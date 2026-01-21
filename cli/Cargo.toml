@@ -1,0 +1,12 @@
+[package]
+name = "orkestra-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "ork"
+path = "src/main.rs"
+
+[dependencies]
+orkestra-core = { path = "../crates/orkestra-core" }
+clap = { version = "4", features = ["derive"] }

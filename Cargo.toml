@@ -1,0 +1,3 @@
+[workspace]
+members = ["src-tauri", "cli", "crates/orkestra-core"]
+resolver = "2"

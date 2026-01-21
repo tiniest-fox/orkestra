@@ -1,4 +1,4 @@
-use orkestra_core::{Task, TaskStatus, tasks, agents, AgentType};
+use orkestra_core::{Task, TaskStatus, tasks, agents, AgentType, load_tasks, recover_all_sessions, recover_session_logs, resume_agent};
 use tasks::{request_review_changes as core_request_review_changes, approve_review as core_approve_review};
 
 #[tauri::command]
@@ -112,6 +112,46 @@ fn approve_review(id: String) -> Result<Task, String> {
     core_approve_review(&id).map_err(|e| e.to_string())
 }
 
+/// Resume a task that was interrupted (agent process died but had session_id)
+#[tauri::command]
+fn resume_task(id: String, prompt: Option<String>) -> Result<Task, String> {
+    let tasks = load_tasks().map_err(|e| e.to_string())?;
+    let task = tasks.iter().find(|t| t.id == id)
+        .ok_or_else(|| "Task not found".to_string())?;
+
+    resume_agent(task, prompt.as_deref())
+        .map_err(|e| e.to_string())?;
+
+    // Return the updated task
+    load_tasks()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|t| t.id == id)
+        .ok_or_else(|| "Task not found".to_string())
+}
+
+/// Recover logs for a specific task from Claude's session file
+#[tauri::command]
+fn recover_task_logs(id: String) -> Result<Task, String> {
+    let tasks = load_tasks().map_err(|e| e.to_string())?;
+    let task = tasks.iter().find(|t| t.id == id)
+        .ok_or_else(|| "Task not found".to_string())?;
+
+    let session_id = task.session_id.as_ref()
+        .ok_or_else(|| "Task has no session_id".to_string())?;
+
+    let entries = recover_session_logs(session_id)
+        .map_err(|e| e.to_string())?;
+
+    tasks::update_task_logs(&id, entries).map_err(|e| e.to_string())
+}
+
+/// Recover all sessions on app startup - recovers logs for tasks whose agent died
+#[tauri::command]
+fn recover_sessions() -> Result<u32, String> {
+    recover_all_sessions().map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -124,7 +164,10 @@ pub fn run() {
             approve_plan,
             request_plan_changes,
             request_review_changes,
-            approve_review
+            approve_review,
+            resume_task,
+            recover_task_logs,
+            recover_sessions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

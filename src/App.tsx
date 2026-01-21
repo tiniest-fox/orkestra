@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { CreateTaskModal } from "./components/CreateTaskModal";
 import { TaskDetailSidebar } from "./components/TaskDetailSidebar";
@@ -9,6 +10,20 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const { tasks, loading, error, createTask, updateTaskStatus, refetch } = useTasks();
+
+  // Recover any interrupted sessions on app startup
+  useEffect(() => {
+    invoke<number>("recover_sessions")
+      .then((count) => {
+        if (count > 0) {
+          console.log(`Recovered logs for ${count} interrupted session(s)`);
+          refetch();
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to recover sessions:", err);
+      });
+  }, []);
 
   // Keep selected task in sync with latest data
   const currentSelectedTask = selectedTask

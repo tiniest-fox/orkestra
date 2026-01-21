@@ -15,6 +15,11 @@ export function TaskCard({ task, onMarkDone, onClick, isSelected }: TaskCardProp
   const isPlanning = task.status === "planning";
   const showSpinner = hasActiveProcess || isInProgress || isPlanning;
 
+  // Task is resumable if it has session_id, no running process, and is incomplete
+  const isResumable = task.session_id &&
+    !task.agent_pid &&
+    (task.status === "planning" || task.status === "in_progress");
+
   const borderClass = isFailed
     ? "border-red-300 bg-red-50"
     : isBlocked
@@ -38,6 +43,13 @@ export function TaskCard({ task, onMarkDone, onClick, isSelected }: TaskCardProp
         )}
         {isBlocked && (
           <span className="flex-shrink-0 text-orange-500 font-bold">||</span>
+        )}
+        {isResumable && (
+          <span className="flex-shrink-0 text-amber-500" title="Session interrupted - can be resumed">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </span>
         )}
       </div>
       {task.description && (

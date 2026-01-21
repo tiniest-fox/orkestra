@@ -22,7 +22,8 @@ export type LogEntry =
   | { type: "text"; content: string }
   | { type: "tool_use"; tool: string; id: string; input: ToolInput }
   | { type: "process_exit"; code: number | null }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "session_resumed"; timestamp: string };
 
 export interface Task {
   id: string;
@@ -39,6 +40,7 @@ export interface Task {
   plan?: string;
   plan_feedback?: string;
   review_feedback?: string;
+  session_id?: string;
 }
 
 export const TASK_STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {

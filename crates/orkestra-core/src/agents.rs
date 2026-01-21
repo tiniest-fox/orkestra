@@ -4,7 +4,7 @@ use std::fs;
 use std::io::BufRead;
 
 use crate::project;
-use crate::tasks::{Task, TaskStatus, LogEntry, ToolInput, update_task_status, update_task_logs, set_task_agent_pid};
+use crate::tasks::{Task, TaskStatus, LogEntry, ToolInput, update_task_status, update_task_logs, set_task_agent_pid, set_task_session_id};
 
 /// Agent types that can be spawned
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -177,6 +177,100 @@ pub struct SpawnedAgent {
     pub process_id: u32,
 }
 
+/// Get path to Claude's session file
+pub fn get_claude_session_path(session_id: &str) -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let cwd = project::find_project_root().ok()?;
+
+    // Encode cwd: /Users/foo/bar -> -Users-foo-bar
+    let encoded_cwd = cwd.to_string_lossy().replace('/', "-");
+
+    Some(home
+        .join(".claude/projects")
+        .join(&encoded_cwd)
+        .join(format!("{}.jsonl", session_id)))
+}
+
+/// Recover logs from Claude's session file
+pub fn recover_session_logs(session_id: &str) -> std::io::Result<Vec<LogEntry>> {
+    let path = get_claude_session_path(session_id)
+        .ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "Could not determine session path"
+        ))?;
+
+    if !path.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("Session file not found: {}", path.display())
+        ));
+    }
+
+    let file = fs::File::open(&path)?;
+    let reader = std::io::BufReader::new(file);
+    let mut entries = Vec::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let v: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        // Parse assistant messages from Claude's session format
+        if v.get("type").and_then(|t| t.as_str()) == Some("assistant") {
+            if let Some(content) = v.get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_array())
+            {
+                for item in content {
+                    if let Some(item_type) = item.get("type").and_then(|t| t.as_str()) {
+                        match item_type {
+                            "text" => {
+                                if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                    let trimmed = text.trim();
+                                    if !trimmed.is_empty() {
+                                        entries.push(LogEntry::Text {
+                                            content: trimmed.to_string()
+                                        });
+                                    }
+                                }
+                            }
+                            "tool_use" => {
+                                let tool_name = item.get("name")
+                                    .and_then(|n| n.as_str())
+                                    .unwrap_or("unknown")
+                                    .to_string();
+                                let tool_id = item.get("id")
+                                    .and_then(|i| i.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let input = item.get("input")
+                                    .cloned()
+                                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+                                let tool_input = parse_tool_input(&tool_name, &input);
+                                entries.push(LogEntry::ToolUse {
+                                    tool: tool_name,
+                                    id: tool_id,
+                                    input: tool_input
+                                });
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(entries)
+}
+
 /// Parses a tool input JSON into a structured ToolInput
 fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
     match tool_name {
@@ -239,29 +333,45 @@ fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
     }
 }
 
+/// Result from parsing a stream event - may include session_id
+struct ParsedEvent {
+    log_entries: Vec<LogEntry>,
+    session_id: Option<String>,
+}
+
 /// Parses a streaming JSON event into structured LogEntry items
-/// Only processes assistant events (text and tool_use), skips user/system/tool_result events
-fn parse_stream_event(json_line: &str) -> Vec<LogEntry> {
+/// Processes assistant events (text and tool_use) and captures session_id from system init
+fn parse_stream_event(json_line: &str) -> ParsedEvent {
     let v: serde_json::Value = match serde_json::from_str(json_line) {
         Ok(v) => v,
-        Err(_) => return vec![],
+        Err(_) => return ParsedEvent { log_entries: vec![], session_id: None },
     };
 
     let event_type = match v.get("type").and_then(|t| t.as_str()) {
         Some(t) => t,
-        None => return vec![],
+        None => return ParsedEvent { log_entries: vec![], session_id: None },
     };
 
     match event_type {
+        "system" => {
+            // Check for init subtype with session_id
+            if v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
+                let session_id = v.get("session_id")
+                    .and_then(|s| s.as_str())
+                    .map(|s| s.to_string());
+                return ParsedEvent { log_entries: vec![], session_id };
+            }
+            ParsedEvent { log_entries: vec![], session_id: None }
+        }
         "assistant" => {
             // Assistant message with potential tool use
             let message = match v.get("message") {
                 Some(m) => m,
-                None => return vec![],
+                None => return ParsedEvent { log_entries: vec![], session_id: None },
             };
             let content = match message.get("content").and_then(|c| c.as_array()) {
                 Some(c) => c,
-                None => return vec![],
+                None => return ParsedEvent { log_entries: vec![], session_id: None },
             };
 
             let mut entries = Vec::new();
@@ -302,17 +412,17 @@ fn parse_stream_event(json_line: &str) -> Vec<LogEntry> {
                     }
                 }
             }
-            entries
+            ParsedEvent { log_entries: entries, session_id: None }
         }
         "error" => {
             let error = v.get("error")
                 .and_then(|e| e.as_str())
                 .unwrap_or("Unknown error")
                 .to_string();
-            vec![LogEntry::Error { message: error }]
+            ParsedEvent { log_entries: vec![LogEntry::Error { message: error }], session_id: None }
         }
-        // Skip "user", "system", and "result" (tool_result) events
-        _ => vec![],
+        // Skip "user" and "result" (tool_result) events
+        _ => ParsedEvent { log_entries: vec![], session_id: None },
     }
 }
 
@@ -412,9 +522,15 @@ pub fn spawn_agent(task: &Task, agent_type: AgentType) -> std::io::Result<Spawne
                         }
 
                         // Parse the streaming JSON event into structured entries
-                        let entries = parse_stream_event(&json_line);
-                        if !entries.is_empty() {
-                            log_entries.extend(entries);
+                        let parsed = parse_stream_event(&json_line);
+
+                        // Capture session_id if present (typically first event)
+                        if let Some(sid) = parsed.session_id {
+                            let _ = set_task_session_id(&task_id, &sid);
+                        }
+
+                        if !parsed.log_entries.is_empty() {
+                            log_entries.extend(parsed.log_entries);
 
                             // Update logs incrementally so they can be viewed in real-time
                             let _ = update_task_logs(&task_id, log_entries.clone());
@@ -461,4 +577,205 @@ pub fn spawn_agent(task: &Task, agent_type: AgentType) -> std::io::Result<Spawne
         task_id: task.id.clone(),
         process_id: pid,
     })
+}
+
+/// Resumes an interrupted Claude Code session
+pub fn resume_agent(task: &Task, continuation_prompt: Option<&str>) -> std::io::Result<SpawnedAgent> {
+    let session_id = task.session_id.as_ref()
+        .ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Task has no session_id to resume"
+        ))?;
+
+    // Determine agent type from current status to get the right default prompt
+    let default_prompt = match task.status {
+        TaskStatus::Planning => "The session was interrupted. Please continue creating the implementation plan where you left off.",
+        TaskStatus::InProgress => "The session was interrupted. Please continue implementing the task where you left off.",
+        _ => "The session was interrupted. Please continue where you left off.",
+    };
+
+    let prompt = continuation_prompt.unwrap_or(default_prompt);
+
+    // Find CLI path for PATH environment
+    let cli_path = find_cli_path();
+    let mut path_env = std::env::var("PATH").unwrap_or_default();
+    if let Some(ref cli) = cli_path {
+        if let Some(parent) = cli.parent() {
+            path_env = format!("{}:{}", parent.display(), path_env);
+        }
+    }
+
+    let project_root = project::find_project_root()?;
+    let task_id = task.id.clone();
+
+    // Spawn claude with --resume flag
+    use std::io::Write as IoWrite;
+    let mut child = Command::new("claude")
+        .args([
+            "--resume", session_id,
+            "--print",
+            "--verbose",
+            "--output-format", "stream-json",
+            "--dangerously-skip-permissions",
+        ])
+        .env("PATH", path_env)
+        .current_dir(&project_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    // Send continuation prompt
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(prompt.as_bytes())?;
+    }
+
+    let pid = child.id();
+    let _ = set_task_agent_pid(&task_id, pid);
+
+    // Take stdout and stderr for processing
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    // Add a "session resumed" marker to logs
+    let mut initial_entries = task.logs.clone().unwrap_or_default();
+    initial_entries.push(LogEntry::SessionResumed {
+        timestamp: chrono::Utc::now().to_rfc3339()
+    });
+    let _ = update_task_logs(&task_id, initial_entries.clone());
+
+    // Spawn a thread to capture and process streaming JSON output (same as spawn_agent)
+    std::thread::spawn(move || {
+        let mut log_entries = initial_entries;
+
+        // Spawn a thread to read stderr in parallel
+        let stderr_handle = stderr.map(|stderr| {
+            std::thread::spawn(move || {
+                let reader = std::io::BufReader::new(stderr);
+                let mut stderr_lines = Vec::new();
+                for line in reader.lines() {
+                    if let Ok(line) = line {
+                        stderr_lines.push(line);
+                    }
+                }
+                stderr_lines
+            })
+        });
+
+        if let Some(stdout) = stdout {
+            let reader = std::io::BufReader::new(stdout);
+
+            for line in reader.lines() {
+                match line {
+                    Ok(json_line) => {
+                        if json_line.trim().is_empty() {
+                            continue;
+                        }
+
+                        let parsed = parse_stream_event(&json_line);
+
+                        if !parsed.log_entries.is_empty() {
+                            log_entries.extend(parsed.log_entries);
+                            let _ = update_task_logs(&task_id, log_entries.clone());
+                        }
+                    }
+                    Err(e) => {
+                        log_entries.push(LogEntry::Error {
+                            message: format!("IO error: {}", e)
+                        });
+                    }
+                }
+            }
+        }
+
+        // Collect stderr output
+        if let Some(handle) = stderr_handle {
+            if let Ok(stderr_lines) = handle.join() {
+                if !stderr_lines.is_empty() {
+                    log_entries.push(LogEntry::Error {
+                        message: format!("stderr: {}", stderr_lines.join("\n"))
+                    });
+                }
+            }
+        }
+
+        // Wait for the process to complete
+        match child.wait() {
+            Ok(status) => {
+                log_entries.push(LogEntry::ProcessExit { code: status.code() });
+                let _ = update_task_logs(&task_id, log_entries);
+                eprintln!("Resumed agent {} finished with exit code: {:?}", task_id, status.code());
+            }
+            Err(e) => {
+                log_entries.push(LogEntry::Error {
+                    message: format!("Process error: {}", e)
+                });
+                let _ = update_task_logs(&task_id, log_entries);
+                eprintln!("Resumed agent {} error: {}", task_id, e);
+            }
+        }
+    });
+
+    Ok(SpawnedAgent {
+        task_id: task.id.clone(),
+        process_id: pid,
+    })
+}
+
+/// Check if a process with the given PID is still running
+fn is_process_running(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        unsafe { libc::kill(pid as i32, 0) == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
+/// Recovers session logs for all tasks that have a session_id but no running process.
+/// This should be called on app startup to restore state after a crash.
+/// Returns the number of tasks that had their logs recovered.
+pub fn recover_all_sessions() -> std::io::Result<u32> {
+    use crate::tasks::{load_tasks, save_tasks};
+
+    let mut tasks = load_tasks()?;
+    let mut recovered_count = 0;
+
+    for task in &mut tasks {
+        // Skip tasks without session_id
+        let session_id = match &task.session_id {
+            Some(sid) => sid.clone(),
+            None => continue,
+        };
+
+        // Check if process is still running
+        let is_running = task.agent_pid
+            .map(|pid| is_process_running(pid))
+            .unwrap_or(false);
+
+        if is_running {
+            // Process is still running - for now we just leave it
+            // In the future, we could start tailing the session file
+            continue;
+        }
+
+        // Process is dead - try to recover logs from Claude's session file
+        if let Ok(entries) = recover_session_logs(&session_id) {
+            // Only update if we got some entries and the task doesn't already have logs
+            if !entries.is_empty() && task.logs.as_ref().map(|l| l.is_empty()).unwrap_or(true) {
+                task.logs = Some(entries);
+                task.agent_pid = None; // Clear stale PID
+                recovered_count += 1;
+            }
+        }
+    }
+
+    if recovered_count > 0 {
+        save_tasks(&tasks)?;
+    }
+
+    Ok(recovered_count)
 }

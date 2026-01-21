@@ -44,6 +44,7 @@ pub enum LogEntry {
     ToolUse { tool: String, id: String, input: ToolInput },
     ProcessExit { code: Option<i32> },
     Error { message: String },
+    SessionResumed { timestamp: String },
 }
 
 /// Tool input details for structured logging
@@ -97,6 +98,8 @@ pub struct Task {
     pub plan_feedback: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review_feedback: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 fn get_tasks_file() -> PathBuf {
@@ -162,7 +165,7 @@ pub fn load_tasks() -> std::io::Result<Vec<Task>> {
     Ok(tasks)
 }
 
-fn save_tasks(tasks: &[Task]) -> std::io::Result<()> {
+pub fn save_tasks(tasks: &[Task]) -> std::io::Result<()> {
     project::ensure_orkestra_dir()?;
     let path = get_tasks_file();
     let mut file = OpenOptions::new()
@@ -205,6 +208,7 @@ pub fn create_task(title: &str, description: &str) -> std::io::Result<Task> {
         plan: None,
         plan_feedback: None,
         review_feedback: None,
+        session_id: None,
     };
 
     let mut tasks = load_tasks()?;
@@ -321,6 +325,21 @@ pub fn set_task_agent_pid(id: &str, pid: u32) -> std::io::Result<Task> {
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
 
     task.agent_pid = Some(pid);
+    task.updated_at = chrono::Utc::now().to_rfc3339();
+
+    let result = task.clone();
+    save_tasks(&tasks)?;
+    Ok(result)
+}
+
+pub fn set_task_session_id(id: &str, session_id: &str) -> std::io::Result<Task> {
+    let mut tasks = load_tasks()?;
+    let task = tasks
+        .iter_mut()
+        .find(|t| t.id == id)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
+
+    task.session_id = Some(session_id.to_string());
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
     let result = task.clone();

@@ -8,17 +8,30 @@ interface KanbanBoardProps {
   onSelectTask: (task: Task) => void;
 }
 
-const COLUMNS: TaskStatus[] = ["pending", "in_progress", "ready_for_review", "done"];
+const COLUMNS: TaskStatus[] = ["planning", "awaiting_approval", "in_progress", "ready_for_review", "done"];
+
+const COLUMN_COLORS: Record<TaskStatus, string> = {
+  pending: "bg-gray-500",
+  planning: "bg-purple-500",
+  awaiting_approval: "bg-amber-500",
+  in_progress: "bg-blue-500",
+  ready_for_review: "bg-yellow-500",
+  done: "bg-green-500",
+  failed: "bg-red-500",
+  blocked: "bg-orange-500",
+};
 
 export function KanbanBoard({ tasks, onUpdateStatus, selectedTaskId, onSelectTask }: KanbanBoardProps) {
   const getTasksForStatus = (status: TaskStatus) =>
     tasks.filter((task) => task.status === status);
 
-  // Show failed and blocked tasks in the pending column with special styling
+  // Group tasks into columns
   const getTasksForColumn = (status: TaskStatus) => {
-    if (status === "pending") {
+    if (status === "planning") {
+      // Include pending, planning, failed, and blocked in the first column
       return [
         ...getTasksForStatus("pending"),
+        ...getTasksForStatus("planning"),
         ...getTasksForStatus("failed"),
         ...getTasksForStatus("blocked"),
       ];
@@ -45,12 +58,7 @@ export function KanbanBoard({ tasks, onUpdateStatus, selectedTaskId, onSelectTas
           >
             <h2 className="font-medium text-gray-700 mb-4 flex items-center gap-2">
               <span
-                className={`w-3 h-3 rounded-full ${
-                  status === "pending" ? "bg-gray-500" :
-                  status === "in_progress" ? "bg-blue-500" :
-                  status === "ready_for_review" ? "bg-yellow-500" :
-                  "bg-green-500"
-                }`}
+                className={`w-3 h-3 rounded-full ${COLUMN_COLORS[status]}`}
               />
               {TASK_STATUS_CONFIG[status].label}
               <span className="text-gray-400 text-sm">

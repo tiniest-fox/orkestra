@@ -1,4 +1,5 @@
-use orkestra_core::{Task, TaskStatus, tasks, agents};
+use orkestra_core::{Task, TaskStatus, tasks, agents, AgentType};
+use tasks::{request_review_changes as core_request_review_changes, approve_review as core_approve_review};
 
 #[tauri::command]
 fn get_tasks() -> Vec<Task> {
@@ -14,19 +15,17 @@ fn create_task(title: String, description: String) -> Result<Task, String> {
 fn create_and_start_task(title: String, description: String) -> Result<Task, String> {
     let task = tasks::create_task(&title, &description).map_err(|e| e.to_string())?;
 
-    // Spawn an agent to work on the task
-    match agents::spawn_agent(&task) {
+    // Spawn a planner agent to create the implementation plan
+    match agents::spawn_agent(&task, AgentType::Planner) {
         Ok(spawned) => {
-            println!("Spawned agent for task {} (pid: {})", spawned.task_id, spawned.process_id);
+            println!("Spawned planner for task {} (pid: {})", spawned.task_id, spawned.process_id);
         }
         Err(e) => {
-            eprintln!("Failed to spawn agent for task {}: {}", task.id, e);
-            // Don't fail the whole operation, just log the error
-            // The task is created, user can manually trigger agent later
+            eprintln!("Failed to spawn planner for task {}: {}", task.id, e);
         }
     }
 
-    // Return the task with updated status (now in_progress)
+    // Return the task with updated status (now planning)
     tasks::load_tasks()
         .map_err(|e| e.to_string())?
         .into_iter()
@@ -40,15 +39,77 @@ fn update_task_status(id: String, status: TaskStatus) -> Result<Task, String> {
 }
 
 #[tauri::command]
-fn spawn_agent_for_task(id: String) -> Result<u32, String> {
-    let tasks_list = tasks::load_tasks().map_err(|e| e.to_string())?;
-    let task = tasks_list
+fn approve_plan(id: String) -> Result<Task, String> {
+    // First approve the plan (changes status to in_progress)
+    let task = tasks::approve_task_plan(&id).map_err(|e| e.to_string())?;
+
+    // Then spawn a worker agent to implement it
+    match agents::spawn_agent(&task, AgentType::Worker) {
+        Ok(spawned) => {
+            println!("Spawned worker for task {} (pid: {})", spawned.task_id, spawned.process_id);
+        }
+        Err(e) => {
+            eprintln!("Failed to spawn worker for task {}: {}", task.id, e);
+        }
+    }
+
+    // Return the updated task
+    tasks::load_tasks()
+        .map_err(|e| e.to_string())?
         .into_iter()
         .find(|t| t.id == id)
-        .ok_or_else(|| format!("Task {} not found", id))?;
+        .ok_or_else(|| "Task not found".to_string())
+}
 
-    let spawned = agents::spawn_agent(&task).map_err(|e| e.to_string())?;
-    Ok(spawned.process_id)
+#[tauri::command]
+fn request_plan_changes(id: String, feedback: String) -> Result<Task, String> {
+    // Request changes (changes status to planning, stores feedback)
+    let task = tasks::request_plan_changes(&id, &feedback).map_err(|e| e.to_string())?;
+
+    // Spawn planner again with the feedback
+    match agents::spawn_agent(&task, AgentType::Planner) {
+        Ok(spawned) => {
+            println!("Spawned planner for task {} revision (pid: {})", spawned.task_id, spawned.process_id);
+        }
+        Err(e) => {
+            eprintln!("Failed to spawn planner for task {}: {}", task.id, e);
+        }
+    }
+
+    // Return the updated task
+    tasks::load_tasks()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|t| t.id == id)
+        .ok_or_else(|| "Task not found".to_string())
+}
+
+#[tauri::command]
+fn request_review_changes(id: String, feedback: String) -> Result<Task, String> {
+    // Request changes (changes status to in_progress, stores feedback)
+    let task = core_request_review_changes(&id, &feedback).map_err(|e| e.to_string())?;
+
+    // Spawn worker agent again with the feedback
+    match agents::spawn_agent(&task, AgentType::Worker) {
+        Ok(spawned) => {
+            println!("Spawned worker for task {} review revision (pid: {})", spawned.task_id, spawned.process_id);
+        }
+        Err(e) => {
+            eprintln!("Failed to spawn worker for task {}: {}", task.id, e);
+        }
+    }
+
+    // Return the updated task
+    tasks::load_tasks()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|t| t.id == id)
+        .ok_or_else(|| "Task not found".to_string())
+}
+
+#[tauri::command]
+fn approve_review(id: String) -> Result<Task, String> {
+    core_approve_review(&id).map_err(|e| e.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -60,7 +121,10 @@ pub fn run() {
             create_task,
             create_and_start_task,
             update_task_status,
-            spawn_agent_for_task
+            approve_plan,
+            request_plan_changes,
+            request_review_changes,
+            approve_review
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

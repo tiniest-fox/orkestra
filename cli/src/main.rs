@@ -68,8 +68,29 @@ enum TaskAction {
     Status {
         /// Task ID
         id: String,
-        /// New status (pending, in_progress, ready_for_review, done, failed, blocked)
+        /// New status (pending, planning, awaiting_approval, in_progress, ready_for_review, done, failed, blocked)
         status: String,
+    },
+    /// Set the implementation plan for a task (used by planner agent)
+    SetPlan {
+        /// Task ID
+        id: String,
+        /// The implementation plan (markdown)
+        #[arg(short, long)]
+        plan: String,
+    },
+    /// Approve a task's plan and move to implementation
+    Approve {
+        /// Task ID
+        id: String,
+    },
+    /// Request changes to a task's plan
+    RequestChanges {
+        /// Task ID
+        id: String,
+        /// Feedback for the planner
+        #[arg(short, long)]
+        feedback: String,
     },
 }
 
@@ -181,13 +202,15 @@ fn main() {
             TaskAction::Status { id, status } => {
                 let task_status = match status.to_lowercase().as_str() {
                     "pending" => TaskStatus::Pending,
+                    "planning" => TaskStatus::Planning,
+                    "awaiting_approval" => TaskStatus::AwaitingApproval,
                     "in_progress" => TaskStatus::InProgress,
                     "ready_for_review" => TaskStatus::ReadyForReview,
                     "done" => TaskStatus::Done,
                     "failed" => TaskStatus::Failed,
                     "blocked" => TaskStatus::Blocked,
                     _ => {
-                        eprintln!("Invalid status: {}. Valid values: pending, in_progress, ready_for_review, done, failed, blocked", status);
+                        eprintln!("Invalid status: {}. Valid values: pending, planning, awaiting_approval, in_progress, ready_for_review, done, failed, blocked", status);
                         std::process::exit(1);
                     }
                 };
@@ -198,6 +221,39 @@ fn main() {
                     }
                     Err(e) => {
                         eprintln!("Error updating task status: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::SetPlan { id, plan } => {
+                match tasks::set_task_plan(&id, &plan) {
+                    Ok(task) => {
+                        println!("Plan set for task {}. Status: awaiting_approval", task.id);
+                    }
+                    Err(e) => {
+                        eprintln!("Error setting plan: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::Approve { id } => {
+                match tasks::approve_task_plan(&id) {
+                    Ok(task) => {
+                        println!("Task {} plan approved. Status: in_progress", task.id);
+                    }
+                    Err(e) => {
+                        eprintln!("Error approving plan: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::RequestChanges { id, feedback } => {
+                match tasks::request_plan_changes(&id, &feedback) {
+                    Ok(task) => {
+                        println!("Changes requested for task {}. Status: planning", task.id);
+                    }
+                    Err(e) => {
+                        eprintln!("Error requesting changes: {}", e);
                         std::process::exit(1);
                     }
                 }

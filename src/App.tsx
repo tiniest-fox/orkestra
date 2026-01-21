@@ -8,7 +8,7 @@ import { Task } from "./types/task";
 function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const { tasks, loading, error, createTask, updateTaskStatus } = useTasks();
+  const { tasks, loading, error, createTask, updateTaskStatus, refetch } = useTasks();
 
   // Keep selected task in sync with latest data
   const currentSelectedTask = selectedTask
@@ -58,6 +58,7 @@ function App() {
         <TaskDetailSidebar
           task={currentSelectedTask}
           onClose={() => setSelectedTask(null)}
+          onTaskUpdated={refetch}
         />
       )}
     </div>

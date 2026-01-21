@@ -10,7 +10,10 @@ interface TaskCardProps {
 export function TaskCard({ task, onMarkDone, onClick, isSelected }: TaskCardProps) {
   const isFailed = task.status === "failed";
   const isBlocked = task.status === "blocked";
+  const hasActiveProcess = task.agent_pid !== undefined;
   const isInProgress = task.status === "in_progress";
+  const isPlanning = task.status === "planning";
+  const showSpinner = hasActiveProcess || isInProgress || isPlanning;
 
   const borderClass = isFailed
     ? "border-red-300 bg-red-50"
@@ -27,7 +30,7 @@ export function TaskCard({ task, onMarkDone, onClick, isSelected }: TaskCardProp
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-medium text-gray-900 text-sm">{task.title}</h3>
-        {isInProgress && (
+        {showSpinner && (
           <span className="flex-shrink-0 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
         )}
         {isFailed && (

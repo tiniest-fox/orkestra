@@ -1,0 +1,55 @@
+use serde::{Deserialize, Serialize};
+
+/// Tool input details for structured logging.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "tool", rename_all = "snake_case")]
+pub enum ToolInput {
+    Bash { command: String },
+    Read { file_path: String },
+    Write { file_path: String },
+    Edit { file_path: String },
+    Glob { pattern: String },
+    Grep { pattern: String },
+    Task { description: String },
+    Other { summary: String },
+}
+
+/// Structured log entry for task execution (loaded from Claude's session files).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LogEntry {
+    Text {
+        content: String,
+    },
+    ToolUse {
+        tool: String,
+        id: String,
+        input: ToolInput,
+    },
+    /// Tool result, especially useful for Task subagent output
+    ToolResult {
+        tool: String,
+        tool_use_id: String,
+        content: String,
+    },
+    /// Subagent activity (tool use within a Task subagent)
+    SubagentToolUse {
+        tool: String,
+        id: String,
+        input: ToolInput,
+        parent_task_id: String,
+    },
+    /// Subagent tool result
+    SubagentToolResult {
+        tool: String,
+        tool_use_id: String,
+        content: String,
+        parent_task_id: String,
+    },
+    ProcessExit {
+        code: Option<i32>,
+    },
+    Error {
+        message: String,
+    },
+}

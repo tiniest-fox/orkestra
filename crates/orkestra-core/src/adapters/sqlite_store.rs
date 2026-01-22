@@ -275,6 +275,7 @@ impl SqliteStore {
             "parent_id",
             "breakdown",
             "breakdown_feedback",
+            "skip_breakdown",
             "branch_name",
             "worktree_path",
             "integration_result",

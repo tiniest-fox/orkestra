@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use crate::project;
-use crate::tasks::{add_task_session, get_subtasks, update_task_status, Task, TaskStatus};
+use crate::tasks::{
+    add_task_session, get_subtasks, set_agent_pid, update_task_status, Task, TaskStatus,
+};
 
 /// Agent types that can be spawned
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -115,21 +117,19 @@ Please address this feedback and continue your implementation."
             String::new()
         } else {
             use std::fmt::Write;
-            let checklist: String = subs
-                .iter()
-                .fold(String::new(), |mut acc, s| {
-                    let status_marker = if s.status == TaskStatus::Done {
-                        "x"
-                    } else {
-                        " "
-                    };
-                    let _ = writeln!(
-                        acc,
-                        "- [{}] **{}**: {} (ID: {})",
-                        status_marker, s.title, s.description, s.id
-                    );
-                    acc
-                });
+            let checklist: String = subs.iter().fold(String::new(), |mut acc, s| {
+                let status_marker = if s.status == TaskStatus::Done {
+                    "x"
+                } else {
+                    " "
+                };
+                let _ = writeln!(
+                    acc,
+                    "- [{}] **{}**: {} (ID: {})",
+                    status_marker, s.title, s.description, s.id
+                );
+                acc
+            });
             format!(
                 r"
 
@@ -403,17 +403,16 @@ fn parse_stream_event(json_line: &str) -> ParsedEvent {
     let event_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
     // Check for system init events which contain session_id
-    if event_type == "system"
-        && v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
-            let session_id = v
-                .get("session_id")
-                .and_then(|s| s.as_str())
-                .map(std::string::ToString::to_string);
-            return ParsedEvent {
-                session_id,
-                has_new_content: true,
-            };
-        }
+    if event_type == "system" && v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
+        let session_id = v
+            .get("session_id")
+            .and_then(|s| s.as_str())
+            .map(std::string::ToString::to_string);
+        return ParsedEvent {
+            session_id,
+            has_new_content: true,
+        };
+    }
 
     // Check for assistant message events (these are written to session file)
     // The "assistant" type with a "message" field indicates a complete message
@@ -558,7 +557,11 @@ fn spawn_stderr_reader(
 }
 
 /// Logs stderr output if present
-fn log_stderr(task_id: &str, prefix: &str, stderr_handle: Option<std::thread::JoinHandle<Vec<String>>>) {
+fn log_stderr(
+    task_id: &str,
+    prefix: &str,
+    stderr_handle: Option<std::thread::JoinHandle<Vec<String>>>,
+) {
     if let Some(handle) = stderr_handle {
         if let Ok(lines) = handle.join() {
             if !lines.is_empty() {
@@ -597,6 +600,9 @@ where
     let stderr = child.stderr.take();
     let session_type = config.session_type.to_string();
 
+    // Record the PID immediately so orchestrator knows agent is running
+    let _ = set_agent_pid(&task_id, Some(pid));
+
     let task_id_for_callback = task_id.clone();
 
     // Spawn background thread for stdout/stderr processing
@@ -623,11 +629,19 @@ where
 
         match child.wait() {
             Ok(status) => {
-                eprintln!("Agent {} finished with exit code: {:?}", task_id, status.code());
+                eprintln!(
+                    "Agent {} finished with exit code: {:?}",
+                    task_id,
+                    status.code()
+                );
+                // Clear the PID now that agent is done
+                let _ = set_agent_pid(&task_id, None);
                 on_update(&task_id_for_callback);
             }
             Err(e) => {
                 eprintln!("Agent {task_id} error: {e}");
+                // Clear the PID even on error
+                let _ = set_agent_pid(&task_id, None);
                 on_update(&task_id_for_callback);
             }
         }
@@ -667,13 +681,8 @@ pub fn spawn_agent_sync(
     let session_type = config.session_type.to_string();
 
     // Read stdout synchronously until we get the session_id or timeout
-    let captured_session_id = wait_for_session_id(
-        stdout,
-        &task_id,
-        &session_type,
-        pid,
-        timeout_secs,
-    );
+    let captured_session_id =
+        wait_for_session_id(stdout, &task_id, &session_type, pid, timeout_secs);
 
     // Spawn background thread for stderr and process completion
     std::thread::spawn(move || {
@@ -682,7 +691,11 @@ pub fn spawn_agent_sync(
 
         match child.wait() {
             Ok(status) => {
-                eprintln!("Agent {} finished with exit code: {:?}", task_id, status.code());
+                eprintln!(
+                    "Agent {} finished with exit code: {:?}",
+                    task_id,
+                    status.code()
+                );
             }
             Err(e) => {
                 eprintln!("Agent {task_id} error: {e}");
@@ -802,6 +815,10 @@ where
     let pid = child.id();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
+
+    // Record the PID immediately so orchestrator knows agent is running
+    let _ = set_agent_pid(&task_id, Some(pid));
+
     let task_id_for_callback = task_id.clone();
 
     // Spawn background thread for stdout/stderr processing
@@ -825,11 +842,19 @@ where
 
         match child.wait() {
             Ok(status) => {
-                eprintln!("Resumed agent {} finished with exit code: {:?}", task_id, status.code());
+                eprintln!(
+                    "Resumed agent {} finished with exit code: {:?}",
+                    task_id,
+                    status.code()
+                );
+                // Clear the PID now that agent is done
+                let _ = set_agent_pid(&task_id, None);
                 on_update(&task_id_for_callback);
             }
             Err(e) => {
                 eprintln!("Resumed agent {task_id} error: {e}");
+                // Clear the PID even on error
+                let _ = set_agent_pid(&task_id, None);
                 on_update(&task_id_for_callback);
             }
         }

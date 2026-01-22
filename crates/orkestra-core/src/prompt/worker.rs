@@ -45,21 +45,19 @@ Please address this feedback and continue your implementation."
             String::new()
         } else {
             use std::fmt::Write;
-            let checklist: String = subs
-                .iter()
-                .fold(String::new(), |mut acc, s| {
-                    let status_marker = if s.status == crate::domain::TaskStatus::Done {
-                        "x"
-                    } else {
-                        " "
-                    };
-                    let _ = writeln!(
-                        acc,
-                        "- [{}] **{}**: {} (ID: {})",
-                        status_marker, s.title, s.description, s.id
-                    );
-                    acc
-                });
+            let checklist: String = subs.iter().fold(String::new(), |mut acc, s| {
+                let status_marker = if s.status == crate::domain::TaskStatus::Done {
+                    "x"
+                } else {
+                    " "
+                };
+                let _ = writeln!(
+                    acc,
+                    "- [{}] **{}**: {} (ID: {})",
+                    status_marker, s.title, s.description, s.id
+                );
+                acc
+            });
             format!(
                 r"
 

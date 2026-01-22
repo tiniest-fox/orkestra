@@ -187,6 +187,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         if (key === "plan") label = "Plan";
         else if (key === "breakdown") label = "Breakdown";
         else if (key === "work") label = "Work";
+        else if (key === "review") label = "Review";
         else if (key.startsWith("review_")) {
           const idx = parseInt(key.replace("review_", ""), 10);
           label = `Review ${idx + 1}`;
@@ -339,29 +340,9 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     }
   };
 
-  const isPlanning = task.status === "planning";
-  const isBreakingDown = task.status === "breaking_down";
-  const isWorking = task.status === "working";
   const taskNeedsPlanReview = needsPlanReview(task);
   const taskNeedsBreakdownReview = needsBreakdownReview(task);
   const taskNeedsWorkReview = needsWorkReview(task);
-
-  // Session is resumable if: has sessions, no running process, not waiting for review, and task is incomplete
-  const hasSession = task.sessions && Object.keys(task.sessions).length > 0;
-  const isResumable =
-    hasSession &&
-    !task.agent_pid &&
-    !taskNeedsPlanReview &&
-    !taskNeedsBreakdownReview &&
-    !taskNeedsWorkReview &&
-    (isPlanning || isBreakingDown || isWorking);
-
-  // Get the most recent session key for resuming
-  const resumeSessionKey = useMemo(() => {
-    if (!task.sessions) return null;
-    const keys = Object.keys(task.sessions);
-    return keys.length > 0 ? keys[keys.length - 1] : null;
-  }, [task.sessions]);
 
   // Reset review feedback when task changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: task.id triggers reset when selected task changes
@@ -431,19 +412,6 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       onTaskUpdated();
     } catch (err) {
       console.error("Failed to skip breakdown:", err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleResume = async () => {
-    if (!resumeSessionKey) return;
-    setIsSubmitting(true);
-    try {
-      await invoke("resume_task", { id: task.id, sessionKey: resumeSessionKey });
-      onTaskUpdated();
-    } catch (err) {
-      console.error("Failed to resume task:", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -601,44 +569,6 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           {task.agent_pid && <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />}
         </button>
       </div>
-
-      {/* Resume Interrupted Session Banner */}
-      {isResumable && (
-        <div className="flex-shrink-0 p-4 border-b border-gray-200 bg-amber-50">
-          <div className="text-sm font-medium text-amber-800 mb-2">Session Interrupted</div>
-          <p className="text-xs text-amber-600 mb-3">
-            The agent process stopped unexpectedly. Click to resume where it left off.
-          </p>
-          <button
-            type="button"
-            onClick={handleResume}
-            disabled={isSubmitting}
-            className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            Resume Session
-          </button>
-        </div>
-      )}
 
       {/* Tab Content Area */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -886,7 +816,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
               disabled={isSubmitting}
               className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
             >
-              Approve as Done
+              Approve for Review
             </button>
           )}
         </div>

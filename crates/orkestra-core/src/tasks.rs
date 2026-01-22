@@ -66,6 +66,7 @@ pub fn create_task_with_options(
         breakdown: None,
         breakdown_feedback: None,
         skip_breakdown: false,
+        agent_pid: None,
     };
 
     store
@@ -137,6 +138,15 @@ pub fn block_task(id: &str, reason: &str) -> std::io::Result<Task> {
         .find_by_id(id)
         .map_err(|e| std::io::Error::other(e.to_string()))?
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))
+}
+
+/// Set or clear the `agent_pid` on a task.
+/// Call with Some(pid) immediately when spawning, None when agent finishes.
+pub fn set_agent_pid(id: &str, pid: Option<u32>) -> std::io::Result<()> {
+    let store = get_store();
+    store
+        .update_agent_pid(id, pid)
+        .map_err(|e| std::io::Error::other(e.to_string()))
 }
 
 /// Add a session to a task atomically with optional agent PID.
@@ -443,6 +453,7 @@ pub fn create_child_task(parent_id: &str, title: &str, description: &str) -> std
         breakdown: None,
         breakdown_feedback: None,
         skip_breakdown: true,
+        agent_pid: None,
     };
 
     store
@@ -490,6 +501,7 @@ pub fn create_subtask(parent_id: &str, title: &str, description: &str) -> std::i
         breakdown: None,
         breakdown_feedback: None,
         skip_breakdown: true,
+        agent_pid: None,
     };
 
     store
@@ -567,7 +579,9 @@ pub fn set_breakdown(id: &str, breakdown: &str) -> std::io::Result<Task> {
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))
 }
 
-/// Approve a breakdown and transition to `WaitingOnSubtasks`.
+/// Approve a breakdown and transition to Working or `WaitingOnSubtasks`.
+/// - If there are child tasks (kind: task), go to `WaitingOnSubtasks` (they get parallel workers)
+/// - If only subtasks (kind: subtask) or none, go to Working (checklist for worker)
 pub fn approve_breakdown(id: &str) -> std::io::Result<Task> {
     let store = get_store();
     let task = store
@@ -582,8 +596,18 @@ pub fn approve_breakdown(id: &str) -> std::io::Result<Task> {
         ));
     }
 
+    // Check if there are child tasks (not subtasks) - those get parallel workers
+    let child_tasks = get_child_tasks(id)?;
+    let new_status = if child_tasks.is_empty() {
+        // No child tasks, just subtasks (checklist) - go to Working
+        TaskStatus::Working
+    } else {
+        // Has child tasks that need their own workers - wait on them
+        TaskStatus::WaitingOnSubtasks
+    };
+
     store
-        .update_status(id, TaskStatus::WaitingOnSubtasks)
+        .update_status(id, new_status)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
     store
         .update_field(id, "breakdown_feedback", None)

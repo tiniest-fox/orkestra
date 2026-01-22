@@ -241,7 +241,45 @@ fn main() {
                 }
                 TaskAction::Complete { id, summary } => match tasks::complete_task(&id, &summary) {
                     Ok(task) => {
-                        println!("Task {} marked as ready for review", task.id);
+                        if task.auto_approve {
+                            // Auto-approve: transition to Reviewing and spawn reviewer
+                            match tasks::start_automated_review(&id) {
+                                Ok(reviewing_task) => {
+                                    println!(
+                                        "Task {} completed. Auto-starting review.",
+                                        reviewing_task.id
+                                    );
+                                    // Spawn reviewer agent
+                                    match spawn_agent_sync(&reviewing_task, AgentType::Reviewer, 30)
+                                    {
+                                        Ok(spawned) => {
+                                            if let Some(sid) = &spawned.session_id {
+                                                println!(
+                                                    "Spawned reviewer agent (pid: {}, session: {})",
+                                                    spawned.process_id, sid
+                                                );
+                                            } else {
+                                                println!(
+                                                    "Spawned reviewer agent (pid: {}, session capture pending)",
+                                                    spawned.process_id
+                                                );
+                                            }
+                                        }
+                                        Err(e) => {
+                                            eprintln!(
+                                                "Warning: Failed to spawn reviewer agent: {e}"
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Warning: Failed to start automated review: {e}");
+                                    println!("Task {} marked as ready for review", task.id);
+                                }
+                            }
+                        } else {
+                            println!("Task {} marked as ready for review", task.id);
+                        }
                     }
                     Err(e) => {
                         eprintln!("Error completing task: {e}");
@@ -341,9 +379,7 @@ fn main() {
                                             }
                                         }
                                         Err(e) => {
-                                            eprintln!(
-                                                "Warning: Failed to spawn worker agent: {e}"
-                                            );
+                                            eprintln!("Warning: Failed to spawn worker agent: {e}");
                                         }
                                     }
                                 }
@@ -527,20 +563,15 @@ fn main() {
                         std::process::exit(1);
                     }
                 },
-                TaskAction::ApproveReview { id } => {
-                    match tasks::approve_automated_review(&id) {
-                        Ok(task) => {
-                            println!(
-                                "Task {} review approved. Status: done",
-                                task.id
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("Error approving review: {e}");
-                            std::process::exit(1);
-                        }
+                TaskAction::ApproveReview { id } => match tasks::approve_automated_review(&id) {
+                    Ok(task) => {
+                        println!("Task {} review approved. Status: done", task.id);
                     }
-                }
+                    Err(e) => {
+                        eprintln!("Error approving review: {e}");
+                        std::process::exit(1);
+                    }
+                },
                 TaskAction::RejectReview { id, feedback } => {
                     match tasks::reject_automated_review(&id, &feedback) {
                         Ok(task) => {

@@ -14,6 +14,22 @@ You receive tasks with descriptions of what needs to be done. Your job is to imp
 4. Test your changes if possible (run builds, tests, etc.)
 5. **CRITICAL**: When complete, you MUST use the Bash tool to run the completion command
 
+## Pre-Completion Checks - REQUIRED
+
+Before marking your task complete, you MUST run these checks:
+
+1. **Rust checks** (if you modified Rust code):
+   - `cargo fmt` - Format code
+   - `cargo clippy` - Check for warnings/errors
+   - `cargo build` - Ensure it compiles
+   - `cargo test` - Run tests
+
+2. **TypeScript/React checks** (if you modified frontend code):
+   - `npm run check:fix` - Auto-fix lint/format issues
+   - `npm run build` - Ensure it compiles
+
+Fix any errors these commands surface before marking the task complete.
+
 ## Completing Your Work - REQUIRED
 
 **You MUST use the Bash tool to execute this command when done:**

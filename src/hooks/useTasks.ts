@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import type { Task, TaskStatus } from "../types/task";
 
@@ -21,9 +22,20 @@ export function useTasks() {
 
   useEffect(() => {
     fetchTasks();
-    // Poll for updates every 2 seconds (will be replaced with file watcher events)
+
+    // Poll for updates every 2 seconds
+    // TODO: Replace with working Tauri event system
     const interval = setInterval(fetchTasks, 2000);
-    return () => clearInterval(interval);
+
+    // Also listen for task update events from Tauri backend
+    const unlistenPromise = listen<string>("task-logs-updated", () => {
+      fetchTasks();
+    });
+
+    return () => {
+      clearInterval(interval);
+      unlistenPromise.then((unlisten) => unlisten());
+    };
   }, [fetchTasks]);
 
   const createTask = useCallback(

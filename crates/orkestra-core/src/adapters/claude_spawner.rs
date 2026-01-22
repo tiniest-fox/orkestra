@@ -70,10 +70,9 @@ impl ClaudeSpawner {
         let event_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
         // System init events
-        if event_type == "system"
-            && v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
-                return true;
-            }
+        if event_type == "system" && v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
+            return true;
+        }
 
         // Assistant message events
         if event_type == "assistant" && v.get("message").is_some() {

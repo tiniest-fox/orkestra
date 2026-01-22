@@ -87,6 +87,7 @@ impl SqliteStore {
                 breakdown TEXT,
                 breakdown_feedback TEXT,
                 skip_breakdown INTEGER NOT NULL DEFAULT 0,
+                agent_pid INTEGER,
                 FOREIGN KEY (parent_id) REFERENCES tasks(id)
             );
 
@@ -106,6 +107,10 @@ impl SqliteStore {
             CREATE INDEX IF NOT EXISTS idx_sessions_task_id ON sessions(task_id);
             ",
         )?;
+
+        // Migration: add agent_pid column if it doesn't exist
+        // SQLite doesn't have ADD COLUMN IF NOT EXISTS, so we try and ignore errors
+        let _ = conn.execute("ALTER TABLE tasks ADD COLUMN agent_pid INTEGER", []);
 
         Ok(())
     }
@@ -183,6 +188,7 @@ impl SqliteStore {
         let kind_str: String = row.get(4)?;
         let auto_approve: i32 = row.get(14)?;
         let skip_breakdown: i32 = row.get(18)?;
+        let agent_pid: Option<i32> = row.get(19)?;
 
         Ok(Task {
             id: row.get(0)?,
@@ -205,6 +211,7 @@ impl SqliteStore {
             breakdown: row.get(16)?,
             breakdown_feedback: row.get(17)?,
             skip_breakdown: skip_breakdown != 0,
+            agent_pid: agent_pid.map(|p| p as u32),
         })
     }
 
@@ -263,9 +270,7 @@ impl SqliteStore {
             )));
         }
 
-        let sql = format!(
-            "UPDATE tasks SET {field} = ?, updated_at = ? WHERE id = ?"
-        );
+        let sql = format!("UPDATE tasks SET {field} = ?, updated_at = ? WHERE id = ?");
         conn.execute(
             &sql,
             params![value, chrono::Utc::now().to_rfc3339(), task_id],
@@ -282,6 +287,23 @@ impl SqliteStore {
             "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
             params![
                 status_to_str(status),
+                chrono::Utc::now().to_rfc3339(),
+                task_id
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    /// Update the `agent_pid` field on a task.
+    /// Set to Some(pid) when spawning, None when agent finishes.
+    pub fn update_agent_pid(&self, task_id: &str, agent_pid: Option<u32>) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        conn.execute(
+            "UPDATE tasks SET agent_pid = ?, updated_at = ? WHERE id = ?",
+            params![
+                agent_pid.map(|p| p as i32),
                 chrono::Utc::now().to_rfc3339(),
                 task_id
             ],
@@ -373,8 +395,8 @@ impl TaskStore for SqliteStore {
                 id, title, description, status, kind, created_at, updated_at,
                 completed_at, summary, error, plan, plan_feedback,
                 review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
-                skip_breakdown
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                skip_breakdown, agent_pid
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ",
             params![
                 task.id,
@@ -396,6 +418,7 @@ impl TaskStore for SqliteStore {
                 task.breakdown,
                 task.breakdown_feedback,
                 i32::from(task.skip_breakdown),
+                task.agent_pid.map(|p| p as i32),
             ],
         )?;
 
@@ -423,8 +446,8 @@ impl TaskStore for SqliteStore {
                     id, title, description, status, kind, created_at, updated_at,
                     completed_at, summary, error, plan, plan_feedback,
                     review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
-                    skip_breakdown
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    skip_breakdown, agent_pid
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ",
                 params![
                     task.id,
@@ -446,6 +469,7 @@ impl TaskStore for SqliteStore {
                     task.breakdown,
                     task.breakdown_feedback,
                     i32::from(task.skip_breakdown),
+                    task.agent_pid.map(|p| p as i32),
                 ],
             )?;
 

@@ -51,7 +51,9 @@ impl TaskStatus {
     /// - Reviewing -> Failed/Blocked
     /// - Any -> Failed/Blocked (can fail or block from anywhere)
     pub fn can_transition_to(&self, new: &TaskStatus) -> bool {
-        use TaskStatus::{Blocked, BreakingDown, Done, Failed, Planning, Reviewing, WaitingOnSubtasks, Working};
+        use TaskStatus::{
+            Blocked, BreakingDown, Done, Failed, Planning, Reviewing, WaitingOnSubtasks, Working,
+        };
         matches!(
             (self, new),
             // Planning transitions
@@ -120,6 +122,9 @@ pub struct Task {
     /// Whether this task should skip breakdown and go straight to working
     #[serde(default)]
     pub skip_breakdown: bool,
+    /// Currently running agent process ID (set immediately when spawned, cleared when finished)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_pid: Option<u32>,
 }
 
 impl Task {
@@ -147,6 +152,7 @@ impl Task {
             breakdown: None,
             breakdown_feedback: None,
             skip_breakdown: false,
+            agent_pid: None,
         }
     }
 

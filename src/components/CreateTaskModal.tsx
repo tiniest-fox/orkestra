@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -12,6 +12,20 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
   const [autoApprove, setAutoApprove] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Handle Escape key to close modal
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -42,11 +56,11 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
   };
 
   return (
-    <button
-      type="button"
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 border-0"
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape key handled separately
+    // biome-ignore lint/a11y/noStaticElementInteractions: Modal backdrop pattern
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       onClick={handleBackdropClick}
-      aria-label="Close modal"
     >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -134,6 +148,6 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
           </div>
         </form>
       </div>
-    </button>
+    </div>
   );
 }

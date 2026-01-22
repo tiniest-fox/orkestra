@@ -2,17 +2,21 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use orkestra_core::{
-    agents, load_tasks, recover_session_logs, resume_agent, tasks, AgentType, LogEntry, Task,
-    TaskStatus,
+    agents, load_tasks, orchestrator, recover_session_logs, resume_agent, tasks, AgentType,
+    LogEntry, Task, TaskStatus,
 };
 use tasks::{
-    approve_breakdown as core_approve_breakdown,
-    get_child_tasks as core_get_child_tasks, get_subtasks as core_get_subtasks,
-    request_breakdown_changes as core_request_breakdown_changes,
+    approve_breakdown as core_approve_breakdown, get_child_tasks as core_get_child_tasks,
+    get_subtasks as core_get_subtasks, request_breakdown_changes as core_request_breakdown_changes,
     request_review_changes as core_request_review_changes, skip_breakdown as core_skip_breakdown,
     start_automated_review as core_start_automated_review,
 };
-use tauri::Emitter;
+use tauri::{AppHandle, Emitter};
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 #[tauri::command]
 fn get_tasks() -> Vec<Task> {
@@ -29,36 +33,10 @@ fn create_and_start_task(
     title: String,
     description: String,
     auto_approve: Option<bool>,
-    app_handle: tauri::AppHandle,
 ) -> Result<Task, String> {
-    let task = tasks::create_task_with_options(&title, &description, auto_approve.unwrap_or(false))
-        .map_err(|e| e.to_string())?;
-
-    // Create callback that emits Tauri events for real-time updates
-    let handle = app_handle.clone();
-    let on_update = move |task_id: &str| {
-        let _ = handle.emit("task-logs-updated", task_id.to_string());
-    };
-
-    // Spawn a planner agent to create the implementation plan
-    match agents::spawn_agent(&task, AgentType::Planner, on_update) {
-        Ok(spawned) => {
-            println!(
-                "Spawned planner for task {} (pid: {})",
-                spawned.task_id, spawned.process_id
-            );
-        }
-        Err(e) => {
-            eprintln!("Failed to spawn planner for task {}: {}", task.id, e);
-        }
-    }
-
-    // Return the task with updated status (now planning)
-    tasks::load_tasks()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|t| t.id == task.id)
-        .ok_or_else(|| "Task not found after creation".to_string())
+    // Create task in Planning status - orchestrator will spawn the planner
+    tasks::create_task_with_options(&title, &description, auto_approve.unwrap_or(false))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -67,345 +45,52 @@ fn update_task_status(id: String, status: TaskStatus) -> Result<Task, String> {
 }
 
 #[tauri::command]
-fn approve_plan(id: String, app_handle: tauri::AppHandle) -> Result<Task, String> {
-    // First approve the plan (changes status to BreakingDown or Working)
-    let task = tasks::approve_task_plan(&id).map_err(|e| e.to_string())?;
-
-    // Create callback that emits Tauri events for real-time updates
-    let handle = app_handle.clone();
-    let on_update = move |task_id: &str| {
-        let _ = handle.emit("task-logs-updated", task_id.to_string());
-    };
-
-    // Spawn appropriate agent based on the new status
-    match task.status {
-        TaskStatus::BreakingDown => {
-            // Spawn breakdown agent to create subtasks
-            match agents::spawn_agent(&task, AgentType::Breakdown, on_update) {
-                Ok(spawned) => {
-                    println!(
-                        "Spawned breakdown agent for task {} (pid: {})",
-                        spawned.task_id, spawned.process_id
-                    );
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Failed to spawn breakdown agent for task {}: {}",
-                        task.id, e
-                    );
-                }
-            }
-        }
-        TaskStatus::Working => {
-            // Skip breakdown, spawn worker directly
-            match agents::spawn_agent(&task, AgentType::Worker, on_update) {
-                Ok(spawned) => {
-                    println!(
-                        "Spawned worker for task {} (pid: {})",
-                        spawned.task_id, spawned.process_id
-                    );
-                }
-                Err(e) => {
-                    eprintln!("Failed to spawn worker for task {}: {}", task.id, e);
-                }
-            }
-        }
-        _ => {}
-    }
-
-    // Return the updated task
-    tasks::load_tasks()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|t| t.id == id)
-        .ok_or_else(|| "Task not found".to_string())
+fn approve_plan(id: String) -> Result<Task, String> {
+    // Approve plan (changes status to BreakingDown or Working)
+    // Orchestrator will spawn the appropriate agent
+    tasks::approve_task_plan(&id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn request_plan_changes(
-    id: String,
-    feedback: String,
-    app_handle: tauri::AppHandle,
-) -> Result<Task, String> {
+fn request_plan_changes(id: String, feedback: String) -> Result<Task, String> {
     // Request changes (changes status to planning, stores feedback)
-    let task = tasks::request_plan_changes(&id, &feedback).map_err(|e| e.to_string())?;
-
-    // Create callback that emits Tauri events for real-time updates
-    let handle = app_handle.clone();
-    let on_update = move |task_id: &str| {
-        let _ = handle.emit("task-logs-updated", task_id.to_string());
-    };
-
-    // Resume existing plan session with feedback as the continuation prompt
-    // This keeps the conversation context instead of starting fresh
-    if task.sessions.as_ref().and_then(|s| s.get("plan")).is_some() {
-        let prompt = format!(
-            "The user has requested changes to your plan:\n\n{feedback}\n\nPlease revise your plan to address this feedback."
-        );
-        match resume_agent(&task, "plan", Some(&prompt), on_update) {
-            Ok(spawned) => {
-                println!(
-                    "Resumed planner for task {} revision (pid: {})",
-                    spawned.task_id, spawned.process_id
-                );
-            }
-            Err(e) => {
-                eprintln!("Failed to resume planner for task {}: {}", task.id, e);
-            }
-        }
-    } else {
-        // No existing session, spawn new (shouldn't normally happen)
-        match agents::spawn_agent(&task, AgentType::Planner, on_update) {
-            Ok(spawned) => {
-                println!(
-                    "Spawned planner for task {} revision (pid: {})",
-                    spawned.task_id, spawned.process_id
-                );
-            }
-            Err(e) => {
-                eprintln!("Failed to spawn planner for task {}: {}", task.id, e);
-            }
-        }
-    }
-
-    // Return the updated task
-    tasks::load_tasks()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|t| t.id == id)
-        .ok_or_else(|| "Task not found".to_string())
+    // Orchestrator will resume the planner session
+    tasks::request_plan_changes(&id, &feedback).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn request_review_changes(
-    id: String,
-    feedback: String,
-    app_handle: tauri::AppHandle,
-) -> Result<Task, String> {
-    // Request changes (clears summary, stores feedback)
-    let task = core_request_review_changes(&id, &feedback).map_err(|e| e.to_string())?;
-
-    // Create callback that emits Tauri events for real-time updates
-    let handle = app_handle.clone();
-    let on_update = move |task_id: &str| {
-        let _ = handle.emit("task-logs-updated", task_id.to_string());
-    };
-
-    // Resume the work session (feedback iterations continue the same session)
-    let session_to_resume = task
-        .sessions
-        .as_ref()
-        .and_then(|s| s.contains_key("work").then(|| "work".to_string()));
-
-    if let Some(session_key) = session_to_resume {
-        let prompt = format!(
-            "The reviewer has requested changes:\n\n{feedback}\n\nPlease address this feedback and continue your implementation."
-        );
-        match resume_agent(&task, &session_key, Some(&prompt), on_update) {
-            Ok(spawned) => {
-                println!(
-                    "Resumed worker for task {} review revision (pid: {})",
-                    spawned.task_id, spawned.process_id
-                );
-            }
-            Err(e) => {
-                eprintln!("Failed to resume worker for task {}: {}", task.id, e);
-            }
-        }
-    } else {
-        // Fallback to spawning new if no session exists
-        match agents::spawn_agent(&task, AgentType::Worker, on_update) {
-            Ok(spawned) => {
-                println!(
-                    "Spawned worker for task {} review revision (pid: {})",
-                    spawned.task_id, spawned.process_id
-                );
-            }
-            Err(e) => {
-                eprintln!("Failed to spawn worker for task {}: {}", task.id, e);
-            }
-        }
-    }
-
-    // Return the updated task
-    tasks::load_tasks()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|t| t.id == id)
-        .ok_or_else(|| "Task not found".to_string())
+fn request_review_changes(id: String, feedback: String) -> Result<Task, String> {
+    // Request changes (clears summary, stores feedback, back to working)
+    // Orchestrator will resume the worker session
+    core_request_review_changes(&id, &feedback).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn approve_review(id: String, app_handle: tauri::AppHandle) -> Result<Task, String> {
-    // Transition to Reviewing status (spawns reviewer agent)
-    let task = core_start_automated_review(&id).map_err(|e| e.to_string())?;
-
-    // Create callback that emits Tauri events for real-time updates
-    let handle = app_handle.clone();
-    let on_update = move |task_id: &str| {
-        let _ = handle.emit("task-logs-updated", task_id.to_string());
-    };
-
-    // Spawn the reviewer agent
-    match agents::spawn_agent(&task, AgentType::Reviewer, on_update) {
-        Ok(spawned) => {
-            println!(
-                "Spawned reviewer for task {} (pid: {})",
-                spawned.task_id, spawned.process_id
-            );
-        }
-        Err(e) => {
-            eprintln!("Failed to spawn reviewer for task {}: {}", task.id, e);
-        }
-    }
-
-    // Return the updated task
-    tasks::load_tasks()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|t| t.id == id)
-        .ok_or_else(|| "Task not found".to_string())
+fn approve_review(id: String) -> Result<Task, String> {
+    // Transition to Reviewing status
+    // Orchestrator will spawn the reviewer agent
+    core_start_automated_review(&id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn approve_breakdown(id: String, app_handle: tauri::AppHandle) -> Result<Task, String> {
-    // Approve breakdown (changes status to WaitingOnSubtasks)
-    let _task = core_approve_breakdown(&id).map_err(|e| e.to_string())?;
-
-    // Create callback that emits Tauri events for real-time updates
-    let handle = app_handle.clone();
-
-    // Spawn worker agents for child tasks only (not subtasks/checklist items)
-    // Child tasks are parallel work items that each get their own worker
-    // Subtasks are checklist items worked through by the parent's worker
-    match core_get_child_tasks(&id) {
-        Ok(child_tasks) => {
-            for child in child_tasks {
-                let handle_clone = handle.clone();
-                let on_update = move |task_id: &str| {
-                    let _ = handle_clone.emit("task-logs-updated", task_id.to_string());
-                };
-                match agents::spawn_agent(&child, AgentType::Worker, on_update) {
-                    Ok(spawned) => {
-                        println!(
-                            "Spawned worker for child task {} (pid: {})",
-                            spawned.task_id, spawned.process_id
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to spawn worker for child task {}: {}", child.id, e);
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to get child tasks for task {id}: {e}");
-        }
-    }
-
-    // Return the updated task
-    tasks::load_tasks()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|t| t.id == id)
-        .ok_or_else(|| "Task not found".to_string())
+fn approve_breakdown(id: String) -> Result<Task, String> {
+    // Approve breakdown (changes status to WaitingOnSubtasks or Working)
+    // Orchestrator will spawn workers for child tasks if needed
+    core_approve_breakdown(&id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn request_breakdown_changes(
-    id: String,
-    feedback: String,
-    app_handle: tauri::AppHandle,
-) -> Result<Task, String> {
-    // Request changes (clears breakdown, stores feedback)
-    let task = core_request_breakdown_changes(&id, &feedback).map_err(|e| e.to_string())?;
-
-    // Create callback that emits Tauri events for real-time updates
-    let handle = app_handle.clone();
-    let on_update = move |task_id: &str| {
-        let _ = handle.emit("task-logs-updated", task_id.to_string());
-    };
-
-    // Resume the breakdown session (feedback iterations continue the same session)
-    let session_to_resume = task
-        .sessions
-        .as_ref()
-        .and_then(|s| s.contains_key("breakdown").then(|| "breakdown".to_string()));
-
-    if let Some(session_key) = session_to_resume {
-        let prompt = format!(
-            "The user has requested changes to your breakdown:\n\n{feedback}\n\nPlease revise your subtask breakdown to address this feedback."
-        );
-        match resume_agent(&task, &session_key, Some(&prompt), on_update) {
-            Ok(spawned) => {
-                println!(
-                    "Resumed breakdown agent for task {} revision (pid: {})",
-                    spawned.task_id, spawned.process_id
-                );
-            }
-            Err(e) => {
-                eprintln!(
-                    "Failed to resume breakdown agent for task {}: {}",
-                    task.id, e
-                );
-            }
-        }
-    } else {
-        // No existing session, spawn new (shouldn't normally happen)
-        match agents::spawn_agent(&task, AgentType::Breakdown, on_update) {
-            Ok(spawned) => {
-                println!(
-                    "Spawned breakdown agent for task {} revision (pid: {})",
-                    spawned.task_id, spawned.process_id
-                );
-            }
-            Err(e) => {
-                eprintln!(
-                    "Failed to spawn breakdown agent for task {}: {}",
-                    task.id, e
-                );
-            }
-        }
-    }
-
-    // Return the updated task
-    tasks::load_tasks()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|t| t.id == id)
-        .ok_or_else(|| "Task not found".to_string())
+fn request_breakdown_changes(id: String, feedback: String) -> Result<Task, String> {
+    // Request changes (clears breakdown, stores feedback, back to BreakingDown)
+    // Orchestrator will resume/spawn breakdown agent
+    core_request_breakdown_changes(&id, &feedback).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn skip_breakdown(id: String, app_handle: tauri::AppHandle) -> Result<Task, String> {
+fn skip_breakdown(id: String) -> Result<Task, String> {
     // Skip breakdown (changes status to Working)
-    let task = core_skip_breakdown(&id).map_err(|e| e.to_string())?;
-
-    // Create callback that emits Tauri events for real-time updates
-    let handle = app_handle.clone();
-    let on_update = move |task_id: &str| {
-        let _ = handle.emit("task-logs-updated", task_id.to_string());
-    };
-
-    // Spawn worker agent
-    match agents::spawn_agent(&task, AgentType::Worker, on_update) {
-        Ok(spawned) => {
-            println!(
-                "Spawned worker for task {} (pid: {})",
-                spawned.task_id, spawned.process_id
-            );
-        }
-        Err(e) => {
-            eprintln!("Failed to spawn worker for task {}: {}", task.id, e);
-        }
-    }
-
-    // Return the updated task
-    tasks::load_tasks()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|t| t.id == id)
-        .ok_or_else(|| "Task not found".to_string())
+    // Orchestrator will spawn worker agent
+    core_skip_breakdown(&id).map_err(|e| e.to_string())
 }
 
 /// Get subtasks (checklist items) for a task
@@ -490,10 +175,155 @@ fn get_task_logs(id: String, session_key: Option<String>) -> Result<Vec<LogEntry
     recover_session_logs(&session_id).map_err(|e| e.to_string())
 }
 
+/// Start the orchestrator background loop
+fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
+    thread::spawn(move || {
+        while !stop_flag.load(Ordering::Relaxed) {
+            // Check for tasks that need agents
+            match orchestrator::check_tasks() {
+                Ok(actions) => {
+                    for action in actions {
+                        let handle = app_handle.clone();
+                        let on_update = move |task_id: &str| {
+                            let _ = handle.emit("task-logs-updated", task_id.to_string());
+                        };
+
+                        match action {
+                            orchestrator::OrchestratorAction::SpawnPlanner(task) => {
+                                match agents::spawn_agent(&task, AgentType::Planner, on_update) {
+                                    Ok(spawned) => {
+                                        println!(
+                                            "[orchestrator] Spawned planner for {} (pid: {})",
+                                            spawned.task_id, spawned.process_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[orchestrator] Failed to spawn planner for {}: {}",
+                                            task.id, e
+                                        );
+                                    }
+                                }
+                            }
+                            orchestrator::OrchestratorAction::SpawnBreakdown(task) => {
+                                match agents::spawn_agent(&task, AgentType::Breakdown, on_update) {
+                                    Ok(spawned) => {
+                                        println!(
+                                            "[orchestrator] Spawned breakdown for {} (pid: {})",
+                                            spawned.task_id, spawned.process_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[orchestrator] Failed to spawn breakdown for {}: {}",
+                                            task.id, e
+                                        );
+                                    }
+                                }
+                            }
+                            orchestrator::OrchestratorAction::SpawnWorker(task) => {
+                                match agents::spawn_agent(&task, AgentType::Worker, on_update) {
+                                    Ok(spawned) => {
+                                        println!(
+                                            "[orchestrator] Spawned worker for {} (pid: {})",
+                                            spawned.task_id, spawned.process_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[orchestrator] Failed to spawn worker for {}: {}",
+                                            task.id, e
+                                        );
+                                    }
+                                }
+                            }
+                            orchestrator::OrchestratorAction::ResumeWorker {
+                                task,
+                                session_key,
+                            } => {
+                                let handle2 = app_handle.clone();
+                                let on_update2 = move |task_id: &str| {
+                                    let _ = handle2.emit("task-logs-updated", task_id.to_string());
+                                };
+                                match resume_agent(&task, &session_key, None, on_update2) {
+                                    Ok(spawned) => {
+                                        println!(
+                                            "[orchestrator] Resumed worker for {} (pid: {})",
+                                            spawned.task_id, spawned.process_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[orchestrator] Failed to resume worker for {}: {}",
+                                            task.id, e
+                                        );
+                                    }
+                                }
+                            }
+                            orchestrator::OrchestratorAction::SpawnReviewer(task) => {
+                                match agents::spawn_agent(&task, AgentType::Reviewer, on_update) {
+                                    Ok(spawned) => {
+                                        println!(
+                                            "[orchestrator] Spawned reviewer for {} (pid: {})",
+                                            spawned.task_id, spawned.process_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[orchestrator] Failed to spawn reviewer for {}: {}",
+                                            task.id, e
+                                        );
+                                    }
+                                }
+                            }
+                            orchestrator::OrchestratorAction::ResumeReviewer {
+                                task,
+                                session_key,
+                            } => {
+                                let handle2 = app_handle.clone();
+                                let on_update2 = move |task_id: &str| {
+                                    let _ = handle2.emit("task-logs-updated", task_id.to_string());
+                                };
+                                match resume_agent(&task, &session_key, None, on_update2) {
+                                    Ok(spawned) => {
+                                        println!(
+                                            "[orchestrator] Resumed reviewer for {} (pid: {})",
+                                            spawned.task_id, spawned.process_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[orchestrator] Failed to resume reviewer for {}: {}",
+                                            task.id, e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[orchestrator] Error checking tasks: {e}");
+                }
+            }
+
+            // Sleep for 1 second
+            thread::sleep(Duration::from_secs(1));
+        }
+        println!("[orchestrator] Stopped");
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            // Start the orchestrator background loop
+            let stop_flag = Arc::new(AtomicBool::new(false));
+            start_orchestrator(app.handle().clone(), stop_flag);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_tasks,
             create_task,

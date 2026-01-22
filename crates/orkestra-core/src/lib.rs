@@ -1,5 +1,6 @@
 // Legacy modules (to be removed after migration)
 pub mod agents;
+pub mod orchestrator;
 pub mod project;
 pub mod session_logs;
 pub mod tasks;
@@ -14,8 +15,8 @@ pub mod services;
 
 // Legacy re-exports (for backward compatibility during migration)
 pub use agents::{resume_agent, spawn_agent, spawn_agent_sync, AgentType, SpawnedAgent};
-pub use session_logs::{get_claude_session_path, recover_session_logs};
 pub use project::{find_project_root, get_orkestra_dir};
+pub use session_logs::{get_claude_session_path, recover_session_logs};
 pub use tasks::{
     add_task_session, approve_automated_review, create_task_with_options, load_tasks,
     reject_automated_review, save_tasks, start_automated_review, LogEntry, SessionInfo, Task,

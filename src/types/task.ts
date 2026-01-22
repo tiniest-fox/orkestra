@@ -19,6 +19,21 @@ export interface TodoItem {
   activeForm: string;
 }
 
+export type OrkAction =
+  | { action: "set_plan"; task_id: string }
+  | { action: "complete"; task_id: string; summary?: string }
+  | { action: "fail"; task_id: string; reason?: string }
+  | { action: "block"; task_id: string; reason?: string }
+  | { action: "approve"; task_id: string }
+  | { action: "approve_review"; task_id: string }
+  | { action: "reject_review"; task_id: string; feedback?: string }
+  | { action: "create_subtask"; parent_id: string; title: string }
+  | { action: "set_breakdown"; task_id: string }
+  | { action: "approve_breakdown"; task_id: string }
+  | { action: "skip_breakdown"; task_id: string }
+  | { action: "complete_subtask"; subtask_id: string }
+  | { action: "other"; raw: string };
+
 export type ToolInput =
   | { tool: "bash"; command: string }
   | { tool: "read"; file_path: string }
@@ -28,6 +43,7 @@ export type ToolInput =
   | { tool: "grep"; pattern: string }
   | { tool: "task"; description: string }
   | { tool: "todo_write"; todos: TodoItem[] }
+  | { tool: "ork"; ork_action: OrkAction }
   | { tool: "other"; summary: string };
 
 export type LogEntry =

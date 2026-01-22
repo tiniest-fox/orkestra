@@ -83,11 +83,22 @@ pub fn update_task_status(id: &str, status: TaskStatus) -> std::io::Result<Task>
         .update_status(id, status)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-    // If transitioning to Done, also set completed_at
+    // If transitioning to Done, also set completed_at and mark subtasks as done
     if status == TaskStatus::Done {
+        let now = chrono::Utc::now().to_rfc3339();
         store
-            .update_field(id, "completed_at", Some(&chrono::Utc::now().to_rfc3339()))
+            .update_field(id, "completed_at", Some(&now))
             .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+        // Also mark all subtasks as Done (they're checklist items for this task)
+        if let Ok(subtasks) = store.get_subtasks(id) {
+            for subtask in subtasks {
+                if subtask.status != TaskStatus::Done {
+                    let _ = store.update_status(&subtask.id, TaskStatus::Done);
+                    let _ = store.update_field(&subtask.id, "completed_at", Some(&now));
+                }
+            }
+        }
     }
 
     // Return updated task

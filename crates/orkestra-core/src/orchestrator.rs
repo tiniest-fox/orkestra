@@ -24,6 +24,7 @@ pub enum OrchestratorAction {
 }
 
 /// Check if a process with the given PID is still running
+#[allow(clippy::cast_possible_wrap)] // PIDs won't exceed i32::MAX in practice
 fn is_process_running(pid: u32) -> bool {
     #[cfg(unix)]
     {

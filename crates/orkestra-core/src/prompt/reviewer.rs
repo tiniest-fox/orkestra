@@ -94,6 +94,7 @@ mod tests {
             breakdown: None,
             breakdown_feedback: None,
             skip_breakdown: false,
+            agent_pid: None,
         }
     }
 

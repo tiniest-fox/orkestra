@@ -1,26 +1,66 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toRelativePath, useProjectRoot } from "../hooks/useProjectRoot";
 import {
   type LogEntry,
+  type OrkAction,
   type SessionInfo,
   TASK_STATUS_CONFIG,
   type Task,
   type ToolInput,
 } from "../types/task";
 import { TodoDisplay } from "./TodoDisplay";
-import { ToolIcon } from "./ToolIcon";
+import { getOrkSubIcon, ToolIcon } from "./ToolIcon";
 
-type TabType = "details" | "plan" | "logs";
+type TabType = "details" | "breakdown" | "plan" | "logs";
 
-function formatToolInput(input: ToolInput): string {
+function formatOrkAction(action: OrkAction): string {
+  switch (action.action) {
+    case "complete":
+      return action.summary
+        ? `Complete ${action.task_id} (with summary)`
+        : `Complete ${action.task_id}`;
+    case "fail":
+      return action.reason ? `Fail ${action.task_id} (with reason)` : `Fail ${action.task_id}`;
+    case "block":
+      return action.reason ? `Block ${action.task_id} (with reason)` : `Block ${action.task_id}`;
+    case "set_plan":
+      return `Set plan for ${action.task_id}`;
+    case "approve":
+      return `Approve ${action.task_id}`;
+    case "approve_review":
+      return `Approve review for ${action.task_id}`;
+    case "reject_review":
+      return action.feedback
+        ? `Reject review for ${action.task_id} (with feedback)`
+        : `Reject review for ${action.task_id}`;
+    case "create_subtask":
+      return `Create subtask: ${action.title || "(untitled)"}`;
+    case "set_breakdown":
+      return `Set breakdown for ${action.task_id}`;
+    case "approve_breakdown":
+      return `Approve breakdown for ${action.task_id}`;
+    case "skip_breakdown":
+      return `Skip breakdown for ${action.task_id}`;
+    case "complete_subtask":
+      return `Complete subtask ${action.subtask_id}`;
+    case "other": {
+      // Truncate the raw command for display
+      const truncated = action.raw.length > 50 ? `${action.raw.slice(0, 50)}...` : action.raw;
+      return truncated;
+    }
+  }
+}
+
+function formatToolInput(input: ToolInput, projectRoot: string | null): string {
   switch (input.tool) {
     case "bash":
       return input.command;
     case "read":
     case "write":
     case "edit":
-      return input.file_path;
+      return toRelativePath(input.file_path, projectRoot);
     case "glob":
     case "grep":
       return input.pattern;
@@ -28,6 +68,8 @@ function formatToolInput(input: ToolInput): string {
       return input.description;
     case "todo_write":
       return `${input.todos.length} item${input.todos.length !== 1 ? "s" : ""}`;
+    case "ork":
+      return formatOrkAction(input.ork_action);
     case "other":
       return input.summary;
   }
@@ -99,17 +141,52 @@ function SubagentToolResultView({ tool, content }: { tool: string; content: stri
   );
 }
 
-function LogEntryView({ entry }: { entry: LogEntry }) {
+function OrkToolView({
+  input,
+  isSubagent,
+}: {
+  input: ToolInput & { tool: "ork" };
+  isSubagent: boolean;
+}) {
+  const subIcon = getOrkSubIcon(input.ork_action.action);
+  const SubIconComponent = subIcon.icon;
+  const borderColor = isSubagent ? "border-indigo-500/50" : "border-indigo-500";
+  const textColor = isSubagent ? "text-indigo-400" : "text-indigo-400";
+  const iconSize = isSubagent ? 12 : 14;
+
+  return (
+    <div
+      className={`${isSubagent ? "ml-4 border-l" : "border-l-2"} ${borderColor} pl-2 my-${isSubagent ? "0.5" : "1"} py-${isSubagent ? "0.5" : "1"}`}
+    >
+      <div className="flex items-center gap-1.5">
+        <ToolIcon tool="Ork" size={iconSize} className={textColor} />
+        <SubIconComponent size={iconSize} className={subIcon.className} />
+        <span className={`${textColor} ${isSubagent ? "text-sm" : "font-medium"}`}>Ork</span>
+        <span className={`${isSubagent ? "text-gray-500" : "text-gray-400"} text-xs font-mono`}>
+          {formatOrkAction(input.ork_action)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function LogEntryView({ entry, projectRoot }: { entry: LogEntry; projectRoot: string | null }) {
   switch (entry.type) {
     case "text":
       return <div className="text-gray-100 whitespace-pre-wrap py-1">{entry.content}</div>;
     case "tool_use":
+      // Special handling for Ork commands
+      if (entry.input.tool === "ork") {
+        return <OrkToolView input={entry.input} isSubagent={false} />;
+      }
       return (
         <div className="border-l-2 border-blue-500 pl-2 my-1 py-1">
           <div className="flex items-center gap-1.5">
             <ToolIcon tool={entry.tool} size={14} className="text-blue-400" />
             <span className="text-blue-400 font-medium">{entry.tool}</span>
-            <span className="text-gray-400 text-xs font-mono">{formatToolInput(entry.input)}</span>
+            <span className="text-gray-400 text-xs font-mono">
+              {formatToolInput(entry.input, projectRoot)}
+            </span>
           </div>
           {entry.input.tool === "todo_write" && <TodoDisplay todos={entry.input.todos} />}
         </div>
@@ -117,12 +194,18 @@ function LogEntryView({ entry }: { entry: LogEntry }) {
     case "tool_result":
       return <ToolResultView tool={entry.tool} content={entry.content} />;
     case "subagent_tool_use":
+      // Special handling for Ork commands in subagents
+      if (entry.input.tool === "ork") {
+        return <OrkToolView input={entry.input} isSubagent={true} />;
+      }
       return (
         <div className="ml-4 border-l border-purple-500/50 pl-2 my-0.5 py-0.5">
           <div className="flex items-center gap-1.5">
             <ToolIcon tool={entry.tool} size={12} className="text-purple-400" />
             <span className="text-purple-400 text-sm">{entry.tool}</span>
-            <span className="text-gray-500 text-xs font-mono">{formatToolInput(entry.input)}</span>
+            <span className="text-gray-500 text-xs font-mono">
+              {formatToolInput(entry.input, projectRoot)}
+            </span>
           </div>
           {entry.input.tool === "todo_write" && <TodoDisplay todos={entry.input.todos} />}
         </div>
@@ -170,6 +253,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const [subtasks, setSubtasks] = useState<Task[]>([]);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const statusConfig = TASK_STATUS_CONFIG[task.status];
+  const projectRoot = useProjectRoot();
 
   // Fetch subtasks (checklist items) for the task
   // biome-ignore lint/correctness/useExhaustiveDependencies: task.status is intentionally included to refresh when status changes
@@ -298,14 +382,20 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
 
   const hasPlan = Boolean(task.plan);
 
-  // Reset active tab when task changes, and handle plan tab visibility
+  const hasSubtasks = subtasks.length > 0;
+
+  // Reset active tab when task changes, and handle conditional tab visibility
   // biome-ignore lint/correctness/useExhaustiveDependencies: task.id triggers reset when selected task changes
   useEffect(() => {
     // If currently on plan tab but plan doesn't exist, switch to details
     if (activeTab === "plan" && !hasPlan) {
       setActiveTab("details");
     }
-  }, [task.id, hasPlan, activeTab]);
+    // If currently on breakdown tab but no subtasks exist, switch to details
+    if (activeTab === "breakdown" && !hasSubtasks) {
+      setActiveTab("details");
+    }
+  }, [task.id, hasPlan, hasSubtasks, activeTab]);
 
   const handleLogsScroll = () => {
     if (!logsContainerRef.current) return;
@@ -551,6 +641,19 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         >
           Details
         </button>
+        {hasSubtasks && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("breakdown")}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === "breakdown"
+                ? "bg-gray-100 text-gray-900 border-b-2 border-blue-500"
+                : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+            }`}
+          >
+            Breakdown
+          </button>
+        )}
         {hasPlan && (
           <button
             type="button"
@@ -597,64 +700,61 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
                 <p className="text-sm text-red-800">{task.error}</p>
               </div>
             )}
-            {/* Subtasks Checklist */}
-            {subtasks.length > 0 && (
-              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded">
-                <div className="text-xs font-medium text-gray-700 mb-2">
-                  Subtasks ({subtasks.filter((s) => s.status === "done").length}/{subtasks.length})
-                </div>
-                <div className="space-y-2">
-                  {subtasks.map((subtask) => (
+          </div>
+        )}
+
+        {/* Breakdown Tab */}
+        {activeTab === "breakdown" && hasSubtasks && (
+          <div className="flex-1 overflow-auto p-4">
+            <div className="text-sm font-medium text-gray-700 mb-3">
+              Subtasks ({subtasks.filter((s) => s.status === "done").length}/{subtasks.length})
+            </div>
+            <div className="space-y-2">
+              {subtasks.map((subtask) => (
+                <div
+                  key={subtask.id}
+                  className={`flex items-start gap-2 p-3 rounded border ${
+                    subtask.status === "done"
+                      ? "bg-green-50 border-green-200"
+                      : "bg-white border-gray-200"
+                  }`}
+                >
+                  <div className="flex-shrink-0 mt-0.5">
+                    {subtask.status === "done" ? (
+                      <svg
+                        className="w-5 h-5 text-green-600"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    ) : (
+                      <div className="w-5 h-5 border-2 border-gray-300 rounded" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
                     <div
-                      key={subtask.id}
-                      className={`flex items-start gap-2 p-2 rounded ${
-                        subtask.status === "done" ? "bg-green-50" : "bg-white"
+                      className={`text-sm font-medium ${
+                        subtask.status === "done" ? "text-green-700 line-through" : "text-gray-900"
                       }`}
                     >
-                      <div className="flex-shrink-0 mt-0.5">
-                        {subtask.status === "done" ? (
-                          <svg
-                            className="w-4 h-4 text-green-600"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M5 13l4 4L19 7"
-                            />
-                          </svg>
-                        ) : (
-                          <div className="w-4 h-4 border-2 border-gray-300 rounded" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div
-                          className={`text-sm font-medium ${
-                            subtask.status === "done"
-                              ? "text-green-700 line-through"
-                              : "text-gray-900"
-                          }`}
-                        >
-                          {subtask.title}
-                        </div>
-                        {subtask.description && (
-                          <div className="text-xs text-gray-500 mt-0.5 truncate">
-                            {subtask.description}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-shrink-0 text-xs font-mono text-gray-400">
-                        {subtask.id}
-                      </div>
+                      {subtask.title}
                     </div>
-                  ))}
+                    {subtask.description && (
+                      <div className="text-xs text-gray-500 mt-1">{subtask.description}</div>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0 text-xs font-mono text-gray-400">{subtask.id}</div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
         )}
 
@@ -702,7 +802,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
                 <div className="text-sm font-mono space-y-1">
                   {logs.map((entry, index) => (
                     // biome-ignore lint/suspicious/noArrayIndexKey: logs have no stable IDs
-                    <LogEntryView key={index} entry={entry} />
+                    <LogEntryView key={index} entry={entry} projectRoot={projectRoot} />
                   ))}
                 </div>
               ) : (

@@ -1,16 +1,24 @@
 import {
+  AlertCircle,
+  CheckCircle,
   Circle,
+  FileCheck,
   FileEdit,
   FilePlus,
   FileText,
   FolderSearch,
   GitBranch,
   HelpCircle,
+  ListPlus,
   ListTodo,
   type LucideIcon,
   Search,
+  Sparkles,
   Terminal,
+  Wand2,
+  XCircle,
 } from "lucide-react";
+import type { OrkAction } from "../types/task";
 
 interface ToolIconProps {
   tool: string;
@@ -30,7 +38,39 @@ const TOOL_ICONS: Record<string, LucideIcon> = {
   NotebookEdit: FileEdit,
   WebFetch: Search,
   WebSearch: Search,
+  Ork: Wand2,
 };
+
+/** Get the sub-icon for an Ork action */
+export function getOrkSubIcon(action: OrkAction["action"]): {
+  icon: LucideIcon;
+  className: string;
+} {
+  switch (action) {
+    case "complete":
+    case "complete_subtask":
+      return { icon: CheckCircle, className: "text-green-500" };
+    case "fail":
+      return { icon: XCircle, className: "text-red-500" };
+    case "block":
+      return { icon: AlertCircle, className: "text-orange-500" };
+    case "set_plan":
+    case "set_breakdown":
+      return { icon: FileCheck, className: "text-blue-500" };
+    case "approve":
+    case "approve_review":
+    case "approve_breakdown":
+      return { icon: Sparkles, className: "text-green-500" };
+    case "reject_review":
+      return { icon: XCircle, className: "text-amber-500" };
+    case "create_subtask":
+      return { icon: ListPlus, className: "text-purple-500" };
+    case "skip_breakdown":
+      return { icon: CheckCircle, className: "text-gray-400" };
+    default:
+      return { icon: Wand2, className: "text-indigo-400" };
+  }
+}
 
 export function ToolIcon({ tool, size = 16, className = "" }: ToolIconProps) {
   const IconComponent = TOOL_ICONS[tool];

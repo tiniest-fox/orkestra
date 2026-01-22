@@ -2,8 +2,8 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use orkestra_core::{
-    agents, load_tasks, orchestrator, recover_session_logs, resume_agent, tasks, AgentType,
-    LogEntry, Task, TaskStatus,
+    agents, find_project_root, load_tasks, orchestrator, recover_session_logs, resume_agent, tasks,
+    AgentType, LogEntry, Task, TaskStatus,
 };
 use tasks::{
     approve_breakdown as core_approve_breakdown, get_child_tasks as core_get_child_tasks,
@@ -141,6 +141,14 @@ fn resume_task(
         .ok_or_else(|| "Task not found".to_string())
 }
 
+/// Get the project root path
+#[tauri::command]
+fn get_project_root() -> Result<String, String> {
+    find_project_root()
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(|e| e.to_string())
+}
+
 /// Get logs for a specific task session from Claude's session file
 /// session_key specifies which session to load (e.g., "plan", "work", "review_0")
 /// If session_key is None, returns the most recent session's logs
@@ -176,6 +184,7 @@ fn get_task_logs(id: String, session_key: Option<String>) -> Result<Vec<LogEntry
 }
 
 /// Start the orchestrator background loop
+#[allow(clippy::too_many_lines)]
 fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
     thread::spawn(move || {
         while !stop_flag.load(Ordering::Relaxed) {
@@ -340,6 +349,7 @@ pub fn run() {
             get_child_tasks,
             resume_task,
             get_task_logs,
+            get_project_root,
             set_task_auto_approve
         ])
         .run(tauri::generate_context!())

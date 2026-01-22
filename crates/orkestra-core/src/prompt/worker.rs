@@ -131,6 +131,7 @@ mod tests {
             breakdown: None,
             breakdown_feedback: None,
             skip_breakdown: false,
+            agent_pid: None,
         }
     }
 
@@ -171,6 +172,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::similar_names)]
     fn test_with_subtasks() {
         let task = create_test_task();
         let mut subtask1 = create_test_task();

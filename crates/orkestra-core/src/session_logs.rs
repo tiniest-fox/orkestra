@@ -8,7 +8,7 @@ use std::fs;
 use std::io::BufRead;
 use std::path::PathBuf;
 
-use crate::domain::TodoItem;
+use crate::domain::{OrkAction, TodoItem};
 use crate::project;
 use crate::tasks::{LogEntry, ToolInput};
 
@@ -239,6 +239,12 @@ fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
                 .and_then(|c| c.as_str())
                 .unwrap_or("")
                 .to_string();
+
+            // Check if this is an ork command
+            if let Some(ork_action) = parse_ork_command(&command) {
+                return ToolInput::Ork { ork_action };
+            }
+
             ToolInput::Bash { command }
         }
         "Read" => {
@@ -329,4 +335,165 @@ fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
             ToolInput::Other { summary }
         }
     }
+}
+
+/// Helper to get first arg as String
+fn first_arg_as_string(args: &[&str]) -> String {
+    args.first().map_or_else(String::new, |s| (*s).to_string())
+}
+
+/// Parse an ork CLI command from a bash command string
+fn parse_ork_command(command: &str) -> Option<OrkAction> {
+    let trimmed = command.trim();
+
+    // Check if this is an ork task command (various forms)
+    let ork_part = if trimmed.starts_with("./target/debug/ork task ")
+        || trimmed.starts_with("./target/release/ork task ")
+    {
+        // Extract the part after "ork task "
+        trimmed.split_once("ork task ")?.1
+    } else if trimmed.starts_with("ork task ") {
+        trimmed.strip_prefix("ork task ")?
+    } else {
+        return None;
+    };
+
+    // Parse the subcommand and arguments
+    let parts: Vec<&str> = shell_words_simple(ork_part);
+    if parts.is_empty() {
+        return None;
+    }
+
+    let subcommand = parts[0];
+    let args = &parts[1..];
+
+    match subcommand {
+        "complete" => {
+            let task_id = first_arg_as_string(args);
+            let summary = extract_flag_value(args, "--summary");
+            Some(OrkAction::Complete { task_id, summary })
+        }
+        "fail" => {
+            let task_id = first_arg_as_string(args);
+            let reason = extract_flag_value(args, "--reason");
+            Some(OrkAction::Fail { task_id, reason })
+        }
+        "block" => {
+            let task_id = first_arg_as_string(args);
+            let reason = extract_flag_value(args, "--reason");
+            Some(OrkAction::Block { task_id, reason })
+        }
+        "set-plan" => {
+            let task_id = first_arg_as_string(args);
+            Some(OrkAction::SetPlan { task_id })
+        }
+        "approve" => {
+            let task_id = first_arg_as_string(args);
+            Some(OrkAction::Approve { task_id })
+        }
+        "approve-review" => {
+            let task_id = first_arg_as_string(args);
+            Some(OrkAction::ApproveReview { task_id })
+        }
+        "reject-review" | "request-review-changes" => {
+            let task_id = first_arg_as_string(args);
+            let feedback = extract_flag_value(args, "--feedback");
+            Some(OrkAction::RejectReview { task_id, feedback })
+        }
+        "create-subtask" => {
+            let parent_id = first_arg_as_string(args);
+            let title = extract_flag_value(args, "--title").unwrap_or_default();
+            Some(OrkAction::CreateSubtask { parent_id, title })
+        }
+        "set-breakdown" => {
+            let task_id = first_arg_as_string(args);
+            Some(OrkAction::SetBreakdown { task_id })
+        }
+        "approve-breakdown" => {
+            let task_id = first_arg_as_string(args);
+            Some(OrkAction::ApproveBreakdown { task_id })
+        }
+        "skip-breakdown" => {
+            let task_id = first_arg_as_string(args);
+            Some(OrkAction::SkipBreakdown { task_id })
+        }
+        "complete-subtask" => {
+            let subtask_id = first_arg_as_string(args);
+            Some(OrkAction::CompleteSubtask { subtask_id })
+        }
+        _ => Some(OrkAction::Other {
+            raw: command.to_string(),
+        }),
+    }
+}
+
+/// Simple shell word splitting that handles quoted strings
+fn shell_words_simple(input: &str) -> Vec<&str> {
+    let mut result = Vec::new();
+    let mut current_start: Option<usize> = None;
+    let mut in_quotes = false;
+    let mut quote_char = '"';
+
+    for (idx, ch) in input.char_indices() {
+        match ch {
+            '"' | '\'' if !in_quotes => {
+                in_quotes = true;
+                quote_char = ch;
+                if current_start.is_none() {
+                    current_start = Some(idx + 1); // Start after the quote
+                }
+            }
+            c if in_quotes && c == quote_char => {
+                if let Some(start) = current_start {
+                    let word = &input[start..idx];
+                    if !word.is_empty() {
+                        result.push(word);
+                    }
+                }
+                current_start = None;
+                in_quotes = false;
+            }
+            ' ' | '\t' if !in_quotes => {
+                if let Some(start) = current_start {
+                    let word = &input[start..idx];
+                    if !word.is_empty() {
+                        result.push(word);
+                    }
+                    current_start = None;
+                }
+            }
+            _ => {
+                if current_start.is_none() {
+                    current_start = Some(idx);
+                }
+            }
+        }
+    }
+
+    // Handle remaining word
+    if let Some(start) = current_start {
+        let word = &input[start..];
+        if !word.is_empty() {
+            result.push(word);
+        }
+    }
+
+    result
+}
+
+/// Extract a flag value from argument list (e.g., --summary "value")
+fn extract_flag_value(args: &[&str], flag: &str) -> Option<String> {
+    let mut iter = args.iter();
+    for &arg in iter.by_ref() {
+        if arg == flag {
+            return iter.next().map(|s| (*s).to_string());
+        }
+        // Handle --flag=value form
+        if let Some(rest) = arg.strip_prefix(flag) {
+            if let Some(value) = rest.strip_prefix('=') {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
 }

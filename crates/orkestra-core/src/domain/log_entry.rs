@@ -9,6 +9,56 @@ pub struct TodoItem {
     pub active_form: String,
 }
 
+/// Ork CLI action types for specialized display
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum OrkAction {
+    SetPlan {
+        task_id: String,
+    },
+    Complete {
+        task_id: String,
+        summary: Option<String>,
+    },
+    Fail {
+        task_id: String,
+        reason: Option<String>,
+    },
+    Block {
+        task_id: String,
+        reason: Option<String>,
+    },
+    Approve {
+        task_id: String,
+    },
+    ApproveReview {
+        task_id: String,
+    },
+    RejectReview {
+        task_id: String,
+        feedback: Option<String>,
+    },
+    CreateSubtask {
+        parent_id: String,
+        title: String,
+    },
+    SetBreakdown {
+        task_id: String,
+    },
+    ApproveBreakdown {
+        task_id: String,
+    },
+    SkipBreakdown {
+        task_id: String,
+    },
+    CompleteSubtask {
+        subtask_id: String,
+    },
+    Other {
+        raw: String,
+    },
+}
+
 /// Tool input details for structured logging.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "tool", rename_all = "snake_case")]
@@ -21,6 +71,7 @@ pub enum ToolInput {
     Grep { pattern: String },
     Task { description: String },
     TodoWrite { todos: Vec<TodoItem> },
+    Ork { ork_action: OrkAction },
     Other { summary: String },
 }
 

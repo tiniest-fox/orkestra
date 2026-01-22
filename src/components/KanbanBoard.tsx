@@ -48,7 +48,9 @@ export function KanbanBoard({ tasks, onUpdateStatus, selectedTaskId, onSelectTas
   };
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
+    <div className="flex gap-4 overflow-x-auto pt-6 pb-6">
+      {/* Left padding spacer */}
+      <div className="flex-shrink-0 w-2" aria-hidden="true" />
       {COLUMNS.map((status) => {
         const columnTasks = getTasksForColumn(status);
         return (
@@ -89,6 +91,8 @@ export function KanbanBoard({ tasks, onUpdateStatus, selectedTaskId, onSelectTas
           </div>
         );
       })}
+      {/* Right padding spacer */}
+      <div className="flex-shrink-0 w-2" aria-hidden="true" />
     </div>
   );
 }

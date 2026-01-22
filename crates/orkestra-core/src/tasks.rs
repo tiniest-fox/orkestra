@@ -1,50 +1,31 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
 use crate::project;
 
-/// Custom deserializer that handles both old string logs and new Vec<LogEntry> logs
-/// Old string logs are silently converted to None for backwards compatibility
-fn deserialize_logs<'de, D>(deserializer: D) -> Result<Option<Vec<LogEntry>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    use serde::de::Error;
-
-    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
-
-    match value {
-        None => Ok(None),
-        Some(serde_json::Value::Array(arr)) => {
-            // New format: array of LogEntry
-            let entries: Result<Vec<LogEntry>, _> = arr
-                .into_iter()
-                .map(|v| serde_json::from_value(v).map_err(D::Error::custom))
-                .collect();
-            Ok(Some(entries?))
-        }
-        Some(serde_json::Value::String(_)) => {
-            // Old format: string logs - discard and return None
-            Ok(None)
-        }
-        Some(_) => {
-            // Unexpected format - return None
-            Ok(None)
-        }
-    }
+/// Session information for tracking agent sessions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionInfo {
+    pub session_id: String,
+    pub started_at: String,
 }
 
-/// Structured log entry for task execution
+/// Structured log entry for task execution (loaded from Claude's session files)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LogEntry {
     Text { content: String },
     ToolUse { tool: String, id: String, input: ToolInput },
+    /// Tool result, especially useful for Task subagent output
+    ToolResult { tool: String, tool_use_id: String, content: String },
+    /// Subagent activity (tool use within a Task subagent)
+    SubagentToolUse { tool: String, id: String, input: ToolInput, parent_task_id: String },
+    /// Subagent tool result
+    SubagentToolResult { tool: String, tool_use_id: String, content: String, parent_task_id: String },
     ProcessExit { code: Option<i32> },
     Error { message: String },
-    SessionResumed { timestamp: String },
 }
 
 /// Tool input details for structured logging
@@ -88,8 +69,6 @@ pub struct Task {
     pub summary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_logs", default)]
-    pub logs: Option<Vec<LogEntry>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_pid: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -98,8 +77,14 @@ pub struct Task {
     pub plan_feedback: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review_feedback: Option<String>,
+    // Multi-session tracking - logs are loaded on-demand from Claude's session files
+    // Keys are session types: "plan", "work", "review_0", "review_1", etc.
+    // Ordered by insertion (creation time)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
+    pub sessions: Option<indexmap::IndexMap<String, SessionInfo>>,
+    // Auto-approve mode - when enabled, plans are automatically approved without manual review
+    #[serde(default)]
+    pub auto_approve: bool,
 }
 
 fn get_tasks_file() -> PathBuf {
@@ -192,6 +177,10 @@ fn generate_task_id() -> String {
 }
 
 pub fn create_task(title: &str, description: &str) -> std::io::Result<Task> {
+    create_task_with_options(title, description, false)
+}
+
+pub fn create_task_with_options(title: &str, description: &str, auto_approve: bool) -> std::io::Result<Task> {
     let now = chrono::Utc::now().to_rfc3339();
     let task = Task {
         id: generate_task_id(),
@@ -203,12 +192,12 @@ pub fn create_task(title: &str, description: &str) -> std::io::Result<Task> {
         completed_at: None,
         summary: None,
         error: None,
-        logs: None,
         agent_pid: None,
         plan: None,
         plan_feedback: None,
         review_feedback: None,
-        session_id: None,
+        sessions: None,
+        auto_approve,
     };
 
     let mut tasks = load_tasks()?;
@@ -284,39 +273,6 @@ pub fn block_task(id: &str, reason: &str) -> std::io::Result<Task> {
     Ok(result)
 }
 
-pub fn update_task_logs(id: &str, logs: Vec<LogEntry>) -> std::io::Result<Task> {
-    let mut tasks = load_tasks()?;
-    let task = tasks
-        .iter_mut()
-        .find(|t| t.id == id)
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
-
-    task.logs = Some(logs);
-    task.updated_at = chrono::Utc::now().to_rfc3339();
-
-    let result = task.clone();
-    save_tasks(&tasks)?;
-    Ok(result)
-}
-
-pub fn append_task_log(id: &str, entry: LogEntry) -> std::io::Result<Task> {
-    let mut tasks = load_tasks()?;
-    let task = tasks
-        .iter_mut()
-        .find(|t| t.id == id)
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
-
-    match &mut task.logs {
-        Some(logs) => logs.push(entry),
-        None => task.logs = Some(vec![entry]),
-    }
-    task.updated_at = chrono::Utc::now().to_rfc3339();
-
-    let result = task.clone();
-    save_tasks(&tasks)?;
-    Ok(result)
-}
-
 pub fn set_task_agent_pid(id: &str, pid: u32) -> std::io::Result<Task> {
     let mut tasks = load_tasks()?;
     let task = tasks
@@ -332,19 +288,43 @@ pub fn set_task_agent_pid(id: &str, pid: u32) -> std::io::Result<Task> {
     Ok(result)
 }
 
-pub fn set_task_session_id(id: &str, session_id: &str) -> std::io::Result<Task> {
+/// Add a session to a task. Session types: "plan", "work", "review_0", "review_1", etc.
+pub fn add_task_session(id: &str, session_type: &str, session_id: &str) -> std::io::Result<Task> {
     let mut tasks = load_tasks()?;
     let task = tasks
         .iter_mut()
         .find(|t| t.id == id)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
 
-    task.session_id = Some(session_id.to_string());
+    let session = SessionInfo {
+        session_id: session_id.to_string(),
+        started_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    match &mut task.sessions {
+        Some(sessions) => {
+            sessions.insert(session_type.to_string(), session);
+        }
+        None => {
+            let mut sessions = indexmap::IndexMap::new();
+            sessions.insert(session_type.to_string(), session);
+            task.sessions = Some(sessions);
+        }
+    }
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
     let result = task.clone();
     save_tasks(&tasks)?;
     Ok(result)
+}
+
+/// Get the next review session key (review_0, review_1, etc.)
+pub fn get_next_review_session_key(task: &Task) -> String {
+    let count = task.sessions
+        .as_ref()
+        .map(|s| s.keys().filter(|k| k.starts_with("review_")).count())
+        .unwrap_or(0);
+    format!("review_{}", count)
 }
 
 pub fn set_task_plan(id: &str, plan: &str) -> std::io::Result<Task> {
@@ -379,7 +359,6 @@ pub fn approve_task_plan(id: &str) -> std::io::Result<Task> {
 
     task.status = TaskStatus::InProgress;
     task.plan_feedback = None;
-    task.logs = None; // Clear planner logs before worker runs
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
     let result = task.clone();
@@ -403,7 +382,6 @@ pub fn request_plan_changes(id: &str, feedback: &str) -> std::io::Result<Task> {
 
     task.status = TaskStatus::Planning;
     task.plan_feedback = Some(feedback.to_string());
-    task.logs = None; // Clear logs for new planning run
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
     let result = task.clone();
@@ -427,7 +405,6 @@ pub fn request_review_changes(id: &str, feedback: &str) -> std::io::Result<Task>
 
     task.status = TaskStatus::InProgress;
     task.review_feedback = Some(feedback.to_string());
-    task.logs = None; // Clear logs for new work run
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
     let result = task.clone();
@@ -452,6 +429,21 @@ pub fn approve_review(id: &str) -> std::io::Result<Task> {
     task.status = TaskStatus::Done;
     task.completed_at = Some(chrono::Utc::now().to_rfc3339());
     task.review_feedback = None; // Clear review feedback when approved
+    task.updated_at = chrono::Utc::now().to_rfc3339();
+
+    let result = task.clone();
+    save_tasks(&tasks)?;
+    Ok(result)
+}
+
+pub fn set_auto_approve(id: &str, enabled: bool) -> std::io::Result<Task> {
+    let mut tasks = load_tasks()?;
+    let task = tasks
+        .iter_mut()
+        .find(|t| t.id == id)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
+
+    task.auto_approve = enabled;
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
     let result = task.clone();

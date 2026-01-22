@@ -21,9 +21,19 @@ export type ToolInput =
 export type LogEntry =
   | { type: "text"; content: string }
   | { type: "tool_use"; tool: string; id: string; input: ToolInput }
+  | { type: "tool_result"; tool: string; tool_use_id: string; content: string }
+  | { type: "subagent_tool_use"; tool: string; id: string; input: ToolInput; parent_task_id: string }
+  | { type: "subagent_tool_result"; tool: string; tool_use_id: string; content: string; parent_task_id: string }
   | { type: "process_exit"; code: number | null }
-  | { type: "error"; message: string }
-  | { type: "session_resumed"; timestamp: string };
+  | { type: "error"; message: string };
+
+export interface SessionInfo {
+  session_id: string;
+  started_at: string;
+}
+
+// Session type is just the key in the sessions object: "plan", "work", "review_0", etc.
+export type SessionType = string;
 
 export interface Task {
   id: string;
@@ -35,12 +45,16 @@ export interface Task {
   completed_at?: string;
   summary?: string;
   error?: string;
-  logs?: LogEntry[];
   agent_pid?: number;
   plan?: string;
   plan_feedback?: string;
   review_feedback?: string;
-  session_id?: string;
+  // Multi-session tracking - logs are loaded on-demand from Claude's session files
+  // Keys are session types: "plan", "work", "review_0", "review_1", etc.
+  // Object preserves insertion order (creation time)
+  sessions?: Record<string, SessionInfo>;
+  // Auto-approve mode - when enabled, plans are automatically approved without manual review
+  auto_approve?: boolean;
 }
 
 export const TASK_STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {

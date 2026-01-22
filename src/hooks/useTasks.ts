@@ -26,10 +26,14 @@ export function useTasks() {
     return () => clearInterval(interval);
   }, [fetchTasks]);
 
-  const createTask = useCallback(async (title: string, description: string) => {
+  const createTask = useCallback(async (title: string, description: string, autoApprove?: boolean) => {
     try {
       // Creates task AND spawns an agent to work on it
-      const newTask = await invoke<Task>("create_and_start_task", { title, description });
+      const newTask = await invoke<Task>("create_and_start_task", {
+        title,
+        description,
+        autoApprove: autoApprove ?? false
+      });
       setTasks((prev) => [...prev, newTask]);
       return newTask;
     } catch (err) {

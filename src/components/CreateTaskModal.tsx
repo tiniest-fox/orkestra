@@ -3,12 +3,13 @@ import { useState } from "react";
 interface CreateTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (title: string, description: string) => Promise<unknown>;
+  onSubmit: (title: string, description: string, autoApprove?: boolean) => Promise<unknown>;
 }
 
 export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [autoApprove, setAutoApprove] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,9 +23,10 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
     setError(null);
 
     try {
-      await onSubmit(title.trim(), description.trim());
+      await onSubmit(title.trim(), description.trim(), autoApprove);
       setTitle("");
       setDescription("");
+      setAutoApprove(false);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");
@@ -90,6 +92,32 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                 placeholder="Describe the task in detail..."
               />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoApprove}
+                onClick={() => setAutoApprove(!autoApprove)}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  autoApprove ? "bg-blue-600" : "bg-gray-200"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    autoApprove ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-gray-700">
+                  Auto-approve plans
+                </span>
+                <span className="text-xs text-gray-500">
+                  Skip manual plan approval and go straight to implementation
+                </span>
+              </div>
             </div>
           </div>
 

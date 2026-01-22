@@ -1,36 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Task, TASK_STATUS_CONFIG, LogEntry, ToolInput } from "../types/task";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { Task, TASK_STATUS_CONFIG, LogEntry, ToolInput, SessionInfo } from "../types/task";
 
-function CollapsibleHeader({
-  title,
-  expanded,
-  onToggle,
-  rightContent
-}: {
-  title: string;
-  expanded: boolean;
-  onToggle: () => void;
-  rightContent?: React.ReactNode;
-}) {
-  return (
-    <div
-      className="flex-shrink-0 px-4 py-2 border-b border-gray-200 flex items-center justify-between cursor-pointer hover:bg-gray-50"
-      onClick={onToggle}
-    >
-      <div className="flex items-center gap-2">
-        <svg
-          className={`w-4 h-4 text-gray-500 transition-transform ${expanded ? 'rotate-90' : ''}`}
-          fill="none" stroke="currentColor" viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-        <span className="text-sm font-medium text-gray-700">{title}</span>
-      </div>
-      {rightContent}
-    </div>
-  );
-}
+type TabType = 'details' | 'plan' | 'logs';
 
 function formatToolInput(input: ToolInput): string {
   switch (input.tool) {
@@ -50,6 +23,66 @@ function formatToolInput(input: ToolInput): string {
   }
 }
 
+function ToolResultView({ tool, content }: { tool: string; content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const previewLength = 200;
+  const isLong = content.length > previewLength;
+  const preview = isLong ? content.slice(0, previewLength) + "..." : content;
+
+  return (
+    <div className="border-l-2 border-green-500 pl-2 my-1 py-1 bg-gray-800 rounded-r">
+      <div
+        className="flex items-center gap-2 cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <svg
+          className={`w-3 h-3 text-green-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+        <span className="text-green-400 font-medium text-sm">{tool} Result</span>
+        <span className="text-gray-500 text-xs">(subagent output)</span>
+      </div>
+      <div className="mt-1 text-gray-300 text-sm whitespace-pre-wrap">
+        {expanded ? content : preview}
+        {isLong && !expanded && (
+          <button
+            onClick={() => setExpanded(true)}
+            className="ml-1 text-green-400 hover:text-green-300 text-xs"
+          >
+            Show more
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SubagentToolResultView({ tool, content }: { tool: string; content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const previewLength = 100;
+  const isLong = content.length > previewLength;
+  const preview = isLong ? content.slice(0, previewLength) + "..." : content;
+
+  return (
+    <div className="ml-4 border-l border-purple-500/50 pl-2 my-0.5 py-0.5 text-xs">
+      <span className="text-purple-300">{tool}:</span>
+      <span className="text-gray-400 ml-1">
+        {expanded ? content : preview}
+        {isLong && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="ml-1 text-purple-400 hover:text-purple-300"
+          >
+            {expanded ? 'less' : 'more'}
+          </button>
+        )}
+      </span>
+    </div>
+  );
+}
+
 function LogEntryView({ entry }: { entry: LogEntry }) {
   switch (entry.type) {
     case "text":
@@ -67,6 +100,19 @@ function LogEntryView({ entry }: { entry: LogEntry }) {
           </span>
         </div>
       );
+    case "tool_result":
+      return <ToolResultView tool={entry.tool} content={entry.content} />;
+    case "subagent_tool_use":
+      return (
+        <div className="ml-4 border-l border-purple-500/50 pl-2 my-0.5 py-0.5">
+          <span className="text-purple-400 text-sm">{entry.tool}</span>
+          <span className="text-gray-500 text-xs ml-2 font-mono">
+            {formatToolInput(entry.input)}
+          </span>
+        </div>
+      );
+    case "subagent_tool_result":
+      return <SubagentToolResultView tool={entry.tool} content={entry.content} />;
     case "process_exit":
       return (
         <div className="text-gray-500 py-1 text-sm">
@@ -77,12 +123,6 @@ function LogEntryView({ entry }: { entry: LogEntry }) {
       return (
         <div className="text-red-400 py-1">
           {entry.message}
-        </div>
-      );
-    case "session_resumed":
-      return (
-        <div className="border-t border-amber-500 my-2 py-2 text-amber-400 text-sm">
-          --- Session Resumed ({new Date(entry.timestamp).toLocaleString()}) ---
         </div>
       );
   }
@@ -98,33 +138,128 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const [feedback, setFeedback] = useState("");
   const [reviewFeedback, setReviewFeedback] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [planExpanded, setPlanExpanded] = useState(true);
-  const [logsExpanded, setLogsExpanded] = useState(true);
+  const [isTogglingAutoApprove, setIsTogglingAutoApprove] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>('details');
   const [autoScroll, setAutoScroll] = useState(true);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [activeSession, setActiveSession] = useState<string | null>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const statusConfig = TASK_STATUS_CONFIG[task.status];
 
+  // Get available sessions from the task
+  const availableSessions = useMemo(() => {
+    const sessions: { key: string; label: string; info: SessionInfo }[] = [];
+    if (task.sessions) {
+      // Keys are ordered by insertion time (creation order)
+      for (const [key, info] of Object.entries(task.sessions)) {
+        let label = key;
+        if (key === "plan") label = "Plan";
+        else if (key === "work") label = "Work";
+        else if (key.startsWith("review_")) {
+          const idx = parseInt(key.replace("review_", ""), 10);
+          label = `Review ${idx + 1}`;
+        }
+        sessions.push({ key, label, info });
+      }
+    }
+    return sessions;
+  }, [task.sessions]);
+
+  // Set default active session to the most recent one
+  useEffect(() => {
+    if (availableSessions.length > 0 && !activeSession) {
+      setActiveSession(availableSessions[availableSessions.length - 1].key);
+    }
+  }, [availableSessions, activeSession]);
+
+  // Fetch logs for the active session
+  const fetchLogs = useCallback(async () => {
+    if (!activeSession) {
+      setLogs([]);
+      return;
+    }
+    setLogsLoading(true);
+    try {
+      const result = await invoke<LogEntry[]>("get_task_logs", {
+        id: task.id,
+        sessionKey: activeSession,
+      });
+      setLogs(result);
+    } catch (err) {
+      console.error("Failed to fetch logs:", err);
+      setLogs([]);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [task.id, activeSession]);
+
+  // Fetch logs when task or active session changes
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
+
+  // Listen for real-time log updates via Tauri events (throttled)
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+    let throttleTimeout: ReturnType<typeof setTimeout> | null = null;
+    let pendingUpdate = false;
+
+    const handleUpdate = () => {
+      // Refresh task data to get updated sessions
+      onTaskUpdated();
+      // Then fetch logs
+      fetchLogs();
+    };
+
+    // Subscribe to task-logs-updated events
+    listen<string>("task-logs-updated", (event) => {
+      // Only process if this event is for our task
+      if (event.payload !== task.id) return;
+
+      // Throttle updates to max once per 200ms
+      if (throttleTimeout) {
+        pendingUpdate = true;
+        return;
+      }
+
+      handleUpdate();
+      throttleTimeout = setTimeout(() => {
+        throttleTimeout = null;
+        if (pendingUpdate) {
+          pendingUpdate = false;
+          handleUpdate();
+        }
+      }, 200);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+      if (throttleTimeout) {
+        clearTimeout(throttleTimeout);
+      }
+    };
+  }, [task.id, fetchLogs, onTaskUpdated]);
+
+  // Reset active session when task changes
+  useEffect(() => {
+    setActiveSession(null);
+    setLogs([]);
+  }, [task.id]);
+
   const hasPlan = Boolean(task.plan);
 
-  const togglePlan = () => {
-    if (planExpanded && !logsExpanded) {
-      // Switching from plan-only to logs-only
-      setPlanExpanded(false);
-      setLogsExpanded(true);
-    } else {
-      setPlanExpanded(!planExpanded);
+  // Reset active tab when task changes, and handle plan tab visibility
+  useEffect(() => {
+    // If currently on plan tab but plan doesn't exist, switch to details
+    if (activeTab === 'plan' && !hasPlan) {
+      setActiveTab('details');
     }
-  };
-
-  const toggleLogs = () => {
-    if (logsExpanded && !planExpanded && hasPlan) {
-      // Switching from logs-only to plan-only
-      setLogsExpanded(false);
-      setPlanExpanded(true);
-    } else {
-      setLogsExpanded(!logsExpanded);
-    }
-  };
+  }, [task.id, hasPlan, activeTab]);
 
   const handleLogsScroll = () => {
     if (!logsContainerRef.current) return;
@@ -135,10 +270,10 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
 
   // Auto-scroll effect
   useEffect(() => {
-    if (autoScroll && logsContainerRef.current && logsExpanded) {
+    if (autoScroll && logsContainerRef.current && activeTab === 'logs') {
       logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
     }
-  }, [task.logs, autoScroll, logsExpanded]);
+  }, [logs, autoScroll, activeTab]);
 
   const handleApprove = async () => {
     setIsSubmitting(true);
@@ -171,10 +306,18 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const isInProgress = task.status === "in_progress";
   const isReadyForReview = task.status === "ready_for_review";
 
-  // Session is resumable if: has session_id, no running process, and task is incomplete
-  const isResumable = task.session_id &&
+  // Session is resumable if: has sessions, no running process, and task is incomplete
+  const hasSession = task.sessions && Object.keys(task.sessions).length > 0;
+  const isResumable = hasSession &&
     !task.agent_pid &&
     (task.status === "planning" || task.status === "in_progress");
+
+  // Get the most recent session key for resuming
+  const resumeSessionKey = useMemo(() => {
+    if (!task.sessions) return null;
+    const keys = Object.keys(task.sessions);
+    return keys.length > 0 ? keys[keys.length - 1] : null;
+  }, [task.sessions]);
 
   // Reset review feedback when task changes
   useEffect(() => {
@@ -208,9 +351,10 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   };
 
   const handleResume = async () => {
+    if (!resumeSessionKey) return;
     setIsSubmitting(true);
     try {
-      await invoke("resume_task", { id: task.id });
+      await invoke("resume_task", { id: task.id, sessionKey: resumeSessionKey });
       onTaskUpdated();
     } catch (err) {
       console.error("Failed to resume task:", err);
@@ -219,8 +363,23 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     }
   };
 
+  const handleToggleAutoApprove = async () => {
+    setIsTogglingAutoApprove(true);
+    try {
+      await invoke("set_task_auto_approve", { id: task.id, enabled: !task.auto_approve });
+      onTaskUpdated();
+    } catch (err) {
+      console.error("Failed to toggle auto-approve:", err);
+    } finally {
+      setIsTogglingAutoApprove(false);
+    }
+  };
+
+  // Only show auto-approve toggle when task is not actively being worked on
+  const canToggleAutoApprove = ["pending", "awaiting_approval", "ready_for_review", "done", "failed", "blocked"].includes(task.status);
+
   return (
-    <div className="fixed inset-y-0 right-0 w-[500px] bg-white shadow-xl border-l border-gray-200 flex flex-col z-50 overflow-hidden">
+    <div className="w-1/2 flex-shrink-0 bg-white shadow-xl border-l border-gray-200 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-200">
         <div className="flex items-center gap-2">
@@ -246,40 +405,183 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           >
             {statusConfig.label}
           </span>
+          {task.auto_approve && (
+            <span className="px-2 py-0.5 text-xs rounded-full bg-indigo-100 text-indigo-700">
+              Auto
+            </span>
+          )}
         </div>
+        <div className="flex items-center gap-2">
+          {canToggleAutoApprove && (
+            <button
+              onClick={handleToggleAutoApprove}
+              disabled={isTogglingAutoApprove}
+              className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
+                task.auto_approve
+                  ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              } disabled:opacity-50`}
+              title={task.auto_approve ? "Disable auto-approve" : "Enable auto-approve"}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Auto
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-gray-100 rounded transition-colors"
+          >
+            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Tab Bar */}
+      <div className="flex-shrink-0 flex border-b border-gray-200">
         <button
-          onClick={onClose}
-          className="p-1 hover:bg-gray-100 rounded transition-colors"
+          onClick={() => setActiveTab('details')}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === 'details'
+              ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-500'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
         >
-          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          Details
+        </button>
+        {hasPlan && (
+          <button
+            onClick={() => setActiveTab('plan')}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'plan'
+                ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-500'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            }`}
+          >
+            Plan
+          </button>
+        )}
+        <button
+          onClick={() => setActiveTab('logs')}
+          className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            activeTab === 'logs'
+              ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-500'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+          }`}
+        >
+          Logs
+          {(isPlanning || isInProgress) && (
+            <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+          )}
         </button>
       </div>
 
-      {/* Task Info */}
-      <div className="flex-shrink-0 p-4 border-b border-gray-200">
-        <h2 className="font-semibold text-lg text-gray-900">{task.title}</h2>
-        {task.description && (
-          <p className="text-gray-600 text-sm mt-2">{task.description}</p>
-        )}
-        {task.summary && (
-          <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
-            <div className="text-xs font-medium text-green-700 mb-1">Summary</div>
-            <p className="text-sm text-green-800">{task.summary}</p>
+      {/* Resume Interrupted Session Banner */}
+      {isResumable && (
+        <div className="flex-shrink-0 p-4 border-b border-gray-200 bg-amber-50">
+          <div className="text-sm font-medium text-amber-800 mb-2">Session Interrupted</div>
+          <p className="text-xs text-amber-600 mb-3">
+            The agent process stopped unexpectedly. Click to resume where it left off.
+          </p>
+          <button
+            onClick={handleResume}
+            disabled={isSubmitting}
+            className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Resume Session
+          </button>
+        </div>
+      )}
+
+      {/* Tab Content Area */}
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        {/* Details Tab */}
+        {activeTab === 'details' && (
+          <div className="flex-1 overflow-auto p-4">
+            <h2 className="font-semibold text-lg text-gray-900">{task.title}</h2>
+            {task.description && (
+              <p className="text-gray-600 text-sm mt-2">{task.description}</p>
+            )}
+            {task.summary && (
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+                <div className="text-xs font-medium text-green-700 mb-1">Summary</div>
+                <p className="text-sm text-green-800">{task.summary}</p>
+              </div>
+            )}
+            {task.error && (
+              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
+                <div className="text-xs font-medium text-red-700 mb-1">Error</div>
+                <p className="text-sm text-red-800">{task.error}</p>
+              </div>
+            )}
           </div>
         )}
-        {task.error && (
-          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
-            <div className="text-xs font-medium text-red-700 mb-1">Error</div>
-            <p className="text-sm text-red-800">{task.error}</p>
+
+        {/* Plan Tab */}
+        {activeTab === 'plan' && hasPlan && (
+          <div className="flex-1 overflow-auto p-4">
+            <div className="prose prose-sm max-w-none">
+              <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 p-3 rounded border">
+                {task.plan}
+              </pre>
+            </div>
+          </div>
+        )}
+
+        {/* Logs Tab */}
+        {activeTab === 'logs' && (
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {/* Session Sub-Tabs (if multiple sessions exist) */}
+            {availableSessions.length > 1 && (
+              <div className="flex-shrink-0 px-4 py-2 border-b border-gray-700 bg-gray-800 flex gap-2 overflow-x-auto">
+                {availableSessions.map((session) => (
+                  <button
+                    key={session.key}
+                    onClick={() => setActiveSession(session.key)}
+                    className={`px-3 py-1 text-xs rounded whitespace-nowrap ${
+                      activeSession === session.key
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                    }`}
+                  >
+                    {session.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div
+              ref={logsContainerRef}
+              onScroll={handleLogsScroll}
+              className="flex-1 overflow-auto min-h-0 p-4 bg-gray-900"
+            >
+              {logsLoading && logs.length === 0 ? (
+                <div className="text-gray-500 text-sm">Loading logs...</div>
+              ) : logs.length > 0 ? (
+                <div className="text-sm font-mono space-y-1">
+                  {logs.map((entry, index) => (
+                    <LogEntryView key={index} entry={entry} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-gray-500 text-sm">
+                  No logs available yet. Logs will appear here once the agent starts working.
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Approval Actions */}
+      {/* Approval Actions - at bottom after collapsible sections */}
       {isAwaitingApproval && (
-        <div className="flex-shrink-0 p-4 border-b border-gray-200 bg-amber-50">
+        <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-amber-50">
           <div className="text-sm font-medium text-amber-800 mb-3">Plan Review</div>
           <textarea
             value={feedback}
@@ -308,9 +610,9 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         </div>
       )}
 
-      {/* Review Actions */}
+      {/* Review Actions - at bottom after collapsible sections */}
       {isReadyForReview && (
-        <div className="flex-shrink-0 p-4 border-b border-gray-200 bg-yellow-50">
+        <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-yellow-50">
           <div className="text-sm font-medium text-yellow-800 mb-3">Review</div>
           <textarea
             value={reviewFeedback}
@@ -338,83 +640,6 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           )}
         </div>
       )}
-
-      {/* Resume Interrupted Session */}
-      {isResumable && (
-        <div className="flex-shrink-0 p-4 border-b border-gray-200 bg-amber-50">
-          <div className="text-sm font-medium text-amber-800 mb-2">Session Interrupted</div>
-          <p className="text-xs text-amber-600 mb-3">
-            The agent process stopped unexpectedly. Click to resume where it left off.
-          </p>
-          <button
-            onClick={handleResume}
-            disabled={isSubmitting}
-            className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Resume Session
-          </button>
-        </div>
-      )}
-
-      {/* Plan Section (when available) - flex-1 to share space with logs */}
-      {task.plan && (
-        <div className={`flex flex-col border-b border-gray-200 min-h-0 ${planExpanded ? 'flex-1' : 'flex-shrink-0'}`}>
-          <CollapsibleHeader
-            title="Implementation Plan"
-            expanded={planExpanded}
-            onToggle={togglePlan}
-          />
-          {planExpanded && (
-            <div className="flex-1 overflow-auto min-h-0 p-4">
-              <div className="prose prose-sm max-w-none">
-                <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 p-3 rounded border">
-                  {task.plan}
-                </pre>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Agent Logs - flex-1 to share space with plan */}
-      <div className={`flex flex-col min-h-0 ${logsExpanded ? 'flex-1' : 'flex-shrink-0'}`}>
-        <CollapsibleHeader
-          title="Agent Logs"
-          expanded={logsExpanded}
-          onToggle={toggleLogs}
-          rightContent={
-            (isPlanning || isInProgress) ? (
-              <span className="flex items-center gap-1 text-xs text-blue-600">
-                <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                Live
-              </span>
-            ) : undefined
-          }
-        />
-        {logsExpanded && (
-          <div
-            ref={logsContainerRef}
-            onScroll={handleLogsScroll}
-            className="flex-1 overflow-auto min-h-0 p-4 bg-gray-900"
-          >
-            {task.logs && task.logs.length > 0 ? (
-              <div className="text-sm font-mono space-y-1">
-                {task.logs.map((entry, index) => (
-                  <LogEntryView key={index} entry={entry} />
-                ))}
-              </div>
-            ) : (
-              <div className="text-gray-500 text-sm">
-                No logs available yet. Logs will appear here once the agent starts working.
-              </div>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

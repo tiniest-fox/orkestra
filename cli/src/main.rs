@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use orkestra_core::{tasks, TaskStatus};
+use orkestra_core::{tasks, AgentType, TaskStatus, spawn_agent_sync};
 
 #[derive(Parser)]
 #[command(name = "orkestra")]
@@ -240,6 +240,23 @@ fn main() {
                 match tasks::approve_task_plan(&id) {
                     Ok(task) => {
                         println!("Task {} plan approved. Status: in_progress", task.id);
+
+                        // Spawn a worker agent to implement the approved plan
+                        // Use the synchronous version to ensure session_id is captured
+                        // before this CLI process exits (important for auto-approve mode)
+                        match spawn_agent_sync(&task, AgentType::Worker, 30) {
+                            Ok(spawned) => {
+                                if let Some(sid) = &spawned.session_id {
+                                    println!("Spawned worker agent (pid: {}, session: {})", spawned.process_id, sid);
+                                } else {
+                                    println!("Spawned worker agent (pid: {}, session capture pending)", spawned.process_id);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Warning: Failed to spawn worker agent: {}", e);
+                                // Don't exit - the task status was already updated
+                            }
+                        }
                     }
                     Err(e) => {
                         eprintln!("Error approving plan: {}", e);

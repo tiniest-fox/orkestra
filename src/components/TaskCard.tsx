@@ -15,8 +15,9 @@ export function TaskCard({ task, onMarkDone, onClick, isSelected }: TaskCardProp
   const isPlanning = task.status === "planning";
   const showSpinner = hasActiveProcess || isInProgress || isPlanning;
 
-  // Task is resumable if it has session_id, no running process, and is incomplete
-  const isResumable = task.session_id &&
+  // Task is resumable if it has sessions, no running process, and is incomplete
+  const hasSession = task.sessions && Object.keys(task.sessions).length > 0;
+  const isResumable = hasSession &&
     !task.agent_pid &&
     (task.status === "planning" || task.status === "in_progress");
 

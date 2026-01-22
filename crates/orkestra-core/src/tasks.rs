@@ -78,7 +78,7 @@ pub fn update_task_status(id: &str, status: TaskStatus) -> std::io::Result<Task>
 
     // Update status atomically
     store
-        .update_status(id, status.clone())
+        .update_status(id, status)
         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
     // If transitioning to Done, also set completed_at

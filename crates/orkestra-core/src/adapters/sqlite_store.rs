@@ -1,3 +1,8 @@
+// Allow i32<->u32 casts for SQLite PID storage. PIDs are stored as i32 in SQLite
+// (which lacks unsigned types) but represented as u32 in Rust. Process IDs are
+// always positive and won't exceed i32::MAX on any supported platform.
+#![allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+
 use rusqlite::{params, Connection};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -106,7 +111,6 @@ impl SqliteStore {
 
     /// Load sessions for a task.
     fn load_sessions(
-        &self,
         conn: &Connection,
         task_id: &str,
     ) -> Result<Option<indexmap::IndexMap<String, SessionInfo>>> {
@@ -120,6 +124,7 @@ impl SqliteStore {
                 SessionInfo {
                     session_id: row.get(1)?,
                     started_at: row.get(2)?,
+                    // agent_pid stored as i32 in SQLite, convert back to u32
                     agent_pid: row.get::<_, Option<i32>>(3)?.map(|p| p as u32),
                 },
             ))
@@ -140,10 +145,9 @@ impl SqliteStore {
 
     /// Save sessions for a task (replaces all existing sessions).
     fn save_sessions(
-        &self,
         conn: &Connection,
         task_id: &str,
-        sessions: &Option<indexmap::IndexMap<String, SessionInfo>>,
+        sessions: Option<&indexmap::IndexMap<String, SessionInfo>>,
     ) -> Result<()> {
         // Delete existing sessions
         conn.execute("DELETE FROM sessions WHERE task_id = ?", params![task_id])?;
@@ -160,6 +164,7 @@ impl SqliteStore {
                     key,
                     info.session_id,
                     info.started_at,
+                    // u32 PID stored as i32 in SQLite (PIDs won't exceed i32::MAX)
                     info.agent_pid.map(|p| p as i32)
                 ])?;
             }
@@ -215,6 +220,7 @@ impl SqliteStore {
         // Use INSERT OR REPLACE to handle concurrent adds
         conn.execute(
             "INSERT OR REPLACE INTO sessions (task_id, session_key, session_id, started_at, agent_pid) VALUES (?, ?, ?, ?, ?)",
+            // u32 PID stored as i32 in SQLite (PIDs won't exceed i32::MAX)
             params![task_id, session_key, session_id, chrono::Utc::now().to_rfc3339(), agent_pid.map(|p| p as i32)],
         )?;
 
@@ -272,7 +278,7 @@ impl SqliteStore {
         conn.execute(
             "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
             params![
-                status_to_str(&status),
+                status_to_str(status),
                 chrono::Utc::now().to_rfc3339(),
                 task_id
             ],
@@ -294,7 +300,7 @@ impl SqliteStore {
         let mut tasks = Vec::new();
         for row in rows {
             let mut task = row?;
-            task.sessions = self.load_sessions(&conn, &task.id)?;
+            task.sessions = Self::load_sessions(&conn, &task.id)?;
             tasks.push(task);
         }
 
@@ -314,7 +320,7 @@ impl SqliteStore {
         let mut tasks = Vec::new();
         for row in rows {
             let mut task = row?;
-            task.sessions = self.load_sessions(&conn, &task.id)?;
+            task.sessions = Self::load_sessions(&conn, &task.id)?;
             tasks.push(task);
         }
 
@@ -332,7 +338,7 @@ impl TaskStore for SqliteStore {
         let mut tasks = Vec::new();
         for row in rows {
             let mut task = row?;
-            task.sessions = self.load_sessions(&conn, &task.id)?;
+            task.sessions = Self::load_sessions(&conn, &task.id)?;
             tasks.push(task);
         }
 
@@ -347,7 +353,7 @@ impl TaskStore for SqliteStore {
 
         if let Some(row) = rows.next()? {
             let mut task = Self::row_to_task(row)?;
-            task.sessions = self.load_sessions(&conn, &task.id)?;
+            task.sessions = Self::load_sessions(&conn, &task.id)?;
             Ok(Some(task))
         } else {
             Ok(None)
@@ -371,8 +377,8 @@ impl TaskStore for SqliteStore {
                 task.id,
                 task.title,
                 task.description,
-                status_to_str(&task.status),
-                kind_to_str(&task.kind),
+                status_to_str(task.status),
+                kind_to_str(task.kind),
                 task.created_at,
                 task.updated_at,
                 task.completed_at,
@@ -390,7 +396,7 @@ impl TaskStore for SqliteStore {
         )?;
 
         // Save sessions
-        self.save_sessions(&conn, &task.id, &task.sessions)?;
+        Self::save_sessions(&conn, &task.id, task.sessions.as_ref())?;
 
         Ok(())
     }
@@ -420,8 +426,8 @@ impl TaskStore for SqliteStore {
                     task.id,
                     task.title,
                     task.description,
-                    status_to_str(&task.status),
-                    kind_to_str(&task.kind),
+                    status_to_str(task.status),
+                    kind_to_str(task.kind),
                     task.created_at,
                     task.updated_at,
                     task.completed_at,
@@ -443,6 +449,7 @@ impl TaskStore for SqliteStore {
                 for (key, info) in sessions {
                     conn.execute(
                         "INSERT INTO sessions (task_id, session_key, session_id, started_at, agent_pid) VALUES (?, ?, ?, ?, ?)",
+                        // u32 PID stored as i32 in SQLite (PIDs won't exceed i32::MAX)
                         params![task.id, key, info.session_id, info.started_at, info.agent_pid.map(|p| p as i32)],
                     )?;
                 }
@@ -468,7 +475,7 @@ impl TaskStore for SqliteStore {
     }
 }
 
-fn status_to_str(status: &TaskStatus) -> &'static str {
+fn status_to_str(status: TaskStatus) -> &'static str {
     match status {
         TaskStatus::Planning => "planning",
         TaskStatus::BreakingDown => "breaking_down",
@@ -482,18 +489,18 @@ fn status_to_str(status: &TaskStatus) -> &'static str {
 
 fn parse_status(s: &str) -> TaskStatus {
     match s {
-        "planning" => TaskStatus::Planning,
         "breaking_down" => TaskStatus::BreakingDown,
         "waiting_on_subtasks" => TaskStatus::WaitingOnSubtasks,
         "working" => TaskStatus::Working,
         "done" => TaskStatus::Done,
         "failed" => TaskStatus::Failed,
         "blocked" => TaskStatus::Blocked,
-        _ => TaskStatus::Planning, // Default fallback
+        // "planning" or unknown defaults to Planning
+        _ => TaskStatus::Planning,
     }
 }
 
-fn kind_to_str(kind: &TaskKind) -> &'static str {
+fn kind_to_str(kind: TaskKind) -> &'static str {
     match kind {
         TaskKind::Task => "task",
         TaskKind::Subtask => "subtask",
@@ -502,9 +509,9 @@ fn kind_to_str(kind: &TaskKind) -> &'static str {
 
 fn parse_kind(s: &str) -> TaskKind {
     match s {
-        "task" => TaskKind::Task,
         "subtask" => TaskKind::Subtask,
-        _ => TaskKind::Task, // Default fallback
+        // "task" or unknown defaults to Task
+        _ => TaskKind::Task,
     }
 }
 

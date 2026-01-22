@@ -122,7 +122,7 @@ impl ProcessSpawner for ClaudeSpawner {
                 std::thread::spawn(move || {
                     let reader = std::io::BufReader::new(stderr);
                     let mut stderr_lines = Vec::new();
-                    for line in reader.lines().flatten() {
+                    for line in reader.lines().map_while(std::result::Result::ok) {
                         stderr_lines.push(line);
                     }
                     stderr_lines
@@ -132,7 +132,7 @@ impl ProcessSpawner for ClaudeSpawner {
             if let Some(stdout) = stdout {
                 let reader = std::io::BufReader::new(stdout);
 
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(std::result::Result::ok) {
                     if line.trim().is_empty() {
                         continue;
                     }
@@ -206,7 +206,7 @@ impl ProcessSpawner for ClaudeSpawner {
             // Spawn thread to read lines
             let reader_thread = std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(stdout);
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(std::result::Result::ok) {
                     if tx.send(line).is_err() {
                         break;
                     }
@@ -224,7 +224,7 @@ impl ProcessSpawner for ClaudeSpawner {
                             break;
                         }
                     }
-                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             }
@@ -238,7 +238,7 @@ impl ProcessSpawner for ClaudeSpawner {
         if let Some(stderr) = stderr {
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(stderr);
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(std::result::Result::ok) {
                     eprintln!("Agent stderr: {line}");
                 }
             });
@@ -290,7 +290,7 @@ impl ProcessSpawner for ClaudeSpawner {
             let stderr_handle = stderr.map(|stderr| {
                 std::thread::spawn(move || {
                     let reader = std::io::BufReader::new(stderr);
-                    for line in reader.lines().flatten() {
+                    for line in reader.lines().map_while(std::result::Result::ok) {
                         eprintln!("Agent stderr: {line}");
                     }
                 })
@@ -299,7 +299,7 @@ impl ProcessSpawner for ClaudeSpawner {
             if let Some(stdout) = stdout {
                 let reader = std::io::BufReader::new(stdout);
 
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(std::result::Result::ok) {
                     if line.trim().is_empty() {
                         continue;
                     }
@@ -335,7 +335,7 @@ impl ProcessSpawner for ClaudeSpawner {
     fn is_running(&self, pid: u32) -> bool {
         #[cfg(unix)]
         {
-            unsafe { libc::kill(pid as i32, 0) == 0 }
+            unsafe { libc::kill(i32::try_from(pid).unwrap_or(i32::MAX), 0) == 0 }
         }
         #[cfg(not(unix))]
         {

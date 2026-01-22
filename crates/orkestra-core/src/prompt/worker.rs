@@ -44,20 +44,22 @@ Please address this feedback and continue your implementation."
         if subs.is_empty() {
             String::new()
         } else {
+            use std::fmt::Write;
             let checklist: String = subs
                 .iter()
-                .map(|s| {
+                .fold(String::new(), |mut acc, s| {
                     let status_marker = if s.status == crate::domain::TaskStatus::Done {
                         "x"
                     } else {
                         " "
                     };
-                    format!(
-                        "- [{}] **{}**: {} (ID: {})\n",
+                    let _ = writeln!(
+                        acc,
+                        "- [{}] **{}**: {} (ID: {})",
                         status_marker, s.title, s.description, s.id
-                    )
-                })
-                .collect();
+                    );
+                    acc
+                });
             format!(
                 r"
 

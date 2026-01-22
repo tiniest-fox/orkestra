@@ -200,7 +200,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
         task.kind = TaskKind::Task; // appears in Kanban
         task.skip_breakdown = true;
         // Inherit parent's plan as context
-        task.plan = parent.plan.clone();
+        task.plan.clone_from(&parent.plan);
         // Start child tasks directly in Working status
         task.status = TaskStatus::Working;
         self.store.save(&task)?;
@@ -227,7 +227,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
         task.kind = TaskKind::Subtask; // hidden from Kanban, shown as checklist
         task.skip_breakdown = true;
         // Inherit parent's plan as context
-        task.plan = parent.plan.clone();
+        task.plan.clone_from(&parent.plan);
         // Start subtasks directly in Working status
         task.status = TaskStatus::Working;
         self.store.save(&task)?;

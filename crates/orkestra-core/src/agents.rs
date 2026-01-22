@@ -113,20 +113,22 @@ Please address this feedback and continue your implementation."
         if subs.is_empty() {
             String::new()
         } else {
+            use std::fmt::Write;
             let checklist: String = subs
                 .iter()
-                .map(|s| {
+                .fold(String::new(), |mut acc, s| {
                     let status_marker = if s.status == TaskStatus::Done {
                         "x"
                     } else {
                         " "
                     };
-                    format!(
-                        "- [{}] **{}**: {} (ID: {})\n",
+                    let _ = writeln!(
+                        acc,
+                        "- [{}] **{}**: {} (ID: {})",
                         status_marker, s.title, s.description, s.id
-                    )
-                })
-                .collect();
+                    );
+                    acc
+                });
             format!(
                 r"
 
@@ -478,10 +480,8 @@ fn spawn_stderr_reader(
         std::thread::spawn(move || {
             let reader = std::io::BufReader::new(stderr);
             let mut lines = Vec::new();
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    lines.push(line);
-                }
+            for line in reader.lines().map_while(std::result::Result::ok) {
+                lines.push(line);
             }
             lines
         })
@@ -536,18 +536,16 @@ where
 
         if let Some(stdout) = stdout {
             let reader = std::io::BufReader::new(stdout);
-            for line in reader.lines() {
-                if let Ok(json_line) = line {
-                    if json_line.trim().is_empty() {
-                        continue;
-                    }
-                    let parsed = parse_stream_event(&json_line);
-                    if let Some(sid) = parsed.session_id {
-                        let _ = add_task_session(&task_id, &session_type, &sid, Some(pid));
-                    }
-                    if parsed.has_new_content {
-                        on_update(&task_id_for_callback);
-                    }
+            for json_line in reader.lines().map_while(std::result::Result::ok) {
+                if json_line.trim().is_empty() {
+                    continue;
+                }
+                let parsed = parse_stream_event(&json_line);
+                if let Some(sid) = parsed.session_id {
+                    let _ = add_task_session(&task_id, &session_type, &sid, Some(pid));
+                }
+                if parsed.has_new_content {
+                    on_update(&task_id_for_callback);
                 }
             }
         }
@@ -743,15 +741,13 @@ where
 
         if let Some(stdout) = stdout {
             let reader = std::io::BufReader::new(stdout);
-            for line in reader.lines() {
-                if let Ok(json_line) = line {
-                    if json_line.trim().is_empty() {
-                        continue;
-                    }
-                    let parsed = parse_stream_event(&json_line);
-                    if parsed.has_new_content {
-                        on_update(&task_id_for_callback);
-                    }
+            for json_line in reader.lines().map_while(std::result::Result::ok) {
+                if json_line.trim().is_empty() {
+                    continue;
+                }
+                let parsed = parse_stream_event(&json_line);
+                if parsed.has_new_content {
+                    on_update(&task_id_for_callback);
                 }
             }
         }

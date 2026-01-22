@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// "Needs review" is detected by checking data fields:
 /// - Planning + `plan.is_some()` → needs plan approval
 /// - Working + `summary.is_some()` → needs work review
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Planning,
@@ -27,7 +27,7 @@ pub enum TaskStatus {
 ///
 /// - Task: Appears in Kanban board, has its own worker agent
 /// - Subtask: Hidden from Kanban, shown as checklist item in parent task
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
     #[default]

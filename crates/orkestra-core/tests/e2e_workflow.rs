@@ -15,7 +15,6 @@ use orkestra_core::{
     ports::{ProcessSpawner, SpawnConfig},
     testutil::{
         create_orkestra_dirs, create_temp_git_repo, create_test_orchestrator, MockProcessSpawner,
-        MockStore,
     },
 };
 use std::path::{Path, PathBuf};
@@ -292,6 +291,13 @@ fn test_convenience_run_full_workflow() {
         task.integration_result,
         Some(IntegrationResult::Merged { .. })
     ));
+
+    // Task should be deleted from database after successful merge
+    let tasks = orchestrator.project.list_tasks().unwrap();
+    assert!(
+        tasks.is_empty(),
+        "Task should be deleted after successful merge"
+    );
 }
 
 // =============================================================================
@@ -327,21 +333,6 @@ fn test_mock_spawner_records_calls() {
     // Mark process as finished
     spawner.finish_process(result.pid);
     assert!(!spawner.is_running(result.pid));
-}
-
-#[test]
-fn test_mock_store_basic_operations() {
-    use orkestra_core::ports::TaskStore;
-
-    let store = MockStore::new();
-
-    // Generate IDs
-    assert_eq!(store.next_id().unwrap(), "TASK-001");
-    assert_eq!(store.next_id().unwrap(), "TASK-002");
-
-    // Initially empty
-    assert!(store.load_all().unwrap().is_empty());
-    assert!(store.find_by_id("TASK-001").unwrap().is_none());
 }
 
 #[test]

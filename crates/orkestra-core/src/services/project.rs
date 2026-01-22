@@ -275,7 +275,11 @@ impl Project {
     /// Approve work review and complete the task.
     ///
     /// For root tasks with worktrees, this attempts to merge the branch
-    /// back to the primary branch.
+    /// back to the primary branch. On successful merge, the task is deleted
+    /// from the database (git history preserves the work).
+    ///
+    /// Returns the final task state (even if deleted) so the caller knows
+    /// what happened.
     pub fn approve_review(&self, task_id: &str) -> Result<Task> {
         let mut task = self.require_task(task_id)?;
 
@@ -289,6 +293,9 @@ impl Project {
         // Try to integrate the branch back to primary
         let (new_status, integration_result, conflict_msg) = self.try_integrate(&task);
 
+        // Check if this was a successful merge before moving integration_result
+        let was_merged = matches!(integration_result, Some(IntegrationResult::Merged { .. }));
+
         task.status = new_status;
         task.integration_result = integration_result;
         task.updated_at = chrono::Utc::now().to_rfc3339();
@@ -296,6 +303,12 @@ impl Project {
         if new_status == TaskStatus::Done {
             task.completed_at = Some(chrono::Utc::now().to_rfc3339());
             task.review_feedback = None;
+
+            // On successful merge, delete the task - git history has everything
+            if was_merged {
+                self.store.delete(&task.id)?;
+                return Ok(task);
+            }
         } else {
             // Conflict - reopen task
             task.summary = None;

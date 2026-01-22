@@ -18,6 +18,9 @@ pub trait TaskStore: Send + Sync {
     /// Save all tasks (overwrite storage).
     fn save_all(&self, tasks: &[Task]) -> Result<()>;
 
+    /// Delete a task by its ID.
+    fn delete(&self, id: &str) -> Result<()>;
+
     /// Generate the next available task ID.
     fn next_id(&self) -> Result<String>;
 }

@@ -384,63 +384,11 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::FixedClock;
-    use std::collections::HashMap;
-    use std::sync::RwLock;
-
-    struct MockStore {
-        tasks: RwLock<HashMap<String, Task>>,
-        next_id: RwLock<u32>,
-    }
-
-    impl MockStore {
-        fn new() -> Self {
-            Self {
-                tasks: RwLock::new(HashMap::new()),
-                next_id: RwLock::new(1),
-            }
-        }
-    }
-
-    impl TaskStore for MockStore {
-        fn load_all(&self) -> Result<Vec<Task>> {
-            let mut tasks: Vec<Task> = self.tasks.read().unwrap().values().cloned().collect();
-            tasks.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-            Ok(tasks)
-        }
-
-        fn find_by_id(&self, id: &str) -> Result<Option<Task>> {
-            Ok(self.tasks.read().unwrap().get(id).cloned())
-        }
-
-        fn save(&self, task: &Task) -> Result<()> {
-            self.tasks
-                .write()
-                .unwrap()
-                .insert(task.id.clone(), task.clone());
-            Ok(())
-        }
-
-        fn save_all(&self, tasks: &[Task]) -> Result<()> {
-            let mut store = self.tasks.write().unwrap();
-            store.clear();
-            for task in tasks {
-                store.insert(task.id.clone(), task.clone());
-            }
-            Ok(())
-        }
-
-        fn next_id(&self) -> Result<String> {
-            let mut id = self.next_id.write().unwrap();
-            let current = *id;
-            *id = current + 1;
-            Ok(format!("TASK-{current:03}"))
-        }
-    }
+    use crate::adapters::{FixedClock, SqliteStore};
 
     #[test]
     fn test_create_task() {
-        let store = MockStore::new();
+        let store = SqliteStore::in_memory().unwrap();
         let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
         let service = TaskService::new(store, clock);
 
@@ -454,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_task_workflow_skip_breakdown() {
-        let store = MockStore::new();
+        let store = SqliteStore::in_memory().unwrap();
         let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
         let service = TaskService::new(store, clock);
 
@@ -491,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_task_workflow_with_breakdown() {
-        let store = MockStore::new();
+        let store = SqliteStore::in_memory().unwrap();
         let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
         let service = TaskService::new(store, clock);
 
@@ -561,7 +509,7 @@ mod tests {
 
     #[test]
     fn test_parent_blocked_on_child_failure() {
-        let store = MockStore::new();
+        let store = SqliteStore::in_memory().unwrap();
         let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
         let service = TaskService::new(store, clock);
 
@@ -589,7 +537,7 @@ mod tests {
 
     #[test]
     fn test_skip_breakdown_from_breaking_down() {
-        let store = MockStore::new();
+        let store = SqliteStore::in_memory().unwrap();
         let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
         let service = TaskService::new(store, clock);
 
@@ -605,7 +553,7 @@ mod tests {
 
     #[test]
     fn test_request_breakdown_changes() {
-        let store = MockStore::new();
+        let store = SqliteStore::in_memory().unwrap();
         let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
         let service = TaskService::new(store, clock);
 
@@ -631,7 +579,7 @@ mod tests {
 
     #[test]
     fn test_invalid_approve_plan() {
-        let store = MockStore::new();
+        let store = SqliteStore::in_memory().unwrap();
         let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
         let service = TaskService::new(store, clock);
 
@@ -644,7 +592,7 @@ mod tests {
 
     #[test]
     fn test_invalid_approve_review() {
-        let store = MockStore::new();
+        let store = SqliteStore::in_memory().unwrap();
         let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
         let service = TaskService::new(store, clock);
 

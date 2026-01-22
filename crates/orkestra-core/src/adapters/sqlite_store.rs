@@ -524,6 +524,16 @@ impl TaskStore for SqliteStore {
         Ok(())
     }
 
+    fn delete(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        // Delete sessions first (foreign key would prevent task deletion)
+        conn.execute("DELETE FROM sessions WHERE task_id = ?", params![id])?;
+        conn.execute("DELETE FROM tasks WHERE id = ?", params![id])?;
+
+        Ok(())
+    }
+
     fn next_id(&self) -> Result<String> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
 

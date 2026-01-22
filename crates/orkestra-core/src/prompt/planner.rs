@@ -92,6 +92,7 @@ mod tests {
             agent_pid: None,
             branch_name: None,
             worktree_path: None,
+            integration_result: None,
         }
     }
 

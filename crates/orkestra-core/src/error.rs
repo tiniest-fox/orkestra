@@ -41,6 +41,9 @@ pub enum OrkestraError {
 
     #[error("Git error: {0}")]
     GitError(String),
+
+    #[error("Merge conflict on branch {branch}: {files:?}")]
+    MergeConflict { branch: String, files: Vec<String> },
 }
 
 /// Result type alias for Orkestra operations.

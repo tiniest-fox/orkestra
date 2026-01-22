@@ -5,8 +5,12 @@ use crate::ports::TaskStore;
 use crate::project;
 use crate::services::GitService;
 
+use crate::error::OrkestraError;
+
 // Re-export domain types that were previously defined here
-pub use crate::domain::{LogEntry, SessionInfo, Task, TaskKind, TaskStatus, ToolInput};
+pub use crate::domain::{
+    IntegrationResult, LogEntry, SessionInfo, Task, TaskKind, TaskStatus, ToolInput,
+};
 
 /// Global `SQLite` store instance.
 /// Using `OnceLock` for thread-safe lazy initialization.
@@ -17,13 +21,105 @@ fn get_store() -> &'static SqliteStore {
     STORE.get_or_init(|| SqliteStore::new().expect("Failed to initialize SQLite store"))
 }
 
-/// Create a GitService for the current project.
+/// Create a `GitService` for the current project.
 /// Returns None if not in a git repository.
-/// Note: git2::Repository is not thread-safe, so we create a new service each time.
+/// Note: `git2::Repository` is not thread-safe, so we create a new service each time.
 fn create_git_service() -> Option<GitService> {
     project::find_project_root()
         .ok()
         .and_then(|root| GitService::new(&root).ok())
+}
+
+/// Attempt to integrate a completed task's branch back to the primary branch.
+/// Called automatically when root tasks reach Done status.
+/// Returns (`new_status`, `integration_result`, `conflict_message`).
+/// - On success: (Done, Merged, None)
+/// - On conflict: (Working, Conflict, Some(feedback message))
+/// - On skip: (Done, Skipped, None)
+fn try_integrate_task(task: &Task) -> (TaskStatus, Option<IntegrationResult>, Option<String>) {
+    // Skip if not a root task (has parent)
+    if task.parent_id.is_some() {
+        return (
+            TaskStatus::Done,
+            Some(IntegrationResult::Skipped {
+                reason: "Child task - parent handles integration".into(),
+            }),
+            None,
+        );
+    }
+
+    // Skip if no worktree/branch
+    let branch_name = match &task.branch_name {
+        Some(b) => b.clone(),
+        None => {
+            return (
+                TaskStatus::Done,
+                Some(IntegrationResult::Skipped {
+                    reason: "No branch associated with task".into(),
+                }),
+                None,
+            )
+        }
+    };
+
+    // Get git service
+    let Some(git) = create_git_service() else {
+        return (
+            TaskStatus::Done,
+            Some(IntegrationResult::Skipped {
+                reason: "Git service not available".into(),
+            }),
+            None,
+        );
+    };
+
+    // Attempt merge
+    match git.merge_to_primary(&branch_name) {
+        Ok(commit_sha) => {
+            // Success: cleanup worktree and branch
+            let _ = git.remove_worktree(&task.id);
+            let _ = git.delete_branch(&branch_name);
+
+            let target_branch = git.detect_primary_branch().unwrap_or_else(|_| "main".into());
+            (
+                TaskStatus::Done,
+                Some(IntegrationResult::Merged {
+                    merged_at: chrono::Utc::now().to_rfc3339(),
+                    commit_sha,
+                    target_branch,
+                }),
+                None,
+            )
+        }
+        Err(OrkestraError::MergeConflict { files, .. }) => {
+            // Conflict: abort merge, reopen task
+            let _ = git.abort_merge();
+
+            let conflict_msg = format!(
+                "Merge conflict occurred when integrating to primary branch. Please resolve the following conflicts:\n\n{}\n\nAfter resolving, mark the task complete again.",
+                files.iter().map(|f| format!("- {f}")).collect::<Vec<_>>().join("\n")
+            );
+
+            (
+                TaskStatus::Working,
+                Some(IntegrationResult::Conflict {
+                    conflict_files: files,
+                }),
+                Some(conflict_msg),
+            )
+        }
+        Err(e) => {
+            // Other error: log and skip integration
+            eprintln!("Warning: Failed to integrate task {}: {e}", task.id);
+            (
+                TaskStatus::Done,
+                Some(IntegrationResult::Skipped {
+                    reason: format!("Merge failed: {e}"),
+                }),
+                None,
+            )
+        }
+    }
 }
 
 pub fn load_tasks() -> std::io::Result<Vec<Task>> {
@@ -95,6 +191,7 @@ pub fn create_task_with_options(
         agent_pid: None,
         branch_name,
         worktree_path,
+        integration_result: None,
     };
 
     store
@@ -311,9 +408,10 @@ pub fn request_review_changes(id: &str, feedback: &str) -> std::io::Result<Task>
 }
 
 /// Approve work review and transition to Done.
+/// For root tasks with worktrees, this also attempts to merge the branch back to primary.
 pub fn approve_review(id: &str) -> std::io::Result<Task> {
     let store = get_store();
-    let task = store
+    let mut task = store
         .find_by_id(id)
         .map_err(|e| std::io::Error::other(e.to_string()))?
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
@@ -325,20 +423,28 @@ pub fn approve_review(id: &str) -> std::io::Result<Task> {
         ));
     }
 
-    store
-        .update_status(id, TaskStatus::Done)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-    store
-        .update_field(id, "completed_at", Some(&chrono::Utc::now().to_rfc3339()))
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-    store
-        .update_field(id, "review_feedback", None)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    // Try to integrate the branch back to primary
+    let (new_status, integration_result, conflict_msg) = try_integrate_task(&task);
+
+    task.status = new_status;
+    task.integration_result = integration_result;
+    task.updated_at = chrono::Utc::now().to_rfc3339();
+
+    if new_status == TaskStatus::Done {
+        // Success or skipped - mark as done
+        task.completed_at = Some(chrono::Utc::now().to_rfc3339());
+        task.review_feedback = None;
+    } else {
+        // Conflict - reopen task with feedback
+        task.summary = None; // Clear so worker knows to continue
+        task.reviewer_feedback = conflict_msg;
+    }
 
     store
-        .find_by_id(id)
-        .map_err(|e| std::io::Error::other(e.to_string()))?
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))
+        .save(&task)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    Ok(task)
 }
 
 /// Transition task to Reviewing status (spawns reviewer agent).
@@ -371,9 +477,10 @@ pub fn start_automated_review(id: &str) -> std::io::Result<Task> {
 }
 
 /// Reviewer agent approves the implementation → Done.
+/// For root tasks with worktrees, this also attempts to merge the branch back to primary.
 pub fn approve_automated_review(id: &str) -> std::io::Result<Task> {
     let store = get_store();
-    let task = store
+    let mut task = store
         .find_by_id(id)
         .map_err(|e| std::io::Error::other(e.to_string()))?
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
@@ -385,20 +492,28 @@ pub fn approve_automated_review(id: &str) -> std::io::Result<Task> {
         ));
     }
 
-    store
-        .update_status(id, TaskStatus::Done)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-    store
-        .update_field(id, "completed_at", Some(&chrono::Utc::now().to_rfc3339()))
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-    store
-        .update_field(id, "reviewer_feedback", None)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    // Try to integrate the branch back to primary
+    let (new_status, integration_result, conflict_msg) = try_integrate_task(&task);
+
+    task.status = new_status;
+    task.integration_result = integration_result;
+    task.updated_at = chrono::Utc::now().to_rfc3339();
+
+    if new_status == TaskStatus::Done {
+        // Success or skipped - mark as done
+        task.completed_at = Some(chrono::Utc::now().to_rfc3339());
+        task.reviewer_feedback = None;
+    } else {
+        // Conflict - reopen task with feedback
+        task.summary = None; // Clear so worker knows to continue
+        task.reviewer_feedback = conflict_msg;
+    }
 
     store
-        .find_by_id(id)
-        .map_err(|e| std::io::Error::other(e.to_string()))?
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))
+        .save(&task)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    Ok(task)
 }
 
 /// Reviewer agent rejects the implementation → back to Working with feedback.
@@ -497,6 +612,7 @@ pub fn create_child_task(parent_id: &str, title: &str, description: &str) -> std
         // Inherit parent's worktree
         branch_name: parent.branch_name.clone(),
         worktree_path: parent.worktree_path.clone(),
+        integration_result: None, // Child tasks don't do integration
     };
 
     store
@@ -549,6 +665,7 @@ pub fn create_subtask(parent_id: &str, title: &str, description: &str) -> std::i
         // Inherit parent's worktree
         branch_name: parent.branch_name.clone(),
         worktree_path: parent.worktree_path.clone(),
+        integration_result: None, // Subtasks don't do integration
     };
 
     store
@@ -729,9 +846,10 @@ pub fn get_children(parent_id: &str) -> std::io::Result<Vec<Task>> {
 }
 
 /// Check if parent should transition based on children states.
+/// For root tasks with worktrees, also attempts to merge the branch back to primary.
 pub fn check_parent_completion(parent_id: &str) -> std::io::Result<Option<Task>> {
     let store = get_store();
-    let parent = store
+    let mut parent = store
         .find_by_id(parent_id)
         .map_err(|e| std::io::Error::other(e.to_string()))?
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
@@ -761,29 +879,32 @@ pub fn check_parent_completion(parent_id: &str) -> std::io::Result<Option<Task>>
     // Check if all children are done
     let all_done = children.iter().all(|c| c.status == TaskStatus::Done);
     if all_done {
-        let now = chrono::Utc::now().to_rfc3339();
+        // Try to integrate the branch back to primary
+        let (new_status, integration_result, conflict_msg) = try_integrate_task(&parent);
+
+        parent.status = new_status;
+        parent.integration_result = integration_result;
+        parent.updated_at = chrono::Utc::now().to_rfc3339();
+
+        if new_status == TaskStatus::Done {
+            // Success or skipped - mark as done
+            parent.completed_at = Some(chrono::Utc::now().to_rfc3339());
+            parent.summary = Some(format!(
+                "All {} subtasks completed successfully",
+                children.len()
+            ));
+        } else {
+            // Conflict - reopen task with feedback
+            // Note: Parent goes to Working status so worker can resolve conflicts
+            parent.summary = None;
+            parent.reviewer_feedback = conflict_msg;
+        }
+
         store
-            .update_status(parent_id, TaskStatus::Done)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        store
-            .update_field(parent_id, "completed_at", Some(&now))
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        store
-            .update_field(
-                parent_id,
-                "summary",
-                Some(&format!(
-                    "All {} subtasks completed successfully",
-                    children.len()
-                )),
-            )
+            .save(&parent)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-        let updated = store
-            .find_by_id(parent_id)
-            .map_err(|e| std::io::Error::other(e.to_string()))?
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
-        return Ok(Some(updated));
+        return Ok(Some(parent));
     }
 
     Ok(None)

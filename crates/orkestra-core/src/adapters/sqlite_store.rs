@@ -113,6 +113,7 @@ impl SqliteStore {
         let _ = conn.execute("ALTER TABLE tasks ADD COLUMN agent_pid INTEGER", []);
         let _ = conn.execute("ALTER TABLE tasks ADD COLUMN branch_name TEXT", []);
         let _ = conn.execute("ALTER TABLE tasks ADD COLUMN worktree_path TEXT", []);
+        let _ = conn.execute("ALTER TABLE tasks ADD COLUMN integration_result TEXT", []);
 
         Ok(())
     }
@@ -185,13 +186,14 @@ impl SqliteStore {
     /// Column order: id, title, description, status, kind, `created_at`, `updated_at`,
     /// `completed_at`, summary, error, plan, `plan_feedback`, `review_feedback`,
     /// `reviewer_feedback`, `auto_approve`, `parent_id`, breakdown, `breakdown_feedback`,
-    /// `skip_breakdown`, `agent_pid`, `branch_name`, `worktree_path`
+    /// `skip_breakdown`, `agent_pid`, `branch_name`, `worktree_path`, `integration_result`
     fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         let status_str: String = row.get(3)?;
         let kind_str: String = row.get(4)?;
         let auto_approve: i32 = row.get(14)?;
         let skip_breakdown: i32 = row.get(18)?;
         let agent_pid: Option<i32> = row.get(19)?;
+        let integration_result_json: Option<String> = row.get(22)?;
 
         Ok(Task {
             id: row.get(0)?,
@@ -217,6 +219,8 @@ impl SqliteStore {
             agent_pid: agent_pid.map(|p| p as u32),
             branch_name: row.get(20)?,
             worktree_path: row.get(21)?,
+            integration_result: integration_result_json
+                .and_then(|json| serde_json::from_str(&json).ok()),
         })
     }
 
@@ -269,6 +273,7 @@ impl SqliteStore {
             "breakdown_feedback",
             "branch_name",
             "worktree_path",
+            "integration_result",
         ];
 
         if !valid_fields.contains(&field) {
@@ -395,6 +400,12 @@ impl TaskStore for SqliteStore {
     fn save(&self, task: &Task) -> Result<()> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
 
+        // Serialize integration_result to JSON
+        let integration_result_json = task
+            .integration_result
+            .as_ref()
+            .map(|r| serde_json::to_string(r).unwrap_or_default());
+
         // Use INSERT OR REPLACE to handle both insert and update
         conn.execute(
             r"
@@ -402,8 +413,8 @@ impl TaskStore for SqliteStore {
                 id, title, description, status, kind, created_at, updated_at,
                 completed_at, summary, error, plan, plan_feedback,
                 review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
-                skip_breakdown, agent_pid, branch_name, worktree_path
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                skip_breakdown, agent_pid, branch_name, worktree_path, integration_result
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ",
             params![
                 task.id,
@@ -428,6 +439,7 @@ impl TaskStore for SqliteStore {
                 task.agent_pid.map(|p| p as i32),
                 task.branch_name,
                 task.worktree_path,
+                integration_result_json,
             ],
         )?;
 
@@ -449,14 +461,20 @@ impl TaskStore for SqliteStore {
 
         // Insert all tasks
         for task in tasks {
+            // Serialize integration_result to JSON
+            let integration_result_json = task
+                .integration_result
+                .as_ref()
+                .map(|r| serde_json::to_string(r).unwrap_or_default());
+
             conn.execute(
                 r"
                 INSERT INTO tasks (
                     id, title, description, status, kind, created_at, updated_at,
                     completed_at, summary, error, plan, plan_feedback,
                     review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
-                    skip_breakdown, agent_pid, branch_name, worktree_path
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    skip_breakdown, agent_pid, branch_name, worktree_path, integration_result
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ",
                 params![
                     task.id,
@@ -481,6 +499,7 @@ impl TaskStore for SqliteStore {
                     task.agent_pid.map(|p| p as i32),
                     task.branch_name,
                     task.worktree_path,
+                    integration_result_json,
                 ],
             )?;
 

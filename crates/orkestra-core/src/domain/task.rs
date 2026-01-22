@@ -36,6 +36,22 @@ pub enum TaskKind {
     Subtask,
 }
 
+/// Result of attempting to integrate a task branch back to the primary branch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum IntegrationResult {
+    /// Branch was successfully merged and cleaned up.
+    Merged {
+        merged_at: String,
+        commit_sha: String,
+        target_branch: String,
+    },
+    /// Merge conflict occurred. Task was reopened for resolution.
+    Conflict { conflict_files: Vec<String> },
+    /// Integration was skipped (not a root task, no worktree, etc.).
+    Skipped { reason: String },
+}
+
 impl TaskStatus {
     /// Check if transition to a new status is allowed.
     ///
@@ -133,6 +149,9 @@ pub struct Task {
     /// Only set on root tasks; child tasks inherit from parent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_path: Option<String>,
+    /// Result of integrating this task's branch back to the primary branch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub integration_result: Option<IntegrationResult>,
 }
 
 impl Task {
@@ -163,6 +182,7 @@ impl Task {
             agent_pid: None,
             branch_name: None,
             worktree_path: None,
+            integration_result: None,
         }
     }
 

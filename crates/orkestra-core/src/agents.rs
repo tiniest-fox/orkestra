@@ -523,7 +523,7 @@ where
     // Update task status based on agent type
     let new_status = match agent_type {
         AgentType::Planner => TaskStatus::Planning,
-        AgentType::Worker => TaskStatus::InProgress,
+        AgentType::Worker => TaskStatus::Working,
     };
     update_task_status(&task.id, new_status)?;
 
@@ -683,7 +683,7 @@ pub fn spawn_agent_sync(task: &Task, agent_type: AgentType, timeout_secs: u64) -
     // Update task status based on agent type
     let new_status = match agent_type {
         AgentType::Planner => TaskStatus::Planning,
-        AgentType::Worker => TaskStatus::InProgress,
+        AgentType::Worker => TaskStatus::Working,
     };
     update_task_status(&task.id, new_status)?;
 

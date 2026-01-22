@@ -47,7 +47,7 @@ fn update_task_status(id: String, status: TaskStatus) -> Result<Task, String> {
 
 #[tauri::command]
 fn approve_plan(id: String, app_handle: tauri::AppHandle) -> Result<Task, String> {
-    // First approve the plan (changes status to in_progress)
+    // First approve the plan (changes status to working)
     let task = tasks::approve_task_plan(&id).map_err(|e| e.to_string())?;
 
     // Create callback that emits Tauri events for real-time updates
@@ -122,7 +122,7 @@ fn request_plan_changes(id: String, feedback: String, app_handle: tauri::AppHand
 
 #[tauri::command]
 fn request_review_changes(id: String, feedback: String, app_handle: tauri::AppHandle) -> Result<Task, String> {
-    // Request changes (changes status to in_progress, stores feedback)
+    // Request changes (clears summary, stores feedback)
     let task = core_request_review_changes(&id, &feedback).map_err(|e| e.to_string())?;
 
     // Create callback that emits Tauri events for real-time updates

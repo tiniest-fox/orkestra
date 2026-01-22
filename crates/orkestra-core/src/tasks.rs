@@ -42,14 +42,21 @@ pub enum ToolInput {
     Other { summary: String },
 }
 
+/// Task status representing the current state in the workflow.
+///
+/// The workflow is simplified to 3 main phases:
+/// - Planning: Agent is creating a plan, or plan is ready for review
+/// - Working: Agent is implementing, or work is ready for review
+/// - Done: Task completed
+///
+/// "Needs review" is detected by checking data fields:
+/// - Planning + plan.is_some() → needs plan approval
+/// - Working + summary.is_some() → needs work review
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
-    Pending,
     Planning,
-    AwaitingApproval,
-    InProgress,
-    ReadyForReview,
+    Working,
     Done,
     Failed,
     Blocked,
@@ -186,7 +193,7 @@ pub fn create_task_with_options(title: &str, description: &str, auto_approve: bo
         id: generate_task_id(),
         title: title.to_string(),
         description: description.to_string(),
-        status: TaskStatus::Pending,
+        status: TaskStatus::Planning,
         created_at: now.clone(),
         updated_at: now,
         completed_at: None,
@@ -225,6 +232,8 @@ pub fn update_task_status(id: &str, status: TaskStatus) -> std::io::Result<Task>
     Ok(result)
 }
 
+/// Mark task as complete - stays in Working status with summary set.
+/// The presence of summary indicates work is ready for review.
 pub fn complete_task(id: &str, summary: &str) -> std::io::Result<Task> {
     let mut tasks = load_tasks()?;
     let task = tasks
@@ -232,9 +241,9 @@ pub fn complete_task(id: &str, summary: &str) -> std::io::Result<Task> {
         .find(|t| t.id == id)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
 
-    task.status = TaskStatus::ReadyForReview;
-    task.updated_at = chrono::Utc::now().to_rfc3339();
+    // Stay in Working status - summary indicates ready for review
     task.summary = Some(summary.to_string());
+    task.updated_at = chrono::Utc::now().to_rfc3339();
 
     let result = task.clone();
     save_tasks(&tasks)?;
@@ -327,6 +336,7 @@ pub fn get_next_review_session_key(task: &Task) -> String {
     format!("review_{}", count)
 }
 
+/// Set the plan for a task. Stays in Planning status - plan field indicates ready for review.
 pub fn set_task_plan(id: &str, plan: &str) -> std::io::Result<Task> {
     let mut tasks = load_tasks()?;
     let task = tasks
@@ -335,7 +345,7 @@ pub fn set_task_plan(id: &str, plan: &str) -> std::io::Result<Task> {
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
 
     task.plan = Some(plan.to_string());
-    task.status = TaskStatus::AwaitingApproval;
+    // Stay in Planning status - plan field indicates ready for review
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
     let result = task.clone();
@@ -343,6 +353,8 @@ pub fn set_task_plan(id: &str, plan: &str) -> std::io::Result<Task> {
     Ok(result)
 }
 
+/// Approve a task's plan and transition to Working status.
+/// Requires: Planning status + plan is set.
 pub fn approve_task_plan(id: &str) -> std::io::Result<Task> {
     let mut tasks = load_tasks()?;
     let task = tasks
@@ -350,14 +362,15 @@ pub fn approve_task_plan(id: &str) -> std::io::Result<Task> {
         .find(|t| t.id == id)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
 
-    if task.status != TaskStatus::AwaitingApproval {
+    // Must be in Planning with a plan set
+    if task.status != TaskStatus::Planning || task.plan.is_none() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Task is not awaiting approval",
+            "Task must be in Planning status with a plan set",
         ));
     }
 
-    task.status = TaskStatus::InProgress;
+    task.status = TaskStatus::Working;
     task.plan_feedback = None;
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
@@ -366,6 +379,8 @@ pub fn approve_task_plan(id: &str) -> std::io::Result<Task> {
     Ok(result)
 }
 
+/// Request changes to a task's plan. Requires: Planning status + plan is set.
+/// Clears the plan and stores feedback for the agent.
 pub fn request_plan_changes(id: &str, feedback: &str) -> std::io::Result<Task> {
     let mut tasks = load_tasks()?;
     let task = tasks
@@ -373,14 +388,16 @@ pub fn request_plan_changes(id: &str, feedback: &str) -> std::io::Result<Task> {
         .find(|t| t.id == id)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
 
-    if task.status != TaskStatus::AwaitingApproval {
+    // Must be in Planning with a plan set
+    if task.status != TaskStatus::Planning || task.plan.is_none() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Task is not awaiting approval",
+            "Task must be in Planning status with a plan set",
         ));
     }
 
-    task.status = TaskStatus::Planning;
+    // Clear the plan and set feedback - stays in Planning
+    task.plan = None;
     task.plan_feedback = Some(feedback.to_string());
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
@@ -389,6 +406,8 @@ pub fn request_plan_changes(id: &str, feedback: &str) -> std::io::Result<Task> {
     Ok(result)
 }
 
+/// Request changes during work review. Requires: Working status + summary is set.
+/// Clears the summary and stores feedback for the agent.
 pub fn request_review_changes(id: &str, feedback: &str) -> std::io::Result<Task> {
     let mut tasks = load_tasks()?;
     let task = tasks
@@ -396,14 +415,16 @@ pub fn request_review_changes(id: &str, feedback: &str) -> std::io::Result<Task>
         .find(|t| t.id == id)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
 
-    if task.status != TaskStatus::ReadyForReview {
+    // Must be in Working with a summary set
+    if task.status != TaskStatus::Working || task.summary.is_none() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Task is not ready for review",
+            "Task must be in Working status with a summary set",
         ));
     }
 
-    task.status = TaskStatus::InProgress;
+    // Clear the summary and set feedback - stays in Working
+    task.summary = None;
     task.review_feedback = Some(feedback.to_string());
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
@@ -412,6 +433,7 @@ pub fn request_review_changes(id: &str, feedback: &str) -> std::io::Result<Task>
     Ok(result)
 }
 
+/// Approve work review and transition to Done. Requires: Working status + summary is set.
 pub fn approve_review(id: &str) -> std::io::Result<Task> {
     let mut tasks = load_tasks()?;
     let task = tasks
@@ -419,16 +441,17 @@ pub fn approve_review(id: &str) -> std::io::Result<Task> {
         .find(|t| t.id == id)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
 
-    if task.status != TaskStatus::ReadyForReview {
+    // Must be in Working with a summary set
+    if task.status != TaskStatus::Working || task.summary.is_none() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Task is not ready for review",
+            "Task must be in Working status with a summary set",
         ));
     }
 
     task.status = TaskStatus::Done;
     task.completed_at = Some(chrono::Utc::now().to_rfc3339());
-    task.review_feedback = None; // Clear review feedback when approved
+    task.review_feedback = None;
     task.updated_at = chrono::Utc::now().to_rfc3339();
 
     let result = task.clone();

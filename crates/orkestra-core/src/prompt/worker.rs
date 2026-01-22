@@ -74,7 +74,7 @@ mod tests {
             id: "TASK-001".to_string(),
             title: "Test Task".to_string(),
             description: "Test description".to_string(),
-            status: TaskStatus::InProgress,
+            status: TaskStatus::Working,
             created_at: "now".to_string(),
             updated_at: "now".to_string(),
             completed_at: None,

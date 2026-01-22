@@ -134,6 +134,13 @@ interface TaskDetailSidebarProps {
   onTaskUpdated: () => void;
 }
 
+// Helper to check review states
+const needsPlanReview = (task: Task): boolean =>
+  task.status === "planning" && task.plan !== undefined;
+
+const needsWorkReview = (task: Task): boolean =>
+  task.status === "working" && task.summary !== undefined;
+
 export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSidebarProps) {
   const [feedback, setFeedback] = useState("");
   const [reviewFeedback, setReviewFeedback] = useState("");
@@ -302,15 +309,17 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   };
 
   const isPlanning = task.status === "planning";
-  const isAwaitingApproval = task.status === "awaiting_approval";
-  const isInProgress = task.status === "in_progress";
-  const isReadyForReview = task.status === "ready_for_review";
+  const isWorking = task.status === "working";
+  const taskNeedsPlanReview = needsPlanReview(task);
+  const taskNeedsWorkReview = needsWorkReview(task);
 
-  // Session is resumable if: has sessions, no running process, and task is incomplete
+  // Session is resumable if: has sessions, no running process, not waiting for review, and task is incomplete
   const hasSession = task.sessions && Object.keys(task.sessions).length > 0;
   const isResumable = hasSession &&
     !task.agent_pid &&
-    (task.status === "planning" || task.status === "in_progress");
+    !taskNeedsPlanReview &&
+    !taskNeedsWorkReview &&
+    (isPlanning || isWorking);
 
   // Get the most recent session key for resuming
   const resumeSessionKey = useMemo(() => {
@@ -375,8 +384,14 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     }
   };
 
-  // Only show auto-approve toggle when task is not actively being worked on
-  const canToggleAutoApprove = ["pending", "awaiting_approval", "ready_for_review", "done", "failed", "blocked"].includes(task.status);
+  // Only show auto-approve toggle when task is not actively being worked on by an agent
+  const canToggleAutoApprove = !task.agent_pid && (
+    task.status === "done" ||
+    task.status === "failed" ||
+    task.status === "blocked" ||
+    taskNeedsPlanReview ||
+    taskNeedsWorkReview
+  );
 
   return (
     <div className="w-1/2 flex-shrink-0 bg-white shadow-xl border-l border-gray-200 flex flex-col overflow-hidden">
@@ -388,14 +403,10 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
             className={`px-2 py-0.5 text-xs rounded-full ${
               task.status === "done"
                 ? "bg-green-100 text-green-700"
-                : task.status === "in_progress"
+                : task.status === "working"
                 ? "bg-blue-100 text-blue-700"
                 : task.status === "planning"
                 ? "bg-purple-100 text-purple-700"
-                : task.status === "awaiting_approval"
-                ? "bg-amber-100 text-amber-700"
-                : task.status === "ready_for_review"
-                ? "bg-yellow-100 text-yellow-700"
                 : task.status === "failed"
                 ? "bg-red-100 text-red-700"
                 : task.status === "blocked"
@@ -405,6 +416,11 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           >
             {statusConfig.label}
           </span>
+          {(taskNeedsPlanReview || taskNeedsWorkReview) && (
+            <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">
+              Review
+            </span>
+          )}
           {task.auto_approve && (
             <span className="px-2 py-0.5 text-xs rounded-full bg-indigo-100 text-indigo-700">
               Auto
@@ -473,7 +489,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           }`}
         >
           Logs
-          {(isPlanning || isInProgress) && (
+          {task.agent_pid && (
             <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
           )}
         </button>
@@ -579,8 +595,8 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         )}
       </div>
 
-      {/* Approval Actions - at bottom after collapsible sections */}
-      {isAwaitingApproval && (
+      {/* Plan Approval Actions */}
+      {taskNeedsPlanReview && (
         <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-amber-50">
           <div className="text-sm font-medium text-amber-800 mb-3">Plan Review</div>
           <textarea
@@ -610,10 +626,10 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         </div>
       )}
 
-      {/* Review Actions - at bottom after collapsible sections */}
-      {isReadyForReview && (
+      {/* Work Review Actions */}
+      {taskNeedsWorkReview && (
         <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-yellow-50">
-          <div className="text-sm font-medium text-yellow-800 mb-3">Review</div>
+          <div className="text-sm font-medium text-yellow-800 mb-3">Work Review</div>
           <textarea
             value={reviewFeedback}
             onChange={(e) => setReviewFeedback(e.target.value)}

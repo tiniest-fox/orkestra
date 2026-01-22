@@ -2,14 +2,20 @@ use serde::{Deserialize, Serialize};
 use crate::error::{OrkestraError, Result};
 
 /// Task status representing the current state in the workflow.
+///
+/// The workflow is simplified to 3 main phases:
+/// - Planning: Agent is creating a plan, or plan is ready for review
+/// - Working: Agent is implementing, or work is ready for review
+/// - Done: Task completed
+///
+/// "Needs review" is detected by checking data fields:
+/// - Planning + plan.is_some() → needs plan approval
+/// - Working + summary.is_some() → needs work review
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
-    Pending,
     Planning,
-    AwaitingApproval,
-    InProgress,
-    ReadyForReview,
+    Working,
     Done,
     Failed,
     Blocked,
@@ -19,30 +25,25 @@ impl TaskStatus {
     /// Check if transition to a new status is allowed.
     ///
     /// The task workflow follows this state machine:
-    /// - Pending -> Planning (task started)
-    /// - Planning -> AwaitingApproval (plan created)
-    /// - AwaitingApproval -> InProgress (plan approved)
-    /// - AwaitingApproval -> Planning (plan changes requested)
-    /// - InProgress -> ReadyForReview (work completed)
-    /// - InProgress -> Failed/Blocked (work failed or blocked)
-    /// - ReadyForReview -> Done (review approved)
-    /// - ReadyForReview -> InProgress (review changes requested)
+    /// - Planning -> Working (plan approved)
+    /// - Planning -> Failed/Blocked
+    /// - Working -> Done (work approved)
+    /// - Working -> Planning (rare: restart planning)
+    /// - Working -> Failed/Blocked
     /// - Any -> Failed/Blocked (can fail or block from anywhere)
     pub fn can_transition_to(&self, new: &TaskStatus) -> bool {
         use TaskStatus::*;
         matches!(
             (self, new),
-            (Pending, Planning)
-                | (Planning, AwaitingApproval)
-                | (AwaitingApproval, InProgress)
-                | (AwaitingApproval, Planning)
-                | (InProgress, ReadyForReview)
-                | (InProgress, Failed)
-                | (InProgress, Blocked)
-                | (ReadyForReview, Done)
-                | (ReadyForReview, InProgress)
-                | (_, Failed)
-                | (_, Blocked)
+            (Planning, Working)      // plan approved
+                | (Planning, Failed)
+                | (Planning, Blocked)
+                | (Working, Done)    // work approved
+                | (Working, Planning) // rare: restart planning
+                | (Working, Failed)
+                | (Working, Blocked)
+                | (_, Failed)        // can fail from anywhere
+                | (_, Blocked)       // can block from anywhere
         )
     }
 }
@@ -85,12 +86,13 @@ pub struct Task {
 
 impl Task {
     /// Create a new task with the given ID, title, and description.
+    /// Tasks start in Planning status immediately.
     pub fn new(id: String, title: String, description: String, now: &str) -> Self {
         Self {
             id,
             title,
             description,
-            status: TaskStatus::Pending,
+            status: TaskStatus::Planning,
             created_at: now.to_string(),
             updated_at: now.to_string(),
             completed_at: None,
@@ -103,6 +105,16 @@ impl Task {
             sessions: None,
             auto_approve: false,
         }
+    }
+
+    /// Returns true if task is in Planning and has a plan ready for review.
+    pub fn needs_plan_review(&self) -> bool {
+        self.status == TaskStatus::Planning && self.plan.is_some()
+    }
+
+    /// Returns true if task is Working and has work ready for review.
+    pub fn needs_work_review(&self) -> bool {
+        self.status == TaskStatus::Working && self.summary.is_some()
     }
 
     /// Transition the task to a new status, validating the transition.
@@ -153,21 +165,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_new_task_starts_in_planning() {
+        let task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        assert_eq!(task.status, TaskStatus::Planning);
+    }
+
+    #[test]
     fn test_valid_transitions() {
         let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
-
-        assert!(task.transition_to(TaskStatus::Planning, "now").is_ok());
         assert_eq!(task.status, TaskStatus::Planning);
 
-        assert!(task.transition_to(TaskStatus::AwaitingApproval, "now").is_ok());
-        assert_eq!(task.status, TaskStatus::AwaitingApproval);
+        // Planning -> Working (plan approved)
+        assert!(task.transition_to(TaskStatus::Working, "now").is_ok());
+        assert_eq!(task.status, TaskStatus::Working);
 
-        assert!(task.transition_to(TaskStatus::InProgress, "now").is_ok());
-        assert_eq!(task.status, TaskStatus::InProgress);
-
-        assert!(task.transition_to(TaskStatus::ReadyForReview, "now").is_ok());
-        assert_eq!(task.status, TaskStatus::ReadyForReview);
-
+        // Working -> Done (work approved)
         assert!(task.transition_to(TaskStatus::Done, "now").is_ok());
         assert_eq!(task.status, TaskStatus::Done);
     }
@@ -177,6 +189,7 @@ mod tests {
         let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
         task.status = TaskStatus::Done;
 
+        // Can't go from Done to Planning
         let result = task.transition_to(TaskStatus::Planning, "now");
         assert!(result.is_err());
     }
@@ -186,6 +199,33 @@ mod tests {
         let task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
         assert!(task.status.can_transition_to(&TaskStatus::Failed));
         assert!(task.status.can_transition_to(&TaskStatus::Blocked));
+    }
+
+    #[test]
+    fn test_needs_plan_review() {
+        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        assert!(!task.needs_plan_review());
+
+        task.plan = Some("My plan".to_string());
+        assert!(task.needs_plan_review());
+
+        // Not true if status is Working
+        task.status = TaskStatus::Working;
+        assert!(!task.needs_plan_review());
+    }
+
+    #[test]
+    fn test_needs_work_review() {
+        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        task.status = TaskStatus::Working;
+        assert!(!task.needs_work_review());
+
+        task.summary = Some("Done".to_string());
+        assert!(task.needs_work_review());
+
+        // Not true if status is Planning
+        task.status = TaskStatus::Planning;
+        assert!(!task.needs_work_review());
     }
 
     #[test]

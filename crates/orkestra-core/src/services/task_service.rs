@@ -56,61 +56,60 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
         self.update(id, |task| task.transition_to(new_status, &now))
     }
 
-    /// Set the plan for a task and transition to AwaitingApproval.
+    /// Set the plan for a task. Stays in Planning - plan field indicates ready for review.
     pub fn set_plan(&self, id: &str, plan: &str) -> Result<Task> {
-        let now = self.clock.now_rfc3339();
         self.update(id, |task| {
             task.plan = Some(plan.to_string());
-            task.transition_to(TaskStatus::AwaitingApproval, &now)
+            Ok(())
         })
     }
 
-    /// Approve a plan and transition to InProgress.
+    /// Approve a plan and transition to Working. Requires: Planning + plan set.
     pub fn approve_plan(&self, id: &str) -> Result<Task> {
         let now = self.clock.now_rfc3339();
         self.update(id, |task| {
-            if task.status != TaskStatus::AwaitingApproval {
+            if !task.needs_plan_review() {
                 return Err(OrkestraError::InvalidState {
-                    expected: "awaiting_approval".to_string(),
+                    expected: "planning with plan set".to_string(),
                     actual: format!("{:?}", task.status),
                 });
             }
             task.plan_feedback = None;
-            task.transition_to(TaskStatus::InProgress, &now)
+            task.transition_to(TaskStatus::Working, &now)
         })
     }
 
-    /// Request changes to a plan and transition back to Planning.
+    /// Request changes to a plan. Requires: Planning + plan set.
+    /// Clears the plan and stores feedback.
     pub fn request_plan_changes(&self, id: &str, feedback: &str) -> Result<Task> {
-        let now = self.clock.now_rfc3339();
         self.update(id, |task| {
-            if task.status != TaskStatus::AwaitingApproval {
+            if !task.needs_plan_review() {
                 return Err(OrkestraError::InvalidState {
-                    expected: "awaiting_approval".to_string(),
+                    expected: "planning with plan set".to_string(),
                     actual: format!("{:?}", task.status),
                 });
             }
+            task.plan = None;
             task.plan_feedback = Some(feedback.to_string());
-            task.transition_to(TaskStatus::Planning, &now)
+            Ok(())
         })
     }
 
-    /// Complete a task and transition to ReadyForReview.
+    /// Complete a task by setting summary. Stays in Working - summary indicates ready for review.
     pub fn complete(&self, id: &str, summary: &str) -> Result<Task> {
-        let now = self.clock.now_rfc3339();
         self.update(id, |task| {
             task.summary = Some(summary.to_string());
-            task.transition_to(TaskStatus::ReadyForReview, &now)
+            Ok(())
         })
     }
 
-    /// Approve a review and transition to Done.
+    /// Approve work review and transition to Done. Requires: Working + summary set.
     pub fn approve_review(&self, id: &str) -> Result<Task> {
         let now = self.clock.now_rfc3339();
         self.update(id, |task| {
-            if task.status != TaskStatus::ReadyForReview {
+            if !task.needs_work_review() {
                 return Err(OrkestraError::InvalidState {
-                    expected: "ready_for_review".to_string(),
+                    expected: "working with summary set".to_string(),
                     actual: format!("{:?}", task.status),
                 });
             }
@@ -120,18 +119,19 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
         })
     }
 
-    /// Request changes during review and transition back to InProgress.
+    /// Request changes during work review. Requires: Working + summary set.
+    /// Clears the summary and stores feedback.
     pub fn request_review_changes(&self, id: &str, feedback: &str) -> Result<Task> {
-        let now = self.clock.now_rfc3339();
         self.update(id, |task| {
-            if task.status != TaskStatus::ReadyForReview {
+            if !task.needs_work_review() {
                 return Err(OrkestraError::InvalidState {
-                    expected: "ready_for_review".to_string(),
+                    expected: "working with summary set".to_string(),
                     actual: format!("{:?}", task.status),
                 });
             }
+            task.summary = None;
             task.review_feedback = Some(feedback.to_string());
-            task.transition_to(TaskStatus::InProgress, &now)
+            Ok(())
         })
     }
 
@@ -243,7 +243,7 @@ mod tests {
 
         assert_eq!(task.id, "TASK-001");
         assert_eq!(task.title, "Test Task");
-        assert_eq!(task.status, TaskStatus::Pending);
+        assert_eq!(task.status, TaskStatus::Planning);
         assert_eq!(task.created_at, "2025-01-21T00:00:00Z");
     }
 
@@ -253,34 +253,54 @@ mod tests {
         let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
         let service = TaskService::new(store, clock);
 
+        // Create task - starts in Planning
         let task = service.create("Test", "Desc", false).unwrap();
-        let task = service.transition(&task.id, TaskStatus::Planning).unwrap();
         assert_eq!(task.status, TaskStatus::Planning);
 
+        // Set plan - stays in Planning (plan indicates ready for review)
         let task = service.set_plan(&task.id, "My Plan").unwrap();
-        assert_eq!(task.status, TaskStatus::AwaitingApproval);
+        assert_eq!(task.status, TaskStatus::Planning);
         assert_eq!(task.plan, Some("My Plan".to_string()));
 
+        // Approve plan - transitions to Working
         let task = service.approve_plan(&task.id).unwrap();
-        assert_eq!(task.status, TaskStatus::InProgress);
+        assert_eq!(task.status, TaskStatus::Working);
 
+        // Complete work - stays in Working (summary indicates ready for review)
         let task = service.complete(&task.id, "Done").unwrap();
-        assert_eq!(task.status, TaskStatus::ReadyForReview);
+        assert_eq!(task.status, TaskStatus::Working);
+        assert_eq!(task.summary, Some("Done".to_string()));
 
+        // Approve review - transitions to Done
         let task = service.approve_review(&task.id).unwrap();
         assert_eq!(task.status, TaskStatus::Done);
     }
 
     #[test]
-    fn test_invalid_transition() {
+    fn test_invalid_approve_plan() {
         let store = MockStore::new();
         let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
         let service = TaskService::new(store, clock);
 
         let task = service.create("Test", "Desc", false).unwrap();
 
-        // Can't approve plan when not in AwaitingApproval
+        // Can't approve plan when no plan is set
         let result = service.approve_plan(&task.id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_approve_review() {
+        let store = MockStore::new();
+        let clock = FixedClock("2025-01-21T00:00:00Z".to_string());
+        let service = TaskService::new(store, clock);
+
+        let task = service.create("Test", "Desc", false).unwrap();
+        let task = service.set_plan(&task.id, "Plan").unwrap();
+        let task = service.approve_plan(&task.id).unwrap();
+
+        // Can't approve review when no summary is set
+        let result = service.approve_review(&task.id);
         assert!(result.is_err());
     }
 }

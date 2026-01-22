@@ -8,43 +8,60 @@ interface KanbanBoardProps {
   onSelectTask: (task: Task) => void;
 }
 
-const COLUMNS: TaskStatus[] = ["planning", "awaiting_approval", "in_progress", "ready_for_review", "done"];
+// 3 main columns - failed/blocked tasks stay inline in their relevant column
+const COLUMNS: TaskStatus[] = ["planning", "working", "done"];
 
 const COLUMN_COLORS: Record<TaskStatus, string> = {
-  pending: "bg-gray-500",
   planning: "bg-purple-500",
-  awaiting_approval: "bg-amber-500",
-  in_progress: "bg-blue-500",
-  ready_for_review: "bg-yellow-500",
+  working: "bg-blue-500",
   done: "bg-green-500",
   failed: "bg-red-500",
   blocked: "bg-orange-500",
 };
 
-export function KanbanBoard({ tasks, onUpdateStatus, selectedTaskId, onSelectTask }: KanbanBoardProps) {
-  const getTasksForStatus = (status: TaskStatus) =>
-    tasks.filter((task) => task.status === status);
+// Helper to check if a task needs review
+const needsReview = (task: Task): boolean => {
+  return (task.status === "planning" && task.plan !== undefined) ||
+         (task.status === "working" && task.summary !== undefined);
+};
 
-  // Group tasks into columns
-  const getTasksForColumn = (status: TaskStatus) => {
-    if (status === "planning") {
-      // Include pending, planning, failed, and blocked in the first column
-      return [
-        ...getTasksForStatus("pending"),
-        ...getTasksForStatus("planning"),
-        ...getTasksForStatus("failed"),
-        ...getTasksForStatus("blocked"),
-      ];
-    }
-    return getTasksForStatus(status);
-  };
+export function KanbanBoard({ tasks, selectedTaskId, onSelectTask }: KanbanBoardProps) {
+  // Group tasks into columns, with failed/blocked staying in their relevant column
+  const getTasksForColumn = (column: TaskStatus): Task[] => {
+    const columnTasks = tasks.filter((task) => {
+      if (column === "planning") {
+        // Planning column: planning tasks, or failed/blocked that were in planning phase
+        // (no summary indicates they were in planning phase)
+        return task.status === "planning" ||
+               ((task.status === "failed" || task.status === "blocked") && !task.summary);
+      }
+      if (column === "working") {
+        // Working column: working tasks, or failed/blocked that were in working phase
+        // (has summary or was explicitly in working)
+        return task.status === "working" ||
+               ((task.status === "failed" || task.status === "blocked") && task.summary);
+      }
+      // Done column: only done tasks
+      return task.status === column;
+    });
 
-  const handleMarkDone = async (taskId: string) => {
-    try {
-      await onUpdateStatus(taskId, "done");
-    } catch (err) {
-      console.error("Failed to update task:", err);
-    }
+    // Sort: needs review first, then active (has agent_pid), then failed/blocked last
+    return columnTasks.sort((a, b) => {
+      // Needs review items at top
+      const aReview = needsReview(a) ? 0 : 1;
+      const bReview = needsReview(b) ? 0 : 1;
+      if (aReview !== bReview) return aReview - bReview;
+
+      // Failed/blocked items at bottom
+      const aFailed = (a.status === "failed" || a.status === "blocked") ? 1 : 0;
+      const bFailed = (b.status === "failed" || b.status === "blocked") ? 1 : 0;
+      if (aFailed !== bFailed) return aFailed - bFailed;
+
+      // Active items (with agent running) above idle items
+      const aActive = a.agent_pid ? 0 : 1;
+      const bActive = b.agent_pid ? 0 : 1;
+      return aActive - bActive;
+    });
   };
 
   return (
@@ -79,11 +96,6 @@ export function KanbanBoard({ tasks, onUpdateStatus, selectedTaskId, onSelectTas
                     task={task}
                     onClick={() => onSelectTask(task)}
                     isSelected={task.id === selectedTaskId}
-                    onMarkDone={
-                      task.status === "ready_for_review"
-                        ? () => handleMarkDone(task.id)
-                        : undefined
-                    }
                   />
                 ))
               )}

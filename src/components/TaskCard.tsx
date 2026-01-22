@@ -2,29 +2,39 @@ import { Task } from "../types/task";
 
 interface TaskCardProps {
   task: Task;
-  onMarkDone?: () => void;
   onClick?: () => void;
   isSelected?: boolean;
 }
 
-export function TaskCard({ task, onMarkDone, onClick, isSelected }: TaskCardProps) {
+// Helper to check if a task needs review
+const needsReview = (task: Task): boolean => {
+  return (task.status === "planning" && task.plan !== undefined) ||
+         (task.status === "working" && task.summary !== undefined);
+};
+
+export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
   const isFailed = task.status === "failed";
   const isBlocked = task.status === "blocked";
   const hasActiveProcess = task.agent_pid !== undefined;
-  const isInProgress = task.status === "in_progress";
+  const isWorking = task.status === "working";
   const isPlanning = task.status === "planning";
-  const showSpinner = hasActiveProcess || isInProgress || isPlanning;
+  const taskNeedsReview = needsReview(task);
+  // Show spinner if agent is running and not waiting for review
+  const showSpinner = hasActiveProcess && !taskNeedsReview;
 
   // Task is resumable if it has sessions, no running process, and is incomplete
   const hasSession = task.sessions && Object.keys(task.sessions).length > 0;
   const isResumable = hasSession &&
     !task.agent_pid &&
-    (task.status === "planning" || task.status === "in_progress");
+    !taskNeedsReview &&
+    (isPlanning || isWorking);
 
   const borderClass = isFailed
     ? "border-red-300 bg-red-50"
     : isBlocked
     ? "border-orange-300 bg-orange-50"
+    : taskNeedsReview
+    ? "border-amber-400 bg-amber-50"
     : isSelected
     ? "border-blue-500 ring-2 ring-blue-200"
     : "border-gray-200";
@@ -36,6 +46,11 @@ export function TaskCard({ task, onMarkDone, onClick, isSelected }: TaskCardProp
     >
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-medium text-gray-900 text-sm">{task.title}</h3>
+        {taskNeedsReview && (
+          <span className="flex-shrink-0 text-amber-600 text-xs font-medium px-1.5 py-0.5 bg-amber-100 rounded">
+            Review
+          </span>
+        )}
         {showSpinner && (
           <span className="flex-shrink-0 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
         )}
@@ -60,17 +75,6 @@ export function TaskCard({ task, onMarkDone, onClick, isSelected }: TaskCardProp
       )}
       <div className="flex items-center justify-between mt-3">
         <span className="text-gray-400 text-xs font-mono">{task.id}</span>
-        {onMarkDone && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onMarkDone();
-            }}
-            className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors"
-          >
-            Mark Done
-          </button>
-        )}
       </div>
       {isFailed && task.error && (
         <p className="text-red-600 text-xs mt-2 p-2 bg-red-100 rounded">
@@ -82,7 +86,7 @@ export function TaskCard({ task, onMarkDone, onClick, isSelected }: TaskCardProp
           Blocked: {task.error}
         </p>
       )}
-      {task.summary && (
+      {task.summary && task.status === "done" && (
         <p className="text-gray-600 text-xs mt-2 p-2 bg-gray-100 rounded">
           {task.summary}
         </p>

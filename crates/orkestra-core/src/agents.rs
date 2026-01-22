@@ -1,10 +1,10 @@
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
 use std::fs;
 use std::io::BufRead;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 use crate::project;
-use crate::tasks::{Task, TaskStatus, LogEntry, ToolInput, update_task_status, add_task_session, get_subtasks};
+use crate::tasks::{add_task_session, get_subtasks, update_task_status, Task, TaskStatus};
 
 /// Agent types that can be spawned
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -18,17 +18,16 @@ pub enum AgentType {
 fn build_planner_prompt(task: &Task, agent_definition: &str) -> String {
     let feedback_section = if let Some(feedback) = &task.plan_feedback {
         format!(
-            r#"
+            r"
 
 ## Previous Plan Feedback
 
 The user has requested changes to the previous plan:
 
-{}
+{feedback}
 
 Please revise your plan to address this feedback.
-"#,
-            feedback
+"
         )
     } else {
         String::new()
@@ -52,7 +51,7 @@ The second command will automatically start the worker agent to implement your p
     };
 
     format!(
-        r#"{agent_definition}
+        r"{agent_definition}
 
 ---
 
@@ -67,7 +66,7 @@ The second command will automatically start the worker agent to implement your p
 ---
 
 {completion_instructions}
-"#,
+",
         agent_definition = agent_definition,
         task_id = task.id,
         title = task.title,
@@ -81,15 +80,14 @@ The second command will automatically start the worker agent to implement your p
 fn build_worker_prompt(task: &Task, agent_definition: &str, subtasks: Option<&[Task]>) -> String {
     let plan_section = if let Some(plan) = &task.plan {
         format!(
-            r#"
+            r"
 
 ## Approved Implementation Plan
 
 Follow this plan that was approved by the user:
 
-{}
-"#,
-            plan
+{plan}
+"
         )
     } else {
         String::new()
@@ -97,16 +95,15 @@ Follow this plan that was approved by the user:
 
     let review_feedback_section = if let Some(feedback) = &task.review_feedback {
         format!(
-            r#"
+            r"
 
 ## Review Feedback
 
 The reviewer has requested changes to your work:
 
-{}
+{feedback}
 
-Please address this feedback and continue your implementation."#,
-            feedback
+Please address this feedback and continue your implementation."
         )
     } else {
         String::new()
@@ -116,21 +113,30 @@ Please address this feedback and continue your implementation."#,
         if subs.is_empty() {
             String::new()
         } else {
-            let checklist: String = subs.iter().map(|s| {
-                let status_marker = if s.status == TaskStatus::Done { "x" } else { " " };
-                format!("- [{}] **{}**: {} (ID: {})\n", status_marker, s.title, s.description, s.id)
-            }).collect();
+            let checklist: String = subs
+                .iter()
+                .map(|s| {
+                    let status_marker = if s.status == TaskStatus::Done {
+                        "x"
+                    } else {
+                        " "
+                    };
+                    format!(
+                        "- [{}] **{}**: {} (ID: {})\n",
+                        status_marker, s.title, s.description, s.id
+                    )
+                })
+                .collect();
             format!(
-                r#"
+                r"
 
 ## Subtasks Checklist
 
 Work through these subtasks in order. Mark each complete as you finish:
 
-{}
+{checklist}
 To mark a subtask complete, run: `ork task complete-subtask SUBTASK_ID`
-"#,
-                checklist
+"
             )
         }
     } else {
@@ -171,15 +177,14 @@ Remember: When you are done with ALL work, you MUST run one of these commands:
 fn build_breakdown_prompt(task: &Task, agent_definition: &str) -> String {
     let plan_section = if let Some(plan) = &task.plan {
         format!(
-            r#"
+            r"
 
 ## Approved Implementation Plan
 
 The following plan has been approved for implementation:
 
-{}
-"#,
-            plan
+{plan}
+"
         )
     } else {
         String::new()
@@ -187,17 +192,16 @@ The following plan has been approved for implementation:
 
     let feedback_section = if let Some(feedback) = &task.breakdown_feedback {
         format!(
-            r#"
+            r"
 
 ## Previous Breakdown Feedback
 
 The user has requested changes to the previous breakdown:
 
-{}
+{feedback}
 
 Please revise your breakdown to address this feedback.
-"#,
-            feedback
+"
         )
     } else {
         String::new()
@@ -224,7 +228,7 @@ If the task is simple and doesn't need subtasks, instead run:
     };
 
     format!(
-        r#"{agent_definition}
+        r"{agent_definition}
 
 ---
 
@@ -239,7 +243,7 @@ If the task is simple and doesn't need subtasks, instead run:
 ---
 
 {completion_instructions}
-"#,
+",
         agent_definition = agent_definition,
         task_id = task.id,
         title = task.title,
@@ -263,9 +267,7 @@ fn find_cli_path() -> Option<PathBuf> {
     }
 
     // Check relative to current directory (development mode)
-    let dev_path = std::env::current_dir()
-        .ok()?
-        .join("target/debug/ork");
+    let dev_path = std::env::current_dir().ok()?.join("target/debug/ork");
     if dev_path.exists() {
         return Some(dev_path);
     }
@@ -277,7 +279,9 @@ fn find_cli_path() -> Option<PathBuf> {
 pub fn load_agent_definition(agent_type: &str) -> std::io::Result<String> {
     // Try project .orkestra/agents/ first
     if let Ok(project_root) = project::find_project_root() {
-        let local_path = project_root.join(".orkestra/agents").join(format!("{}.md", agent_type));
+        let local_path = project_root
+            .join(".orkestra/agents")
+            .join(format!("{agent_type}.md"));
         if local_path.exists() {
             return fs::read_to_string(local_path);
         }
@@ -285,7 +289,9 @@ pub fn load_agent_definition(agent_type: &str) -> std::io::Result<String> {
 
     // Fall back to home directory for global/default agents
     if let Some(home) = dirs::home_dir() {
-        let home_path = home.join(".orkestra/agents").join(format!("{}.md", agent_type));
+        let home_path = home
+            .join(".orkestra/agents")
+            .join(format!("{agent_type}.md"));
         if home_path.exists() {
             return fs::read_to_string(home_path);
         }
@@ -293,7 +299,9 @@ pub fn load_agent_definition(agent_type: &str) -> std::io::Result<String> {
 
     Err(std::io::Error::new(
         std::io::ErrorKind::NotFound,
-        format!("Agent definition not found: {} (searched .orkestra/agents/ and ~/.orkestra/agents/)", agent_type),
+        format!(
+            "Agent definition not found: {agent_type} (searched .orkestra/agents/ and ~/.orkestra/agents/)"
+        ),
     ))
 }
 
@@ -303,268 +311,6 @@ pub struct SpawnedAgent {
     pub task_id: String,
     pub process_id: u32,
     pub session_id: Option<String>,
-}
-
-/// Get path to Claude's session file
-pub fn get_claude_session_path(session_id: &str) -> Option<PathBuf> {
-    let home = dirs::home_dir()?;
-    let cwd = project::find_project_root().ok()?;
-
-    // Encode cwd: /Users/foo/bar -> -Users-foo-bar
-    let encoded_cwd = cwd.to_string_lossy().replace('/', "-");
-
-    Some(home
-        .join(".claude/projects")
-        .join(&encoded_cwd)
-        .join(format!("{}.jsonl", session_id)))
-}
-
-/// Recover logs from Claude's session file
-pub fn recover_session_logs(session_id: &str) -> std::io::Result<Vec<LogEntry>> {
-    let path = get_claude_session_path(session_id)
-        .ok_or_else(|| std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Could not determine session path"
-        ))?;
-
-    if !path.exists() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("Session file not found: {}", path.display())
-        ));
-    }
-
-    let file = fs::File::open(&path)?;
-    let reader = std::io::BufReader::new(file);
-    let mut entries = Vec::new();
-
-    // Track tool_use IDs to their tool names for correlating with results
-    let mut tool_use_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    // Track which tool_use IDs are Task tools (subagent parents)
-    let mut task_tool_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let v: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        let msg_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-        // Check if this event is part of a subagent (has parent_tool_use_id pointing to a Task)
-        let parent_tool_use_id = v.get("parent_tool_use_id")
-            .and_then(|p| p.as_str())
-            .map(|s| s.to_string());
-        let is_subagent_event = parent_tool_use_id.as_ref()
-            .map(|id| task_tool_ids.contains(id))
-            .unwrap_or(false);
-
-        // Parse assistant messages from Claude's session format
-        if msg_type == "assistant" {
-            if let Some(content) = v.get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_array())
-            {
-                for item in content {
-                    if let Some(item_type) = item.get("type").and_then(|t| t.as_str()) {
-                        match item_type {
-                            "text" => {
-                                // Skip text from subagent events (we show tool uses instead)
-                                if !is_subagent_event {
-                                    if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                                        let trimmed = text.trim();
-                                        if !trimmed.is_empty() {
-                                            entries.push(LogEntry::Text {
-                                                content: trimmed.to_string()
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                            "tool_use" => {
-                                let tool_name = item.get("name")
-                                    .and_then(|n| n.as_str())
-                                    .unwrap_or("unknown")
-                                    .to_string();
-                                let tool_id = item.get("id")
-                                    .and_then(|i| i.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let input = item.get("input")
-                                    .cloned()
-                                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-                                // Track tool_use ID -> tool name mapping
-                                tool_use_map.insert(tool_id.clone(), tool_name.clone());
-
-                                // Track Task tool IDs for identifying subagent events
-                                if tool_name == "Task" {
-                                    task_tool_ids.insert(tool_id.clone());
-                                }
-
-                                let tool_input = parse_tool_input(&tool_name, &input);
-
-                                if is_subagent_event {
-                                    // This is a subagent's tool use
-                                    entries.push(LogEntry::SubagentToolUse {
-                                        tool: tool_name,
-                                        id: tool_id,
-                                        input: tool_input,
-                                        parent_task_id: parent_tool_use_id.clone().unwrap_or_default(),
-                                    });
-                                } else {
-                                    entries.push(LogEntry::ToolUse {
-                                        tool: tool_name,
-                                        id: tool_id,
-                                        input: tool_input,
-                                    });
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        // Parse user messages for tool results
-        else if msg_type == "user" {
-            if let Some(content) = v.get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_array())
-            {
-                for item in content {
-                    if item.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
-                        let tool_use_id = item.get("tool_use_id")
-                            .and_then(|i| i.as_str())
-                            .unwrap_or("")
-                            .to_string();
-
-                        // Look up the tool name from our map
-                        let tool_name = tool_use_map.get(&tool_use_id)
-                            .cloned()
-                            .unwrap_or_else(|| "unknown".to_string());
-
-                        // Check if this result is from a subagent's tool use
-                        let is_subagent_result = is_subagent_event;
-
-                        if is_subagent_result {
-                            // Subagent tool result - show it inline
-                            let content_str = extract_tool_result_content(item);
-                            if !content_str.trim().is_empty() {
-                                entries.push(LogEntry::SubagentToolResult {
-                                    tool: tool_name,
-                                    tool_use_id,
-                                    content: content_str,
-                                    parent_task_id: parent_tool_use_id.clone().unwrap_or_default(),
-                                });
-                            }
-                        } else if tool_name == "Task" {
-                            // Final Task result (subagent summary)
-                            let content_str = extract_tool_result_content(item);
-                            if !content_str.trim().is_empty() {
-                                entries.push(LogEntry::ToolResult {
-                                    tool: tool_name,
-                                    tool_use_id,
-                                    content: content_str,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(entries)
-}
-
-/// Extract text content from a tool_result item
-fn extract_tool_result_content(item: &serde_json::Value) -> String {
-    let result_content = item.get("content");
-    match result_content {
-        Some(serde_json::Value::String(s)) => s.clone(),
-        Some(serde_json::Value::Array(arr)) => {
-            // Content might be an array of text blocks
-            arr.iter()
-                .filter_map(|item| {
-                    if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                        item.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        }
-        _ => String::new(),
-    }
-}
-
-/// Parses a tool input JSON into a structured ToolInput
-fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
-    match tool_name {
-        "Bash" => {
-            let command = input.get("command")
-                .and_then(|c| c.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Bash { command }
-        }
-        "Read" => {
-            let file_path = input.get("file_path")
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Read { file_path }
-        }
-        "Write" => {
-            let file_path = input.get("file_path")
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Write { file_path }
-        }
-        "Edit" => {
-            let file_path = input.get("file_path")
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Edit { file_path }
-        }
-        "Glob" => {
-            let pattern = input.get("pattern")
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Glob { pattern }
-        }
-        "Grep" => {
-            let pattern = input.get("pattern")
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Grep { pattern }
-        }
-        "Task" => {
-            let description = input.get("description")
-                .and_then(|d| d.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Task { description }
-        }
-        _ => {
-            // For other tools, create a compact summary
-            let summary = serde_json::to_string(input)
-                .map(|s| if s.len() > 100 { format!("{}...", &s[..100]) } else { s })
-                .unwrap_or_else(|_| "{}".to_string());
-            ToolInput::Other { summary }
-        }
-    }
 }
 
 /// Result from parsing a stream event
@@ -579,45 +325,68 @@ struct ParsedEvent {
 fn parse_stream_event(json_line: &str) -> ParsedEvent {
     let v: serde_json::Value = match serde_json::from_str(json_line) {
         Ok(v) => v,
-        Err(_) => return ParsedEvent { session_id: None, has_new_content: false },
+        Err(_) => {
+            return ParsedEvent {
+                session_id: None,
+                has_new_content: false,
+            }
+        }
     };
 
     let event_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
     // Check for system init events which contain session_id
-    if event_type == "system" {
-        if v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
-            let session_id = v.get("session_id")
+    if event_type == "system"
+        && v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
+            let session_id = v
+                .get("session_id")
                 .and_then(|s| s.as_str())
-                .map(|s| s.to_string());
-            return ParsedEvent { session_id, has_new_content: true };
+                .map(std::string::ToString::to_string);
+            return ParsedEvent {
+                session_id,
+                has_new_content: true,
+            };
         }
-    }
 
     // Check for assistant message events (these are written to session file)
     // The "assistant" type with a "message" field indicates a complete message
     if event_type == "assistant" {
         // Check if it has actual content (not just status)
         if v.get("message").is_some() {
-            return ParsedEvent { session_id: None, has_new_content: true };
+            return ParsedEvent {
+                session_id: None,
+                has_new_content: true,
+            };
         }
     }
 
     // Check for result events (tool results, which update the session)
     if event_type == "result" {
-        return ParsedEvent { session_id: None, has_new_content: true };
+        return ParsedEvent {
+            session_id: None,
+            has_new_content: true,
+        };
     }
 
-    ParsedEvent { session_id: None, has_new_content: false }
+    ParsedEvent {
+        session_id: None,
+        has_new_content: false,
+    }
 }
 
-/// Spawns a Claude Code agent to work on a task
-/// The `on_update` callback is called whenever there's new output (for real-time UI updates)
-pub fn spawn_agent<F>(task: &Task, agent_type: AgentType, on_update: F) -> std::io::Result<SpawnedAgent>
-where
-    F: Fn(&str) + Send + 'static,
-{
-    // Load the appropriate agent definition
+// =============================================================================
+// Agent Configuration & Spawn Helpers
+// =============================================================================
+
+/// Configuration resolved for spawning an agent
+struct AgentConfig {
+    prompt: String,
+    status: TaskStatus,
+    session_type: &'static str,
+}
+
+/// Resolves agent configuration: loads definition, builds prompt, determines status
+fn resolve_agent_config(task: &Task, agent_type: AgentType) -> std::io::Result<AgentConfig> {
     let agent_name = match agent_type {
         AgentType::Planner => "planner",
         AgentType::Breakdown => "breakdown",
@@ -625,26 +394,36 @@ where
     };
     let agent_def = load_agent_definition(agent_name)?;
 
-    // Build the appropriate prompt
     let prompt = match agent_type {
         AgentType::Planner => build_planner_prompt(task, &agent_def),
         AgentType::Breakdown => build_breakdown_prompt(task, &agent_def),
         AgentType::Worker => {
-            // Load subtasks (checklist items) for the worker
             let subtasks = get_subtasks(&task.id).ok();
             build_worker_prompt(task, &agent_def, subtasks.as_deref())
         }
     };
 
-    // Update task status based on agent type
-    let new_status = match agent_type {
+    let status = match agent_type {
         AgentType::Planner => TaskStatus::Planning,
         AgentType::Breakdown => TaskStatus::BreakingDown,
         AgentType::Worker => TaskStatus::Working,
     };
-    update_task_status(&task.id, new_status)?;
 
-    // Find the CLI path and add its directory to PATH for the subprocess
+    let session_type = match agent_type {
+        AgentType::Planner => "plan",
+        AgentType::Breakdown => "breakdown",
+        AgentType::Worker => "work",
+    };
+
+    Ok(AgentConfig {
+        prompt,
+        status,
+        session_type,
+    })
+}
+
+/// Prepares the PATH environment variable with the CLI directory
+fn prepare_path_env() -> String {
     let cli_path = find_cli_path();
     let mut path_env = std::env::var("PATH").unwrap_or_default();
     if let Some(ref cli) = cli_path {
@@ -652,86 +431,120 @@ where
             path_env = format!("{}:{}", parent.display(), path_env);
         }
     }
+    path_env
+}
 
-    // Get the project root to run Claude in the right directory
-    let project_root = project::find_project_root()?;
+/// Spawns a Claude process with common arguments
+fn spawn_claude_process(
+    project_root: &std::path::Path,
+    path_env: &str,
+    resume_session: Option<&str>,
+) -> std::io::Result<std::process::Child> {
+    let mut cmd = Command::new("claude");
 
-    let task_id = task.id.clone();
-
-    // Spawn claude with streaming JSON output for detailed tool usage logging
-    use std::io::Write as IoWrite;
-    let mut child = Command::new("claude")
-        .args([
-            "--print",
-            "--verbose",
-            "--output-format", "stream-json",
-            "--dangerously-skip-permissions",
-        ])
-        .env("PATH", path_env)
-        .current_dir(&project_root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    // Write the prompt to stdin
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes())?;
-        // stdin is dropped here, closing the pipe
+    if let Some(session_id) = resume_session {
+        cmd.args(["--resume", session_id]);
     }
 
-    let pid = child.id();
+    cmd.args([
+        "--print",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--dangerously-skip-permissions",
+    ])
+    .env("PATH", path_env)
+    .current_dir(project_root)
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+}
 
-    // Take stdout and stderr for processing
+/// Writes prompt to stdin and closes it
+fn write_prompt_to_stdin(child: &mut std::process::Child, prompt: &str) -> std::io::Result<()> {
+    use std::io::Write as IoWrite;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(prompt.as_bytes())?;
+    }
+    Ok(())
+}
+
+/// Spawns a thread to read stderr and collect lines
+fn spawn_stderr_reader(
+    stderr: Option<std::process::ChildStderr>,
+) -> Option<std::thread::JoinHandle<Vec<String>>> {
+    stderr.map(|stderr| {
+        std::thread::spawn(move || {
+            let reader = std::io::BufReader::new(stderr);
+            let mut lines = Vec::new();
+            for line in reader.lines() {
+                if let Ok(line) = line {
+                    lines.push(line);
+                }
+            }
+            lines
+        })
+    })
+}
+
+/// Logs stderr output if present
+fn log_stderr(task_id: &str, prefix: &str, stderr_handle: Option<std::thread::JoinHandle<Vec<String>>>) {
+    if let Some(handle) = stderr_handle {
+        if let Ok(lines) = handle.join() {
+            if !lines.is_empty() {
+                eprintln!("{} {} stderr: {}", prefix, task_id, lines.join("\n"));
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Spawn Functions
+// =============================================================================
+
+/// Spawns a Claude Code agent to work on a task
+/// The `on_update` callback is called whenever there's new output (for real-time UI updates)
+pub fn spawn_agent<F>(
+    task: &Task,
+    agent_type: AgentType,
+    on_update: F,
+) -> std::io::Result<SpawnedAgent>
+where
+    F: Fn(&str) + Send + 'static,
+{
+    let config = resolve_agent_config(task, agent_type)?;
+    update_task_status(&task.id, config.status)?;
+
+    let path_env = prepare_path_env();
+    let project_root = project::find_project_root()?;
+    let task_id = task.id.clone();
+
+    let mut child = spawn_claude_process(&project_root, &path_env, None)?;
+    write_prompt_to_stdin(&mut child, &config.prompt)?;
+
+    let pid = child.id();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
+    let session_type = config.session_type.to_string();
 
-    // Determine the session type based on agent type
-    // Feedback iterations use session resumption, so we only need base session names
-    let session_type = match agent_type {
-        AgentType::Planner => "plan".to_string(),
-        AgentType::Breakdown => "breakdown".to_string(),
-        AgentType::Worker => "work".to_string(),
-    };
-
-    // Clone task_id for the callback
     let task_id_for_callback = task_id.clone();
 
-    // Spawn a thread to capture session_id and wait for process completion
-    // Logs are not stored - they're read on-demand from Claude's session files
+    // Spawn background thread for stdout/stderr processing
     std::thread::spawn(move || {
-        // Spawn a thread to read stderr in parallel
-        let stderr_handle = stderr.map(|stderr| {
-            std::thread::spawn(move || {
-                let reader = std::io::BufReader::new(stderr);
-                let mut stderr_lines = Vec::new();
-                for line in reader.lines() {
-                    if let Ok(line) = line {
-                        stderr_lines.push(line);
-                    }
-                }
-                stderr_lines
-            })
-        });
+        let stderr_handle = spawn_stderr_reader(stderr);
 
         if let Some(stdout) = stdout {
             let reader = std::io::BufReader::new(stdout);
-
             for line in reader.lines() {
                 if let Ok(json_line) = line {
                     if json_line.trim().is_empty() {
                         continue;
                     }
-
-                    // Parse the streaming JSON event
                     let parsed = parse_stream_event(&json_line);
-
-                    // Capture session_id if present (typically first event)
                     if let Some(sid) = parsed.session_id {
                         let _ = add_task_session(&task_id, &session_type, &sid, Some(pid));
                     }
-
-                    // Only notify UI when there's meaningful new content
                     if parsed.has_new_content {
                         on_update(&task_id_for_callback);
                     }
@@ -739,24 +552,15 @@ where
             }
         }
 
-        // Collect stderr output for logging
-        if let Some(handle) = stderr_handle {
-            if let Ok(stderr_lines) = handle.join() {
-                if !stderr_lines.is_empty() {
-                    eprintln!("Agent {} stderr: {}", task_id, stderr_lines.join("\n"));
-                }
-            }
-        }
+        log_stderr(&task_id, "Agent", stderr_handle);
 
-        // Wait for the process to complete
         match child.wait() {
             Ok(status) => {
                 eprintln!("Agent {} finished with exit code: {:?}", task_id, status.code());
-                // Final notification on completion
                 on_update(&task_id_for_callback);
             }
             Err(e) => {
-                eprintln!("Agent {} error: {}", task_id, e);
+                eprintln!("Agent {task_id} error: {e}");
                 on_update(&task_id_for_callback);
             }
         }
@@ -770,191 +574,51 @@ where
 }
 
 /// Spawns a Claude Code agent and waits for session initialization before returning.
-/// This is useful for CLI contexts where we need to ensure the session_id is captured
+/// This is useful for CLI contexts where we need to ensure the `session_id` is captured
 /// before the calling process exits.
 ///
-/// Returns the SpawnedAgent with session_id populated.
+/// Returns the `SpawnedAgent` with `session_id` populated.
 /// The agent continues running in the background after this returns.
-pub fn spawn_agent_sync(task: &Task, agent_type: AgentType, timeout_secs: u64) -> std::io::Result<SpawnedAgent> {
-    // Load the appropriate agent definition
-    let agent_name = match agent_type {
-        AgentType::Planner => "planner",
-        AgentType::Breakdown => "breakdown",
-        AgentType::Worker => "worker",
-    };
-    let agent_def = load_agent_definition(agent_name)?;
+pub fn spawn_agent_sync(
+    task: &Task,
+    agent_type: AgentType,
+    timeout_secs: u64,
+) -> std::io::Result<SpawnedAgent> {
+    let config = resolve_agent_config(task, agent_type)?;
+    update_task_status(&task.id, config.status)?;
 
-    // Build the appropriate prompt
-    let prompt = match agent_type {
-        AgentType::Planner => build_planner_prompt(task, &agent_def),
-        AgentType::Breakdown => build_breakdown_prompt(task, &agent_def),
-        AgentType::Worker => {
-            // Load subtasks (checklist items) for the worker
-            let subtasks = get_subtasks(&task.id).ok();
-            build_worker_prompt(task, &agent_def, subtasks.as_deref())
-        }
-    };
-
-    // Update task status based on agent type
-    let new_status = match agent_type {
-        AgentType::Planner => TaskStatus::Planning,
-        AgentType::Breakdown => TaskStatus::BreakingDown,
-        AgentType::Worker => TaskStatus::Working,
-    };
-    update_task_status(&task.id, new_status)?;
-
-    // Find the CLI path and add its directory to PATH for the subprocess
-    let cli_path = find_cli_path();
-    let mut path_env = std::env::var("PATH").unwrap_or_default();
-    if let Some(ref cli) = cli_path {
-        if let Some(parent) = cli.parent() {
-            path_env = format!("{}:{}", parent.display(), path_env);
-        }
-    }
-
-    // Get the project root to run Claude in the right directory
+    let path_env = prepare_path_env();
     let project_root = project::find_project_root()?;
-
     let task_id = task.id.clone();
 
-    // Spawn claude with streaming JSON output
-    use std::io::Write as IoWrite;
-    let mut child = Command::new("claude")
-        .args([
-            "--print",
-            "--verbose",
-            "--output-format", "stream-json",
-            "--dangerously-skip-permissions",
-        ])
-        .env("PATH", path_env)
-        .current_dir(&project_root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    // Write the prompt to stdin
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes())?;
-    }
+    let mut child = spawn_claude_process(&project_root, &path_env, None)?;
+    write_prompt_to_stdin(&mut child, &config.prompt)?;
 
     let pid = child.id();
-
-    // Take stdout for synchronous session_id capture
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-
-    // Determine the session type based on agent type
-    // Feedback iterations use session resumption, so we only need base session names
-    let session_type = match agent_type {
-        AgentType::Planner => "plan".to_string(),
-        AgentType::Breakdown => "breakdown".to_string(),
-        AgentType::Worker => "work".to_string(),
-    };
+    let session_type = config.session_type.to_string();
 
     // Read stdout synchronously until we get the session_id or timeout
-    let mut captured_session_id: Option<String> = None;
-    let mut buffered_lines: Vec<String> = Vec::new();
+    let captured_session_id = wait_for_session_id(
+        stdout,
+        &task_id,
+        &session_type,
+        pid,
+        timeout_secs,
+    );
 
-    if let Some(stdout) = stdout {
-        let reader = std::io::BufReader::new(stdout);
-        let start_time = std::time::Instant::now();
-        let timeout = std::time::Duration::from_secs(timeout_secs);
-
-        // We'll read lines until we get session_id or timeout
-        // Use a separate thread with a channel so we can timeout
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        std::thread::spawn(move || {
-            for line in reader.lines() {
-                if tx.send(line).is_err() {
-                    break;
-                }
-            }
-        });
-
-        loop {
-            // Check for timeout
-            if start_time.elapsed() > timeout {
-                eprintln!("Warning: Timeout waiting for session_id after {} seconds", timeout_secs);
-                break;
-            }
-
-            // Try to receive a line with a small timeout
-            match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                Ok(Ok(json_line)) => {
-                    if json_line.trim().is_empty() {
-                        continue;
-                    }
-
-                    buffered_lines.push(json_line.clone());
-
-                    let parsed = parse_stream_event(&json_line);
-
-                    if let Some(sid) = parsed.session_id {
-                        // Store the session immediately with the PID
-                        let _ = add_task_session(&task_id, &session_type, &sid, Some(pid));
-                        captured_session_id = Some(sid);
-                        // We have session_id, now spawn background thread for the rest
-                        break;
-                    }
-                }
-                Ok(Err(e)) => {
-                    eprintln!("Error reading stdout: {}", e);
-                    break;
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    // Continue waiting
-                    continue;
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    // Stream ended without session_id
-                    break;
-                }
-            }
-        }
-
-        // Now spawn a background thread to continue processing the remaining output
-        let task_id_clone = task_id.clone();
-        std::thread::spawn(move || {
-            // Continue reading from the channel until it's done
-            for line_result in rx {
-                if let Ok(json_line) = line_result {
-                    if json_line.trim().is_empty() {
-                        continue;
-                    }
-                    // We don't need to do anything with these lines
-                    // The session file captures everything
-                }
-            }
-            eprintln!("Agent {} stdout processing completed", task_id_clone);
-        });
-    }
-
-    // Spawn a thread to handle stderr and wait for process completion
-    let task_id_for_stderr = task_id.clone();
+    // Spawn background thread for stderr and process completion
     std::thread::spawn(move || {
-        // Read stderr
-        if let Some(stderr) = stderr {
-            let reader = std::io::BufReader::new(stderr);
-            let mut stderr_lines = Vec::new();
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    stderr_lines.push(line);
-                }
-            }
-            if !stderr_lines.is_empty() {
-                eprintln!("Agent {} stderr: {}", task_id_for_stderr, stderr_lines.join("\n"));
-            }
-        }
+        let stderr_handle = spawn_stderr_reader(stderr);
+        log_stderr(&task_id, "Agent", stderr_handle);
 
-        // Wait for the process to complete
         match child.wait() {
             Ok(status) => {
-                eprintln!("Agent {} finished with exit code: {:?}", task_id_for_stderr, status.code());
+                eprintln!("Agent {} finished with exit code: {:?}", task_id, status.code());
             }
             Err(e) => {
-                eprintln!("Agent {} error: {}", task_id_for_stderr, e);
+                eprintln!("Agent {task_id} error: {e}");
             }
         }
     });
@@ -966,92 +630,117 @@ pub fn spawn_agent_sync(task: &Task, agent_type: AgentType, timeout_secs: u64) -
     })
 }
 
+/// Waits synchronously for `session_id` from stdout, with timeout
+fn wait_for_session_id(
+    stdout: Option<std::process::ChildStdout>,
+    task_id: &str,
+    session_type: &str,
+    pid: u32,
+    timeout_secs: u64,
+) -> Option<String> {
+    let stdout = stdout?;
+    let reader = std::io::BufReader::new(stdout);
+    let start_time = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(timeout_secs);
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in reader.lines() {
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut captured_session_id: Option<String> = None;
+    let task_id_owned = task_id.to_string();
+    let session_type_owned = session_type.to_string();
+
+    loop {
+        if start_time.elapsed() > timeout {
+            eprintln!("Warning: Timeout waiting for session_id after {timeout_secs} seconds");
+            break;
+        }
+
+        match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(Ok(json_line)) => {
+                if json_line.trim().is_empty() {
+                    continue;
+                }
+                let parsed = parse_stream_event(&json_line);
+                if let Some(sid) = parsed.session_id {
+                    let _ = add_task_session(&task_id_owned, &session_type_owned, &sid, Some(pid));
+                    captured_session_id = Some(sid);
+                    break;
+                }
+            }
+            Ok(Err(e)) => {
+                eprintln!("Error reading stdout: {e}");
+                break;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    // Spawn background thread to drain remaining stdout
+    let task_id_clone = task_id.to_string();
+    std::thread::spawn(move || {
+        // Drain remaining lines from channel (session file captures everything)
+        for _ in rx.iter().filter_map(Result::ok) {}
+        eprintln!("Agent {task_id_clone} stdout processing completed");
+    });
+
+    captured_session_id
+}
+
 /// Resumes an interrupted Claude Code session
-/// session_key specifies which session to resume (e.g., "plan", "work", "review_0")
+/// `session_key` specifies which session to resume (e.g., "plan", "work")
 /// The `on_update` callback is called whenever there's new output (for real-time UI updates)
-pub fn resume_agent<F>(task: &Task, session_key: &str, continuation_prompt: Option<&str>, on_update: F) -> std::io::Result<SpawnedAgent>
+pub fn resume_agent<F>(
+    task: &Task,
+    session_key: &str,
+    continuation_prompt: Option<&str>,
+    on_update: F,
+) -> std::io::Result<SpawnedAgent>
 where
     F: Fn(&str) + Send + 'static,
 {
-    // Get the session_id from the sessions map
-    let session_id = task.sessions.as_ref()
+    let session_id = task
+        .sessions
+        .as_ref()
         .and_then(|s| s.get(session_key))
         .map(|info| info.session_id.clone())
-        .ok_or_else(|| std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("Task has no session '{}' to resume", session_key)
-        ))?;
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Task has no session '{session_key}' to resume"),
+            )
+        })?;
 
-    // Determine default prompt based on session type
     let default_prompt = if session_key == "plan" {
         "The session was interrupted. Please continue creating the implementation plan where you left off."
     } else {
         "The session was interrupted. Please continue implementing the task where you left off."
     };
-
     let prompt = continuation_prompt.unwrap_or(default_prompt);
 
-    // Find CLI path for PATH environment
-    let cli_path = find_cli_path();
-    let mut path_env = std::env::var("PATH").unwrap_or_default();
-    if let Some(ref cli) = cli_path {
-        if let Some(parent) = cli.parent() {
-            path_env = format!("{}:{}", parent.display(), path_env);
-        }
-    }
-
+    let path_env = prepare_path_env();
     let project_root = project::find_project_root()?;
     let task_id = task.id.clone();
 
-    // Spawn claude with --resume flag
-    use std::io::Write as IoWrite;
-    let mut child = Command::new("claude")
-        .args([
-            "--resume", &session_id,
-            "--print",
-            "--verbose",
-            "--output-format", "stream-json",
-            "--dangerously-skip-permissions",
-        ])
-        .env("PATH", path_env)
-        .current_dir(&project_root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    // Send continuation prompt
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes())?;
-    }
+    let mut child = spawn_claude_process(&project_root, &path_env, Some(&session_id))?;
+    write_prompt_to_stdin(&mut child, prompt)?;
 
     let pid = child.id();
-
-    // Take stdout and stderr for processing
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
-
-    // Clone task_id for the callback
     let task_id_for_callback = task_id.clone();
 
-    // Spawn a thread to wait for process completion
-    // Logs are not stored - they're read on-demand from Claude's session files
+    // Spawn background thread for stdout/stderr processing
     std::thread::spawn(move || {
-        // Spawn a thread to read stderr in parallel
-        let stderr_handle = stderr.map(|stderr| {
-            std::thread::spawn(move || {
-                let reader = std::io::BufReader::new(stderr);
-                let mut stderr_lines = Vec::new();
-                for line in reader.lines() {
-                    if let Ok(line) = line {
-                        stderr_lines.push(line);
-                    }
-                }
-                stderr_lines
-            })
-        });
+        let stderr_handle = spawn_stderr_reader(stderr);
 
-        // Process stdout and notify on meaningful updates
         if let Some(stdout) = stdout {
             let reader = std::io::BufReader::new(stdout);
             for line in reader.lines() {
@@ -1059,7 +748,6 @@ where
                     if json_line.trim().is_empty() {
                         continue;
                     }
-                    // Parse and only notify on meaningful content
                     let parsed = parse_stream_event(&json_line);
                     if parsed.has_new_content {
                         on_update(&task_id_for_callback);
@@ -1068,24 +756,15 @@ where
             }
         }
 
-        // Collect stderr output for logging
-        if let Some(handle) = stderr_handle {
-            if let Ok(stderr_lines) = handle.join() {
-                if !stderr_lines.is_empty() {
-                    eprintln!("Resumed agent {} stderr: {}", task_id, stderr_lines.join("\n"));
-                }
-            }
-        }
+        log_stderr(&task_id, "Resumed agent", stderr_handle);
 
-        // Wait for the process to complete
         match child.wait() {
             Ok(status) => {
                 eprintln!("Resumed agent {} finished with exit code: {:?}", task_id, status.code());
-                // Final notification on completion
                 on_update(&task_id_for_callback);
             }
             Err(e) => {
-                eprintln!("Resumed agent {} error: {}", task_id, e);
+                eprintln!("Resumed agent {task_id} error: {e}");
                 on_update(&task_id_for_callback);
             }
         }
@@ -1097,4 +776,3 @@ where
         session_id: None,
     })
 }
-

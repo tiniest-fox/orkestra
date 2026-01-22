@@ -4,18 +4,21 @@ use crate::domain::Task;
 ///
 /// If subtasks (checklist items) are provided, they are included in the prompt
 /// and the worker is instructed to complete them in order.
-pub fn build_worker_prompt(task: &Task, agent_definition: &str, subtasks: Option<&[Task]>) -> String {
+pub fn build_worker_prompt(
+    task: &Task,
+    agent_definition: &str,
+    subtasks: Option<&[Task]>,
+) -> String {
     let plan_section = if let Some(plan) = &task.plan {
         format!(
-            r#"
+            r"
 
 ## Approved Implementation Plan
 
 Follow this plan that was approved by the user:
 
-{}
-"#,
-            plan
+{plan}
+"
         )
     } else {
         String::new()
@@ -23,16 +26,15 @@ Follow this plan that was approved by the user:
 
     let review_feedback_section = if let Some(feedback) = &task.review_feedback {
         format!(
-            r#"
+            r"
 
 ## Review Feedback
 
 The reviewer has requested changes to your work:
 
-{}
+{feedback}
 
-Please address this feedback and continue your implementation."#,
-            feedback
+Please address this feedback and continue your implementation."
         )
     } else {
         String::new()
@@ -42,21 +44,30 @@ Please address this feedback and continue your implementation."#,
         if subs.is_empty() {
             String::new()
         } else {
-            let checklist: String = subs.iter().map(|s| {
-                let status_marker = if s.status == crate::domain::TaskStatus::Done { "x" } else { " " };
-                format!("- [{}] **{}**: {} (ID: {})\n", status_marker, s.title, s.description, s.id)
-            }).collect();
+            let checklist: String = subs
+                .iter()
+                .map(|s| {
+                    let status_marker = if s.status == crate::domain::TaskStatus::Done {
+                        "x"
+                    } else {
+                        " "
+                    };
+                    format!(
+                        "- [{}] **{}**: {} (ID: {})\n",
+                        status_marker, s.title, s.description, s.id
+                    )
+                })
+                .collect();
             format!(
-                r#"
+                r"
 
 ## Subtasks Checklist
 
 Work through these subtasks in order. Mark each complete as you finish:
 
-{}
+{checklist}
 To mark a subtask complete, run: `ork task complete-subtask SUBTASK_ID`
-"#,
-                checklist
+"
             )
         }
     } else {

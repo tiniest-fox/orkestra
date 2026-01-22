@@ -24,9 +24,7 @@ impl ClaudeSpawner {
         }
 
         // Check relative to current directory (development mode)
-        let dev_path = std::env::current_dir()
-            .ok()?
-            .join("target/debug/ork");
+        let dev_path = std::env::current_dir().ok()?.join("target/debug/ork");
         if dev_path.exists() {
             return Some(dev_path);
         }
@@ -45,7 +43,7 @@ impl ClaudeSpawner {
         path_env
     }
 
-    /// Parse a streaming JSON event to extract session_id.
+    /// Parse a streaming JSON event to extract `session_id`.
     fn parse_session_id(json_line: &str) -> Option<String> {
         let v: serde_json::Value = serde_json::from_str(json_line).ok()?;
 
@@ -53,9 +51,10 @@ impl ClaudeSpawner {
         if v.get("type").and_then(|t| t.as_str()) == Some("system")
             && v.get("subtype").and_then(|s| s.as_str()) == Some("init")
         {
-            return v.get("session_id")
+            return v
+                .get("session_id")
                 .and_then(|s| s.as_str())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
         }
 
         None
@@ -71,11 +70,10 @@ impl ClaudeSpawner {
         let event_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
         // System init events
-        if event_type == "system" {
-            if v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
+        if event_type == "system"
+            && v.get("subtype").and_then(|s| s.as_str()) == Some("init") {
                 return true;
             }
-        }
 
         // Assistant message events
         if event_type == "assistant" && v.get("message").is_some() {
@@ -92,7 +90,11 @@ impl ClaudeSpawner {
 }
 
 impl ProcessSpawner for ClaudeSpawner {
-    fn spawn(&self, config: SpawnConfig, on_output: Box<dyn Fn() + Send>) -> Result<SpawnedProcess> {
+    fn spawn(
+        &self,
+        config: SpawnConfig,
+        on_output: Box<dyn Fn() + Send>,
+    ) -> Result<SpawnedProcess> {
         let path_env = Self::build_path_env();
 
         let mut child = Command::new("claude")
@@ -158,7 +160,7 @@ impl ProcessSpawner for ClaudeSpawner {
                     on_output();
                 }
                 Err(e) => {
-                    eprintln!("Agent error: {}", e);
+                    eprintln!("Agent error: {e}");
                     on_output();
                 }
             }
@@ -237,7 +239,7 @@ impl ProcessSpawner for ClaudeSpawner {
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(stderr);
                 for line in reader.lines().flatten() {
-                    eprintln!("Agent stderr: {}", line);
+                    eprintln!("Agent stderr: {line}");
                 }
             });
         }
@@ -289,7 +291,7 @@ impl ProcessSpawner for ClaudeSpawner {
                 std::thread::spawn(move || {
                     let reader = std::io::BufReader::new(stderr);
                     for line in reader.lines().flatten() {
-                        eprintln!("Agent stderr: {}", line);
+                        eprintln!("Agent stderr: {line}");
                     }
                 })
             });
@@ -318,7 +320,7 @@ impl ProcessSpawner for ClaudeSpawner {
                     on_output();
                 }
                 Err(e) => {
-                    eprintln!("Agent error: {}", e);
+                    eprintln!("Agent error: {e}");
                     on_output();
                 }
             }

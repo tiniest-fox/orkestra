@@ -1,5 +1,16 @@
-use orkestra_core::{Task, TaskStatus, tasks, agents, AgentType, load_tasks, recover_session_logs, resume_agent, LogEntry};
-use tasks::{request_review_changes as core_request_review_changes, approve_review as core_approve_review, approve_breakdown as core_approve_breakdown, request_breakdown_changes as core_request_breakdown_changes, skip_breakdown as core_skip_breakdown, get_subtasks as core_get_subtasks, get_child_tasks as core_get_child_tasks};
+// Tauri commands require owned types for serialization
+#![allow(clippy::needless_pass_by_value)]
+
+use orkestra_core::{
+    agents, load_tasks, recover_session_logs, resume_agent, tasks, AgentType, LogEntry, Task,
+    TaskStatus,
+};
+use tasks::{
+    approve_breakdown as core_approve_breakdown, approve_review as core_approve_review,
+    get_child_tasks as core_get_child_tasks, get_subtasks as core_get_subtasks,
+    request_breakdown_changes as core_request_breakdown_changes,
+    request_review_changes as core_request_review_changes, skip_breakdown as core_skip_breakdown,
+};
 use tauri::Emitter;
 
 #[tauri::command]
@@ -13,8 +24,14 @@ fn create_task(title: String, description: String) -> Result<Task, String> {
 }
 
 #[tauri::command]
-fn create_and_start_task(title: String, description: String, auto_approve: Option<bool>, app_handle: tauri::AppHandle) -> Result<Task, String> {
-    let task = tasks::create_task_with_options(&title, &description, auto_approve.unwrap_or(false)).map_err(|e| e.to_string())?;
+fn create_and_start_task(
+    title: String,
+    description: String,
+    auto_approve: Option<bool>,
+    app_handle: tauri::AppHandle,
+) -> Result<Task, String> {
+    let task = tasks::create_task_with_options(&title, &description, auto_approve.unwrap_or(false))
+        .map_err(|e| e.to_string())?;
 
     // Create callback that emits Tauri events for real-time updates
     let handle = app_handle.clone();
@@ -25,7 +42,10 @@ fn create_and_start_task(title: String, description: String, auto_approve: Optio
     // Spawn a planner agent to create the implementation plan
     match agents::spawn_agent(&task, AgentType::Planner, on_update) {
         Ok(spawned) => {
-            println!("Spawned planner for task {} (pid: {})", spawned.task_id, spawned.process_id);
+            println!(
+                "Spawned planner for task {} (pid: {})",
+                spawned.task_id, spawned.process_id
+            );
         }
         Err(e) => {
             eprintln!("Failed to spawn planner for task {}: {}", task.id, e);
@@ -62,10 +82,16 @@ fn approve_plan(id: String, app_handle: tauri::AppHandle) -> Result<Task, String
             // Spawn breakdown agent to create subtasks
             match agents::spawn_agent(&task, AgentType::Breakdown, on_update) {
                 Ok(spawned) => {
-                    println!("Spawned breakdown agent for task {} (pid: {})", spawned.task_id, spawned.process_id);
+                    println!(
+                        "Spawned breakdown agent for task {} (pid: {})",
+                        spawned.task_id, spawned.process_id
+                    );
                 }
                 Err(e) => {
-                    eprintln!("Failed to spawn breakdown agent for task {}: {}", task.id, e);
+                    eprintln!(
+                        "Failed to spawn breakdown agent for task {}: {}",
+                        task.id, e
+                    );
                 }
             }
         }
@@ -73,7 +99,10 @@ fn approve_plan(id: String, app_handle: tauri::AppHandle) -> Result<Task, String
             // Skip breakdown, spawn worker directly
             match agents::spawn_agent(&task, AgentType::Worker, on_update) {
                 Ok(spawned) => {
-                    println!("Spawned worker for task {} (pid: {})", spawned.task_id, spawned.process_id);
+                    println!(
+                        "Spawned worker for task {} (pid: {})",
+                        spawned.task_id, spawned.process_id
+                    );
                 }
                 Err(e) => {
                     eprintln!("Failed to spawn worker for task {}: {}", task.id, e);
@@ -92,7 +121,11 @@ fn approve_plan(id: String, app_handle: tauri::AppHandle) -> Result<Task, String
 }
 
 #[tauri::command]
-fn request_plan_changes(id: String, feedback: String, app_handle: tauri::AppHandle) -> Result<Task, String> {
+fn request_plan_changes(
+    id: String,
+    feedback: String,
+    app_handle: tauri::AppHandle,
+) -> Result<Task, String> {
     // Request changes (changes status to planning, stores feedback)
     let task = tasks::request_plan_changes(&id, &feedback).map_err(|e| e.to_string())?;
 
@@ -106,12 +139,14 @@ fn request_plan_changes(id: String, feedback: String, app_handle: tauri::AppHand
     // This keeps the conversation context instead of starting fresh
     if task.sessions.as_ref().and_then(|s| s.get("plan")).is_some() {
         let prompt = format!(
-            "The user has requested changes to your plan:\n\n{}\n\nPlease revise your plan to address this feedback.",
-            feedback
+            "The user has requested changes to your plan:\n\n{feedback}\n\nPlease revise your plan to address this feedback."
         );
         match resume_agent(&task, "plan", Some(&prompt), on_update) {
             Ok(spawned) => {
-                println!("Resumed planner for task {} revision (pid: {})", spawned.task_id, spawned.process_id);
+                println!(
+                    "Resumed planner for task {} revision (pid: {})",
+                    spawned.task_id, spawned.process_id
+                );
             }
             Err(e) => {
                 eprintln!("Failed to resume planner for task {}: {}", task.id, e);
@@ -121,7 +156,10 @@ fn request_plan_changes(id: String, feedback: String, app_handle: tauri::AppHand
         // No existing session, spawn new (shouldn't normally happen)
         match agents::spawn_agent(&task, AgentType::Planner, on_update) {
             Ok(spawned) => {
-                println!("Spawned planner for task {} revision (pid: {})", spawned.task_id, spawned.process_id);
+                println!(
+                    "Spawned planner for task {} revision (pid: {})",
+                    spawned.task_id, spawned.process_id
+                );
             }
             Err(e) => {
                 eprintln!("Failed to spawn planner for task {}: {}", task.id, e);
@@ -138,7 +176,11 @@ fn request_plan_changes(id: String, feedback: String, app_handle: tauri::AppHand
 }
 
 #[tauri::command]
-fn request_review_changes(id: String, feedback: String, app_handle: tauri::AppHandle) -> Result<Task, String> {
+fn request_review_changes(
+    id: String,
+    feedback: String,
+    app_handle: tauri::AppHandle,
+) -> Result<Task, String> {
     // Request changes (clears summary, stores feedback)
     let task = core_request_review_changes(&id, &feedback).map_err(|e| e.to_string())?;
 
@@ -149,17 +191,21 @@ fn request_review_changes(id: String, feedback: String, app_handle: tauri::AppHa
     };
 
     // Resume the work session (feedback iterations continue the same session)
-    let session_to_resume = task.sessions.as_ref()
+    let session_to_resume = task
+        .sessions
+        .as_ref()
         .and_then(|s| s.contains_key("work").then(|| "work".to_string()));
 
     if let Some(session_key) = session_to_resume {
         let prompt = format!(
-            "The reviewer has requested changes:\n\n{}\n\nPlease address this feedback and continue your implementation.",
-            feedback
+            "The reviewer has requested changes:\n\n{feedback}\n\nPlease address this feedback and continue your implementation."
         );
         match resume_agent(&task, &session_key, Some(&prompt), on_update) {
             Ok(spawned) => {
-                println!("Resumed worker for task {} review revision (pid: {})", spawned.task_id, spawned.process_id);
+                println!(
+                    "Resumed worker for task {} review revision (pid: {})",
+                    spawned.task_id, spawned.process_id
+                );
             }
             Err(e) => {
                 eprintln!("Failed to resume worker for task {}: {}", task.id, e);
@@ -169,7 +215,10 @@ fn request_review_changes(id: String, feedback: String, app_handle: tauri::AppHa
         // Fallback to spawning new if no session exists
         match agents::spawn_agent(&task, AgentType::Worker, on_update) {
             Ok(spawned) => {
-                println!("Spawned worker for task {} review revision (pid: {})", spawned.task_id, spawned.process_id);
+                println!(
+                    "Spawned worker for task {} review revision (pid: {})",
+                    spawned.task_id, spawned.process_id
+                );
             }
             Err(e) => {
                 eprintln!("Failed to spawn worker for task {}: {}", task.id, e);
@@ -210,7 +259,10 @@ fn approve_breakdown(id: String, app_handle: tauri::AppHandle) -> Result<Task, S
                 };
                 match agents::spawn_agent(&child, AgentType::Worker, on_update) {
                     Ok(spawned) => {
-                        println!("Spawned worker for child task {} (pid: {})", spawned.task_id, spawned.process_id);
+                        println!(
+                            "Spawned worker for child task {} (pid: {})",
+                            spawned.task_id, spawned.process_id
+                        );
                     }
                     Err(e) => {
                         eprintln!("Failed to spawn worker for child task {}: {}", child.id, e);
@@ -219,7 +271,7 @@ fn approve_breakdown(id: String, app_handle: tauri::AppHandle) -> Result<Task, S
             }
         }
         Err(e) => {
-            eprintln!("Failed to get child tasks for task {}: {}", id, e);
+            eprintln!("Failed to get child tasks for task {id}: {e}");
         }
     }
 
@@ -232,7 +284,11 @@ fn approve_breakdown(id: String, app_handle: tauri::AppHandle) -> Result<Task, S
 }
 
 #[tauri::command]
-fn request_breakdown_changes(id: String, feedback: String, app_handle: tauri::AppHandle) -> Result<Task, String> {
+fn request_breakdown_changes(
+    id: String,
+    feedback: String,
+    app_handle: tauri::AppHandle,
+) -> Result<Task, String> {
     // Request changes (clears breakdown, stores feedback)
     let task = core_request_breakdown_changes(&id, &feedback).map_err(|e| e.to_string())?;
 
@@ -243,30 +299,43 @@ fn request_breakdown_changes(id: String, feedback: String, app_handle: tauri::Ap
     };
 
     // Resume the breakdown session (feedback iterations continue the same session)
-    let session_to_resume = task.sessions.as_ref()
+    let session_to_resume = task
+        .sessions
+        .as_ref()
         .and_then(|s| s.contains_key("breakdown").then(|| "breakdown".to_string()));
 
     if let Some(session_key) = session_to_resume {
         let prompt = format!(
-            "The user has requested changes to your breakdown:\n\n{}\n\nPlease revise your subtask breakdown to address this feedback.",
-            feedback
+            "The user has requested changes to your breakdown:\n\n{feedback}\n\nPlease revise your subtask breakdown to address this feedback."
         );
         match resume_agent(&task, &session_key, Some(&prompt), on_update) {
             Ok(spawned) => {
-                println!("Resumed breakdown agent for task {} revision (pid: {})", spawned.task_id, spawned.process_id);
+                println!(
+                    "Resumed breakdown agent for task {} revision (pid: {})",
+                    spawned.task_id, spawned.process_id
+                );
             }
             Err(e) => {
-                eprintln!("Failed to resume breakdown agent for task {}: {}", task.id, e);
+                eprintln!(
+                    "Failed to resume breakdown agent for task {}: {}",
+                    task.id, e
+                );
             }
         }
     } else {
         // No existing session, spawn new (shouldn't normally happen)
         match agents::spawn_agent(&task, AgentType::Breakdown, on_update) {
             Ok(spawned) => {
-                println!("Spawned breakdown agent for task {} revision (pid: {})", spawned.task_id, spawned.process_id);
+                println!(
+                    "Spawned breakdown agent for task {} revision (pid: {})",
+                    spawned.task_id, spawned.process_id
+                );
             }
             Err(e) => {
-                eprintln!("Failed to spawn breakdown agent for task {}: {}", task.id, e);
+                eprintln!(
+                    "Failed to spawn breakdown agent for task {}: {}",
+                    task.id, e
+                );
             }
         }
     }
@@ -293,7 +362,10 @@ fn skip_breakdown(id: String, app_handle: tauri::AppHandle) -> Result<Task, Stri
     // Spawn worker agent
     match agents::spawn_agent(&task, AgentType::Worker, on_update) {
         Ok(spawned) => {
-            println!("Spawned worker for task {} (pid: {})", spawned.task_id, spawned.process_id);
+            println!(
+                "Spawned worker for task {} (pid: {})",
+                spawned.task_id, spawned.process_id
+            );
         }
         Err(e) => {
             eprintln!("Failed to spawn worker for task {}: {}", task.id, e);
@@ -328,9 +400,16 @@ fn set_task_auto_approve(id: String, enabled: bool) -> Result<Task, String> {
 /// Resume a task that was interrupted (agent process died but had session)
 /// session_key specifies which session to resume (e.g., "plan", "work", "review_0")
 #[tauri::command]
-fn resume_task(id: String, session_key: String, prompt: Option<String>, app_handle: tauri::AppHandle) -> Result<Task, String> {
+fn resume_task(
+    id: String,
+    session_key: String,
+    prompt: Option<String>,
+    app_handle: tauri::AppHandle,
+) -> Result<Task, String> {
     let tasks = load_tasks().map_err(|e| e.to_string())?;
-    let task = tasks.iter().find(|t| t.id == id)
+    let task = tasks
+        .iter()
+        .find(|t| t.id == id)
         .ok_or_else(|| "Task not found".to_string())?;
 
     // Create callback that emits Tauri events for real-time updates
@@ -339,8 +418,7 @@ fn resume_task(id: String, session_key: String, prompt: Option<String>, app_hand
         let _ = handle.emit("task-logs-updated", task_id.to_string());
     };
 
-    resume_agent(task, &session_key, prompt.as_deref(), on_update)
-        .map_err(|e| e.to_string())?;
+    resume_agent(task, &session_key, prompt.as_deref(), on_update).map_err(|e| e.to_string())?;
 
     // Return the updated task
     load_tasks()
@@ -356,24 +434,25 @@ fn resume_task(id: String, session_key: String, prompt: Option<String>, app_hand
 #[tauri::command]
 fn get_task_logs(id: String, session_key: Option<String>) -> Result<Vec<LogEntry>, String> {
     let tasks = load_tasks().map_err(|e| e.to_string())?;
-    let task = tasks.iter().find(|t| t.id == id)
+    let task = tasks
+        .iter()
+        .find(|t| t.id == id)
         .ok_or_else(|| "Task not found".to_string())?;
 
-    let sessions = match &task.sessions {
-        Some(s) => s,
-        None => return Ok(vec![]), // No sessions = no logs
+    let Some(sessions) = &task.sessions else {
+        return Ok(vec![]); // No sessions = no logs
     };
 
     // Determine which session to load
     let session_id = match session_key {
-        Some(key) => {
-            sessions.get(&key)
-                .map(|info| info.session_id.clone())
-                .ok_or_else(|| format!("Session '{}' not found", key))?
-        }
+        Some(key) => sessions
+            .get(&key)
+            .map(|info| info.session_id.clone())
+            .ok_or_else(|| format!("Session '{key}' not found"))?,
         None => {
             // Default: return most recent session (last in the ordered map)
-            sessions.values()
+            sessions
+                .values()
                 .last()
                 .map(|info| info.session_id.clone())
                 .ok_or_else(|| "No sessions available".to_string())?

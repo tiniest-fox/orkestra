@@ -5,6 +5,9 @@ description = "Orchestrate multiple Claude Code instances"
 authors = ["you"]
 edition = "2021"
 
+[lints]
+workspace = true
+
 [lib]
 name = "orkestra_lib"
 crate-type = ["lib", "cdylib", "staticlib"]

@@ -64,7 +64,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
         })
     }
 
-    /// Approve a plan. Transitions to BreakingDown or Working based on skip_breakdown.
+    /// Approve a plan. Transitions to `BreakingDown` or Working based on `skip_breakdown`.
     /// Requires: Planning + plan set.
     pub fn approve_plan(&self, id: &str) -> Result<Task> {
         let now = self.clock.now_rfc3339();
@@ -160,7 +160,13 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
     }
 
     /// Add a session to a task with optional agent PID.
-    pub fn add_session(&self, id: &str, session_type: &str, session_id: &str, agent_pid: Option<u32>) -> Result<Task> {
+    pub fn add_session(
+        &self,
+        id: &str,
+        session_type: &str,
+        session_id: &str,
+        agent_pid: Option<u32>,
+    ) -> Result<Task> {
         let now = self.clock.now_rfc3339();
         self.update(id, |task| {
             task.add_session(session_type, session_id, &now, agent_pid);
@@ -204,12 +210,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
     /// Create a subtask under a parent task (checklist item, hidden from Kanban).
     /// Subtasks have kind=Subtask and start in Working status.
     /// The parent's worker agent iterates through these; logs stay on parent.
-    pub fn create_subtask(
-        &self,
-        parent_id: &str,
-        title: &str,
-        description: &str,
-    ) -> Result<Task> {
+    pub fn create_subtask(&self, parent_id: &str, title: &str, description: &str) -> Result<Task> {
         // Verify parent exists and is in BreakingDown status
         let parent = self.get(parent_id)?;
         if parent.status != TaskStatus::BreakingDown {
@@ -251,16 +252,22 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
     /// Get subtasks (checklist items) for a task.
     pub fn get_subtasks(&self, parent_id: &str) -> Result<Vec<Task>> {
         let children = self.get_children(parent_id)?;
-        Ok(children.into_iter().filter(|t| t.kind == TaskKind::Subtask).collect())
+        Ok(children
+            .into_iter()
+            .filter(|t| t.kind == TaskKind::Subtask)
+            .collect())
     }
 
     /// Get child tasks (parallel tasks that appear in Kanban) for a task.
     pub fn get_child_tasks(&self, parent_id: &str) -> Result<Vec<Task>> {
         let children = self.get_children(parent_id)?;
-        Ok(children.into_iter().filter(|t| t.kind == TaskKind::Task).collect())
+        Ok(children
+            .into_iter()
+            .filter(|t| t.kind == TaskKind::Task)
+            .collect())
     }
 
-    /// Set the breakdown for a task. Stays in BreakingDown - breakdown field indicates ready for review.
+    /// Set the breakdown for a task. Stays in `BreakingDown` - breakdown field indicates ready for review.
     pub fn set_breakdown(&self, id: &str, breakdown: &str) -> Result<Task> {
         self.update(id, |task| {
             if task.status != TaskStatus::BreakingDown {
@@ -274,8 +281,8 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
         })
     }
 
-    /// Approve a breakdown and transition to WaitingOnSubtasks.
-    /// Requires: BreakingDown + breakdown set.
+    /// Approve a breakdown and transition to `WaitingOnSubtasks`.
+    /// Requires: `BreakingDown` + breakdown set.
     pub fn approve_breakdown(&self, id: &str) -> Result<Task> {
         let now = self.clock.now_rfc3339();
         self.update(id, |task| {
@@ -290,7 +297,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
         })
     }
 
-    /// Request changes to a breakdown. Requires: BreakingDown + breakdown set.
+    /// Request changes to a breakdown. Requires: `BreakingDown` + breakdown set.
     /// Clears the breakdown and stores feedback.
     pub fn request_breakdown_changes(&self, id: &str, feedback: &str) -> Result<Task> {
         self.update(id, |task| {
@@ -307,7 +314,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
     }
 
     /// Skip breakdown and go directly to Working.
-    /// Requires: BreakingDown status. Used when breakdown agent decides no subtasks needed.
+    /// Requires: `BreakingDown` status. Used when breakdown agent decides no subtasks needed.
     pub fn skip_breakdown(&self, id: &str) -> Result<Task> {
         let now = self.clock.now_rfc3339();
         self.update(id, |task| {
@@ -378,8 +385,8 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
 mod tests {
     use super::*;
     use crate::adapters::FixedClock;
-    use std::sync::RwLock;
     use std::collections::HashMap;
+    use std::sync::RwLock;
 
     struct MockStore {
         tasks: RwLock<HashMap<String, Task>>,
@@ -407,7 +414,10 @@ mod tests {
         }
 
         fn save(&self, task: &Task) -> Result<()> {
-            self.tasks.write().unwrap().insert(task.id.clone(), task.clone());
+            self.tasks
+                .write()
+                .unwrap()
+                .insert(task.id.clone(), task.clone());
             Ok(())
         }
 
@@ -424,7 +434,7 @@ mod tests {
             let mut id = self.next_id.write().unwrap();
             let current = *id;
             *id = current + 1;
-            Ok(format!("TASK-{:03}", current))
+            Ok(format!("TASK-{current:03}"))
         }
     }
 
@@ -453,10 +463,12 @@ mod tests {
         assert_eq!(task.status, TaskStatus::Planning);
 
         // Set skip_breakdown to use the simple flow
-        let task = service.update(&task.id, |t| {
-            t.skip_breakdown = true;
-            Ok(())
-        }).unwrap();
+        let task = service
+            .update(&task.id, |t| {
+                t.skip_breakdown = true;
+                Ok(())
+            })
+            .unwrap();
 
         // Set plan - stays in Planning (plan indicates ready for review)
         let task = service.set_plan(&task.id, "My Plan").unwrap();
@@ -497,18 +509,24 @@ mod tests {
         assert_eq!(parent.status, TaskStatus::BreakingDown);
 
         // Create child tasks (parallel, appear in Kanban)
-        let subtask1 = service.create_child_task(&parent.id, "Subtask 1", "First part").unwrap();
+        let subtask1 = service
+            .create_child_task(&parent.id, "Subtask 1", "First part")
+            .unwrap();
         assert_eq!(subtask1.parent_id, Some(parent.id.clone()));
         assert_eq!(subtask1.status, TaskStatus::Working); // child tasks start in Working
         assert!(subtask1.skip_breakdown);
         assert_eq!(subtask1.plan, parent.plan); // inherits parent's plan
         assert_eq!(subtask1.kind, TaskKind::Task); // parallel task
 
-        let subtask2 = service.create_child_task(&parent.id, "Subtask 2", "Second part").unwrap();
+        let subtask2 = service
+            .create_child_task(&parent.id, "Subtask 2", "Second part")
+            .unwrap();
         assert_eq!(subtask2.parent_id, Some(parent.id.clone()));
 
         // Set breakdown summary
-        let parent = service.set_breakdown(&parent.id, "Split into 2 parts").unwrap();
+        let parent = service
+            .set_breakdown(&parent.id, "Split into 2 parts")
+            .unwrap();
         assert!(parent.needs_breakdown_review());
 
         // Approve breakdown - transitions to WaitingOnSubtasks
@@ -551,7 +569,9 @@ mod tests {
         let parent = service.create("Parent", "Desc", false).unwrap();
         let parent = service.set_plan(&parent.id, "Plan").unwrap();
         let parent = service.approve_plan(&parent.id).unwrap();
-        let subtask = service.create_child_task(&parent.id, "Child Task", "Desc").unwrap();
+        let subtask = service
+            .create_child_task(&parent.id, "Child Task", "Desc")
+            .unwrap();
         let parent = service.set_breakdown(&parent.id, "One subtask").unwrap();
         let parent = service.approve_breakdown(&parent.id).unwrap();
         assert_eq!(parent.status, TaskStatus::WaitingOnSubtasks);
@@ -592,13 +612,20 @@ mod tests {
         let task = service.create("Task", "Desc", false).unwrap();
         let task = service.set_plan(&task.id, "Plan").unwrap();
         let task = service.approve_plan(&task.id).unwrap();
-        let task = service.set_breakdown(&task.id, "Initial breakdown").unwrap();
+        let task = service
+            .set_breakdown(&task.id, "Initial breakdown")
+            .unwrap();
         assert!(task.needs_breakdown_review());
 
         // Request changes
-        let task = service.request_breakdown_changes(&task.id, "Split into more parts").unwrap();
+        let task = service
+            .request_breakdown_changes(&task.id, "Split into more parts")
+            .unwrap();
         assert!(task.breakdown.is_none());
-        assert_eq!(task.breakdown_feedback, Some("Split into more parts".to_string()));
+        assert_eq!(
+            task.breakdown_feedback,
+            Some("Split into more parts".to_string())
+        );
         assert_eq!(task.status, TaskStatus::BreakingDown);
     }
 

@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use std::fs;
+use std::path::PathBuf;
 
 /// Finds the project root by looking for workspace Cargo.toml or agents directory.
 /// This ensures we use a consistent root regardless of which subdirectory we're running from.

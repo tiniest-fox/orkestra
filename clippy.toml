@@ -1,0 +1,5 @@
+# Clippy configuration
+# See: https://doc.rust-lang.org/clippy/configuration.html
+
+# Allow slightly longer functions for readability
+cognitive-complexity-threshold = 30

@@ -6,7 +6,7 @@ use crate::ports::{ProcessSpawner, SpawnConfig, SpawnedProcess};
 /// Service for agent spawning operations.
 ///
 /// This service encapsulates agent-related operations,
-/// using an injected ProcessSpawner trait for actual process creation.
+/// using an injected `ProcessSpawner` trait for actual process creation.
 pub struct AgentService<P: ProcessSpawner> {
     spawner: P,
     project_root: PathBuf,
@@ -41,14 +41,10 @@ impl<P: ProcessSpawner> AgentService<P> {
     }
 
     /// Spawn an agent to work on a task.
-    pub fn spawn(
-        &self,
-        prompt: &str,
-        on_update: Box<dyn Fn() + Send>,
-    ) -> Result<SpawnedProcess> {
+    pub fn spawn(&self, prompt: &str, on_update: Box<dyn Fn() + Send>) -> Result<SpawnedProcess> {
         let args = Self::base_args();
         let config = SpawnConfig {
-            args: &args.iter().map(|s| *s).collect::<Vec<_>>(),
+            args: &args.clone(),
             cwd: &self.project_root,
             stdin_content: prompt,
         };
@@ -57,19 +53,16 @@ impl<P: ProcessSpawner> AgentService<P> {
     }
 
     /// Spawn an agent and wait for session initialization.
-    pub fn spawn_sync(
-        &self,
-        prompt: &str,
-        timeout_secs: u64,
-    ) -> Result<SpawnedProcess> {
+    pub fn spawn_sync(&self, prompt: &str, timeout_secs: u64) -> Result<SpawnedProcess> {
         let args = Self::base_args();
         let config = SpawnConfig {
-            args: &args.iter().map(|s| *s).collect::<Vec<_>>(),
+            args: &args.clone(),
             cwd: &self.project_root,
             stdin_content: prompt,
         };
 
-        self.spawner.spawn_and_wait_for_session(config, timeout_secs)
+        self.spawner
+            .spawn_and_wait_for_session(config, timeout_secs)
     }
 
     /// Resume an existing session with a continuation prompt.
@@ -81,7 +74,7 @@ impl<P: ProcessSpawner> AgentService<P> {
     ) -> Result<SpawnedProcess> {
         let args = Self::base_args();
         let config = SpawnConfig {
-            args: &args.iter().map(|s| *s).collect::<Vec<_>>(),
+            args: &args.clone(),
             cwd: &self.project_root,
             stdin_content: prompt,
         };

@@ -4,17 +4,16 @@ use crate::domain::Task;
 pub fn build_planner_prompt(task: &Task, agent_definition: &str) -> String {
     let feedback_section = if let Some(feedback) = &task.plan_feedback {
         format!(
-            r#"
+            r"
 
 ## Previous Plan Feedback
 
 The user has requested changes to the previous plan:
 
-{}
+{feedback}
 
 Please revise your plan to address this feedback.
-"#,
-            feedback
+"
         )
     } else {
         String::new()
@@ -38,7 +37,7 @@ The second command will automatically start the worker agent to implement your p
     };
 
     format!(
-        r#"{agent_definition}
+        r"{agent_definition}
 
 ---
 
@@ -53,7 +52,7 @@ The second command will automatically start the worker agent to implement your p
 ---
 
 {completion_instructions}
-"#,
+",
         agent_definition = agent_definition,
         task_id = task.id,
         title = task.title,

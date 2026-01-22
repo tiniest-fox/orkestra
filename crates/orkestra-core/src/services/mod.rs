@@ -1,5 +1,5 @@
-mod task_service;
 mod agent_service;
+mod task_service;
 
-pub use task_service::TaskService;
 pub use agent_service::AgentService;
+pub use task_service::TaskService;

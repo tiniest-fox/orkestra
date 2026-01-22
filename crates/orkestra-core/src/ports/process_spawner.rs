@@ -1,5 +1,5 @@
-use std::path::Path;
 use crate::error::Result;
+use std::path::Path;
 
 /// Result of spawning a process.
 #[derive(Debug)]
@@ -23,7 +23,8 @@ pub trait ProcessSpawner: Send + Sync {
     /// Spawn a process with the given configuration.
     ///
     /// The `on_output` callback is invoked when meaningful output is received.
-    fn spawn(&self, config: SpawnConfig, on_output: Box<dyn Fn() + Send>) -> Result<SpawnedProcess>;
+    fn spawn(&self, config: SpawnConfig, on_output: Box<dyn Fn() + Send>)
+        -> Result<SpawnedProcess>;
 
     /// Spawn a process and wait for the session ID.
     ///

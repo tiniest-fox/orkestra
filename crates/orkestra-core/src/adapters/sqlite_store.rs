@@ -1,8 +1,8 @@
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::domain::{Task, TaskStatus, TaskKind, SessionInfo};
+use crate::domain::{SessionInfo, Task, TaskKind, TaskStatus};
 use crate::error::{OrkestraError, Result};
 use crate::ports::TaskStore;
 use crate::project;
@@ -16,7 +16,7 @@ pub struct SqliteStore {
 }
 
 impl SqliteStore {
-    /// Create a new SQLite store, initializing the database if needed.
+    /// Create a new `SQLite` store, initializing the database if needed.
     pub fn new() -> Result<Self> {
         let path = Self::db_path()?;
 
@@ -61,7 +61,7 @@ impl SqliteStore {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
 
         conn.execute_batch(
-            r#"
+            r"
             CREATE TABLE IF NOT EXISTS tasks (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -98,14 +98,18 @@ impl SqliteStore {
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_task_id ON sessions(task_id);
-            "#,
+            ",
         )?;
 
         Ok(())
     }
 
     /// Load sessions for a task.
-    fn load_sessions(&self, conn: &Connection, task_id: &str) -> Result<Option<indexmap::IndexMap<String, SessionInfo>>> {
+    fn load_sessions(
+        &self,
+        conn: &Connection,
+        task_id: &str,
+    ) -> Result<Option<indexmap::IndexMap<String, SessionInfo>>> {
         let mut stmt = conn.prepare(
             "SELECT session_key, session_id, started_at, agent_pid FROM sessions WHERE task_id = ? ORDER BY id"
         )?;
@@ -135,7 +139,12 @@ impl SqliteStore {
     }
 
     /// Save sessions for a task (replaces all existing sessions).
-    fn save_sessions(&self, conn: &Connection, task_id: &str, sessions: &Option<indexmap::IndexMap<String, SessionInfo>>) -> Result<()> {
+    fn save_sessions(
+        &self,
+        conn: &Connection,
+        task_id: &str,
+        sessions: &Option<indexmap::IndexMap<String, SessionInfo>>,
+    ) -> Result<()> {
         // Delete existing sessions
         conn.execute("DELETE FROM sessions WHERE task_id = ?", params![task_id])?;
 
@@ -146,7 +155,13 @@ impl SqliteStore {
             )?;
 
             for (key, info) in sessions {
-                stmt.execute(params![task_id, key, info.session_id, info.started_at, info.agent_pid.map(|p| p as i32)])?;
+                stmt.execute(params![
+                    task_id,
+                    key,
+                    info.session_id,
+                    info.started_at,
+                    info.agent_pid.map(|p| p as i32)
+                ])?;
             }
         }
 
@@ -154,9 +169,9 @@ impl SqliteStore {
     }
 
     /// Convert a row to a Task (without sessions, which are loaded separately).
-    /// Column order: id, title, description, status, kind, created_at, updated_at,
-    /// completed_at, summary, error, plan, plan_feedback, review_feedback,
-    /// auto_approve, parent_id, breakdown, breakdown_feedback, skip_breakdown
+    /// Column order: id, title, description, status, kind, `created_at`, `updated_at`,
+    /// `completed_at`, summary, error, plan, `plan_feedback`, `review_feedback`,
+    /// `auto_approve`, `parent_id`, breakdown, `breakdown_feedback`, `skip_breakdown`
     fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         let status_str: String = row.get(3)?;
         let kind_str: String = row.get(4)?;
@@ -188,7 +203,13 @@ impl SqliteStore {
 
     /// Add a session to a task atomically with optional agent PID.
     /// This is the key method that solves our race condition - it uses a transaction.
-    pub fn add_session(&self, task_id: &str, session_key: &str, session_id: &str, agent_pid: Option<u32>) -> Result<()> {
+    pub fn add_session(
+        &self,
+        task_id: &str,
+        session_key: &str,
+        session_id: &str,
+        agent_pid: Option<u32>,
+    ) -> Result<()> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
 
         // Use INSERT OR REPLACE to handle concurrent adds
@@ -212,17 +233,34 @@ impl SqliteStore {
 
         // Validate field name to prevent SQL injection
         let valid_fields = [
-            "title", "description", "status", "kind", "completed_at", "summary",
-            "error", "plan", "plan_feedback", "review_feedback", "parent_id",
-            "breakdown", "breakdown_feedback",
+            "title",
+            "description",
+            "status",
+            "kind",
+            "completed_at",
+            "summary",
+            "error",
+            "plan",
+            "plan_feedback",
+            "review_feedback",
+            "parent_id",
+            "breakdown",
+            "breakdown_feedback",
         ];
 
         if !valid_fields.contains(&field) {
-            return Err(OrkestraError::InvalidInput(format!("Invalid field: {}", field)));
+            return Err(OrkestraError::InvalidInput(format!(
+                "Invalid field: {field}"
+            )));
         }
 
-        let sql = format!("UPDATE tasks SET {} = ?, updated_at = ? WHERE id = ?", field);
-        conn.execute(&sql, params![value, chrono::Utc::now().to_rfc3339(), task_id])?;
+        let sql = format!(
+            "UPDATE tasks SET {field} = ?, updated_at = ? WHERE id = ?"
+        );
+        conn.execute(
+            &sql,
+            params![value, chrono::Utc::now().to_rfc3339(), task_id],
+        )?;
 
         Ok(())
     }
@@ -233,18 +271,22 @@ impl SqliteStore {
 
         conn.execute(
             "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
-            params![status_to_str(&status), chrono::Utc::now().to_rfc3339(), task_id],
+            params![
+                status_to_str(&status),
+                chrono::Utc::now().to_rfc3339(),
+                task_id
+            ],
         )?;
 
         Ok(())
     }
 
-    /// Get child tasks (tasks with parent_id = given id and kind = 'task').
+    /// Get child tasks (tasks with `parent_id` = given id and kind = 'task').
     pub fn get_child_tasks(&self, parent_id: &str) -> Result<Vec<Task>> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
 
         let mut stmt = conn.prepare(
-            "SELECT * FROM tasks WHERE parent_id = ? AND kind = 'task' ORDER BY created_at"
+            "SELECT * FROM tasks WHERE parent_id = ? AND kind = 'task' ORDER BY created_at",
         )?;
 
         let rows = stmt.query_map(params![parent_id], Self::row_to_task)?;
@@ -259,12 +301,12 @@ impl SqliteStore {
         Ok(tasks)
     }
 
-    /// Get subtasks (tasks with parent_id = given id and kind = 'subtask').
+    /// Get subtasks (tasks with `parent_id` = given id and kind = 'subtask').
     pub fn get_subtasks(&self, parent_id: &str) -> Result<Vec<Task>> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
 
         let mut stmt = conn.prepare(
-            "SELECT * FROM tasks WHERE parent_id = ? AND kind = 'subtask' ORDER BY created_at"
+            "SELECT * FROM tasks WHERE parent_id = ? AND kind = 'subtask' ORDER BY created_at",
         )?;
 
         let rows = stmt.query_map(params![parent_id], Self::row_to_task)?;
@@ -278,7 +320,6 @@ impl SqliteStore {
 
         Ok(tasks)
     }
-
 }
 
 impl TaskStore for SqliteStore {
@@ -318,14 +359,14 @@ impl TaskStore for SqliteStore {
 
         // Use INSERT OR REPLACE to handle both insert and update
         conn.execute(
-            r#"
+            r"
             INSERT OR REPLACE INTO tasks (
                 id, title, description, status, kind, created_at, updated_at,
                 completed_at, summary, error, plan, plan_feedback,
                 review_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
                 skip_breakdown
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
+            ",
             params![
                 task.id,
                 task.title,
@@ -340,11 +381,11 @@ impl TaskStore for SqliteStore {
                 task.plan,
                 task.plan_feedback,
                 task.review_feedback,
-                task.auto_approve as i32,
+                i32::from(task.auto_approve),
                 task.parent_id,
                 task.breakdown,
                 task.breakdown_feedback,
-                task.skip_breakdown as i32,
+                i32::from(task.skip_breakdown),
             ],
         )?;
 
@@ -367,14 +408,14 @@ impl TaskStore for SqliteStore {
         // Insert all tasks
         for task in tasks {
             conn.execute(
-                r#"
+                r"
                 INSERT INTO tasks (
                     id, title, description, status, kind, created_at, updated_at,
                     completed_at, summary, error, plan, plan_feedback,
                     review_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
                     skip_breakdown
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
+                ",
                 params![
                     task.id,
                     task.title,
@@ -389,11 +430,11 @@ impl TaskStore for SqliteStore {
                     task.plan,
                     task.plan_feedback,
                     task.review_feedback,
-                    task.auto_approve as i32,
+                    i32::from(task.auto_approve),
                     task.parent_id,
                     task.breakdown,
                     task.breakdown_feedback,
-                    task.skip_breakdown as i32,
+                    i32::from(task.skip_breakdown),
                 ],
             )?;
 
@@ -423,7 +464,7 @@ impl TaskStore for SqliteStore {
         )?;
 
         let next = max_num.unwrap_or(0) + 1;
-        Ok(format!("TASK-{:03}", next))
+        Ok(format!("TASK-{next:03}"))
     }
 }
 
@@ -475,7 +516,12 @@ mod tests {
     fn test_create_and_load_task() {
         let store = SqliteStore::in_memory().unwrap();
 
-        let task = Task::new("TASK-001".into(), "Test".into(), "Description".into(), "2024-01-01T00:00:00Z");
+        let task = Task::new(
+            "TASK-001".into(),
+            "Test".into(),
+            "Description".into(),
+            "2024-01-01T00:00:00Z",
+        );
         store.save(&task).unwrap();
 
         let loaded = store.find_by_id("TASK-001").unwrap().unwrap();
@@ -487,10 +533,17 @@ mod tests {
     fn test_add_session_atomic() {
         let store = SqliteStore::in_memory().unwrap();
 
-        let task = Task::new("TASK-001".into(), "Test".into(), "Description".into(), "2024-01-01T00:00:00Z");
+        let task = Task::new(
+            "TASK-001".into(),
+            "Test".into(),
+            "Description".into(),
+            "2024-01-01T00:00:00Z",
+        );
         store.save(&task).unwrap();
 
-        store.add_session("TASK-001", "plan", "session-123", Some(12345)).unwrap();
+        store
+            .add_session("TASK-001", "plan", "session-123", Some(12345))
+            .unwrap();
 
         let loaded = store.find_by_id("TASK-001").unwrap().unwrap();
         let sessions = loaded.sessions.unwrap();

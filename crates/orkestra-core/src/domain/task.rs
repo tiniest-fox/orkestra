@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::error::{OrkestraError, Result};
+use serde::{Deserialize, Serialize};
 
 /// Task status representing the current state in the workflow.
 ///
@@ -9,8 +9,8 @@ use crate::error::{OrkestraError, Result};
 /// - Done: Task completed
 ///
 /// "Needs review" is detected by checking data fields:
-/// - Planning + plan.is_some() → needs plan approval
-/// - Working + summary.is_some() → needs work review
+/// - Planning + `plan.is_some()` → needs plan approval
+/// - Working + `summary.is_some()` → needs work review
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
@@ -46,31 +46,14 @@ impl TaskStatus {
     /// - Working -> Failed/Blocked
     /// - Any -> Failed/Blocked (can fail or block from anywhere)
     pub fn can_transition_to(&self, new: &TaskStatus) -> bool {
-        use TaskStatus::*;
+        use TaskStatus::{Planning, BreakingDown, Working, Failed, Blocked, WaitingOnSubtasks, Done};
         matches!(
             (self, new),
             // Planning transitions
-            (Planning, BreakingDown)     // plan approved, needs breakdown
-                | (Planning, Working)    // plan approved, skip_breakdown=true
-                | (Planning, Failed)
-                | (Planning, Blocked)
-                // BreakingDown transitions
-                | (BreakingDown, WaitingOnSubtasks)  // breakdown approved, subtasks created
-                | (BreakingDown, Working)            // no subtasks needed
-                | (BreakingDown, Failed)
-                | (BreakingDown, Blocked)
-                // WaitingOnSubtasks transitions
-                | (WaitingOnSubtasks, Done)    // all children done
-                | (WaitingOnSubtasks, Blocked) // child failed/blocked
-                | (WaitingOnSubtasks, Failed)
-                // Working transitions
-                | (Working, Done)        // work approved
-                | (Working, Planning)    // rare: restart planning
-                | (Working, Failed)
-                | (Working, Blocked)
-                // Can fail/block from anywhere
-                | (_, Failed)
-                | (_, Blocked)
+            (Planning, BreakingDown | Working | Failed | Blocked) |
+(BreakingDown, WaitingOnSubtasks | Working | Failed | Blocked) |
+(WaitingOnSubtasks | Working, Done) |
+(WaitingOnSubtasks | Working | _, Blocked | Failed) | (Working, Planning)
         )
     }
 }
@@ -163,7 +146,7 @@ impl Task {
         self.status == TaskStatus::Working && self.summary.is_some()
     }
 
-    /// Returns true if task is BreakingDown and has breakdown ready for review.
+    /// Returns true if task is `BreakingDown` and has breakdown ready for review.
     pub fn needs_breakdown_review(&self) -> bool {
         self.status == TaskStatus::BreakingDown && self.breakdown.is_some()
     }
@@ -173,7 +156,7 @@ impl Task {
         if !self.status.can_transition_to(&new_status) {
             return Err(OrkestraError::InvalidTransition {
                 from: format!("{:?}", self.status),
-                to: format!("{:?}", new_status),
+                to: format!("{new_status:?}"),
             });
         }
         self.status = new_status;
@@ -182,22 +165,25 @@ impl Task {
     }
 
     /// Add a session to the task.
-    pub fn add_session(&mut self, session_type: &str, session_id: &str, now: &str, agent_pid: Option<u32>) {
+    pub fn add_session(
+        &mut self,
+        session_type: &str,
+        session_id: &str,
+        now: &str,
+        agent_pid: Option<u32>,
+    ) {
         let session = SessionInfo {
             session_id: session_id.to_string(),
             started_at: now.to_string(),
             agent_pid,
         };
 
-        match &mut self.sessions {
-            Some(sessions) => {
-                sessions.insert(session_type.to_string(), session);
-            }
-            None => {
-                let mut sessions = indexmap::IndexMap::new();
-                sessions.insert(session_type.to_string(), session);
-                self.sessions = Some(sessions);
-            }
+        if let Some(sessions) = &mut self.sessions {
+            sessions.insert(session_type.to_string(), session);
+        } else {
+            let mut sessions = indexmap::IndexMap::new();
+            sessions.insert(session_type.to_string(), session);
+            self.sessions = Some(sessions);
         }
     }
 }
@@ -280,7 +266,9 @@ mod tests {
         assert_eq!(task.status, TaskStatus::BreakingDown);
 
         // BreakingDown -> WaitingOnSubtasks (breakdown approved)
-        assert!(task.transition_to(TaskStatus::WaitingOnSubtasks, "now").is_ok());
+        assert!(task
+            .transition_to(TaskStatus::WaitingOnSubtasks, "now")
+            .is_ok());
         assert_eq!(task.status, TaskStatus::WaitingOnSubtasks);
 
         // WaitingOnSubtasks -> Done (all children done)

@@ -1,5 +1,5 @@
-mod task;
 mod log_entry;
+mod task;
 
-pub use task::{Task, TaskKind, TaskStatus, SessionInfo};
 pub use log_entry::{LogEntry, ToolInput};
+pub use task::{SessionInfo, Task, TaskKind, TaskStatus};

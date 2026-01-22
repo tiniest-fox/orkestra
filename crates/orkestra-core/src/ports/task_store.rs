@@ -1,5 +1,5 @@
-use crate::error::Result;
 use crate::domain::Task;
+use crate::error::Result;
 
 /// Abstraction over task persistence.
 ///

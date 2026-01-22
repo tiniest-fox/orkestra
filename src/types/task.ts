@@ -1,9 +1,16 @@
 export type TaskStatus =
   | "planning"
+  | "breaking_down"
+  | "waiting_on_subtasks"
   | "working"
   | "done"
   | "failed"
   | "blocked";
+
+// Task kind distinguishes between parallel tasks and checklist subtasks
+// - task: Appears in Kanban board, has its own worker agent
+// - subtask: Hidden from Kanban, shown as checklist item in parent task
+export type TaskKind = "task" | "subtask";
 
 export type ToolInput =
   | { tool: "bash"; command: string }
@@ -37,6 +44,8 @@ export interface Task {
   title: string;
   description: string;
   status: TaskStatus;
+  // Kind of task: "task" (Kanban, parallel) or "subtask" (checklist item)
+  kind: TaskKind;
   created_at: string;
   updated_at: string;
   completed_at?: string;
@@ -47,15 +56,25 @@ export interface Task {
   plan_feedback?: string;
   review_feedback?: string;
   // Multi-session tracking - logs are loaded on-demand from Claude's session files
-  // Keys are session types: "plan", "work", "review_0", "review_1", etc.
+  // Keys are session types: "plan", "work", "breakdown", "review_0", "review_1", etc.
   // Object preserves insertion order (creation time)
   sessions?: Record<string, SessionInfo>;
   // Auto-approve mode - when enabled, plans are automatically approved without manual review
   auto_approve?: boolean;
+  // Parent task ID for subtasks (undefined for root tasks)
+  parent_id?: string;
+  // The breakdown produced by the breakdown agent
+  breakdown?: string;
+  // Feedback for breakdown revision
+  breakdown_feedback?: string;
+  // Whether this task should skip breakdown and go straight to working
+  skip_breakdown?: boolean;
 }
 
 export const TASK_STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
   planning: { label: "Planning", color: "bg-purple-100" },
+  breaking_down: { label: "Breaking Down", color: "bg-indigo-100" },
+  waiting_on_subtasks: { label: "Waiting", color: "bg-cyan-100" },
   working: { label: "Working", color: "bg-blue-100" },
   done: { label: "Done", color: "bg-green-100" },
   failed: { label: "Failed", color: "bg-red-100" },

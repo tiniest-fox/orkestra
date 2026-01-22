@@ -17,6 +17,7 @@ pub struct AgentService<P: ProcessSpawner> {
 #[allow(dead_code)]
 pub enum AgentType {
     Planner,
+    Breakdown,
     Worker,
 }
 

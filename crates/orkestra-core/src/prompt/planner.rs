@@ -66,7 +66,7 @@ The second command will automatically start the worker agent to implement your p
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::TaskStatus;
+    use crate::domain::{TaskKind, TaskStatus};
 
     fn create_test_task() -> Task {
         Task {
@@ -74,17 +74,21 @@ mod tests {
             title: "Test Task".to_string(),
             description: "Test description".to_string(),
             status: TaskStatus::Planning,
+            kind: TaskKind::Task,
             created_at: "now".to_string(),
             updated_at: "now".to_string(),
             completed_at: None,
             summary: None,
             error: None,
-            agent_pid: None,
             plan: None,
             plan_feedback: None,
             review_feedback: None,
             sessions: None,
             auto_approve: false,
+            parent_id: None,
+            breakdown: None,
+            breakdown_feedback: None,
+            skip_breakdown: false,
         }
     }
 

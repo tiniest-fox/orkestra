@@ -24,11 +24,20 @@ pub enum OrkestraError {
     #[error("Project root not found")]
     ProjectNotFound,
 
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("Lock acquisition failed")]
+    LockError,
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("Database error: {0}")]
+    Database(#[from] rusqlite::Error),
 }
 
 /// Result type alias for Orkestra operations.

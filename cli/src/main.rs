@@ -68,7 +68,7 @@ enum TaskAction {
     Status {
         /// Task ID
         id: String,
-        /// New status (pending, planning, awaiting_approval, in_progress, ready_for_review, done, failed, blocked)
+        /// New status (planning, breaking_down, waiting_on_subtasks, working, done, failed, blocked)
         status: String,
     },
     /// Set the implementation plan for a task (used by planner agent)
@@ -79,7 +79,7 @@ enum TaskAction {
         #[arg(short, long)]
         plan: String,
     },
-    /// Approve a task's plan and move to implementation
+    /// Approve a task's plan and move to breakdown or implementation
     Approve {
         /// Task ID
         id: String,
@@ -91,6 +91,64 @@ enum TaskAction {
         /// Feedback for the planner
         #[arg(short, long)]
         feedback: String,
+    },
+    /// Create a child task under a parent (parallel work, appears in Kanban)
+    CreateTask {
+        /// Parent task ID
+        parent_id: String,
+        /// Task title
+        #[arg(short, long)]
+        title: String,
+        /// Task description
+        #[arg(short, long, default_value = "")]
+        description: String,
+    },
+    /// Create a subtask under a parent (checklist item, hidden from Kanban)
+    CreateSubtask {
+        /// Parent task ID
+        parent_id: String,
+        /// Subtask title
+        #[arg(short, long)]
+        title: String,
+        /// Subtask description
+        #[arg(short, long, default_value = "")]
+        description: String,
+    },
+    /// Mark a subtask (checklist item) as complete
+    CompleteSubtask {
+        /// Subtask ID
+        id: String,
+    },
+    /// Set the breakdown for a task (used by breakdown agent)
+    SetBreakdown {
+        /// Task ID
+        id: String,
+        /// The breakdown summary (markdown)
+        #[arg(short, long)]
+        breakdown: String,
+    },
+    /// Approve a task's breakdown and start working on subtasks
+    ApproveBreakdown {
+        /// Task ID
+        id: String,
+    },
+    /// Request changes to a task's breakdown
+    RequestBreakdownChanges {
+        /// Task ID
+        id: String,
+        /// Feedback for the breakdown agent
+        #[arg(short, long)]
+        feedback: String,
+    },
+    /// Skip breakdown and go straight to working
+    SkipBreakdown {
+        /// Task ID
+        id: String,
+    },
+    /// Show subtasks of a parent task
+    Subtasks {
+        /// Parent task ID
+        parent_id: String,
     },
 }
 
@@ -201,16 +259,15 @@ fn main() {
             }
             TaskAction::Status { id, status } => {
                 let task_status = match status.to_lowercase().as_str() {
-                    "pending" => TaskStatus::Pending,
                     "planning" => TaskStatus::Planning,
-                    "awaiting_approval" => TaskStatus::AwaitingApproval,
-                    "in_progress" => TaskStatus::InProgress,
-                    "ready_for_review" => TaskStatus::ReadyForReview,
+                    "breaking_down" => TaskStatus::BreakingDown,
+                    "waiting_on_subtasks" => TaskStatus::WaitingOnSubtasks,
+                    "working" => TaskStatus::Working,
                     "done" => TaskStatus::Done,
                     "failed" => TaskStatus::Failed,
                     "blocked" => TaskStatus::Blocked,
                     _ => {
-                        eprintln!("Invalid status: {}. Valid values: pending, planning, awaiting_approval, in_progress, ready_for_review, done, failed, blocked", status);
+                        eprintln!("Invalid status: {}. Valid values: planning, breaking_down, waiting_on_subtasks, working, done, failed, blocked", status);
                         std::process::exit(1);
                     }
                 };
@@ -239,22 +296,41 @@ fn main() {
             TaskAction::Approve { id } => {
                 match tasks::approve_task_plan(&id) {
                     Ok(task) => {
-                        println!("Task {} plan approved. Status: in_progress", task.id);
-
-                        // Spawn a worker agent to implement the approved plan
-                        // Use the synchronous version to ensure session_id is captured
-                        // before this CLI process exits (important for auto-approve mode)
-                        match spawn_agent_sync(&task, AgentType::Worker, 30) {
-                            Ok(spawned) => {
-                                if let Some(sid) = &spawned.session_id {
-                                    println!("Spawned worker agent (pid: {}, session: {})", spawned.process_id, sid);
-                                } else {
-                                    println!("Spawned worker agent (pid: {}, session capture pending)", spawned.process_id);
+                        match task.status {
+                            TaskStatus::BreakingDown => {
+                                println!("Task {} plan approved. Status: breaking_down", task.id);
+                                // Spawn a breakdown agent
+                                match spawn_agent_sync(&task, AgentType::Breakdown, 30) {
+                                    Ok(spawned) => {
+                                        if let Some(sid) = &spawned.session_id {
+                                            println!("Spawned breakdown agent (pid: {}, session: {})", spawned.process_id, sid);
+                                        } else {
+                                            println!("Spawned breakdown agent (pid: {}, session capture pending)", spawned.process_id);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Warning: Failed to spawn breakdown agent: {}", e);
+                                    }
                                 }
                             }
-                            Err(e) => {
-                                eprintln!("Warning: Failed to spawn worker agent: {}", e);
-                                // Don't exit - the task status was already updated
+                            TaskStatus::Working => {
+                                println!("Task {} plan approved. Status: working (breakdown skipped)", task.id);
+                                // Spawn a worker agent
+                                match spawn_agent_sync(&task, AgentType::Worker, 30) {
+                                    Ok(spawned) => {
+                                        if let Some(sid) = &spawned.session_id {
+                                            println!("Spawned worker agent (pid: {}, session: {})", spawned.process_id, sid);
+                                        } else {
+                                            println!("Spawned worker agent (pid: {}, session capture pending)", spawned.process_id);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Warning: Failed to spawn worker agent: {}", e);
+                                    }
+                                }
+                            }
+                            _ => {
+                                println!("Task {} plan approved. Status: {:?}", task.id, task.status);
                             }
                         }
                     }
@@ -271,6 +347,146 @@ fn main() {
                     }
                     Err(e) => {
                         eprintln!("Error requesting changes: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::CreateTask { parent_id, title, description } => {
+                match tasks::create_child_task(&parent_id, &title, &description) {
+                    Ok(task) => {
+                        println!("Created child task: {} (parent: {})", task.id, parent_id);
+                    }
+                    Err(e) => {
+                        eprintln!("Error creating child task: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::CreateSubtask { parent_id, title, description } => {
+                match tasks::create_subtask(&parent_id, &title, &description) {
+                    Ok(task) => {
+                        println!("Created subtask (checklist): {} (parent: {})", task.id, parent_id);
+                    }
+                    Err(e) => {
+                        eprintln!("Error creating subtask: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::CompleteSubtask { id } => {
+                match tasks::complete_subtask(&id) {
+                    Ok(task) => {
+                        println!("Subtask {} marked as complete", task.id);
+                    }
+                    Err(e) => {
+                        eprintln!("Error completing subtask: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::SetBreakdown { id, breakdown } => {
+                match tasks::set_breakdown(&id, &breakdown) {
+                    Ok(task) => {
+                        println!("Breakdown set for task {}. Ready for approval.", task.id);
+                    }
+                    Err(e) => {
+                        eprintln!("Error setting breakdown: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::ApproveBreakdown { id } => {
+                match tasks::approve_breakdown(&id) {
+                    Ok(task) => {
+                        println!("Task {} breakdown approved. Status: waiting_on_subtasks", task.id);
+
+                        // Spawn worker agents for child tasks only (not subtasks/checklist items)
+                        match tasks::get_child_tasks(&id) {
+                            Ok(child_tasks) => {
+                                for child in child_tasks {
+                                    match spawn_agent_sync(&child, AgentType::Worker, 30) {
+                                        Ok(spawned) => {
+                                            if let Some(sid) = &spawned.session_id {
+                                                println!("Spawned worker for {} (pid: {}, session: {})", child.id, spawned.process_id, sid);
+                                            } else {
+                                                println!("Spawned worker for {} (pid: {}, session capture pending)", child.id, spawned.process_id);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            eprintln!("Warning: Failed to spawn worker for {}: {}", child.id, e);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Warning: Failed to get child tasks: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error approving breakdown: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::RequestBreakdownChanges { id, feedback } => {
+                match tasks::request_breakdown_changes(&id, &feedback) {
+                    Ok(task) => {
+                        println!("Breakdown changes requested for task {}. Status: breaking_down", task.id);
+                    }
+                    Err(e) => {
+                        eprintln!("Error requesting breakdown changes: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::SkipBreakdown { id } => {
+                match tasks::skip_breakdown(&id) {
+                    Ok(task) => {
+                        println!("Task {} breakdown skipped. Status: working", task.id);
+
+                        // Spawn a worker agent
+                        match spawn_agent_sync(&task, AgentType::Worker, 30) {
+                            Ok(spawned) => {
+                                if let Some(sid) = &spawned.session_id {
+                                    println!("Spawned worker agent (pid: {}, session: {})", spawned.process_id, sid);
+                                } else {
+                                    println!("Spawned worker agent (pid: {}, session capture pending)", spawned.process_id);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Warning: Failed to spawn worker agent: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error skipping breakdown: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            TaskAction::Subtasks { parent_id } => {
+                match tasks::get_children(&parent_id) {
+                    Ok(children) => {
+                        if children.is_empty() {
+                            println!("No children found for {}.", parent_id);
+                            return;
+                        }
+
+                        println!("Children of {}:", parent_id);
+                        for task in children {
+                            let kind = format!("{:?}", task.kind).to_lowercase();
+                            println!(
+                                "  {} [{}] ({}) {}",
+                                task.id,
+                                format!("{:?}", task.status).to_lowercase(),
+                                kind,
+                                task.title
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error getting children: {}", e);
                         std::process::exit(1);
                     }
                 }

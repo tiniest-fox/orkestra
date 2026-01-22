@@ -4,12 +4,13 @@ use std::fs;
 use std::io::BufRead;
 
 use crate::project;
-use crate::tasks::{Task, TaskStatus, LogEntry, ToolInput, update_task_status, set_task_agent_pid, add_task_session, get_next_review_session_key};
+use crate::tasks::{Task, TaskStatus, LogEntry, ToolInput, update_task_status, add_task_session, get_next_review_session_key, get_next_breakdown_session_key, get_subtasks};
 
 /// Agent types that can be spawned
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AgentType {
     Planner,
+    Breakdown,
     Worker,
 }
 
@@ -77,7 +78,7 @@ The second command will automatically start the worker agent to implement your p
 }
 
 /// Builds the prompt for a worker agent
-fn build_worker_prompt(task: &Task, agent_definition: &str) -> String {
+fn build_worker_prompt(task: &Task, agent_definition: &str, subtasks: Option<&[Task]>) -> String {
     let plan_section = if let Some(plan) = &task.plan {
         format!(
             r#"
@@ -111,6 +112,31 @@ Please address this feedback and continue your implementation."#,
         String::new()
     };
 
+    let subtasks_section = if let Some(subs) = subtasks {
+        if subs.is_empty() {
+            String::new()
+        } else {
+            let checklist: String = subs.iter().map(|s| {
+                let status_marker = if s.status == TaskStatus::Done { "x" } else { " " };
+                format!("- [{}] **{}**: {} (ID: {})\n", status_marker, s.title, s.description, s.id)
+            }).collect();
+            format!(
+                r#"
+
+## Subtasks Checklist
+
+Work through these subtasks in order. Mark each complete as you finish:
+
+{}
+To mark a subtask complete, run: `ork task complete-subtask SUBTASK_ID`
+"#,
+                checklist
+            )
+        }
+    } else {
+        String::new()
+    };
+
     format!(
         r#"{agent_definition}
 
@@ -123,10 +149,10 @@ Please address this feedback and continue your implementation."#,
 
 ### Description
 {description}
-{plan_section}{review_feedback_section}
+{plan_section}{subtasks_section}{review_feedback_section}
 ---
 
-Remember: When you are done, you MUST run one of these commands:
+Remember: When you are done with ALL work, you MUST run one of these commands:
 - `ork task complete {task_id} --summary "what you did"` - if successful
 - `ork task fail {task_id} --reason "why"` - if you cannot complete it
 - `ork task block {task_id} --reason "what you need"` - if you need clarification
@@ -136,7 +162,91 @@ Remember: When you are done, you MUST run one of these commands:
         title = task.title,
         description = task.description,
         plan_section = plan_section,
+        subtasks_section = subtasks_section,
         review_feedback_section = review_feedback_section,
+    )
+}
+
+/// Builds the prompt for a breakdown agent
+fn build_breakdown_prompt(task: &Task, agent_definition: &str) -> String {
+    let plan_section = if let Some(plan) = &task.plan {
+        format!(
+            r#"
+
+## Approved Implementation Plan
+
+The following plan has been approved for implementation:
+
+{}
+"#,
+            plan
+        )
+    } else {
+        String::new()
+    };
+
+    let feedback_section = if let Some(feedback) = &task.breakdown_feedback {
+        format!(
+            r#"
+
+## Previous Breakdown Feedback
+
+The user has requested changes to the previous breakdown:
+
+{}
+
+Please revise your breakdown to address this feedback.
+"#,
+            feedback
+        )
+    } else {
+        String::new()
+    };
+
+    let completion_instructions = if task.auto_approve {
+        format!(
+            r#"Remember: This task has AUTO-APPROVE enabled. When your breakdown is ready:
+1. Create all subtasks using `ork task create-subtask {task_id} --title "..." --description "..."`
+2. Run `ork task set-breakdown {task_id} --breakdown "YOUR_BREAKDOWN_SUMMARY"`
+3. Run `ork task approve-breakdown {task_id}`"#,
+            task_id = task.id
+        )
+    } else {
+        format!(
+            r#"Remember: When your breakdown is ready:
+1. Create all subtasks using `ork task create-subtask {task_id} --title "..." --description "..."`
+2. Run `ork task set-breakdown {task_id} --breakdown "YOUR_BREAKDOWN_SUMMARY"`
+
+If the task is simple and doesn't need subtasks, instead run:
+`ork task skip-breakdown {task_id}`"#,
+            task_id = task.id
+        )
+    };
+
+    format!(
+        r#"{agent_definition}
+
+---
+
+## Your Current Task
+
+**Task ID**: {task_id}
+**Title**: {title}
+
+### Description
+{description}
+{plan_section}{feedback_section}
+---
+
+{completion_instructions}
+"#,
+        agent_definition = agent_definition,
+        task_id = task.id,
+        title = task.title,
+        description = task.description,
+        plan_section = plan_section,
+        feedback_section = feedback_section,
+        completion_instructions = completion_instructions,
     )
 }
 
@@ -510,6 +620,7 @@ where
     // Load the appropriate agent definition
     let agent_name = match agent_type {
         AgentType::Planner => "planner",
+        AgentType::Breakdown => "breakdown",
         AgentType::Worker => "worker",
     };
     let agent_def = load_agent_definition(agent_name)?;
@@ -517,12 +628,18 @@ where
     // Build the appropriate prompt
     let prompt = match agent_type {
         AgentType::Planner => build_planner_prompt(task, &agent_def),
-        AgentType::Worker => build_worker_prompt(task, &agent_def),
+        AgentType::Breakdown => build_breakdown_prompt(task, &agent_def),
+        AgentType::Worker => {
+            // Load subtasks (checklist items) for the worker
+            let subtasks = get_subtasks(&task.id).ok();
+            build_worker_prompt(task, &agent_def, subtasks.as_deref())
+        }
     };
 
     // Update task status based on agent type
     let new_status = match agent_type {
         AgentType::Planner => TaskStatus::Planning,
+        AgentType::Breakdown => TaskStatus::BreakingDown,
         AgentType::Worker => TaskStatus::Working,
     };
     update_task_status(&task.id, new_status)?;
@@ -565,9 +682,6 @@ where
 
     let pid = child.id();
 
-    // Store the PID in the task
-    let _ = set_task_agent_pid(&task_id, pid);
-
     // Take stdout and stderr for processing
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -575,6 +689,14 @@ where
     // Determine the session type based on agent type and task state
     let session_type = match agent_type {
         AgentType::Planner => "plan".to_string(),
+        AgentType::Breakdown => {
+            // Check if this is a breakdown revision cycle (has breakdown_feedback)
+            if task.breakdown_feedback.is_some() {
+                get_next_breakdown_session_key(task)
+            } else {
+                "breakdown".to_string()
+            }
+        }
         AgentType::Worker => {
             // Check if this is a review cycle (has review_feedback)
             if task.review_feedback.is_some() {
@@ -619,7 +741,7 @@ where
 
                     // Capture session_id if present (typically first event)
                     if let Some(sid) = parsed.session_id {
-                        let _ = add_task_session(&task_id, &session_type, &sid);
+                        let _ = add_task_session(&task_id, &session_type, &sid, Some(pid));
                     }
 
                     // Only notify UI when there's meaningful new content
@@ -670,6 +792,7 @@ pub fn spawn_agent_sync(task: &Task, agent_type: AgentType, timeout_secs: u64) -
     // Load the appropriate agent definition
     let agent_name = match agent_type {
         AgentType::Planner => "planner",
+        AgentType::Breakdown => "breakdown",
         AgentType::Worker => "worker",
     };
     let agent_def = load_agent_definition(agent_name)?;
@@ -677,12 +800,18 @@ pub fn spawn_agent_sync(task: &Task, agent_type: AgentType, timeout_secs: u64) -
     // Build the appropriate prompt
     let prompt = match agent_type {
         AgentType::Planner => build_planner_prompt(task, &agent_def),
-        AgentType::Worker => build_worker_prompt(task, &agent_def),
+        AgentType::Breakdown => build_breakdown_prompt(task, &agent_def),
+        AgentType::Worker => {
+            // Load subtasks (checklist items) for the worker
+            let subtasks = get_subtasks(&task.id).ok();
+            build_worker_prompt(task, &agent_def, subtasks.as_deref())
+        }
     };
 
     // Update task status based on agent type
     let new_status = match agent_type {
         AgentType::Planner => TaskStatus::Planning,
+        AgentType::Breakdown => TaskStatus::BreakingDown,
         AgentType::Worker => TaskStatus::Working,
     };
     update_task_status(&task.id, new_status)?;
@@ -724,9 +853,6 @@ pub fn spawn_agent_sync(task: &Task, agent_type: AgentType, timeout_secs: u64) -
 
     let pid = child.id();
 
-    // Store the PID in the task
-    let _ = set_task_agent_pid(&task_id, pid);
-
     // Take stdout for synchronous session_id capture
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -734,6 +860,13 @@ pub fn spawn_agent_sync(task: &Task, agent_type: AgentType, timeout_secs: u64) -
     // Determine the session type based on agent type and task state
     let session_type = match agent_type {
         AgentType::Planner => "plan".to_string(),
+        AgentType::Breakdown => {
+            if task.breakdown_feedback.is_some() {
+                get_next_breakdown_session_key(task)
+            } else {
+                "breakdown".to_string()
+            }
+        }
         AgentType::Worker => {
             if task.review_feedback.is_some() {
                 get_next_review_session_key(task)
@@ -783,8 +916,8 @@ pub fn spawn_agent_sync(task: &Task, agent_type: AgentType, timeout_secs: u64) -
                     let parsed = parse_stream_event(&json_line);
 
                     if let Some(sid) = parsed.session_id {
-                        // Store the session immediately
-                        let _ = add_task_session(&task_id, &session_type, &sid);
+                        // Store the session immediately with the PID
+                        let _ = add_task_session(&task_id, &session_type, &sid, Some(pid));
                         captured_session_id = Some(sid);
                         // We have session_id, now spawn background thread for the rest
                         break;
@@ -917,7 +1050,6 @@ where
     }
 
     let pid = child.id();
-    let _ = set_task_agent_pid(&task_id, pid);
 
     // Take stdout and stderr for processing
     let stdout = child.stdout.take();

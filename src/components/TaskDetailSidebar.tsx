@@ -138,11 +138,15 @@ interface TaskDetailSidebarProps {
 const needsPlanReview = (task: Task): boolean =>
   task.status === "planning" && task.plan !== undefined;
 
+const needsBreakdownReview = (task: Task): boolean =>
+  task.status === "breaking_down" && task.breakdown !== undefined;
+
 const needsWorkReview = (task: Task): boolean =>
   task.status === "working" && task.summary !== undefined;
 
 export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSidebarProps) {
   const [feedback, setFeedback] = useState("");
+  const [breakdownFeedback, setBreakdownFeedback] = useState("");
   const [reviewFeedback, setReviewFeedback] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTogglingAutoApprove, setIsTogglingAutoApprove] = useState(false);
@@ -151,8 +155,22 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [activeSession, setActiveSession] = useState<string | null>(null);
+  const [subtasks, setSubtasks] = useState<Task[]>([]);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const statusConfig = TASK_STATUS_CONFIG[task.status];
+
+  // Fetch subtasks (checklist items) for the task
+  useEffect(() => {
+    const fetchSubtasks = async () => {
+      try {
+        const result = await invoke<Task[]>("get_subtasks", { parentId: task.id });
+        setSubtasks(result);
+      } catch {
+        setSubtasks([]);
+      }
+    };
+    fetchSubtasks();
+  }, [task.id, task.status]);
 
   // Get available sessions from the task
   const availableSessions = useMemo(() => {
@@ -162,10 +180,14 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       for (const [key, info] of Object.entries(task.sessions)) {
         let label = key;
         if (key === "plan") label = "Plan";
+        else if (key === "breakdown") label = "Breakdown";
         else if (key === "work") label = "Work";
         else if (key.startsWith("review_")) {
           const idx = parseInt(key.replace("review_", ""), 10);
           label = `Review ${idx + 1}`;
+        } else if (key.startsWith("breakdown_")) {
+          const idx = parseInt(key.replace("breakdown_", ""), 10);
+          label = `Breakdown ${idx + 1}`;
         }
         sessions.push({ key, label, info });
       }
@@ -309,8 +331,10 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   };
 
   const isPlanning = task.status === "planning";
+  const isBreakingDown = task.status === "breaking_down";
   const isWorking = task.status === "working";
   const taskNeedsPlanReview = needsPlanReview(task);
+  const taskNeedsBreakdownReview = needsBreakdownReview(task);
   const taskNeedsWorkReview = needsWorkReview(task);
 
   // Session is resumable if: has sessions, no running process, not waiting for review, and task is incomplete
@@ -318,8 +342,9 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const isResumable = hasSession &&
     !task.agent_pid &&
     !taskNeedsPlanReview &&
+    !taskNeedsBreakdownReview &&
     !taskNeedsWorkReview &&
-    (isPlanning || isWorking);
+    (isPlanning || isBreakingDown || isWorking);
 
   // Get the most recent session key for resuming
   const resumeSessionKey = useMemo(() => {
@@ -359,6 +384,44 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     }
   };
 
+  const handleApproveBreakdown = async () => {
+    setIsSubmitting(true);
+    try {
+      await invoke("approve_breakdown", { id: task.id });
+      onTaskUpdated();
+    } catch (err) {
+      console.error("Failed to approve breakdown:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRequestBreakdownChanges = async () => {
+    if (!breakdownFeedback.trim()) return;
+    setIsSubmitting(true);
+    try {
+      await invoke("request_breakdown_changes", { id: task.id, feedback: breakdownFeedback.trim() });
+      setBreakdownFeedback("");
+      onTaskUpdated();
+    } catch (err) {
+      console.error("Failed to request breakdown changes:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSkipBreakdown = async () => {
+    setIsSubmitting(true);
+    try {
+      await invoke("skip_breakdown", { id: task.id });
+      onTaskUpdated();
+    } catch (err) {
+      console.error("Failed to skip breakdown:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleResume = async () => {
     if (!resumeSessionKey) return;
     setIsSubmitting(true);
@@ -390,6 +453,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     task.status === "failed" ||
     task.status === "blocked" ||
     taskNeedsPlanReview ||
+    taskNeedsBreakdownReview ||
     taskNeedsWorkReview
   );
 
@@ -405,8 +469,12 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
                 ? "bg-green-100 text-green-700"
                 : task.status === "working"
                 ? "bg-blue-100 text-blue-700"
+                : task.status === "waiting_on_subtasks"
+                ? "bg-cyan-100 text-cyan-700"
                 : task.status === "planning"
                 ? "bg-purple-100 text-purple-700"
+                : task.status === "breaking_down"
+                ? "bg-indigo-100 text-indigo-700"
                 : task.status === "failed"
                 ? "bg-red-100 text-red-700"
                 : task.status === "blocked"
@@ -416,7 +484,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           >
             {statusConfig.label}
           </span>
-          {(taskNeedsPlanReview || taskNeedsWorkReview) && (
+          {(taskNeedsPlanReview || taskNeedsBreakdownReview || taskNeedsWorkReview) && (
             <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">
               Review
             </span>
@@ -537,6 +605,49 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
                 <p className="text-sm text-red-800">{task.error}</p>
               </div>
             )}
+            {/* Subtasks Checklist */}
+            {subtasks.length > 0 && (
+              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded">
+                <div className="text-xs font-medium text-gray-700 mb-2">
+                  Subtasks ({subtasks.filter(s => s.status === "done").length}/{subtasks.length})
+                </div>
+                <div className="space-y-2">
+                  {subtasks.map((subtask) => (
+                    <div
+                      key={subtask.id}
+                      className={`flex items-start gap-2 p-2 rounded ${
+                        subtask.status === "done" ? "bg-green-50" : "bg-white"
+                      }`}
+                    >
+                      <div className="flex-shrink-0 mt-0.5">
+                        {subtask.status === "done" ? (
+                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <div className="w-4 h-4 border-2 border-gray-300 rounded" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-medium ${
+                          subtask.status === "done" ? "text-green-700 line-through" : "text-gray-900"
+                        }`}>
+                          {subtask.title}
+                        </div>
+                        {subtask.description && (
+                          <div className="text-xs text-gray-500 mt-0.5 truncate">
+                            {subtask.description}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-shrink-0 text-xs font-mono text-gray-400">
+                        {subtask.id}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -620,8 +731,54 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
               disabled={isSubmitting}
               className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
             >
-              Approve & Start Work
+              Approve & Start Breakdown
             </button>
+          )}
+        </div>
+      )}
+
+      {/* Breakdown Approval Actions */}
+      {taskNeedsBreakdownReview && (
+        <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-indigo-50">
+          <div className="text-sm font-medium text-indigo-800 mb-3">Breakdown Review</div>
+          {task.breakdown && (
+            <div className="mb-3 p-2 bg-white rounded border border-indigo-200 text-sm text-indigo-900 max-h-32 overflow-auto">
+              {task.breakdown}
+            </div>
+          )}
+          <textarea
+            value={breakdownFeedback}
+            onChange={(e) => setBreakdownFeedback(e.target.value)}
+            placeholder="Leave feedback to request changes..."
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none mb-3"
+            rows={2}
+          />
+          {breakdownFeedback.trim() ? (
+            <button
+              onClick={handleRequestBreakdownChanges}
+              disabled={isSubmitting}
+              className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+            >
+              Request Changes
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={handleApproveBreakdown}
+                disabled={isSubmitting}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+              >
+                Approve & Start Subtasks
+              </button>
+              <button
+                onClick={handleSkipBreakdown}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 transition-colors"
+                title="Skip breakdown and work on this task directly"
+              >
+                Skip
+              </button>
+            </div>
           )}
         </div>
       )}

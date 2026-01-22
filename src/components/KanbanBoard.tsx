@@ -13,6 +13,8 @@ const COLUMNS: TaskStatus[] = ["planning", "working", "done"];
 
 const COLUMN_COLORS: Record<TaskStatus, string> = {
   planning: "bg-purple-500",
+  breaking_down: "bg-indigo-500",
+  waiting_on_subtasks: "bg-cyan-500",
   working: "bg-blue-500",
   done: "bg-green-500",
   failed: "bg-red-500",
@@ -22,24 +24,32 @@ const COLUMN_COLORS: Record<TaskStatus, string> = {
 // Helper to check if a task needs review
 const needsReview = (task: Task): boolean => {
   return (task.status === "planning" && task.plan !== undefined) ||
+         (task.status === "breaking_down" && task.breakdown !== undefined) ||
          (task.status === "working" && task.summary !== undefined);
 };
 
 export function KanbanBoard({ tasks, selectedTaskId, onSelectTask }: KanbanBoardProps) {
+  // Filter to show only:
+  // - Tasks with kind === "task" (not checklist subtasks)
+  // - Exclude waiting_on_subtasks (parent is waiting, show children instead)
+  const visibleTasks = tasks.filter((task) =>
+    task.kind === "task" && task.status !== "waiting_on_subtasks"
+  );
+
   // Group tasks into columns, with failed/blocked staying in their relevant column
   const getTasksForColumn = (column: TaskStatus): Task[] => {
-    const columnTasks = tasks.filter((task) => {
+    const columnTasks = visibleTasks.filter((task) => {
       if (column === "planning") {
-        // Planning column: planning tasks, or failed/blocked that were in planning phase
-        // (no summary indicates they were in planning phase)
+        // Planning column: planning, breaking_down tasks, or failed/blocked in planning phase
+        // (no summary indicates they were in planning/breakdown phase)
         return task.status === "planning" ||
-               ((task.status === "failed" || task.status === "blocked") && !task.summary);
+               task.status === "breaking_down" ||
+               ((task.status === "failed" || task.status === "blocked") && !task.summary && !task.breakdown);
       }
       if (column === "working") {
-        // Working column: working tasks, or failed/blocked that were in working phase
-        // (has summary or was explicitly in working)
+        // Working column: working tasks, or failed/blocked in working phase
         return task.status === "working" ||
-               ((task.status === "failed" || task.status === "blocked") && task.summary);
+               ((task.status === "failed" || task.status === "blocked") && (task.summary || task.breakdown));
       }
       // Done column: only done tasks
       return task.status === column;

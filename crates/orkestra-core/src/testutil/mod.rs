@@ -22,21 +22,26 @@
 //!
 //! let (orchestrator, _temp_dir) = create_test_orchestrator().unwrap();
 //!
-//! // Create task with worktree
-//! let task = orchestrator
-//!     .create_task_with_worktree("Feature", "Description")
-//!     .unwrap();
+//! // Use real Project methods
+//! let task = orchestrator.project.create_task("Feature", "Description").unwrap();
 //!
-//! // Simulate workflow...
-//! orchestrator.simulate_planner_complete(&task.id, "Plan").unwrap();
-//! orchestrator.task_service.approve_plan(&task.id).unwrap();
-//! orchestrator.simulate_worker_complete(&task.id, "Done").unwrap();
-//! let task = orchestrator.complete_and_integrate(&task.id).unwrap();
+//! // Skip breakdown for simplicity
+//! orchestrator.project.update_task(&task.id, |t| {
+//!     t.skip_breakdown = true;
+//!     Ok(())
+//! }).unwrap();
+//!
+//! // Simulate workflow using real code paths
+//! orchestrator.project.set_plan(&task.id, "Plan").unwrap();
+//! orchestrator.project.approve_plan(&task.id).unwrap();
+//! orchestrator.simulate_worker_changes(&task.id, "Changes").unwrap();
+//! orchestrator.project.complete_task(&task.id, "Done").unwrap();
+//! let task = orchestrator.project.approve_review(&task.id).unwrap();
 //! ```
 //!
 //! # Using Individual Mocks
 //!
-//! For unit tests, use the mocks directly:
+//! For unit tests that need trait-based mocking, use the mocks directly:
 //!
 //! ```ignore
 //! use orkestra_core::testutil::{MockStore, MockProcessSpawner};

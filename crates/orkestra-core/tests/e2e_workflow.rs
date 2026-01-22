@@ -1,11 +1,14 @@
-//! End-to-end workflow tests with mocked Claude Code.
+//! End-to-end workflow tests using real Project code.
 //!
-//! These tests verify the complete task lifecycle:
+//! These tests verify the complete task lifecycle using the actual production
+//! code paths in `Project`. The only mocking is for process spawning (Claude Code).
+//!
+//! Key test scenarios:
 //! - Task creation with git worktree
-//! - Planning phase
-//! - Working phase
-//! - Review phase
+//! - Planning phase (set plan, approve)
+//! - Working phase (simulated worker changes)
 //! - Completion with automatic merge back to primary branch
+//! - Merge conflict detection and task reopening
 
 use orkestra_core::{
     domain::{IntegrationResult, TaskStatus},
@@ -19,18 +22,19 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 // =============================================================================
-// Full Workflow Tests
+// Full Workflow Tests (using real Project code)
 // =============================================================================
 
 #[test]
 fn test_full_workflow_with_successful_merge() {
-    // Setup using convenience function
+    // Setup using convenience function - creates temp git repo with real Project
     let (orchestrator, _temp_dir) =
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
-    // Step 1: Create task with worktree
+    // Step 1: Create task (uses real Project::create_task which creates worktree)
     let task = orchestrator
-        .create_task_with_worktree("Implement feature X", "Add the new feature X to the codebase")
+        .project
+        .create_task("Implement feature X", "Add the new feature X to the codebase")
         .expect("Failed to create task");
 
     assert_eq!(task.id, "TASK-001");
@@ -43,38 +47,55 @@ fn test_full_workflow_with_successful_merge() {
     assert!(Path::new(worktree_path).exists());
     assert_eq!(task.branch_name.as_ref().unwrap(), "task/TASK-001");
 
-    // Step 2: Planner completes planning
+    // Skip breakdown for this test
+    orchestrator
+        .project
+        .update_task(&task.id, |t| {
+            t.skip_breakdown = true;
+            Ok(())
+        })
+        .unwrap();
+
+    // Step 2: Planner completes planning (uses real Project::set_plan)
     let task = orchestrator
-        .simulate_planner_complete(&task.id, "1. Create module\n2. Add tests\n3. Update docs")
+        .project
+        .set_plan(&task.id, "1. Create module\n2. Add tests\n3. Update docs")
         .expect("Failed to set plan");
 
     assert_eq!(task.status, TaskStatus::Planning);
     assert!(task.plan.is_some());
 
-    // Step 3: Plan approved, move to Working
+    // Step 3: Plan approved (uses real Project::approve_plan)
     let task = orchestrator
-        .task_service
+        .project
         .approve_plan(&task.id)
         .expect("Failed to approve plan");
 
     assert_eq!(task.status, TaskStatus::Working);
 
-    // Step 4: Worker completes work (makes changes in worktree)
-    let task = orchestrator
-        .simulate_worker_complete(&task.id, "Implemented feature X with tests")
-        .expect("Failed to complete work");
-
-    assert_eq!(task.status, TaskStatus::Working);
-    assert!(task.summary.is_some());
+    // Step 4: Worker makes changes in worktree (simulated)
+    orchestrator
+        .simulate_worker_changes(&task.id, "Implemented feature X with tests")
+        .expect("Failed to simulate worker changes");
 
     // Verify changes were committed in worktree
     let worktree_path = task.worktree_path.as_ref().unwrap();
     assert!(Path::new(worktree_path).join("changes.txt").exists());
 
-    // Step 5: Approve review and integrate (merge back to main)
+    // Step 5: Complete work (uses real Project::complete_task)
     let task = orchestrator
-        .complete_and_integrate(&task.id)
-        .expect("Failed to complete and integrate");
+        .project
+        .complete_task(&task.id, "Implemented feature X with tests")
+        .expect("Failed to complete work");
+
+    assert_eq!(task.status, TaskStatus::Working);
+    assert!(task.summary.is_some());
+
+    // Step 6: Approve review and integrate (uses real Project::approve_review)
+    let task = orchestrator
+        .project
+        .approve_review(&task.id)
+        .expect("Failed to approve review");
 
     assert_eq!(task.status, TaskStatus::Done);
 
@@ -106,63 +127,51 @@ fn test_workflow_with_merge_conflict() {
 
     // Create task with worktree
     let task = orchestrator
-        .create_task_with_worktree("Feature causing conflict", "This will conflict")
+        .project
+        .create_task("Feature causing conflict", "This will conflict")
         .expect("Failed to create task");
+
+    // Skip breakdown
+    orchestrator
+        .project
+        .update_task(&task.id, |t| {
+            t.skip_breakdown = true;
+            Ok(())
+        })
+        .unwrap();
 
     // Complete planning phase
     orchestrator
-        .simulate_planner_complete(&task.id, "Make conflicting changes")
+        .project
+        .set_plan(&task.id, "Make conflicting changes")
         .unwrap();
-    orchestrator.task_service.approve_plan(&task.id).unwrap();
+    orchestrator.project.approve_plan(&task.id).unwrap();
 
     // Make conflicting change on main BEFORE worker completes
-    std::fs::write(
-        orchestrator.project_root.join("conflict.txt"),
-        "Main branch content\n",
-    )
-    .expect("Failed to write on main");
-
-    Command::new("git")
-        .args(["add", "conflict.txt"])
-        .current_dir(&orchestrator.project_root)
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["commit", "-m", "Change on main"])
-        .current_dir(&orchestrator.project_root)
-        .output()
-        .unwrap();
+    orchestrator
+        .make_main_branch_changes("conflict.txt", "Main branch content\n", "Change on main")
+        .expect("Failed to make changes on main");
 
     // Worker makes conflicting change in worktree
-    let worktree_path = task.worktree_path.as_ref().unwrap();
-    std::fs::write(
-        Path::new(worktree_path).join("conflict.txt"),
-        "Worktree branch content\n",
-    )
-    .expect("Failed to write in worktree");
-
-    Command::new("git")
-        .args(["add", "conflict.txt"])
-        .current_dir(worktree_path)
-        .output()
-        .unwrap();
-
-    Command::new("git")
-        .args(["commit", "-m", "Conflicting change in worktree"])
-        .current_dir(worktree_path)
-        .output()
-        .unwrap();
+    orchestrator
+        .simulate_worker_file_change(
+            &task.id,
+            "conflict.txt",
+            "Worktree branch content\n",
+            "Conflicting change in worktree",
+        )
+        .expect("Failed to simulate worker file change");
 
     // Complete work
     orchestrator
-        .task_service
-        .complete(&task.id, "Made changes")
+        .project
+        .complete_task(&task.id, "Made changes")
         .unwrap();
 
     // Try to integrate - should detect conflict and reopen task
     let task = orchestrator
-        .complete_and_integrate(&task.id)
+        .project
+        .approve_review(&task.id)
         .expect("Failed to handle integration");
 
     // Task should be reopened (back to Working)
@@ -184,6 +193,7 @@ fn test_workflow_with_merge_conflict() {
     }
 
     // Worktree should still exist for conflict resolution
+    let worktree_path = task.worktree_path.as_ref().unwrap();
     assert!(
         Path::new(worktree_path).exists(),
         "Worktree should be preserved for conflict resolution"
@@ -197,19 +207,29 @@ fn test_child_task_skips_integration() {
 
     // Create parent task
     let parent = orchestrator
-        .create_task_with_worktree("Parent task", "Parent description")
+        .project
+        .create_task("Parent task", "Parent description")
         .expect("Failed to create parent task");
+
+    // Skip breakdown on parent
+    orchestrator
+        .project
+        .update_task(&parent.id, |t| {
+            t.skip_breakdown = true;
+            Ok(())
+        })
+        .unwrap();
 
     // Create child task (simulating what breakdown would do)
     let child = orchestrator
-        .task_service
-        .create("Child task", "Child description", false)
+        .project
+        .create_task("Child task", "Child description")
         .unwrap();
 
-    // Set child's parent_id and inherit worktree
+    // Set child's parent_id and inherit worktree (simulating breakdown)
     orchestrator
-        .task_service
-        .update(&child.id, |t| {
+        .project
+        .update_task(&child.id, |t| {
             t.parent_id = Some(parent.id.clone());
             t.branch_name = parent.branch_name.clone();
             t.worktree_path = parent.worktree_path.clone();
@@ -221,21 +241,23 @@ fn test_child_task_skips_integration() {
 
     // Complete the child task
     orchestrator
-        .task_service
-        .complete(&child.id, "Child work done")
+        .project
+        .complete_task(&child.id, "Child work done")
         .unwrap();
 
     // Integration should be skipped for child
     let child = orchestrator
-        .complete_and_integrate(&child.id)
+        .project
+        .approve_review(&child.id)
         .expect("Failed to complete child");
 
     assert_eq!(child.status, TaskStatus::Done);
     match &child.integration_result {
         Some(IntegrationResult::Skipped { reason }) => {
             assert!(
-                reason.contains("Not a root task"),
-                "Should skip because it's a child task"
+                reason.contains("Child task") || reason.contains("parent"),
+                "Should skip because it's a child task, got: {}",
+                reason
             );
         }
         other => panic!("Expected Skipped result, got {:?}", other),
@@ -247,6 +269,29 @@ fn test_child_task_skips_integration() {
         Path::new(parent_worktree).exists(),
         "Parent worktree should still exist"
     );
+}
+
+#[test]
+fn test_convenience_run_full_workflow() {
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Use the convenience method to run the entire workflow
+    let task = orchestrator
+        .run_full_workflow(
+            "Quick feature",
+            "A simple feature",
+            "1. Do X\n2. Do Y",
+            "Implementation content",
+            "All done!",
+        )
+        .expect("Full workflow should succeed");
+
+    assert_eq!(task.status, TaskStatus::Done);
+    assert!(matches!(
+        task.integration_result,
+        Some(IntegrationResult::Merged { .. })
+    ));
 }
 
 // =============================================================================

@@ -4,7 +4,6 @@
 #![allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 
 use rusqlite::{params, Connection};
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crate::domain::{SessionInfo, Task, TaskKind, TaskStatus};
@@ -22,8 +21,20 @@ pub struct SqliteStore {
 
 impl SqliteStore {
     /// Create a new `SQLite` store, initializing the database if needed.
+    ///
+    /// Uses project discovery to find the project root.
+    /// For explicit path control, use [`SqliteStore::for_project`].
     pub fn new() -> Result<Self> {
-        let path = Self::db_path()?;
+        let root = project::find_project_root()?;
+        Self::for_project(&root)
+    }
+
+    /// Create a `SQLite` store for a specific project directory.
+    ///
+    /// The database will be created at `{project_root}/.orkestra/tasks.db`.
+    /// The `.orkestra` directory will be created if it doesn't exist.
+    pub fn for_project(project_root: &std::path::Path) -> Result<Self> {
+        let path = project_root.join(".orkestra").join("tasks.db");
 
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
@@ -45,7 +56,6 @@ impl SqliteStore {
     }
 
     /// Create an in-memory store for testing.
-    #[cfg(test)]
     pub fn in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         let store = Self {
@@ -53,12 +63,6 @@ impl SqliteStore {
         };
         store.init_schema()?;
         Ok(store)
-    }
-
-    /// Get the path to the database file.
-    fn db_path() -> Result<PathBuf> {
-        let root = project::find_project_root()?;
-        Ok(root.join(".orkestra").join("tasks.db"))
     }
 
     /// Initialize the database schema.

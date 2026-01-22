@@ -37,7 +37,7 @@ pub use domain::{
 pub use error::{OrkestraError, Result};
 pub use ports::{Clock, ProcessSpawner, SpawnConfig, SpawnedProcess, TaskStore};
 pub use prompt::{build_planner_prompt, build_reviewer_prompt, build_worker_prompt};
-pub use services::{AgentService, TaskService};
+pub use services::{AgentService, GitService, Project, TaskService};
 
 // Auto-tasks re-exports
 pub use auto_tasks::{get_auto_task, list_auto_tasks, AutoTask};

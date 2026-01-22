@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Task, TaskStatus } from "../types/task";
+import { useCallback, useEffect, useState } from "react";
+import type { Task, TaskStatus } from "../types/task";
 
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -26,27 +26,28 @@ export function useTasks() {
     return () => clearInterval(interval);
   }, [fetchTasks]);
 
-  const createTask = useCallback(async (title: string, description: string, autoApprove?: boolean) => {
-    try {
-      // Creates task AND spawns an agent to work on it
-      const newTask = await invoke<Task>("create_and_start_task", {
-        title,
-        description,
-        autoApprove: autoApprove ?? false
-      });
-      setTasks((prev) => [...prev, newTask]);
-      return newTask;
-    } catch (err) {
-      throw new Error(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
+  const createTask = useCallback(
+    async (title: string, description: string, autoApprove?: boolean) => {
+      try {
+        // Creates task AND spawns an agent to work on it
+        const newTask = await invoke<Task>("create_and_start_task", {
+          title,
+          description,
+          autoApprove: autoApprove ?? false,
+        });
+        setTasks((prev) => [...prev, newTask]);
+        return newTask;
+      } catch (err) {
+        throw new Error(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [],
+  );
 
   const updateTaskStatus = useCallback(async (id: string, status: TaskStatus) => {
     try {
       const updated = await invoke<Task>("update_task_status", { id, status });
-      setTasks((prev) =>
-        prev.map((task) => (task.id === id ? updated : task))
-      );
+      setTasks((prev) => prev.map((task) => (task.id === id ? updated : task)));
       return updated;
     } catch (err) {
       throw new Error(err instanceof Error ? err.message : String(err));

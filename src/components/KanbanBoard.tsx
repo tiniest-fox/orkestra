@@ -1,4 +1,4 @@
-import { Task, TaskStatus, TASK_STATUS_CONFIG } from "../types/task";
+import { TASK_STATUS_CONFIG, type Task, type TaskStatus } from "../types/task";
 import { TaskCard } from "./TaskCard";
 
 interface KanbanBoardProps {
@@ -23,17 +23,19 @@ const COLUMN_COLORS: Record<TaskStatus, string> = {
 
 // Helper to check if a task needs review
 const needsReview = (task: Task): boolean => {
-  return (task.status === "planning" && task.plan !== undefined) ||
-         (task.status === "breaking_down" && task.breakdown !== undefined) ||
-         (task.status === "working" && task.summary !== undefined);
+  return (
+    (task.status === "planning" && task.plan !== undefined) ||
+    (task.status === "breaking_down" && task.breakdown !== undefined) ||
+    (task.status === "working" && task.summary !== undefined)
+  );
 };
 
 export function KanbanBoard({ tasks, selectedTaskId, onSelectTask }: KanbanBoardProps) {
   // Filter to show only:
   // - Tasks with kind === "task" (not checklist subtasks)
   // - Exclude waiting_on_subtasks (parent is waiting, show children instead)
-  const visibleTasks = tasks.filter((task) =>
-    task.kind === "task" && task.status !== "waiting_on_subtasks"
+  const visibleTasks = tasks.filter(
+    (task) => task.kind === "task" && task.status !== "waiting_on_subtasks",
   );
 
   // Group tasks into columns, with failed/blocked staying in their relevant column
@@ -42,14 +44,21 @@ export function KanbanBoard({ tasks, selectedTaskId, onSelectTask }: KanbanBoard
       if (column === "planning") {
         // Planning column: planning, breaking_down tasks, or failed/blocked in planning phase
         // (no summary indicates they were in planning/breakdown phase)
-        return task.status === "planning" ||
-               task.status === "breaking_down" ||
-               ((task.status === "failed" || task.status === "blocked") && !task.summary && !task.breakdown);
+        return (
+          task.status === "planning" ||
+          task.status === "breaking_down" ||
+          ((task.status === "failed" || task.status === "blocked") &&
+            !task.summary &&
+            !task.breakdown)
+        );
       }
       if (column === "working") {
         // Working column: working tasks, or failed/blocked in working phase
-        return task.status === "working" ||
-               ((task.status === "failed" || task.status === "blocked") && (task.summary || task.breakdown));
+        return (
+          task.status === "working" ||
+          ((task.status === "failed" || task.status === "blocked") &&
+            (task.summary || task.breakdown))
+        );
       }
       // Done column: only done tasks
       return task.status === column;
@@ -63,8 +72,8 @@ export function KanbanBoard({ tasks, selectedTaskId, onSelectTask }: KanbanBoard
       if (aReview !== bReview) return aReview - bReview;
 
       // Failed/blocked items at bottom
-      const aFailed = (a.status === "failed" || a.status === "blocked") ? 1 : 0;
-      const bFailed = (b.status === "failed" || b.status === "blocked") ? 1 : 0;
+      const aFailed = a.status === "failed" || a.status === "blocked" ? 1 : 0;
+      const bFailed = b.status === "failed" || b.status === "blocked" ? 1 : 0;
       if (aFailed !== bFailed) return aFailed - bFailed;
 
       // Active items (with agent running) above idle items
@@ -81,24 +90,15 @@ export function KanbanBoard({ tasks, selectedTaskId, onSelectTask }: KanbanBoard
       {COLUMNS.map((status) => {
         const columnTasks = getTasksForColumn(status);
         return (
-          <div
-            key={status}
-            className="flex-shrink-0 w-72 bg-gray-50 rounded-lg p-4"
-          >
+          <div key={status} className="flex-shrink-0 w-72 bg-gray-50 rounded-lg p-4">
             <h2 className="font-medium text-gray-700 mb-4 flex items-center gap-2">
-              <span
-                className={`w-3 h-3 rounded-full ${COLUMN_COLORS[status]}`}
-              />
+              <span className={`w-3 h-3 rounded-full ${COLUMN_COLORS[status]}`} />
               {TASK_STATUS_CONFIG[status].label}
-              <span className="text-gray-400 text-sm">
-                ({columnTasks.length})
-              </span>
+              <span className="text-gray-400 text-sm">({columnTasks.length})</span>
             </h2>
             <div className="space-y-3">
               {columnTasks.length === 0 ? (
-                <div className="text-gray-400 text-sm text-center py-8">
-                  No tasks
-                </div>
+                <div className="text-gray-400 text-sm text-center py-8">No tasks</div>
               ) : (
                 columnTasks.map((task) => (
                   <TaskCard

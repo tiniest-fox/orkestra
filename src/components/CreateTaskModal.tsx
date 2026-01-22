@@ -42,9 +42,11 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+    <button
+      type="button"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 border-0"
       onClick={handleBackdropClick}
+      aria-label="Close modal"
     >
       <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -60,10 +62,7 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
             )}
 
             <div>
-              <label
-                htmlFor="title"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
+              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
                 Title
               </label>
               <input
@@ -73,15 +72,13 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="What needs to be done?"
+                // biome-ignore lint/a11y/noAutofocus: intentional focus for modal UX
                 autoFocus
               />
             </div>
 
             <div>
-              <label
-                htmlFor="description"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
                 Description
               </label>
               <textarea
@@ -111,9 +108,7 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                 />
               </button>
               <div className="flex flex-col">
-                <span className="text-sm font-medium text-gray-700">
-                  Auto-approve plans
-                </span>
+                <span className="text-sm font-medium text-gray-700">Auto-approve plans</span>
                 <span className="text-xs text-gray-500">
                   Skip manual plan approval and go straight to implementation
                 </span>
@@ -139,6 +134,6 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
           </div>
         </form>
       </div>
-    </div>
+    </button>
   );
 }

@@ -26,8 +26,20 @@ export type LogEntry =
   | { type: "text"; content: string }
   | { type: "tool_use"; tool: string; id: string; input: ToolInput }
   | { type: "tool_result"; tool: string; tool_use_id: string; content: string }
-  | { type: "subagent_tool_use"; tool: string; id: string; input: ToolInput; parent_task_id: string }
-  | { type: "subagent_tool_result"; tool: string; tool_use_id: string; content: string; parent_task_id: string }
+  | {
+      type: "subagent_tool_use";
+      tool: string;
+      id: string;
+      input: ToolInput;
+      parent_task_id: string;
+    }
+  | {
+      type: "subagent_tool_result";
+      tool: string;
+      tool_use_id: string;
+      content: string;
+      parent_task_id: string;
+    }
   | { type: "process_exit"; code: number | null }
   | { type: "error"; message: string };
 

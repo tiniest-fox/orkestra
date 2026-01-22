@@ -1,9 +1,15 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
-import { Task, TASK_STATUS_CONFIG, LogEntry, ToolInput, SessionInfo } from "../types/task";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type LogEntry,
+  type SessionInfo,
+  TASK_STATUS_CONFIG,
+  type Task,
+  type ToolInput,
+} from "../types/task";
 
-type TabType = 'details' | 'plan' | 'logs';
+type TabType = "details" | "plan" | "logs";
 
 function formatToolInput(input: ToolInput): string {
   switch (input.tool) {
@@ -27,27 +33,32 @@ function ToolResultView({ tool, content }: { tool: string; content: string }) {
   const [expanded, setExpanded] = useState(false);
   const previewLength = 200;
   const isLong = content.length > previewLength;
-  const preview = isLong ? content.slice(0, previewLength) + "..." : content;
+  const preview = isLong ? `${content.slice(0, previewLength)}...` : content;
 
   return (
     <div className="border-l-2 border-green-500 pl-2 my-1 py-1 bg-gray-800 rounded-r">
-      <div
-        className="flex items-center gap-2 cursor-pointer"
+      <button
+        type="button"
+        className="flex items-center gap-2 cursor-pointer bg-transparent border-0 p-0 text-left w-full"
         onClick={() => setExpanded(!expanded)}
       >
         <svg
-          className={`w-3 h-3 text-green-400 transition-transform ${expanded ? 'rotate-90' : ''}`}
-          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+          className={`w-3 h-3 text-green-400 transition-transform ${expanded ? "rotate-90" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
         <span className="text-green-400 font-medium text-sm">{tool} Result</span>
         <span className="text-gray-500 text-xs">(subagent output)</span>
-      </div>
+      </button>
       <div className="mt-1 text-gray-300 text-sm whitespace-pre-wrap">
         {expanded ? content : preview}
         {isLong && !expanded && (
           <button
+            type="button"
             onClick={() => setExpanded(true)}
             className="ml-1 text-green-400 hover:text-green-300 text-xs"
           >
@@ -63,7 +74,7 @@ function SubagentToolResultView({ tool, content }: { tool: string; content: stri
   const [expanded, setExpanded] = useState(false);
   const previewLength = 100;
   const isLong = content.length > previewLength;
-  const preview = isLong ? content.slice(0, previewLength) + "..." : content;
+  const preview = isLong ? `${content.slice(0, previewLength)}...` : content;
 
   return (
     <div className="ml-4 border-l border-purple-500/50 pl-2 my-0.5 py-0.5 text-xs">
@@ -72,10 +83,11 @@ function SubagentToolResultView({ tool, content }: { tool: string; content: stri
         {expanded ? content : preview}
         {isLong && (
           <button
+            type="button"
             onClick={() => setExpanded(!expanded)}
             className="ml-1 text-purple-400 hover:text-purple-300"
           >
-            {expanded ? 'less' : 'more'}
+            {expanded ? "less" : "more"}
           </button>
         )}
       </span>
@@ -86,11 +98,7 @@ function SubagentToolResultView({ tool, content }: { tool: string; content: stri
 function LogEntryView({ entry }: { entry: LogEntry }) {
   switch (entry.type) {
     case "text":
-      return (
-        <div className="text-gray-100 whitespace-pre-wrap py-1">
-          {entry.content}
-        </div>
-      );
+      return <div className="text-gray-100 whitespace-pre-wrap py-1">{entry.content}</div>;
     case "tool_use":
       return (
         <div className="border-l-2 border-blue-500 pl-2 my-1 py-1">
@@ -120,11 +128,7 @@ function LogEntryView({ entry }: { entry: LogEntry }) {
         </div>
       );
     case "error":
-      return (
-        <div className="text-red-400 py-1">
-          {entry.message}
-        </div>
-      );
+      return <div className="text-red-400 py-1">{entry.message}</div>;
   }
 }
 
@@ -150,7 +154,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const [reviewFeedback, setReviewFeedback] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isTogglingAutoApprove, setIsTogglingAutoApprove] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('details');
+  const [activeTab, setActiveTab] = useState<TabType>("details");
   const [autoScroll, setAutoScroll] = useState(true);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -160,6 +164,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const statusConfig = TASK_STATUS_CONFIG[task.status];
 
   // Fetch subtasks (checklist items) for the task
+  // biome-ignore lint/correctness/useExhaustiveDependencies: task.status is intentionally included to refresh when status changes
   useEffect(() => {
     const fetchSubtasks = async () => {
       try {
@@ -229,6 +234,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   }, [fetchLogs]);
 
   // Listen for real-time log updates via Tauri events (throttled)
+  // Note: fetchLogs and onTaskUpdated are stable callbacks from useCallback/props
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
     let throttleTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -275,6 +281,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   }, [task.id, fetchLogs, onTaskUpdated]);
 
   // Reset active session when task changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: task.id triggers reset when selected task changes
   useEffect(() => {
     setActiveSession(null);
     setLogs([]);
@@ -283,10 +290,11 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const hasPlan = Boolean(task.plan);
 
   // Reset active tab when task changes, and handle plan tab visibility
+  // biome-ignore lint/correctness/useExhaustiveDependencies: task.id triggers reset when selected task changes
   useEffect(() => {
     // If currently on plan tab but plan doesn't exist, switch to details
-    if (activeTab === 'plan' && !hasPlan) {
-      setActiveTab('details');
+    if (activeTab === "plan" && !hasPlan) {
+      setActiveTab("details");
     }
   }, [task.id, hasPlan, activeTab]);
 
@@ -298,8 +306,9 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   };
 
   // Auto-scroll effect
+  // biome-ignore lint/correctness/useExhaustiveDependencies: logs triggers scroll when new logs arrive
   useEffect(() => {
-    if (autoScroll && logsContainerRef.current && activeTab === 'logs') {
+    if (autoScroll && logsContainerRef.current && activeTab === "logs") {
       logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
     }
   }, [logs, autoScroll, activeTab]);
@@ -339,7 +348,8 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
 
   // Session is resumable if: has sessions, no running process, not waiting for review, and task is incomplete
   const hasSession = task.sessions && Object.keys(task.sessions).length > 0;
-  const isResumable = hasSession &&
+  const isResumable =
+    hasSession &&
     !task.agent_pid &&
     !taskNeedsPlanReview &&
     !taskNeedsBreakdownReview &&
@@ -354,6 +364,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   }, [task.sessions]);
 
   // Reset review feedback when task changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: task.id triggers reset when selected task changes
   useEffect(() => {
     setReviewFeedback("");
   }, [task.id]);
@@ -400,7 +411,10 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     if (!breakdownFeedback.trim()) return;
     setIsSubmitting(true);
     try {
-      await invoke("request_breakdown_changes", { id: task.id, feedback: breakdownFeedback.trim() });
+      await invoke("request_breakdown_changes", {
+        id: task.id,
+        feedback: breakdownFeedback.trim(),
+      });
       setBreakdownFeedback("");
       onTaskUpdated();
     } catch (err) {
@@ -448,14 +462,14 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   };
 
   // Only show auto-approve toggle when task is not actively being worked on by an agent
-  const canToggleAutoApprove = !task.agent_pid && (
-    task.status === "done" ||
-    task.status === "failed" ||
-    task.status === "blocked" ||
-    taskNeedsPlanReview ||
-    taskNeedsBreakdownReview ||
-    taskNeedsWorkReview
-  );
+  const canToggleAutoApprove =
+    !task.agent_pid &&
+    (task.status === "done" ||
+      task.status === "failed" ||
+      task.status === "blocked" ||
+      taskNeedsPlanReview ||
+      taskNeedsBreakdownReview ||
+      taskNeedsWorkReview);
 
   return (
     <div className="w-1/2 flex-shrink-0 bg-white shadow-xl border-l border-gray-200 flex flex-col overflow-hidden">
@@ -468,18 +482,18 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
               task.status === "done"
                 ? "bg-green-100 text-green-700"
                 : task.status === "working"
-                ? "bg-blue-100 text-blue-700"
-                : task.status === "waiting_on_subtasks"
-                ? "bg-cyan-100 text-cyan-700"
-                : task.status === "planning"
-                ? "bg-purple-100 text-purple-700"
-                : task.status === "breaking_down"
-                ? "bg-indigo-100 text-indigo-700"
-                : task.status === "failed"
-                ? "bg-red-100 text-red-700"
-                : task.status === "blocked"
-                ? "bg-orange-100 text-orange-700"
-                : "bg-gray-100 text-gray-700"
+                  ? "bg-blue-100 text-blue-700"
+                  : task.status === "waiting_on_subtasks"
+                    ? "bg-cyan-100 text-cyan-700"
+                    : task.status === "planning"
+                      ? "bg-purple-100 text-purple-700"
+                      : task.status === "breaking_down"
+                        ? "bg-indigo-100 text-indigo-700"
+                        : task.status === "failed"
+                          ? "bg-red-100 text-red-700"
+                          : task.status === "blocked"
+                            ? "bg-orange-100 text-orange-700"
+                            : "bg-gray-100 text-gray-700"
             }`}
           >
             {statusConfig.label}
@@ -498,6 +512,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         <div className="flex items-center gap-2">
           {canToggleAutoApprove && (
             <button
+              type="button"
               onClick={handleToggleAutoApprove}
               disabled={isTogglingAutoApprove}
               className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
@@ -507,18 +522,41 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
               } disabled:opacity-50`}
               title={task.auto_approve ? "Disable auto-approve" : "Enable auto-approve"}
             >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              <svg
+                className="w-3.5 h-3.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
               </svg>
               Auto
             </button>
           )}
           <button
+            type="button"
             onClick={onClose}
             className="p-1 hover:bg-gray-100 rounded transition-colors"
           >
-            <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="w-5 h-5 text-gray-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -527,39 +565,40 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       {/* Tab Bar */}
       <div className="flex-shrink-0 flex border-b border-gray-200">
         <button
-          onClick={() => setActiveTab('details')}
+          type="button"
+          onClick={() => setActiveTab("details")}
           className={`px-4 py-2 text-sm font-medium transition-colors ${
-            activeTab === 'details'
-              ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-500'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            activeTab === "details"
+              ? "bg-gray-100 text-gray-900 border-b-2 border-blue-500"
+              : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
           }`}
         >
           Details
         </button>
         {hasPlan && (
           <button
-            onClick={() => setActiveTab('plan')}
+            type="button"
+            onClick={() => setActiveTab("plan")}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === 'plan'
-                ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-500'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              activeTab === "plan"
+                ? "bg-gray-100 text-gray-900 border-b-2 border-blue-500"
+                : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
             }`}
           >
             Plan
           </button>
         )}
         <button
-          onClick={() => setActiveTab('logs')}
+          type="button"
+          onClick={() => setActiveTab("logs")}
           className={`px-4 py-2 text-sm font-medium transition-colors flex items-center gap-1.5 ${
-            activeTab === 'logs'
-              ? 'bg-gray-100 text-gray-900 border-b-2 border-blue-500'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+            activeTab === "logs"
+              ? "bg-gray-100 text-gray-900 border-b-2 border-blue-500"
+              : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
           }`}
         >
           Logs
-          {task.agent_pid && (
-            <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-          )}
+          {task.agent_pid && <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />}
         </button>
       </div>
 
@@ -571,13 +610,30 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
             The agent process stopped unexpectedly. Click to resume where it left off.
           </p>
           <button
+            type="button"
             onClick={handleResume}
             disabled={isSubmitting}
             className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
             </svg>
             Resume Session
           </button>
@@ -587,12 +643,10 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       {/* Tab Content Area */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Details Tab */}
-        {activeTab === 'details' && (
+        {activeTab === "details" && (
           <div className="flex-1 overflow-auto p-4">
             <h2 className="font-semibold text-lg text-gray-900">{task.title}</h2>
-            {task.description && (
-              <p className="text-gray-600 text-sm mt-2">{task.description}</p>
-            )}
+            {task.description && <p className="text-gray-600 text-sm mt-2">{task.description}</p>}
             {task.summary && (
               <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
                 <div className="text-xs font-medium text-green-700 mb-1">Summary</div>
@@ -609,7 +663,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
             {subtasks.length > 0 && (
               <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded">
                 <div className="text-xs font-medium text-gray-700 mb-2">
-                  Subtasks ({subtasks.filter(s => s.status === "done").length}/{subtasks.length})
+                  Subtasks ({subtasks.filter((s) => s.status === "done").length}/{subtasks.length})
                 </div>
                 <div className="space-y-2">
                   {subtasks.map((subtask) => (
@@ -621,17 +675,32 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
                     >
                       <div className="flex-shrink-0 mt-0.5">
                         {subtask.status === "done" ? (
-                          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          <svg
+                            className="w-4 h-4 text-green-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M5 13l4 4L19 7"
+                            />
                           </svg>
                         ) : (
                           <div className="w-4 h-4 border-2 border-gray-300 rounded" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-medium ${
-                          subtask.status === "done" ? "text-green-700 line-through" : "text-gray-900"
-                        }`}>
+                        <div
+                          className={`text-sm font-medium ${
+                            subtask.status === "done"
+                              ? "text-green-700 line-through"
+                              : "text-gray-900"
+                          }`}
+                        >
                           {subtask.title}
                         </div>
                         {subtask.description && (
@@ -652,7 +721,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         )}
 
         {/* Plan Tab */}
-        {activeTab === 'plan' && hasPlan && (
+        {activeTab === "plan" && hasPlan && (
           <div className="flex-1 overflow-auto p-4">
             <div className="prose prose-sm max-w-none">
               <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 p-3 rounded border">
@@ -663,13 +732,14 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         )}
 
         {/* Logs Tab */}
-        {activeTab === 'logs' && (
+        {activeTab === "logs" && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             {/* Session Sub-Tabs (if multiple sessions exist) */}
             {availableSessions.length > 1 && (
               <div className="flex-shrink-0 px-4 py-2 border-b border-gray-700 bg-gray-800 flex gap-2 overflow-x-auto">
                 {availableSessions.map((session) => (
                   <button
+                    type="button"
                     key={session.key}
                     onClick={() => setActiveSession(session.key)}
                     className={`px-3 py-1 text-xs rounded whitespace-nowrap ${
@@ -693,6 +763,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
               ) : logs.length > 0 ? (
                 <div className="text-sm font-mono space-y-1">
                   {logs.map((entry, index) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: logs have no stable IDs
                     <LogEntryView key={index} entry={entry} />
                   ))}
                 </div>
@@ -719,6 +790,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           />
           {feedback.trim() ? (
             <button
+              type="button"
               onClick={handleRequestChanges}
               disabled={isSubmitting}
               className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
@@ -727,6 +799,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
             </button>
           ) : (
             <button
+              type="button"
               onClick={handleApprove}
               disabled={isSubmitting}
               className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
@@ -755,6 +828,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           />
           {breakdownFeedback.trim() ? (
             <button
+              type="button"
               onClick={handleRequestBreakdownChanges}
               disabled={isSubmitting}
               className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
@@ -764,6 +838,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           ) : (
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={handleApproveBreakdown}
                 disabled={isSubmitting}
                 className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
@@ -771,6 +846,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
                 Approve & Start Subtasks
               </button>
               <button
+                type="button"
                 onClick={handleSkipBreakdown}
                 disabled={isSubmitting}
                 className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:opacity-50 transition-colors"
@@ -796,6 +872,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           />
           {reviewFeedback.trim() ? (
             <button
+              type="button"
               onClick={handleRequestReviewChanges}
               disabled={isSubmitting}
               className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
@@ -804,6 +881,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
             </button>
           ) : (
             <button
+              type="button"
               onClick={handleApproveReview}
               disabled={isSubmitting}
               className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"

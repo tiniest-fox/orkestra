@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { KanbanBoard } from "./components/KanbanBoard";
 import { CreateTaskModal } from "./components/CreateTaskModal";
+import { KanbanBoard } from "./components/KanbanBoard";
 import { TaskDetailSidebar } from "./components/TaskDetailSidebar";
 import { useTasks } from "./hooks/useTasks";
-import { Task } from "./types/task";
+import type { Task } from "./types/task";
 
 function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -21,6 +21,7 @@ function App() {
         <div className="px-6 py-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Orkestra</h1>
           <button
+            type="button"
             onClick={() => setIsModalOpen(true)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >

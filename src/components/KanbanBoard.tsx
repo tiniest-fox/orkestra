@@ -94,37 +94,44 @@ export function KanbanBoard({ tasks, selectedTaskId, onSelectTask }: KanbanBoard
   };
 
   return (
-    <div className="flex gap-4 overflow-x-auto pt-6 pb-6">
-      {/* Left padding spacer */}
-      <div className="flex-shrink-0 w-2" aria-hidden="true" />
-      {COLUMNS.map((status) => {
-        const columnTasks = getTasksForColumn(status);
-        return (
-          <div key={status} className="flex-shrink-0 w-72 bg-gray-50 rounded-lg p-4">
-            <h2 className="font-medium text-gray-700 mb-4 flex items-center gap-2">
-              <span className={`w-3 h-3 rounded-full ${COLUMN_COLORS[status]}`} />
-              {TASK_STATUS_CONFIG[status].label}
-              <span className="text-gray-400 text-sm">({columnTasks.length})</span>
-            </h2>
-            <div className="space-y-3">
-              {columnTasks.length === 0 ? (
-                <div className="text-gray-400 text-sm text-center py-8">No tasks</div>
-              ) : (
-                columnTasks.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    onClick={() => onSelectTask(task)}
-                    isSelected={task.id === selectedTaskId}
-                  />
-                ))
-              )}
-            </div>
-          </div>
-        );
-      })}
-      {/* Right padding spacer */}
-      <div className="flex-shrink-0 w-2" aria-hidden="true" />
+    <div className="h-full flex flex-col">
+      <div className="flex-1 overflow-x-auto overflow-y-hidden">
+        <div className="flex gap-4 pt-6 pb-6 h-full">
+          {/* Left padding spacer */}
+          <div className="flex-shrink-0 w-2" aria-hidden="true" />
+          {COLUMNS.map((status) => {
+            const columnTasks = getTasksForColumn(status);
+            return (
+              <div
+                key={status}
+                className="flex-shrink-0 w-72 bg-gray-50 rounded-lg p-4 flex flex-col h-full"
+              >
+                <h2 className="font-medium text-gray-700 mb-4 flex items-center gap-2 flex-shrink-0">
+                  <span className={`w-3 h-3 rounded-full ${COLUMN_COLORS[status]}`} />
+                  {TASK_STATUS_CONFIG[status].label}
+                  <span className="text-gray-400 text-sm">({columnTasks.length})</span>
+                </h2>
+                <div className="space-y-3 overflow-y-auto flex-1">
+                  {columnTasks.length === 0 ? (
+                    <div className="text-gray-400 text-sm text-center py-8">No tasks</div>
+                  ) : (
+                    columnTasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        onClick={() => onSelectTask(task)}
+                        isSelected={task.id === selectedTaskId}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {/* Right padding spacer */}
+          <div className="flex-shrink-0 w-2" aria-hidden="true" />
+        </div>
+      </div>
     </div>
   );
 }

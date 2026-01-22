@@ -30,7 +30,7 @@ function App() {
         </div>
       </header>
       <div className="flex flex-1 overflow-hidden">
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-hidden">
           {error && (
             <div className="mx-6 mt-6 mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
               Error loading tasks: {error}

@@ -125,6 +125,54 @@ impl GitService {
         ))
     }
 
+    /// Commit any uncommitted changes in a worktree.
+    ///
+    /// This ensures all work is preserved before merging. If there are no
+    /// changes to commit, this is a no-op.
+    pub fn commit_pending_changes(&self, worktree_path: &Path, message: &str) -> Result<()> {
+        // Check if there are any changes (staged or unstaged)
+        let status_output = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(worktree_path)
+            .output()
+            .map_err(|e| OrkestraError::GitError(format!("Failed to run git status: {e}")))?;
+
+        let status = String::from_utf8_lossy(&status_output.stdout);
+        if status.trim().is_empty() {
+            // No changes to commit
+            return Ok(());
+        }
+
+        // Stage all changes
+        let add_output = Command::new("git")
+            .args(["add", "-A"])
+            .current_dir(worktree_path)
+            .output()
+            .map_err(|e| OrkestraError::GitError(format!("Failed to run git add: {e}")))?;
+
+        if !add_output.status.success() {
+            let stderr = String::from_utf8_lossy(&add_output.stderr);
+            return Err(OrkestraError::GitError(format!("Failed to stage changes: {stderr}")));
+        }
+
+        // Commit
+        let commit_output = Command::new("git")
+            .args(["commit", "-m", message])
+            .current_dir(worktree_path)
+            .output()
+            .map_err(|e| OrkestraError::GitError(format!("Failed to run git commit: {e}")))?;
+
+        if !commit_output.status.success() {
+            let stderr = String::from_utf8_lossy(&commit_output.stderr);
+            // "nothing to commit" is not an error
+            if !stderr.contains("nothing to commit") {
+                return Err(OrkestraError::GitError(format!("Failed to commit: {stderr}")));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Merge a task branch into the primary branch.
     ///
     /// Uses git CLI for reliability (git2 merge API is complex).

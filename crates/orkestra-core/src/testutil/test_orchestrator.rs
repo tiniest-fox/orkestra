@@ -90,13 +90,15 @@ impl TestOrchestrator {
         Ok(())
     }
 
-    /// Simulate worker making specific file changes (for conflict testing).
+    /// Simulate worker creating a file in the worktree.
+    ///
+    /// This just creates the file - the production code should handle
+    /// committing before merge.
     pub fn simulate_worker_file_change(
         &self,
         task_id: &str,
         filename: &str,
         content: &str,
-        commit_message: &str,
     ) -> Result<()> {
         let task = self
             .project
@@ -105,16 +107,6 @@ impl TestOrchestrator {
 
         if let Some(worktree_path) = &task.worktree_path {
             std::fs::write(Path::new(worktree_path).join(filename), content)?;
-
-            Command::new("git")
-                .args(["add", filename])
-                .current_dir(worktree_path)
-                .output()?;
-
-            Command::new("git")
-                .args(["commit", "-m", commit_message])
-                .current_dir(worktree_path)
-                .output()?;
         }
 
         Ok(())

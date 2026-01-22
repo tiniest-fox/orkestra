@@ -73,13 +73,15 @@ fn test_full_workflow_with_successful_merge() {
     assert_eq!(task.status, TaskStatus::Working);
 
     // Step 4: Worker makes changes in worktree (simulated)
+    // Just create the file - production code should commit before merge
+    let feature_content = "pub fn feature_x() -> &'static str {\n    \"Hello from feature X!\"\n}\n";
     orchestrator
-        .simulate_worker_changes(&task.id, "Implemented feature X with tests")
+        .simulate_worker_file_change(&task.id, "feature_x.rs", feature_content)
         .expect("Failed to simulate worker changes");
 
     // Verify changes were committed in worktree
     let worktree_path = task.worktree_path.as_ref().unwrap();
-    assert!(Path::new(worktree_path).join("changes.txt").exists());
+    assert!(Path::new(worktree_path).join("feature_x.rs").exists());
 
     // Step 5: Complete work (uses real Project::complete_task)
     let task = orchestrator
@@ -114,9 +116,15 @@ fn test_full_workflow_with_successful_merge() {
     // Verify worktree was cleaned up
     assert!(!Path::new(worktree_path).exists());
 
-    // Verify changes are now in main branch
-    let changes_in_main = orchestrator.project_root.join("changes.txt");
-    assert!(changes_in_main.exists(), "Changes should be merged to main");
+    // Verify changes are now in main branch with correct content
+    let feature_file = orchestrator.project_root.join("feature_x.rs");
+    assert!(feature_file.exists(), "feature_x.rs should be merged to main");
+
+    let content = std::fs::read_to_string(&feature_file).expect("Failed to read merged file");
+    assert!(
+        content.contains("Hello from feature X!"),
+        "File content should match what worker created"
+    );
 }
 
 #[test]
@@ -153,12 +161,7 @@ fn test_workflow_with_merge_conflict() {
 
     // Worker makes conflicting change in worktree
     orchestrator
-        .simulate_worker_file_change(
-            &task.id,
-            "conflict.txt",
-            "Worktree branch content\n",
-            "Conflicting change in worktree",
-        )
+        .simulate_worker_file_change(&task.id, "conflict.txt", "Worktree branch content\n")
         .expect("Failed to simulate worker file change");
 
     // Complete work

@@ -402,6 +402,16 @@ impl Project {
             );
         };
 
+        // Commit any uncommitted changes in the worktree before merging
+        if let Some(worktree_path) = &task.worktree_path {
+            if let Err(e) = git.commit_pending_changes(
+                std::path::Path::new(worktree_path),
+                &format!("Final changes for task {}", task.id),
+            ) {
+                eprintln!("Warning: Failed to commit pending changes: {e}");
+            }
+        }
+
         // Attempt merge
         match git.merge_to_primary(&branch_name) {
             Ok(commit_sha) => {

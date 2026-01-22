@@ -141,8 +141,13 @@ impl Project {
         self.git.as_ref()
     }
 
+    /// Get a reference to the task store.
+    pub fn store(&self) -> &SqliteStore {
+        &self.store
+    }
+
     // =========================================================================
-    // Task Operations
+    // Task Operations (convenience methods that delegate to tasks module)
     // =========================================================================
 
     /// Load all tasks from the project.

@@ -3,10 +3,10 @@ use std::io::BufRead;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use crate::domain::{Task, TaskStatus};
 use crate::project;
-use crate::tasks::{
-    add_task_session, get_subtasks, set_agent_pid, update_task_status, Task, TaskStatus,
-};
+use crate::services::Project;
+use crate::tasks;
 
 /// Agent types that can be spawned
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -452,7 +452,7 @@ struct AgentConfig {
 }
 
 /// Resolves agent configuration: loads definition, builds prompt, determines status
-fn resolve_agent_config(task: &Task, agent_type: AgentType) -> std::io::Result<AgentConfig> {
+fn resolve_agent_config(project: &Project, task: &Task, agent_type: AgentType) -> std::io::Result<AgentConfig> {
     let agent_name = match agent_type {
         AgentType::Planner => "planner",
         AgentType::Breakdown => "breakdown",
@@ -465,7 +465,7 @@ fn resolve_agent_config(task: &Task, agent_type: AgentType) -> std::io::Result<A
         AgentType::Planner => build_planner_prompt(task, &agent_def),
         AgentType::Breakdown => build_breakdown_prompt(task, &agent_def),
         AgentType::Worker => {
-            let subtasks = get_subtasks(&task.id).ok();
+            let subtasks = tasks::get_subtasks(project, &task.id).ok();
             build_worker_prompt(task, &agent_def, subtasks.as_deref())
         }
         AgentType::Reviewer => build_reviewer_prompt(task, &agent_def),
@@ -579,6 +579,7 @@ fn log_stderr(
 /// The `on_update` callback is called whenever there's new output (for real-time UI updates)
 /// If the task has a `worktree_path`, the agent will be spawned in that directory.
 pub fn spawn_agent<F>(
+    project: &Project,
     task: &Task,
     agent_type: AgentType,
     on_update: F,
@@ -586,11 +587,12 @@ pub fn spawn_agent<F>(
 where
     F: Fn(&str) + Send + 'static,
 {
-    let config = resolve_agent_config(task, agent_type)?;
-    update_task_status(&task.id, config.status)?;
+    let config = resolve_agent_config(project, task, agent_type)?;
+    tasks::update_task_status(project, &task.id, config.status)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
 
     let path_env = prepare_path_env();
-    let project_root = project::find_project_root()?;
+    let project_root = project.root().to_path_buf();
     let task_id = task.id.clone();
 
     // Use task's worktree_path if available, otherwise fall back to project_root
@@ -608,12 +610,23 @@ where
     let session_type = config.session_type.to_string();
 
     // Record the PID immediately so orchestrator knows agent is running
-    let _ = set_agent_pid(&task_id, Some(pid));
+    // Note: Background thread will use its own Project instance for subsequent updates
+    let _ = tasks::set_agent_pid(project, &task_id, Some(pid));
 
     let task_id_for_callback = task_id.clone();
 
     // Spawn background thread for stdout/stderr processing
+    // Each thread gets its own Project instance (SQLite handles concurrent access)
     std::thread::spawn(move || {
+        // Create a Project instance for this thread
+        let thread_project = match Project::discover() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Failed to discover project in agent thread: {e}");
+                return;
+            }
+        };
+
         let stderr_handle = spawn_stderr_reader(stderr);
 
         if let Some(stdout) = stdout {
@@ -624,7 +637,7 @@ where
                 }
                 let parsed = parse_stream_event(&json_line);
                 if let Some(sid) = parsed.session_id {
-                    let _ = add_task_session(&task_id, &session_type, &sid, Some(pid));
+                    let _ = tasks::add_task_session(&thread_project, &task_id, &session_type, &sid, Some(pid));
                 }
                 if parsed.has_new_content {
                     on_update(&task_id_for_callback);
@@ -642,13 +655,13 @@ where
                     status.code()
                 );
                 // Clear the PID now that agent is done
-                let _ = set_agent_pid(&task_id, None);
+                let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
                 on_update(&task_id_for_callback);
             }
             Err(e) => {
                 eprintln!("Agent {task_id} error: {e}");
                 // Clear the PID even on error
-                let _ = set_agent_pid(&task_id, None);
+                let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
                 on_update(&task_id_for_callback);
             }
         }
@@ -669,15 +682,17 @@ where
 /// The agent continues running in the background after this returns.
 /// If the task has a `worktree_path`, the agent will be spawned in that directory.
 pub fn spawn_agent_sync(
+    project: &Project,
     task: &Task,
     agent_type: AgentType,
     timeout_secs: u64,
 ) -> std::io::Result<SpawnedAgent> {
-    let config = resolve_agent_config(task, agent_type)?;
-    update_task_status(&task.id, config.status)?;
+    let config = resolve_agent_config(project, task, agent_type)?;
+    tasks::update_task_status(project, &task.id, config.status)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
 
     let path_env = prepare_path_env();
-    let project_root = project::find_project_root()?;
+    let project_root = project.root().to_path_buf();
     let task_id = task.id.clone();
 
     // Use task's worktree_path if available, otherwise fall back to project_root
@@ -696,7 +711,7 @@ pub fn spawn_agent_sync(
 
     // Read stdout synchronously until we get the session_id or timeout
     let captured_session_id =
-        wait_for_session_id(stdout, &task_id, &session_type, pid, timeout_secs);
+        wait_for_session_id(project, stdout, &task_id, &session_type, pid, timeout_secs);
 
     // Spawn background thread for stderr and process completion
     std::thread::spawn(move || {
@@ -726,6 +741,7 @@ pub fn spawn_agent_sync(
 
 /// Waits synchronously for `session_id` from stdout, with timeout
 fn wait_for_session_id(
+    project: &Project,
     stdout: Option<std::process::ChildStdout>,
     task_id: &str,
     session_type: &str,
@@ -747,8 +763,6 @@ fn wait_for_session_id(
     });
 
     let mut captured_session_id: Option<String> = None;
-    let task_id_owned = task_id.to_string();
-    let session_type_owned = session_type.to_string();
 
     loop {
         if start_time.elapsed() > timeout {
@@ -763,7 +777,7 @@ fn wait_for_session_id(
                 }
                 let parsed = parse_stream_event(&json_line);
                 if let Some(sid) = parsed.session_id {
-                    let _ = add_task_session(&task_id_owned, &session_type_owned, &sid, Some(pid));
+                    let _ = tasks::add_task_session(project, task_id, session_type, &sid, Some(pid));
                     captured_session_id = Some(sid);
                     break;
                 }
@@ -793,6 +807,7 @@ fn wait_for_session_id(
 /// The `on_update` callback is called whenever there's new output (for real-time UI updates)
 /// If the task has a `worktree_path`, the agent will be resumed in that directory.
 pub fn resume_agent<F>(
+    project: &Project,
     task: &Task,
     session_key: &str,
     continuation_prompt: Option<&str>,
@@ -821,7 +836,7 @@ where
     let prompt = continuation_prompt.unwrap_or(default_prompt);
 
     let path_env = prepare_path_env();
-    let project_root = project::find_project_root()?;
+    let project_root = project.root().to_path_buf();
     let task_id = task.id.clone();
 
     // Use task's worktree_path if available, otherwise fall back to project_root
@@ -838,12 +853,22 @@ where
     let stderr = child.stderr.take();
 
     // Record the PID immediately so orchestrator knows agent is running
-    let _ = set_agent_pid(&task_id, Some(pid));
+    let _ = tasks::set_agent_pid(project, &task_id, Some(pid));
 
     let task_id_for_callback = task_id.clone();
 
     // Spawn background thread for stdout/stderr processing
+    // Each thread gets its own Project instance (SQLite handles concurrent access)
     std::thread::spawn(move || {
+        // Create a Project instance for this thread
+        let thread_project = match Project::discover() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Failed to discover project in agent thread: {e}");
+                return;
+            }
+        };
+
         let stderr_handle = spawn_stderr_reader(stderr);
 
         if let Some(stdout) = stdout {
@@ -869,13 +894,13 @@ where
                     status.code()
                 );
                 // Clear the PID now that agent is done
-                let _ = set_agent_pid(&task_id, None);
+                let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
                 on_update(&task_id_for_callback);
             }
             Err(e) => {
                 eprintln!("Resumed agent {task_id} error: {e}");
                 // Clear the PID even on error
-                let _ = set_agent_pid(&task_id, None);
+                let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
                 on_update(&task_id_for_callback);
             }
         }

@@ -4,7 +4,9 @@
 //! at every state transition, we periodically check what should be running
 //! and start/resume agents as needed.
 
-use crate::tasks::{self, Task, TaskKind, TaskStatus};
+use crate::domain::{Task, TaskKind, TaskStatus};
+use crate::services::Project;
+use crate::tasks;
 
 /// Represents an action the orchestrator wants to take
 #[derive(Debug, Clone)]
@@ -88,8 +90,8 @@ fn get_resume_session_key(task: &Task) -> Option<String> {
 
 /// Determine what actions need to be taken for the current task state.
 /// This is the core reconciliation logic.
-pub fn check_tasks() -> std::io::Result<Vec<OrchestratorAction>> {
-    let all_tasks = tasks::load_tasks()?;
+pub fn check_tasks(project: &Project) -> crate::error::Result<Vec<OrchestratorAction>> {
+    let all_tasks = tasks::load_tasks(project)?;
     let mut actions = Vec::new();
 
     for task in all_tasks {

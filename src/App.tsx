@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CreateTaskModal } from "./components/CreateTaskModal";
 import { KanbanBoard } from "./components/KanbanBoard";
 import { TaskDetailSidebar } from "./components/TaskDetailSidebar";
+import { useAutoTasks } from "./hooks/useAutoTasks";
 import { useTasks } from "./hooks/useTasks";
 import type { Task } from "./types/task";
 
@@ -9,6 +10,17 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const { tasks, loading, error, createTask, updateTaskStatus, refetch } = useTasks();
+  const { autoTasks, createFromAutoTask } = useAutoTasks();
+
+  const handleAutoTaskClick = async (name: string) => {
+    try {
+      const newTask = await createFromAutoTask(name);
+      refetch();
+      setSelectedTask(newTask);
+    } catch (err) {
+      console.error("Failed to create task from auto-task:", err);
+    }
+  };
 
   // Keep selected task in sync with latest data
   const currentSelectedTask = selectedTask
@@ -20,13 +32,29 @@ function App() {
       <header className="flex-shrink-0 bg-white shadow-sm border-b border-gray-200">
         <div className="px-6 py-4 flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Orkestra</h1>
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            + New Task
-          </button>
+          <div className="flex items-center gap-2">
+            {autoTasks.map((autoTask) => (
+              <button
+                key={autoTask.name}
+                type="button"
+                onClick={() => handleAutoTaskClick(autoTask.name)}
+                className="px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                title={
+                  autoTask.description.slice(0, 100) +
+                  (autoTask.description.length > 100 ? "..." : "")
+                }
+              >
+                {autoTask.title}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setIsModalOpen(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              + New Task
+            </button>
+          </div>
         </div>
       </header>
       <div className="flex flex-1 overflow-hidden">

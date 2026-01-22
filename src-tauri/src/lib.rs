@@ -2,8 +2,8 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use orkestra_core::{
-    agents, find_project_root, load_tasks, orchestrator, recover_session_logs, resume_agent, tasks,
-    AgentType, LogEntry, Task, TaskStatus,
+    agents, auto_tasks, find_project_root, load_tasks, orchestrator, recover_session_logs,
+    resume_agent, tasks, AgentType, AutoTask, LogEntry, Task, TaskStatus,
 };
 use tasks::{
     approve_breakdown as core_approve_breakdown, get_child_tasks as core_get_child_tasks,
@@ -108,6 +108,24 @@ fn get_child_tasks(parent_id: String) -> Result<Vec<Task>, String> {
 #[tauri::command]
 fn set_task_auto_approve(id: String, enabled: bool) -> Result<Task, String> {
     tasks::set_auto_approve(&id, enabled).map_err(|e| e.to_string())
+}
+
+/// Get all available auto-tasks from .orkestra/tasks/
+#[tauri::command]
+fn get_auto_tasks() -> Result<Vec<AutoTask>, String> {
+    let project_root = find_project_root().map_err(|e| e.to_string())?;
+    auto_tasks::list_auto_tasks(&project_root).map_err(|e| e.to_string())
+}
+
+/// Create a new task from an auto-task template
+#[tauri::command]
+fn create_task_from_auto_task(name: String) -> Result<Task, String> {
+    let project_root = find_project_root().map_err(|e| e.to_string())?;
+    let auto_task = auto_tasks::get_auto_task(&project_root, &name).map_err(|e| e.to_string())?;
+
+    // Create the task using the auto-task's title, description, and auto_run setting
+    tasks::create_task_with_options(&auto_task.title, &auto_task.description, auto_task.auto_run)
+        .map_err(|e| e.to_string())
 }
 
 /// Resume a task that was interrupted (agent process died but had session)
@@ -350,7 +368,9 @@ pub fn run() {
             resume_task,
             get_task_logs,
             get_project_root,
-            set_task_auto_approve
+            set_task_auto_approve,
+            get_auto_tasks,
+            create_task_from_auto_task
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

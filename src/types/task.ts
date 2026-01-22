@@ -109,6 +109,14 @@ export interface Task {
   skip_breakdown?: boolean;
 }
 
+// Auto-task template loaded from .orkestra/tasks/*.md files
+export interface AutoTask {
+  name: string; // filename without .md extension
+  title: string; // from frontmatter
+  description: string; // markdown body content
+  auto_run: boolean; // whether to auto-approve tasks created from this template
+}
+
 export const TASK_STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
   planning: { label: "Planning", color: "bg-purple-100" },
   breaking_down: { label: "Breaking Down", color: "bg-indigo-100" },

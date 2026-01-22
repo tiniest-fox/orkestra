@@ -7,6 +7,7 @@ pub mod tasks;
 
 // New modular architecture
 pub mod adapters;
+pub mod auto_tasks;
 pub mod domain;
 pub mod error;
 pub mod ports;
@@ -33,3 +34,6 @@ pub use error::{OrkestraError, Result};
 pub use ports::{Clock, ProcessSpawner, SpawnConfig, SpawnedProcess, TaskStore};
 pub use prompt::{build_planner_prompt, build_reviewer_prompt, build_worker_prompt};
 pub use services::{AgentService, TaskService};
+
+// Auto-tasks re-exports
+pub use auto_tasks::{get_auto_task, list_auto_tasks, AutoTask};

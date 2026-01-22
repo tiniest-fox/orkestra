@@ -3,6 +3,7 @@ export type TaskStatus =
   | "breaking_down"
   | "waiting_on_subtasks"
   | "working"
+  | "reviewing"
   | "done"
   | "failed"
   | "blocked";
@@ -67,6 +68,8 @@ export interface Task {
   plan?: string;
   plan_feedback?: string;
   review_feedback?: string;
+  // Feedback from reviewer agent when it rejects work
+  reviewer_feedback?: string;
   // Multi-session tracking - logs are loaded on-demand from Claude's session files
   // Keys are session types: "plan", "work", "breakdown", "review_0", "review_1", etc.
   // Object preserves insertion order (creation time)
@@ -88,6 +91,7 @@ export const TASK_STATUS_CONFIG: Record<TaskStatus, { label: string; color: stri
   breaking_down: { label: "Breaking Down", color: "bg-indigo-100" },
   waiting_on_subtasks: { label: "Waiting", color: "bg-cyan-100" },
   working: { label: "Working", color: "bg-blue-100" },
+  reviewing: { label: "Reviewing", color: "bg-violet-100" },
   done: { label: "Done", color: "bg-green-100" },
   failed: { label: "Failed", color: "bg-red-100" },
   blocked: { label: "Blocked", color: "bg-orange-100" },

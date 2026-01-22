@@ -68,7 +68,7 @@ enum TaskAction {
     Status {
         /// Task ID
         id: String,
-        /// New status (planning, `breaking_down`, `waiting_on_subtasks`, working, done, failed, blocked)
+        /// New status (planning, `breaking_down`, `waiting_on_subtasks`, working, reviewing, done, failed, blocked)
         status: String,
     },
     /// Set the implementation plan for a task (used by planner agent)
@@ -149,6 +149,19 @@ enum TaskAction {
     Subtasks {
         /// Parent task ID
         parent_id: String,
+    },
+    /// Reviewer agent approves the implementation
+    ApproveReview {
+        /// Task ID
+        id: String,
+    },
+    /// Reviewer agent rejects with feedback
+    RejectReview {
+        /// Task ID
+        id: String,
+        /// Feedback for the worker
+        #[arg(short, long)]
+        feedback: String,
     },
 }
 
@@ -259,11 +272,12 @@ fn main() {
                         "breaking_down" => TaskStatus::BreakingDown,
                         "waiting_on_subtasks" => TaskStatus::WaitingOnSubtasks,
                         "working" => TaskStatus::Working,
+                        "reviewing" => TaskStatus::Reviewing,
                         "done" => TaskStatus::Done,
                         "failed" => TaskStatus::Failed,
                         "blocked" => TaskStatus::Blocked,
                         _ => {
-                            eprintln!("Invalid status: {status}. Valid values: planning, breaking_down, waiting_on_subtasks, working, done, failed, blocked");
+                            eprintln!("Invalid status: {status}. Valid values: planning, breaking_down, waiting_on_subtasks, working, reviewing, done, failed, blocked");
                             std::process::exit(1);
                         }
                     };
@@ -513,6 +527,34 @@ fn main() {
                         std::process::exit(1);
                     }
                 },
+                TaskAction::ApproveReview { id } => {
+                    match tasks::approve_automated_review(&id) {
+                        Ok(task) => {
+                            println!(
+                                "Task {} review approved. Status: done",
+                                task.id
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Error approving review: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                TaskAction::RejectReview { id, feedback } => {
+                    match tasks::reject_automated_review(&id, &feedback) {
+                        Ok(task) => {
+                            println!(
+                                "Task {} review rejected. Status: working (feedback provided)",
+                                task.id
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("Error rejecting review: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
             }
         }
     }

@@ -16,6 +16,7 @@ const COLUMN_COLORS: Record<TaskStatus, string> = {
   breaking_down: "bg-indigo-500",
   waiting_on_subtasks: "bg-cyan-500",
   working: "bg-blue-500",
+  reviewing: "bg-violet-500",
   done: "bg-green-500",
   failed: "bg-red-500",
   blocked: "bg-orange-500",
@@ -53,9 +54,10 @@ export function KanbanBoard({ tasks, selectedTaskId, onSelectTask }: KanbanBoard
         );
       }
       if (column === "working") {
-        // Working column: working tasks, or failed/blocked in working phase
+        // Working column: working, reviewing tasks, or failed/blocked in working phase
         return (
           task.status === "working" ||
+          task.status === "reviewing" ||
           ((task.status === "failed" || task.status === "blocked") &&
             (task.summary || task.breakdown))
         );

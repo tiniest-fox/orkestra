@@ -81,6 +81,7 @@ impl SqliteStore {
                 plan TEXT,
                 plan_feedback TEXT,
                 review_feedback TEXT,
+                reviewer_feedback TEXT,
                 auto_approve INTEGER NOT NULL DEFAULT 0,
                 parent_id TEXT,
                 breakdown TEXT,
@@ -176,12 +177,12 @@ impl SqliteStore {
     /// Convert a row to a Task (without sessions, which are loaded separately).
     /// Column order: id, title, description, status, kind, `created_at`, `updated_at`,
     /// `completed_at`, summary, error, plan, `plan_feedback`, `review_feedback`,
-    /// `auto_approve`, `parent_id`, breakdown, `breakdown_feedback`, `skip_breakdown`
+    /// `reviewer_feedback`, `auto_approve`, `parent_id`, breakdown, `breakdown_feedback`, `skip_breakdown`
     fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         let status_str: String = row.get(3)?;
         let kind_str: String = row.get(4)?;
-        let auto_approve: i32 = row.get(13)?;
-        let skip_breakdown: i32 = row.get(17)?;
+        let auto_approve: i32 = row.get(14)?;
+        let skip_breakdown: i32 = row.get(18)?;
 
         Ok(Task {
             id: row.get(0)?,
@@ -197,11 +198,12 @@ impl SqliteStore {
             plan: row.get(10)?,
             plan_feedback: row.get(11)?,
             review_feedback: row.get(12)?,
+            reviewer_feedback: row.get(13)?,
             sessions: None, // Loaded separately
             auto_approve: auto_approve != 0,
-            parent_id: row.get(14)?,
-            breakdown: row.get(15)?,
-            breakdown_feedback: row.get(16)?,
+            parent_id: row.get(15)?,
+            breakdown: row.get(16)?,
+            breakdown_feedback: row.get(17)?,
             skip_breakdown: skip_breakdown != 0,
         })
     }
@@ -249,6 +251,7 @@ impl SqliteStore {
             "plan",
             "plan_feedback",
             "review_feedback",
+            "reviewer_feedback",
             "parent_id",
             "breakdown",
             "breakdown_feedback",
@@ -369,9 +372,9 @@ impl TaskStore for SqliteStore {
             INSERT OR REPLACE INTO tasks (
                 id, title, description, status, kind, created_at, updated_at,
                 completed_at, summary, error, plan, plan_feedback,
-                review_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
+                review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
                 skip_breakdown
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ",
             params![
                 task.id,
@@ -387,6 +390,7 @@ impl TaskStore for SqliteStore {
                 task.plan,
                 task.plan_feedback,
                 task.review_feedback,
+                task.reviewer_feedback,
                 i32::from(task.auto_approve),
                 task.parent_id,
                 task.breakdown,
@@ -418,9 +422,9 @@ impl TaskStore for SqliteStore {
                 INSERT INTO tasks (
                     id, title, description, status, kind, created_at, updated_at,
                     completed_at, summary, error, plan, plan_feedback,
-                    review_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
+                    review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
                     skip_breakdown
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ",
                 params![
                     task.id,
@@ -436,6 +440,7 @@ impl TaskStore for SqliteStore {
                     task.plan,
                     task.plan_feedback,
                     task.review_feedback,
+                    task.reviewer_feedback,
                     i32::from(task.auto_approve),
                     task.parent_id,
                     task.breakdown,
@@ -481,6 +486,7 @@ fn status_to_str(status: TaskStatus) -> &'static str {
         TaskStatus::BreakingDown => "breaking_down",
         TaskStatus::WaitingOnSubtasks => "waiting_on_subtasks",
         TaskStatus::Working => "working",
+        TaskStatus::Reviewing => "reviewing",
         TaskStatus::Done => "done",
         TaskStatus::Failed => "failed",
         TaskStatus::Blocked => "blocked",
@@ -492,6 +498,7 @@ fn parse_status(s: &str) -> TaskStatus {
         "breaking_down" => TaskStatus::BreakingDown,
         "waiting_on_subtasks" => TaskStatus::WaitingOnSubtasks,
         "working" => TaskStatus::Working,
+        "reviewing" => TaskStatus::Reviewing,
         "done" => TaskStatus::Done,
         "failed" => TaskStatus::Failed,
         "blocked" => TaskStatus::Blocked,

@@ -12,6 +12,7 @@ pub enum AgentType {
     Planner,
     Breakdown,
     Worker,
+    Reviewer,
 }
 
 /// Builds the prompt for a planner agent
@@ -256,6 +257,70 @@ If the task is simple and doesn't need subtasks, instead run:
     )
 }
 
+/// Builds the prompt for a reviewer agent
+fn build_reviewer_prompt(task: &Task, agent_definition: &str) -> String {
+    let plan_section = if let Some(plan) = &task.plan {
+        format!(
+            r"
+
+## Approved Implementation Plan
+
+The worker followed this plan:
+
+{plan}
+"
+        )
+    } else {
+        String::new()
+    };
+
+    let summary_section = if let Some(summary) = &task.summary {
+        format!(
+            r"
+
+## Work Summary
+
+The worker completed the implementation with this summary:
+
+{summary}
+"
+        )
+    } else {
+        String::new()
+    };
+
+    format!(
+        r#"{agent_definition}
+
+---
+
+## Task Under Review
+
+**Task ID**: {task_id}
+**Title**: {title}
+
+### Description
+{description}
+{plan_section}{summary_section}
+---
+
+## Your Review Commands
+
+When you are done reviewing, you MUST run ONE of these commands:
+- `ork task approve-review {task_id}` - if the implementation passes all checks and review
+- `ork task reject-review {task_id} --feedback "specific feedback for the worker"` - if issues need to be fixed
+
+If you reject, provide clear, actionable feedback so the worker knows exactly what to fix.
+"#,
+        agent_definition = agent_definition,
+        task_id = task.id,
+        title = task.title,
+        description = task.description,
+        plan_section = plan_section,
+        summary_section = summary_section,
+    )
+}
+
 /// Finds the ork CLI binary path
 fn find_cli_path() -> Option<PathBuf> {
     // First check if ork is in PATH
@@ -393,6 +458,7 @@ fn resolve_agent_config(task: &Task, agent_type: AgentType) -> std::io::Result<A
         AgentType::Planner => "planner",
         AgentType::Breakdown => "breakdown",
         AgentType::Worker => "worker",
+        AgentType::Reviewer => "reviewer",
     };
     let agent_def = load_agent_definition(agent_name)?;
 
@@ -403,18 +469,21 @@ fn resolve_agent_config(task: &Task, agent_type: AgentType) -> std::io::Result<A
             let subtasks = get_subtasks(&task.id).ok();
             build_worker_prompt(task, &agent_def, subtasks.as_deref())
         }
+        AgentType::Reviewer => build_reviewer_prompt(task, &agent_def),
     };
 
     let status = match agent_type {
         AgentType::Planner => TaskStatus::Planning,
         AgentType::Breakdown => TaskStatus::BreakingDown,
         AgentType::Worker => TaskStatus::Working,
+        AgentType::Reviewer => TaskStatus::Reviewing,
     };
 
     let session_type = match agent_type {
         AgentType::Planner => "plan",
         AgentType::Breakdown => "breakdown",
         AgentType::Worker => "work",
+        AgentType::Reviewer => "review",
     };
 
     Ok(AgentConfig {

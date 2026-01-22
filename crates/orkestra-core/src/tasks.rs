@@ -59,6 +59,7 @@ pub fn create_task_with_options(
         plan: None,
         plan_feedback: None,
         review_feedback: None,
+        reviewer_feedback: None,
         sessions: None,
         auto_approve,
         parent_id: None,
@@ -291,6 +292,100 @@ pub fn approve_review(id: &str) -> std::io::Result<Task> {
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))
 }
 
+/// Transition task to Reviewing status (spawns reviewer agent).
+/// Called when human approves the work.
+pub fn start_automated_review(id: &str) -> std::io::Result<Task> {
+    let store = get_store();
+    let task = store
+        .find_by_id(id)
+        .map_err(|e| std::io::Error::other(e.to_string()))?
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
+
+    if task.status != TaskStatus::Working || task.summary.is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Task must be in Working status with a summary set",
+        ));
+    }
+
+    store
+        .update_status(id, TaskStatus::Reviewing)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    store
+        .update_field(id, "review_feedback", None)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    store
+        .find_by_id(id)
+        .map_err(|e| std::io::Error::other(e.to_string()))?
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))
+}
+
+/// Reviewer agent approves the implementation → Done.
+pub fn approve_automated_review(id: &str) -> std::io::Result<Task> {
+    let store = get_store();
+    let task = store
+        .find_by_id(id)
+        .map_err(|e| std::io::Error::other(e.to_string()))?
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
+
+    if task.status != TaskStatus::Reviewing {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Task must be in Reviewing status",
+        ));
+    }
+
+    store
+        .update_status(id, TaskStatus::Done)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    store
+        .update_field(id, "completed_at", Some(&chrono::Utc::now().to_rfc3339()))
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    store
+        .update_field(id, "reviewer_feedback", None)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    store
+        .find_by_id(id)
+        .map_err(|e| std::io::Error::other(e.to_string()))?
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))
+}
+
+/// Reviewer agent rejects the implementation → back to Working with feedback.
+pub fn reject_automated_review(id: &str, feedback: &str) -> std::io::Result<Task> {
+    let store = get_store();
+    let task = store
+        .find_by_id(id)
+        .map_err(|e| std::io::Error::other(e.to_string()))?
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))?;
+
+    if task.status != TaskStatus::Reviewing {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Task must be in Reviewing status",
+        ));
+    }
+
+    // Clear the summary so worker knows to continue working
+    store
+        .update_field(id, "summary", None)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    // Set feedback from reviewer
+    store
+        .update_field(id, "reviewer_feedback", Some(feedback))
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    // Transition back to Working
+    store
+        .update_status(id, TaskStatus::Working)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    store
+        .find_by_id(id)
+        .map_err(|e| std::io::Error::other(e.to_string()))?
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))
+}
+
 pub fn set_auto_approve(id: &str, enabled: bool) -> std::io::Result<Task> {
     let store = get_store();
     let mut task = store
@@ -341,6 +436,7 @@ pub fn create_child_task(parent_id: &str, title: &str, description: &str) -> std
         plan: parent.plan.clone(),
         plan_feedback: None,
         review_feedback: None,
+        reviewer_feedback: None,
         sessions: None,
         auto_approve: false,
         parent_id: Some(parent_id.to_string()),
@@ -387,6 +483,7 @@ pub fn create_subtask(parent_id: &str, title: &str, description: &str) -> std::i
         plan: parent.plan.clone(),
         plan_feedback: None,
         review_feedback: None,
+        reviewer_feedback: None,
         sessions: None,
         auto_approve: false,
         parent_id: Some(parent_id.to_string()),

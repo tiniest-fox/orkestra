@@ -126,6 +126,7 @@ mod tests {
             plan: None,
             plan_feedback: None,
             review_feedback: None,
+            reviewer_feedback: None,
             sessions: None,
             auto_approve: false,
             parent_id: None,

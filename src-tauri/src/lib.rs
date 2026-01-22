@@ -6,10 +6,11 @@ use orkestra_core::{
     TaskStatus,
 };
 use tasks::{
-    approve_breakdown as core_approve_breakdown, approve_review as core_approve_review,
+    approve_breakdown as core_approve_breakdown,
     get_child_tasks as core_get_child_tasks, get_subtasks as core_get_subtasks,
     request_breakdown_changes as core_request_breakdown_changes,
     request_review_changes as core_request_review_changes, skip_breakdown as core_skip_breakdown,
+    start_automated_review as core_start_automated_review,
 };
 use tauri::Emitter;
 
@@ -235,8 +236,35 @@ fn request_review_changes(
 }
 
 #[tauri::command]
-fn approve_review(id: String) -> Result<Task, String> {
-    core_approve_review(&id).map_err(|e| e.to_string())
+fn approve_review(id: String, app_handle: tauri::AppHandle) -> Result<Task, String> {
+    // Transition to Reviewing status (spawns reviewer agent)
+    let task = core_start_automated_review(&id).map_err(|e| e.to_string())?;
+
+    // Create callback that emits Tauri events for real-time updates
+    let handle = app_handle.clone();
+    let on_update = move |task_id: &str| {
+        let _ = handle.emit("task-logs-updated", task_id.to_string());
+    };
+
+    // Spawn the reviewer agent
+    match agents::spawn_agent(&task, AgentType::Reviewer, on_update) {
+        Ok(spawned) => {
+            println!(
+                "Spawned reviewer for task {} (pid: {})",
+                spawned.task_id, spawned.process_id
+            );
+        }
+        Err(e) => {
+            eprintln!("Failed to spawn reviewer for task {}: {}", task.id, e);
+        }
+    }
+
+    // Return the updated task
+    tasks::load_tasks()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .find(|t| t.id == id)
+        .ok_or_else(|| "Task not found".to_string())
 }
 
 #[tauri::command]

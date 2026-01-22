@@ -17,8 +17,9 @@ pub use agents::{resume_agent, spawn_agent, spawn_agent_sync, AgentType, Spawned
 pub use session_logs::{get_claude_session_path, recover_session_logs};
 pub use project::{find_project_root, get_orkestra_dir};
 pub use tasks::{
-    add_task_session, create_task_with_options, load_tasks, save_tasks, LogEntry, SessionInfo,
-    Task, TaskKind, TaskStatus, ToolInput,
+    add_task_session, approve_automated_review, create_task_with_options, load_tasks,
+    reject_automated_review, save_tasks, start_automated_review, LogEntry, SessionInfo, Task,
+    TaskKind, TaskStatus, ToolInput,
 };
 
 // New architecture re-exports
@@ -29,5 +30,5 @@ pub use domain::{
 };
 pub use error::{OrkestraError, Result};
 pub use ports::{Clock, ProcessSpawner, SpawnConfig, SpawnedProcess, TaskStore};
-pub use prompt::{build_planner_prompt, build_worker_prompt};
+pub use prompt::{build_planner_prompt, build_reviewer_prompt, build_worker_prompt};
 pub use services::{AgentService, TaskService};

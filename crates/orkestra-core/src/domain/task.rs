@@ -18,6 +18,7 @@ pub enum TaskStatus {
     BreakingDown,
     WaitingOnSubtasks,
     Working,
+    Reviewing,
     Done,
     Failed,
     Blocked,
@@ -41,19 +42,28 @@ impl TaskStatus {
     /// The task workflow follows this state machine:
     /// - Planning -> Working (plan approved)
     /// - Planning -> Failed/Blocked
-    /// - Working -> Done (work approved)
+    /// - Working -> Reviewing (work approved, automated review)
+    /// - Working -> Done (work approved, skip review)
     /// - Working -> Planning (rare: restart planning)
     /// - Working -> Failed/Blocked
+    /// - Reviewing -> Done (reviewer approved)
+    /// - Reviewing -> Working (reviewer rejected, back to worker)
+    /// - Reviewing -> Failed/Blocked
     /// - Any -> Failed/Blocked (can fail or block from anywhere)
     pub fn can_transition_to(&self, new: &TaskStatus) -> bool {
-        use TaskStatus::{Planning, BreakingDown, Working, Failed, Blocked, WaitingOnSubtasks, Done};
+        use TaskStatus::{Blocked, BreakingDown, Done, Failed, Planning, Reviewing, WaitingOnSubtasks, Working};
         matches!(
             (self, new),
             // Planning transitions
-            (Planning, BreakingDown | Working | Failed | Blocked) |
-(BreakingDown, WaitingOnSubtasks | Working | Failed | Blocked) |
-(WaitingOnSubtasks | Working, Done) |
-(WaitingOnSubtasks | Working | _, Blocked | Failed) | (Working, Planning)
+            (Planning, BreakingDown | Working | Failed | Blocked)
+                | (BreakingDown, WaitingOnSubtasks | Working | Failed | Blocked)
+                | (WaitingOnSubtasks, Done | Blocked | Failed)
+                // Working transitions
+                | (Working, Done | Reviewing | Planning | Blocked | Failed)
+                // Reviewing transitions
+                | (Reviewing, Done | Working | Blocked | Failed)
+                // Universal failure/block transitions
+                | (_, Blocked | Failed)
         )
     }
 }
@@ -91,6 +101,9 @@ pub struct Task {
     pub plan_feedback: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub review_feedback: Option<String>,
+    /// Feedback from reviewer agent when it rejects work
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reviewer_feedback: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sessions: Option<indexmap::IndexMap<String, SessionInfo>>,
     #[serde(default)]
@@ -127,6 +140,7 @@ impl Task {
             plan: None,
             plan_feedback: None,
             review_feedback: None,
+            reviewer_feedback: None,
             sessions: None,
             auto_approve: false,
             parent_id: None,
@@ -149,6 +163,11 @@ impl Task {
     /// Returns true if task is `BreakingDown` and has breakdown ready for review.
     pub fn needs_breakdown_review(&self) -> bool {
         self.status == TaskStatus::BreakingDown && self.breakdown.is_some()
+    }
+
+    /// Returns true if task is in the `Reviewing` state (automated review in progress).
+    pub fn is_reviewing(&self) -> bool {
+        self.status == TaskStatus::Reviewing
     }
 
     /// Transition the task to a new status, validating the transition.
@@ -339,5 +358,65 @@ mod tests {
     fn test_task_kind_default() {
         // Test that serde default works for backward compatibility
         assert_eq!(TaskKind::default(), TaskKind::Task);
+    }
+
+    #[test]
+    fn test_reviewing_workflow_transitions() {
+        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        task.status = TaskStatus::Working;
+
+        // Working -> Reviewing (work approved, automated review)
+        assert!(task.transition_to(TaskStatus::Reviewing, "now").is_ok());
+        assert_eq!(task.status, TaskStatus::Reviewing);
+        assert!(task.is_reviewing());
+
+        // Reviewing -> Done (reviewer approved)
+        assert!(task.transition_to(TaskStatus::Done, "now").is_ok());
+        assert_eq!(task.status, TaskStatus::Done);
+    }
+
+    #[test]
+    fn test_reviewing_rejection() {
+        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        task.status = TaskStatus::Reviewing;
+
+        // Reviewing -> Working (reviewer rejected, back to worker)
+        assert!(task.transition_to(TaskStatus::Working, "now").is_ok());
+        assert_eq!(task.status, TaskStatus::Working);
+    }
+
+    #[test]
+    fn test_reviewing_can_fail_or_block() {
+        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        task.status = TaskStatus::Reviewing;
+
+        // Reviewing -> Failed
+        assert!(task.status.can_transition_to(&TaskStatus::Failed));
+        // Reviewing -> Blocked
+        assert!(task.status.can_transition_to(&TaskStatus::Blocked));
+    }
+
+    #[test]
+    fn test_is_reviewing() {
+        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        assert!(!task.is_reviewing());
+
+        task.status = TaskStatus::Reviewing;
+        assert!(task.is_reviewing());
+
+        task.status = TaskStatus::Working;
+        assert!(!task.is_reviewing());
+    }
+
+    #[test]
+    fn test_reviewer_feedback_field() {
+        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        assert!(task.reviewer_feedback.is_none());
+
+        task.reviewer_feedback = Some("Tests failing, please fix".to_string());
+        assert_eq!(
+            task.reviewer_feedback,
+            Some("Tests failing, please fix".to_string())
+        );
     }
 }

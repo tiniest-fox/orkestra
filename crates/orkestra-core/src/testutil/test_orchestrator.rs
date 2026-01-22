@@ -168,11 +168,11 @@ impl TestOrchestrator {
     }
 
     /// Run the full workflow using realistic code paths:
-    /// 1. UI creates task (tasks:: function)
+    /// 1. UI creates task (`tasks::` function)
     /// 2. Agent sets plan (CLI command)
-    /// 3. UI approves plan (tasks:: function)
+    /// 3. UI approves plan (`tasks::` function)
     /// 4. Agent makes changes and completes (CLI command)
-    /// 5. UI starts automated review (tasks:: function)
+    /// 5. UI starts automated review (`tasks::` function)
     /// 6. Reviewer agent approves (CLI command)
     pub fn run_full_workflow(
         &self,
@@ -297,7 +297,7 @@ fn find_cli_binary() -> std::io::Result<PathBuf> {
 /// - Real [`Project`] initialized in the temp directory
 /// - Path to CLI binary for running agent commands
 ///
-/// Returns the orchestrator and temp directory (keep the TempDir alive
+/// Returns the orchestrator and temp directory (keep the `TempDir` alive
 /// for the duration of the test).
 ///
 /// # Example
@@ -322,8 +322,7 @@ pub fn create_test_orchestrator() -> std::io::Result<(TestOrchestrator, TempDir)
     create_orkestra_dirs(&project_root)?;
 
     // Use the real Project::init()
-    let project =
-        Project::init(&project_root).map_err(|e| std::io::Error::other(e.to_string()))?;
+    let project = Project::init(&project_root).map_err(|e| std::io::Error::other(e.to_string()))?;
 
     let orchestrator = TestOrchestrator::new(project, project_root, cli_binary);
 

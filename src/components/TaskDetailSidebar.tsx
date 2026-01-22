@@ -251,6 +251,8 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const [logsLoading, setLogsLoading] = useState(false);
   const [activeSession, setActiveSession] = useState<string | null>(null);
   const [subtasks, setSubtasks] = useState<Task[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const statusConfig = TASK_STATUS_CONFIG[task.status];
   const projectRoot = useProjectRoot();
@@ -527,6 +529,20 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     }
   };
 
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await invoke("delete_task", { id: task.id });
+      onTaskUpdated();
+      onClose();
+    } catch (err) {
+      console.error("Failed to delete task:", err);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   // Only show auto-approve toggle when task is not actively being worked on by an agent
   const canToggleAutoApprove =
     !task.agent_pid &&
@@ -605,6 +621,28 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
               Auto
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setShowDeleteConfirm(true)}
+            disabled={Boolean(task.agent_pid) || isDeleting}
+            className="p-1 hover:bg-red-100 rounded transition-colors text-red-500 hover:text-red-600 disabled:opacity-50"
+            title="Delete task"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+              />
+            </svg>
+          </button>
           <button
             type="button"
             onClick={onClose}
@@ -927,6 +965,37 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
               Approve for Review
             </button>
           )}
+        </div>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Task?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              This will permanently delete the task "{task.title}" and clean up its git
+              branch/worktree. Any child tasks will also be deleted. This action cannot be undone.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {isDeleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -7,7 +7,7 @@
 //!
 //! Key test scenarios:
 //! - Task creation with git worktree
-//! - Planning phase (agent sets plan via CLI, user approves via tasks::)
+//! - Planning phase (agent sets plan via CLI, user approves via `tasks::`)
 //! - Working phase (agent makes changes, completes via CLI)
 //! - Review phase (UI starts review, reviewer agent approves via CLI)
 //! - Completion with automatic merge back to primary branch
@@ -77,8 +77,8 @@ fn test_full_workflow_with_successful_merge() {
     assert!(task.plan.is_some());
 
     // Step 3: UI approves plan (what Tauri does)
-    let task = tasks::approve_task_plan(&orchestrator.project, &task.id)
-        .expect("Failed to approve plan");
+    let task =
+        tasks::approve_task_plan(&orchestrator.project, &task.id).expect("Failed to approve plan");
     assert_eq!(task.status, TaskStatus::Working);
 
     // Step 4: Agent (Claude Code) makes changes in worktree
@@ -232,7 +232,7 @@ fn test_workflow_with_merge_conflict() {
                 "Should identify conflict.txt as conflicting"
             );
         }
-        other => panic!("Expected Conflict result, got {:?}", other),
+        other => panic!("Expected Conflict result, got {other:?}"),
     }
 
     // Worktree should still exist for conflict resolution
@@ -284,9 +284,7 @@ fn test_child_task_skips_integration() {
     store
         .update_field(&child.id, "worktree_path", parent.worktree_path.as_deref())
         .unwrap();
-    store
-        .update_status(&child.id, TaskStatus::Working)
-        .unwrap();
+    store.update_status(&child.id, TaskStatus::Working).unwrap();
     store
         .update_field(&child.id, "skip_breakdown", Some("1"))
         .unwrap();
@@ -295,7 +293,13 @@ fn test_child_task_skips_integration() {
     orchestrator
         .run_cli_in_worktree(
             &parent.id, // Run from parent's worktree
-            &["task", "complete", &child.id, "--summary", "Child work done"],
+            &[
+                "task",
+                "complete",
+                &child.id,
+                "--summary",
+                "Child work done",
+            ],
         )
         .unwrap();
 
@@ -317,11 +321,10 @@ fn test_child_task_skips_integration() {
         Some(IntegrationResult::Skipped { reason }) => {
             assert!(
                 reason.contains("Child task") || reason.contains("parent"),
-                "Should skip because it's a child task, got: {}",
-                reason
+                "Should skip because it's a child task, got: {reason}"
             );
         }
-        other => panic!("Expected Skipped result, got {:?}", other),
+        other => panic!("Expected Skipped result, got {other:?}"),
     }
 
     // Parent's worktree should still exist
@@ -389,8 +392,12 @@ fn test_cli_show_task() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create a task
-    let task =
-        tasks::create_task(&orchestrator.project, "Show me task", "Detailed description").unwrap();
+    let task = tasks::create_task(
+        &orchestrator.project,
+        "Show me task",
+        "Detailed description",
+    )
+    .unwrap();
 
     // Show via CLI
     let output = orchestrator

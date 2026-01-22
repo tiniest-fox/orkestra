@@ -14,6 +14,10 @@ pub mod ports;
 pub mod prompt;
 pub mod services;
 
+// Test utilities (available for integration tests)
+#[cfg(any(test, feature = "testutil"))]
+pub mod testutil;
+
 // Legacy re-exports (for backward compatibility during migration)
 pub use agents::{resume_agent, spawn_agent, spawn_agent_sync, AgentType, SpawnedAgent};
 pub use project::{find_project_root, get_orkestra_dir};

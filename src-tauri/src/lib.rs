@@ -148,19 +148,9 @@ fn request_review_changes(id: String, feedback: String, app_handle: tauri::AppHa
         let _ = handle.emit("task-logs-updated", task_id.to_string());
     };
 
-    // Find the most recent work-related session to resume (work or latest review_N)
-    // We specifically look for work sessions, not plan or breakdown sessions
+    // Resume the work session (feedback iterations continue the same session)
     let session_to_resume = task.sessions.as_ref()
-        .and_then(|s| {
-            // First try to find the latest review session (review_0, review_1, etc.)
-            let latest_review = s.keys()
-                .filter(|k| k.starts_with("review_"))
-                .max_by_key(|k| k.strip_prefix("review_").and_then(|n| n.parse::<u32>().ok()).unwrap_or(0))
-                .cloned();
-
-            // Fall back to "work" session if no review sessions exist
-            latest_review.or_else(|| s.contains_key("work").then(|| "work".to_string()))
-        });
+        .and_then(|s| s.contains_key("work").then(|| "work".to_string()));
 
     if let Some(session_key) = session_to_resume {
         let prompt = format!(
@@ -252,18 +242,9 @@ fn request_breakdown_changes(id: String, feedback: String, app_handle: tauri::Ap
         let _ = handle.emit("task-logs-updated", task_id.to_string());
     };
 
-    // Find the most recent breakdown session to resume (breakdown or latest breakdown_N)
+    // Resume the breakdown session (feedback iterations continue the same session)
     let session_to_resume = task.sessions.as_ref()
-        .and_then(|s| {
-            // First try to find the latest breakdown revision session (breakdown_0, breakdown_1, etc.)
-            let latest_revision = s.keys()
-                .filter(|k| k.starts_with("breakdown_"))
-                .max_by_key(|k| k.strip_prefix("breakdown_").and_then(|n| n.parse::<u32>().ok()).unwrap_or(0))
-                .cloned();
-
-            // Fall back to "breakdown" session if no revision sessions exist
-            latest_revision.or_else(|| s.contains_key("breakdown").then(|| "breakdown".to_string()))
-        });
+        .and_then(|s| s.contains_key("breakdown").then(|| "breakdown".to_string()));
 
     if let Some(session_key) = session_to_resume {
         let prompt = format!(

@@ -4,7 +4,7 @@ use std::fs;
 use std::io::BufRead;
 
 use crate::project;
-use crate::tasks::{Task, TaskStatus, LogEntry, ToolInput, update_task_status, add_task_session, get_next_review_session_key, get_next_breakdown_session_key, get_subtasks};
+use crate::tasks::{Task, TaskStatus, LogEntry, ToolInput, update_task_status, add_task_session, get_subtasks};
 
 /// Agent types that can be spawned
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -686,25 +686,12 @@ where
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    // Determine the session type based on agent type and task state
+    // Determine the session type based on agent type
+    // Feedback iterations use session resumption, so we only need base session names
     let session_type = match agent_type {
         AgentType::Planner => "plan".to_string(),
-        AgentType::Breakdown => {
-            // Check if this is a breakdown revision cycle (has breakdown_feedback)
-            if task.breakdown_feedback.is_some() {
-                get_next_breakdown_session_key(task)
-            } else {
-                "breakdown".to_string()
-            }
-        }
-        AgentType::Worker => {
-            // Check if this is a review cycle (has review_feedback)
-            if task.review_feedback.is_some() {
-                get_next_review_session_key(task)
-            } else {
-                "work".to_string()
-            }
-        }
+        AgentType::Breakdown => "breakdown".to_string(),
+        AgentType::Worker => "work".to_string(),
     };
 
     // Clone task_id for the callback
@@ -857,23 +844,12 @@ pub fn spawn_agent_sync(task: &Task, agent_type: AgentType, timeout_secs: u64) -
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    // Determine the session type based on agent type and task state
+    // Determine the session type based on agent type
+    // Feedback iterations use session resumption, so we only need base session names
     let session_type = match agent_type {
         AgentType::Planner => "plan".to_string(),
-        AgentType::Breakdown => {
-            if task.breakdown_feedback.is_some() {
-                get_next_breakdown_session_key(task)
-            } else {
-                "breakdown".to_string()
-            }
-        }
-        AgentType::Worker => {
-            if task.review_feedback.is_some() {
-                get_next_review_session_key(task)
-            } else {
-                "work".to_string()
-            }
-        }
+        AgentType::Breakdown => "breakdown".to_string(),
+        AgentType::Worker => "work".to_string(),
     };
 
     // Read stdout synchronously until we get the session_id or timeout

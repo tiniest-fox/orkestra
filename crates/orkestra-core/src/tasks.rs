@@ -131,11 +131,6 @@ pub fn add_task_session(id: &str, session_type: &str, session_id: &str, agent_pi
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Task not found"))
 }
 
-/// Get the next review session key (review_0, review_1, etc.)
-pub fn get_next_review_session_key(task: &Task) -> String {
-    task.next_review_session_key()
-}
-
 /// Set the plan for a task.
 pub fn set_task_plan(id: &str, plan: &str) -> std::io::Result<Task> {
     let store = get_store();
@@ -531,9 +526,4 @@ pub fn check_parent_completion(parent_id: &str) -> std::io::Result<Option<Task>>
     }
 
     Ok(None)
-}
-
-/// Get the next breakdown session key (breakdown_0, breakdown_1, etc.)
-pub fn get_next_breakdown_session_key(task: &Task) -> String {
-    task.next_breakdown_session_key()
 }

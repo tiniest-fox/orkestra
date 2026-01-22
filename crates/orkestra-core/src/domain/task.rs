@@ -181,26 +181,6 @@ impl Task {
         Ok(())
     }
 
-    /// Get the next review session key (review_0, review_1, etc.)
-    pub fn next_review_session_key(&self) -> String {
-        let count = self
-            .sessions
-            .as_ref()
-            .map(|s| s.keys().filter(|k| k.starts_with("review_")).count())
-            .unwrap_or(0);
-        format!("review_{}", count)
-    }
-
-    /// Get the next breakdown session key (breakdown_0, breakdown_1, etc.)
-    pub fn next_breakdown_session_key(&self) -> String {
-        let count = self
-            .sessions
-            .as_ref()
-            .map(|s| s.keys().filter(|k| k.starts_with("breakdown_")).count())
-            .unwrap_or(0);
-        format!("breakdown_{}", count)
-    }
-
     /// Add a session to the task.
     pub fn add_session(&mut self, session_type: &str, session_id: &str, now: &str, agent_pid: Option<u32>) {
         let session = SessionInfo {
@@ -291,19 +271,6 @@ mod tests {
     }
 
     #[test]
-    fn test_review_session_key() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
-
-        assert_eq!(task.next_review_session_key(), "review_0");
-
-        task.add_session("review_0", "session-1", "now", None);
-        assert_eq!(task.next_review_session_key(), "review_1");
-
-        task.add_session("review_1", "session-2", "now", None);
-        assert_eq!(task.next_review_session_key(), "review_2");
-    }
-
-    #[test]
     fn test_breakdown_workflow_transitions() {
         let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
         assert_eq!(task.status, TaskStatus::Planning);
@@ -353,19 +320,6 @@ mod tests {
         // Not true if status is not BreakingDown
         task.status = TaskStatus::Planning;
         assert!(!task.needs_breakdown_review());
-    }
-
-    #[test]
-    fn test_breakdown_session_key() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
-
-        assert_eq!(task.next_breakdown_session_key(), "breakdown_0");
-
-        task.add_session("breakdown_0", "session-1", "now", None);
-        assert_eq!(task.next_breakdown_session_key(), "breakdown_1");
-
-        task.add_session("breakdown_1", "session-2", "now", None);
-        assert_eq!(task.next_breakdown_session_key(), "breakdown_2");
     }
 
     #[test]

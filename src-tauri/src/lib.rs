@@ -2,8 +2,8 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use orkestra_core::{
-    agents, auto_tasks, find_project_root, orchestrator, recover_session_logs, resume_agent,
-    tasks, AgentType, AutoTask, LogEntry, Project, Task, TaskStatus,
+    agents, auto_tasks, find_project_root, orchestrator, recover_session_logs, resume_agent, tasks,
+    AgentType, AutoTask, LogEntry, Project, Task, TaskStatus,
 };
 use tasks::{
     approve_breakdown as core_approve_breakdown, get_child_tasks as core_get_child_tasks,
@@ -38,8 +38,13 @@ fn create_and_start_task(
 ) -> Result<Task, String> {
     let project = Project::discover().map_err(|e| e.to_string())?;
     // Create task in Planning status - orchestrator will spawn the planner
-    tasks::create_task_with_options(&project, &title, &description, auto_approve.unwrap_or(false))
-        .map_err(|e| e.to_string())
+    tasks::create_task_with_options(
+        &project,
+        &title,
+        &description,
+        auto_approve.unwrap_or(false),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -135,8 +140,7 @@ fn get_auto_tasks() -> Result<Vec<AutoTask>, String> {
 #[tauri::command]
 fn create_task_from_auto_task(name: String) -> Result<Task, String> {
     let project = Project::discover().map_err(|e| e.to_string())?;
-    let auto_task =
-        auto_tasks::get_auto_task(project.root(), &name).map_err(|e| e.to_string())?;
+    let auto_task = auto_tasks::get_auto_task(project.root(), &name).map_err(|e| e.to_string())?;
 
     // Create the task using the auto-task's title, description, and auto_run setting
     tasks::create_task_with_options(
@@ -319,13 +323,8 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                 let on_update2 = move |task_id: &str| {
                                     let _ = handle2.emit("task-logs-updated", task_id.to_string());
                                 };
-                                match resume_agent(
-                                    &project,
-                                    &task,
-                                    &session_key,
-                                    None,
-                                    on_update2,
-                                ) {
+                                match resume_agent(&project, &task, &session_key, None, on_update2)
+                                {
                                     Ok(spawned) => {
                                         println!(
                                             "[orchestrator] Resumed worker for {} (pid: {})",
@@ -369,13 +368,8 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                 let on_update2 = move |task_id: &str| {
                                     let _ = handle2.emit("task-logs-updated", task_id.to_string());
                                 };
-                                match resume_agent(
-                                    &project,
-                                    &task,
-                                    &session_key,
-                                    None,
-                                    on_update2,
-                                ) {
+                                match resume_agent(&project, &task, &session_key, None, on_update2)
+                                {
                                     Ok(spawned) => {
                                         println!(
                                             "[orchestrator] Resumed reviewer for {} (pid: {})",

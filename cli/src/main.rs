@@ -249,53 +249,59 @@ fn main() {
                         }
                     }
                 }
-                TaskAction::Complete { id, summary } => match tasks::complete_task(&project, &id, &summary) {
-                    Ok(task) => {
-                        if task.auto_approve {
-                            // Auto-approve: transition to Reviewing and spawn reviewer
-                            match tasks::start_automated_review(&project, &id) {
-                                Ok(reviewing_task) => {
-                                    println!(
-                                        "Task {} completed. Auto-starting review.",
-                                        reviewing_task.id
-                                    );
-                                    // Spawn reviewer agent
-                                    match spawn_agent_sync(&project, &reviewing_task, AgentType::Reviewer, 30)
-                                    {
-                                        Ok(spawned) => {
-                                            if let Some(sid) = &spawned.session_id {
-                                                println!(
+                TaskAction::Complete { id, summary } => {
+                    match tasks::complete_task(&project, &id, &summary) {
+                        Ok(task) => {
+                            if task.auto_approve {
+                                // Auto-approve: transition to Reviewing and spawn reviewer
+                                match tasks::start_automated_review(&project, &id) {
+                                    Ok(reviewing_task) => {
+                                        println!(
+                                            "Task {} completed. Auto-starting review.",
+                                            reviewing_task.id
+                                        );
+                                        // Spawn reviewer agent
+                                        match spawn_agent_sync(
+                                            &project,
+                                            &reviewing_task,
+                                            AgentType::Reviewer,
+                                            30,
+                                        ) {
+                                            Ok(spawned) => {
+                                                if let Some(sid) = &spawned.session_id {
+                                                    println!(
                                                     "Spawned reviewer agent (pid: {}, session: {})",
                                                     spawned.process_id, sid
                                                 );
-                                            } else {
-                                                println!(
+                                                } else {
+                                                    println!(
                                                     "Spawned reviewer agent (pid: {}, session capture pending)",
                                                     spawned.process_id
                                                 );
+                                                }
+                                            }
+                                            Err(e) => {
+                                                eprintln!(
+                                                    "Warning: Failed to spawn reviewer agent: {e}"
+                                                );
                                             }
                                         }
-                                        Err(e) => {
-                                            eprintln!(
-                                                "Warning: Failed to spawn reviewer agent: {e}"
-                                            );
-                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Warning: Failed to start automated review: {e}");
+                                        println!("Task {} marked as ready for review", task.id);
                                     }
                                 }
-                                Err(e) => {
-                                    eprintln!("Warning: Failed to start automated review: {e}");
-                                    println!("Task {} marked as ready for review", task.id);
-                                }
+                            } else {
+                                println!("Task {} marked as ready for review", task.id);
                             }
-                        } else {
-                            println!("Task {} marked as ready for review", task.id);
+                        }
+                        Err(e) => {
+                            eprintln!("Error completing task: {e}");
+                            std::process::exit(1);
                         }
                     }
-                    Err(e) => {
-                        eprintln!("Error completing task: {e}");
-                        std::process::exit(1);
-                    }
-                },
+                }
                 TaskAction::Fail { id, reason } => match tasks::fail_task(&project, &id, &reason) {
                     Ok(task) => {
                         println!("Task {} marked as failed", task.id);
@@ -305,7 +311,8 @@ fn main() {
                         std::process::exit(1);
                     }
                 },
-                TaskAction::Block { id, reason } => match tasks::block_task(&project, &id, &reason) {
+                TaskAction::Block { id, reason } => match tasks::block_task(&project, &id, &reason)
+                {
                     Ok(task) => {
                         println!("Task {} marked as blocked", task.id);
                     }
@@ -340,15 +347,17 @@ fn main() {
                         }
                     }
                 }
-                TaskAction::SetPlan { id, plan } => match tasks::set_task_plan(&project, &id, &plan) {
-                    Ok(task) => {
-                        println!("Plan set for task {}. Status: awaiting_approval", task.id);
+                TaskAction::SetPlan { id, plan } => {
+                    match tasks::set_task_plan(&project, &id, &plan) {
+                        Ok(task) => {
+                            println!("Plan set for task {}. Status: awaiting_approval", task.id);
+                        }
+                        Err(e) => {
+                            eprintln!("Error setting plan: {e}");
+                            std::process::exit(1);
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("Error setting plan: {e}");
-                        std::process::exit(1);
-                    }
-                },
+                }
                 TaskAction::Approve { id } => {
                     match tasks::approve_task_plan(&project, &id) {
                         Ok(task) => {
@@ -359,7 +368,12 @@ fn main() {
                                         task.id
                                     );
                                     // Spawn a breakdown agent
-                                    match spawn_agent_sync(&project, &task, AgentType::Breakdown, 30) {
+                                    match spawn_agent_sync(
+                                        &project,
+                                        &task,
+                                        AgentType::Breakdown,
+                                        30,
+                                    ) {
                                         Ok(spawned) => {
                                             if let Some(sid) = &spawned.session_id {
                                                 println!("Spawned breakdown agent (pid: {}, session: {})", spawned.process_id, sid);
@@ -447,15 +461,17 @@ fn main() {
                         std::process::exit(1);
                     }
                 },
-                TaskAction::CompleteSubtask { id } => match tasks::complete_subtask(&project, &id) {
-                    Ok(task) => {
-                        println!("Subtask {} marked as complete", task.id);
+                TaskAction::CompleteSubtask { id } => {
+                    match tasks::complete_subtask(&project, &id) {
+                        Ok(task) => {
+                            println!("Subtask {} marked as complete", task.id);
+                        }
+                        Err(e) => {
+                            eprintln!("Error completing subtask: {e}");
+                            std::process::exit(1);
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("Error completing subtask: {e}");
-                        std::process::exit(1);
-                    }
-                },
+                }
                 TaskAction::SetBreakdown { id, breakdown } => {
                     match tasks::set_breakdown(&project, &id, &breakdown) {
                         Ok(task) => {
@@ -479,7 +495,12 @@ fn main() {
                             match tasks::get_child_tasks(&project, &id) {
                                 Ok(child_tasks) => {
                                     for child in child_tasks {
-                                        match spawn_agent_sync(&project, &child, AgentType::Worker, 30) {
+                                        match spawn_agent_sync(
+                                            &project,
+                                            &child,
+                                            AgentType::Worker,
+                                            30,
+                                        ) {
                                             Ok(spawned) => {
                                                 if let Some(sid) = &spawned.session_id {
                                                     println!("Spawned worker for {} (pid: {}, session: {})", child.id, spawned.process_id, sid);
@@ -549,39 +570,43 @@ fn main() {
                         }
                     }
                 }
-                TaskAction::Subtasks { parent_id } => match tasks::get_children(&project, &parent_id) {
-                    Ok(children) => {
-                        if children.is_empty() {
-                            println!("No children found for {parent_id}.");
-                            return;
-                        }
+                TaskAction::Subtasks { parent_id } => {
+                    match tasks::get_children(&project, &parent_id) {
+                        Ok(children) => {
+                            if children.is_empty() {
+                                println!("No children found for {parent_id}.");
+                                return;
+                            }
 
-                        println!("Children of {parent_id}:");
-                        for task in children {
-                            let kind = format!("{:?}", task.kind).to_lowercase();
-                            println!(
-                                "  {} [{}] ({}) {}",
-                                task.id,
-                                format!("{:?}", task.status).to_lowercase(),
-                                kind,
-                                task.title
-                            );
+                            println!("Children of {parent_id}:");
+                            for task in children {
+                                let kind = format!("{:?}", task.kind).to_lowercase();
+                                println!(
+                                    "  {} [{}] ({}) {}",
+                                    task.id,
+                                    format!("{:?}", task.status).to_lowercase(),
+                                    kind,
+                                    task.title
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error getting children: {e}");
+                            std::process::exit(1);
                         }
                     }
-                    Err(e) => {
-                        eprintln!("Error getting children: {e}");
-                        std::process::exit(1);
+                }
+                TaskAction::ApproveReview { id } => {
+                    match tasks::approve_automated_review(&project, &id) {
+                        Ok(task) => {
+                            println!("Task {} review approved. Status: done", task.id);
+                        }
+                        Err(e) => {
+                            eprintln!("Error approving review: {e}");
+                            std::process::exit(1);
+                        }
                     }
-                },
-                TaskAction::ApproveReview { id } => match tasks::approve_automated_review(&project, &id) {
-                    Ok(task) => {
-                        println!("Task {} review approved. Status: done", task.id);
-                    }
-                    Err(e) => {
-                        eprintln!("Error approving review: {e}");
-                        std::process::exit(1);
-                    }
-                },
+                }
                 TaskAction::RejectReview { id, feedback } => {
                     match tasks::reject_automated_review(&project, &id, &feedback) {
                         Ok(task) => {

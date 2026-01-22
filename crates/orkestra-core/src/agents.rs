@@ -452,7 +452,11 @@ struct AgentConfig {
 }
 
 /// Resolves agent configuration: loads definition, builds prompt, determines status
-fn resolve_agent_config(project: &Project, task: &Task, agent_type: AgentType) -> std::io::Result<AgentConfig> {
+fn resolve_agent_config(
+    project: &Project,
+    task: &Task,
+    agent_type: AgentType,
+) -> std::io::Result<AgentConfig> {
     let agent_name = match agent_type {
         AgentType::Planner => "planner",
         AgentType::Breakdown => "breakdown",
@@ -637,7 +641,13 @@ where
                 }
                 let parsed = parse_stream_event(&json_line);
                 if let Some(sid) = parsed.session_id {
-                    let _ = tasks::add_task_session(&thread_project, &task_id, &session_type, &sid, Some(pid));
+                    let _ = tasks::add_task_session(
+                        &thread_project,
+                        &task_id,
+                        &session_type,
+                        &sid,
+                        Some(pid),
+                    );
                 }
                 if parsed.has_new_content {
                     on_update(&task_id_for_callback);
@@ -777,7 +787,8 @@ fn wait_for_session_id(
                 }
                 let parsed = parse_stream_event(&json_line);
                 if let Some(sid) = parsed.session_id {
-                    let _ = tasks::add_task_session(project, task_id, session_type, &sid, Some(pid));
+                    let _ =
+                        tasks::add_task_session(project, task_id, session_type, &sid, Some(pid));
                     captured_session_id = Some(sid);
                     break;
                 }

@@ -152,7 +152,9 @@ impl GitService {
 
         if !add_output.status.success() {
             let stderr = String::from_utf8_lossy(&add_output.stderr);
-            return Err(OrkestraError::GitError(format!("Failed to stage changes: {stderr}")));
+            return Err(OrkestraError::GitError(format!(
+                "Failed to stage changes: {stderr}"
+            )));
         }
 
         // Commit
@@ -166,7 +168,9 @@ impl GitService {
             let stderr = String::from_utf8_lossy(&commit_output.stderr);
             // "nothing to commit" is not an error
             if !stderr.contains("nothing to commit") {
-                return Err(OrkestraError::GitError(format!("Failed to commit: {stderr}")));
+                return Err(OrkestraError::GitError(format!(
+                    "Failed to commit: {stderr}"
+                )));
             }
         }
 

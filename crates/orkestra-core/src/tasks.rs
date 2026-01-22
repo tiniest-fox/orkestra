@@ -7,7 +7,9 @@ use crate::ports::TaskStore;
 use crate::services::Project;
 
 // Re-export domain types for convenience
-pub use crate::domain::{IntegrationResult, LogEntry, SessionInfo, Task, TaskKind, TaskStatus, ToolInput};
+pub use crate::domain::{
+    IntegrationResult, LogEntry, SessionInfo, Task, TaskKind, TaskStatus, ToolInput,
+};
 
 // =============================================================================
 // Integration Helper
@@ -15,7 +17,10 @@ pub use crate::domain::{IntegrationResult, LogEntry, SessionInfo, Task, TaskKind
 
 /// Attempt to integrate a completed task's branch back to the primary branch.
 /// Returns (`new_status`, `integration_result`, `conflict_message`).
-fn try_integrate(project: &Project, task: &Task) -> (TaskStatus, Option<IntegrationResult>, Option<String>) {
+fn try_integrate(
+    project: &Project,
+    task: &Task,
+) -> (TaskStatus, Option<IntegrationResult>, Option<String>) {
     // Skip if not a root task (has parent)
     if task.parent_id.is_some() {
         return (
@@ -69,7 +74,9 @@ fn try_integrate(project: &Project, task: &Task) -> (TaskStatus, Option<Integrat
             let _ = git.remove_worktree(&task.id);
             let _ = git.delete_branch(&branch_name);
 
-            let target_branch = git.detect_primary_branch().unwrap_or_else(|_| "main".into());
+            let target_branch = git
+                .detect_primary_branch()
+                .unwrap_or_else(|_| "main".into());
             (
                 TaskStatus::Done,
                 Some(IntegrationResult::Merged {
@@ -253,7 +260,9 @@ pub fn add_task_session(
     session_id: &str,
     agent_pid: Option<u32>,
 ) -> Result<Task> {
-    project.store().add_session(id, session_type, session_id, agent_pid)?;
+    project
+        .store()
+        .add_session(id, session_type, session_id, agent_pid)?;
     require_task(project, id)
 }
 
@@ -456,7 +465,12 @@ pub fn set_auto_approve(project: &Project, id: &str, enabled: bool) -> Result<Ta
 // =============================================================================
 
 /// Create a child task under a parent task (parallel work, appears in Kanban).
-pub fn create_child_task(project: &Project, parent_id: &str, title: &str, description: &str) -> Result<Task> {
+pub fn create_child_task(
+    project: &Project,
+    parent_id: &str,
+    title: &str,
+    description: &str,
+) -> Result<Task> {
     let store = project.store();
     let parent = require_task(project, parent_id)?;
 
@@ -500,7 +514,12 @@ pub fn create_child_task(project: &Project, parent_id: &str, title: &str, descri
 }
 
 /// Create a subtask under a parent task (checklist item, hidden from Kanban).
-pub fn create_subtask(project: &Project, parent_id: &str, title: &str, description: &str) -> Result<Task> {
+pub fn create_subtask(
+    project: &Project,
+    parent_id: &str,
+    title: &str,
+    description: &str,
+) -> Result<Task> {
     let store = project.store();
     let parent = require_task(project, parent_id)?;
 

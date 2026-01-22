@@ -13,6 +13,12 @@ export type TaskStatus =
 // - subtask: Hidden from Kanban, shown as checklist item in parent task
 export type TaskKind = "task" | "subtask";
 
+export interface TodoItem {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm: string;
+}
+
 export type ToolInput =
   | { tool: "bash"; command: string }
   | { tool: "read"; file_path: string }
@@ -21,6 +27,7 @@ export type ToolInput =
   | { tool: "glob"; pattern: string }
   | { tool: "grep"; pattern: string }
   | { tool: "task"; description: string }
+  | { tool: "todo_write"; todos: TodoItem[] }
   | { tool: "other"; summary: string };
 
 export type LogEntry =

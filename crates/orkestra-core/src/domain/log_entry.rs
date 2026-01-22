@@ -1,5 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+/// A single todo item from `TodoWrite` tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodoItem {
+    pub content: String,
+    pub status: String, // "pending", "in_progress", "completed"
+    #[serde(rename = "activeForm")]
+    pub active_form: String,
+}
+
 /// Tool input details for structured logging.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "tool", rename_all = "snake_case")]
@@ -11,6 +20,7 @@ pub enum ToolInput {
     Glob { pattern: String },
     Grep { pattern: String },
     Task { description: String },
+    TodoWrite { todos: Vec<TodoItem> },
     Other { summary: String },
 }
 

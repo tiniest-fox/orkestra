@@ -8,6 +8,8 @@ import {
   type Task,
   type ToolInput,
 } from "../types/task";
+import { TodoDisplay } from "./TodoDisplay";
+import { ToolIcon } from "./ToolIcon";
 
 type TabType = "details" | "plan" | "logs";
 
@@ -24,6 +26,8 @@ function formatToolInput(input: ToolInput): string {
       return input.pattern;
     case "task":
       return input.description;
+    case "todo_write":
+      return `${input.todos.length} item${input.todos.length !== 1 ? "s" : ""}`;
     case "other":
       return input.summary;
   }
@@ -102,10 +106,12 @@ function LogEntryView({ entry }: { entry: LogEntry }) {
     case "tool_use":
       return (
         <div className="border-l-2 border-blue-500 pl-2 my-1 py-1">
-          <span className="text-blue-400 font-medium">{entry.tool}</span>
-          <span className="text-gray-400 text-xs ml-2 font-mono">
-            {formatToolInput(entry.input)}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <ToolIcon tool={entry.tool} size={14} className="text-blue-400" />
+            <span className="text-blue-400 font-medium">{entry.tool}</span>
+            <span className="text-gray-400 text-xs font-mono">{formatToolInput(entry.input)}</span>
+          </div>
+          {entry.input.tool === "todo_write" && <TodoDisplay todos={entry.input.todos} />}
         </div>
       );
     case "tool_result":
@@ -113,10 +119,12 @@ function LogEntryView({ entry }: { entry: LogEntry }) {
     case "subagent_tool_use":
       return (
         <div className="ml-4 border-l border-purple-500/50 pl-2 my-0.5 py-0.5">
-          <span className="text-purple-400 text-sm">{entry.tool}</span>
-          <span className="text-gray-500 text-xs ml-2 font-mono">
-            {formatToolInput(entry.input)}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <ToolIcon tool={entry.tool} size={12} className="text-purple-400" />
+            <span className="text-purple-400 text-sm">{entry.tool}</span>
+            <span className="text-gray-500 text-xs font-mono">{formatToolInput(entry.input)}</span>
+          </div>
+          {entry.input.tool === "todo_write" && <TodoDisplay todos={entry.input.todos} />}
         </div>
       );
     case "subagent_tool_result":

@@ -8,6 +8,7 @@ use std::fs;
 use std::io::BufRead;
 use std::path::PathBuf;
 
+use crate::domain::TodoItem;
 use crate::project;
 use crate::tasks::{LogEntry, ToolInput};
 
@@ -287,6 +288,31 @@ fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
                 .unwrap_or("")
                 .to_string();
             ToolInput::Task { description }
+        }
+        "TodoWrite" => {
+            let todos = input
+                .get("todos")
+                .and_then(|t| t.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|item| {
+                            let content = item.get("content")?.as_str()?.to_string();
+                            let status = item.get("status")?.as_str()?.to_string();
+                            let active_form = item
+                                .get("activeForm")
+                                .and_then(|a| a.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            Some(TodoItem {
+                                content,
+                                status,
+                                active_form,
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            ToolInput::TodoWrite { todos }
         }
         _ => {
             // For other tools, create a compact summary

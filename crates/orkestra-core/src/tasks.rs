@@ -2,6 +2,8 @@ use std::sync::OnceLock;
 
 use crate::adapters::SqliteStore;
 use crate::ports::TaskStore;
+use crate::project;
+use crate::services::GitService;
 
 // Re-export domain types that were previously defined here
 pub use crate::domain::{LogEntry, SessionInfo, Task, TaskKind, TaskStatus, ToolInput};
@@ -13,6 +15,15 @@ static STORE: OnceLock<SqliteStore> = OnceLock::new();
 /// Get or initialize the global store.
 fn get_store() -> &'static SqliteStore {
     STORE.get_or_init(|| SqliteStore::new().expect("Failed to initialize SQLite store"))
+}
+
+/// Create a GitService for the current project.
+/// Returns None if not in a git repository.
+/// Note: git2::Repository is not thread-safe, so we create a new service each time.
+fn create_git_service() -> Option<GitService> {
+    project::find_project_root()
+        .ok()
+        .and_then(|root| GitService::new(&root).ok())
 }
 
 pub fn load_tasks() -> std::io::Result<Vec<Task>> {
@@ -45,8 +56,23 @@ pub fn create_task_with_options(
 ) -> std::io::Result<Task> {
     let store = get_store();
     let now = chrono::Utc::now().to_rfc3339();
+    let id = generate_task_id();
+
+    // Create worktree for root task if GitService is available
+    let (branch_name, worktree_path) = if let Some(git) = create_git_service() {
+        match git.create_worktree(&id) {
+            Ok((branch, path)) => (Some(branch), Some(path.to_string_lossy().to_string())),
+            Err(e) => {
+                eprintln!("Warning: Failed to create worktree for task {id}: {e}");
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
+
     let task = Task {
-        id: generate_task_id(),
+        id,
         title: title.to_string(),
         description: description.to_string(),
         status: TaskStatus::Planning,
@@ -67,6 +93,8 @@ pub fn create_task_with_options(
         breakdown_feedback: None,
         skip_breakdown: false,
         agent_pid: None,
+        branch_name,
+        worktree_path,
     };
 
     store
@@ -426,6 +454,7 @@ pub fn set_auto_approve(id: &str, enabled: bool) -> std::io::Result<Task> {
 // ========== Breakdown functions ==========
 
 /// Create a child task under a parent task (parallel work, appears in Kanban).
+/// Child tasks inherit the parent's worktree.
 pub fn create_child_task(parent_id: &str, title: &str, description: &str) -> std::io::Result<Task> {
     let store = get_store();
     let parent = store
@@ -465,6 +494,9 @@ pub fn create_child_task(parent_id: &str, title: &str, description: &str) -> std
         breakdown_feedback: None,
         skip_breakdown: true,
         agent_pid: None,
+        // Inherit parent's worktree
+        branch_name: parent.branch_name.clone(),
+        worktree_path: parent.worktree_path.clone(),
     };
 
     store
@@ -474,6 +506,7 @@ pub fn create_child_task(parent_id: &str, title: &str, description: &str) -> std
 }
 
 /// Create a subtask under a parent task (checklist item, hidden from Kanban).
+/// Subtasks inherit the parent's worktree.
 pub fn create_subtask(parent_id: &str, title: &str, description: &str) -> std::io::Result<Task> {
     let store = get_store();
     let parent = store
@@ -513,6 +546,9 @@ pub fn create_subtask(parent_id: &str, title: &str, description: &str) -> std::i
         breakdown_feedback: None,
         skip_breakdown: true,
         agent_pid: None,
+        // Inherit parent's worktree
+        branch_name: parent.branch_name.clone(),
+        worktree_path: parent.worktree_path.clone(),
     };
 
     store

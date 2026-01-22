@@ -38,6 +38,9 @@ pub enum OrkestraError {
 
     #[error("Database error: {0}")]
     Database(#[from] rusqlite::Error),
+
+    #[error("Git error: {0}")]
+    GitError(String),
 }
 
 /// Result type alias for Orkestra operations.

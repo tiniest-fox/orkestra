@@ -577,6 +577,7 @@ fn log_stderr(
 
 /// Spawns a Claude Code agent to work on a task
 /// The `on_update` callback is called whenever there's new output (for real-time UI updates)
+/// If the task has a worktree_path, the agent will be spawned in that directory.
 pub fn spawn_agent<F>(
     task: &Task,
     agent_type: AgentType,
@@ -592,7 +593,14 @@ where
     let project_root = project::find_project_root()?;
     let task_id = task.id.clone();
 
-    let mut child = spawn_claude_process(&project_root, &path_env, None)?;
+    // Use task's worktree_path if available, otherwise fall back to project_root
+    let cwd = task
+        .worktree_path
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or(project_root);
+
+    let mut child = spawn_claude_process(&cwd, &path_env, None)?;
     write_prompt_to_stdin(&mut child, &config.prompt)?;
 
     let pid = child.id();
@@ -660,6 +668,7 @@ where
 ///
 /// Returns the `SpawnedAgent` with `session_id` populated.
 /// The agent continues running in the background after this returns.
+/// If the task has a worktree_path, the agent will be spawned in that directory.
 pub fn spawn_agent_sync(
     task: &Task,
     agent_type: AgentType,
@@ -672,7 +681,14 @@ pub fn spawn_agent_sync(
     let project_root = project::find_project_root()?;
     let task_id = task.id.clone();
 
-    let mut child = spawn_claude_process(&project_root, &path_env, None)?;
+    // Use task's worktree_path if available, otherwise fall back to project_root
+    let cwd = task
+        .worktree_path
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or(project_root);
+
+    let mut child = spawn_claude_process(&cwd, &path_env, None)?;
     write_prompt_to_stdin(&mut child, &config.prompt)?;
 
     let pid = child.id();
@@ -777,6 +793,7 @@ fn wait_for_session_id(
 /// Resumes an interrupted Claude Code session
 /// `session_key` specifies which session to resume (e.g., "plan", "work")
 /// The `on_update` callback is called whenever there's new output (for real-time UI updates)
+/// If the task has a worktree_path, the agent will be resumed in that directory.
 pub fn resume_agent<F>(
     task: &Task,
     session_key: &str,
@@ -809,7 +826,14 @@ where
     let project_root = project::find_project_root()?;
     let task_id = task.id.clone();
 
-    let mut child = spawn_claude_process(&project_root, &path_env, Some(&session_id))?;
+    // Use task's worktree_path if available, otherwise fall back to project_root
+    let cwd = task
+        .worktree_path
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or(project_root);
+
+    let mut child = spawn_claude_process(&cwd, &path_env, Some(&session_id))?;
     write_prompt_to_stdin(&mut child, prompt)?;
 
     let pid = child.id();

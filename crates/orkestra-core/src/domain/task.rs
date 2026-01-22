@@ -125,6 +125,14 @@ pub struct Task {
     /// Currently running agent process ID (set immediately when spawned, cleared when finished)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_pid: Option<u32>,
+    /// Git branch name for this task (e.g., "task/TASK-001")
+    /// Only set on root tasks; child tasks inherit from parent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch_name: Option<String>,
+    /// Path to the git worktree for this task (e.g., ".orkestra/worktrees/TASK-001")
+    /// Only set on root tasks; child tasks inherit from parent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<String>,
 }
 
 impl Task {
@@ -153,6 +161,8 @@ impl Task {
             breakdown_feedback: None,
             skip_breakdown: false,
             agent_pid: None,
+            branch_name: None,
+            worktree_path: None,
         }
     }
 

@@ -108,9 +108,11 @@ impl SqliteStore {
             ",
         )?;
 
-        // Migration: add agent_pid column if it doesn't exist
+        // Migration: add columns if they don't exist
         // SQLite doesn't have ADD COLUMN IF NOT EXISTS, so we try and ignore errors
         let _ = conn.execute("ALTER TABLE tasks ADD COLUMN agent_pid INTEGER", []);
+        let _ = conn.execute("ALTER TABLE tasks ADD COLUMN branch_name TEXT", []);
+        let _ = conn.execute("ALTER TABLE tasks ADD COLUMN worktree_path TEXT", []);
 
         Ok(())
     }
@@ -182,7 +184,8 @@ impl SqliteStore {
     /// Convert a row to a Task (without sessions, which are loaded separately).
     /// Column order: id, title, description, status, kind, `created_at`, `updated_at`,
     /// `completed_at`, summary, error, plan, `plan_feedback`, `review_feedback`,
-    /// `reviewer_feedback`, `auto_approve`, `parent_id`, breakdown, `breakdown_feedback`, `skip_breakdown`
+    /// `reviewer_feedback`, `auto_approve`, `parent_id`, breakdown, `breakdown_feedback`,
+    /// `skip_breakdown`, `agent_pid`, `branch_name`, `worktree_path`
     fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         let status_str: String = row.get(3)?;
         let kind_str: String = row.get(4)?;
@@ -212,6 +215,8 @@ impl SqliteStore {
             breakdown_feedback: row.get(17)?,
             skip_breakdown: skip_breakdown != 0,
             agent_pid: agent_pid.map(|p| p as u32),
+            branch_name: row.get(20)?,
+            worktree_path: row.get(21)?,
         })
     }
 
@@ -262,6 +267,8 @@ impl SqliteStore {
             "parent_id",
             "breakdown",
             "breakdown_feedback",
+            "branch_name",
+            "worktree_path",
         ];
 
         if !valid_fields.contains(&field) {
@@ -395,8 +402,8 @@ impl TaskStore for SqliteStore {
                 id, title, description, status, kind, created_at, updated_at,
                 completed_at, summary, error, plan, plan_feedback,
                 review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
-                skip_breakdown, agent_pid
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                skip_breakdown, agent_pid, branch_name, worktree_path
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ",
             params![
                 task.id,
@@ -419,6 +426,8 @@ impl TaskStore for SqliteStore {
                 task.breakdown_feedback,
                 i32::from(task.skip_breakdown),
                 task.agent_pid.map(|p| p as i32),
+                task.branch_name,
+                task.worktree_path,
             ],
         )?;
 
@@ -446,8 +455,8 @@ impl TaskStore for SqliteStore {
                     id, title, description, status, kind, created_at, updated_at,
                     completed_at, summary, error, plan, plan_feedback,
                     review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
-                    skip_breakdown, agent_pid
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    skip_breakdown, agent_pid, branch_name, worktree_path
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ",
                 params![
                     task.id,
@@ -470,6 +479,8 @@ impl TaskStore for SqliteStore {
                     task.breakdown_feedback,
                     i32::from(task.skip_breakdown),
                     task.agent_pid.map(|p| p as i32),
+                    task.branch_name,
+                    task.worktree_path,
                 ],
             )?;
 

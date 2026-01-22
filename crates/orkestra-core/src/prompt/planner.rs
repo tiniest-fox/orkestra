@@ -90,6 +90,8 @@ mod tests {
             breakdown_feedback: None,
             skip_breakdown: false,
             agent_pid: None,
+            branch_name: None,
+            worktree_path: None,
         }
     }
 

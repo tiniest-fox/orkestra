@@ -15,25 +15,25 @@ cargo build
 
 Using the CLI:
 ```bash
-./target/debug/ork task create -t "Your task title" -d "Detailed description of what needs to be done"
+ork task create -t "Your task title" -d "Detailed description of what needs to be done"
 ```
 
 ### 3. View Tasks
 
 List all tasks:
 ```bash
-./target/debug/ork task list
+ork task list
 ```
 
 Filter by status:
 ```bash
-./target/debug/ork task list --status pending
-./target/debug/ork task list --status in_progress
+ork task list --status pending
+ork task list --status in_progress
 ```
 
 View task details:
 ```bash
-./target/debug/ork task show TASK-001
+ork task show TASK-001
 ```
 
 ## The Planning-Approval-Execution Flow

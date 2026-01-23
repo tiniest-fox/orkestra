@@ -36,7 +36,7 @@ Orkestra stores all data in the `.orkestra/` directory at your project root:
 
 Use the CLI:
 ```bash
-./target/debug/ork task create -t "Task title" -d "Detailed description"
+ork task create -t "Task title" -d "Detailed description"
 ```
 
 Or use the desktop application's Kanban board interface.
@@ -53,7 +53,7 @@ Or use the desktop application's Kanban board interface.
 ### How do I approve a plan?
 
 ```bash
-./target/debug/ork task approve TASK-XXX
+ork task approve TASK-XXX
 ```
 
 Or click the approve button in the desktop UI when viewing a task.
@@ -61,7 +61,7 @@ Or click the approve button in the desktop UI when viewing a task.
 ### How do I request changes to a plan?
 
 ```bash
-./target/debug/ork task request-changes TASK-XXX --feedback "Your feedback here"
+ork task request-changes TASK-XXX --feedback "Your feedback here"
 ```
 
 ### Can I run multiple tasks in parallel?
@@ -93,7 +93,7 @@ Yes, agent definitions are stored in `.orkestra/agents/` as markdown files. You 
 
 The planner agent may have encountered an error. Check the task logs:
 ```bash
-./target/debug/ork task show TASK-XXX
+ork task show TASK-XXX
 ```
 
 You can also try restarting the planning process.
@@ -102,7 +102,7 @@ You can also try restarting the planning process.
 
 Check if the worker encountered an error or marked the task as failed/blocked:
 ```bash
-./target/debug/ork task show TASK-XXX
+ork task show TASK-XXX
 ```
 
 Review the task logs for details on what happened.

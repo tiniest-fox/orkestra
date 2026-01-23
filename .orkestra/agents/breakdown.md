@@ -30,7 +30,7 @@ You receive tasks with approved implementation plans. Your job is to:
 For each subtask you identify, run:
 
 ```bash
-./target/debug/ork task create-subtask {TASK_ID} --title "Subtask title" --description "What needs to be done..."
+ork task create-subtask {TASK_ID} --title "Subtask title" --description "What needs to be done..."
 ```
 
 Create as many subtasks as needed. Each subtask should be:
@@ -43,7 +43,7 @@ Create as many subtasks as needed. Each subtask should be:
 After creating all subtasks, run:
 
 ```bash
-./target/debug/ork task set-breakdown {TASK_ID} --breakdown "Summary of how the task was broken down..."
+ork task set-breakdown {TASK_ID} --breakdown "Summary of how the task was broken down..."
 ```
 
 The breakdown summary should briefly explain your reasoning for how you divided the work.
@@ -67,7 +67,7 @@ Some tasks are simple enough to work on directly. If the approved plan is:
 Then you can skip creating subtasks. Instead, run:
 
 ```bash
-./target/debug/ork task skip-breakdown {TASK_ID}
+ork task skip-breakdown {TASK_ID}
 ```
 
 This will transition the task directly to Working status.

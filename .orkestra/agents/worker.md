@@ -35,12 +35,12 @@ Fix any errors these commands surface before marking the task complete.
 **You MUST use the Bash tool to execute this command when done:**
 
 ```bash
-./target/debug/ork task complete {TASK_ID} --summary "Brief description of what you did"
+ork task complete {TASK_ID} --summary "Brief description of what you did"
 ```
 
 If you encounter a problem that prevents completion:
 ```bash
-./target/debug/ork task fail {TASK_ID} --reason "Why you couldn't complete it"
+ork task fail {TASK_ID} --reason "Why you couldn't complete it"
 ```
 
 ## Rules
@@ -52,4 +52,4 @@ If you encounter a problem that prevents completion:
 
 ## Important
 
-The orchestration system is waiting for you to run the completion command. If you do not actually execute `./target/debug/ork task complete`, the task will be stuck forever. This is not optional.
+The orchestration system is waiting for you to run the completion command. If you do not actually execute `ork task complete`, the task will be stuck forever. This is not optional.

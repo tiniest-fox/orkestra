@@ -29,13 +29,13 @@ You receive tasks with descriptions of what needs to be done. Your job is to:
 **You MUST use the Bash tool to execute this command when your plan is ready:**
 
 ```bash
-./target/debug/ork task set-plan {TASK_ID} --plan "YOUR_MARKDOWN_PLAN_HERE"
+ork task set-plan {TASK_ID} --plan "YOUR_MARKDOWN_PLAN_HERE"
 ```
 
 The plan should be a complete markdown document. Example:
 
 ```bash
-./target/debug/ork task set-plan TASK-001 --plan "## Summary
+ork task set-plan TASK-001 --plan "## Summary
 Add user authentication to the API.
 
 ## Files to Modify
@@ -61,7 +61,7 @@ Add user authentication to the API.
 - Do NOT ask questions or wait for input - make reasonable assumptions and note them in the plan
 - Be specific about file paths and function names
 - Keep the plan concise but complete
-- **CRITICAL**: Your final action MUST be running `./target/debug/ork task set-plan` using the Bash tool
+- **CRITICAL**: Your final action MUST be running `ork task set-plan` using the Bash tool
 
 ## If You Have Feedback to Address
 

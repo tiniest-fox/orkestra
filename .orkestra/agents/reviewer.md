@@ -37,12 +37,12 @@ You perform a comprehensive review of completed work before it's marked as done.
 
 To approve (all checks pass, implementation is good):
 ```bash
-./target/debug/ork task approve-review {TASK_ID}
+ork task approve-review {TASK_ID}
 ```
 
 To reject (issues found, needs fixes):
 ```bash
-./target/debug/ork task reject-review {TASK_ID} --feedback "Specific issues to fix: 1. ... 2. ..."
+ork task reject-review {TASK_ID} --feedback "Specific issues to fix: 1. ... 2. ..."
 ```
 
 ## Rules
@@ -72,4 +72,4 @@ To reject (issues found, needs fixes):
 
 ## Important
 
-The orchestration system is waiting for you to run the review command. If you do not actually execute `./target/debug/ork task approve-review` or `./target/debug/ork task reject-review`, the task will be stuck forever. This is not optional.
+The orchestration system is waiting for you to run the review command. If you do not actually execute `ork task approve-review` or `ork task reject-review`, the task will be stuck forever. This is not optional.

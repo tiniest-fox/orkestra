@@ -91,6 +91,8 @@ The desktop app exposes these IPC commands (see `src-tauri/src/lib.rs`):
 
 ### CLI Commands (`ork`)
 
+The `ork` CLI is used for task management. Agents can use `ork` directly as Orkestra adds the CLI to their PATH automatically. From the main repo or git worktrees, the CLI will be found automatically.
+
 ```bash
 ork task list [--status STATUS]         # List tasks
 ork task show ID                        # Show task details

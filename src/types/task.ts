@@ -118,12 +118,12 @@ export interface AutoTask {
 }
 
 export const TASK_STATUS_CONFIG: Record<TaskStatus, { label: string; color: string }> = {
-  planning: { label: "Planning", color: "bg-purple-100" },
-  breaking_down: { label: "Breaking Down", color: "bg-indigo-100" },
-  waiting_on_subtasks: { label: "Waiting", color: "bg-cyan-100" },
-  working: { label: "Working", color: "bg-blue-100" },
-  reviewing: { label: "Reviewing", color: "bg-violet-100" },
-  done: { label: "Done", color: "bg-green-100" },
+  planning: { label: "Planning", color: "bg-slate-100" },
+  breaking_down: { label: "Breaking Down", color: "bg-blue-100" },
+  waiting_on_subtasks: { label: "Waiting", color: "bg-sky-100" },
+  working: { label: "Working", color: "bg-sky-100" },
+  reviewing: { label: "Reviewing", color: "bg-teal-100" },
+  done: { label: "Done", color: "bg-emerald-100" },
   failed: { label: "Failed", color: "bg-red-100" },
   blocked: { label: "Blocked", color: "bg-orange-100" },
 };

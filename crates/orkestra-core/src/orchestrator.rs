@@ -23,6 +23,8 @@ pub enum OrchestratorAction {
     SpawnReviewer(Task),
     /// Resume an existing reviewer session for this task
     ResumeReviewer { task: Task, session_key: String },
+    /// Integrate a done task's branch back to primary, then cleanup
+    IntegrateDoneTask(Task),
 }
 
 /// Check if a process with the given PID is still running
@@ -167,7 +169,16 @@ pub fn check_tasks(project: &Project) -> crate::error::Result<Vec<OrchestratorAc
                 // Child tasks will be handled in their own iteration
                 None
             }
-            TaskStatus::Done | TaskStatus::Failed | TaskStatus::Blocked => {
+            TaskStatus::Done => {
+                // Done tasks may need integration (merge branch, cleanup worktree)
+                // Only integrate if task has a branch but no integration result yet
+                if task.branch_name.is_some() && task.integration_result.is_none() {
+                    Some(OrchestratorAction::IntegrateDoneTask(task.clone()))
+                } else {
+                    None
+                }
+            }
+            TaskStatus::Failed | TaskStatus::Blocked => {
                 // Terminal states - no action needed
                 None
             }

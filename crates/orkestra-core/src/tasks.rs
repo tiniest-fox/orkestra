@@ -17,7 +17,10 @@ pub use crate::domain::{
 
 /// Attempt to integrate a completed task's branch back to the primary branch.
 /// Returns (`new_status`, `integration_result`, `conflict_message`).
-fn try_integrate(
+///
+/// Called by the orchestrator for tasks in Done status that have a branch
+/// but no integration result yet.
+pub fn try_integrate(
     project: &Project,
     task: &Task,
 ) -> (TaskStatus, Option<IntegrationResult>, Option<String>) {
@@ -123,6 +126,58 @@ fn try_integrate(
             )
         }
     }
+}
+
+/// Called by orchestrator to integrate a Done task's branch back to primary.
+/// - If merge succeeds: deletes the task from the store
+/// - If merge conflicts: sets task back to Working with feedback
+/// - If task is a child or has no branch: deletes the task (no merge needed)
+pub fn integrate_done_task(project: &Project, id: &str) -> Result<()> {
+    let task = require_task(project, id)?;
+
+    if task.status != TaskStatus::Done {
+        return Err(OrkestraError::InvalidState {
+            expected: "Done".into(),
+            actual: format!("{:?}", task.status),
+        });
+    }
+
+    // Already integrated - nothing to do
+    if task.integration_result.is_some() {
+        return Ok(());
+    }
+
+    let (new_status, integration_result, conflict_msg) = try_integrate(project, &task);
+
+    let store = project.store();
+
+    // If merge conflict or error, reopen the task for user to fix
+    if new_status == TaskStatus::Working {
+        store.update_status(id, TaskStatus::Working)?;
+        store.update_field(id, "summary", None)?; // Clear summary to reopen
+        store.update_field(id, "completed_at", None)?;
+        if let Some(msg) = conflict_msg {
+            store.update_field(id, "reviewer_feedback", Some(&msg))?;
+        }
+        if let Some(result) = &integration_result {
+            let result_json = serde_json::to_string(result)
+                .map_err(|e| OrkestraError::InvalidInput(e.to_string()))?;
+            store.update_field(id, "integration_result", Some(&result_json))?;
+        }
+        return Ok(());
+    }
+
+    // Store integration result before deleting
+    if let Some(result) = &integration_result {
+        let result_json = serde_json::to_string(result)
+            .map_err(|e| OrkestraError::InvalidInput(e.to_string()))?;
+        store.update_field(id, "integration_result", Some(&result_json))?;
+    }
+
+    // Successfully integrated (merged or skipped) - delete the task
+    store.delete(id)?;
+
+    Ok(())
 }
 
 // =============================================================================
@@ -348,10 +403,10 @@ pub fn request_review_changes(project: &Project, id: &str, feedback: &str) -> Re
 }
 
 /// Approve work review and transition to Done.
-/// For root tasks with worktrees, this also attempts to merge the branch back to primary.
+/// Orchestrator will handle branch integration and cleanup for Done tasks.
 pub fn approve_review(project: &Project, id: &str) -> Result<Task> {
     let store = project.store();
-    let mut task = require_task(project, id)?;
+    let task = require_task(project, id)?;
 
     if task.status != TaskStatus::Working || task.summary.is_none() {
         return Err(OrkestraError::InvalidState {
@@ -360,31 +415,12 @@ pub fn approve_review(project: &Project, id: &str) -> Result<Task> {
         });
     }
 
-    // Try to integrate the branch back to primary
-    let (new_status, integration_result, conflict_msg) = try_integrate(project, &task);
-    let was_merged = matches!(integration_result, Some(IntegrationResult::Merged { .. }));
+    let now = chrono::Utc::now().to_rfc3339();
+    store.update_status(id, TaskStatus::Done)?;
+    store.update_field(id, "completed_at", Some(&now))?;
+    store.update_field(id, "review_feedback", None)?;
 
-    task.status = new_status;
-    task.integration_result = integration_result;
-    task.updated_at = chrono::Utc::now().to_rfc3339();
-
-    if new_status == TaskStatus::Done {
-        task.completed_at = Some(chrono::Utc::now().to_rfc3339());
-        task.review_feedback = None;
-
-        // On successful merge, delete the task - git history has everything
-        if was_merged {
-            store.delete(&task.id)?;
-            return Ok(task);
-        }
-    } else {
-        // Conflict - reopen task with feedback
-        task.summary = None;
-        task.reviewer_feedback = conflict_msg;
-    }
-
-    store.save(&task)?;
-    Ok(task)
+    require_task(project, id)
 }
 
 /// Transition task to Reviewing status (spawns reviewer agent).
@@ -405,9 +441,10 @@ pub fn start_automated_review(project: &Project, id: &str) -> Result<Task> {
 }
 
 /// Reviewer agent approves the implementation → Done.
+/// Orchestrator will handle branch integration and cleanup for Done tasks.
 pub fn approve_automated_review(project: &Project, id: &str) -> Result<Task> {
     let store = project.store();
-    let mut task = require_task(project, id)?;
+    let task = require_task(project, id)?;
 
     if task.status != TaskStatus::Reviewing {
         return Err(OrkestraError::InvalidState {
@@ -416,29 +453,12 @@ pub fn approve_automated_review(project: &Project, id: &str) -> Result<Task> {
         });
     }
 
-    // Try to integrate the branch back to primary
-    let (new_status, integration_result, conflict_msg) = try_integrate(project, &task);
-    let was_merged = matches!(integration_result, Some(IntegrationResult::Merged { .. }));
+    let now = chrono::Utc::now().to_rfc3339();
+    store.update_status(id, TaskStatus::Done)?;
+    store.update_field(id, "completed_at", Some(&now))?;
+    store.update_field(id, "reviewer_feedback", None)?;
 
-    task.status = new_status;
-    task.integration_result = integration_result;
-    task.updated_at = chrono::Utc::now().to_rfc3339();
-
-    if new_status == TaskStatus::Done {
-        task.completed_at = Some(chrono::Utc::now().to_rfc3339());
-        task.reviewer_feedback = None;
-
-        if was_merged {
-            store.delete(&task.id)?;
-            return Ok(task);
-        }
-    } else {
-        task.summary = None;
-        task.reviewer_feedback = conflict_msg;
-    }
-
-    store.save(&task)?;
-    Ok(task)
+    require_task(project, id)
 }
 
 /// Reviewer agent rejects the implementation → back to Working with feedback.

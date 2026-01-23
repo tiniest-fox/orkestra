@@ -120,13 +120,23 @@ fn test_full_workflow_with_successful_merge() {
     assert_eq!(task.status, TaskStatus::Reviewing);
 
     // Step 7: Reviewer agent approves via CLI (what reviewer Claude Code does)
+    // This now just sets status to Done
     orchestrator
         .run_cli_in_worktree(&task.id, &["task", "approve-review", &task.id])
         .expect("Reviewer should be able to approve via CLI");
 
-    // Reload task to verify final state
+    // Task should now be in Done status, waiting for orchestrator to integrate
+    let task = tasks::get_task(&orchestrator.project, &task.id)
+        .unwrap()
+        .expect("Task should exist in Done status");
+    assert_eq!(task.status, TaskStatus::Done);
+
+    // Step 8: Orchestrator integrates the done task (merge branch, cleanup, delete from DB)
+    tasks::integrate_done_task(&orchestrator.project, &task.id)
+        .expect("Integration should succeed");
+
+    // Task should be deleted after successful merge
     let task = tasks::get_task(&orchestrator.project, &task.id);
-    // Task should be deleted after successful merge, so it won't be found
     assert!(
         task.unwrap().is_none(),
         "Task should be deleted after successful merge"
@@ -207,10 +217,20 @@ fn test_workflow_with_merge_conflict() {
     // UI starts automated review
     tasks::start_automated_review(&orchestrator.project, &task.id).unwrap();
 
-    // Reviewer agent tries to approve - should detect conflict and reopen task
+    // Reviewer agent approves - this now just sets status to Done
     orchestrator
         .run_cli_in_worktree(&task.id, &["task", "approve-review", &task.id])
-        .expect("CLI should succeed even with conflict (it reopens the task)");
+        .expect("CLI should succeed");
+
+    // Task should be in Done status
+    let task = tasks::get_task(&orchestrator.project, &task.id)
+        .unwrap()
+        .expect("Task should exist in Done status");
+    assert_eq!(task.status, TaskStatus::Done);
+
+    // Orchestrator tries to integrate - should detect conflict and reopen task
+    tasks::integrate_done_task(&orchestrator.project, &task.id)
+        .expect("Integration should handle conflict gracefully");
 
     // Reload task to check state
     let task = tasks::get_task(&orchestrator.project, &task.id)
@@ -306,26 +326,26 @@ fn test_child_task_skips_integration() {
     // UI starts automated review for child
     tasks::start_automated_review(&orchestrator.project, &child.id).unwrap();
 
-    // Reviewer agent approves child - integration should be skipped for child
+    // Reviewer agent approves child - this now just sets status to Done
     orchestrator
         .run_cli_in_worktree(&parent.id, &["task", "approve-review", &child.id])
         .unwrap();
 
-    // Reload child to check state
+    // Child should be in Done status
     let child = tasks::get_task(&orchestrator.project, &child.id)
         .unwrap()
-        .expect("Child task should still exist (not deleted since integration was skipped)");
-
+        .expect("Child task should exist in Done status");
     assert_eq!(child.status, TaskStatus::Done);
-    match &child.integration_result {
-        Some(IntegrationResult::Skipped { reason }) => {
-            assert!(
-                reason.contains("Child task") || reason.contains("parent"),
-                "Should skip because it's a child task, got: {reason}"
-            );
-        }
-        other => panic!("Expected Skipped result, got {other:?}"),
-    }
+
+    // Orchestrator integrates - should skip because it's a child task, then delete
+    tasks::integrate_done_task(&orchestrator.project, &child.id).unwrap();
+
+    // Child task should be deleted (integration was skipped but task is cleaned up)
+    let child = tasks::get_task(&orchestrator.project, &child.id).unwrap();
+    assert!(
+        child.is_none(),
+        "Child task should be deleted after integration (even when skipped)"
+    );
 
     // Parent's worktree should still exist
     let parent_worktree = parent.worktree_path.as_ref().unwrap();

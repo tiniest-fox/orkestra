@@ -209,11 +209,14 @@ impl TestOrchestrator {
         tasks::start_automated_review(&self.project, &task.id)?;
 
         // Step 7: Reviewer agent approves (what reviewer Claude Code does - run actual CLI)
+        // This now just sets status to Done
         self.run_cli_in_worktree(&task.id, &["task", "approve-review", &task.id])?;
 
-        // Return the final task state (may be deleted after successful merge)
-        // We need to get the task before it's deleted - but actually the approve-review
-        // already completed the workflow. Let's create a synthetic Done task for the return.
+        // Step 8: Orchestrator integrates the done task (merge branch, cleanup, delete from DB)
+        tasks::integrate_done_task(&self.project, &task.id)?;
+
+        // Return the final task state - task is deleted after successful merge
+        // so we return a synthetic Done task for the caller's assertions
         Ok(crate::Task {
             id: task.id,
             title: title.to_string(),

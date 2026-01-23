@@ -3,7 +3,11 @@ import { useEffect, useState } from "react";
 interface CreateTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (title: string, description: string, autoApprove?: boolean) => Promise<unknown>;
+  onSubmit: (
+    title: string | undefined,
+    description: string,
+    autoApprove?: boolean,
+  ) => Promise<unknown>;
 }
 
 export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalProps) {
@@ -31,13 +35,15 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!description.trim()) return;
 
     setSubmitting(true);
     setError(null);
 
     try {
-      await onSubmit(title.trim(), description.trim(), autoApprove);
+      // Pass undefined for title if empty (will be auto-generated)
+      const titleToSubmit = title.trim() || undefined;
+      await onSubmit(titleToSubmit, description.trim(), autoApprove);
       setTitle("");
       setDescription("");
       setAutoApprove(false);
@@ -77,7 +83,7 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
 
             <div>
               <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
-                Title
+                Title <span className="text-gray-400 font-normal">(optional)</span>
               </label>
               <input
                 id="title"
@@ -85,9 +91,7 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="What needs to be done?"
-                // biome-ignore lint/a11y/noAutofocus: intentional focus for modal UX
-                autoFocus
+                placeholder="Leave blank to auto-generate"
               />
             </div>
 
@@ -102,6 +106,8 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                 rows={4}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                 placeholder="Describe the task in detail..."
+                // biome-ignore lint/a11y/noAutofocus: intentional focus for modal UX
+                autoFocus
               />
             </div>
 
@@ -140,10 +146,10 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
             </button>
             <button
               type="submit"
-              disabled={submitting || !title.trim()}
+              disabled={submitting || !description.trim()}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {submitting ? "Creating..." : "Create Task"}
+              {submitting ? (title.trim() ? "Creating..." : "Generating title...") : "Create Task"}
             </button>
           </div>
         </form>

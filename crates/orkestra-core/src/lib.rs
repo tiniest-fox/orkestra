@@ -22,7 +22,9 @@ pub use error::{OrkestraError, Result};
 pub use services::Project;
 
 // Agent re-exports
-pub use agents::{resume_agent, spawn_agent, spawn_agent_sync, AgentType, SpawnedAgent};
+pub use agents::{
+    generate_title_sync, resume_agent, spawn_agent, spawn_agent_sync, AgentType, SpawnedAgent,
+};
 
 // Project discovery re-exports
 pub use project::{find_project_root, get_orkestra_dir};

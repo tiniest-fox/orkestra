@@ -2,7 +2,8 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use orkestra_core::{
-    agents, auto_tasks, find_project_root, orchestrator, recover_session_logs, resume_agent, tasks,
+    agents::{self, generate_title_sync},
+    auto_tasks, find_project_root, orchestrator, recover_session_logs, resume_agent, tasks,
     AgentType, AutoTask, LogEntry, Project, Task, TaskStatus,
 };
 use tasks::{
@@ -32,15 +33,34 @@ fn create_task(title: String, description: String) -> Result<Task, String> {
 
 #[tauri::command]
 fn create_and_start_task(
-    title: String,
+    title: Option<String>,
     description: String,
     auto_approve: Option<bool>,
 ) -> Result<Task, String> {
     let project = Project::discover().map_err(|e| e.to_string())?;
+
+    // Generate title if not provided or empty
+    let final_title = match title {
+        Some(t) if !t.trim().is_empty() => t,
+        _ => {
+            // Generate title using AI (30 second timeout)
+            generate_title_sync(&description, 30).unwrap_or_else(|e| {
+                eprintln!("Warning: Failed to generate title: {e}");
+                // Fallback to a generic title based on description
+                let preview: String = description.chars().take(50).collect();
+                if preview.len() < description.len() {
+                    format!("{preview}...")
+                } else {
+                    preview
+                }
+            })
+        }
+    };
+
     // Create task in Planning status - orchestrator will spawn the planner
     tasks::create_task_with_options(
         &project,
-        &title,
+        &final_title,
         &description,
         auto_approve.unwrap_or(false),
     )

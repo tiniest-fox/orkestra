@@ -569,15 +569,14 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     }
   };
 
-  // Only show auto-approve toggle when task is not actively being worked on by an agent
+  // Show auto-approve toggle when task is in a reviewable state or terminal state
   const canToggleAutoApprove =
-    !task.agent_pid &&
-    (task.status === "done" ||
-      task.status === "failed" ||
-      task.status === "blocked" ||
-      taskNeedsPlanReview ||
-      taskNeedsBreakdownReview ||
-      taskNeedsWorkReview);
+    task.status === "done" ||
+    task.status === "failed" ||
+    task.status === "blocked" ||
+    taskNeedsPlanReview ||
+    taskNeedsBreakdownReview ||
+    taskNeedsWorkReview;
 
   return (
     <div className="w-1/2 flex-shrink-0 bg-white shadow-xl border-l border-gray-200 flex flex-col overflow-hidden">
@@ -650,7 +649,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           <button
             type="button"
             onClick={() => setShowDeleteConfirm(true)}
-            disabled={Boolean(task.agent_pid) || isDeleting}
+            disabled={isDeleting}
             className="p-1 hover:bg-red-100 rounded transition-colors text-red-500 hover:text-red-600 disabled:opacity-50"
             title="Delete task"
           >

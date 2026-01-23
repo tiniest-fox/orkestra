@@ -2,6 +2,10 @@ use std::fs;
 use std::io::BufRead;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use crate::domain::{Task, TaskStatus};
 use crate::project;
@@ -22,6 +26,44 @@ pub enum AgentType {
     Worker,
     Reviewer,
     TitleGenerator,
+}
+
+/// RAII guard that ensures a spawned process is killed when dropped.
+/// This provides defense-in-depth: if code panics or takes an unexpected path,
+/// the process will still be cleaned up.
+///
+/// Call `disarm()` when the process exits normally to prevent killing on drop.
+pub struct ProcessGuard {
+    pid: u32,
+    disarmed: AtomicBool,
+}
+
+impl ProcessGuard {
+    /// Create a new process guard for the given PID.
+    pub fn new(pid: u32) -> Self {
+        Self {
+            pid,
+            disarmed: AtomicBool::new(false),
+        }
+    }
+
+    /// Disarm the guard to prevent killing the process on drop.
+    /// Call this when the process exits normally.
+    pub fn disarm(&self) {
+        self.disarmed.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        if !self.disarmed.load(Ordering::Relaxed) {
+            eprintln!(
+                "[ProcessGuard] Killing orphaned process {} on drop",
+                self.pid
+            );
+            let _ = kill_agent(self.pid);
+        }
+    }
 }
 
 /// Finds the ork CLI binary path
@@ -275,8 +317,124 @@ fn spawn_claude_process(
     .current_dir(project_root)
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .spawn()
+    .stderr(Stdio::piped());
+
+    // Create new process group so we can kill all descendants (cargo, rustc, etc.)
+    // when the agent is terminated. Without this, child processes become orphans.
+    #[cfg(unix)]
+    cmd.process_group(0);
+
+    cmd.spawn()
+}
+
+/// Recursively finds all descendant PIDs of a given process.
+/// Uses pgrep -P to find children at each level.
+#[cfg(unix)]
+fn get_descendant_pids(pid: u32) -> Vec<u32> {
+    let mut descendants = Vec::new();
+    let mut to_check = vec![pid];
+
+    while let Some(parent_pid) = to_check.pop() {
+        // Use pgrep -P to find direct children
+        if let Ok(output) = Command::new("pgrep").args(["-P", &parent_pid.to_string()]).output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    if let Ok(child_pid) = line.trim().parse::<u32>() {
+                        descendants.push(child_pid);
+                        to_check.push(child_pid);
+                    }
+                }
+            }
+        }
+    }
+
+    descendants
+}
+
+/// Kills an agent and all its descendant processes.
+/// This ensures that when an agent is terminated, all spawned processes
+/// (cargo, rustc, shells, etc.) are also killed, preventing orphaned processes.
+///
+/// Strategy:
+/// 1. First collect all descendant PIDs (children create their own process groups)
+/// 2. Kill the main process group (catches direct children in same group)
+/// 3. Kill any remaining descendants that were in different process groups
+#[cfg(unix)]
+#[allow(clippy::cast_possible_wrap)]
+pub fn kill_agent(pid: u32) -> std::io::Result<()> {
+    // Collect all descendants BEFORE killing (they may reparent to init otherwise)
+    let descendants = get_descendant_pids(pid);
+
+    // The PID is the process group ID since we spawn with process_group(0)
+    let pgid = pid as i32;
+
+    // First try SIGTERM for graceful shutdown of the main process group
+    let result = unsafe { libc::kill(-pgid, libc::SIGTERM) };
+
+    if result != 0 {
+        let err = std::io::Error::last_os_error();
+        // ESRCH means process doesn't exist - that's fine
+        if err.raw_os_error() != Some(libc::ESRCH) {
+            // If SIGTERM failed for another reason, try SIGKILL
+            unsafe { libc::kill(-pgid, libc::SIGKILL) };
+        }
+    }
+
+    // Now kill any descendants that were in different process groups
+    // (e.g., shells spawned by Claude that created their own process groups)
+    for desc_pid in descendants {
+        let desc_pgid = desc_pid as i32;
+        // Try to kill the descendant's process group first
+        let result = unsafe { libc::kill(-desc_pgid, libc::SIGTERM) };
+        if result != 0 {
+            // If process group kill failed, try killing just the process
+            unsafe { libc::kill(desc_pgid, libc::SIGTERM) };
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn kill_agent(pid: u32) -> std::io::Result<()> {
+    // On Windows, use taskkill with /T to kill the tree
+    Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .output()?;
+    Ok(())
+}
+
+/// Checks if a process with the given PID is still running.
+/// Uses kill(pid, 0) on Unix to check without sending a signal.
+#[cfg(unix)]
+#[allow(clippy::cast_possible_wrap)]
+pub fn is_process_running(pid: u32) -> bool {
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+#[cfg(not(unix))]
+pub fn is_process_running(_pid: u32) -> bool {
+    // On Windows, we can't easily check without more complex logic
+    // For now, assume not running (conservative - may cause unnecessary cleanup)
+    false
+}
+
+/// Kills all agents that have tracked PIDs in the task database.
+/// Useful for cleanup on shutdown or when recovering from stuck state.
+pub fn kill_all_agents(project: &Project) -> std::io::Result<()> {
+    let tasks = tasks::load_tasks(project)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    for task in tasks {
+        if let Some(pid) = task.agent_pid {
+            let _ = kill_agent(pid);
+            // Clear the PID since we killed it
+            let _ = tasks::set_agent_pid(project, &task.id, None);
+        }
+    }
+
+    Ok(())
 }
 
 /// Writes prompt to stdin and closes it
@@ -357,6 +515,9 @@ where
     let stderr = child.stderr.take();
     let session_type = config.session_type.to_string();
 
+    // Create process guard for RAII cleanup if thread panics or takes unexpected path
+    let guard = ProcessGuard::new(pid);
+
     // Record the PID immediately so orchestrator knows agent is running
     // Note: Background thread will use its own Project instance for subsequent updates
     let _ = tasks::set_agent_pid(project, &task_id, Some(pid));
@@ -366,6 +527,9 @@ where
     // Spawn background thread for stdout/stderr processing
     // Each thread gets its own Project instance (SQLite handles concurrent access)
     std::thread::spawn(move || {
+        // Guard is moved into thread - will kill process on drop unless disarmed
+        let _guard = guard;
+
         // Create a Project instance for this thread
         let thread_project = match Project::discover() {
             Ok(p) => p,
@@ -403,6 +567,8 @@ where
 
         match child.wait() {
             Ok(status) => {
+                // Process exited normally - disarm the guard
+                _guard.disarm();
                 eprintln!(
                     "Agent {} finished with exit code: {:?}",
                     task_id,
@@ -413,6 +579,8 @@ where
                 on_update(&task_id_for_callback);
             }
             Err(e) => {
+                // Process wait failed - disarm since we don't know state
+                _guard.disarm();
                 eprintln!("Agent {task_id} error: {e}");
                 // Clear the PID even on error
                 let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
@@ -463,17 +631,25 @@ pub fn spawn_agent_sync(
     let stderr = child.stderr.take();
     let session_type = config.session_type.to_string();
 
+    // Create process guard for RAII cleanup if thread panics or takes unexpected path
+    let guard = ProcessGuard::new(pid);
+
     // Read stdout synchronously until we get the session_id or timeout
     let captured_session_id =
         wait_for_session_id(project, stdout, &task_id, &session_type, pid, timeout_secs);
 
     // Spawn background thread for stderr and process completion
     std::thread::spawn(move || {
+        // Guard is moved into thread - will kill process on drop unless disarmed
+        let _guard = guard;
+
         let stderr_handle = spawn_stderr_reader(stderr);
         log_stderr(&task_id, "Agent", stderr_handle);
 
         match child.wait() {
             Ok(status) => {
+                // Process exited normally - disarm the guard
+                _guard.disarm();
                 eprintln!(
                     "Agent {} finished with exit code: {:?}",
                     task_id,
@@ -481,6 +657,8 @@ pub fn spawn_agent_sync(
                 );
             }
             Err(e) => {
+                // Process wait failed - disarm since we don't know state
+                _guard.disarm();
                 eprintln!("Agent {task_id} error: {e}");
             }
         }
@@ -624,6 +802,9 @@ where
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
+    // Create process guard for RAII cleanup if thread panics or takes unexpected path
+    let guard = ProcessGuard::new(pid);
+
     // Record the PID immediately so orchestrator knows agent is running
     let _ = tasks::set_agent_pid(project, &task_id, Some(pid));
 
@@ -632,6 +813,9 @@ where
     // Spawn background thread for stdout/stderr processing
     // Each thread gets its own Project instance (SQLite handles concurrent access)
     std::thread::spawn(move || {
+        // Guard is moved into thread - will kill process on drop unless disarmed
+        let _guard = guard;
+
         // Create a Project instance for this thread
         let thread_project = match Project::discover() {
             Ok(p) => p,
@@ -660,6 +844,8 @@ where
 
         match child.wait() {
             Ok(status) => {
+                // Process exited normally - disarm the guard
+                _guard.disarm();
                 eprintln!(
                     "Resumed agent {} finished with exit code: {:?}",
                     task_id,
@@ -670,6 +856,8 @@ where
                 on_update(&task_id_for_callback);
             }
             Err(e) => {
+                // Process wait failed - disarm since we don't know state
+                _guard.disarm();
                 eprintln!("Resumed agent {task_id} error: {e}");
                 // Clear the PID even on error
                 let _ = tasks::set_agent_pid(&thread_project, &task_id, None);

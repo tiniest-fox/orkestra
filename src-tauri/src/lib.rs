@@ -2,7 +2,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use orkestra_core::{
-    agents::{self, generate_title_sync},
+    agents::{self, generate_title_sync, is_process_running, kill_agent, kill_all_agents},
     auto_tasks, find_project_root, orchestrator, recover_session_logs, resume_agent, tasks,
     AgentType, AutoTask, LogEntry, Project, Task, TaskStatus, WorkLoop,
 };
@@ -527,14 +527,102 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
     });
 }
 
+/// Cleanup function to kill all tracked agents on shutdown
+fn cleanup_agents() {
+    println!("[cleanup] Killing all tracked agents...");
+    if let Ok(project) = Project::discover() {
+        if let Err(e) = kill_all_agents(&project) {
+            eprintln!("[cleanup] Error killing agents: {e}");
+        } else {
+            println!("[cleanup] All agents killed successfully");
+        }
+    }
+}
+
+/// Clean up any orphaned agent processes from a previous crash.
+/// Called on startup to ensure stale PIDs don't prevent new agents from spawning.
+fn cleanup_orphaned_agents() {
+    println!("[startup] Checking for orphaned agents...");
+    let project = match Project::discover() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let all_tasks = match tasks::load_tasks(&project) {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+
+    let mut orphans_found = 0;
+    for task in all_tasks {
+        if let Some(pid) = task.agent_pid {
+            if is_process_running(pid) {
+                eprintln!(
+                    "[startup] Found orphaned agent for task {} (pid: {pid}), killing...",
+                    task.id
+                );
+                let _ = kill_agent(pid);
+                orphans_found += 1;
+            }
+            // Clear the stale PID regardless (process may have died without cleanup)
+            let _ = tasks::set_agent_pid(&project, &task.id, None);
+        }
+    }
+
+    if orphans_found > 0 {
+        println!("[startup] Cleaned up {orphans_found} orphaned agent(s)");
+    } else {
+        println!("[startup] No orphaned agents found");
+    }
+}
+
+/// Set up signal handlers to clean up agents on termination signals (Unix only).
+/// This handles SIGTERM, SIGINT, and SIGHUP to ensure cleanup happens even when
+/// the app is killed externally (e.g., kill command, Ctrl+C from terminal).
+#[cfg(unix)]
+fn setup_signal_handlers(stop_flag: Arc<AtomicBool>) {
+    use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+    use signal_hook::iterator::Signals;
+
+    std::thread::spawn(move || {
+        let mut signals = match Signals::new([SIGTERM, SIGINT, SIGHUP]) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[signal] Failed to register signal handlers: {e}");
+                return;
+            }
+        };
+
+        for sig in signals.forever() {
+            eprintln!("[signal] Received signal {sig}, cleaning up...");
+            stop_flag.store(true, Ordering::Relaxed);
+            cleanup_agents();
+            std::process::exit(128 + sig);
+        }
+    });
+}
+
+#[cfg(not(unix))]
+fn setup_signal_handlers(_stop_flag: Arc<AtomicBool>) {
+    // Signal handlers not supported on non-Unix platforms
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Clean up any orphaned agents from a previous crash before starting
+    cleanup_orphaned_agents();
+
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let stop_flag_for_exit = stop_flag.clone();
+
+    // Set up signal handlers to ensure cleanup on external termination
+    setup_signal_handlers(stop_flag.clone());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
+        .setup(move |app| {
             // Start the orchestrator background loop
-            let stop_flag = Arc::new(AtomicBool::new(false));
-            start_orchestrator(app.handle().clone(), stop_flag);
+            start_orchestrator(app.handle().clone(), stop_flag.clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -562,6 +650,14 @@ pub fn run() {
             get_auto_tasks,
             create_task_from_auto_task
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |_app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Signal orchestrator to stop
+                stop_flag_for_exit.store(true, Ordering::Relaxed);
+                // Kill all tracked agents to prevent orphaned processes
+                cleanup_agents();
+            }
+        });
 }

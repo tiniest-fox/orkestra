@@ -26,7 +26,8 @@ pub use services::Project;
 
 // Agent re-exports
 pub use agents::{
-    generate_title_sync, resume_agent, spawn_agent, spawn_agent_sync, AgentType, SpawnedAgent,
+    generate_title_sync, is_process_running, kill_agent, kill_all_agents, resume_agent,
+    spawn_agent, spawn_agent_sync, AgentType, SpawnedAgent,
 };
 
 // Project discovery re-exports

@@ -2445,6 +2445,7 @@ dependencies = [
  "orkestra-core",
  "serde",
  "serde_json",
+ "signal-hook",
  "tauri",
  "tauri-build",
  "tauri-plugin-shell",

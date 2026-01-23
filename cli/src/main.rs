@@ -176,6 +176,11 @@ enum TaskAction {
         /// Task ID
         id: String,
     },
+    /// Delete a task and all its children (subtasks, worktree, branch)
+    Delete {
+        /// Task ID
+        id: String,
+    },
 }
 
 #[allow(clippy::too_many_lines)] // CLI dispatch naturally has many branches
@@ -678,6 +683,17 @@ fn main() {
                         }
                         Err(e) => {
                             eprintln!("Error generating title: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                TaskAction::Delete { id } => {
+                    match tasks::delete_task(&project, &id) {
+                        Ok(()) => {
+                            println!("Deleted task {id} and all its children");
+                        }
+                        Err(e) => {
+                            eprintln!("Error deleting task: {e}");
                             std::process::exit(1);
                         }
                     }

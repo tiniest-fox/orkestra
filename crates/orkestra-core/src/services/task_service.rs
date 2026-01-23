@@ -394,7 +394,8 @@ mod tests {
 
         let task = service.create("Test Task", "Description", false).unwrap();
 
-        assert_eq!(task.id, "TASK-001");
+        // ID should be a petname (hyphenated lowercase words)
+        assert!(task.id.contains('-'), "ID should be a petname: {}", task.id);
         assert_eq!(task.title, "Test Task");
         assert_eq!(task.status, TaskStatus::Planning);
         assert_eq!(task.created_at, "2025-01-21T00:00:00Z");

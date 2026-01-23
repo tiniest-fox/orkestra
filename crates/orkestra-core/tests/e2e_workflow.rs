@@ -39,7 +39,8 @@ fn test_full_workflow_with_successful_merge() {
     )
     .expect("Failed to create task");
 
-    assert_eq!(task.id, "TASK-001");
+    // ID should be a petname (hyphenated lowercase words)
+    assert!(task.id.contains('-'), "ID should be a petname: {}", task.id);
     assert_eq!(task.status, TaskStatus::Planning);
     assert!(task.branch_name.is_some());
     assert!(task.worktree_path.is_some());
@@ -47,7 +48,9 @@ fn test_full_workflow_with_successful_merge() {
     // Verify worktree was created
     let worktree_path = task.worktree_path.as_ref().unwrap();
     assert!(Path::new(worktree_path).exists());
-    assert_eq!(task.branch_name.as_ref().unwrap(), "task/TASK-001");
+    // Branch name should be "task/{id}"
+    let expected_branch = format!("task/{}", task.id);
+    assert_eq!(task.branch_name.as_ref().unwrap(), &expected_branch);
 
     // Set skip_breakdown for simpler flow
     orchestrator
@@ -395,14 +398,15 @@ fn test_cli_list_tasks() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create a task via tasks:: (UI action)
-    tasks::create_task(&orchestrator.project, "Test task", "Test description").unwrap();
+    let task =
+        tasks::create_task(&orchestrator.project, "Test task", "Test description").unwrap();
 
     // List via CLI (could be UI or agent)
     let output = orchestrator
         .run_cli(&["task", "list"])
         .expect("CLI list should work");
 
-    assert!(output.contains("TASK-001"));
+    assert!(output.contains(&task.id), "Output should contain task ID");
     assert!(output.contains("Test task"));
 }
 
@@ -424,7 +428,7 @@ fn test_cli_show_task() {
         .run_cli(&["task", "show", &task.id])
         .expect("CLI show should work");
 
-    assert!(output.contains("TASK-001"));
+    assert!(output.contains(&task.id), "Output should contain task ID");
     assert!(output.contains("Show me task"));
     assert!(output.contains("Detailed description"));
 }

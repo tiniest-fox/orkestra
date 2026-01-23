@@ -3,6 +3,7 @@
 // always positive and won't exceed i32::MAX on any supported platform.
 #![allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 
+use petname::Generator;
 use rusqlite::{params, Connection};
 use std::sync::Mutex;
 
@@ -538,14 +539,31 @@ impl TaskStore for SqliteStore {
     fn next_id(&self) -> Result<String> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
 
-        let max_num: Option<i32> = conn.query_row(
-            "SELECT MAX(CAST(SUBSTR(id, 6) AS INTEGER)) FROM tasks WHERE id LIKE 'TASK-%'",
-            [],
-            |row| row.get(0),
-        )?;
+        // Generate a unique petname (e.g., "swift-amber-fox")
+        // With 3 words from ~7k adjectives and ~5k nouns, collision probability is very low
+        // but we check anyway to guarantee uniqueness
+        let petname_gen = petname::Petnames::default();
 
-        let next = max_num.unwrap_or(0) + 1;
-        Ok(format!("TASK-{next:03}"))
+        for _ in 0..100 {
+            let Some(id) = petname_gen.generate_one(3, "-") else {
+                continue;
+            };
+
+            let exists: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM tasks WHERE id = ?)",
+                params![&id],
+                |row| row.get(0),
+            )?;
+
+            if !exists {
+                return Ok(id);
+            }
+        }
+
+        // Fallback: add random suffix if somehow all petnames collide
+        Err(OrkestraError::InvalidInput(
+            "Failed to generate unique task ID after 100 attempts".into(),
+        ))
     }
 }
 
@@ -637,12 +655,19 @@ mod tests {
     fn test_next_id() {
         let store = SqliteStore::in_memory().unwrap();
 
-        assert_eq!(store.next_id().unwrap(), "TASK-001");
+        // Petnames should be hyphenated words (e.g., "swift-amber-fox")
+        let id1 = store.next_id().unwrap();
+        assert!(id1.contains('-'), "Petname should contain hyphens: {id1}");
+        assert!(id1.chars().all(|c| c.is_ascii_lowercase() || c == '-'));
 
-        let task = Task::new("TASK-001".into(), "Test".into(), "Desc".into(), "now");
+        // Save task with that ID
+        let task = Task::new(id1.clone(), "Test".into(), "Desc".into(), "now");
         store.save(&task).unwrap();
 
-        assert_eq!(store.next_id().unwrap(), "TASK-002");
+        // Next ID should be different (unique)
+        let id2 = store.next_id().unwrap();
+        assert_ne!(id1, id2, "IDs should be unique");
+        assert!(id2.contains('-'), "Petname should contain hyphens: {id2}");
     }
 
     #[test]

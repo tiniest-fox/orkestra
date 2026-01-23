@@ -880,7 +880,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       </div>
 
       {/* Plan Approval Actions */}
-      {taskNeedsPlanReview && (
+      {taskNeedsPlanReview && !task.auto_approve && (
         <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-amber-50">
           <div className="text-sm font-medium text-amber-800 mb-3">Plan Review</div>
           <textarea
@@ -913,7 +913,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       )}
 
       {/* Breakdown Approval Actions */}
-      {taskNeedsBreakdownReview && (
+      {taskNeedsBreakdownReview && !task.auto_approve && (
         <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-indigo-50">
           <div className="text-sm font-medium text-indigo-800 mb-3">Breakdown Review</div>
           {task.breakdown && (
@@ -962,7 +962,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       )}
 
       {/* Work Review Actions */}
-      {taskNeedsWorkReview && (
+      {taskNeedsWorkReview && !task.auto_approve && (
         <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-yellow-50">
           <div className="text-sm font-medium text-yellow-800 mb-3">Work Review</div>
           <textarea

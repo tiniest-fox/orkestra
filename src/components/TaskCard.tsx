@@ -46,7 +46,22 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
       type="button"
     >
       <div className="flex items-start justify-between gap-2">
-        <h3 className="font-medium text-gray-900 text-sm">{task.title}</h3>
+        <div className="flex items-center gap-1.5">
+          {task.auto_approve && (
+            <span className="flex-shrink-0 text-indigo-500" title="Auto-progress enabled">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <title>Auto-progress enabled</title>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                />
+              </svg>
+            </span>
+          )}
+          <h3 className="font-medium text-gray-900 text-sm">{task.title}</h3>
+        </div>
         {taskNeedsReview && (
           <span className="flex-shrink-0 text-amber-600 text-xs font-medium px-1.5 py-0.5 bg-amber-100 rounded">
             Review

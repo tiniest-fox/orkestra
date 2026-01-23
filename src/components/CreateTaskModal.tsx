@@ -176,12 +176,16 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                   }`}
                 />
               </button>
-              <div className="flex flex-col">
-                <span className="text-sm font-medium text-gray-700">Auto-approve plans</span>
+              <button
+                type="button"
+                onClick={() => setAutoApprove(!autoApprove)}
+                className="flex flex-col text-left cursor-pointer"
+              >
+                <span className="text-sm font-medium text-gray-700">Auto-progress</span>
                 <span className="text-xs text-gray-500">
-                  Skip manual plan approval and go straight to implementation
+                  Automatically advance through all stages without manual review
                 </span>
-              </div>
+              </button>
             </div>
           </div>
 

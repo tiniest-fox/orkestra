@@ -743,14 +743,8 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     }
   };
 
-  // Show auto-approve toggle when task is in a reviewable state or terminal state
-  const canToggleAutoApprove =
-    task.status === "done" ||
-    task.status === "failed" ||
-    task.status === "blocked" ||
-    taskNeedsPlanReview ||
-    taskNeedsBreakdownReview ||
-    taskNeedsWorkReview;
+  // Always show auto-approve toggle so users can control it at any time
+  const canToggleAutoApprove = true;
 
   return (
     <div className="w-1/2 flex-shrink-0 bg-white shadow-xl border-l border-gray-200 flex flex-col overflow-hidden">

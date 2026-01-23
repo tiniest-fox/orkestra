@@ -5,16 +5,18 @@ import ReactMarkdown from "react-markdown";
 import { toRelativePath, useProjectRoot } from "../hooks/useProjectRoot";
 import {
   type LogEntry,
+  type LoopOutcome,
   type OrkAction,
   type SessionInfo,
   TASK_STATUS_CONFIG,
   type Task,
   type ToolInput,
+  type WorkLoop,
 } from "../types/task";
 import { TodoDisplay } from "./TodoDisplay";
 import { getOrkSubIcon, ToolIcon } from "./ToolIcon";
 
-type TabType = "details" | "breakdown" | "plan" | "logs";
+type TabType = "details" | "breakdown" | "plan" | "logs" | "activity";
 
 function formatOrkAction(action: OrkAction): string {
   switch (action.action) {
@@ -237,6 +239,120 @@ function LogEntryView({ entry, projectRoot }: { entry: LogEntry; projectRoot: st
   }
 }
 
+// Helper to format loop outcome for display
+function formatLoopOutcome(outcome: LoopOutcome): { label: string; color: string; details?: string } {
+  switch (outcome.type) {
+    case "plan_rejected":
+      return { label: "Plan Rejected", color: "text-amber-700 bg-amber-50", details: outcome.feedback };
+    case "breakdown_rejected":
+      return { label: "Breakdown Rejected", color: "text-amber-700 bg-amber-50", details: outcome.feedback };
+    case "work_rejected":
+      return { label: "Work Rejected", color: "text-amber-700 bg-amber-50", details: outcome.feedback };
+    case "reviewer_rejected":
+      return { label: "Reviewer Rejected", color: "text-orange-700 bg-orange-50", details: outcome.feedback };
+    case "integration_failed":
+      return {
+        label: "Integration Failed",
+        color: "text-red-700 bg-red-50",
+        details: outcome.conflict_files
+          ? `${outcome.error}\nConflict files: ${outcome.conflict_files.join(", ")}`
+          : outcome.error,
+      };
+    case "agent_error":
+      return { label: "Agent Error", color: "text-red-700 bg-red-50", details: outcome.error };
+    case "blocked":
+      return { label: "Blocked", color: "text-gray-700 bg-gray-100", details: outcome.reason };
+    case "completed":
+      return {
+        label: "Completed",
+        color: "text-green-700 bg-green-50",
+        details: outcome.merged_at ? `Merged to ${outcome.target_branch}` : undefined,
+      };
+  }
+}
+
+// Format status for display
+function formatStatus(status: string): string {
+  return status
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+// Format timestamp for display
+function formatTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Loop card component for Activity tab
+function LoopCard({ loop }: { loop: WorkLoop }) {
+  const isActive = !loop.outcome;
+  const outcomeInfo = loop.outcome ? formatLoopOutcome(loop.outcome) : null;
+
+  return (
+    <div
+      className={`border rounded-lg overflow-hidden ${
+        isActive ? "border-blue-300 bg-blue-50" : "border-gray-200 bg-white"
+      }`}
+    >
+      {/* Loop Header */}
+      <div className="px-3 py-2 flex items-center justify-between border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <span className={`font-medium ${isActive ? "text-blue-700" : "text-gray-900"}`}>
+            Loop {loop.loop_number}
+          </span>
+          {isActive && (
+            <span className="flex items-center gap-1 text-xs text-blue-600">
+              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+              Active
+            </span>
+          )}
+        </div>
+        <span className="text-xs text-gray-500">{formatTimestamp(loop.started_at)}</span>
+      </div>
+
+      {/* Loop Content */}
+      <div className="px-3 py-2 space-y-2">
+        {/* Started From */}
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-gray-500">Started from:</span>
+          <span className="px-2 py-0.5 bg-gray-100 rounded text-gray-700 text-xs font-medium">
+            {formatStatus(loop.started_from)}
+          </span>
+        </div>
+
+        {/* Outcome (if ended) */}
+        {outcomeInfo && (
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500 text-sm">Outcome:</span>
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${outcomeInfo.color}`}>
+                {outcomeInfo.label}
+              </span>
+            </div>
+            {outcomeInfo.details && (
+              <div className="text-sm text-gray-600 bg-gray-50 rounded p-2 whitespace-pre-wrap">
+                {outcomeInfo.details}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Duration / End time */}
+        {loop.ended_at && (
+          <div className="text-xs text-gray-400">Ended: {formatTimestamp(loop.ended_at)}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface TaskDetailSidebarProps {
   task: Task;
   onClose: () => void;
@@ -267,6 +383,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const [subtasks, setSubtasks] = useState<Task[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [loops, setLoops] = useState<WorkLoop[]>([]);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const statusConfig = TASK_STATUS_CONFIG[task.status];
   const projectRoot = useProjectRoot();
@@ -283,6 +400,20 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       }
     };
     fetchSubtasks();
+  }, [task.id, task.status]);
+
+  // Fetch work loops for the task
+  // biome-ignore lint/correctness/useExhaustiveDependencies: task.status is intentionally included to refresh when status changes
+  useEffect(() => {
+    const fetchLoops = async () => {
+      try {
+        const result = await invoke<WorkLoop[]>("get_task_loops", { id: task.id });
+        setLoops(result);
+      } catch {
+        setLoops([]);
+      }
+    };
+    fetchLoops();
   }, [task.id, task.status]);
 
   // Get available sessions from the task
@@ -755,6 +886,17 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           Logs
           {task.agent_pid && <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />}
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("activity")}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "activity"
+              ? "bg-gray-100 text-gray-900 border-b-2 border-blue-500"
+              : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+          }`}
+        >
+          Activity
+        </button>
       </div>
 
       {/* Tab Content Area */}
@@ -887,6 +1029,24 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Activity Tab */}
+        {activeTab === "activity" && (
+          <div className="flex-1 overflow-auto p-4">
+            <div className="text-sm font-medium text-gray-700 mb-4">
+              Work Loop History
+            </div>
+            {loops.length === 0 ? (
+              <div className="text-gray-500 text-sm">No activity recorded yet.</div>
+            ) : (
+              <div className="space-y-4">
+                {loops.map((loop) => (
+                  <LoopCard key={loop.loop_number} loop={loop} />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -503,7 +503,7 @@ fn test_worktree_setup_script_runs() {
     // Create a project and task (which creates a worktree)
     let project =
         orkestra_core::services::Project::open(temp_dir.path()).expect("Failed to open project");
-    let task = tasks::create_task(&project, "Test task", "Test description")
+    let task = tasks::create_task(&project, Some("Test task"), "Test description")
         .expect("Failed to create task");
 
     // Verify the setup script ran by checking for the marker file

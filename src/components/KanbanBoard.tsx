@@ -8,8 +8,8 @@ interface KanbanBoardProps {
   onSelectTask: (task: Task) => void;
 }
 
-// 4 main columns - failed/blocked tasks stay inline in their relevant column
-const COLUMNS: TaskStatus[] = ["planning", "working", "reviewing", "done"];
+// 5 main columns - failed/blocked tasks stay inline in their relevant column
+const COLUMNS: TaskStatus[] = ["planning", "breaking_down", "working", "reviewing", "done"];
 
 const COLUMN_COLORS: Record<TaskStatus, string> = {
   planning: "bg-purple-500",
@@ -43,13 +43,18 @@ export function KanbanBoard({ tasks, selectedTaskId, onSelectTask }: KanbanBoard
   const getTasksForColumn = (column: TaskStatus): Task[] => {
     const columnTasks = visibleTasks.filter((task) => {
       if (column === "planning") {
-        // Planning column: planning, breaking_down tasks, or failed/blocked in planning phase
-        // (no summary indicates they were in planning/breakdown phase)
+        // Planning column: planning tasks, or failed/blocked with no plan yet
         return (
           task.status === "planning" ||
+          ((task.status === "failed" || task.status === "blocked") && !task.plan && !task.breakdown)
+        );
+      }
+      if (column === "breaking_down") {
+        // Breaking Down column: breaking_down tasks, or failed/blocked with plan but no breakdown
+        return (
           task.status === "breaking_down" ||
           ((task.status === "failed" || task.status === "blocked") &&
-            !task.summary &&
+            task.plan !== undefined &&
             !task.breakdown)
         );
       }

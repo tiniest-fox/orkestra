@@ -44,10 +44,19 @@ pub use auto_tasks::{get_auto_task, list_auto_tasks, AutoTask};
 pub use adapters::{ClaudeSpawner, FixedClock, SqliteStore, SystemClock};
 pub use ports::{Clock, ProcessSpawner, SpawnConfig, SpawnedProcess, TaskStore};
 pub use prompts::{
-    build_breakdown_prompt, build_planner_prompt, build_reviewer_prompt,
-    build_title_generator_prompt, build_worker_prompt,
+    build_breakdown_prompt,
+    build_planner_prompt,
+    build_reviewer_prompt,
+    build_title_generator_prompt,
+    build_worker_prompt,
     // Resume prompts
-    render_resume_breakdown, render_resume_planner, render_resume_reviewer, render_resume_worker,
-    ResumeBreakdownContext, ResumePlannerContext, ResumeReviewerContext, ResumeWorkerContext,
+    render_resume_breakdown,
+    render_resume_planner,
+    render_resume_reviewer,
+    render_resume_worker,
+    ResumeBreakdownContext,
+    ResumePlannerContext,
+    ResumeReviewerContext,
+    ResumeWorkerContext,
 };
 pub use services::{AgentService, GitService, TaskService};

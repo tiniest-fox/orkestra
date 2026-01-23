@@ -232,7 +232,11 @@ pub fn render_title_generator(ctx: &TitleGeneratorContext) -> String {
 // =============================================================================
 
 /// Builds a worker prompt from a Task and agent definition.
-pub fn build_worker_prompt(task: &Task, agent_definition: &str, subtasks: Option<&[Task]>) -> String {
+pub fn build_worker_prompt(
+    task: &Task,
+    agent_definition: &str,
+    subtasks: Option<&[Task]>,
+) -> String {
     let subtask_contexts: Option<Vec<SubtaskContext>> = subtasks.map(|subs| {
         subs.iter()
             .map(|s| SubtaskContext {

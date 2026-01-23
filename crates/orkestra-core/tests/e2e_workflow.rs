@@ -405,8 +405,7 @@ fn test_cli_list_tasks() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create a task via tasks:: (UI action)
-    let task =
-        tasks::create_task(&orchestrator.project, "Test task", "Test description").unwrap();
+    let task = tasks::create_task(&orchestrator.project, "Test task", "Test description").unwrap();
 
     // List via CLI (could be UI or agent)
     let output = orchestrator
@@ -509,7 +508,10 @@ fn test_loop_created_on_task_creation() {
         TaskStatus::Planning,
         "Loop should start from Planning"
     );
-    assert!(loops[0].outcome.is_none(), "Loop should be active (no outcome)");
+    assert!(
+        loops[0].outcome.is_none(),
+        "Loop should be active (no outcome)"
+    );
     assert!(loops[0].ended_at.is_none(), "Loop should not have ended");
 }
 
@@ -549,7 +551,7 @@ fn test_plan_rejection_creates_new_loop() {
         Some(LoopOutcome::PlanRejected { feedback }) => {
             assert_eq!(feedback, "Need more detail");
         }
-        other => panic!("Expected PlanRejected outcome, got {:?}", other),
+        other => panic!("Expected PlanRejected outcome, got {other:?}"),
     }
 
     // Check Loop 2
@@ -603,7 +605,7 @@ fn test_work_rejection_creates_new_loop() {
         Some(LoopOutcome::WorkRejected { feedback }) => {
             assert_eq!(feedback, "Fix the tests");
         }
-        other => panic!("Expected WorkRejected outcome, got {:?}", other),
+        other => panic!("Expected WorkRejected outcome, got {other:?}"),
     }
 
     // Check Loop 2 started from Working
@@ -673,7 +675,7 @@ fn test_reviewer_rejection_creates_new_loop() {
         Some(LoopOutcome::ReviewerRejected { feedback }) => {
             assert_eq!(feedback, "Code doesn't follow conventions");
         }
-        other => panic!("Expected ReviewerRejected outcome, got {:?}", other),
+        other => panic!("Expected ReviewerRejected outcome, got {other:?}"),
     }
 
     // Check Loop 2
@@ -711,7 +713,10 @@ fn test_successful_completion_loop_outcome() {
     // But the loops should also be cleaned up
     // Let's verify the task is gone
     let task = tasks::get_task(&orchestrator.project, &task_id).unwrap();
-    assert!(task.is_none(), "Task should be deleted after successful merge");
+    assert!(
+        task.is_none(),
+        "Task should be deleted after successful merge"
+    );
 
     // Loops are also deleted when task is deleted (cascade)
     let loops = orchestrator.project.store().get_loops(&task_id).unwrap();
@@ -731,19 +736,28 @@ fn test_multiple_rejections_loop_progression() {
 
     // First plan rejection
     orchestrator
-        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Plan v1"])
+        .run_cli_in_worktree(
+            &task.id,
+            &["task", "set-plan", &task.id, "--plan", "Plan v1"],
+        )
         .unwrap();
     tasks::request_plan_changes(&orchestrator.project, &task.id, "Rejection 1").unwrap();
 
     // Second plan rejection
     orchestrator
-        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Plan v2"])
+        .run_cli_in_worktree(
+            &task.id,
+            &["task", "set-plan", &task.id, "--plan", "Plan v2"],
+        )
         .unwrap();
     tasks::request_plan_changes(&orchestrator.project, &task.id, "Rejection 2").unwrap();
 
     // Third plan rejection
     orchestrator
-        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Plan v3"])
+        .run_cli_in_worktree(
+            &task.id,
+            &["task", "set-plan", &task.id, "--plan", "Plan v3"],
+        )
         .unwrap();
     tasks::request_plan_changes(&orchestrator.project, &task.id, "Rejection 3").unwrap();
 
@@ -786,11 +800,18 @@ fn test_feedback_retrieval_from_loops() {
     let task = tasks::create_task(&orchestrator.project, "Test task", "Description").unwrap();
 
     orchestrator
-        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Bad plan"])
+        .run_cli_in_worktree(
+            &task.id,
+            &["task", "set-plan", &task.id, "--plan", "Bad plan"],
+        )
         .unwrap();
 
-    tasks::request_plan_changes(&orchestrator.project, &task.id, "This feedback should be retrievable")
-        .unwrap();
+    tasks::request_plan_changes(
+        &orchestrator.project,
+        &task.id,
+        "This feedback should be retrievable",
+    )
+    .unwrap();
 
     // Retrieve feedback using the helper
     let feedback = orchestrator
@@ -812,11 +833,15 @@ fn test_breakdown_rejection_creates_new_loop() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create task (breakdown enabled by default)
-    let task = tasks::create_task(&orchestrator.project, "Complex task", "Needs breakdown").unwrap();
+    let task =
+        tasks::create_task(&orchestrator.project, "Complex task", "Needs breakdown").unwrap();
 
     // Set and approve plan
     orchestrator
-        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Big plan"])
+        .run_cli_in_worktree(
+            &task.id,
+            &["task", "set-plan", &task.id, "--plan", "Big plan"],
+        )
         .unwrap();
 
     tasks::approve_task_plan(&orchestrator.project, &task.id).unwrap();
@@ -845,14 +870,18 @@ fn test_breakdown_rejection_creates_new_loop() {
 
     // Verify new loop created
     let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
-    assert_eq!(loops.len(), 2, "Should have two loops after breakdown rejection");
+    assert_eq!(
+        loops.len(),
+        2,
+        "Should have two loops after breakdown rejection"
+    );
 
     // Check Loop 1 outcome
     match &loops[0].outcome {
         Some(LoopOutcome::BreakdownRejected { feedback }) => {
             assert_eq!(feedback, "Need more subtasks");
         }
-        other => panic!("Expected BreakdownRejected outcome, got {:?}", other),
+        other => panic!("Expected BreakdownRejected outcome, got {other:?}"),
     }
 
     // Check Loop 2

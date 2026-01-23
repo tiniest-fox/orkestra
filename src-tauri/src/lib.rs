@@ -476,7 +476,7 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                     &project,
                                     &task,
                                     &session_key,
-                                    None,  // Reviewer has no feedback to pass
+                                    None, // Reviewer has no feedback to pass
                                     on_update2,
                                 ) {
                                     Ok(spawned) => {

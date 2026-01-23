@@ -165,7 +165,9 @@ pub fn integrate_done_task(project: &Project, id: &str) -> Result<()> {
                     }
                 }
                 _ => LoopOutcome::IntegrationFailed {
-                    error: conflict_msg.clone().unwrap_or_else(|| "Unknown error".to_string()),
+                    error: conflict_msg
+                        .clone()
+                        .unwrap_or_else(|| "Unknown error".to_string()),
                     conflict_files: None,
                 },
             };

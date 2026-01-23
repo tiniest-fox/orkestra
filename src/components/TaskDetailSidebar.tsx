@@ -153,17 +153,15 @@ function OrkToolView({
 }) {
   const subIcon = getOrkSubIcon(input.ork_action.action);
   const SubIconComponent = subIcon.icon;
-  const borderColor = isSubagent ? "border-indigo-500/50" : "border-indigo-500";
   const textColor = isSubagent ? "text-indigo-400" : "text-indigo-400";
   const iconSize = isSubagent ? 12 : 14;
 
   return (
     <div
-      className={`${isSubagent ? "ml-4 border-l" : "border-l-2"} ${borderColor} pl-2 my-${isSubagent ? "0.5" : "1"} py-${isSubagent ? "0.5" : "1"}`}
+      className={`${isSubagent ? "ml-4" : ""} pl-2 my-${isSubagent ? "0.5" : "1"} py-${isSubagent ? "0.5" : "1"}`}
     >
-      <div className="flex items-center gap-1.5">
-        <ToolIcon tool="Ork" size={iconSize} className={textColor} />
-        <SubIconComponent size={iconSize} className={subIcon.className} />
+      <div className="flex items-start gap-1.5">
+        <SubIconComponent size={iconSize} className={`${subIcon.className} flex-shrink-0 mt-0.5`} />
         <span className={`${textColor} ${isSubagent ? "text-sm" : "font-medium"}`}>Ork</span>
         <span className={`${isSubagent ? "text-gray-500" : "text-gray-400"} text-xs font-mono`}>
           {formatOrkAction(input.ork_action)}
@@ -196,13 +194,17 @@ function LogEntryView({ entry, projectRoot }: { entry: LogEntry; projectRoot: st
         return <OrkToolView input={entry.input} isSubagent={false} />;
       }
       return (
-        <div className="border-l-2 border-blue-500 pl-2 my-1 py-1">
-          <div className="flex items-center gap-1.5">
-            <ToolIcon tool={entry.tool} size={14} className="text-blue-400" />
-            <span className="text-blue-400 font-medium">{entry.tool}</span>
-            <span className="text-gray-400 text-xs font-mono">
-              {formatToolInput(entry.input, projectRoot)}
+        <div className="pl-2 my-1 py-1">
+          <div className="flex items-start gap-1.5">
+            <ToolIcon tool={entry.tool} size={14} className="text-blue-400 flex-shrink-0 mt-0.5" />
+            <span className="text-blue-400 font-medium">
+              {entry.input.tool === "bash" ? formatToolInput(entry.input, projectRoot) : entry.tool}
             </span>
+            {entry.input.tool !== "bash" && (
+              <span className="text-gray-400 text-xs font-mono">
+                {formatToolInput(entry.input, projectRoot)}
+              </span>
+            )}
           </div>
           {entry.input.tool === "todo_write" && <TodoDisplay todos={entry.input.todos} />}
         </div>
@@ -215,13 +217,21 @@ function LogEntryView({ entry, projectRoot }: { entry: LogEntry; projectRoot: st
         return <OrkToolView input={entry.input} isSubagent={true} />;
       }
       return (
-        <div className="ml-4 border-l border-purple-500/50 pl-2 my-0.5 py-0.5">
-          <div className="flex items-center gap-1.5">
-            <ToolIcon tool={entry.tool} size={12} className="text-purple-400" />
-            <span className="text-purple-400 text-sm">{entry.tool}</span>
-            <span className="text-gray-500 text-xs font-mono">
-              {formatToolInput(entry.input, projectRoot)}
+        <div className="ml-4 pl-2 my-0.5 py-0.5">
+          <div className="flex items-start gap-1.5">
+            <ToolIcon
+              tool={entry.tool}
+              size={12}
+              className="text-purple-400 flex-shrink-0 mt-0.5"
+            />
+            <span className="text-purple-400 text-sm">
+              {entry.input.tool === "bash" ? formatToolInput(entry.input, projectRoot) : entry.tool}
             </span>
+            {entry.input.tool !== "bash" && (
+              <span className="text-gray-500 text-xs font-mono">
+                {formatToolInput(entry.input, projectRoot)}
+              </span>
+            )}
           </div>
           {entry.input.tool === "todo_write" && <TodoDisplay todos={entry.input.todos} />}
         </div>
@@ -240,16 +250,36 @@ function LogEntryView({ entry, projectRoot }: { entry: LogEntry; projectRoot: st
 }
 
 // Helper to format loop outcome for display
-function formatLoopOutcome(outcome: LoopOutcome): { label: string; color: string; details?: string } {
+function formatLoopOutcome(outcome: LoopOutcome): {
+  label: string;
+  color: string;
+  details?: string;
+} {
   switch (outcome.type) {
     case "plan_rejected":
-      return { label: "Plan Rejected", color: "text-amber-700 bg-amber-50", details: outcome.feedback };
+      return {
+        label: "Plan Rejected",
+        color: "text-amber-700 bg-amber-50",
+        details: outcome.feedback,
+      };
     case "breakdown_rejected":
-      return { label: "Breakdown Rejected", color: "text-amber-700 bg-amber-50", details: outcome.feedback };
+      return {
+        label: "Breakdown Rejected",
+        color: "text-amber-700 bg-amber-50",
+        details: outcome.feedback,
+      };
     case "work_rejected":
-      return { label: "Work Rejected", color: "text-amber-700 bg-amber-50", details: outcome.feedback };
+      return {
+        label: "Work Rejected",
+        color: "text-amber-700 bg-amber-50",
+        details: outcome.feedback,
+      };
     case "reviewer_rejected":
-      return { label: "Reviewer Rejected", color: "text-orange-700 bg-orange-50", details: outcome.feedback };
+      return {
+        label: "Reviewer Rejected",
+        color: "text-orange-700 bg-orange-50",
+        details: outcome.feedback,
+      };
     case "integration_failed":
       return {
         label: "Integration Failed",
@@ -1035,9 +1065,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         {/* Activity Tab */}
         {activeTab === "activity" && (
           <div className="flex-1 overflow-auto p-4">
-            <div className="text-sm font-medium text-gray-700 mb-4">
-              Work Loop History
-            </div>
+            <div className="text-sm font-medium text-gray-700 mb-4">Work Loop History</div>
             {loops.length === 0 ? (
               <div className="text-gray-500 text-sm">No activity recorded yet.</div>
             ) : (

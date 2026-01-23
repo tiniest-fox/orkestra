@@ -7,9 +7,9 @@ use crate::domain::{Task, TaskStatus};
 use crate::project;
 use crate::prompts::{
     build_breakdown_prompt, build_planner_prompt, build_reviewer_prompt,
-    build_title_generator_prompt, build_worker_prompt,
-    render_resume_breakdown, render_resume_planner, render_resume_reviewer, render_resume_worker,
-    ResumeBreakdownContext, ResumePlannerContext, ResumeReviewerContext, ResumeWorkerContext,
+    build_title_generator_prompt, build_worker_prompt, render_resume_breakdown,
+    render_resume_planner, render_resume_reviewer, render_resume_worker, ResumeBreakdownContext,
+    ResumePlannerContext, ResumeReviewerContext, ResumeWorkerContext,
 };
 use crate::services::Project;
 use crate::tasks;
@@ -594,9 +594,9 @@ where
             task_id: &task.id,
             review_feedback: continuation_prompt,
         }),
-        s if s == "review" || s.starts_with("review_") => render_resume_reviewer(&ResumeReviewerContext {
-            task_id: &task.id,
-        }),
+        s if s == "review" || s.starts_with("review_") => {
+            render_resume_reviewer(&ResumeReviewerContext { task_id: &task.id })
+        }
         "breakdown" => render_resume_breakdown(&ResumeBreakdownContext {
             task_id: &task.id,
             breakdown_feedback: continuation_prompt,

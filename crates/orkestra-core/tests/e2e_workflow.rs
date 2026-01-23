@@ -16,7 +16,10 @@
 use orkestra_core::{
     domain::{LoopOutcome, TaskStatus},
     tasks,
-    testutil::{create_orkestra_dirs, create_temp_git_repo, create_test_orchestrator},
+    testutil::{
+        create_orkestra_dirs, create_temp_git_repo, create_test_orchestrator,
+        create_worktree_setup_script,
+    },
 };
 use std::path::Path;
 use std::process::Command;
@@ -479,6 +482,29 @@ fn test_orkestra_dirs_creation() {
 
     assert!(temp_dir.path().join(".orkestra").exists());
     assert!(temp_dir.path().join(".orkestra/worktrees").exists());
+}
+
+#[test]
+fn test_worktree_setup_script_runs() {
+    // Create a test repo with a worktree setup script
+    let temp_dir = create_temp_git_repo().expect("Failed to create temp repo");
+    create_orkestra_dirs(temp_dir.path()).expect("Failed to create orkestra dirs");
+    create_worktree_setup_script(temp_dir.path()).expect("Failed to create setup script");
+
+    // Create a project and task (which creates a worktree)
+    let project =
+        orkestra_core::services::Project::open(temp_dir.path()).expect("Failed to open project");
+    let task = tasks::create_task(&project, "Test task", "Test description")
+        .expect("Failed to create task");
+
+    // Verify the setup script ran by checking for the marker file
+    let worktree_path = task.worktree_path.expect("Task should have worktree path");
+    let marker_file = Path::new(&worktree_path).join(".setup_complete");
+
+    assert!(
+        marker_file.exists(),
+        "Setup script should have created .setup_complete marker file in worktree"
+    );
 }
 
 // =============================================================================

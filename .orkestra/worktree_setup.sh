@@ -28,9 +28,8 @@
 
 WORKTREE_PATH="$1"
 
-# Add your project-specific setup below:
-
-# Example: Install node dependencies (uncomment if needed)
-# cd "$WORKTREE_PATH" && pnpm install --frozen-lockfile
+# Install node dependencies using pnpm (fast with global cache)
+echo "Installing node dependencies..."
+cd "$WORKTREE_PATH" && pnpm install --frozen-lockfile
 
 echo "Worktree setup complete: $WORKTREE_PATH"

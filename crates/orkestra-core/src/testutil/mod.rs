@@ -52,7 +52,7 @@ mod git_helpers;
 mod test_orchestrator;
 
 pub use git_helpers::{
-    create_and_commit_file, create_orkestra_dirs, create_temp_git_repo, get_current_branch,
-    is_git_repo, make_commit,
+    create_and_commit_file, create_orkestra_dirs, create_temp_git_repo,
+    create_worktree_setup_script, get_current_branch, is_git_repo, make_commit,
 };
 pub use test_orchestrator::{create_test_orchestrator, TestOrchestrator};

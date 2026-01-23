@@ -230,8 +230,7 @@ fn get_task_logs(id: String, session_key: Option<String>) -> Result<Vec<LogEntry
     let session_cwd = task
         .worktree_path
         .as_ref()
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| project.root().to_path_buf());
+        .map_or_else(|| project.root().to_path_buf(), std::path::PathBuf::from);
 
     recover_session_logs(&session_id, &session_cwd).map_err(|e| e.to_string())
 }
@@ -278,6 +277,11 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                             "[orchestrator] Failed to spawn planner for {}: {}",
                                             task.id, e
                                         );
+                                        let _ = tasks::fail_task(
+                                            &project,
+                                            &task.id,
+                                            &format!("Failed to spawn planner: {e}"),
+                                        );
                                     }
                                 }
                             }
@@ -299,6 +303,11 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                             "[orchestrator] Failed to spawn breakdown for {}: {}",
                                             task.id, e
                                         );
+                                        let _ = tasks::fail_task(
+                                            &project,
+                                            &task.id,
+                                            &format!("Failed to spawn breakdown: {e}"),
+                                        );
                                     }
                                 }
                             }
@@ -319,6 +328,11 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                         eprintln!(
                                             "[orchestrator] Failed to spawn worker for {}: {}",
                                             task.id, e
+                                        );
+                                        let _ = tasks::fail_task(
+                                            &project,
+                                            &task.id,
+                                            &format!("Failed to spawn worker: {e}"),
                                         );
                                     }
                                 }
@@ -344,6 +358,11 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                             "[orchestrator] Failed to resume worker for {}: {}",
                                             task.id, e
                                         );
+                                        let _ = tasks::fail_task(
+                                            &project,
+                                            &task.id,
+                                            &format!("Failed to resume worker: {e}"),
+                                        );
                                     }
                                 }
                             }
@@ -364,6 +383,11 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                         eprintln!(
                                             "[orchestrator] Failed to spawn reviewer for {}: {}",
                                             task.id, e
+                                        );
+                                        let _ = tasks::fail_task(
+                                            &project,
+                                            &task.id,
+                                            &format!("Failed to spawn reviewer: {e}"),
                                         );
                                     }
                                 }
@@ -388,6 +412,11 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                         eprintln!(
                                             "[orchestrator] Failed to resume reviewer for {}: {}",
                                             task.id, e
+                                        );
+                                        let _ = tasks::fail_task(
+                                            &project,
+                                            &task.id,
+                                            &format!("Failed to resume reviewer: {e}"),
                                         );
                                     }
                                 }

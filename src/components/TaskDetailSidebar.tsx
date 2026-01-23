@@ -328,12 +328,16 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     fetchLogs();
   }, [fetchLogs]);
 
-  // Listen for real-time log updates via Tauri events (throttled)
+  // Listen for real-time log updates via Tauri events (throttled) with polling fallback
   // Note: fetchLogs and onTaskUpdated are stable callbacks from useCallback/props
   useEffect(() => {
     let unlisten: UnlistenFn | null = null;
     let throttleTimeout: ReturnType<typeof setTimeout> | null = null;
     let pendingUpdate = false;
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+    // Determine if task is in an active state where logs are being generated
+    const isActiveTask = ["planning", "breaking_down", "working"].includes(task.status);
 
     const handleUpdate = () => {
       // Refresh task data to get updated sessions
@@ -342,7 +346,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       fetchLogs();
     };
 
-    // Subscribe to task-logs-updated events
+    // Subscribe to task-logs-updated events (primary mechanism)
     listen<string>("task-logs-updated", (event) => {
       // Only process if this event is for our task
       if (event.payload !== task.id) return;
@@ -365,6 +369,11 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       unlisten = fn;
     });
 
+    // Polling fallback for active tasks
+    if (isActiveTask) {
+      pollInterval = setInterval(fetchLogs, 1000);
+    }
+
     return () => {
       if (unlisten) {
         unlisten();
@@ -372,8 +381,11 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
       if (throttleTimeout) {
         clearTimeout(throttleTimeout);
       }
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
     };
-  }, [task.id, fetchLogs, onTaskUpdated]);
+  }, [task.id, task.status, fetchLogs, onTaskUpdated]);
 
   // Reset active session when task changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: task.id triggers reset when selected task changes

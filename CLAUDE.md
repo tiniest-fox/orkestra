@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Philosophy
 
-This project is in early development. Prioritize getting things working over backwards compatibility or data consistency. Feel free to make breaking changes to data formats, APIs, or schemas as needed. Old tasks in `.orkestra/tasks.jsonl` can be deleted if they cause issues with new code.
+This project is in early development. Prioritize getting things working over backwards compatibility or data consistency. Feel free to make breaking changes to data formats, APIs, or schemas as needed.
 
 ## Build & Development Commands
 
@@ -16,16 +16,19 @@ cargo build
 cargo build --release
 
 # Run the Tauri desktop app (includes frontend dev server)
-npm run tauri dev
+pnpm tauri dev
 
 # Build production Tauri app
-npm run tauri build
+pnpm tauri build
 
 # Run frontend dev server only (without Tauri)
-npm run dev
+pnpm dev
 
 # Build frontend only
-npm run build
+pnpm build
+
+# Install frontend dependencies
+pnpm install
 
 # Run Rust tests
 cargo test
@@ -33,6 +36,13 @@ cargo test
 # Run specific crate tests
 cargo test -p orkestra-core
 ```
+
+## Build Performance
+
+The project uses two caching mechanisms for faster builds:
+
+- **sccache** - Caches Rust compilation artifacts. Configured in `.cargo/config.toml`. Clean builds with warm cache: ~24s (vs ~64s without).
+- **pnpm** - Uses a global content-addressable store with hard links. Fresh `node_modules` install with warm cache: ~1.2s.
 
 ## Architecture Overview
 
@@ -45,8 +55,9 @@ Orkestra is a task orchestration system that spawns Claude Code instances (agent
 - **`src-tauri/`** - Tauri desktop application backend
 - **`src/`** - React/TypeScript frontend (Kanban board UI)
 - **`.orkestra/`** - Runtime data directory (auto-created)
-  - `tasks.jsonl` - Append-only task database
-  - `agents/` - Agent definition markdown files (planner.md, worker.md)
+  - `orkestra.db` - SQLite database for tasks and sessions
+  - `worktrees/` - Git worktrees for task isolation (one per task)
+  - `worktree_setup.sh` - Script that runs when creating new worktrees (customize for project-specific setup like copying .env files)
 
 ### Core Library Architecture (`crates/orkestra-core/`)
 
@@ -54,7 +65,7 @@ The core uses a hexagonal architecture with domain/ports/adapters:
 
 - **`domain/`** - Core domain models (`Task`, `TaskStatus`, `LogEntry`)
 - **`ports/`** - Trait interfaces (`TaskStore`, `ProcessSpawner`, `Clock`)
-- **`adapters/`** - Implementations (`JsonlTaskStore`, `ClaudeSpawner`, `SystemClock`)
+- **`adapters/`** - Implementations (`SqliteStore`, `ClaudeSpawner`, `SystemClock`)
 - **`services/`** - Business logic (`TaskService`, `AgentService`)
 - **`prompt/`** - Agent prompt builders (planner.rs, worker.rs)
 
@@ -107,6 +118,25 @@ ork task request-changes ID --feedback  # Request plan revisions
 
 ### Key Design Patterns
 
-- **Append-only JSONL**: Tasks stored in `.orkestra/tasks.jsonl` - later entries override earlier ones for the same task ID
+- **SQLite storage**: Tasks stored in `.orkestra/orkestra.db` with full ACID guarantees
+- **Git worktrees**: Each task gets an isolated worktree at `.orkestra/worktrees/{task-id}`, allowing parallel work without conflicts
 - **Session tracking**: Each agent run creates a session (plan, work, review_0, review_1...) enabling resume after interruption
 - **Project root detection**: Finds workspace root by looking for `Cargo.toml` with `[workspace]` or `.orkestra/` directory
+
+### Process Management
+
+Agent processes (Claude Code instances) are managed with multiple cleanup mechanisms:
+
+- **Signal handlers**: SIGTERM/SIGINT/SIGHUP trigger cleanup before exit
+- **Startup orphan cleanup**: Kills any orphaned agents from previous crashes on app start
+- **ProcessGuard**: RAII guard that kills processes on drop (defense against panics)
+- **Recursive tree killing**: Kills entire process trees including child shells
+
+### Worktree Setup
+
+When a new worktree is created for a task, `.orkestra/worktree_setup.sh` runs automatically. Use this for project-specific setup:
+
+```bash
+WORKTREE_PATH="$1"
+# Copy .env, run pnpm install, etc.
+```

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { toRelativePath, useProjectRoot } from "../hooks/useProjectRoot";
 import {
   type LogEntry,
@@ -754,7 +755,9 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
             {task.summary && (
               <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
                 <div className="text-xs font-medium text-green-700 mb-1">Summary</div>
-                <p className="text-sm text-green-800">{task.summary}</p>
+                <div className="prose prose-sm max-w-none prose-headings:text-green-800 prose-p:text-green-800 prose-li:text-green-800 prose-code:bg-green-100 prose-code:px-1 prose-code:rounded">
+                  <ReactMarkdown>{task.summary}</ReactMarkdown>
+                </div>
               </div>
             )}
             {task.error && (
@@ -824,10 +827,8 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         {/* Plan Tab */}
         {activeTab === "plan" && hasPlan && (
           <div className="flex-1 overflow-auto p-4">
-            <div className="prose prose-sm max-w-none">
-              <pre className="whitespace-pre-wrap text-sm text-gray-800 bg-gray-50 p-3 rounded border">
-                {task.plan}
-              </pre>
+            <div className="prose prose-sm max-w-none prose-headings:text-gray-800 prose-p:text-gray-700 prose-li:text-gray-700 prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-100 prose-pre:text-gray-800">
+              <ReactMarkdown>{task.plan}</ReactMarkdown>
             </div>
           </div>
         )}
@@ -916,8 +917,8 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-indigo-50">
           <div className="text-sm font-medium text-indigo-800 mb-3">Breakdown Review</div>
           {task.breakdown && (
-            <div className="mb-3 p-2 bg-white rounded border border-indigo-200 text-sm text-indigo-900 max-h-32 overflow-auto">
-              {task.breakdown}
+            <div className="mb-3 p-2 bg-white rounded border border-indigo-200 max-h-32 overflow-auto prose prose-sm max-w-none prose-headings:text-indigo-900 prose-p:text-indigo-900 prose-li:text-indigo-900 prose-code:bg-indigo-50 prose-code:px-1 prose-code:rounded">
+              <ReactMarkdown>{task.breakdown}</ReactMarkdown>
             </div>
           )}
           <textarea

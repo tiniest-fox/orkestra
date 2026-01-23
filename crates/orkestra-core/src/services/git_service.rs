@@ -152,7 +152,9 @@ impl GitService {
 
         if !add_output.status.success() {
             let stderr = String::from_utf8_lossy(&add_output.stderr);
-            return Err(OrkestraError::GitError(format!("Failed to stage changes: {stderr}")));
+            return Err(OrkestraError::GitError(format!(
+                "Failed to stage changes: {stderr}"
+            )));
         }
 
         // Commit
@@ -166,7 +168,9 @@ impl GitService {
             let stderr = String::from_utf8_lossy(&commit_output.stderr);
             // "nothing to commit" is not an error
             if !stderr.contains("nothing to commit") {
-                return Err(OrkestraError::GitError(format!("Failed to commit: {stderr}")));
+                return Err(OrkestraError::GitError(format!(
+                    "Failed to commit: {stderr}"
+                )));
             }
         }
 
@@ -176,13 +180,31 @@ impl GitService {
     /// Merge a task branch into the primary branch.
     ///
     /// Uses git CLI for reliability (git2 merge API is complex).
+    /// If the main repo has uncommitted changes, they are stashed before merge
+    /// and restored afterward.
     /// Returns the merge commit SHA on success.
     pub fn merge_to_primary(&self, branch_name: &str) -> Result<String> {
         let primary = self.detect_primary_branch()?;
 
+        // Stash any uncommitted changes in the main repo before merge
+        let was_stashed = self.stash_changes()?;
+
+        // Use a closure to ensure stash is always popped, even on error
+        let merge_result = self.do_merge(&primary, branch_name);
+
+        // Always restore stashed changes
+        if let Err(e) = self.stash_pop(was_stashed) {
+            eprintln!("Warning: Failed to restore stashed changes: {e}");
+        }
+
+        merge_result
+    }
+
+    /// Internal helper to perform the actual merge operation.
+    fn do_merge(&self, primary: &str, branch_name: &str) -> Result<String> {
         // First, checkout the primary branch
         let checkout_output = Command::new("git")
-            .args(["checkout", &primary])
+            .args(["checkout", primary])
             .current_dir(&self.repo_path)
             .output()
             .map_err(|e| OrkestraError::GitError(format!("Failed to run git checkout: {e}")))?;
@@ -263,6 +285,70 @@ impl GitService {
                 )));
             }
         }
+        Ok(())
+    }
+
+    /// Check if the main repository has uncommitted changes.
+    fn has_uncommitted_changes(&self) -> Result<bool> {
+        let output = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| OrkestraError::GitError(format!("Failed to run git status: {e}")))?;
+
+        let status = String::from_utf8_lossy(&output.stdout);
+        Ok(!status.trim().is_empty())
+    }
+
+    /// Stash uncommitted changes in the main repository.
+    ///
+    /// Returns `true` if changes were stashed, `false` if there was nothing to stash.
+    fn stash_changes(&self) -> Result<bool> {
+        // Check if there are changes to stash
+        if !self.has_uncommitted_changes()? {
+            return Ok(false);
+        }
+
+        let output = Command::new("git")
+            .args(["stash", "push", "-m", "orkestra-temp"])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| OrkestraError::GitError(format!("Failed to run git stash: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(OrkestraError::GitError(format!(
+                "Failed to stash changes: {stderr}"
+            )));
+        }
+
+        Ok(true)
+    }
+
+    /// Restore stashed changes in the main repository.
+    ///
+    /// Only pops if we actually stashed something (indicated by `was_stashed`).
+    fn stash_pop(&self, was_stashed: bool) -> Result<()> {
+        if !was_stashed {
+            return Ok(());
+        }
+
+        let output = Command::new("git")
+            .args(["stash", "pop"])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| OrkestraError::GitError(format!("Failed to run git stash pop: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Don't fail if there's nothing to pop (edge case)
+            if !stderr.contains("No stash entries found") {
+                return Err(OrkestraError::GitError(format!(
+                    "Failed to restore stashed changes: {stderr}"
+                )));
+            }
+        }
+
         Ok(())
     }
 

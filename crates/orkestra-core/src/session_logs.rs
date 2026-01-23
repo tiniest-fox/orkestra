@@ -22,7 +22,7 @@ pub fn get_claude_session_path(session_id: &str, cwd: &std::path::Path) -> Optio
     // Encode cwd to match Claude's directory naming:
     // Claude replaces both '/' and '.' with '-'
     // Example: /Users/foo/.orkestra/bar -> -Users-foo--orkestra-bar
-    let encoded_cwd = cwd.to_string_lossy().replace('/', "-").replace('.', "-");
+    let encoded_cwd = cwd.to_string_lossy().replace(['/', '.'], "-");
 
     Some(
         home.join(".claude/projects")
@@ -158,7 +158,10 @@ impl SessionLogParser {
 ///
 /// The `cwd` parameter should be the directory where the Claude session was started.
 /// For agents working in worktrees, this is the worktree path.
-pub fn recover_session_logs(session_id: &str, cwd: &std::path::Path) -> std::io::Result<Vec<LogEntry>> {
+pub fn recover_session_logs(
+    session_id: &str,
+    cwd: &std::path::Path,
+) -> std::io::Result<Vec<LogEntry>> {
     let path = get_claude_session_path(session_id, cwd).ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,

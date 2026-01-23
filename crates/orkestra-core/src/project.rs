@@ -141,7 +141,13 @@ mod tests {
         let worktree_path = main_repo.join("worktrees/test-task");
         fs::create_dir_all(main_repo.join("worktrees")).unwrap();
         Command::new("git")
-            .args(["worktree", "add", "-b", "task/test", worktree_path.to_str().unwrap()])
+            .args([
+                "worktree",
+                "add",
+                "-b",
+                "task/test",
+                worktree_path.to_str().unwrap(),
+            ])
             .current_dir(main_repo)
             .output()
             .unwrap();

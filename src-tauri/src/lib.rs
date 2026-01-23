@@ -109,6 +109,13 @@ fn skip_breakdown(id: String) -> Result<Task, String> {
     core_skip_breakdown(&project, &id).map_err(|e| e.to_string())
 }
 
+/// Delete a task and all its resources (worktree, branch, children)
+#[tauri::command]
+fn delete_task(id: String) -> Result<(), String> {
+    let project = Project::discover().map_err(|e| e.to_string())?;
+    tasks::delete_task(&project, &id).map_err(|e| e.to_string())
+}
+
 /// Get subtasks (checklist items) for a task
 #[tauri::command]
 fn get_subtasks(parent_id: String) -> Result<Vec<Task>, String> {
@@ -458,6 +465,7 @@ pub fn run() {
             approve_breakdown,
             request_breakdown_changes,
             skip_breakdown,
+            delete_task,
             get_subtasks,
             get_child_tasks,
             resume_task,

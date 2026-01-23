@@ -672,6 +672,38 @@ pub fn get_children(project: &Project, parent_id: &str) -> Result<Vec<Task>> {
         .collect())
 }
 
+/// Delete a task and all its resources (worktree, branch, children).
+pub fn delete_task(project: &Project, id: &str) -> Result<()> {
+    let store = project.store();
+    let task = require_task(project, id)?;
+
+    // Kill agent if running
+    if let Some(pid) = task.agent_pid {
+        let _ = std::process::Command::new("kill")
+            .arg(pid.to_string())
+            .output();
+    }
+
+    // Recursively delete children first
+    let children = get_children(project, id)?;
+    for child in children {
+        delete_task(project, &child.id)?;
+    }
+
+    // Clean up git resources
+    if let Some(git) = project.git() {
+        let _ = git.remove_worktree(id);
+        if let Some(branch) = &task.branch_name {
+            let _ = git.delete_branch(branch);
+        }
+    }
+
+    // Delete from database
+    store.delete(id)?;
+
+    Ok(())
+}
+
 /// Check if parent should transition based on children states.
 pub fn check_parent_completion(project: &Project, parent_id: &str) -> Result<Option<Task>> {
     let store = project.store();

@@ -282,6 +282,12 @@ pub fn set_task_plan(project: &Project, id: &str, plan: &str) -> Result<Task> {
     require_task(project, id)
 }
 
+/// Set the title for a task.
+pub fn set_task_title(project: &Project, id: &str, title: &str) -> Result<Task> {
+    project.store().update_field(id, "title", Some(title))?;
+    require_task(project, id)
+}
+
 /// Approve a task's plan. Transitions to `BreakingDown` or Working based on `skip_breakdown`.
 pub fn approve_task_plan(project: &Project, id: &str) -> Result<Task> {
     let store = project.store();

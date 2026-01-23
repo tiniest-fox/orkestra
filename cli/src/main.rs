@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use orkestra_core::{spawn_agent_sync, tasks, AgentType, Project, TaskStatus};
+use orkestra_core::{agents, spawn_agent_sync, tasks, AgentType, Project, TaskStatus};
 
 #[derive(Parser)]
 #[command(name = "orkestra")]
@@ -162,6 +162,19 @@ enum TaskAction {
         /// Feedback for the worker
         #[arg(short, long)]
         feedback: String,
+    },
+    /// Set the title for a task
+    SetTitle {
+        /// Task ID
+        id: String,
+        /// The new title
+        #[arg(short, long)]
+        title: String,
+    },
+    /// Generate a title for a task using AI
+    GenerateTitle {
+        /// Task ID
+        id: String,
     },
 }
 
@@ -617,6 +630,54 @@ fn main() {
                         }
                         Err(e) => {
                             eprintln!("Error rejecting review: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                TaskAction::SetTitle { id, title } => {
+                    match tasks::set_task_title(&project, &id, &title) {
+                        Ok(task) => {
+                            println!("Task {} title set to: {}", task.id, task.title);
+                        }
+                        Err(e) => {
+                            eprintln!("Error setting title: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                TaskAction::GenerateTitle { id } => {
+                    // First get the task to retrieve its description
+                    let all_tasks = tasks::load_tasks(&project).unwrap_or_else(|e| {
+                        eprintln!("Error loading tasks: {e}");
+                        std::process::exit(1);
+                    });
+
+                    let Some(task) = all_tasks.iter().find(|t| t.id == id) else {
+                        eprintln!("Task {id} not found");
+                        std::process::exit(1);
+                    };
+
+                    println!("Generating title for task {id}...");
+
+                    // Generate title using AI
+                    match agents::generate_title_sync(&task.description, 30) {
+                        Ok(title) => {
+                            // Set the generated title
+                            match tasks::set_task_title(&project, &id, &title) {
+                                Ok(updated_task) => {
+                                    println!(
+                                        "Task {} title set to: {}",
+                                        updated_task.id, updated_task.title
+                                    );
+                                }
+                                Err(e) => {
+                                    eprintln!("Error setting title: {e}");
+                                    std::process::exit(1);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error generating title: {e}");
                             std::process::exit(1);
                         }
                     }

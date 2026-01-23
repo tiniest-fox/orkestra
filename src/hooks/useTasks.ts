@@ -39,11 +39,12 @@ export function useTasks() {
   }, [fetchTasks]);
 
   const createTask = useCallback(
-    async (title: string, description: string, autoApprove?: boolean) => {
+    async (title: string | undefined, description: string, autoApprove?: boolean) => {
       try {
         // Creates task AND spawns an agent to work on it
+        // If title is undefined or empty, the backend will auto-generate it
         const newTask = await invoke<Task>("create_and_start_task", {
-          title,
+          title: title || null,
           description,
           autoApprove: autoApprove ?? false,
         });

@@ -39,7 +39,12 @@ export function useTasks() {
   }, [fetchTasks]);
 
   const createTask = useCallback(
-    async (title: string | undefined, description: string, autoApprove?: boolean) => {
+    async (
+      title: string | undefined,
+      description: string,
+      autoApprove?: boolean,
+      baseBranch?: string,
+    ) => {
       try {
         // Creates task AND spawns an agent to work on it
         // If title is undefined or empty, the backend will auto-generate it
@@ -47,6 +52,7 @@ export function useTasks() {
           title: title || null,
           description,
           autoApprove: autoApprove ?? false,
+          baseBranch: baseBranch || null,
         });
         setTasks((prev) => [...prev, newTask]);
         return newTask;

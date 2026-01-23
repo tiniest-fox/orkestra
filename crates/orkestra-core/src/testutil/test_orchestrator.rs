@@ -183,7 +183,7 @@ impl TestOrchestrator {
         summary: &str,
     ) -> Result<crate::Task> {
         // Step 1: UI creates task (what Tauri does)
-        let task = tasks::create_task_with_options(&self.project, title, description, false)?;
+        let task = tasks::create_task_with_options(&self.project, title, description, false, None)?;
 
         // Set skip_breakdown for simpler flow
         self.project

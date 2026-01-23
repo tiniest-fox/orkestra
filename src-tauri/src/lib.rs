@@ -36,6 +36,7 @@ fn create_and_start_task(
     title: Option<String>,
     description: String,
     auto_approve: Option<bool>,
+    base_branch: Option<String>,
 ) -> Result<Task, String> {
     let project = Project::discover().map_err(|e| e.to_string())?;
 
@@ -63,6 +64,7 @@ fn create_and_start_task(
         &final_title,
         &description,
         auto_approve.unwrap_or(false),
+        base_branch.as_deref(),
     )
     .map_err(|e| e.to_string())
 }
@@ -175,6 +177,7 @@ fn create_task_from_auto_task(name: String) -> Result<Task, String> {
         &auto_task.title,
         &auto_task.description,
         auto_task.auto_run,
+        None, // Use current branch
     )
     .map_err(|e| e.to_string())
 }
@@ -218,6 +221,26 @@ fn get_project_root() -> Result<String, String> {
     find_project_root()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())
+}
+
+/// Get the currently checked-out branch name
+#[tauri::command]
+fn get_current_branch() -> Result<String, String> {
+    let project = Project::discover().map_err(|e| e.to_string())?;
+    let git = project
+        .git()
+        .ok_or_else(|| "Git service not available".to_string())?;
+    git.get_current_branch().map_err(|e| e.to_string())
+}
+
+/// Get list of local branches (excluding worktree branches)
+#[tauri::command]
+fn get_branches() -> Result<Vec<String>, String> {
+    let project = Project::discover().map_err(|e| e.to_string())?;
+    let git = project
+        .git()
+        .ok_or_else(|| "Git service not available".to_string())?;
+    git.list_branches().map_err(|e| e.to_string())
 }
 
 /// Get logs for a specific task session from Claude's session file
@@ -451,10 +474,7 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                             orchestrator::OrchestratorAction::IntegrateDoneTask(task) => {
                                 match tasks::integrate_done_task(&project, &task.id) {
                                     Ok(()) => {
-                                        println!(
-                                            "[orchestrator] Integrated done task {}",
-                                            task.id
-                                        );
+                                        println!("[orchestrator] Integrated done task {}", task.id);
                                     }
                                     Err(e) => {
                                         eprintln!(
@@ -508,6 +528,8 @@ pub fn run() {
             resume_task,
             get_task_logs,
             get_project_root,
+            get_current_branch,
+            get_branches,
             set_task_auto_approve,
             get_auto_tasks,
             create_task_from_auto_task

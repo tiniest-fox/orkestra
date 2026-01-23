@@ -32,25 +32,42 @@ impl GitService {
 
     /// Create a worktree for a task.
     ///
-    /// Creates a new branch `task/{task_id}` from HEAD and a worktree at
-    /// `.orkestra/worktrees/{task_id}`.
+    /// Creates a new branch `task/{task_id}` from the specified base branch (or HEAD if None)
+    /// and a worktree at `.orkestra/worktrees/{task_id}`.
     ///
     /// Returns (`branch_name`, `worktree_path`).
-    pub fn create_worktree(&self, task_id: &str) -> Result<(String, PathBuf)> {
+    pub fn create_worktree(
+        &self,
+        task_id: &str,
+        base_branch: Option<&str>,
+    ) -> Result<(String, PathBuf)> {
         let branch_name = format!("task/{task_id}");
         let worktree_path = self.worktrees_dir.join(task_id);
 
         // Ensure worktrees directory exists
         std::fs::create_dir_all(&self.worktrees_dir)?;
 
-        // Get the current HEAD commit
-        let head = self
-            .repo
-            .head()
-            .map_err(|e| OrkestraError::GitError(format!("Failed to get HEAD: {e}")))?;
-        let commit = head
-            .peel_to_commit()
-            .map_err(|e| OrkestraError::GitError(format!("Failed to get commit: {e}")))?;
+        // Get the commit to branch from
+        let commit = if let Some(branch) = base_branch {
+            // Find the specified branch and get its commit
+            let branch_ref = self
+                .repo
+                .find_branch(branch, git2::BranchType::Local)
+                .map_err(|e| {
+                    OrkestraError::GitError(format!("Failed to find branch '{branch}': {e}"))
+                })?;
+            branch_ref.get().peel_to_commit().map_err(|e| {
+                OrkestraError::GitError(format!("Failed to get commit for branch '{branch}': {e}"))
+            })?
+        } else {
+            // Use current HEAD
+            let head = self
+                .repo
+                .head()
+                .map_err(|e| OrkestraError::GitError(format!("Failed to get HEAD: {e}")))?;
+            head.peel_to_commit()
+                .map_err(|e| OrkestraError::GitError(format!("Failed to get commit: {e}")))?
+        };
 
         // Create the branch
         self.repo
@@ -369,5 +386,53 @@ impl GitService {
             )));
         }
         Ok(())
+    }
+
+    /// Get the currently checked-out branch name.
+    ///
+    /// Handles detached HEAD state gracefully by returning "HEAD".
+    pub fn get_current_branch(&self) -> Result<String> {
+        let output = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| OrkestraError::GitError(format!("Failed to get current branch: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(OrkestraError::GitError(format!(
+                "Failed to get current branch: {stderr}"
+            )));
+        }
+
+        let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(branch)
+    }
+
+    /// List local branches, excluding worktree branches (task/* pattern).
+    ///
+    /// Returns a list of branch names sorted alphabetically.
+    pub fn list_branches(&self) -> Result<Vec<String>> {
+        let output = Command::new("git")
+            .args(["branch", "--format=%(refname:short)"])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| OrkestraError::GitError(format!("Failed to list branches: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(OrkestraError::GitError(format!(
+                "Failed to list branches: {stderr}"
+            )));
+        }
+
+        let branches: Vec<String> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|s| !s.is_empty())
+            .filter(|s| !s.starts_with("task/")) // Exclude worktree branches
+            .map(String::from)
+            .collect();
+
+        Ok(branches)
     }
 }

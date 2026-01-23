@@ -193,7 +193,7 @@ pub fn save_tasks(project: &Project, tasks: &[Task]) -> Result<()> {
 }
 
 pub fn create_task(project: &Project, title: &str, description: &str) -> Result<Task> {
-    create_task_with_options(project, title, description, false)
+    create_task_with_options(project, title, description, false, None)
 }
 
 pub fn create_task_with_options(
@@ -201,6 +201,7 @@ pub fn create_task_with_options(
     title: &str,
     description: &str,
     auto_approve: bool,
+    base_branch: Option<&str>,
 ) -> Result<Task> {
     let store = project.store();
     let now = chrono::Utc::now().to_rfc3339();
@@ -208,7 +209,7 @@ pub fn create_task_with_options(
 
     // Create worktree for root task if git is available
     let (branch_name, worktree_path) = if let Some(git) = project.git() {
-        match git.create_worktree(&id) {
+        match git.create_worktree(&id, base_branch) {
             Ok((branch, path)) => (Some(branch), Some(path.to_string_lossy().to_string())),
             Err(e) => {
                 eprintln!("Warning: Failed to create worktree for task {id}: {e}");

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface CreateTaskModalProps {
   isOpen: boolean;
@@ -7,6 +8,7 @@ interface CreateTaskModalProps {
     title: string | undefined,
     description: string,
     autoApprove?: boolean,
+    baseBranch?: string,
   ) => Promise<unknown>;
 }
 
@@ -17,19 +19,66 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Branch selector state
+  const [branches, setBranches] = useState<string[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const [showBranchDropdown, setShowBranchDropdown] = useState(false);
+  const branchDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fetch branches when modal opens
+  const fetchBranches = useCallback(async () => {
+    try {
+      const [branchList, currentBranch] = await Promise.all([
+        invoke<string[]>("get_branches"),
+        invoke<string>("get_current_branch"),
+      ]);
+      setBranches(branchList);
+      setSelectedBranch(currentBranch);
+    } catch (err) {
+      console.error("Failed to fetch branches:", err);
+      // Set a fallback if git isn't available
+      setBranches([]);
+      setSelectedBranch(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchBranches();
+    }
+  }, [isOpen, fetchBranches]);
+
   // Handle Escape key to close modal
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onClose();
+        if (showBranchDropdown) {
+          setShowBranchDropdown(false);
+        } else {
+          onClose();
+        }
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, showBranchDropdown]);
+
+  // Handle clicking outside the dropdown to close it
+  useEffect(() => {
+    if (!showBranchDropdown) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (branchDropdownRef.current && !branchDropdownRef.current.contains(e.target as Node)) {
+        setShowBranchDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showBranchDropdown]);
 
   if (!isOpen) return null;
 
@@ -43,7 +92,7 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
     try {
       // Pass undefined for title if empty (will be auto-generated)
       const titleToSubmit = title.trim() || undefined;
-      await onSubmit(titleToSubmit, description.trim(), autoApprove);
+      await onSubmit(titleToSubmit, description.trim(), autoApprove, selectedBranch ?? undefined);
       setTitle("");
       setDescription("");
       setAutoApprove(false);
@@ -136,21 +185,88 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
             </div>
           </div>
 
-          <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting || !description.trim()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {submitting ? (title.trim() ? "Creating..." : "Generating title...") : "Create Task"}
-            </button>
+          <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center">
+            {/* Branch selector on the left */}
+            <div className="relative" ref={branchDropdownRef}>
+              {selectedBranch && branches.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowBranchDropdown(!showBranchDropdown)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <title>Git branch</title>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
+                      />
+                    </svg>
+                    <span className="max-w-32 truncate">{selectedBranch}</span>
+                    <svg
+                      className={`w-4 h-4 transition-transform ${showBranchDropdown ? "rotate-180" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <title>Toggle dropdown</title>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 9l-7 7-7-7"
+                      />
+                    </svg>
+                  </button>
+
+                  {showBranchDropdown && (
+                    <div className="absolute bottom-full left-0 mb-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto z-10">
+                      {branches.map((branch) => (
+                        <button
+                          key={branch}
+                          type="button"
+                          onClick={() => {
+                            setSelectedBranch(branch);
+                            setShowBranchDropdown(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                            branch === selectedBranch
+                              ? "bg-blue-50 text-blue-700 font-medium"
+                              : "text-gray-700"
+                          }`}
+                        >
+                          <span className="truncate block">{branch}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Action buttons on the right */}
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || !description.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {submitting
+                  ? title.trim()
+                    ? "Creating..."
+                    : "Generating title..."
+                  : "Create Task"}
+              </button>
+            </div>
           </div>
         </form>
       </div>

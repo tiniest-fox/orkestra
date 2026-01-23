@@ -395,8 +395,15 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                 let on_update2 = move |task_id: &str| {
                                     let _ = handle2.emit("task-logs-updated", task_id.to_string());
                                 };
-                                match resume_agent(&project, &task, &session_key, None, on_update2)
-                                {
+
+                                // Pass review feedback if present - template handles formatting
+                                match resume_agent(
+                                    &project,
+                                    &task,
+                                    &session_key,
+                                    task.review_feedback.as_deref(),
+                                    on_update2,
+                                ) {
                                     Ok(spawned) => {
                                         println!(
                                             "[orchestrator] Resumed worker for {} (pid: {})",
@@ -450,8 +457,15 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                 let on_update2 = move |task_id: &str| {
                                     let _ = handle2.emit("task-logs-updated", task_id.to_string());
                                 };
-                                match resume_agent(&project, &task, &session_key, None, on_update2)
-                                {
+
+                                // Template handles the resumption message
+                                match resume_agent(
+                                    &project,
+                                    &task,
+                                    &session_key,
+                                    None,  // Reviewer has no feedback to pass
+                                    on_update2,
+                                ) {
                                     Ok(spawned) => {
                                         println!(
                                             "[orchestrator] Resumed reviewer for {} (pid: {})",

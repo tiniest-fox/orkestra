@@ -48,6 +48,7 @@ export type ToolInput =
 
 export type LogEntry =
   | { type: "text"; content: string }
+  | { type: "user_message"; content: string }
   | { type: "tool_use"; tool: string; id: string; input: ToolInput }
   | { type: "tool_result"; tool: string; tool_use_id: string; content: string }
   | {

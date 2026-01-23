@@ -213,15 +213,31 @@ pub fn recover_session_logs(
                 }
             }
         } else if msg_type == "user" {
-            if let Some(content) = v
-                .get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_array())
-            {
-                for item in content {
-                    if item.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
-                        parser.process_tool_result(item, is_subagent, parent_id.as_ref());
+            let content = v.get("message").and_then(|m| m.get("content"));
+
+            // Handle content as array (tool results, structured content)
+            if let Some(arr) = content.and_then(|c| c.as_array()) {
+                for item in arr {
+                    match item.get("type").and_then(|t| t.as_str()) {
+                        Some("tool_result") => {
+                            parser.process_tool_result(item, is_subagent, parent_id.as_ref());
+                        }
+                        Some("text") => {
+                            // Capture user text messages (e.g., session resumption prompts)
+                            if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                                if let Some(content) = extract_resumption_content(text) {
+                                    parser.entries.push(LogEntry::UserMessage { content });
+                                }
+                            }
+                        }
+                        _ => {}
                     }
+                }
+            }
+            // Handle content as string (simple text message, e.g., initial prompt or resumption)
+            else if let Some(text) = content.and_then(|c| c.as_str()) {
+                if let Some(content) = extract_resumption_content(text) {
+                    parser.entries.push(LogEntry::UserMessage { content });
                 }
             }
         }
@@ -247,6 +263,52 @@ fn extract_tool_result_content(item: &serde_json::Value) -> String {
             .join("\n"),
         _ => String::new(),
     }
+}
+
+/// Marker used to identify Orkestra resumption prompts in session logs
+const RESUME_MARKER: &str = "<!orkestra-resume>";
+
+/// Extract resumption prompt content from a user message.
+/// Returns Some(content) if this is a resumption prompt, None otherwise.
+///
+/// Detection strategy:
+/// 1. If the message starts with `<!orkestra-resume>`, strip it and return the rest
+/// 2. For legacy sessions without the marker, use heuristics to detect resumption prompts
+fn extract_resumption_content(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+
+    // New format: explicit marker
+    if let Some(rest) = trimmed.strip_prefix(RESUME_MARKER) {
+        let content = rest.trim();
+        if !content.is_empty() {
+            return Some(content.to_string());
+        }
+        return None;
+    }
+
+    // Legacy detection: use heuristics
+    // Skip if empty
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Skip initial agent prompts (long or start with agent headers)
+    let is_initial_prompt = trimmed.len() > 500
+        || trimmed.starts_with("# Worker Agent")
+        || trimmed.starts_with("# Planner Agent")
+        || trimmed.starts_with("# Reviewer Agent")
+        || trimmed.starts_with("# Breakdown Agent");
+
+    if is_initial_prompt {
+        return None;
+    }
+
+    // Skip task notifications from Claude's background Task tool
+    if trimmed.contains("<task-notification>") {
+        return None;
+    }
+
+    Some(trimmed.to_string())
 }
 
 /// Parses a tool input JSON into a structured `ToolInput`

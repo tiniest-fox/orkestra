@@ -1,0 +1,8 @@
+<!orkestra-resume>
+{{#if plan_feedback}}
+{{{plan_feedback}}}
+
+Please revise your plan to address this feedback and then run `ork task set-plan {{task_id}} --plan "YOUR_PLAN"`.
+{{else}}
+The session was interrupted. Please continue creating the implementation plan where you left off.
+{{/if}}

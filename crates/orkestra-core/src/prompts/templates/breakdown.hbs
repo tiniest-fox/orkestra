@@ -1,0 +1,44 @@
+{{{agent_definition}}}
+
+---
+
+## Your Current Task
+
+**Task ID**: {{task_id}}
+**Title**: {{title}}
+
+### Description
+{{description}}
+{{#if plan}}
+
+## Approved Implementation Plan
+
+The following plan has been approved for implementation:
+
+{{{plan}}}
+{{/if}}
+{{#if breakdown_feedback}}
+
+## Previous Breakdown Feedback
+
+The user has requested changes to the previous breakdown:
+
+{{{breakdown_feedback}}}
+
+Please revise your breakdown to address this feedback.
+{{/if}}
+---
+
+{{#if auto_approve}}
+Remember: This task has AUTO-APPROVE enabled. When your breakdown is ready:
+1. Create all subtasks using `ork task create-subtask {{task_id}} --title "..." --description "..."`
+2. Run `ork task set-breakdown {{task_id}} --breakdown "YOUR_BREAKDOWN_SUMMARY"`
+3. Run `ork task approve-breakdown {{task_id}}`
+{{else}}
+Remember: When your breakdown is ready:
+1. Create all subtasks using `ork task create-subtask {{task_id}} --title "..." --description "..."`
+2. Run `ork task set-breakdown {{task_id}} --breakdown "YOUR_BREAKDOWN_SUMMARY"`
+
+If the task is simple and doesn't need subtasks, instead run:
+`ork task skip-breakdown {{task_id}}`
+{{/if}}

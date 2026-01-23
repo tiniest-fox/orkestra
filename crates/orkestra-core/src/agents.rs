@@ -5,6 +5,12 @@ use std::process::{Command, Stdio};
 
 use crate::domain::{Task, TaskStatus};
 use crate::project;
+use crate::prompts::{
+    build_breakdown_prompt, build_planner_prompt, build_reviewer_prompt,
+    build_title_generator_prompt, build_worker_prompt,
+    render_resume_breakdown, render_resume_planner, render_resume_reviewer, render_resume_worker,
+    ResumeBreakdownContext, ResumePlannerContext, ResumeReviewerContext, ResumeWorkerContext,
+};
 use crate::services::Project;
 use crate::tasks;
 
@@ -16,328 +22,6 @@ pub enum AgentType {
     Worker,
     Reviewer,
     TitleGenerator,
-}
-
-/// Builds the prompt for a planner agent
-fn build_planner_prompt(task: &Task, agent_definition: &str) -> String {
-    let feedback_section = if let Some(feedback) = &task.plan_feedback {
-        format!(
-            r"
-
-## Previous Plan Feedback
-
-The user has requested changes to the previous plan:
-
-{feedback}
-
-Please revise your plan to address this feedback.
-"
-        )
-    } else {
-        String::new()
-    };
-
-    let completion_instructions = if task.auto_approve {
-        format!(
-            r#"Remember: This task has AUTO-APPROVE enabled. When your plan is ready, you MUST run BOTH commands in sequence:
-1. `ork task set-plan {task_id} --plan "YOUR_MARKDOWN_PLAN"`
-2. `ork task approve {task_id}`
-
-The second command will automatically start the worker agent to implement your plan."#,
-            task_id = task.id
-        )
-    } else {
-        format!(
-            r#"Remember: When your plan is ready, you MUST run:
-`ork task set-plan {task_id} --plan "YOUR_MARKDOWN_PLAN"`"#,
-            task_id = task.id
-        )
-    };
-
-    format!(
-        r"{agent_definition}
-
----
-
-## Your Current Task
-
-**Task ID**: {task_id}
-**Title**: {title}
-
-### Description
-{description}
-{feedback_section}
----
-
-{completion_instructions}
-",
-        agent_definition = agent_definition,
-        task_id = task.id,
-        title = task.title,
-        description = task.description,
-        feedback_section = feedback_section,
-        completion_instructions = completion_instructions,
-    )
-}
-
-/// Builds the prompt for a worker agent
-fn build_worker_prompt(task: &Task, agent_definition: &str, subtasks: Option<&[Task]>) -> String {
-    let plan_section = if let Some(plan) = &task.plan {
-        format!(
-            r"
-
-## Approved Implementation Plan
-
-Follow this plan that was approved by the user:
-
-{plan}
-"
-        )
-    } else {
-        String::new()
-    };
-
-    let review_feedback_section = if let Some(feedback) = &task.review_feedback {
-        format!(
-            r"
-
-## Review Feedback
-
-The reviewer has requested changes to your work:
-
-{feedback}
-
-Please address this feedback and continue your implementation."
-        )
-    } else {
-        String::new()
-    };
-
-    let subtasks_section = if let Some(subs) = subtasks {
-        if subs.is_empty() {
-            String::new()
-        } else {
-            use std::fmt::Write;
-            let checklist: String = subs.iter().fold(String::new(), |mut acc, s| {
-                let status_marker = if s.status == TaskStatus::Done {
-                    "x"
-                } else {
-                    " "
-                };
-                let _ = writeln!(
-                    acc,
-                    "- [{}] **{}**: {} (ID: {})",
-                    status_marker, s.title, s.description, s.id
-                );
-                acc
-            });
-            format!(
-                r"
-
-## Subtasks Checklist
-
-Work through these subtasks in order. Mark each complete as you finish:
-
-{checklist}
-To mark a subtask complete, run: `ork task complete-subtask SUBTASK_ID`
-"
-            )
-        }
-    } else {
-        String::new()
-    };
-
-    format!(
-        r#"{agent_definition}
-
----
-
-## Your Current Task
-
-**Task ID**: {task_id}
-**Title**: {title}
-
-### Description
-{description}
-{plan_section}{subtasks_section}{review_feedback_section}
----
-
-Remember: When you are done with ALL work, you MUST run one of these commands:
-- `ork task complete {task_id} --summary "what you did"` - if successful
-- `ork task fail {task_id} --reason "why"` - if you cannot complete it
-- `ork task block {task_id} --reason "what you need"` - if you need clarification
-"#,
-        agent_definition = agent_definition,
-        task_id = task.id,
-        title = task.title,
-        description = task.description,
-        plan_section = plan_section,
-        subtasks_section = subtasks_section,
-        review_feedback_section = review_feedback_section,
-    )
-}
-
-/// Builds the prompt for a breakdown agent
-fn build_breakdown_prompt(task: &Task, agent_definition: &str) -> String {
-    let plan_section = if let Some(plan) = &task.plan {
-        format!(
-            r"
-
-## Approved Implementation Plan
-
-The following plan has been approved for implementation:
-
-{plan}
-"
-        )
-    } else {
-        String::new()
-    };
-
-    let feedback_section = if let Some(feedback) = &task.breakdown_feedback {
-        format!(
-            r"
-
-## Previous Breakdown Feedback
-
-The user has requested changes to the previous breakdown:
-
-{feedback}
-
-Please revise your breakdown to address this feedback.
-"
-        )
-    } else {
-        String::new()
-    };
-
-    let completion_instructions = if task.auto_approve {
-        format!(
-            r#"Remember: This task has AUTO-APPROVE enabled. When your breakdown is ready:
-1. Create all subtasks using `ork task create-subtask {task_id} --title "..." --description "..."`
-2. Run `ork task set-breakdown {task_id} --breakdown "YOUR_BREAKDOWN_SUMMARY"`
-3. Run `ork task approve-breakdown {task_id}`"#,
-            task_id = task.id
-        )
-    } else {
-        format!(
-            r#"Remember: When your breakdown is ready:
-1. Create all subtasks using `ork task create-subtask {task_id} --title "..." --description "..."`
-2. Run `ork task set-breakdown {task_id} --breakdown "YOUR_BREAKDOWN_SUMMARY"`
-
-If the task is simple and doesn't need subtasks, instead run:
-`ork task skip-breakdown {task_id}`"#,
-            task_id = task.id
-        )
-    };
-
-    format!(
-        r"{agent_definition}
-
----
-
-## Your Current Task
-
-**Task ID**: {task_id}
-**Title**: {title}
-
-### Description
-{description}
-{plan_section}{feedback_section}
----
-
-{completion_instructions}
-",
-        agent_definition = agent_definition,
-        task_id = task.id,
-        title = task.title,
-        description = task.description,
-        plan_section = plan_section,
-        feedback_section = feedback_section,
-        completion_instructions = completion_instructions,
-    )
-}
-
-/// Builds the prompt for a reviewer agent
-fn build_reviewer_prompt(task: &Task, agent_definition: &str) -> String {
-    let plan_section = if let Some(plan) = &task.plan {
-        format!(
-            r"
-
-## Approved Implementation Plan
-
-The worker followed this plan:
-
-{plan}
-"
-        )
-    } else {
-        String::new()
-    };
-
-    let summary_section = if let Some(summary) = &task.summary {
-        format!(
-            r"
-
-## Work Summary
-
-The worker completed the implementation with this summary:
-
-{summary}
-"
-        )
-    } else {
-        String::new()
-    };
-
-    format!(
-        r#"{agent_definition}
-
----
-
-## Task Under Review
-
-**Task ID**: {task_id}
-**Title**: {title}
-
-### Description
-{description}
-{plan_section}{summary_section}
----
-
-## Your Review Commands
-
-When you are done reviewing, you MUST run ONE of these commands:
-- `ork task approve-review {task_id}` - if the implementation passes all checks and review
-- `ork task reject-review {task_id} --feedback "specific feedback for the worker"` - if issues need to be fixed
-
-If you reject, provide clear, actionable feedback so the worker knows exactly what to fix.
-"#,
-        agent_definition = agent_definition,
-        task_id = task.id,
-        title = task.title,
-        description = task.description,
-        plan_section = plan_section,
-        summary_section = summary_section,
-    )
-}
-
-/// Builds the prompt for a title generator agent.
-/// This is a minimal prompt that takes only the task description.
-fn build_title_generator_prompt(description: &str) -> String {
-    format!(
-        r"Generate a concise, descriptive title (3-8 words) for this task:
-
-{description}
-
-Rules:
-- Output ONLY the title text, nothing else
-- No quotes, no punctuation at the end
-- Be specific and actionable
-- Use sentence case
-- Do not read any files or use any tools
-- Just output the title immediately"
-    )
 }
 
 /// Finds the ork CLI binary path
@@ -899,12 +583,29 @@ where
             )
         })?;
 
-    let default_prompt = if session_key == "plan" {
-        "The session was interrupted. Please continue creating the implementation plan where you left off."
-    } else {
-        "The session was interrupted. Please continue implementing the task where you left off."
+    // Build the resumption prompt using the appropriate template for this session type
+    // The continuation_prompt parameter is treated as feedback (if any) for the agent
+    let prompt = match session_key {
+        "plan" => render_resume_planner(&ResumePlannerContext {
+            task_id: &task.id,
+            plan_feedback: continuation_prompt,
+        }),
+        "work" => render_resume_worker(&ResumeWorkerContext {
+            task_id: &task.id,
+            review_feedback: continuation_prompt,
+        }),
+        s if s == "review" || s.starts_with("review_") => render_resume_reviewer(&ResumeReviewerContext {
+            task_id: &task.id,
+        }),
+        "breakdown" => render_resume_breakdown(&ResumeBreakdownContext {
+            task_id: &task.id,
+            breakdown_feedback: continuation_prompt,
+        }),
+        _ => render_resume_worker(&ResumeWorkerContext {
+            task_id: &task.id,
+            review_feedback: continuation_prompt,
+        }),
     };
-    let prompt = continuation_prompt.unwrap_or(default_prompt);
 
     let path_env = prepare_path_env();
     let project_root = project.root().to_path_buf();
@@ -917,7 +618,7 @@ where
         .map_or(project_root, PathBuf::from);
 
     let mut child = spawn_claude_process(&cwd, &path_env, Some(&session_id))?;
-    write_prompt_to_stdin(&mut child, prompt)?;
+    write_prompt_to_stdin(&mut child, &prompt)?;
 
     let pid = child.id();
     let stdout = child.stdout.take();

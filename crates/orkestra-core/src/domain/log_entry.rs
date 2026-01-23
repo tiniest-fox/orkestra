@@ -79,7 +79,12 @@ pub enum ToolInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LogEntry {
+    /// Text output from the assistant
     Text {
+        content: String,
+    },
+    /// User/system message (e.g., session resumption with feedback)
+    UserMessage {
         content: String,
     },
     ToolUse {

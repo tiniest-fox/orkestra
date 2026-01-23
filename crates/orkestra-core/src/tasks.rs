@@ -157,7 +157,8 @@ pub fn integrate_done_task(project: &Project, id: &str) -> Result<()> {
         store.update_field(id, "summary", None)?; // Clear summary to reopen
         store.update_field(id, "completed_at", None)?;
         if let Some(msg) = conflict_msg {
-            store.update_field(id, "reviewer_feedback", Some(&msg))?;
+            // Use review_feedback so worker sees it when session is resumed
+            store.update_field(id, "review_feedback", Some(&msg))?;
         }
         if let Some(result) = &integration_result {
             let result_json = serde_json::to_string(result)

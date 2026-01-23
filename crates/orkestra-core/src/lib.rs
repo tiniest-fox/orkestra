@@ -7,7 +7,7 @@ pub mod error;
 pub mod orchestrator;
 pub mod ports;
 pub mod project;
-pub mod prompt;
+pub mod prompts;
 pub mod services;
 pub mod session_logs;
 pub mod tasks;
@@ -40,5 +40,11 @@ pub use auto_tasks::{get_auto_task, list_auto_tasks, AutoTask};
 // Infrastructure re-exports
 pub use adapters::{ClaudeSpawner, FixedClock, SqliteStore, SystemClock};
 pub use ports::{Clock, ProcessSpawner, SpawnConfig, SpawnedProcess, TaskStore};
-pub use prompt::{build_planner_prompt, build_reviewer_prompt, build_worker_prompt};
+pub use prompts::{
+    build_breakdown_prompt, build_planner_prompt, build_reviewer_prompt,
+    build_title_generator_prompt, build_worker_prompt,
+    // Resume prompts
+    render_resume_breakdown, render_resume_planner, render_resume_reviewer, render_resume_worker,
+    ResumeBreakdownContext, ResumePlannerContext, ResumeReviewerContext, ResumeWorkerContext,
+};
 pub use services::{AgentService, GitService, TaskService};

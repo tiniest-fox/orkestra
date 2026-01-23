@@ -175,6 +175,19 @@ function LogEntryView({ entry, projectRoot }: { entry: LogEntry; projectRoot: st
   switch (entry.type) {
     case "text":
       return <div className="text-gray-100 whitespace-pre-wrap py-1">{entry.content}</div>;
+    case "user_message":
+      return (
+        <div className="my-4">
+          <div className="flex items-center gap-2 text-yellow-500">
+            <div className="flex-1 border-t border-yellow-500/50" />
+            <span className="text-xs font-semibold uppercase tracking-wider">Session Resumed</span>
+            <div className="flex-1 border-t border-yellow-500/50" />
+          </div>
+          <div className="mt-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded text-yellow-200 text-sm whitespace-pre-wrap">
+            {entry.content}
+          </div>
+        </div>
+      );
     case "tool_use":
       // Special handling for Ork commands
       if (entry.input.tool === "ork") {

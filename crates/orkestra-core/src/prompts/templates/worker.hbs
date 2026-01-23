@@ -1,0 +1,46 @@
+{{{agent_definition}}}
+
+---
+
+## Your Current Task
+
+**Task ID**: {{task_id}}
+**Title**: {{title}}
+
+### Description
+{{description}}
+{{#if plan}}
+
+## Approved Implementation Plan
+
+Follow this plan that was approved by the user:
+
+{{{plan}}}
+{{/if}}
+{{#if subtasks}}
+
+## Subtasks Checklist
+
+Work through these subtasks in order. Mark each complete as you finish:
+
+{{#each subtasks}}
+- [{{#if done}}x{{else}} {{/if}}] **{{title}}**: {{description}} (ID: {{id}})
+{{/each}}
+To mark a subtask complete, run: `ork task complete-subtask SUBTASK_ID`
+{{/if}}
+{{#if review_feedback}}
+
+## Review Feedback
+
+The reviewer has requested changes to your work:
+
+{{{review_feedback}}}
+
+Please address this feedback and continue your implementation.
+{{/if}}
+---
+
+Remember: When you are done with ALL work, you MUST run one of these commands:
+- `ork task complete {{task_id}} --summary "what you did"` - if successful
+- `ork task fail {{task_id}} --reason "why"` - if you cannot complete it
+- `ork task block {{task_id}} --reason "what you need"` - if you need clarification

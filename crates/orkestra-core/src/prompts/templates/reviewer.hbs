@@ -1,0 +1,36 @@
+{{{agent_definition}}}
+
+---
+
+## Task Under Review
+
+**Task ID**: {{task_id}}
+**Title**: {{title}}
+
+### Description
+{{description}}
+{{#if plan}}
+
+## Approved Implementation Plan
+
+The worker followed this plan:
+
+{{{plan}}}
+{{/if}}
+{{#if summary}}
+
+## Work Summary
+
+The worker completed the implementation with this summary:
+
+{{{summary}}}
+{{/if}}
+---
+
+## Your Review Commands
+
+When you are done reviewing, you MUST run ONE of these commands:
+- `ork task approve-review {{task_id}}` - if the implementation passes all checks and review
+- `ork task reject-review {{task_id}} --feedback "specific feedback for the worker"` - if issues need to be fixed
+
+If you reject, provide clear, actionable feedback so the worker knows exactly what to fix.

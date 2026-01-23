@@ -1,0 +1,12 @@
+<!orkestra-resume>
+{{#if breakdown_feedback}}
+{{{breakdown_feedback}}}
+
+Please revise your breakdown to address this feedback.
+{{else}}
+The session was interrupted. Please continue breaking down the task into subtasks.
+{{/if}}
+
+When ready:
+1. Create subtasks with `ork task create-subtask {{task_id}} --title "..." --description "..."`
+2. Run `ork task set-breakdown {{task_id}} --breakdown "YOUR_BREAKDOWN_SUMMARY"`

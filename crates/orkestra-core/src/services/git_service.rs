@@ -90,7 +90,50 @@ impl GitService {
             .worktree(task_id, &worktree_path, Some(&mut opts))
             .map_err(|e| OrkestraError::GitError(format!("Failed to create worktree: {e}")))?;
 
+        // Run worktree setup script if it exists
+        self.run_worktree_setup(&worktree_path)?;
+
         Ok((branch_name, worktree_path))
+    }
+
+    /// Run the worktree setup script if it exists.
+    ///
+    /// Looks for `.orkestra/worktree_setup.sh` in the main repo and runs it
+    /// with the worktree path as an argument. This allows projects to customize
+    /// worktree setup (e.g., copying .env files, running npm install).
+    fn run_worktree_setup(&self, worktree_path: &Path) -> Result<()> {
+        let setup_script = self.repo_path.join(".orkestra/worktree_setup.sh");
+
+        if !setup_script.exists() {
+            return Ok(());
+        }
+
+        eprintln!(
+            "[worktree] Running setup script for {}",
+            worktree_path.display()
+        );
+
+        let output = Command::new("bash")
+            .arg(&setup_script)
+            .arg(worktree_path)
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| {
+                OrkestraError::GitError(format!("Failed to run worktree setup script: {e}"))
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("[worktree] Setup script failed: {stderr}");
+            // Don't fail worktree creation if setup script fails - just warn
+        } else {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if !stdout.trim().is_empty() {
+                eprintln!("[worktree] Setup output: {stdout}");
+            }
+        }
+
+        Ok(())
     }
 
     /// Check if a worktree exists for the given task ID.

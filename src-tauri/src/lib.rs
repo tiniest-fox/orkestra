@@ -451,10 +451,7 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                             orchestrator::OrchestratorAction::IntegrateDoneTask(task) => {
                                 match tasks::integrate_done_task(&project, &task.id) {
                                     Ok(()) => {
-                                        println!(
-                                            "[orchestrator] Integrated done task {}",
-                                            task.id
-                                        );
+                                        println!("[orchestrator] Integrated done task {}", task.id);
                                     }
                                     Err(e) => {
                                         eprintln!(

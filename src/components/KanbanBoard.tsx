@@ -12,12 +12,12 @@ interface KanbanBoardProps {
 const COLUMNS: TaskStatus[] = ["planning", "breaking_down", "working", "reviewing", "done"];
 
 const COLUMN_COLORS: Record<TaskStatus, string> = {
-  planning: "bg-purple-500",
-  breaking_down: "bg-indigo-500",
-  waiting_on_subtasks: "bg-cyan-500",
-  working: "bg-blue-500",
-  reviewing: "bg-violet-500",
-  done: "bg-green-500",
+  planning: "bg-slate-500",
+  breaking_down: "bg-blue-500",
+  waiting_on_subtasks: "bg-sky-500",
+  working: "bg-sky-500",
+  reviewing: "bg-teal-500",
+  done: "bg-emerald-500",
   failed: "bg-red-500",
   blocked: "bg-orange-500",
 };

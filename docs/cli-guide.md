@@ -12,6 +12,10 @@ cargo build
 
 The binary will be available at `./target/debug/ork` (or `./target/release/ork` for release builds).
 
+Once built, you can invoke the CLI in several ways:
+- **Recommended**: Use `ork` directly. When spawning agents, Orkestra automatically adds the CLI to the PATH.
+- **Development fallback**: Use the full path `./target/debug/ork` from the project root if `ork` is not in your PATH.
+
 ## Command Reference
 
 ### Task Management

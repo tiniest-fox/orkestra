@@ -29,6 +29,35 @@ impl ClaudeSpawner {
             return Some(dev_path);
         }
 
+        // Check relative to git repo root (for worktrees)
+        // Use git rev-parse --show-toplevel to find the actual repo root
+        if let Ok(output) = Command::new("git")
+            .args(["rev-parse", "--show-toplevel"])
+            .output()
+        {
+            if output.status.success() {
+                let repo_root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let git_root_path = PathBuf::from(&repo_root).join("target/debug/ork");
+                if git_root_path.exists() {
+                    return Some(git_root_path);
+                }
+            }
+        }
+
+        // Walk up the directory tree looking for target/debug/ork
+        // This handles worktrees at .orkestra/worktrees/TASK-XXX where the main
+        // repo is at ../../../
+        if let Ok(cwd) = std::env::current_dir() {
+            let mut path = cwd.as_path();
+            while let Some(parent) = path.parent() {
+                let candidate = parent.join("target/debug/ork");
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+                path = parent;
+            }
+        }
+
         None
     }
 

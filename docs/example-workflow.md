@@ -32,7 +32,7 @@ Pending -> Planning -> AwaitingApproval -> InProgress -> ReadyForReview -> Done
 
 Via CLI:
 ```bash
-./target/debug/ork task create -t "Add login button" -d "Add a login button to the header component"
+ork task create -t "Add login button" -d "Add a login button to the header component"
 # Output: Created task: TASK-004
 ```
 
@@ -52,18 +52,18 @@ The task moves to `awaiting_approval` status.
 
 View the plan in the UI or via CLI:
 ```bash
-./target/debug/ork task show TASK-004
+ork task show TASK-004
 ```
 
 Approve the plan:
 ```bash
-./target/debug/ork task approve TASK-004
+ork task approve TASK-004
 # Output: Task TASK-004 plan approved. Status: in_progress
 ```
 
 Or request changes:
 ```bash
-./target/debug/ork task request-changes TASK-004 --feedback "Please also add styling for dark mode"
+ork task request-changes TASK-004 --feedback "Please also add styling for dark mode"
 # Output: Changes requested for task TASK-004. Status: planning
 ```
 
@@ -86,7 +86,7 @@ Review the changes made by checking:
 
 If satisfied, mark as done:
 ```bash
-./target/debug/ork task status TASK-004 done
+ork task status TASK-004 done
 # Output: Task TASK-004 status updated to done
 ```
 
@@ -96,16 +96,16 @@ Commands agents use during execution:
 
 ```bash
 # Complete a task successfully
-./target/debug/ork task complete TASK-ID --summary "What was accomplished"
+ork task complete TASK-ID --summary "What was accomplished"
 
 # Mark a task as failed
-./target/debug/ork task fail TASK-ID --reason "Why it couldn't be completed"
+ork task fail TASK-ID --reason "Why it couldn't be completed"
 
 # Mark a task as blocked (needs external input)
-./target/debug/ork task block TASK-ID --reason "What clarification is needed"
+ork task block TASK-ID --reason "What clarification is needed"
 
 # Set implementation plan (planner agent only)
-./target/debug/ork task set-plan TASK-ID --plan "Implementation plan content"
+ork task set-plan TASK-ID --plan "Implementation plan content"
 ```
 
 ## Handling Edge Cases
@@ -113,7 +113,7 @@ Commands agents use during execution:
 ### Task Fails
 If an agent cannot complete the task, it calls:
 ```bash
-./target/debug/ork task fail TASK-004 --reason "Database schema required but not found"
+ork task fail TASK-004 --reason "Database schema required but not found"
 ```
 
 The error is stored and visible in the UI for debugging.
@@ -121,7 +121,7 @@ The error is stored and visible in the UI for debugging.
 ### Task is Blocked
 If the task needs clarification:
 ```bash
-./target/debug/ork task block TASK-004 --reason "Unclear whether login should use OAuth or email/password"
+ork task block TASK-004 --reason "Unclear whether login should use OAuth or email/password"
 ```
 
 User provides feedback, and the task can be unblocked by restarting the planning phase.

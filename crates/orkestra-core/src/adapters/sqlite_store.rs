@@ -748,14 +748,14 @@ mod tests {
 
         let task = Task::new(
             "TASK-001".into(),
-            "Test".into(),
+            Some("Test".into()),
             "Description".into(),
             "2024-01-01T00:00:00Z",
         );
         store.save(&task).unwrap();
 
         let loaded = store.find_by_id("TASK-001").unwrap().unwrap();
-        assert_eq!(loaded.title, "Test");
+        assert_eq!(loaded.title, Some("Test".to_string()));
         assert_eq!(loaded.status, TaskStatus::Planning);
     }
 
@@ -765,7 +765,7 @@ mod tests {
 
         let task = Task::new(
             "TASK-001".into(),
-            "Test".into(),
+            Some("Test".into()),
             "Description".into(),
             "2024-01-01T00:00:00Z",
         );
@@ -790,7 +790,7 @@ mod tests {
         assert!(id1.chars().all(|c| c.is_ascii_lowercase() || c == '-'));
 
         // Save task with that ID
-        let task = Task::new(id1.clone(), "Test".into(), "Desc".into(), "now");
+        let task = Task::new(id1.clone(), Some("Test".into()), "Desc".into(), "now");
         store.save(&task).unwrap();
 
         // Next ID should be different (unique)
@@ -804,17 +804,32 @@ mod tests {
         let store = SqliteStore::in_memory().unwrap();
 
         // Parent task
-        let parent = Task::new("TASK-001".into(), "Parent".into(), "Desc".into(), "now");
+        let parent = Task::new(
+            "TASK-001".into(),
+            Some("Parent".into()),
+            "Desc".into(),
+            "now",
+        );
         store.save(&parent).unwrap();
 
         // Child task (parallel, appears in Kanban)
-        let mut child = Task::new("TASK-002".into(), "Child".into(), "Desc".into(), "now");
+        let mut child = Task::new(
+            "TASK-002".into(),
+            Some("Child".into()),
+            "Desc".into(),
+            "now",
+        );
         child.parent_id = Some("TASK-001".into());
         child.kind = TaskKind::Task;
         store.save(&child).unwrap();
 
         // Subtask (checklist item)
-        let mut subtask = Task::new("TASK-003".into(), "Subtask".into(), "Desc".into(), "now");
+        let mut subtask = Task::new(
+            "TASK-003".into(),
+            Some("Subtask".into()),
+            "Desc".into(),
+            "now",
+        );
         subtask.parent_id = Some("TASK-001".into());
         subtask.kind = TaskKind::Subtask;
         store.save(&subtask).unwrap();

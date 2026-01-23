@@ -26,47 +26,49 @@ fn get_tasks() -> Result<Vec<Task>, String> {
 }
 
 #[tauri::command]
-fn create_task(title: String, description: String) -> Result<Task, String> {
+fn create_task(title: Option<String>, description: String) -> Result<Task, String> {
     let project = Project::discover().map_err(|e| e.to_string())?;
-    tasks::create_task(&project, &title, &description).map_err(|e| e.to_string())
+    tasks::create_task(&project, title.as_deref(), &description).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 fn create_and_start_task(
-    title: Option<String>,
     description: String,
     auto_approve: Option<bool>,
     base_branch: Option<String>,
 ) -> Result<Task, String> {
     let project = Project::discover().map_err(|e| e.to_string())?;
 
-    // Generate title if not provided or empty
-    let final_title = match title {
-        Some(t) if !t.trim().is_empty() => t,
-        _ => {
-            // Generate title using AI (30 second timeout)
-            generate_title_sync(&description, 30).unwrap_or_else(|e| {
-                eprintln!("Warning: Failed to generate title: {e}");
-                // Fallback to a generic title based on description
-                let preview: String = description.chars().take(50).collect();
-                if preview.len() < description.len() {
-                    format!("{preview}...")
-                } else {
-                    preview
-                }
-            })
-        }
-    };
-
-    // Create task in Planning status - orchestrator will spawn the planner
-    tasks::create_task_with_options(
+    // Create task in Planning status immediately without waiting for title generation
+    // Title will be generated asynchronously and attached later
+    let task = tasks::create_task_with_options(
         &project,
-        &final_title,
+        None, // No title initially - will be generated async
         &description,
         auto_approve.unwrap_or(false),
         base_branch.as_deref(),
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    // Spawn async title generation in background
+    let task_id = task.id.clone();
+    let desc_for_generation = description.clone();
+    std::thread::spawn(move || {
+        // Generate title using AI (30 second timeout)
+        if let Ok(generated_title) = generate_title_sync(&desc_for_generation, 30) {
+            // Update the task with the generated title
+            if let Ok(project) = Project::discover() {
+                if let Err(e) = tasks::update_task_title(&project, &task_id, &generated_title) {
+                    eprintln!("Warning: Failed to set generated title for task {task_id}: {e}");
+                }
+            }
+        } else {
+            eprintln!("Warning: Failed to generate title for task {task_id}");
+            // Task will continue to show description preview - no action needed
+        }
+    });
+
+    Ok(task)
 }
 
 #[tauri::command]
@@ -174,7 +176,7 @@ fn create_task_from_auto_task(name: String) -> Result<Task, String> {
     // Create the task using the auto-task's title, description, and auto_run setting
     tasks::create_task_with_options(
         &project,
-        &auto_task.title,
+        Some(&auto_task.title),
         &auto_task.description,
         auto_task.auto_run,
         None, // Use current branch

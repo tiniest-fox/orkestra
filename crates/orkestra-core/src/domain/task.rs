@@ -99,7 +99,10 @@ pub struct SessionInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
-    pub title: String,
+    /// Title of the task. Optional - can be auto-generated asynchronously.
+    /// When None, the UI should display a truncated description instead.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub description: String,
     pub status: TaskStatus,
     /// Kind of task: Task (Kanban, parallel) or Subtask (checklist item)
@@ -148,7 +151,8 @@ pub struct Task {
 impl Task {
     /// Create a new task with the given ID, title, and description.
     /// Tasks start in Planning status immediately.
-    pub fn new(id: String, title: String, description: String, now: &str) -> Self {
+    /// Title can be None if it will be generated asynchronously.
+    pub fn new(id: String, title: Option<String>, description: String, now: &str) -> Self {
         Self {
             id,
             title,
@@ -235,13 +239,13 @@ mod tests {
 
     #[test]
     fn test_new_task_starts_in_planning() {
-        let task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         assert_eq!(task.status, TaskStatus::Planning);
     }
 
     #[test]
     fn test_valid_transitions() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         assert_eq!(task.status, TaskStatus::Planning);
 
         // Planning -> Working (plan approved)
@@ -255,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_invalid_transition() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         task.status = TaskStatus::Done;
 
         // Can't go from Done to Planning
@@ -265,14 +269,14 @@ mod tests {
 
     #[test]
     fn test_can_fail_from_anywhere() {
-        let task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         assert!(task.status.can_transition_to(&TaskStatus::Failed));
         assert!(task.status.can_transition_to(&TaskStatus::Blocked));
     }
 
     #[test]
     fn test_needs_plan_review() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         assert!(!task.needs_plan_review());
 
         task.plan = Some("My plan".to_string());
@@ -285,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_needs_work_review() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         task.status = TaskStatus::Working;
         assert!(!task.needs_work_review());
 
@@ -299,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_breakdown_workflow_transitions() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         assert_eq!(task.status, TaskStatus::Planning);
 
         // Planning -> BreakingDown (plan approved, breakdown enabled)
@@ -319,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_breakdown_skip_to_working() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         task.skip_breakdown = true;
 
         // Planning -> Working (skip breakdown)
@@ -329,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_breakdown_no_subtasks_needed() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         assert!(task.transition_to(TaskStatus::BreakingDown, "now").is_ok());
 
         // BreakingDown -> Working (breakdown agent decides no subtasks needed)
@@ -339,7 +343,7 @@ mod tests {
 
     #[test]
     fn test_needs_breakdown_review() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         task.status = TaskStatus::BreakingDown;
         assert!(!task.needs_breakdown_review());
 
@@ -353,7 +357,7 @@ mod tests {
 
     #[test]
     fn test_waiting_on_subtasks_can_be_blocked() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         task.status = TaskStatus::WaitingOnSubtasks;
 
         // WaitingOnSubtasks -> Blocked (child failed)
@@ -363,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_new_task_has_breakdown_fields() {
-        let task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         assert!(task.parent_id.is_none());
         assert!(task.breakdown.is_none());
         // Note: breakdown_feedback moved to WorkLoop outcomes
@@ -372,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_new_task_has_task_kind() {
-        let task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         assert_eq!(task.kind, TaskKind::Task);
     }
 
@@ -384,7 +388,7 @@ mod tests {
 
     #[test]
     fn test_reviewing_workflow_transitions() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         task.status = TaskStatus::Working;
 
         // Working -> Reviewing (work approved, automated review)
@@ -399,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_reviewing_rejection() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         task.status = TaskStatus::Reviewing;
 
         // Reviewing -> Working (reviewer rejected, back to worker)
@@ -409,7 +413,7 @@ mod tests {
 
     #[test]
     fn test_reviewing_can_fail_or_block() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         task.status = TaskStatus::Reviewing;
 
         // Reviewing -> Failed
@@ -420,7 +424,7 @@ mod tests {
 
     #[test]
     fn test_is_reviewing() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
+        let mut task = Task::new("001".into(), Some("Test".into()), "Desc".into(), "now");
         assert!(!task.is_reviewing());
 
         task.status = TaskStatus::Reviewing;

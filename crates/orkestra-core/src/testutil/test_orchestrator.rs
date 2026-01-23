@@ -183,7 +183,8 @@ impl TestOrchestrator {
         summary: &str,
     ) -> Result<crate::Task> {
         // Step 1: UI creates task (what Tauri does)
-        let task = tasks::create_task_with_options(&self.project, title, description, false, None)?;
+        let task =
+            tasks::create_task_with_options(&self.project, Some(title), description, false, None)?;
 
         // Set skip_breakdown for simpler flow
         self.project
@@ -219,7 +220,7 @@ impl TestOrchestrator {
         // so we return a synthetic Done task for the caller's assertions
         Ok(crate::Task {
             id: task.id,
-            title: title.to_string(),
+            title: Some(title.to_string()),
             description: description.to_string(),
             status: crate::TaskStatus::Done,
             kind: crate::TaskKind::Task,

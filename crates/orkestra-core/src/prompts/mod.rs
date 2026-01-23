@@ -231,6 +231,11 @@ pub fn render_title_generator(ctx: &TitleGeneratorContext) -> String {
 // Convenience Functions (from Task)
 // =============================================================================
 
+/// Gets the display title for a task, falling back to truncated description.
+fn display_title(task: &Task) -> &str {
+    task.title.as_deref().unwrap_or(&task.description)
+}
+
 /// Builds a worker prompt from a Task and agent definition.
 pub fn build_worker_prompt(
     task: &Task,
@@ -241,7 +246,7 @@ pub fn build_worker_prompt(
         subs.iter()
             .map(|s| SubtaskContext {
                 id: &s.id,
-                title: &s.title,
+                title: display_title(s),
                 description: &s.description,
                 done: s.status == crate::domain::TaskStatus::Done,
             })
@@ -251,7 +256,7 @@ pub fn build_worker_prompt(
     render_worker(&WorkerContext {
         agent_definition,
         task_id: &task.id,
-        title: &task.title,
+        title: display_title(task),
         description: &task.description,
         plan: task.plan.as_deref(),
         // Feedback is passed via resume prompts, not initial spawn
@@ -265,7 +270,7 @@ pub fn build_planner_prompt(task: &Task, agent_definition: &str) -> String {
     render_planner(&PlannerContext {
         agent_definition,
         task_id: &task.id,
-        title: &task.title,
+        title: display_title(task),
         description: &task.description,
         // Feedback is passed via resume prompts, not initial spawn
         plan_feedback: None,
@@ -278,7 +283,7 @@ pub fn build_reviewer_prompt(task: &Task, agent_definition: &str) -> String {
     render_reviewer(&ReviewerContext {
         agent_definition,
         task_id: &task.id,
-        title: &task.title,
+        title: display_title(task),
         description: &task.description,
         plan: task.plan.as_deref(),
         summary: task.summary.as_deref(),
@@ -290,7 +295,7 @@ pub fn build_breakdown_prompt(task: &Task, agent_definition: &str) -> String {
     render_breakdown(&BreakdownContext {
         agent_definition,
         task_id: &task.id,
-        title: &task.title,
+        title: display_title(task),
         description: &task.description,
         plan: task.plan.as_deref(),
         // Feedback is passed via resume prompts, not initial spawn
@@ -316,7 +321,7 @@ mod tests {
     fn create_test_task() -> Task {
         Task {
             id: "TASK-001".to_string(),
-            title: "Test Task".to_string(),
+            title: Some("Test Task".to_string()),
             description: "Test description".to_string(),
             status: TaskStatus::Working,
             kind: TaskKind::Task,
@@ -443,13 +448,13 @@ mod tests {
         let task = create_test_task();
         let mut subtask1 = create_test_task();
         subtask1.id = "TASK-002".to_string();
-        subtask1.title = "First subtask".to_string();
+        subtask1.title = Some("First subtask".to_string());
         subtask1.description = "Do the first thing".to_string();
         subtask1.kind = TaskKind::Subtask;
 
         let mut subtask2 = create_test_task();
         subtask2.id = "TASK-003".to_string();
-        subtask2.title = "Second subtask".to_string();
+        subtask2.title = Some("Second subtask".to_string());
         subtask2.description = "Do the second thing".to_string();
         subtask2.kind = TaskKind::Subtask;
         subtask2.status = TaskStatus::Done;

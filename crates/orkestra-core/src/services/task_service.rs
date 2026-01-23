@@ -32,7 +32,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
     pub fn create(&self, title: &str, description: &str, auto_approve: bool) -> Result<Task> {
         let id = self.store.next_id()?;
         let now = self.clock.now_rfc3339();
-        let mut task = Task::new(id, title.to_string(), description.to_string(), &now);
+        let mut task = Task::new(id, Some(title.to_string()), description.to_string(), &now);
         task.auto_approve = auto_approve;
         self.store.save(&task)?;
         Ok(task)
@@ -195,7 +195,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
 
         let id = self.store.next_id()?;
         let now = self.clock.now_rfc3339();
-        let mut task = Task::new(id, title.to_string(), description.to_string(), &now);
+        let mut task = Task::new(id, Some(title.to_string()), description.to_string(), &now);
         task.parent_id = Some(parent_id.to_string());
         task.kind = TaskKind::Task; // appears in Kanban
         task.skip_breakdown = true;
@@ -222,7 +222,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
 
         let id = self.store.next_id()?;
         let now = self.clock.now_rfc3339();
-        let mut task = Task::new(id, title.to_string(), description.to_string(), &now);
+        let mut task = Task::new(id, Some(title.to_string()), description.to_string(), &now);
         task.parent_id = Some(parent_id.to_string());
         task.kind = TaskKind::Subtask; // hidden from Kanban, shown as checklist
         task.skip_breakdown = true;
@@ -396,7 +396,7 @@ mod tests {
 
         // ID should be a petname (hyphenated lowercase words)
         assert!(task.id.contains('-'), "ID should be a petname: {}", task.id);
-        assert_eq!(task.title, "Test Task");
+        assert_eq!(task.title, Some("Test Task".to_string()));
         assert_eq!(task.status, TaskStatus::Planning);
         assert_eq!(task.created_at, "2025-01-21T00:00:00Z");
     }

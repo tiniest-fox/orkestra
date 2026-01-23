@@ -928,8 +928,12 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         {/* Details Tab */}
         {activeTab === "details" && (
           <div className="flex-1 overflow-auto p-4">
-            <h2 className="font-semibold text-lg text-gray-900">{task.title}</h2>
-            {task.description && <p className="text-gray-600 text-sm mt-2">{task.description}</p>}
+            <h2 className="font-semibold text-lg text-gray-900">
+              {task.title || task.description}
+            </h2>
+            {task.description && task.title && (
+              <p className="text-gray-600 text-sm mt-2">{task.description}</p>
+            )}
             {task.summary && (
               <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
                 <div className="text-xs font-medium text-green-700 mb-1">Summary</div>
@@ -989,9 +993,9 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
                         subtask.status === "done" ? "text-green-700 line-through" : "text-gray-900"
                       }`}
                     >
-                      {subtask.title}
+                      {subtask.title || subtask.description}
                     </div>
-                    {subtask.description && (
+                    {subtask.description && subtask.title && (
                       <div className="text-xs text-gray-500 mt-1">{subtask.description}</div>
                     )}
                   </div>
@@ -1194,8 +1198,9 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           <div className="bg-white rounded-lg p-6 max-w-sm mx-4 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Task?</h3>
             <p className="text-sm text-gray-600 mb-4">
-              This will permanently delete the task "{task.title}" and clean up its git
-              branch/worktree. Any child tasks will also be deleted. This action cannot be undone.
+              This will permanently delete the task "{task.title || task.description}" and clean up
+              its git branch/worktree. Any child tasks will also be deleted. This action cannot be
+              undone.
             </p>
             <div className="flex gap-2 justify-end">
               <button

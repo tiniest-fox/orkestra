@@ -104,7 +104,8 @@ export interface WorkLoop {
 
 export interface Task {
   id: string;
-  title: string;
+  // Title is optional - when null/undefined, UI should show truncated description
+  title?: string;
   description: string;
   status: TaskStatus;
   // Kind of task: "task" (Kanban, parallel) or "subtask" (checklist item)

@@ -4,16 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 interface CreateTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (
-    title: string | undefined,
-    description: string,
-    autoApprove?: boolean,
-    baseBranch?: string,
-  ) => Promise<unknown>;
+  onSubmit: (description: string, autoApprove?: boolean, baseBranch?: string) => Promise<unknown>;
 }
 
 export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalProps) {
-  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [autoApprove, setAutoApprove] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -90,10 +84,8 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
     setError(null);
 
     try {
-      // Pass undefined for title if empty (will be auto-generated)
-      const titleToSubmit = title.trim() || undefined;
-      await onSubmit(titleToSubmit, description.trim(), autoApprove, selectedBranch ?? undefined);
-      setTitle("");
+      // Title will be auto-generated asynchronously in the background
+      await onSubmit(description.trim(), autoApprove, selectedBranch ?? undefined);
       setDescription("");
       setAutoApprove(false);
       onClose();
@@ -129,20 +121,6 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                 {error}
               </div>
             )}
-
-            <div>
-              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
-                Title <span className="text-gray-400 font-normal">(optional)</span>
-              </label>
-              <input
-                id="title"
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Leave blank to auto-generate"
-              />
-            </div>
 
             <div>
               <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
@@ -264,11 +242,7 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                 disabled={submitting || !description.trim()}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {submitting
-                  ? title.trim()
-                    ? "Creating..."
-                    : "Generating title..."
-                  : "Create Task"}
+                {submitting ? "Creating..." : "Create Task"}
               </button>
             </div>
           </div>

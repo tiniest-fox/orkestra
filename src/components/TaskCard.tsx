@@ -6,6 +6,19 @@ interface TaskCardProps {
   isSelected?: boolean;
 }
 
+// Truncate description to create a display title when title is missing
+function getDisplayTitle(task: Task): string {
+  if (task.title) {
+    return task.title;
+  }
+  // Truncate description to a reasonable length for display
+  const maxLength = 60;
+  if (task.description.length <= maxLength) {
+    return task.description;
+  }
+  return `${task.description.slice(0, maxLength)}...`;
+}
+
 // Helper to check if a task needs review
 const needsReview = (task: Task): boolean => {
   return (
@@ -60,7 +73,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
               </svg>
             </span>
           )}
-          <h3 className="font-medium text-gray-900 text-sm">{task.title}</h3>
+          <h3 className="font-medium text-gray-900 text-sm">{getDisplayTitle(task)}</h3>
         </div>
         {taskNeedsReview && (
           <span className="flex-shrink-0 text-amber-600 text-xs font-medium px-1.5 py-0.5 bg-amber-100 rounded">
@@ -89,7 +102,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
           </span>
         )}
       </div>
-      {task.description && (
+      {task.description && task.title && (
         <p className="text-gray-500 text-xs mt-1 line-clamp-2">{task.description}</p>
       )}
       <div className="flex items-center justify-between mt-3">

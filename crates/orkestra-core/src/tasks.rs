@@ -221,13 +221,13 @@ pub fn save_tasks(project: &Project, tasks: &[Task]) -> Result<()> {
     project.store().save_all(tasks)
 }
 
-pub fn create_task(project: &Project, title: &str, description: &str) -> Result<Task> {
+pub fn create_task(project: &Project, title: Option<&str>, description: &str) -> Result<Task> {
     create_task_with_options(project, title, description, false, None)
 }
 
 pub fn create_task_with_options(
     project: &Project,
-    title: &str,
+    title: Option<&str>,
     description: &str,
     auto_approve: bool,
     base_branch: Option<&str>,
@@ -251,7 +251,7 @@ pub fn create_task_with_options(
 
     let task = Task {
         id,
-        title: title.to_string(),
+        title: title.map(String::from),
         description: description.to_string(),
         status: TaskStatus::Planning,
         kind: TaskKind::Task,
@@ -366,10 +366,16 @@ pub fn set_task_plan(project: &Project, id: &str, plan: &str) -> Result<Task> {
     require_task(project, id)
 }
 
-/// Set the title for a task.
+/// Set the title for a task (used for async title generation).
 pub fn set_task_title(project: &Project, id: &str, title: &str) -> Result<Task> {
     project.store().update_field(id, "title", Some(title))?;
     require_task(project, id)
+}
+
+/// Update the title for a task by ID (async title generation).
+pub fn update_task_title(project: &Project, id: &str, title: &str) -> Result<()> {
+    project.store().update_field(id, "title", Some(title))?;
+    Ok(())
 }
 
 /// Approve a task's plan. Transitions to `BreakingDown` or Working based on `skip_breakdown`.
@@ -572,7 +578,7 @@ pub fn create_child_task(
     let now = chrono::Utc::now().to_rfc3339();
     let task = Task {
         id: store.next_id()?,
-        title: title.to_string(),
+        title: Some(title.to_string()),
         description: description.to_string(),
         status: TaskStatus::Working,
         kind: TaskKind::Task,
@@ -616,7 +622,7 @@ pub fn create_subtask(
     let now = chrono::Utc::now().to_rfc3339();
     let task = Task {
         id: store.next_id()?,
-        title: title.to_string(),
+        title: Some(title.to_string()),
         description: description.to_string(),
         status: TaskStatus::Working,
         kind: TaskKind::Subtask,

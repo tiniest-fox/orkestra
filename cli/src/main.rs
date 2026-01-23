@@ -228,7 +228,7 @@ fn main() {
                             "{} [{}] {}",
                             task.id,
                             format!("{:?}", task.status).to_lowercase(),
-                            task.title
+                            task.title.as_deref().unwrap_or("(untitled)")
                         );
                     }
                 }
@@ -240,7 +240,7 @@ fn main() {
 
                     if let Some(task) = all_tasks.into_iter().find(|t| t.id == id) {
                         println!("ID: {}", task.id);
-                        println!("Title: {}", task.title);
+                        println!("Title: {}", task.title.as_deref().unwrap_or("(untitled)"));
                         println!("Status: {:?}", task.status);
                         println!("Description: {}", task.description);
                         println!("Created: {}", task.created_at);
@@ -257,7 +257,7 @@ fn main() {
                     }
                 }
                 TaskAction::Create { title, description } => {
-                    match tasks::create_task(&project, &title, &description) {
+                    match tasks::create_task(&project, Some(&title), &description) {
                         Ok(task) => {
                             println!("Created task: {}", task.id);
                         }
@@ -604,7 +604,7 @@ fn main() {
                                     task.id,
                                     format!("{:?}", task.status).to_lowercase(),
                                     kind,
-                                    task.title
+                                    task.title.as_deref().unwrap_or("(untitled)")
                                 );
                             }
                         }
@@ -642,7 +642,11 @@ fn main() {
                 TaskAction::SetTitle { id, title } => {
                     match tasks::set_task_title(&project, &id, &title) {
                         Ok(task) => {
-                            println!("Task {} title set to: {}", task.id, task.title);
+                            println!(
+                                "Task {} title set to: {}",
+                                task.id,
+                                task.title.as_deref().unwrap_or("(untitled)")
+                            );
                         }
                         Err(e) => {
                             eprintln!("Error setting title: {e}");
@@ -672,7 +676,8 @@ fn main() {
                                 Ok(updated_task) => {
                                     println!(
                                         "Task {} title set to: {}",
-                                        updated_task.id, updated_task.title
+                                        updated_task.id,
+                                        updated_task.title.as_deref().unwrap_or("(untitled)")
                                     );
                                 }
                                 Err(e) => {

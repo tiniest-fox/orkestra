@@ -37,7 +37,7 @@ fn test_full_workflow_with_successful_merge() {
     // Step 1: UI creates task (what Tauri does)
     let task = tasks::create_task(
         &orchestrator.project,
-        "Implement feature X",
+        Some("Implement feature X"),
         "Add the new feature X to the codebase",
     )
     .expect("Failed to create task");
@@ -173,7 +173,7 @@ fn test_workflow_with_merge_conflict() {
     // UI creates task
     let task = tasks::create_task(
         &orchestrator.project,
-        "Feature causing conflict",
+        Some("Feature causing conflict"),
         "This will conflict",
     )
     .expect("Failed to create task");
@@ -284,8 +284,12 @@ fn test_child_task_skips_integration() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // UI creates parent task
-    let parent = tasks::create_task(&orchestrator.project, "Parent task", "Parent description")
-        .expect("Failed to create parent task");
+    let parent = tasks::create_task(
+        &orchestrator.project,
+        Some("Parent task"),
+        "Parent description",
+    )
+    .expect("Failed to create parent task");
 
     // Set skip_breakdown on parent
     orchestrator
@@ -305,8 +309,12 @@ fn test_child_task_skips_integration() {
 
     // Simulate creating a child task (normally done by breakdown agent)
     // We'll manually set up a child task that shares the parent's worktree
-    let child =
-        tasks::create_task(&orchestrator.project, "Child task", "Child description").unwrap();
+    let child = tasks::create_task(
+        &orchestrator.project,
+        Some("Child task"),
+        "Child description",
+    )
+    .unwrap();
 
     // Make it a child of parent (inherit worktree)
     let store = orchestrator.project.store();
@@ -408,7 +416,8 @@ fn test_cli_list_tasks() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create a task via tasks:: (UI action)
-    let task = tasks::create_task(&orchestrator.project, "Test task", "Test description").unwrap();
+    let task =
+        tasks::create_task(&orchestrator.project, Some("Test task"), "Test description").unwrap();
 
     // List via CLI (could be UI or agent)
     let output = orchestrator
@@ -427,7 +436,7 @@ fn test_cli_show_task() {
     // Create a task
     let task = tasks::create_task(
         &orchestrator.project,
-        "Show me task",
+        Some("Show me task"),
         "Detailed description",
     )
     .unwrap();
@@ -517,7 +526,7 @@ fn test_loop_created_on_task_creation() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create a task
-    let task = tasks::create_task(&orchestrator.project, "Test task", "Description")
+    let task = tasks::create_task(&orchestrator.project, Some("Test task"), "Description")
         .expect("Failed to create task");
 
     // Verify Loop 1 was created
@@ -547,7 +556,7 @@ fn test_plan_rejection_creates_new_loop() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create task
-    let task = tasks::create_task(&orchestrator.project, "Test task", "Description")
+    let task = tasks::create_task(&orchestrator.project, Some("Test task"), "Description")
         .expect("Failed to create task");
 
     // Agent sets plan
@@ -592,7 +601,7 @@ fn test_work_rejection_creates_new_loop() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create task and get to Working status
-    let task = tasks::create_task(&orchestrator.project, "Test task", "Description").unwrap();
+    let task = tasks::create_task(&orchestrator.project, Some("Test task"), "Description").unwrap();
 
     orchestrator
         .project
@@ -646,7 +655,7 @@ fn test_reviewer_rejection_creates_new_loop() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create task and get to Reviewing status
-    let task = tasks::create_task(&orchestrator.project, "Test task", "Description").unwrap();
+    let task = tasks::create_task(&orchestrator.project, Some("Test task"), "Description").unwrap();
 
     orchestrator
         .project
@@ -758,7 +767,7 @@ fn test_multiple_rejections_loop_progression() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create task
-    let task = tasks::create_task(&orchestrator.project, "Test task", "Description").unwrap();
+    let task = tasks::create_task(&orchestrator.project, Some("Test task"), "Description").unwrap();
 
     // First plan rejection
     orchestrator
@@ -823,7 +832,7 @@ fn test_feedback_retrieval_from_loops() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create task and reject plan
-    let task = tasks::create_task(&orchestrator.project, "Test task", "Description").unwrap();
+    let task = tasks::create_task(&orchestrator.project, Some("Test task"), "Description").unwrap();
 
     orchestrator
         .run_cli_in_worktree(
@@ -859,8 +868,12 @@ fn test_breakdown_rejection_creates_new_loop() {
         create_test_orchestrator().expect("Failed to create test orchestrator");
 
     // Create task (breakdown enabled by default)
-    let task =
-        tasks::create_task(&orchestrator.project, "Complex task", "Needs breakdown").unwrap();
+    let task = tasks::create_task(
+        &orchestrator.project,
+        Some("Complex task"),
+        "Needs breakdown",
+    )
+    .unwrap();
 
     // Set and approve plan
     orchestrator

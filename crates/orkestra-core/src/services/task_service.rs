@@ -75,7 +75,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
                     actual: format!("{:?}", task.status),
                 });
             }
-            task.plan_feedback = None;
+            // Note: feedback is in WorkLoop outcomes, not on task
             let next_status = if task.skip_breakdown {
                 TaskStatus::Working
             } else {
@@ -87,7 +87,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
 
     /// Request changes to a plan. Requires: Planning + plan set.
     /// Clears the plan and stores feedback.
-    pub fn request_plan_changes(&self, id: &str, feedback: &str) -> Result<Task> {
+    pub fn request_plan_changes(&self, id: &str, _feedback: &str) -> Result<Task> {
         self.update(id, |task| {
             if !task.needs_plan_review() {
                 return Err(OrkestraError::InvalidState {
@@ -96,7 +96,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
                 });
             }
             task.plan = None;
-            task.plan_feedback = Some(feedback.to_string());
+            // Note: feedback is stored in WorkLoop outcomes
             Ok(())
         })
     }
@@ -120,14 +120,14 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
                 });
             }
             task.completed_at = Some(now.clone());
-            task.review_feedback = None;
+            // Note: feedback is in WorkLoop outcomes, not on task
             task.transition_to(TaskStatus::Done, &now)
         })
     }
 
     /// Request changes during work review. Requires: Working + summary set.
     /// Clears the summary and stores feedback.
-    pub fn request_review_changes(&self, id: &str, feedback: &str) -> Result<Task> {
+    pub fn request_review_changes(&self, id: &str, _feedback: &str) -> Result<Task> {
         self.update(id, |task| {
             if !task.needs_work_review() {
                 return Err(OrkestraError::InvalidState {
@@ -136,7 +136,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
                 });
             }
             task.summary = None;
-            task.review_feedback = Some(feedback.to_string());
+            // Note: feedback is stored in WorkLoop outcomes
             Ok(())
         })
     }
@@ -292,14 +292,14 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
                     actual: format!("{:?}", task.status),
                 });
             }
-            task.breakdown_feedback = None;
+            // Note: feedback is in WorkLoop outcomes, not on task
             task.transition_to(TaskStatus::WaitingOnSubtasks, &now)
         })
     }
 
     /// Request changes to a breakdown. Requires: `BreakingDown` + breakdown set.
     /// Clears the breakdown and stores feedback.
-    pub fn request_breakdown_changes(&self, id: &str, feedback: &str) -> Result<Task> {
+    pub fn request_breakdown_changes(&self, id: &str, _feedback: &str) -> Result<Task> {
         self.update(id, |task| {
             if !task.needs_breakdown_review() {
                 return Err(OrkestraError::InvalidState {
@@ -308,7 +308,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
                 });
             }
             task.breakdown = None;
-            task.breakdown_feedback = Some(feedback.to_string());
+            // Note: feedback is stored in WorkLoop outcomes
             Ok(())
         })
     }
@@ -571,10 +571,7 @@ mod tests {
             .request_breakdown_changes(&task.id, "Split into more parts")
             .unwrap();
         assert!(task.breakdown.is_none());
-        assert_eq!(
-            task.breakdown_feedback,
-            Some("Split into more parts".to_string())
-        );
+        // Note: feedback is stored in WorkLoop outcomes, not on task
         assert_eq!(task.status, TaskStatus::BreakingDown);
     }
 

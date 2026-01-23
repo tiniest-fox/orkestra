@@ -229,23 +229,15 @@ impl TestOrchestrator {
             summary: Some(summary.to_string()),
             error: None,
             plan: Some(plan.to_string()),
-            plan_feedback: None,
-            review_feedback: None,
-            reviewer_feedback: None,
             auto_approve: false,
             parent_id: None,
             sessions: None,
             breakdown: None,
-            breakdown_feedback: None,
             skip_breakdown: true,
             agent_pid: None,
             branch_name: task.branch_name,
             worktree_path: None, // Cleaned up after merge
-            integration_result: Some(crate::IntegrationResult::Merged {
-                merged_at: chrono::Utc::now().to_rfc3339(),
-                commit_sha: "merged".to_string(),
-                target_branch: "main".to_string(),
-            }),
+            // Note: integration_result now tracked in WorkLoop outcomes
         })
     }
 }

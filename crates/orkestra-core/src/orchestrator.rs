@@ -171,9 +171,20 @@ pub fn check_tasks(project: &Project) -> crate::error::Result<Vec<OrchestratorAc
             }
             TaskStatus::Done => {
                 // Done tasks may need integration (merge branch, cleanup worktree)
-                // Only integrate if task has a branch but no integration result yet
-                if task.branch_name.is_some() && task.integration_result.is_none() {
-                    Some(OrchestratorAction::IntegrateDoneTask(task.clone()))
+                // Only integrate if the current loop has no outcome yet (first attempt this loop)
+                if task.branch_name.is_some() {
+                    // Check if current loop is still active (no outcome yet)
+                    let needs_integration = project
+                        .store()
+                        .get_current_loop(&task.id)
+                        .ok()
+                        .flatten()
+                        .is_some_and(|loop_| loop_.outcome.is_none());
+                    if needs_integration {
+                        Some(OrchestratorAction::IntegrateDoneTask(task.clone()))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }

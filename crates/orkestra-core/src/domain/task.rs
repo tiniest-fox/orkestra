@@ -115,13 +115,8 @@ pub struct Task {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub plan_feedback: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub review_feedback: Option<String>,
-    /// Feedback from reviewer agent when it rejects work
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reviewer_feedback: Option<String>,
+    // Note: Feedback (plan_feedback, review_feedback, reviewer_feedback) has been moved
+    // to WorkLoop outcomes for single source of truth and audit trail.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sessions: Option<indexmap::IndexMap<String, SessionInfo>>,
     #[serde(default)]
@@ -132,9 +127,7 @@ pub struct Task {
     /// The breakdown produced by the breakdown agent
     #[serde(skip_serializing_if = "Option::is_none")]
     pub breakdown: Option<String>,
-    /// Feedback for breakdown revision
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub breakdown_feedback: Option<String>,
+    // Note: breakdown_feedback has been moved to WorkLoop outcomes
     /// Whether this task should skip breakdown and go straight to working
     #[serde(default)]
     pub skip_breakdown: bool,
@@ -149,9 +142,7 @@ pub struct Task {
     /// Only set on root tasks; child tasks inherit from parent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_path: Option<String>,
-    /// Result of integrating this task's branch back to the primary branch.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub integration_result: Option<IntegrationResult>,
+    // Note: integration_result has been moved to WorkLoop outcomes for single source of truth.
 }
 
 impl Task {
@@ -170,19 +161,14 @@ impl Task {
             summary: None,
             error: None,
             plan: None,
-            plan_feedback: None,
-            review_feedback: None,
-            reviewer_feedback: None,
             sessions: None,
             auto_approve: false,
             parent_id: None,
             breakdown: None,
-            breakdown_feedback: None,
             skip_breakdown: false,
             agent_pid: None,
             branch_name: None,
             worktree_path: None,
-            integration_result: None,
         }
     }
 
@@ -380,7 +366,7 @@ mod tests {
         let task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
         assert!(task.parent_id.is_none());
         assert!(task.breakdown.is_none());
-        assert!(task.breakdown_feedback.is_none());
+        // Note: breakdown_feedback moved to WorkLoop outcomes
         assert!(!task.skip_breakdown);
     }
 
@@ -444,15 +430,5 @@ mod tests {
         assert!(!task.is_reviewing());
     }
 
-    #[test]
-    fn test_reviewer_feedback_field() {
-        let mut task = Task::new("001".into(), "Test".into(), "Desc".into(), "now");
-        assert!(task.reviewer_feedback.is_none());
-
-        task.reviewer_feedback = Some("Tests failing, please fix".to_string());
-        assert_eq!(
-            task.reviewer_feedback,
-            Some("Tests failing, please fix".to_string())
-        );
-    }
+    // Note: test_reviewer_feedback_field removed - feedback now in WorkLoop outcomes
 }

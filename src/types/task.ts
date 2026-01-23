@@ -76,6 +76,32 @@ export interface SessionInfo {
 // Session type is just the key in the sessions object: "plan", "work", "review_0", etc.
 export type SessionType = string;
 
+// How a work loop ended
+export type LoopOutcome =
+  | { type: "plan_rejected"; feedback: string }
+  | { type: "breakdown_rejected"; feedback: string }
+  | { type: "work_rejected"; feedback: string }
+  | { type: "reviewer_rejected"; feedback: string }
+  | { type: "integration_failed"; error: string; conflict_files?: string[] }
+  | { type: "agent_error"; error: string }
+  | { type: "blocked"; reason: string }
+  | {
+      type: "completed";
+      merged_at?: string;
+      commit_sha?: string;
+      target_branch?: string;
+    };
+
+// One pass through the task lifecycle without interruption
+// A new loop starts when work is rejected or encounters an error
+export interface WorkLoop {
+  loop_number: number;
+  started_at: string;
+  ended_at?: string;
+  started_from: TaskStatus;
+  outcome?: LoopOutcome;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -90,10 +116,7 @@ export interface Task {
   error?: string;
   agent_pid?: number;
   plan?: string;
-  plan_feedback?: string;
-  review_feedback?: string;
-  // Feedback from reviewer agent when it rejects work
-  reviewer_feedback?: string;
+  // Note: Feedback fields removed - now stored in WorkLoop outcomes
   // Multi-session tracking - logs are loaded on-demand from Claude's session files
   // Keys are session types: "plan", "work", "breakdown", "review_0", "review_1", etc.
   // Object preserves insertion order (creation time)
@@ -104,8 +127,6 @@ export interface Task {
   parent_id?: string;
   // The breakdown produced by the breakdown agent
   breakdown?: string;
-  // Feedback for breakdown revision
-  breakdown_feedback?: string;
   // Whether this task should skip breakdown and go straight to working
   skip_breakdown?: boolean;
 }

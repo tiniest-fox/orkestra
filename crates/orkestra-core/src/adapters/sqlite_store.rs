@@ -7,7 +7,7 @@ use petname::Generator;
 use rusqlite::{params, Connection};
 use std::sync::Mutex;
 
-use crate::domain::{SessionInfo, Task, TaskKind, TaskStatus};
+use crate::domain::{LoopOutcome, SessionInfo, Task, TaskKind, TaskStatus, WorkLoop};
 use crate::error::{OrkestraError, Result};
 use crate::ports::TaskStore;
 use crate::project;
@@ -107,9 +107,22 @@ impl SqliteStore {
                 UNIQUE(task_id, session_key)
             );
 
+            CREATE TABLE IF NOT EXISTS work_loops (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                loop_number INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                started_from TEXT NOT NULL,
+                outcome TEXT,
+                FOREIGN KEY (task_id) REFERENCES tasks(id),
+                UNIQUE(task_id, loop_number)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_task_id ON sessions(task_id);
+            CREATE INDEX IF NOT EXISTS idx_work_loops_task_id ON work_loops(task_id);
             ",
         )?;
 
@@ -189,16 +202,18 @@ impl SqliteStore {
 
     /// Convert a row to a Task (without sessions, which are loaded separately).
     /// Column order: id, title, description, status, kind, `created_at`, `updated_at`,
-    /// `completed_at`, summary, error, plan, `plan_feedback`, `review_feedback`,
-    /// `reviewer_feedback`, `auto_approve`, `parent_id`, breakdown, `breakdown_feedback`,
-    /// `skip_breakdown`, `agent_pid`, `branch_name`, `worktree_path`, `integration_result`
+    /// `completed_at`, summary, error, plan, (`plan_feedback`), (`review_feedback`),
+    /// (`reviewer_feedback`), `auto_approve`, `parent_id`, breakdown, (`breakdown_feedback`),
+    /// `skip_breakdown`, `agent_pid`, `branch_name`, `worktree_path`, (`integration_result`)
+    /// Note: columns in parens are deprecated - feedback and integration status now in `work_loops` table
     fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         let status_str: String = row.get(3)?;
         let kind_str: String = row.get(4)?;
         let auto_approve: i32 = row.get(14)?;
         let skip_breakdown: i32 = row.get(18)?;
         let agent_pid: Option<i32> = row.get(19)?;
-        let integration_result_json: Option<String> = row.get(22)?;
+        // Column 22 (integration_result) kept for backwards compat but not used
+        // Integration status is now stored in work_loops table
 
         Ok(Task {
             id: row.get(0)?,
@@ -212,20 +227,18 @@ impl SqliteStore {
             summary: row.get(8)?,
             error: row.get(9)?,
             plan: row.get(10)?,
-            plan_feedback: row.get(11)?,
-            review_feedback: row.get(12)?,
-            reviewer_feedback: row.get(13)?,
+            // Columns 11-13 (feedback fields) kept for backwards compat but not used
+            // Feedback is now stored in work_loops table
             sessions: None, // Loaded separately
             auto_approve: auto_approve != 0,
             parent_id: row.get(15)?,
             breakdown: row.get(16)?,
-            breakdown_feedback: row.get(17)?,
+            // Column 17 (breakdown_feedback) kept for backwards compat but not used
             skip_breakdown: skip_breakdown != 0,
             agent_pid: agent_pid.map(|p| p as u32),
             branch_name: row.get(20)?,
             worktree_path: row.get(21)?,
-            integration_result: integration_result_json
-                .and_then(|json| serde_json::from_str(&json).ok()),
+            // Column 22 (integration_result) kept for backwards compat but not used
         })
     }
 
@@ -330,6 +343,123 @@ impl SqliteStore {
         Ok(())
     }
 
+    // =========================================================================
+    // Work Loop Methods
+    // =========================================================================
+
+    /// Start a new work loop for a task.
+    /// Returns the new loop with its assigned loop number.
+    pub fn start_loop(&self, task_id: &str, started_from: TaskStatus) -> Result<WorkLoop> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Get the next loop number for this task
+        let max_loop: Option<i32> = conn.query_row(
+            "SELECT MAX(loop_number) FROM work_loops WHERE task_id = ?",
+            params![task_id],
+            |row| row.get(0),
+        )?;
+        let loop_number = (max_loop.unwrap_or(0) + 1) as u32;
+
+        // Insert the new loop
+        conn.execute(
+            "INSERT INTO work_loops (task_id, loop_number, started_at, started_from) VALUES (?, ?, ?, ?)",
+            params![task_id, loop_number as i32, &now, status_to_str(started_from)],
+        )?;
+
+        Ok(WorkLoop::new(loop_number, started_from, &now))
+    }
+
+    /// End the current work loop for a task with the given outcome.
+    pub fn end_loop(&self, task_id: &str, loop_number: u32, outcome: &LoopOutcome) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let outcome_json = serde_json::to_string(&outcome)
+            .map_err(|e| OrkestraError::InvalidInput(e.to_string()))?;
+
+        conn.execute(
+            "UPDATE work_loops SET ended_at = ?, outcome = ? WHERE task_id = ? AND loop_number = ?",
+            params![&now, &outcome_json, task_id, loop_number as i32],
+        )?;
+
+        Ok(())
+    }
+
+    /// Get all work loops for a task, ordered by loop number.
+    pub fn get_loops(&self, task_id: &str) -> Result<Vec<WorkLoop>> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        let mut stmt = conn.prepare(
+            "SELECT loop_number, started_at, ended_at, started_from, outcome FROM work_loops WHERE task_id = ? ORDER BY loop_number",
+        )?;
+
+        let rows = stmt.query_map(params![task_id], |row| {
+            let loop_number: i32 = row.get(0)?;
+            let started_at: String = row.get(1)?;
+            let ended_at: Option<String> = row.get(2)?;
+            let started_from_str: String = row.get(3)?;
+            let outcome_json: Option<String> = row.get(4)?;
+
+            Ok((loop_number, started_at, ended_at, started_from_str, outcome_json))
+        })?;
+
+        let mut loops = Vec::new();
+        for row in rows {
+            let (loop_number, started_at, ended_at, started_from_str, outcome_json) = row?;
+            let started_from = parse_status(&started_from_str);
+            let outcome = outcome_json.and_then(|json| serde_json::from_str(&json).ok());
+
+            loops.push(WorkLoop {
+                loop_number: loop_number as u32,
+                started_at,
+                ended_at,
+                started_from,
+                outcome,
+            });
+        }
+
+        Ok(loops)
+    }
+
+    /// Get the current (active) work loop for a task, if any.
+    #[allow(clippy::redundant_closure_for_method_calls)]
+    pub fn get_current_loop(&self, task_id: &str) -> Result<Option<WorkLoop>> {
+        let loops = self.get_loops(task_id)?;
+        Ok(loops.into_iter().find(|l| l.is_active()))
+    }
+
+    /// Delete all work loops for a task (used when deleting a task).
+    pub fn delete_loops(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        conn.execute("DELETE FROM work_loops WHERE task_id = ?", params![task_id])?;
+        Ok(())
+    }
+
+    /// Get the outcome from the most recently ended loop.
+    /// This is used to get feedback when resuming an agent after rejection.
+    pub fn get_previous_loop_outcome(&self, task_id: &str) -> Result<Option<LoopOutcome>> {
+        let loops = self.get_loops(task_id)?;
+        // Find the most recent loop that has ended (has an outcome)
+        Ok(loops.into_iter().rev().find_map(|l| l.outcome))
+    }
+
+    /// Get feedback string from the previous loop's outcome.
+    /// Returns the feedback/error message regardless of outcome type.
+    pub fn get_previous_loop_feedback(&self, task_id: &str) -> Result<Option<String>> {
+        let outcome = self.get_previous_loop_outcome(task_id)?;
+        Ok(outcome.and_then(|o| match o {
+            LoopOutcome::PlanRejected { feedback }
+            | LoopOutcome::BreakdownRejected { feedback }
+            | LoopOutcome::WorkRejected { feedback }
+            | LoopOutcome::ReviewerRejected { feedback } => Some(feedback),
+            LoopOutcome::IntegrationFailed { error, .. } | LoopOutcome::AgentError { error } => {
+                Some(error)
+            }
+            LoopOutcome::Blocked { reason } => Some(reason),
+            LoopOutcome::Completed { .. } => None,
+        }))
+    }
+
     /// Get child tasks (tasks with `parent_id` = given id and kind = 'task').
     pub fn get_child_tasks(&self, parent_id: &str) -> Result<Vec<Task>> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
@@ -406,13 +536,9 @@ impl TaskStore for SqliteStore {
     fn save(&self, task: &Task) -> Result<()> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
 
-        // Serialize integration_result to JSON
-        let integration_result_json = task
-            .integration_result
-            .as_ref()
-            .map(|r| serde_json::to_string(r).unwrap_or_default());
-
         // Use INSERT OR REPLACE to handle both insert and update
+        // Note: feedback and integration_result columns kept for backwards compat but always NULL
+        // (now stored in work_loops table)
         conn.execute(
             r"
             INSERT OR REPLACE INTO tasks (
@@ -434,18 +560,18 @@ impl TaskStore for SqliteStore {
                 task.summary,
                 task.error,
                 task.plan,
-                task.plan_feedback,
-                task.review_feedback,
-                task.reviewer_feedback,
+                None::<String>, // plan_feedback - deprecated, in work_loops
+                None::<String>, // review_feedback - deprecated, in work_loops
+                None::<String>, // reviewer_feedback - deprecated, in work_loops
                 i32::from(task.auto_approve),
                 task.parent_id,
                 task.breakdown,
-                task.breakdown_feedback,
+                None::<String>, // breakdown_feedback - deprecated, in work_loops
                 i32::from(task.skip_breakdown),
                 task.agent_pid.map(|p| p as i32),
                 task.branch_name,
                 task.worktree_path,
-                integration_result_json,
+                None::<String>, // integration_result - deprecated, in work_loops
             ],
         )?;
 
@@ -467,12 +593,8 @@ impl TaskStore for SqliteStore {
 
         // Insert all tasks
         for task in tasks {
-            // Serialize integration_result to JSON
-            let integration_result_json = task
-                .integration_result
-                .as_ref()
-                .map(|r| serde_json::to_string(r).unwrap_or_default());
-
+            // Note: feedback and integration_result columns kept for backwards compat but always NULL
+            // (now stored in work_loops table)
             conn.execute(
                 r"
                 INSERT INTO tasks (
@@ -494,18 +616,18 @@ impl TaskStore for SqliteStore {
                     task.summary,
                     task.error,
                     task.plan,
-                    task.plan_feedback,
-                    task.review_feedback,
-                    task.reviewer_feedback,
+                    None::<String>, // plan_feedback - deprecated, in work_loops
+                    None::<String>, // review_feedback - deprecated, in work_loops
+                    None::<String>, // reviewer_feedback - deprecated, in work_loops
                     i32::from(task.auto_approve),
                     task.parent_id,
                     task.breakdown,
-                    task.breakdown_feedback,
+                    None::<String>, // breakdown_feedback - deprecated, in work_loops
                     i32::from(task.skip_breakdown),
                     task.agent_pid.map(|p| p as i32),
                     task.branch_name,
                     task.worktree_path,
-                    integration_result_json,
+                    None::<String>, // integration_result - deprecated, in work_loops
                 ],
             )?;
 
@@ -529,8 +651,9 @@ impl TaskStore for SqliteStore {
     fn delete(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
 
-        // Delete sessions first (foreign key would prevent task deletion)
+        // Delete related data first (foreign keys would prevent task deletion)
         conn.execute("DELETE FROM sessions WHERE task_id = ?", params![id])?;
+        conn.execute("DELETE FROM work_loops WHERE task_id = ?", params![id])?;
         conn.execute("DELETE FROM tasks WHERE id = ?", params![id])?;
 
         Ok(())

@@ -8,7 +8,8 @@ use crate::services::Project;
 
 // Re-export domain types for convenience
 pub use crate::domain::{
-    IntegrationResult, LogEntry, SessionInfo, Task, TaskKind, TaskStatus, ToolInput,
+    IntegrationResult, LogEntry, LoopOutcome, SessionInfo, Task, TaskKind, TaskStatus, ToolInput,
+    WorkLoop,
 };
 
 // =============================================================================
@@ -130,10 +131,11 @@ pub fn try_integrate(
 
 /// Called by orchestrator to integrate a Done task's branch back to primary.
 /// - If merge succeeds: deletes the task from the store
-/// - If merge conflicts: sets task back to Working with feedback
+/// - If merge conflicts: sets task back to Working with feedback in loop
 /// - If task is a child or has no branch: deletes the task (no merge needed)
 pub fn integrate_done_task(project: &Project, id: &str) -> Result<()> {
     let task = require_task(project, id)?;
+    let store = project.store();
 
     if task.status != TaskStatus::Done {
         return Err(OrkestraError::InvalidState {
@@ -142,37 +144,61 @@ pub fn integrate_done_task(project: &Project, id: &str) -> Result<()> {
         });
     }
 
-    // Already integrated - nothing to do
-    if task.integration_result.is_some() {
-        return Ok(());
+    // Check if current loop already has an outcome (shouldn't happen, but be safe)
+    if let Some(current_loop) = store.get_current_loop(id)? {
+        if current_loop.outcome.is_some() {
+            return Ok(()); // Loop already ended, nothing to do
+        }
     }
 
     let (new_status, integration_result, conflict_msg) = try_integrate(project, &task);
 
-    let store = project.store();
-
     // If merge conflict or error, reopen the task for user to fix
     if new_status == TaskStatus::Working {
+        // End current loop with IntegrationFailed, start new loop
+        if let Some(current_loop) = store.get_current_loop(id)? {
+            let outcome = match &integration_result {
+                Some(IntegrationResult::Conflict { conflict_files }) => {
+                    LoopOutcome::IntegrationFailed {
+                        error: conflict_msg.clone().unwrap_or_default(),
+                        conflict_files: Some(conflict_files.clone()),
+                    }
+                }
+                _ => LoopOutcome::IntegrationFailed {
+                    error: conflict_msg.clone().unwrap_or_else(|| "Unknown error".to_string()),
+                    conflict_files: None,
+                },
+            };
+            store.end_loop(id, current_loop.loop_number, &outcome)?;
+            store.start_loop(id, TaskStatus::Working)?;
+        }
+
         store.update_status(id, TaskStatus::Working)?;
         store.update_field(id, "summary", None)?; // Clear summary to reopen
         store.update_field(id, "completed_at", None)?;
-        if let Some(msg) = conflict_msg {
-            // Use review_feedback so worker sees it when session is resumed
-            store.update_field(id, "review_feedback", Some(&msg))?;
-        }
-        if let Some(result) = &integration_result {
-            let result_json = serde_json::to_string(result)
-                .map_err(|e| OrkestraError::InvalidInput(e.to_string()))?;
-            store.update_field(id, "integration_result", Some(&result_json))?;
-        }
+        // Conflict info is stored in the loop outcome, not on the task
         return Ok(());
     }
 
-    // Store integration result before deleting
-    if let Some(result) = &integration_result {
-        let result_json = serde_json::to_string(result)
-            .map_err(|e| OrkestraError::InvalidInput(e.to_string()))?;
-        store.update_field(id, "integration_result", Some(&result_json))?;
+    // Successfully integrated - end loop with Completed (including merge details)
+    if let Some(current_loop) = store.get_current_loop(id)? {
+        let outcome = match &integration_result {
+            Some(IntegrationResult::Merged {
+                merged_at,
+                commit_sha,
+                target_branch,
+            }) => LoopOutcome::Completed {
+                merged_at: Some(merged_at.clone()),
+                commit_sha: Some(commit_sha.clone()),
+                target_branch: Some(target_branch.clone()),
+            },
+            _ => LoopOutcome::Completed {
+                merged_at: None,
+                commit_sha: None,
+                target_branch: None,
+            },
+        };
+        store.end_loop(id, current_loop.loop_number, &outcome)?;
     }
 
     // Successfully integrated (merged or skipped) - delete the task
@@ -233,22 +259,21 @@ pub fn create_task_with_options(
         summary: None,
         error: None,
         plan: None,
-        plan_feedback: None,
-        review_feedback: None,
-        reviewer_feedback: None,
         sessions: None,
         auto_approve,
         parent_id: None,
         breakdown: None,
-        breakdown_feedback: None,
         skip_breakdown: false,
         agent_pid: None,
         branch_name,
         worktree_path,
-        integration_result: None,
     };
 
     store.save(&task)?;
+
+    // Start Loop 1 for new task
+    store.start_loop(&task.id, TaskStatus::Planning)?;
+
     Ok(task)
 }
 
@@ -364,7 +389,7 @@ pub fn approve_task_plan(project: &Project, id: &str) -> Result<Task> {
     };
 
     store.update_status(id, new_status)?;
-    store.update_field(id, "plan_feedback", None)?;
+    // Note: feedback is in WorkLoop outcomes, no need to clear
     require_task(project, id)
 }
 
@@ -379,8 +404,17 @@ pub fn request_plan_changes(project: &Project, id: &str, feedback: &str) -> Resu
         });
     }
 
+    // End current loop with PlanRejected, start new loop
+    if let Some(current_loop) = store.get_current_loop(id)? {
+        let outcome = LoopOutcome::PlanRejected {
+            feedback: feedback.to_string(),
+        };
+        store.end_loop(id, current_loop.loop_number, &outcome)?;
+        store.start_loop(id, TaskStatus::Planning)?;
+    }
+
     store.update_field(id, "plan", None)?;
-    store.update_field(id, "plan_feedback", Some(feedback))?;
+    // Feedback is stored in the loop outcome, not on the task
     require_task(project, id)
 }
 
@@ -399,8 +433,17 @@ pub fn request_review_changes(project: &Project, id: &str, feedback: &str) -> Re
         });
     }
 
+    // End current loop with WorkRejected, start new loop
+    if let Some(current_loop) = store.get_current_loop(id)? {
+        let outcome = LoopOutcome::WorkRejected {
+            feedback: feedback.to_string(),
+        };
+        store.end_loop(id, current_loop.loop_number, &outcome)?;
+        store.start_loop(id, TaskStatus::Working)?;
+    }
+
     store.update_field(id, "summary", None)?;
-    store.update_field(id, "review_feedback", Some(feedback))?;
+    // Feedback is stored in the loop outcome, not on the task
     require_task(project, id)
 }
 
@@ -420,7 +463,7 @@ pub fn approve_review(project: &Project, id: &str) -> Result<Task> {
     let now = chrono::Utc::now().to_rfc3339();
     store.update_status(id, TaskStatus::Done)?;
     store.update_field(id, "completed_at", Some(&now))?;
-    store.update_field(id, "review_feedback", None)?;
+    // Note: Integration status is tracked in WorkLoop outcomes, not on Task
 
     require_task(project, id)
 }
@@ -438,7 +481,6 @@ pub fn start_automated_review(project: &Project, id: &str) -> Result<Task> {
     }
 
     store.update_status(id, TaskStatus::Reviewing)?;
-    store.update_field(id, "review_feedback", None)?;
     require_task(project, id)
 }
 
@@ -458,7 +500,7 @@ pub fn approve_automated_review(project: &Project, id: &str) -> Result<Task> {
     let now = chrono::Utc::now().to_rfc3339();
     store.update_status(id, TaskStatus::Done)?;
     store.update_field(id, "completed_at", Some(&now))?;
-    store.update_field(id, "reviewer_feedback", None)?;
+    // Note: feedback is in WorkLoop outcomes, no need to clear
 
     require_task(project, id)
 }
@@ -475,8 +517,17 @@ pub fn reject_automated_review(project: &Project, id: &str, feedback: &str) -> R
         });
     }
 
+    // End current loop with ReviewerRejected, start new loop
+    if let Some(current_loop) = store.get_current_loop(id)? {
+        let outcome = LoopOutcome::ReviewerRejected {
+            feedback: feedback.to_string(),
+        };
+        store.end_loop(id, current_loop.loop_number, &outcome)?;
+        store.start_loop(id, TaskStatus::Working)?;
+    }
+
     store.update_field(id, "summary", None)?;
-    store.update_field(id, "reviewer_feedback", Some(feedback))?;
+    // Feedback is stored in the loop outcome, not on the task
     store.update_status(id, TaskStatus::Working)?;
     require_task(project, id)
 }
@@ -529,19 +580,14 @@ pub fn create_child_task(
         summary: None,
         error: None,
         plan: parent.plan.clone(),
-        plan_feedback: None,
-        review_feedback: None,
-        reviewer_feedback: None,
         sessions: None,
         auto_approve: false,
         parent_id: Some(parent_id.to_string()),
         breakdown: None,
-        breakdown_feedback: None,
         skip_breakdown: true,
         agent_pid: None,
         branch_name: parent.branch_name.clone(),
         worktree_path: parent.worktree_path.clone(),
-        integration_result: None,
     };
 
     store.save(&task)?;
@@ -578,19 +624,14 @@ pub fn create_subtask(
         summary: None,
         error: None,
         plan: parent.plan.clone(),
-        plan_feedback: None,
-        review_feedback: None,
-        reviewer_feedback: None,
         sessions: None,
         auto_approve: false,
         parent_id: Some(parent_id.to_string()),
         breakdown: None,
-        breakdown_feedback: None,
         skip_breakdown: true,
         agent_pid: None,
         branch_name: parent.branch_name.clone(),
         worktree_path: parent.worktree_path.clone(),
-        integration_result: None,
     };
 
     store.save(&task)?;
@@ -655,7 +696,7 @@ pub fn approve_breakdown(project: &Project, id: &str) -> Result<Task> {
     };
 
     store.update_status(id, new_status)?;
-    store.update_field(id, "breakdown_feedback", None)?;
+    // Note: feedback is in WorkLoop outcomes, no need to clear
     require_task(project, id)
 }
 
@@ -670,8 +711,17 @@ pub fn request_breakdown_changes(project: &Project, id: &str, feedback: &str) ->
         });
     }
 
+    // End current loop with BreakdownRejected, start new loop
+    if let Some(current_loop) = store.get_current_loop(id)? {
+        let outcome = LoopOutcome::BreakdownRejected {
+            feedback: feedback.to_string(),
+        };
+        store.end_loop(id, current_loop.loop_number, &outcome)?;
+        store.start_loop(id, TaskStatus::BreakingDown)?;
+    }
+
     store.update_field(id, "breakdown", None)?;
-    store.update_field(id, "breakdown_feedback", Some(feedback))?;
+    // Feedback is stored in the loop outcome, not on the task
     require_task(project, id)
 }
 
@@ -766,7 +816,6 @@ pub fn check_parent_completion(project: &Project, parent_id: &str) -> Result<Opt
         let was_merged = matches!(integration_result, Some(IntegrationResult::Merged { .. }));
 
         parent.status = new_status;
-        parent.integration_result = integration_result;
         parent.updated_at = chrono::Utc::now().to_rfc3339();
 
         if new_status == TaskStatus::Done {
@@ -776,13 +825,51 @@ pub fn check_parent_completion(project: &Project, parent_id: &str) -> Result<Opt
                 children.len()
             ));
 
+            // End loop with Completed outcome
+            if let Some(current_loop) = store.get_current_loop(&parent.id)? {
+                let outcome = match &integration_result {
+                    Some(IntegrationResult::Merged {
+                        merged_at,
+                        commit_sha,
+                        target_branch,
+                    }) => LoopOutcome::Completed {
+                        merged_at: Some(merged_at.clone()),
+                        commit_sha: Some(commit_sha.clone()),
+                        target_branch: Some(target_branch.clone()),
+                    },
+                    _ => LoopOutcome::Completed {
+                        merged_at: None,
+                        commit_sha: None,
+                        target_branch: None,
+                    },
+                };
+                store.end_loop(&parent.id, current_loop.loop_number, &outcome)?;
+            }
+
             if was_merged {
                 store.delete(&parent.id)?;
                 return Ok(Some(parent));
             }
         } else {
             parent.summary = None;
-            parent.reviewer_feedback = conflict_msg;
+
+            // End current loop with IntegrationFailed, start new loop
+            if let Some(current_loop) = store.get_current_loop(&parent.id)? {
+                let outcome = match &integration_result {
+                    Some(IntegrationResult::Conflict { conflict_files }) => {
+                        LoopOutcome::IntegrationFailed {
+                            error: conflict_msg.clone().unwrap_or_default(),
+                            conflict_files: Some(conflict_files.clone()),
+                        }
+                    }
+                    _ => LoopOutcome::IntegrationFailed {
+                        error: conflict_msg.unwrap_or_else(|| "Unknown error".to_string()),
+                        conflict_files: None,
+                    },
+                };
+                store.end_loop(&parent.id, current_loop.loop_number, &outcome)?;
+                store.start_loop(&parent.id, TaskStatus::Working)?;
+            }
         }
 
         store.save(&parent)?;

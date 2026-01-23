@@ -4,7 +4,7 @@
 use orkestra_core::{
     agents::{self, generate_title_sync},
     auto_tasks, find_project_root, orchestrator, recover_session_logs, resume_agent, tasks,
-    AgentType, AutoTask, LogEntry, Project, Task, TaskStatus,
+    AgentType, AutoTask, LogEntry, Project, Task, TaskStatus, WorkLoop,
 };
 use tasks::{
     approve_breakdown as core_approve_breakdown, get_child_tasks as core_get_child_tasks,
@@ -285,6 +285,14 @@ fn get_task_logs(id: String, session_key: Option<String>) -> Result<Vec<LogEntry
     recover_session_logs(&session_id, &session_cwd).map_err(|e| e.to_string())
 }
 
+/// Get work loops for a task (history of attempts/iterations)
+#[tauri::command]
+fn get_task_loops(id: String) -> Result<Vec<WorkLoop>, String> {
+    let project = Project::discover().map_err(|e| e.to_string())?;
+    let store = project.store();
+    store.get_loops(&id).map_err(|e| e.to_string())
+}
+
 /// Start the orchestrator background loop
 #[allow(clippy::too_many_lines)]
 fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
@@ -396,12 +404,17 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                     let _ = handle2.emit("task-logs-updated", task_id.to_string());
                                 };
 
-                                // Pass review feedback if present - template handles formatting
+                                // Get feedback from previous loop outcome (single source of truth)
+                                let feedback = project
+                                    .store()
+                                    .get_previous_loop_feedback(&task.id)
+                                    .ok()
+                                    .flatten();
                                 match resume_agent(
                                     &project,
                                     &task,
                                     &session_key,
-                                    task.review_feedback.as_deref(),
+                                    feedback.as_deref(),
                                     on_update2,
                                 ) {
                                     Ok(spawned) => {
@@ -541,6 +554,7 @@ pub fn run() {
             get_child_tasks,
             resume_task,
             get_task_logs,
+            get_task_loops,
             get_project_root,
             get_current_branch,
             get_branches,

@@ -17,7 +17,10 @@ pub mod tasks;
 pub mod testutil;
 
 // Primary re-exports
-pub use domain::{IntegrationResult, LogEntry, SessionInfo, Task, TaskKind, TaskStatus, ToolInput};
+pub use domain::{
+    IntegrationResult, LogEntry, LoopOutcome, SessionInfo, Task, TaskKind, TaskStatus, ToolInput,
+    WorkLoop,
+};
 pub use error::{OrkestraError, Result};
 pub use services::Project;
 

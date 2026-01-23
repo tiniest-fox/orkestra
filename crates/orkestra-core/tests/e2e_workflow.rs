@@ -14,7 +14,7 @@
 //! - Merge conflict detection and task reopening
 
 use orkestra_core::{
-    domain::{IntegrationResult, TaskStatus},
+    domain::{LoopOutcome, TaskStatus},
     tasks,
     testutil::{create_orkestra_dirs, create_temp_git_repo, create_test_orchestrator},
 };
@@ -247,15 +247,24 @@ fn test_workflow_with_merge_conflict() {
         "Task should be reopened due to conflict"
     );
 
-    // Verify conflict was recorded
-    match &task.integration_result {
-        Some(IntegrationResult::Conflict { conflict_files }) => {
+    // Verify conflict was recorded in the previous loop's outcome
+    let loops = orchestrator
+        .project
+        .store()
+        .get_loops(&task.id)
+        .expect("Should get loops");
+
+    // Find the most recent completed loop (should have IntegrationFailed outcome)
+    let completed_loop = loops.iter().rev().find(|l| l.outcome.is_some());
+    match completed_loop.and_then(|l| l.outcome.as_ref()) {
+        Some(LoopOutcome::IntegrationFailed { conflict_files, .. }) => {
+            let files = conflict_files.as_ref().expect("Should have conflict files");
             assert!(
-                conflict_files.contains(&"conflict.txt".to_string()),
+                files.contains(&"conflict.txt".to_string()),
                 "Should identify conflict.txt as conflicting"
             );
         }
-        other => panic!("Expected Conflict result, got {other:?}"),
+        other => panic!("Expected IntegrationFailed outcome, got {other:?}"),
     }
 
     // Worktree should still exist for conflict resolution
@@ -375,10 +384,8 @@ fn test_convenience_run_full_workflow() {
         .expect("Full workflow should succeed");
 
     assert_eq!(task.status, TaskStatus::Done);
-    assert!(matches!(
-        task.integration_result,
-        Some(IntegrationResult::Merged { .. })
-    ));
+    // Note: integration_result is now tracked in WorkLoop outcomes
+    // The success of the merge is confirmed by the task being deleted below
 
     // Task should be deleted from database after successful merge
     let tasks_list = tasks::load_tasks(&orchestrator.project).unwrap();
@@ -473,4 +480,382 @@ fn test_orkestra_dirs_creation() {
 
     assert!(temp_dir.path().join(".orkestra").exists());
     assert!(temp_dir.path().join(".orkestra/worktrees").exists());
+}
+
+// =============================================================================
+// WorkLoop Tests
+// =============================================================================
+
+#[test]
+fn test_loop_created_on_task_creation() {
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Create a task
+    let task = tasks::create_task(&orchestrator.project, "Test task", "Description")
+        .expect("Failed to create task");
+
+    // Verify Loop 1 was created
+    let loops = orchestrator
+        .project
+        .store()
+        .get_loops(&task.id)
+        .expect("Should get loops");
+
+    assert_eq!(loops.len(), 1, "Should have exactly one loop");
+    assert_eq!(loops[0].loop_number, 1, "First loop should be number 1");
+    assert_eq!(
+        loops[0].started_from,
+        TaskStatus::Planning,
+        "Loop should start from Planning"
+    );
+    assert!(loops[0].outcome.is_none(), "Loop should be active (no outcome)");
+    assert!(loops[0].ended_at.is_none(), "Loop should not have ended");
+}
+
+#[test]
+fn test_plan_rejection_creates_new_loop() {
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Create task
+    let task = tasks::create_task(&orchestrator.project, "Test task", "Description")
+        .expect("Failed to create task");
+
+    // Agent sets plan
+    orchestrator
+        .run_cli_in_worktree(
+            &task.id,
+            &["task", "set-plan", &task.id, "--plan", "Initial plan"],
+        )
+        .expect("Should set plan");
+
+    // Verify still on Loop 1
+    let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
+    assert_eq!(loops.len(), 1);
+
+    // UI rejects the plan
+    tasks::request_plan_changes(&orchestrator.project, &task.id, "Need more detail")
+        .expect("Should request changes");
+
+    // Verify Loop 1 ended with PlanRejected, and Loop 2 started
+    let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
+    assert_eq!(loops.len(), 2, "Should have two loops after rejection");
+
+    // Check Loop 1
+    assert_eq!(loops[0].loop_number, 1);
+    assert!(loops[0].ended_at.is_some(), "Loop 1 should have ended");
+    match &loops[0].outcome {
+        Some(LoopOutcome::PlanRejected { feedback }) => {
+            assert_eq!(feedback, "Need more detail");
+        }
+        other => panic!("Expected PlanRejected outcome, got {:?}", other),
+    }
+
+    // Check Loop 2
+    assert_eq!(loops[1].loop_number, 2);
+    assert_eq!(loops[1].started_from, TaskStatus::Planning);
+    assert!(loops[1].outcome.is_none(), "Loop 2 should be active");
+}
+
+#[test]
+fn test_work_rejection_creates_new_loop() {
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Create task and get to Working status
+    let task = tasks::create_task(&orchestrator.project, "Test task", "Description").unwrap();
+
+    orchestrator
+        .project
+        .store()
+        .update_field(&task.id, "skip_breakdown", Some("1"))
+        .unwrap();
+
+    orchestrator
+        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Plan"])
+        .unwrap();
+
+    tasks::approve_task_plan(&orchestrator.project, &task.id).unwrap();
+
+    // Agent completes work
+    orchestrator
+        .run_cli_in_worktree(
+            &task.id,
+            &["task", "complete", &task.id, "--summary", "Done"],
+        )
+        .unwrap();
+
+    // Verify still on Loop 1
+    let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
+    assert_eq!(loops.len(), 1);
+
+    // UI rejects the work
+    tasks::request_review_changes(&orchestrator.project, &task.id, "Fix the tests")
+        .expect("Should request changes");
+
+    // Verify Loop 1 ended with WorkRejected, and Loop 2 started
+    let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
+    assert_eq!(loops.len(), 2, "Should have two loops after work rejection");
+
+    // Check Loop 1 outcome
+    match &loops[0].outcome {
+        Some(LoopOutcome::WorkRejected { feedback }) => {
+            assert_eq!(feedback, "Fix the tests");
+        }
+        other => panic!("Expected WorkRejected outcome, got {:?}", other),
+    }
+
+    // Check Loop 2 started from Working
+    assert_eq!(loops[1].loop_number, 2);
+    assert_eq!(loops[1].started_from, TaskStatus::Working);
+    assert!(loops[1].outcome.is_none());
+}
+
+#[test]
+fn test_reviewer_rejection_creates_new_loop() {
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Create task and get to Reviewing status
+    let task = tasks::create_task(&orchestrator.project, "Test task", "Description").unwrap();
+
+    orchestrator
+        .project
+        .store()
+        .update_field(&task.id, "skip_breakdown", Some("1"))
+        .unwrap();
+
+    orchestrator
+        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Plan"])
+        .unwrap();
+
+    tasks::approve_task_plan(&orchestrator.project, &task.id).unwrap();
+
+    orchestrator
+        .run_cli_in_worktree(
+            &task.id,
+            &["task", "complete", &task.id, "--summary", "Done"],
+        )
+        .unwrap();
+
+    // Start automated review
+    tasks::start_automated_review(&orchestrator.project, &task.id).unwrap();
+
+    // Verify still on Loop 1
+    let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
+    assert_eq!(loops.len(), 1);
+
+    // Reviewer agent rejects via CLI
+    orchestrator
+        .run_cli_in_worktree(
+            &task.id,
+            &[
+                "task",
+                "reject-review",
+                &task.id,
+                "--feedback",
+                "Code doesn't follow conventions",
+            ],
+        )
+        .expect("Should reject review");
+
+    // Verify Loop 1 ended with ReviewerRejected, and Loop 2 started
+    let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
+    assert_eq!(
+        loops.len(),
+        2,
+        "Should have two loops after reviewer rejection"
+    );
+
+    // Check Loop 1 outcome
+    match &loops[0].outcome {
+        Some(LoopOutcome::ReviewerRejected { feedback }) => {
+            assert_eq!(feedback, "Code doesn't follow conventions");
+        }
+        other => panic!("Expected ReviewerRejected outcome, got {:?}", other),
+    }
+
+    // Check Loop 2
+    assert_eq!(loops[1].loop_number, 2);
+    assert_eq!(loops[1].started_from, TaskStatus::Working);
+    assert!(loops[1].outcome.is_none());
+
+    // Task should be back in Working status
+    let task = tasks::get_task(&orchestrator.project, &task.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(task.status, TaskStatus::Working);
+}
+
+#[test]
+fn test_successful_completion_loop_outcome() {
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Run full workflow
+    let task = orchestrator
+        .run_full_workflow(
+            "Feature task",
+            "A feature",
+            "1. Do stuff",
+            "// code",
+            "All done",
+        )
+        .expect("Full workflow should succeed");
+
+    // Get the task ID before it gets deleted
+    let task_id = task.id.clone();
+
+    // Note: After successful merge, the task is deleted from DB
+    // But the loops should also be cleaned up
+    // Let's verify the task is gone
+    let task = tasks::get_task(&orchestrator.project, &task_id).unwrap();
+    assert!(task.is_none(), "Task should be deleted after successful merge");
+
+    // Loops are also deleted when task is deleted (cascade)
+    let loops = orchestrator.project.store().get_loops(&task_id).unwrap();
+    assert!(
+        loops.is_empty(),
+        "Loops should be deleted when task is deleted"
+    );
+}
+
+#[test]
+fn test_multiple_rejections_loop_progression() {
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Create task
+    let task = tasks::create_task(&orchestrator.project, "Test task", "Description").unwrap();
+
+    // First plan rejection
+    orchestrator
+        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Plan v1"])
+        .unwrap();
+    tasks::request_plan_changes(&orchestrator.project, &task.id, "Rejection 1").unwrap();
+
+    // Second plan rejection
+    orchestrator
+        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Plan v2"])
+        .unwrap();
+    tasks::request_plan_changes(&orchestrator.project, &task.id, "Rejection 2").unwrap();
+
+    // Third plan rejection
+    orchestrator
+        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Plan v3"])
+        .unwrap();
+    tasks::request_plan_changes(&orchestrator.project, &task.id, "Rejection 3").unwrap();
+
+    // Verify we have 4 loops (1 initial + 3 from rejections)
+    let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
+    assert_eq!(loops.len(), 4, "Should have 4 loops after 3 rejections");
+
+    // Verify loop numbers progress correctly
+    for (i, loop_) in loops.iter().enumerate() {
+        assert_eq!(
+            loop_.loop_number,
+            (i + 1) as u32,
+            "Loop {} should have number {}",
+            i,
+            i + 1
+        );
+    }
+
+    // Verify first 3 loops ended with PlanRejected
+    for i in 0..3 {
+        assert!(
+            matches!(loops[i].outcome, Some(LoopOutcome::PlanRejected { .. })),
+            "Loop {} should have PlanRejected outcome",
+            i + 1
+        );
+        assert!(loops[i].ended_at.is_some());
+    }
+
+    // Verify Loop 4 is active
+    assert!(loops[3].outcome.is_none(), "Loop 4 should be active");
+    assert!(loops[3].ended_at.is_none());
+}
+
+#[test]
+fn test_feedback_retrieval_from_loops() {
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Create task and reject plan
+    let task = tasks::create_task(&orchestrator.project, "Test task", "Description").unwrap();
+
+    orchestrator
+        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Bad plan"])
+        .unwrap();
+
+    tasks::request_plan_changes(&orchestrator.project, &task.id, "This feedback should be retrievable")
+        .unwrap();
+
+    // Retrieve feedback using the helper
+    let feedback = orchestrator
+        .project
+        .store()
+        .get_previous_loop_feedback(&task.id)
+        .expect("Should get feedback");
+
+    assert_eq!(
+        feedback,
+        Some("This feedback should be retrievable".to_string()),
+        "Should retrieve correct feedback from previous loop"
+    );
+}
+
+#[test]
+fn test_breakdown_rejection_creates_new_loop() {
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Create task (breakdown enabled by default)
+    let task = tasks::create_task(&orchestrator.project, "Complex task", "Needs breakdown").unwrap();
+
+    // Set and approve plan
+    orchestrator
+        .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Big plan"])
+        .unwrap();
+
+    tasks::approve_task_plan(&orchestrator.project, &task.id).unwrap();
+
+    // Set breakdown
+    orchestrator
+        .run_cli_in_worktree(
+            &task.id,
+            &[
+                "task",
+                "set-breakdown",
+                &task.id,
+                "--breakdown",
+                "Split into parts",
+            ],
+        )
+        .unwrap();
+
+    // Verify still on Loop 1
+    let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
+    assert_eq!(loops.len(), 1);
+
+    // Reject breakdown
+    tasks::request_breakdown_changes(&orchestrator.project, &task.id, "Need more subtasks")
+        .expect("Should request breakdown changes");
+
+    // Verify new loop created
+    let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
+    assert_eq!(loops.len(), 2, "Should have two loops after breakdown rejection");
+
+    // Check Loop 1 outcome
+    match &loops[0].outcome {
+        Some(LoopOutcome::BreakdownRejected { feedback }) => {
+            assert_eq!(feedback, "Need more subtasks");
+        }
+        other => panic!("Expected BreakdownRejected outcome, got {:?}", other),
+    }
+
+    // Check Loop 2
+    assert_eq!(loops[1].loop_number, 2);
+    assert_eq!(loops[1].started_from, TaskStatus::BreakingDown);
 }

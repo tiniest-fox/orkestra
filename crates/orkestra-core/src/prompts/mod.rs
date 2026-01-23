@@ -5,8 +5,8 @@
 //! and maintain without digging through Rust code.
 
 use handlebars::Handlebars;
-use once_cell::sync::Lazy;
 use serde::Serialize;
+use std::sync::LazyLock;
 
 use crate::domain::Task;
 
@@ -31,7 +31,7 @@ const RESUME_BREAKDOWN_TEMPLATE: &str = include_str!("templates/resume/breakdown
 // Template Registry
 // =============================================================================
 
-static TEMPLATES: Lazy<Handlebars<'static>> = Lazy::new(|| {
+static TEMPLATES: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
     let mut hb = Handlebars::new();
     // Don't escape HTML - we're generating plain text prompts
     hb.register_escape_fn(handlebars::no_escape);
@@ -250,7 +250,8 @@ pub fn build_worker_prompt(task: &Task, agent_definition: &str, subtasks: Option
         title: &task.title,
         description: &task.description,
         plan: task.plan.as_deref(),
-        review_feedback: task.review_feedback.as_deref(),
+        // Feedback is passed via resume prompts, not initial spawn
+        review_feedback: None,
         subtasks: subtask_contexts,
     })
 }
@@ -262,7 +263,8 @@ pub fn build_planner_prompt(task: &Task, agent_definition: &str) -> String {
         task_id: &task.id,
         title: &task.title,
         description: &task.description,
-        plan_feedback: task.plan_feedback.as_deref(),
+        // Feedback is passed via resume prompts, not initial spawn
+        plan_feedback: None,
         auto_approve: task.auto_approve,
     })
 }
@@ -287,7 +289,8 @@ pub fn build_breakdown_prompt(task: &Task, agent_definition: &str) -> String {
         title: &task.title,
         description: &task.description,
         plan: task.plan.as_deref(),
-        breakdown_feedback: task.breakdown_feedback.as_deref(),
+        // Feedback is passed via resume prompts, not initial spawn
+        breakdown_feedback: None,
         auto_approve: task.auto_approve,
     })
 }
@@ -319,19 +322,14 @@ mod tests {
             summary: None,
             error: None,
             plan: None,
-            plan_feedback: None,
-            review_feedback: None,
-            reviewer_feedback: None,
             sessions: None,
             auto_approve: false,
             parent_id: None,
             breakdown: None,
-            breakdown_feedback: None,
             skip_breakdown: false,
             agent_pid: None,
             branch_name: None,
             worktree_path: None,
-            integration_result: None,
         }
     }
 
@@ -433,16 +431,8 @@ mod tests {
         assert!(prompt.contains("2. Do that"));
     }
 
-    #[test]
-    fn test_worker_with_review_feedback() {
-        let mut task = create_test_task();
-        task.review_feedback = Some("Fix the bug".to_string());
-
-        let prompt = build_worker_prompt(&task, "# Agent", None);
-
-        assert!(prompt.contains("Review Feedback"));
-        assert!(prompt.contains("Fix the bug"));
-    }
+    // Note: Feedback is passed via resume prompts, not initial spawn prompts.
+    // See test_resume_worker_with_feedback for feedback testing.
 
     #[test]
     fn test_worker_with_subtasks() {
@@ -482,16 +472,8 @@ mod tests {
         assert!(prompt.contains("ork task set-plan"));
     }
 
-    #[test]
-    fn test_planner_with_feedback() {
-        let mut task = create_test_task();
-        task.plan_feedback = Some("Please add more detail".to_string());
-
-        let prompt = build_planner_prompt(&task, "# Agent");
-
-        assert!(prompt.contains("Previous Plan Feedback"));
-        assert!(prompt.contains("Please add more detail"));
-    }
+    // Note: Feedback is passed via resume prompts, not initial spawn prompts.
+    // See test_resume_planner_with_feedback for feedback testing.
 
     #[test]
     fn test_planner_auto_approve() {

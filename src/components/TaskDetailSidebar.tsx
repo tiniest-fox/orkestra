@@ -240,16 +240,36 @@ function LogEntryView({ entry, projectRoot }: { entry: LogEntry; projectRoot: st
 }
 
 // Helper to format loop outcome for display
-function formatLoopOutcome(outcome: LoopOutcome): { label: string; color: string; details?: string } {
+function formatLoopOutcome(outcome: LoopOutcome): {
+  label: string;
+  color: string;
+  details?: string;
+} {
   switch (outcome.type) {
     case "plan_rejected":
-      return { label: "Plan Rejected", color: "text-amber-700 bg-amber-50", details: outcome.feedback };
+      return {
+        label: "Plan Rejected",
+        color: "text-amber-700 bg-amber-50",
+        details: outcome.feedback,
+      };
     case "breakdown_rejected":
-      return { label: "Breakdown Rejected", color: "text-amber-700 bg-amber-50", details: outcome.feedback };
+      return {
+        label: "Breakdown Rejected",
+        color: "text-amber-700 bg-amber-50",
+        details: outcome.feedback,
+      };
     case "work_rejected":
-      return { label: "Work Rejected", color: "text-amber-700 bg-amber-50", details: outcome.feedback };
+      return {
+        label: "Work Rejected",
+        color: "text-amber-700 bg-amber-50",
+        details: outcome.feedback,
+      };
     case "reviewer_rejected":
-      return { label: "Reviewer Rejected", color: "text-orange-700 bg-orange-50", details: outcome.feedback };
+      return {
+        label: "Reviewer Rejected",
+        color: "text-orange-700 bg-orange-50",
+        details: outcome.feedback,
+      };
     case "integration_failed":
       return {
         label: "Integration Failed",
@@ -713,14 +733,8 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     }
   };
 
-  // Show auto-approve toggle when task is in a reviewable state or terminal state
-  const canToggleAutoApprove =
-    task.status === "done" ||
-    task.status === "failed" ||
-    task.status === "blocked" ||
-    taskNeedsPlanReview ||
-    taskNeedsBreakdownReview ||
-    taskNeedsWorkReview;
+  // Always show auto-approve toggle so users can control it at any time
+  const canToggleAutoApprove = true;
 
   return (
     <div className="w-1/2 flex-shrink-0 bg-white shadow-xl border-l border-gray-200 flex flex-col overflow-hidden">
@@ -1035,9 +1049,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
         {/* Activity Tab */}
         {activeTab === "activity" && (
           <div className="flex-1 overflow-auto p-4">
-            <div className="text-sm font-medium text-gray-700 mb-4">
-              Work Loop History
-            </div>
+            <div className="text-sm font-medium text-gray-700 mb-4">Work Loop History</div>
             {loops.length === 0 ? (
               <div className="text-gray-500 text-sm">No activity recorded yet.</div>
             ) : (

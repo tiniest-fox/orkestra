@@ -400,7 +400,13 @@ impl SqliteStore {
             let started_from_str: String = row.get(3)?;
             let outcome_json: Option<String> = row.get(4)?;
 
-            Ok((loop_number, started_at, ended_at, started_from_str, outcome_json))
+            Ok((
+                loop_number,
+                started_at,
+                ended_at,
+                started_from_str,
+                outcome_json,
+            ))
         })?;
 
         let mut loops = Vec::new();

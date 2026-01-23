@@ -687,17 +687,15 @@ fn main() {
                         }
                     }
                 }
-                TaskAction::Delete { id } => {
-                    match tasks::delete_task(&project, &id) {
-                        Ok(()) => {
-                            println!("Deleted task {id} and all its children");
-                        }
-                        Err(e) => {
-                            eprintln!("Error deleting task: {e}");
-                            std::process::exit(1);
-                        }
+                TaskAction::Delete { id } => match tasks::delete_task(&project, &id) {
+                    Ok(()) => {
+                        println!("Deleted task {id} and all its children");
                     }
-                }
+                    Err(e) => {
+                        eprintln!("Error deleting task: {e}");
+                        std::process::exit(1);
+                    }
+                },
             }
         }
     }

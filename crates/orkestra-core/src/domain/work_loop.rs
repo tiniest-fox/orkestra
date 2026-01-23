@@ -35,34 +35,22 @@ pub struct WorkLoop {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum LoopOutcome {
     /// Plan was rejected by human reviewer
-    PlanRejected {
-        feedback: String,
-    },
+    PlanRejected { feedback: String },
     /// Breakdown was rejected by human reviewer
-    BreakdownRejected {
-        feedback: String,
-    },
+    BreakdownRejected { feedback: String },
     /// Work was rejected by human reviewer
-    WorkRejected {
-        feedback: String,
-    },
+    WorkRejected { feedback: String },
     /// Work was rejected by automated reviewer agent
-    ReviewerRejected {
-        feedback: String,
-    },
+    ReviewerRejected { feedback: String },
     /// Integration failed (merge conflict, etc.)
     IntegrationFailed {
         error: String,
         conflict_files: Option<Vec<String>>,
     },
     /// Agent crashed/timed out/errored
-    AgentError {
-        error: String,
-    },
+    AgentError { error: String },
     /// Task was marked as blocked
-    Blocked {
-        reason: String,
-    },
+    Blocked { reason: String },
     /// Task completed successfully (merged or no merge needed)
     Completed {
         /// When the branch was merged (if applicable)
@@ -126,7 +114,10 @@ mod tests {
 
         assert!(!loop1.is_active());
         assert!(loop1.ended_at.is_some());
-        assert!(matches!(loop1.outcome, Some(LoopOutcome::PlanRejected { .. })));
+        assert!(matches!(
+            loop1.outcome,
+            Some(LoopOutcome::PlanRejected { .. })
+        ));
     }
 
     #[test]

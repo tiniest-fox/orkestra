@@ -237,7 +237,7 @@ impl TestOrchestrator {
             agent_pid: None,
             branch_name: task.branch_name,
             worktree_path: None, // Cleaned up after merge
-            // Note: integration_result now tracked in WorkLoop outcomes
+                                 // Note: integration_result now tracked in WorkLoop outcomes
         })
     }
 }

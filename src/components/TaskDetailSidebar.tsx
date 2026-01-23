@@ -426,6 +426,19 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     }
   }, [logs, autoScroll, activeTab]);
 
+  // Scroll to bottom when switching to logs tab or when task changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: task.id triggers scroll when task changes
+  useEffect(() => {
+    if (activeTab === "logs" && logsContainerRef.current && logs.length > 0) {
+      // Use requestAnimationFrame to ensure the DOM has rendered
+      requestAnimationFrame(() => {
+        if (logsContainerRef.current) {
+          logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+        }
+      });
+    }
+  }, [activeTab, task.id]);
+
   const handleApprove = async () => {
     setIsSubmitting(true);
     try {
@@ -821,10 +834,14 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
 
         {/* Logs Tab */}
         {activeTab === "logs" && (
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            {/* Session Sub-Tabs (if multiple sessions exist) */}
+          <div
+            ref={logsContainerRef}
+            onScroll={handleLogsScroll}
+            className="flex-1 overflow-auto min-h-0 bg-gray-900"
+          >
+            {/* Session Sub-Tabs (if multiple sessions exist) - sticky at top */}
             {availableSessions.length > 1 && (
-              <div className="flex-shrink-0 px-4 py-2 border-b border-gray-700 bg-gray-800 flex gap-2 overflow-x-auto">
+              <div className="sticky top-0 z-10 px-4 py-2 border-b border-gray-700 bg-gray-800 flex gap-2 overflow-x-auto">
                 {availableSessions.map((session) => (
                   <button
                     type="button"
@@ -841,11 +858,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
                 ))}
               </div>
             )}
-            <div
-              ref={logsContainerRef}
-              onScroll={handleLogsScroll}
-              className="flex-1 overflow-auto min-h-0 p-4 bg-gray-900"
-            >
+            <div className="p-4">
               {logsLoading && logs.length === 0 ? (
                 <div className="text-gray-500 text-sm">Loading logs...</div>
               ) : logs.length > 0 ? (

@@ -28,7 +28,7 @@ pub use agents::{resume_agent, spawn_agent, spawn_agent_sync, AgentType, Spawned
 pub use project::{find_project_root, get_orkestra_dir};
 
 // Session logs re-exports
-pub use session_logs::{get_claude_session_path, recover_session_logs};
+pub use session_logs::{get_claude_session_path, get_claude_session_path_from_project, recover_session_logs};
 
 // Auto-tasks re-exports
 pub use auto_tasks::{get_auto_task, list_auto_tasks, AutoTask};

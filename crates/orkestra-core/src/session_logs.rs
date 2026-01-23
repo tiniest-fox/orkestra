@@ -13,18 +13,31 @@ use crate::project;
 use crate::tasks::{LogEntry, ToolInput};
 
 /// Get path to Claude's session file
-pub fn get_claude_session_path(session_id: &str) -> Option<PathBuf> {
+///
+/// The `cwd` parameter should be the directory where the Claude session was started.
+/// For agents working in worktrees, this is the worktree path, not the main project root.
+pub fn get_claude_session_path(session_id: &str, cwd: &std::path::Path) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    let cwd = project::find_project_root().ok()?;
 
-    // Encode cwd: /Users/foo/bar -> -Users-foo-bar
-    let encoded_cwd = cwd.to_string_lossy().replace('/', "-");
+    // Encode cwd to match Claude's directory naming:
+    // Claude replaces both '/' and '.' with '-'
+    // Example: /Users/foo/.orkestra/bar -> -Users-foo--orkestra-bar
+    let encoded_cwd = cwd.to_string_lossy().replace('/', "-").replace('.', "-");
 
     Some(
         home.join(".claude/projects")
             .join(&encoded_cwd)
             .join(format!("{session_id}.jsonl")),
     )
+}
+
+/// Get path to Claude's session file using the current project root.
+///
+/// This is a convenience function for when you don't have a specific worktree path.
+/// For tasks with worktrees, prefer using `get_claude_session_path` with the worktree path.
+pub fn get_claude_session_path_from_project(session_id: &str) -> Option<PathBuf> {
+    let cwd = project::find_project_root().ok()?;
+    get_claude_session_path(session_id, &cwd)
 }
 
 /// State for tracking session log parsing
@@ -142,8 +155,11 @@ impl SessionLogParser {
 }
 
 /// Recover logs from Claude's session file
-pub fn recover_session_logs(session_id: &str) -> std::io::Result<Vec<LogEntry>> {
-    let path = get_claude_session_path(session_id).ok_or_else(|| {
+///
+/// The `cwd` parameter should be the directory where the Claude session was started.
+/// For agents working in worktrees, this is the worktree path.
+pub fn recover_session_logs(session_id: &str, cwd: &std::path::Path) -> std::io::Result<Vec<LogEntry>> {
+    let path = get_claude_session_path(session_id, cwd).ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "Could not determine session path",

@@ -221,7 +221,15 @@ fn get_task_logs(id: String, session_key: Option<String>) -> Result<Vec<LogEntry
         }
     };
 
-    recover_session_logs(&session_id).map_err(|e| e.to_string())
+    // Use worktree path if available, otherwise fall back to project root
+    // Agents run in worktrees, so Claude creates session files based on that path
+    let session_cwd = task
+        .worktree_path
+        .as_ref()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| project.root().to_path_buf());
+
+    recover_session_logs(&session_id, &session_cwd).map_err(|e| e.to_string())
 }
 
 /// Start the orchestrator background loop

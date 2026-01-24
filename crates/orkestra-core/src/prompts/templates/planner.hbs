@@ -19,15 +19,19 @@ The user has requested changes to the previous plan:
 
 Please revise your plan to address this feedback.
 {{/if}}
+{{#if question_history}}
+
+## Previous Questions and Answers
+
+You asked questions earlier and the user has answered them:
+
+{{#each question_history}}
+**Q: {{this.question.question}}**
+A: {{this.answer}}
+
+{{/each}}
+Use these answers to inform your plan.
+{{/if}}
 ---
 
-{{#if auto_approve}}
-Remember: This task has AUTO-APPROVE enabled. When your plan is ready, you MUST run BOTH commands in sequence:
-1. `ork task set-plan {{task_id}} --plan "YOUR_MARKDOWN_PLAN"`
-2. `ork task approve {{task_id}}`
-
-The second command will automatically start the worker agent to implement your plan.
-{{else}}
-Remember: When your plan is ready, you MUST run:
-`ork task set-plan {{task_id}} --plan "YOUR_MARKDOWN_PLAN"`
-{{/if}}
+Remember: Output ONLY valid JSON - either questions (if you need more information) or a plan (if you're ready).

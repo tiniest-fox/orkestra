@@ -192,6 +192,16 @@ impl SqliteStore {
             [],
         );
 
+        // Migration: add columns for planner questions
+        let _ = conn.execute(
+            "ALTER TABLE tasks ADD COLUMN pending_questions TEXT DEFAULT '[]'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE tasks ADD COLUMN question_history TEXT DEFAULT '[]'",
+            [],
+        );
+
         // Migrate legacy tasks: create iteration records for tasks with plan/summary but no iterations
         Self::migrate_legacy_iterations(&conn)?;
 
@@ -417,6 +427,29 @@ impl SqliteStore {
             summary: row.get(8)?,
             error: row.get(9)?,
             plan: row.get(10)?,
+            // Questions are loaded from separate columns if present
+            pending_questions: row
+                .get::<_, Option<String>>(27)
+                .ok()
+                .flatten()
+                .and_then(|s| {
+                    serde_json::from_str(&s).map_err(|e| {
+                        eprintln!("Warning: Failed to parse pending_questions JSON: {e}");
+                        e
+                    }).ok()
+                })
+                .unwrap_or_default(),
+            question_history: row
+                .get::<_, Option<String>>(28)
+                .ok()
+                .flatten()
+                .and_then(|s| {
+                    serde_json::from_str(&s).map_err(|e| {
+                        eprintln!("Warning: Failed to parse question_history JSON: {e}");
+                        e
+                    }).ok()
+                })
+                .unwrap_or_default(),
             // Columns 11-13 (feedback fields) kept for backwards compat but not used
             // Feedback is now stored in work_loops table
             sessions: None, // Loaded separately
@@ -498,6 +531,8 @@ impl SqliteStore {
             "worktree_path",
             "integration_result",
             "assigned_worker_task_id",
+            "pending_questions",
+            "question_history",
         ];
 
         if !valid_fields.contains(&field) {
@@ -556,6 +591,36 @@ impl SqliteStore {
         conn.execute(
             "UPDATE tasks SET phase = ?, updated_at = ? WHERE id = ?",
             params![phase_to_str(phase), chrono::Utc::now().to_rfc3339(), task_id],
+        )?;
+
+        Ok(())
+    }
+
+    /// Update planner questions on a task.
+    ///
+    /// Used when the planner asks questions (sets pending_questions) or
+    /// when the user answers them (clears pending_questions, updates history).
+    pub fn update_planner_questions(
+        &self,
+        task_id: &str,
+        pending_questions: &[crate::domain::PlannerQuestion],
+        question_history: &[crate::domain::QuestionAnswer],
+    ) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        let pending_json =
+            serde_json::to_string(pending_questions).unwrap_or_else(|_| "[]".to_string());
+        let history_json =
+            serde_json::to_string(question_history).unwrap_or_else(|_| "[]".to_string());
+
+        conn.execute(
+            "UPDATE tasks SET pending_questions = ?, question_history = ?, updated_at = ? WHERE id = ?",
+            params![
+                pending_json,
+                history_json,
+                chrono::Utc::now().to_rfc3339(),
+                task_id
+            ],
         )?;
 
         Ok(())
@@ -1159,8 +1224,8 @@ impl TaskStore for SqliteStore {
                 completed_at, summary, error, plan, plan_feedback,
                 review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
                 skip_breakdown, agent_pid, branch_name, worktree_path, integration_result, phase,
-                depends_on, work_items, assigned_worker_task_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                depends_on, work_items, assigned_worker_task_id, pending_questions, question_history
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ",
             params![
                 task.id,
@@ -1190,6 +1255,8 @@ impl TaskStore for SqliteStore {
                 serde_json::to_string(&task.depends_on).unwrap_or_else(|_| "[]".to_string()),
                 serde_json::to_string(&task.work_items).unwrap_or_else(|_| "[]".to_string()),
                 task.assigned_worker_task_id,
+                serde_json::to_string(&task.pending_questions).unwrap_or_else(|_| "[]".to_string()),
+                serde_json::to_string(&task.question_history).unwrap_or_else(|_| "[]".to_string()),
             ],
         )?;
 
@@ -1220,8 +1287,8 @@ impl TaskStore for SqliteStore {
                     completed_at, summary, error, plan, plan_feedback,
                     review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
                     skip_breakdown, agent_pid, branch_name, worktree_path, integration_result, phase,
-                    depends_on, work_items, assigned_worker_task_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    depends_on, work_items, assigned_worker_task_id, pending_questions, question_history
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ",
                 params![
                     task.id,
@@ -1251,6 +1318,8 @@ impl TaskStore for SqliteStore {
                     serde_json::to_string(&task.depends_on).unwrap_or_else(|_| "[]".to_string()),
                     serde_json::to_string(&task.work_items).unwrap_or_else(|_| "[]".to_string()),
                     task.assigned_worker_task_id,
+                    serde_json::to_string(&task.pending_questions).unwrap_or_else(|_| "[]".to_string()),
+                    serde_json::to_string(&task.question_history).unwrap_or_else(|_| "[]".to_string()),
                 ],
             )?;
 

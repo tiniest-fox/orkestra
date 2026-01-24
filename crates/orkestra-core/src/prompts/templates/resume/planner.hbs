@@ -1,8 +1,23 @@
 <!orkestra-resume>
-{{#if plan_feedback}}
+{{#if question_answers}}
+Here are the answers to your questions:
+
+{{#each question_answers}}
+**Q: {{this.question}}**
+A: {{this.answer}}
+
+{{/each}}
+Please use these answers to continue your analysis. You can ask more questions if needed, or output your plan if you're ready.
+
+Remember: Output ONLY valid JSON - either questions (if you need more information) or a plan (if you're ready).
+{{else if plan_feedback}}
 {{{plan_feedback}}}
 
-Please revise your plan to address this feedback and then run `ork task set-plan {{task_id}} --plan "YOUR_PLAN"`.
+Please revise your plan to address this feedback.
+
+Remember: Output ONLY valid JSON with your updated plan.
 {{else}}
 The session was interrupted. Please continue creating the implementation plan where you left off.
+
+Remember: Output ONLY valid JSON - either questions (if you need more information) or a plan (if you're ready).
 {{/if}}

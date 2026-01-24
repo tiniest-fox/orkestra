@@ -28,8 +28,8 @@ pub use state::TaskPhase;
 
 // Agent re-exports
 pub use agents::{
-    generate_title_sync, kill_agent, kill_all_agents, resume_agent, spawn_agent, spawn_agent_sync,
-    AgentType, SpawnedAgent,
+    generate_title_sync, kill_agent, kill_all_agents, resume_agent, resume_planner_with_answers,
+    spawn_agent, spawn_agent_sync, AgentType, SpawnedAgent,
 };
 
 // State predicates re-export (is_process_running is the canonical version)

@@ -1,3 +1,4 @@
+use crate::domain::planner_questions::{PlannerQuestion, QuestionAnswer};
 use crate::domain::subtask_plan::WorkItem;
 use crate::error::{OrkestraError, Result};
 use crate::state::TaskPhase;
@@ -124,6 +125,14 @@ pub struct Task {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plan: Option<String>,
+    /// Pending questions from the planner awaiting user answers.
+    /// When set, the UI should display these questions instead of showing the plan.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_questions: Vec<PlannerQuestion>,
+    /// History of questions and answers from the current planning session.
+    /// Used to provide context when resuming the planner with answers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub question_history: Vec<QuestionAnswer>,
     // Note: Feedback (plan_feedback, review_feedback, reviewer_feedback) has been moved
     // to WorkLoop outcomes for single source of truth and audit trail.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -187,6 +196,8 @@ impl Task {
             summary: None,
             error: None,
             plan: None,
+            pending_questions: Vec::new(),
+            question_history: Vec::new(),
             sessions: None,
             auto_approve: false,
             parent_id: None,
@@ -231,6 +242,11 @@ impl Task {
     /// Returns true if task is in the `Reviewing` state (automated review in progress).
     pub fn is_reviewing(&self) -> bool {
         self.status == TaskStatus::Reviewing
+    }
+
+    /// Returns true if the planner has asked questions that need answering.
+    pub fn has_pending_questions(&self) -> bool {
+        self.status == TaskStatus::Planning && !self.pending_questions.is_empty()
     }
 
     /// Transition the task to a new status, validating the transition.

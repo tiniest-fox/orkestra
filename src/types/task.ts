@@ -73,6 +73,24 @@ export interface SessionInfo {
   started_at: string;
 }
 
+// Planner question types
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface PlannerQuestion {
+  id: string;
+  question: string;
+  context?: string;
+  options: QuestionOption[];
+}
+
+export interface QuestionAnswer {
+  question: PlannerQuestion;
+  answer: string;
+}
+
 // Session type is just the key in the sessions object: "plan", "work", "review_0", etc.
 export type SessionType = string;
 
@@ -130,6 +148,12 @@ export interface Task {
   breakdown?: string;
   // Whether this task should skip breakdown and go straight to working
   skip_breakdown?: boolean;
+  // Pending questions from the planner awaiting user answers
+  // Always an array (empty if no questions) - Rust uses Vec<> which serializes to []
+  pending_questions: PlannerQuestion[];
+  // History of questions and answers from the current planning session
+  // Always an array (empty if no history) - Rust uses Vec<> which serializes to []
+  question_history: QuestionAnswer[];
 }
 
 // Auto-task template loaded from .orkestra/tasks/*.md files

@@ -75,6 +75,8 @@ fn orchestrator_has_no_action_for(orchestrator: &TestOrchestrator, task_id: &str
 
     !actions.iter().any(|a| match a {
         OrchestratorAction::SpawnPlanner(t) => t.id == task_id,
+        OrchestratorAction::ResumePlannerWithAnswers(t) => t.id == task_id,
+        OrchestratorAction::ResumePlanner { task: t, .. } => t.id == task_id,
         OrchestratorAction::SpawnBreakdown(t) => t.id == task_id,
         OrchestratorAction::SpawnWorker(t) => t.id == task_id,
         OrchestratorAction::ResumeWorker { task: t, .. } => t.id == task_id,
@@ -1051,4 +1053,195 @@ fn test_breakdown_rejection_creates_new_loop() {
     // Check Loop 2
     assert_eq!(loops[1].loop_number, 2);
     assert_eq!(loops[1].started_from, TaskStatus::BreakingDown);
+}
+
+// =============================================================================
+// Planner Questions Tests
+// =============================================================================
+
+#[test]
+fn test_answer_questions_validation() {
+    use orkestra_core::domain::{PlannerQuestion, QuestionAnswer, QuestionOption};
+
+    // Setup test orchestrator with temp git repo
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Create a task in Planning status
+    let task = tasks::create_task(&orchestrator.project, Some("Test Task"), "Test description")
+        .expect("Should create task");
+
+    // Trying to answer questions when there are none should fail
+    let result = tasks::answer_questions(&orchestrator.project, &task.id, vec![]);
+    assert!(result.is_err(), "Should fail when no pending questions");
+
+    // Manually set pending questions on the task (simulating planner output)
+    let questions = vec![
+        PlannerQuestion {
+            id: "q1".to_string(),
+            question: "Which approach?".to_string(),
+            context: Some("Multiple approaches are possible.".to_string()),
+            options: vec![
+                QuestionOption {
+                    label: "Option A".to_string(),
+                    description: Some("First option".to_string()),
+                },
+                QuestionOption {
+                    label: "Option B".to_string(),
+                    description: Some("Second option".to_string()),
+                },
+            ],
+        },
+        PlannerQuestion {
+            id: "q2".to_string(),
+            question: "What priority?".to_string(),
+            context: None,
+            options: vec![
+                QuestionOption {
+                    label: "High".to_string(),
+                    description: None,
+                },
+                QuestionOption {
+                    label: "Low".to_string(),
+                    description: None,
+                },
+            ],
+        },
+    ];
+
+    // Set pending questions
+    tasks::set_pending_questions(&orchestrator.project, &task.id, questions.clone())
+        .expect("Should set pending questions");
+
+    // Verify pending questions are set
+    let pending = tasks::get_pending_questions(&orchestrator.project, &task.id)
+        .expect("Should get pending questions");
+    assert_eq!(pending.len(), 2, "Should have 2 pending questions");
+
+    // Test: Wrong number of answers
+    let wrong_count_answers = vec![QuestionAnswer {
+        question: questions[0].clone(),
+        answer: "Option A".to_string(),
+    }];
+    let result = tasks::answer_questions(&orchestrator.project, &task.id, wrong_count_answers);
+    assert!(result.is_err(), "Should fail when answer count doesn't match");
+
+    // Test: Empty answer
+    let empty_answers = vec![
+        QuestionAnswer {
+            question: questions[0].clone(),
+            answer: "Option A".to_string(),
+        },
+        QuestionAnswer {
+            question: questions[1].clone(),
+            answer: "   ".to_string(), // whitespace only
+        },
+    ];
+    let result = tasks::answer_questions(&orchestrator.project, &task.id, empty_answers);
+    assert!(result.is_err(), "Should fail when answer is empty");
+
+    // Test: Valid answers
+    let valid_answers = vec![
+        QuestionAnswer {
+            question: questions[0].clone(),
+            answer: "Option A".to_string(),
+        },
+        QuestionAnswer {
+            question: questions[1].clone(),
+            answer: "High".to_string(),
+        },
+    ];
+    let updated_task = tasks::answer_questions(&orchestrator.project, &task.id, valid_answers)
+        .expect("Should accept valid answers");
+
+    // Verify questions are moved to history
+    assert!(
+        updated_task.pending_questions.is_empty(),
+        "Pending questions should be cleared"
+    );
+    assert_eq!(
+        updated_task.question_history.len(),
+        2,
+        "Should have 2 answers in history"
+    );
+    assert_eq!(
+        updated_task.question_history[0].answer, "Option A",
+        "First answer should be Option A"
+    );
+    assert_eq!(
+        updated_task.question_history[1].answer, "High",
+        "Second answer should be High"
+    );
+}
+
+#[test]
+fn test_orchestrator_resume_planner_with_answers() {
+    use orkestra_core::domain::{PlannerQuestion, QuestionAnswer, QuestionOption};
+
+    // Setup test orchestrator with temp git repo
+    let (orchestrator, _temp_dir) =
+        create_test_orchestrator().expect("Failed to create test orchestrator");
+
+    // Create a task in Planning status
+    let task = tasks::create_task(&orchestrator.project, Some("Test Task"), "Test description")
+        .expect("Should create task");
+
+    // Simulate: planner has asked questions (normally done by agent output parsing)
+    let questions = vec![PlannerQuestion {
+        id: "q1".to_string(),
+        question: "Which database?".to_string(),
+        context: None,
+        options: vec![
+            QuestionOption {
+                label: "PostgreSQL".to_string(),
+                description: None,
+            },
+            QuestionOption {
+                label: "SQLite".to_string(),
+                description: None,
+            },
+        ],
+    }];
+
+    // Set pending questions (this also sets phase to AwaitingReview)
+    tasks::set_pending_questions(&orchestrator.project, &task.id, questions.clone())
+        .expect("Should set pending questions");
+
+    // Simulate: we also need a planner session to exist for the orchestrator check
+    orchestrator
+        .project
+        .store()
+        .add_session(&task.id, "plan", "test-session-123", None)
+        .expect("Should add session");
+
+    // With pending questions and AwaitingReview phase, orchestrator should NOT take action
+    let actions = orchestrator::check_tasks(&orchestrator.project).expect("Should check tasks");
+    let has_action_for_task = actions.iter().any(|a| match a {
+        OrchestratorAction::SpawnPlanner(t) => t.id == task.id,
+        OrchestratorAction::ResumePlannerWithAnswers(t) => t.id == task.id,
+        OrchestratorAction::ResumePlanner { task: t, .. } => t.id == task.id,
+        _ => false,
+    });
+    assert!(
+        !has_action_for_task,
+        "Orchestrator should NOT take action when questions are pending (awaiting review)"
+    );
+
+    // Now answer the questions
+    let answers = vec![QuestionAnswer {
+        question: questions[0].clone(),
+        answer: "PostgreSQL".to_string(),
+    }];
+    tasks::answer_questions(&orchestrator.project, &task.id, answers)
+        .expect("Should answer questions");
+
+    // After answering, orchestrator SHOULD want to resume planner with answers
+    let actions = orchestrator::check_tasks(&orchestrator.project).expect("Should check tasks");
+    let would_resume_with_answers = actions.iter().any(|a| {
+        matches!(a, OrchestratorAction::ResumePlannerWithAnswers(t) if t.id == task.id)
+    });
+    assert!(
+        would_resume_with_answers,
+        "Orchestrator should want to resume planner with answers after questions are answered"
+    );
 }

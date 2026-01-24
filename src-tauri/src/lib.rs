@@ -3,9 +3,10 @@
 
 use orkestra_core::{
     agents::{self, generate_title_sync, kill_agent, kill_all_agents},
-    auto_tasks, find_project_root, is_process_running, orchestrator, recover_session_logs,
-    resume_agent, tasks, AgentType, AutoTask, BreakdownPlan, LogEntry, Project, Task, TaskStatus,
-    WorkLoop,
+    auto_tasks,
+    domain::{PlannerQuestion, QuestionAnswer},
+    find_project_root, is_process_running, orchestrator, recover_session_logs, resume_agent, tasks,
+    AgentType, AutoTask, BreakdownPlan, LogEntry, Project, Task, TaskStatus, WorkLoop,
 };
 use tasks::{
     approve_breakdown as core_approve_breakdown,
@@ -143,6 +144,25 @@ fn skip_breakdown(id: String) -> Result<Task, String> {
 fn delete_task(id: String) -> Result<(), String> {
     let project = Project::discover().map_err(|e| e.to_string())?;
     tasks::delete_task(&project, &id).map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// Planner Question Commands
+// =============================================================================
+
+/// Get pending questions for a task (from the planner)
+#[tauri::command]
+fn get_pending_questions(id: String) -> Result<Vec<PlannerQuestion>, String> {
+    let project = Project::discover().map_err(|e| e.to_string())?;
+    tasks::get_pending_questions(&project, &id).map_err(|e| e.to_string())
+}
+
+/// Answer pending questions from the planner
+/// The orchestrator will automatically resume the planner with the answers
+#[tauri::command]
+fn answer_questions(id: String, answers: Vec<QuestionAnswer>) -> Result<Task, String> {
+    let project = Project::discover().map_err(|e| e.to_string())?;
+    tasks::answer_questions(&project, &id, answers).map_err(|e| e.to_string())
 }
 
 /// Get subtasks (checklist items) for a task
@@ -374,6 +394,69 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                             &project,
                                             &task.id,
                                             &format!("Failed to spawn planner: {e}"),
+                                        );
+                                    }
+                                }
+                            }
+                            orchestrator::OrchestratorAction::ResumePlannerWithAnswers(task) => {
+                                // Resume planner with the user's answers to questions
+                                match agents::resume_planner_with_answers(&project, &task, on_update) {
+                                    Ok(spawned) => {
+                                        println!(
+                                            "[orchestrator] Resumed planner with answers for {} (pid: {})",
+                                            spawned.task_id, spawned.process_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[orchestrator] Failed to resume planner with answers for {}: {}",
+                                            task.id, e
+                                        );
+                                        let _ = tasks::fail_task(
+                                            &project,
+                                            &task.id,
+                                            &format!("Failed to resume planner: {e}"),
+                                        );
+                                    }
+                                }
+                            }
+                            orchestrator::OrchestratorAction::ResumePlanner {
+                                task,
+                                session_key,
+                            } => {
+                                let handle2 = app_handle.clone();
+                                let on_update2 = move |task_id: &str| {
+                                    let _ = handle2.emit("task-logs-updated", task_id.to_string());
+                                };
+
+                                // Get feedback from previous loop outcome (for plan rejections)
+                                let feedback = project
+                                    .store()
+                                    .get_previous_loop_feedback(&task.id)
+                                    .ok()
+                                    .flatten();
+                                match resume_agent(
+                                    &project,
+                                    &task,
+                                    &session_key,
+                                    feedback.as_deref(),
+                                    on_update2,
+                                ) {
+                                    Ok(spawned) => {
+                                        println!(
+                                            "[orchestrator] Resumed planner for {} (pid: {})",
+                                            spawned.task_id, spawned.process_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[orchestrator] Failed to resume planner for {}: {}",
+                                            task.id, e
+                                        );
+                                        let _ = tasks::fail_task(
+                                            &project,
+                                            &task.id,
+                                            &format!("Failed to resume planner: {e}"),
                                         );
                                     }
                                 }
@@ -716,6 +799,8 @@ pub fn run() {
             request_breakdown_changes,
             skip_breakdown,
             delete_task,
+            get_pending_questions,
+            answer_questions,
             get_subtasks,
             get_child_tasks,
             get_ready_subtasks,

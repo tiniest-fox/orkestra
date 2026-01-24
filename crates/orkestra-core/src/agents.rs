@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-use crate::domain::{Task, TaskStatus, WorkOutcome};
+use crate::domain::{PlannerOutput, PlannerQuestion, Task, TaskStatus, WorkOutcome};
 use crate::project;
 use crate::prompts::{
     build_breakdown_prompt, build_planner_prompt, build_reviewer_prompt,
@@ -295,11 +295,18 @@ fn prepare_path_env() -> String {
     path_env
 }
 
-/// Spawns a Claude process with common arguments
+/// Spawns a Claude process with common arguments.
+///
+/// # Arguments
+/// * `project_root` - Working directory for the process
+/// * `path_env` - PATH environment variable value
+/// * `resume_session` - Optional session ID to resume
+/// * `json_schema` - Optional JSON schema for structured output (uses --output-format json)
 fn spawn_claude_process(
     project_root: &std::path::Path,
     path_env: &str,
     resume_session: Option<&str>,
+    json_schema: Option<&str>,
 ) -> std::io::Result<std::process::Child> {
     let mut cmd = Command::new("claude");
 
@@ -307,18 +314,22 @@ fn spawn_claude_process(
         cmd.args(["--resume", session_id]);
     }
 
-    cmd.args([
-        "--print",
-        "--verbose",
-        "--output-format",
-        "stream-json",
-        "--dangerously-skip-permissions",
-    ])
-    .env("PATH", path_env)
-    .current_dir(project_root)
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
+    cmd.args(["--print", "--verbose"]);
+
+    // When using JSON schema, use --output-format json for structured output
+    // Otherwise use stream-json for real-time updates
+    if let Some(schema) = json_schema {
+        cmd.args(["--output-format", "json", "--json-schema", schema]);
+    } else {
+        cmd.args(["--output-format", "stream-json"]);
+    }
+
+    cmd.args(["--dangerously-skip-permissions"])
+        .env("PATH", path_env)
+        .current_dir(project_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     // Create new process group so we can kill all descendants (cargo, rustc, etc.)
     // when the agent is terminated. Without this, child processes become orphans.
@@ -464,6 +475,110 @@ fn log_stderr(
     }
 }
 
+/// Result of parsing planner JSON output
+#[derive(Debug)]
+pub enum PlannerResult {
+    /// Planner is asking questions
+    Questions(Vec<PlannerQuestion>),
+    /// Planner produced a plan (as markdown)
+    Plan(String),
+    /// Parse error - fall back to treating output as raw text
+    Error(String),
+}
+
+/// Parses the JSON output from planner when using --output-format json with --json-schema.
+///
+/// The output is a single JSON object containing:
+/// - `structured_output`: The validated JSON matching the schema (PlannerOutput)
+/// - `result`: Text result (may contain the raw JSON string)
+/// - `session_id`: The session ID for resumption
+fn parse_planner_json_output(json_str: &str) -> (PlannerResult, Option<String>) {
+    let v: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                PlannerResult::Error(format!("Failed to parse JSON: {e}")),
+                None,
+            )
+        }
+    };
+
+    // Extract session_id if present
+    let session_id = v
+        .get("session_id")
+        .and_then(|s| s.as_str())
+        .map(String::from);
+
+    // Try to get structured_output first (preferred)
+    if let Some(structured) = v.get("structured_output") {
+        // structured_output is already a JSON object, parse it as PlannerOutput
+        match serde_json::from_value::<PlannerOutput>(structured.clone()) {
+            Ok(output) => match output {
+                PlannerOutput::Questions { questions } => {
+                    return (PlannerResult::Questions(questions), session_id);
+                }
+                PlannerOutput::Plan { plan } => {
+                    return (PlannerResult::Plan(plan.to_markdown()), session_id);
+                }
+            },
+            Err(e) => {
+                eprintln!(
+                    "Failed to parse structured_output as PlannerOutput: {e}"
+                );
+                // Fall through to try result field
+            }
+        }
+    }
+
+    // Fall back to result field (may contain raw JSON string)
+    if let Some(result) = v.get("result").and_then(|r| r.as_str()) {
+        // Try to parse result as JSON (planner might have output JSON as text)
+        if let Ok(output) = serde_json::from_str::<PlannerOutput>(result) {
+            match output {
+                PlannerOutput::Questions { questions } => {
+                    return (PlannerResult::Questions(questions), session_id);
+                }
+                PlannerOutput::Plan { plan } => {
+                    return (PlannerResult::Plan(plan.to_markdown()), session_id);
+                }
+            }
+        }
+        // If not valid JSON, treat as raw plan text
+        return (PlannerResult::Plan(result.to_string()), session_id);
+    }
+
+    (
+        PlannerResult::Error("No structured_output or result field found".into()),
+        session_id,
+    )
+}
+
+/// Handle planner output by storing questions or plan on the task.
+fn handle_planner_output(project: &Project, task_id: &str, result: PlannerResult) {
+    match result {
+        PlannerResult::Questions(questions) => {
+            eprintln!(
+                "Planner {} returned {} questions",
+                task_id,
+                questions.len()
+            );
+            if let Err(e) = tasks::set_pending_questions(project, task_id, questions) {
+                eprintln!("Failed to set pending questions for {task_id}: {e}");
+            }
+        }
+        PlannerResult::Plan(plan_text) => {
+            eprintln!("Planner {} returned a plan", task_id);
+            if let Err(e) = tasks::set_task_plan(project, task_id, &plan_text) {
+                eprintln!("Failed to set plan for {task_id}: {e}");
+            }
+        }
+        PlannerResult::Error(err) => {
+            eprintln!("Error parsing planner output for {task_id}: {err}");
+            // Don't change task state on error - let user retry or handle manually
+        }
+    }
+}
+
 // =============================================================================
 // Spawn Functions
 // =============================================================================
@@ -494,7 +609,13 @@ where
         .as_ref()
         .map_or(project_root, PathBuf::from);
 
-    let mut child = spawn_claude_process(&cwd, &path_env, None)?;
+    // For planner, use JSON schema to get structured output (questions or plan)
+    let json_schema = if agent_type == AgentType::Planner {
+        Some(crate::prompts::PLANNER_OUTPUT_SCHEMA)
+    } else {
+        None
+    };
+    let mut child = spawn_claude_process(&cwd, &path_env, None, json_schema)?;
     write_prompt_to_stdin(&mut child, &config.prompt)?;
 
     let pid = child.id();
@@ -511,6 +632,7 @@ where
     let _ = tasks::set_phase(project, &task_id, TaskPhase::AgentWorking);
 
     let task_id_for_callback = task_id.clone();
+    let is_planner = agent_type == AgentType::Planner;
 
     // Spawn background thread for stdout/stderr processing
     // Each thread gets its own Project instance (SQLite handles concurrent access)
@@ -530,23 +652,49 @@ where
         let stderr_handle = spawn_stderr_reader(stderr);
 
         if let Some(stdout) = stdout {
-            let reader = std::io::BufReader::new(stdout);
-            for json_line in reader.lines().map_while(std::result::Result::ok) {
-                if json_line.trim().is_empty() {
-                    continue;
+            if is_planner {
+                // For planner with JSON schema, collect all output as single JSON object
+                use std::io::Read as IoRead;
+                let mut reader = std::io::BufReader::new(stdout);
+                let mut full_output = String::new();
+                if let Ok(_) = reader.read_to_string(&mut full_output) {
+                    if !full_output.trim().is_empty() {
+                        let (result, session_id) = parse_planner_json_output(&full_output);
+                        // Record session if we got one
+                        if let Some(sid) = session_id {
+                            let _ = tasks::add_task_session(
+                                &thread_project,
+                                &task_id,
+                                &session_type,
+                                &sid,
+                                Some(pid),
+                            );
+                        }
+                        // Handle the planner result (questions or plan)
+                        handle_planner_output(&thread_project, &task_id, result);
+                        on_update(&task_id_for_callback);
+                    }
                 }
-                let parsed = parse_stream_event(&json_line);
-                if let Some(sid) = parsed.session_id {
-                    let _ = tasks::add_task_session(
-                        &thread_project,
-                        &task_id,
-                        &session_type,
-                        &sid,
-                        Some(pid),
-                    );
-                }
-                if parsed.has_new_content {
-                    on_update(&task_id_for_callback);
+            } else {
+                // For other agents, use streaming JSON events
+                let reader = std::io::BufReader::new(stdout);
+                for json_line in reader.lines().map_while(std::result::Result::ok) {
+                    if json_line.trim().is_empty() {
+                        continue;
+                    }
+                    let parsed = parse_stream_event(&json_line);
+                    if let Some(sid) = parsed.session_id {
+                        let _ = tasks::add_task_session(
+                            &thread_project,
+                            &task_id,
+                            &session_type,
+                            &sid,
+                            Some(pid),
+                        );
+                    }
+                    if parsed.has_new_content {
+                        on_update(&task_id_for_callback);
+                    }
                 }
             }
         }
@@ -615,7 +763,13 @@ pub fn spawn_agent_sync(
         .as_ref()
         .map_or(project_root, PathBuf::from);
 
-    let mut child = spawn_claude_process(&cwd, &path_env, None)?;
+    // For planner, use JSON schema to get structured output (questions or plan)
+    let json_schema = if agent_type == AgentType::Planner {
+        Some(crate::prompts::PLANNER_OUTPUT_SCHEMA)
+    } else {
+        None
+    };
+    let mut child = spawn_claude_process(&cwd, &path_env, None, json_schema)?;
     write_prompt_to_stdin(&mut child, &config.prompt)?;
 
     let pid = child.id();
@@ -779,6 +933,7 @@ where
         "plan" => render_resume_planner(&ResumePlannerContext {
             task_id: &task.id,
             plan_feedback: continuation_prompt,
+            question_answers: None, // Question answers passed separately via resume_planner_with_answers
         }),
         s if s == "work" || s.starts_with("work") => {
             let conflict_refs: Option<Vec<&str>> =
@@ -815,7 +970,13 @@ where
         .as_ref()
         .map_or(project_root, PathBuf::from);
 
-    let mut child = spawn_claude_process(&cwd, &path_env, Some(&session_id))?;
+    // For planner sessions, use JSON schema to get structured output
+    let json_schema = if session_key == "plan" {
+        Some(crate::prompts::PLANNER_OUTPUT_SCHEMA)
+    } else {
+        None
+    };
+    let mut child = spawn_claude_process(&cwd, &path_env, Some(&session_id), json_schema)?;
     write_prompt_to_stdin(&mut child, &prompt)?;
 
     let pid = child.id();
@@ -830,6 +991,8 @@ where
     let _ = tasks::set_phase(project, &task_id, TaskPhase::AgentWorking);
 
     let task_id_for_callback = task_id.clone();
+    let is_planner = session_key == "plan";
+    let session_type_owned = session_key.to_string();
 
     // Spawn background thread for stdout/stderr processing
     // Each thread gets its own Project instance (SQLite handles concurrent access)
@@ -849,14 +1012,40 @@ where
         let stderr_handle = spawn_stderr_reader(stderr);
 
         if let Some(stdout) = stdout {
-            let reader = std::io::BufReader::new(stdout);
-            for json_line in reader.lines().map_while(std::result::Result::ok) {
-                if json_line.trim().is_empty() {
-                    continue;
+            if is_planner {
+                // For planner with JSON schema, collect all output as single JSON object
+                use std::io::Read as IoRead;
+                let mut reader = std::io::BufReader::new(stdout);
+                let mut full_output = String::new();
+                if let Ok(_) = reader.read_to_string(&mut full_output) {
+                    if !full_output.trim().is_empty() {
+                        let (result, new_session_id) = parse_planner_json_output(&full_output);
+                        // Record session if we got a new one (shouldn't happen on resume but be safe)
+                        if let Some(sid) = new_session_id {
+                            let _ = tasks::add_task_session(
+                                &thread_project,
+                                &task_id,
+                                &session_type_owned,
+                                &sid,
+                                Some(pid),
+                            );
+                        }
+                        // Handle the planner result (questions or plan)
+                        handle_planner_output(&thread_project, &task_id, result);
+                        on_update(&task_id_for_callback);
+                    }
                 }
-                let parsed = parse_stream_event(&json_line);
-                if parsed.has_new_content {
-                    on_update(&task_id_for_callback);
+            } else {
+                // For other agents, use streaming JSON events
+                let reader = std::io::BufReader::new(stdout);
+                for json_line in reader.lines().map_while(std::result::Result::ok) {
+                    if json_line.trim().is_empty() {
+                        continue;
+                    }
+                    let parsed = parse_stream_event(&json_line);
+                    if parsed.has_new_content {
+                        on_update(&task_id_for_callback);
+                    }
                 }
             }
         }
@@ -882,6 +1071,148 @@ where
                 _guard.disarm();
                 eprintln!("Resumed agent {task_id} error: {e}");
                 // Clear the PID and reset phase even on error
+                let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
+                let _ = tasks::set_phase(&thread_project, &task_id, TaskPhase::Idle);
+                on_update(&task_id_for_callback);
+            }
+        }
+    });
+
+    Ok(SpawnedAgent {
+        task_id: task.id.clone(),
+        process_id: pid,
+        session_id: None,
+    })
+}
+
+/// Resumes the planner session with the user's answers to questions.
+/// This is called by the orchestrator when the user has answered pending questions.
+/// The `on_update` callback is called whenever there's new output.
+pub fn resume_planner_with_answers<F>(
+    project: &Project,
+    task: &Task,
+    on_update: F,
+) -> std::io::Result<SpawnedAgent>
+where
+    F: Fn(&str) + Send + 'static,
+{
+    // Get the planner session to resume
+    let session_id = task
+        .sessions
+        .as_ref()
+        .and_then(|s| s.get("plan"))
+        .map(|info| info.session_id.clone())
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Task has no planner session to resume",
+            )
+        })?;
+
+    // Build question answer context from the history
+    // Only pass Some() if there are actual answers, otherwise pass None
+    // (Handlebars considers empty arrays truthy, which would confuse the template)
+    let question_answers: Option<Vec<crate::prompts::QuestionAnswerContext>> =
+        if task.question_history.is_empty() {
+            None
+        } else {
+            Some(
+                task.question_history
+                    .iter()
+                    .map(|qa| crate::prompts::QuestionAnswerContext {
+                        question: &qa.question.question,
+                        answer: &qa.answer,
+                    })
+                    .collect(),
+            )
+        };
+
+    // Build the resumption prompt with answers
+    let prompt = render_resume_planner(&ResumePlannerContext {
+        task_id: &task.id,
+        plan_feedback: None,
+        question_answers,
+    });
+
+    let path_env = prepare_path_env();
+    let project_root = project.root().to_path_buf();
+    let task_id = task.id.clone();
+
+    // Use task's worktree_path if available, otherwise fall back to project_root
+    let cwd = task
+        .worktree_path
+        .as_ref()
+        .map_or(project_root, PathBuf::from);
+
+    // Use JSON schema for structured output
+    let mut child = spawn_claude_process(
+        &cwd,
+        &path_env,
+        Some(&session_id),
+        Some(crate::prompts::PLANNER_OUTPUT_SCHEMA),
+    )?;
+    write_prompt_to_stdin(&mut child, &prompt)?;
+
+    let pid = child.id();
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    // Create process guard for RAII cleanup
+    let guard = ProcessGuard::new(pid);
+
+    // Update task status
+    tasks::update_task_status(project, &task_id, TaskStatus::Planning)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    let _ = tasks::set_agent_pid(project, &task_id, Some(pid));
+    let _ = tasks::set_phase(project, &task_id, TaskPhase::AgentWorking);
+
+    let task_id_for_callback = task_id.clone();
+
+    // Spawn background thread for output processing
+    std::thread::spawn(move || {
+        let _guard = guard;
+
+        let thread_project = match Project::discover() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Failed to discover project in agent thread: {e}");
+                return;
+            }
+        };
+
+        let stderr_handle = spawn_stderr_reader(stderr);
+
+        // For planner, collect all output as single JSON object
+        if let Some(stdout) = stdout {
+            use std::io::Read as IoRead;
+            let mut reader = std::io::BufReader::new(stdout);
+            let mut full_output = String::new();
+            if let Ok(_) = reader.read_to_string(&mut full_output) {
+                if !full_output.trim().is_empty() {
+                    let (result, _session_id) = parse_planner_json_output(&full_output);
+                    handle_planner_output(&thread_project, &task_id, result);
+                    on_update(&task_id_for_callback);
+                }
+            }
+        }
+
+        log_stderr(&task_id, "Resumed planner", stderr_handle);
+
+        match child.wait() {
+            Ok(status) => {
+                _guard.disarm();
+                eprintln!(
+                    "Resumed planner {} finished with exit code: {:?}",
+                    task_id,
+                    status.code()
+                );
+                let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
+                let _ = tasks::set_phase(&thread_project, &task_id, TaskPhase::Idle);
+                on_update(&task_id_for_callback);
+            }
+            Err(e) => {
+                _guard.disarm();
+                eprintln!("Resumed planner {task_id} error: {e}");
                 let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
                 let _ = tasks::set_phase(&thread_project, &task_id, TaskPhase::Idle);
                 on_update(&task_id_for_callback);

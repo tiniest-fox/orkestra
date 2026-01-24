@@ -286,6 +286,8 @@ pub fn create_task_with_options(
         summary: None,
         error: None,
         plan: None,
+        pending_questions: Vec::new(),
+        question_history: Vec::new(),
         sessions: None,
         auto_approve,
         parent_id: None,
@@ -687,6 +689,104 @@ pub fn reject_automated_review(project: &Project, id: &str, feedback: &str) -> R
 }
 
 // =============================================================================
+// Planner Question Management
+// =============================================================================
+
+/// Set pending questions on a task (called when planner outputs questions).
+/// The task stays in Planning status while awaiting user answers.
+pub fn set_pending_questions(
+    project: &Project,
+    id: &str,
+    questions: Vec<crate::domain::PlannerQuestion>,
+) -> Result<Task> {
+    let store = project.store();
+    let task = require_task(project, id)?;
+
+    // Keep existing question history, just update pending questions
+    store.update_planner_questions(id, &questions, &task.question_history)?;
+
+    // Set phase to AwaitingReview since planner output is ready (questions to answer)
+    store.update_phase(id, TaskPhase::AwaitingReview)?;
+
+    require_task(project, id)
+}
+
+/// Answer pending questions (called when user provides answers in UI).
+/// Moves questions to history with their answers, clears pending questions,
+/// and resets phase to Idle so orchestrator will resume the planner session.
+pub fn answer_questions(
+    project: &Project,
+    id: &str,
+    answers: Vec<crate::domain::QuestionAnswer>,
+) -> Result<Task> {
+    let store = project.store();
+    let task = require_task(project, id)?;
+
+    // Verify task is in Planning status
+    if task.status != TaskStatus::Planning {
+        return Err(OrkestraError::InvalidState {
+            expected: "Task in Planning status".into(),
+            actual: format!("Task is in {:?} status", task.status),
+        });
+    }
+
+    // Verify there are pending questions to answer
+    if task.pending_questions.is_empty() {
+        return Err(OrkestraError::InvalidState {
+            expected: "Task with pending questions".into(),
+            actual: "No pending questions (already answered or none asked)".into(),
+        });
+    }
+
+    // Validate answer count matches question count
+    if answers.len() != task.pending_questions.len() {
+        return Err(OrkestraError::InvalidState {
+            expected: format!("{} answers", task.pending_questions.len()),
+            actual: format!("{} answers provided", answers.len()),
+        });
+    }
+
+    // Validate all answers are non-empty and question IDs match
+    for (i, answer) in answers.iter().enumerate() {
+        // Check question ID matches
+        if answer.question.id != task.pending_questions[i].id {
+            return Err(OrkestraError::InvalidState {
+                expected: format!("Question ID '{}' for answer {}", task.pending_questions[i].id, i + 1),
+                actual: format!("Got question ID '{}'", answer.question.id),
+            });
+        }
+        // Check answer is non-empty
+        if answer.answer.trim().is_empty() {
+            return Err(OrkestraError::InvalidState {
+                expected: "Non-empty answer".into(),
+                actual: format!("Empty answer for question {}", i + 1),
+            });
+        }
+    }
+
+    // Append new answers to question history
+    let mut history = task.question_history.clone();
+    history.extend(answers);
+
+    // Clear pending questions, update history
+    store.update_planner_questions(id, &[], &history)?;
+
+    // Reset phase to Idle so orchestrator will resume the planner with answers
+    store.update_phase(id, TaskPhase::Idle)?;
+
+    require_task(project, id)
+}
+
+/// Get pending questions for a task.
+pub fn get_pending_questions(
+    project: &Project,
+    id: &str,
+) -> Result<Vec<crate::domain::PlannerQuestion>> {
+    let task = require_task(project, id)?;
+    Ok(task.pending_questions)
+}
+
+// =============================================================================
 // Misc Settings
 // =============================================================================
 
@@ -735,6 +835,8 @@ pub fn create_child_task(
         summary: None,
         error: None,
         plan: parent.plan.clone(),
+        pending_questions: Vec::new(),
+        question_history: Vec::new(),
         sessions: None,
         auto_approve: false,
         parent_id: Some(parent_id.to_string()),
@@ -783,6 +885,8 @@ pub fn create_subtask(
         summary: None,
         error: None,
         plan: parent.plan.clone(),
+        pending_questions: Vec::new(),
+        question_history: Vec::new(),
         sessions: None,
         auto_approve: false,
         parent_id: Some(parent_id.to_string()),
@@ -1044,6 +1148,8 @@ fn create_subtask_from_plan(
         summary: None,
         error: None,
         plan: parent.plan.clone(), // Inherit parent's plan
+        pending_questions: Vec::new(),
+        question_history: Vec::new(),
         sessions: None,
         auto_approve: false,
         parent_id: Some(parent_id.to_string()),

@@ -14,6 +14,10 @@ use crate::tasks;
 pub enum OrchestratorAction {
     /// Spawn a new planner agent for this task
     SpawnPlanner(Task),
+    /// Resume planner with user's answers to questions
+    ResumePlannerWithAnswers(Task),
+    /// Resume planner session (e.g., after plan rejection)
+    ResumePlanner { task: Task, session_key: String },
     /// Spawn a new breakdown agent for this task
     SpawnBreakdown(Task),
     /// Spawn a new worker agent for this task
@@ -98,11 +102,24 @@ pub fn check_tasks(project: &Project) -> crate::error::Result<Vec<OrchestratorAc
         // Determine what action is needed based on status
         let action = match task.status {
             TaskStatus::Planning => {
-                // Need to plan - check if we can resume or need fresh start
-                if let Some(session_key) = get_resume_session_key(&task) {
+                // Check if the planner has asked questions that have been answered
+                // (no pending questions, but has question history and a plan session)
+                // Also verify phase is Idle to avoid race conditions
+                let has_answered_questions = task.pending_questions.is_empty()
+                    && !task.question_history.is_empty()
+                    && task.phase == crate::state::TaskPhase::Idle
+                    && task
+                        .sessions
+                        .as_ref()
+                        .is_some_and(|s| s.contains_key("plan"));
+
+                if has_answered_questions {
+                    // Resume planner with the user's answers
+                    Some(OrchestratorAction::ResumePlannerWithAnswers(task.clone()))
+                } else if let Some(session_key) = get_resume_session_key(&task) {
                     if session_key == "plan" {
                         // Has a plan session, but agent not running - resume it
-                        Some(OrchestratorAction::ResumeWorker {
+                        Some(OrchestratorAction::ResumePlanner {
                             task: task.clone(),
                             session_key,
                         })

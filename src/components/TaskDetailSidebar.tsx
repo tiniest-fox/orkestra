@@ -7,12 +7,14 @@ import {
   type LogEntry,
   type LoopOutcome,
   type OrkAction,
+  type QuestionAnswer,
   type SessionInfo,
   TASK_STATUS_CONFIG,
   type Task,
   type ToolInput,
   type WorkLoop,
 } from "../types/task";
+import { QuestionForm } from "./QuestionForm";
 import { TodoDisplay } from "./TodoDisplay";
 import { getOrkSubIcon, ToolIcon } from "./ToolIcon";
 
@@ -399,6 +401,14 @@ const needsBreakdownReview = (task: Task): boolean =>
 const needsWorkReview = (task: Task): boolean =>
   task.status === "working" && task.summary !== undefined;
 
+// Check if planner has pending questions AND a valid session to resume
+// If no plan session exists, the planner may have crashed
+const hasPendingQuestions = (task: Task): boolean =>
+  task.status === "planning" &&
+  task.pending_questions.length > 0 &&
+  task.sessions !== undefined &&
+  task.sessions.plan !== undefined;
+
 export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSidebarProps) {
   const [feedback, setFeedback] = useState("");
   const [breakdownFeedback, setBreakdownFeedback] = useState("");
@@ -643,6 +653,7 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
   const taskNeedsPlanReview = needsPlanReview(task);
   const taskNeedsBreakdownReview = needsBreakdownReview(task);
   const taskNeedsWorkReview = needsWorkReview(task);
+  const taskHasPendingQuestions = hasPendingQuestions(task);
 
   // Reset review feedback when task changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: task.id triggers reset when selected task changes
@@ -729,6 +740,18 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
     }
   };
 
+  const handleAnswerQuestions = async (answers: QuestionAnswer[]) => {
+    setIsSubmitting(true);
+    try {
+      await invoke("answer_questions", { id: task.id, answers });
+      onTaskUpdated();
+    } catch (err) {
+      console.error("Failed to submit question answers:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
@@ -773,6 +796,11 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           >
             {statusConfig.label}
           </span>
+          {taskHasPendingQuestions && (
+            <span className="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">
+              Questions
+            </span>
+          )}
           {(taskNeedsPlanReview || taskNeedsBreakdownReview || taskNeedsWorkReview) && (
             <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">
               Review
@@ -1076,6 +1104,17 @@ export function TaskDetailSidebar({ task, onClose, onTaskUpdated }: TaskDetailSi
           </div>
         )}
       </div>
+
+      {/* Planner Questions */}
+      {taskHasPendingQuestions && (
+        <div className="flex-shrink-0 p-4 border-t border-gray-200 bg-purple-50 max-h-[60%] overflow-auto">
+          <QuestionForm
+            questions={task.pending_questions}
+            onSubmit={handleAnswerQuestions}
+            isSubmitting={isSubmitting}
+          />
+        </div>
+      )}
 
       {/* Plan Approval Actions */}
       {taskNeedsPlanReview && !task.auto_approve && (

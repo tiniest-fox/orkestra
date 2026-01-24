@@ -234,6 +234,8 @@ impl TestOrchestrator {
             summary: Some(summary.to_string()),
             error: None,
             plan: Some(plan.to_string()),
+            pending_questions: Vec::new(),
+            question_history: Vec::new(),
             auto_approve: false,
             parent_id: None,
             sessions: None,

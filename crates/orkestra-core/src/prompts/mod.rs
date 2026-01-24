@@ -28,6 +28,57 @@ const RESUME_REVIEWER_TEMPLATE: &str = include_str!("templates/resume/reviewer.h
 const RESUME_BREAKDOWN_TEMPLATE: &str = include_str!("templates/resume/breakdown.hbs");
 
 // =============================================================================
+// JSON Schema for Planner Output
+// =============================================================================
+
+/// JSON schema for planner output - used with Claude's --json-schema flag.
+/// The planner outputs either questions (needs more info) or a plan (ready).
+pub const PLANNER_OUTPUT_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["questions", "plan"]
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "question": { "type": "string" },
+          "context": { "type": "string" },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": { "type": "string" },
+                "description": { "type": "string" }
+              },
+              "required": ["label"]
+            }
+          }
+        },
+        "required": ["id", "question", "options"]
+      }
+    },
+    "plan": {
+      "type": "object",
+      "properties": {
+        "summary": { "type": "string" },
+        "files_to_modify": { "type": "array", "items": { "type": "string" } },
+        "implementation_steps": { "type": "array", "items": { "type": "string" } },
+        "testing_strategy": { "type": "string" },
+        "risks": { "type": "string" }
+      },
+      "required": ["summary", "implementation_steps"]
+    }
+  },
+  "required": ["type"]
+}"#;
+
+// =============================================================================
 // Template Registry
 // =============================================================================
 
@@ -84,6 +135,15 @@ pub struct ResumePlannerContext<'a> {
     pub task_id: &'a str,
     /// Plan feedback that needs to be addressed (if any)
     pub plan_feedback: Option<&'a str>,
+    /// User's answers to the planner's questions (if resuming with answers)
+    pub question_answers: Option<Vec<QuestionAnswerContext<'a>>>,
+}
+
+/// Context for a single question-answer pair in resume prompt.
+#[derive(Serialize)]
+pub struct QuestionAnswerContext<'a> {
+    pub question: &'a str,
+    pub answer: &'a str,
 }
 
 /// Context for reviewer session resumption.
@@ -139,7 +199,8 @@ pub struct PlannerContext<'a> {
     pub title: &'a str,
     pub description: &'a str,
     pub plan_feedback: Option<&'a str>,
-    pub auto_approve: bool,
+    /// History of questions and answers from the current planning session.
+    pub question_history: Vec<crate::domain::QuestionAnswer>,
 }
 
 /// Context for reviewer agent prompts.
@@ -302,7 +363,8 @@ pub fn build_planner_prompt(task: &Task, agent_definition: &str) -> String {
         description: &task.description,
         // Feedback is passed via resume prompts, not initial spawn
         plan_feedback: None,
-        auto_approve: task.auto_approve,
+        // Include any previous Q&A history
+        question_history: task.question_history.clone(),
     })
 }
 
@@ -361,6 +423,8 @@ mod tests {
             summary: None,
             error: None,
             plan: None,
+            pending_questions: Vec::new(),
+            question_history: Vec::new(),
             sessions: None,
             auto_approve: false,
             parent_id: None,
@@ -422,6 +486,7 @@ mod tests {
         let prompt = render_resume_planner(&ResumePlannerContext {
             task_id: "TASK-001",
             plan_feedback: None,
+            question_answers: None,
         });
         assert!(prompt.contains("<!orkestra-resume>"));
         assert!(prompt.contains("continue creating the implementation plan"));
@@ -432,10 +497,27 @@ mod tests {
         let prompt = render_resume_planner(&ResumePlannerContext {
             task_id: "TASK-001",
             plan_feedback: Some("Add more detail to step 2"),
+            question_answers: None,
         });
         assert!(prompt.contains("<!orkestra-resume>"));
         assert!(prompt.contains("Add more detail to step 2"));
-        assert!(prompt.contains("ork task set-plan TASK-001"));
+    }
+
+    #[test]
+    fn test_resume_planner_with_question_answers() {
+        let prompt = render_resume_planner(&ResumePlannerContext {
+            task_id: "TASK-001",
+            plan_feedback: None,
+            question_answers: Some(vec![
+                QuestionAnswerContext {
+                    question: "Which approach?",
+                    answer: "Use approach A",
+                },
+            ]),
+        });
+        assert!(prompt.contains("<!orkestra-resume>"));
+        assert!(prompt.contains("Which approach?"));
+        assert!(prompt.contains("Use approach A"));
     }
 
     #[test]
@@ -532,7 +614,8 @@ mod tests {
         assert!(prompt.contains("# Planner Agent"));
         assert!(prompt.contains("TASK-001"));
         assert!(prompt.contains("Test Task"));
-        assert!(prompt.contains("ork task set-plan"));
+        // Planner now uses JSON output, not CLI commands
+        assert!(prompt.contains("valid JSON"));
     }
 
     // Note: Feedback is passed via resume prompts, not initial spawn prompts.
@@ -545,8 +628,10 @@ mod tests {
 
         let prompt = build_planner_prompt(&task, "# Agent");
 
-        assert!(prompt.contains("AUTO-APPROVE"));
-        assert!(prompt.contains("ork task approve"));
+        // The planner.md agent definition doesn't contain AUTO-APPROVE anymore
+        // as the planner uses structured JSON output, not CLI commands
+        assert!(prompt.contains("# Agent"));
+        assert!(prompt.contains("valid JSON"));
     }
 
     #[test]

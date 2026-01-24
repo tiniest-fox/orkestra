@@ -7,7 +7,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-use crate::domain::{PlannerOutput, PlannerQuestion, Task, TaskStatus, WorkOutcome};
+use crate::domain::{
+    BreakdownOutput, BreakdownPlan, PlannerOutput, PlannerQuestion, ReviewerOutput, Task,
+    TaskStatus, WorkOutcome, WorkerOutput,
+};
 use crate::project;
 use crate::prompts::{
     build_breakdown_prompt, build_planner_prompt, build_reviewer_prompt,
@@ -27,6 +30,19 @@ pub enum AgentType {
     Worker,
     Reviewer,
     TitleGenerator,
+}
+
+impl AgentType {
+    /// Returns the agent type as a lowercase string (for filenames, etc.)
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AgentType::Planner => "planner",
+            AgentType::Breakdown => "breakdown",
+            AgentType::Worker => "worker",
+            AgentType::Reviewer => "reviewer",
+            AgentType::TitleGenerator => "title_generator",
+        }
+    }
 }
 
 /// RAII guard that ensures a spawned process is killed when dropped.
@@ -553,6 +569,201 @@ fn parse_planner_json_output(json_str: &str) -> (PlannerResult, Option<String>) 
     )
 }
 
+// =============================================================================
+// Breakdown JSON Parsing
+// =============================================================================
+
+/// Result of parsing breakdown JSON output
+#[derive(Debug)]
+pub enum BreakdownResult {
+    /// Breakdown plan produced
+    Plan(BreakdownPlan),
+    /// Parse error - fall back to treating output as raw text
+    Error(String),
+}
+
+/// Parses the JSON output from breakdown agent when using --output-format json with --json-schema.
+fn parse_breakdown_json_output(json_str: &str) -> (BreakdownResult, Option<String>) {
+    let v: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                BreakdownResult::Error(format!("Failed to parse JSON: {e}")),
+                None,
+            )
+        }
+    };
+
+    let session_id = v
+        .get("session_id")
+        .and_then(|s| s.as_str())
+        .map(String::from);
+
+    // Try structured_output first (preferred)
+    if let Some(structured) = v.get("structured_output") {
+        match serde_json::from_value::<BreakdownOutput>(structured.clone()) {
+            Ok(BreakdownOutput::Breakdown { plan }) => {
+                return (BreakdownResult::Plan(plan), session_id);
+            }
+            Err(e) => {
+                eprintln!("Failed to parse structured_output as BreakdownOutput: {e}");
+            }
+        }
+    }
+
+    // Fall back to result field
+    if let Some(result) = v.get("result").and_then(|r| r.as_str()) {
+        if let Ok(BreakdownOutput::Breakdown { plan }) = serde_json::from_str(result) {
+            return (BreakdownResult::Plan(plan), session_id);
+        }
+    }
+
+    (
+        BreakdownResult::Error("No structured_output or result field found".into()),
+        session_id,
+    )
+}
+
+// =============================================================================
+// Worker JSON Parsing
+// =============================================================================
+
+/// Result of parsing worker JSON output
+#[derive(Debug)]
+pub enum WorkerResult {
+    /// Work completed successfully
+    Completed { summary: String },
+    /// Work failed
+    Failed { reason: String },
+    /// Work blocked
+    Blocked { reason: String },
+    /// Parse error
+    Error(String),
+}
+
+/// Parses the JSON output from worker agent when using --output-format json with --json-schema.
+fn parse_worker_json_output(json_str: &str) -> (WorkerResult, Option<String>) {
+    let v: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                WorkerResult::Error(format!("Failed to parse JSON: {e}")),
+                None,
+            )
+        }
+    };
+
+    let session_id = v
+        .get("session_id")
+        .and_then(|s| s.as_str())
+        .map(String::from);
+
+    // Try structured_output first (preferred)
+    if let Some(structured) = v.get("structured_output") {
+        match serde_json::from_value::<WorkerOutput>(structured.clone()) {
+            Ok(output) => {
+                let result = match output {
+                    WorkerOutput::Completed { summary, .. } => {
+                        WorkerResult::Completed { summary }
+                    }
+                    WorkerOutput::Failed { reason, .. } => WorkerResult::Failed { reason },
+                    WorkerOutput::Blocked { reason, .. } => WorkerResult::Blocked { reason },
+                };
+                return (result, session_id);
+            }
+            Err(e) => {
+                eprintln!("Failed to parse structured_output as WorkerOutput: {e}");
+            }
+        }
+    }
+
+    // Fall back to result field
+    if let Some(result) = v.get("result").and_then(|r| r.as_str()) {
+        if let Ok(output) = serde_json::from_str::<WorkerOutput>(result) {
+            let result = match output {
+                WorkerOutput::Completed { summary, .. } => WorkerResult::Completed { summary },
+                WorkerOutput::Failed { reason, .. } => WorkerResult::Failed { reason },
+                WorkerOutput::Blocked { reason, .. } => WorkerResult::Blocked { reason },
+            };
+            return (result, session_id);
+        }
+    }
+
+    (
+        WorkerResult::Error("No structured_output or result field found".into()),
+        session_id,
+    )
+}
+
+// =============================================================================
+// Reviewer JSON Parsing
+// =============================================================================
+
+/// Result of parsing reviewer JSON output
+#[derive(Debug)]
+pub enum ReviewerResult {
+    /// Work approved
+    Approved { feedback: Option<String> },
+    /// Work rejected
+    Rejected { feedback: String },
+    /// Parse error
+    Error(String),
+}
+
+/// Parses the JSON output from reviewer agent when using --output-format json with --json-schema.
+fn parse_reviewer_json_output(json_str: &str) -> (ReviewerResult, Option<String>) {
+    let v: serde_json::Value = match serde_json::from_str(json_str) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                ReviewerResult::Error(format!("Failed to parse JSON: {e}")),
+                None,
+            )
+        }
+    };
+
+    let session_id = v
+        .get("session_id")
+        .and_then(|s| s.as_str())
+        .map(String::from);
+
+    // Try structured_output first (preferred)
+    if let Some(structured) = v.get("structured_output") {
+        match serde_json::from_value::<ReviewerOutput>(structured.clone()) {
+            Ok(output) => {
+                let result = match output {
+                    ReviewerOutput::Approved { feedback, .. } => {
+                        ReviewerResult::Approved { feedback }
+                    }
+                    ReviewerOutput::Rejected { feedback, .. } => {
+                        ReviewerResult::Rejected { feedback }
+                    }
+                };
+                return (result, session_id);
+            }
+            Err(e) => {
+                eprintln!("Failed to parse structured_output as ReviewerOutput: {e}");
+            }
+        }
+    }
+
+    // Fall back to result field
+    if let Some(result) = v.get("result").and_then(|r| r.as_str()) {
+        if let Ok(output) = serde_json::from_str::<ReviewerOutput>(result) {
+            let result = match output {
+                ReviewerOutput::Approved { feedback, .. } => ReviewerResult::Approved { feedback },
+                ReviewerOutput::Rejected { feedback, .. } => ReviewerResult::Rejected { feedback },
+            };
+            return (result, session_id);
+        }
+    }
+
+    (
+        ReviewerResult::Error("No structured_output or result field found".into()),
+        session_id,
+    )
+}
+
 /// Handle planner output by storing questions or plan on the task.
 fn handle_planner_output(project: &Project, task_id: &str, result: PlannerResult) {
     match result {
@@ -577,6 +788,133 @@ fn handle_planner_output(project: &Project, task_id: &str, result: PlannerResult
             // Don't change task state on error - let user retry or handle manually
         }
     }
+}
+
+/// Handle breakdown output by storing the breakdown plan on the task.
+fn handle_breakdown_output(project: &Project, task_id: &str, result: BreakdownResult) {
+    match result {
+        BreakdownResult::Plan(plan) => {
+            eprintln!(
+                "Breakdown {} returned plan with {} subtasks (skip={})",
+                task_id,
+                plan.subtasks.len(),
+                plan.skip_breakdown
+            );
+            if let Err(e) = tasks::set_breakdown_plan(project, task_id, &plan) {
+                eprintln!("Failed to set breakdown plan for {task_id}: {e}");
+            }
+        }
+        BreakdownResult::Error(err) => {
+            eprintln!("Error parsing breakdown output for {task_id}: {err}");
+            // Don't change task state on error - let user retry or handle manually
+        }
+    }
+}
+
+/// Handle worker output by completing, failing, or blocking the task.
+fn handle_worker_output(project: &Project, task_id: &str, result: WorkerResult) {
+    match result {
+        WorkerResult::Completed { summary } => {
+            eprintln!("Worker {} completed: {}", task_id, summary);
+            if let Err(e) = tasks::complete_task(project, task_id, &summary) {
+                eprintln!("Failed to complete task {task_id}: {e}");
+            }
+        }
+        WorkerResult::Failed { reason } => {
+            eprintln!("Worker {} failed: {}", task_id, reason);
+            if let Err(e) = tasks::fail_task(project, task_id, &reason) {
+                eprintln!("Failed to mark task {task_id} as failed: {e}");
+            }
+        }
+        WorkerResult::Blocked { reason } => {
+            eprintln!("Worker {} blocked: {}", task_id, reason);
+            if let Err(e) = tasks::block_task(project, task_id, &reason) {
+                eprintln!("Failed to mark task {task_id} as blocked: {e}");
+            }
+        }
+        WorkerResult::Error(err) => {
+            eprintln!("Error parsing worker output for {task_id}: {err}");
+            // Don't change task state on error - let user retry or handle manually
+        }
+    }
+}
+
+/// Handle reviewer output by approving or rejecting the task.
+fn handle_reviewer_output(project: &Project, task_id: &str, result: ReviewerResult) {
+    match result {
+        ReviewerResult::Approved { feedback } => {
+            eprintln!("Reviewer {} approved", task_id);
+            if let Some(fb) = &feedback {
+                eprintln!("  Feedback: {fb}");
+            }
+            if let Err(e) = tasks::approve_automated_review(project, task_id) {
+                eprintln!("Failed to approve task {task_id}: {e}");
+            }
+        }
+        ReviewerResult::Rejected { feedback } => {
+            eprintln!("Reviewer {} rejected: {}", task_id, feedback);
+            if let Err(e) = tasks::reject_automated_review(project, task_id, &feedback) {
+                eprintln!("Failed to reject task {task_id}: {e}");
+            }
+        }
+        ReviewerResult::Error(err) => {
+            eprintln!("Error parsing reviewer output for {task_id}: {err}");
+            // Don't change task state on error - let user retry or handle manually
+        }
+    }
+}
+
+/// Recover and process any pending JSON outputs from crashed sessions.
+///
+/// This should be called on app startup and before spawning new agents.
+/// Returns the number of pending outputs that were successfully recovered.
+pub fn recover_pending_outputs(project: &Project) -> usize {
+    let pending_outputs = project.list_pending_outputs();
+    let mut recovered = 0;
+
+    for (task_id, agent_type) in pending_outputs {
+        if let Some(json_output) = project.read_pending_output(&task_id, &agent_type) {
+            eprintln!(
+                "[recovery] Found pending {agent_type} output for task {task_id}, recovering..."
+            );
+
+            // Dispatch to appropriate parser based on agent type
+            match agent_type.as_str() {
+                "planner" => {
+                    let (result, _) = parse_planner_json_output(&json_output);
+                    handle_planner_output(project, &task_id, result);
+                }
+                "breakdown" => {
+                    let (result, _) = parse_breakdown_json_output(&json_output);
+                    handle_breakdown_output(project, &task_id, result);
+                }
+                "worker" => {
+                    let (result, _) = parse_worker_json_output(&json_output);
+                    handle_worker_output(project, &task_id, result);
+                }
+                "reviewer" => {
+                    let (result, _) = parse_reviewer_json_output(&json_output);
+                    handle_reviewer_output(project, &task_id, result);
+                }
+                _ => {
+                    eprintln!("[recovery] Unknown agent type '{agent_type}' for task {task_id}");
+                    continue;
+                }
+            }
+
+            // Clear the pending output after successful handling
+            project.clear_pending_output(&task_id, &agent_type);
+            recovered += 1;
+
+            eprintln!("[recovery] Successfully recovered {agent_type} output for task {task_id}");
+        }
+    }
+
+    if recovered > 0 {
+        eprintln!("[recovery] Recovered {recovered} pending output(s)");
+    }
+
+    recovered
 }
 
 // =============================================================================
@@ -609,11 +947,13 @@ where
         .as_ref()
         .map_or(project_root, PathBuf::from);
 
-    // For planner, use JSON schema to get structured output (questions or plan)
-    let json_schema = if agent_type == AgentType::Planner {
-        Some(crate::prompts::PLANNER_OUTPUT_SCHEMA)
-    } else {
-        None
+    // Use JSON schema for structured output from all agent types (except TitleGenerator)
+    let json_schema = match agent_type {
+        AgentType::Planner => Some(crate::prompts::PLANNER_OUTPUT_SCHEMA.as_str()),
+        AgentType::Breakdown => Some(crate::prompts::BREAKDOWN_OUTPUT_SCHEMA),
+        AgentType::Worker => Some(crate::prompts::WORKER_OUTPUT_SCHEMA),
+        AgentType::Reviewer => Some(crate::prompts::REVIEWER_OUTPUT_SCHEMA),
+        AgentType::TitleGenerator => None, // Uses separate flow
     };
     let mut child = spawn_claude_process(&cwd, &path_env, None, json_schema)?;
     write_prompt_to_stdin(&mut child, &config.prompt)?;
@@ -632,7 +972,7 @@ where
     let _ = tasks::set_phase(project, &task_id, TaskPhase::AgentWorking);
 
     let task_id_for_callback = task_id.clone();
-    let is_planner = agent_type == AgentType::Planner;
+    let uses_json_schema = json_schema.is_some();
 
     // Spawn background thread for stdout/stderr processing
     // Each thread gets its own Project instance (SQLite handles concurrent access)
@@ -652,31 +992,67 @@ where
         let stderr_handle = spawn_stderr_reader(stderr);
 
         if let Some(stdout) = stdout {
-            if is_planner {
-                // For planner with JSON schema, collect all output as single JSON object
+            if uses_json_schema {
+                // For agents with JSON schema, collect all output as single JSON object
                 use std::io::Read as IoRead;
                 let mut reader = std::io::BufReader::new(stdout);
                 let mut full_output = String::new();
-                if let Ok(_) = reader.read_to_string(&mut full_output) {
-                    if !full_output.trim().is_empty() {
-                        let (result, session_id) = parse_planner_json_output(&full_output);
-                        // Record session if we got one
-                        if let Some(sid) = session_id {
-                            let _ = tasks::add_task_session(
-                                &thread_project,
-                                &task_id,
-                                &session_type,
-                                &sid,
-                                Some(pid),
-                            );
-                        }
-                        // Handle the planner result (questions or plan)
-                        handle_planner_output(&thread_project, &task_id, result);
-                        on_update(&task_id_for_callback);
+                if reader.read_to_string(&mut full_output).is_ok() && !full_output.trim().is_empty()
+                {
+                    // CRASH RECOVERY: Persist raw JSON before parsing
+                    let agent_type_str = agent_type.as_str();
+                    if let Err(e) =
+                        thread_project.write_pending_output(&task_id, agent_type_str, &full_output)
+                    {
+                        eprintln!("Warning: Failed to write pending output for {task_id}: {e}");
                     }
+
+                    // Extract session_id and dispatch to appropriate handler
+                    let session_id = serde_json::from_str::<serde_json::Value>(&full_output)
+                        .ok()
+                        .and_then(|v| v.get("session_id")?.as_str().map(String::from));
+
+                    if let Some(sid) = &session_id {
+                        let _ = tasks::add_task_session(
+                            &thread_project,
+                            &task_id,
+                            &session_type,
+                            sid,
+                            Some(pid),
+                        );
+                    }
+
+                    // Dispatch to appropriate parser and handler based on agent type
+                    match agent_type {
+                        AgentType::Planner => {
+                            let (result, _) = parse_planner_json_output(&full_output);
+                            handle_planner_output(&thread_project, &task_id, result);
+                        }
+                        AgentType::Breakdown => {
+                            let (result, _) = parse_breakdown_json_output(&full_output);
+                            handle_breakdown_output(&thread_project, &task_id, result);
+                        }
+                        AgentType::Worker => {
+                            let (result, _) = parse_worker_json_output(&full_output);
+                            handle_worker_output(&thread_project, &task_id, result);
+                        }
+                        AgentType::Reviewer => {
+                            let (result, _) = parse_reviewer_json_output(&full_output);
+                            handle_reviewer_output(&thread_project, &task_id, result);
+                        }
+                        AgentType::TitleGenerator => {
+                            // Should not happen - TitleGenerator uses separate flow
+                            eprintln!("Warning: TitleGenerator should not use JSON schema path");
+                        }
+                    }
+
+                    // CRASH RECOVERY: Clear pending output after successful handling
+                    thread_project.clear_pending_output(&task_id, agent_type_str);
+
+                    on_update(&task_id_for_callback);
                 }
             } else {
-                // For other agents, use streaming JSON events
+                // For agents without JSON schema, use streaming JSON events
                 let reader = std::io::BufReader::new(stdout);
                 for json_line in reader.lines().map_while(std::result::Result::ok) {
                     if json_line.trim().is_empty() {
@@ -763,11 +1139,13 @@ pub fn spawn_agent_sync(
         .as_ref()
         .map_or(project_root, PathBuf::from);
 
-    // For planner, use JSON schema to get structured output (questions or plan)
-    let json_schema = if agent_type == AgentType::Planner {
-        Some(crate::prompts::PLANNER_OUTPUT_SCHEMA)
-    } else {
-        None
+    // Use JSON schema for structured output from all agent types (except TitleGenerator)
+    let json_schema = match agent_type {
+        AgentType::Planner => Some(crate::prompts::PLANNER_OUTPUT_SCHEMA.as_str()),
+        AgentType::Breakdown => Some(crate::prompts::BREAKDOWN_OUTPUT_SCHEMA),
+        AgentType::Worker => Some(crate::prompts::WORKER_OUTPUT_SCHEMA),
+        AgentType::Reviewer => Some(crate::prompts::REVIEWER_OUTPUT_SCHEMA),
+        AgentType::TitleGenerator => None, // Uses separate flow
     };
     let mut child = spawn_claude_process(&cwd, &path_env, None, json_schema)?;
     write_prompt_to_stdin(&mut child, &config.prompt)?;
@@ -970,11 +1348,26 @@ where
         .as_ref()
         .map_or(project_root, PathBuf::from);
 
-    // For planner sessions, use JSON schema to get structured output
-    let json_schema = if session_key == "plan" {
-        Some(crate::prompts::PLANNER_OUTPUT_SCHEMA)
+    // Determine agent type from session key
+    let agent_type_for_session = if session_key == "plan" {
+        AgentType::Planner
+    } else if session_key == "breakdown" {
+        AgentType::Breakdown
+    } else if session_key == "work" || session_key.starts_with("work") {
+        AgentType::Worker
+    } else if session_key == "review" || session_key.starts_with("review_") {
+        AgentType::Reviewer
     } else {
-        None
+        AgentType::Worker // Default fallback
+    };
+
+    // Use JSON schema for structured output based on session type
+    let json_schema = match agent_type_for_session {
+        AgentType::Planner => Some(crate::prompts::PLANNER_OUTPUT_SCHEMA.as_str()),
+        AgentType::Breakdown => Some(crate::prompts::BREAKDOWN_OUTPUT_SCHEMA),
+        AgentType::Worker => Some(crate::prompts::WORKER_OUTPUT_SCHEMA),
+        AgentType::Reviewer => Some(crate::prompts::REVIEWER_OUTPUT_SCHEMA),
+        AgentType::TitleGenerator => None,
     };
     let mut child = spawn_claude_process(&cwd, &path_env, Some(&session_id), json_schema)?;
     write_prompt_to_stdin(&mut child, &prompt)?;
@@ -991,7 +1384,7 @@ where
     let _ = tasks::set_phase(project, &task_id, TaskPhase::AgentWorking);
 
     let task_id_for_callback = task_id.clone();
-    let is_planner = session_key == "plan";
+    let uses_json_schema = json_schema.is_some();
     let session_type_owned = session_key.to_string();
 
     // Spawn background thread for stdout/stderr processing
@@ -1012,31 +1405,67 @@ where
         let stderr_handle = spawn_stderr_reader(stderr);
 
         if let Some(stdout) = stdout {
-            if is_planner {
-                // For planner with JSON schema, collect all output as single JSON object
+            if uses_json_schema {
+                // For agents with JSON schema, collect all output as single JSON object
                 use std::io::Read as IoRead;
                 let mut reader = std::io::BufReader::new(stdout);
                 let mut full_output = String::new();
-                if let Ok(_) = reader.read_to_string(&mut full_output) {
-                    if !full_output.trim().is_empty() {
-                        let (result, new_session_id) = parse_planner_json_output(&full_output);
-                        // Record session if we got a new one (shouldn't happen on resume but be safe)
-                        if let Some(sid) = new_session_id {
-                            let _ = tasks::add_task_session(
-                                &thread_project,
-                                &task_id,
-                                &session_type_owned,
-                                &sid,
-                                Some(pid),
-                            );
-                        }
-                        // Handle the planner result (questions or plan)
-                        handle_planner_output(&thread_project, &task_id, result);
-                        on_update(&task_id_for_callback);
+                if reader.read_to_string(&mut full_output).is_ok() && !full_output.trim().is_empty()
+                {
+                    // CRASH RECOVERY: Persist raw JSON before parsing
+                    let agent_type_str = agent_type_for_session.as_str();
+                    if let Err(e) =
+                        thread_project.write_pending_output(&task_id, agent_type_str, &full_output)
+                    {
+                        eprintln!("Warning: Failed to write pending output for {task_id}: {e}");
                     }
+
+                    // Extract session_id if present (shouldn't happen on resume but be safe)
+                    let new_session_id = serde_json::from_str::<serde_json::Value>(&full_output)
+                        .ok()
+                        .and_then(|v| v.get("session_id")?.as_str().map(String::from));
+
+                    if let Some(sid) = &new_session_id {
+                        let _ = tasks::add_task_session(
+                            &thread_project,
+                            &task_id,
+                            &session_type_owned,
+                            sid,
+                            Some(pid),
+                        );
+                    }
+
+                    // Dispatch to appropriate parser and handler based on agent type
+                    match agent_type_for_session {
+                        AgentType::Planner => {
+                            let (result, _) = parse_planner_json_output(&full_output);
+                            handle_planner_output(&thread_project, &task_id, result);
+                        }
+                        AgentType::Breakdown => {
+                            let (result, _) = parse_breakdown_json_output(&full_output);
+                            handle_breakdown_output(&thread_project, &task_id, result);
+                        }
+                        AgentType::Worker => {
+                            let (result, _) = parse_worker_json_output(&full_output);
+                            handle_worker_output(&thread_project, &task_id, result);
+                        }
+                        AgentType::Reviewer => {
+                            let (result, _) = parse_reviewer_json_output(&full_output);
+                            handle_reviewer_output(&thread_project, &task_id, result);
+                        }
+                        AgentType::TitleGenerator => {
+                            // Should not happen
+                            eprintln!("Warning: TitleGenerator should not use JSON schema path");
+                        }
+                    }
+
+                    // CRASH RECOVERY: Clear pending output after successful handling
+                    thread_project.clear_pending_output(&task_id, agent_type_str);
+
+                    on_update(&task_id_for_callback);
                 }
             } else {
-                // For other agents, use streaming JSON events
+                // For agents without JSON schema, use streaming JSON events
                 let reader = std::io::BufReader::new(stdout);
                 for json_line in reader.lines().map_while(std::result::Result::ok) {
                     if json_line.trim().is_empty() {
@@ -1149,7 +1578,7 @@ where
         &cwd,
         &path_env,
         Some(&session_id),
-        Some(crate::prompts::PLANNER_OUTPUT_SCHEMA),
+        Some(crate::prompts::PLANNER_OUTPUT_SCHEMA.as_str()),
     )?;
     write_prompt_to_stdin(&mut child, &prompt)?;
 
@@ -1187,12 +1616,21 @@ where
             use std::io::Read as IoRead;
             let mut reader = std::io::BufReader::new(stdout);
             let mut full_output = String::new();
-            if let Ok(_) = reader.read_to_string(&mut full_output) {
-                if !full_output.trim().is_empty() {
-                    let (result, _session_id) = parse_planner_json_output(&full_output);
-                    handle_planner_output(&thread_project, &task_id, result);
-                    on_update(&task_id_for_callback);
+            if reader.read_to_string(&mut full_output).is_ok() && !full_output.trim().is_empty() {
+                // CRASH RECOVERY: Persist raw JSON before parsing
+                if let Err(e) =
+                    thread_project.write_pending_output(&task_id, "planner", &full_output)
+                {
+                    eprintln!("Warning: Failed to write pending output for {task_id}: {e}");
                 }
+
+                let (result, _session_id) = parse_planner_json_output(&full_output);
+                handle_planner_output(&thread_project, &task_id, result);
+
+                // CRASH RECOVERY: Clear pending output after successful handling
+                thread_project.clear_pending_output(&task_id, "planner");
+
+                on_update(&task_id_for_callback);
             }
         }
 

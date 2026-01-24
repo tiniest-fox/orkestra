@@ -19,8 +19,10 @@ pub mod testutil;
 
 // Primary re-exports
 pub use domain::{
-    BreakdownPlan, IntegrationResult, LogEntry, LoopOutcome, PlannedSubtask, PlannedWorkItem,
-    SessionInfo, SubtaskComplexity, Task, TaskKind, TaskStatus, ToolInput, WorkItem, WorkLoop,
+    BreakdownOutput, BreakdownPlan, IntegrationResult, IssueSeverity, LogEntry, LoopOutcome,
+    PlannedSubtask, PlannedWorkItem, ReviewerOutput, ReviewIssue, ReviewMetadata, SessionInfo,
+    SubtaskComplexity, Task, TaskKind, TaskStatus, ToolInput, WorkerOutput, WorkItem, WorkLoop,
+    WorkMetadata,
 };
 pub use error::{OrkestraError, Result};
 pub use services::Project;
@@ -28,8 +30,8 @@ pub use state::TaskPhase;
 
 // Agent re-exports
 pub use agents::{
-    generate_title_sync, kill_agent, kill_all_agents, resume_agent, resume_planner_with_answers,
-    spawn_agent, spawn_agent_sync, AgentType, SpawnedAgent,
+    generate_title_sync, kill_agent, kill_all_agents, recover_pending_outputs, resume_agent,
+    resume_planner_with_answers, spawn_agent, spawn_agent_sync, AgentType, SpawnedAgent,
 };
 
 // State predicates re-export (is_process_running is the canonical version)

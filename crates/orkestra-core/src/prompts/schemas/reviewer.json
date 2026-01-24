@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "description": "Reviewer output indicating approval or rejection",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["approved", "rejected"],
+      "description": "The review decision"
+    },
+    "feedback": {
+      "type": "string",
+      "description": "Feedback for the worker (required if rejected)"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional metadata about the review",
+      "properties": {
+        "tests_verified": { "type": "boolean" },
+        "build_verified": { "type": "boolean" },
+        "issues_found": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": ["error", "warning", "info"]
+              },
+              "description": { "type": "string" },
+              "file": { "type": "string" },
+              "line": { "type": "integer" }
+            },
+            "required": ["severity", "description"]
+          }
+        }
+      }
+    }
+  },
+  "required": ["type"]
+}

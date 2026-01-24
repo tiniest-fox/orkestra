@@ -27,10 +27,38 @@ The worker completed the implementation with this summary:
 {{/if}}
 ---
 
-## Your Review Commands
+## Output Format
 
-When you are done reviewing, you MUST run ONE of these commands:
-- `ork task approve-review {{task_id}}` - if the implementation passes all checks and review
-- `ork task reject-review {{task_id}} --feedback "specific feedback for the worker"` - if issues need to be fixed
+When you have completed your review, output ONLY valid JSON in one of these formats:
+
+**If the implementation passes all checks:**
+```json
+{
+  "type": "approved",
+  "feedback": "optional positive feedback or notes",
+  "metadata": {
+    "tests_verified": true,
+    "build_verified": true,
+    "issues_found": []
+  }
+}
+```
+
+**If the implementation needs changes:**
+```json
+{
+  "type": "rejected",
+  "feedback": "specific, actionable feedback for the worker explaining what needs to be fixed",
+  "metadata": {
+    "tests_verified": true,
+    "build_verified": true,
+    "issues_found": [
+      {"severity": "error", "description": "issue description", "file": "path/to/file.rs", "line": 42}
+    ]
+  }
+}
+```
+
+The `metadata` field is optional but helps track what was verified. Severity can be: `error`, `warning`, or `info`.
 
 If you reject, provide clear, actionable feedback so the worker knows exactly what to fix.

@@ -28,55 +28,44 @@ const RESUME_REVIEWER_TEMPLATE: &str = include_str!("templates/resume/reviewer.h
 const RESUME_BREAKDOWN_TEMPLATE: &str = include_str!("templates/resume/breakdown.hbs");
 
 // =============================================================================
-// JSON Schema for Planner Output
+// JSON Schemas (loaded from files)
 // =============================================================================
 
-/// JSON schema for planner output - used with Claude's --json-schema flag.
+// Component schemas (for composition)
+const PLAN_SCHEMA: &str = include_str!("schemas/components/plan.json");
+const QUESTIONS_SCHEMA: &str = include_str!("schemas/components/questions.json");
+
+// Agent schemas (loaded from files)
+/// JSON schema for breakdown output - used with Claude's --json-schema flag.
+pub const BREAKDOWN_OUTPUT_SCHEMA: &str = include_str!("schemas/breakdown.json");
+
+/// JSON schema for worker output - used with Claude's --json-schema flag.
+pub const WORKER_OUTPUT_SCHEMA: &str = include_str!("schemas/worker.json");
+
+/// JSON schema for reviewer output - used with Claude's --json-schema flag.
+pub const REVIEWER_OUTPUT_SCHEMA: &str = include_str!("schemas/reviewer.json");
+
+/// Composed planner schema (plan OR questions) - built at runtime from components.
 /// The planner outputs either questions (needs more info) or a plan (ready).
-pub const PLANNER_OUTPUT_SCHEMA: &str = r#"{
-  "type": "object",
-  "properties": {
-    "type": {
-      "type": "string",
-      "enum": ["questions", "plan"]
-    },
-    "questions": {
-      "type": "array",
-      "items": {
+pub static PLANNER_OUTPUT_SCHEMA: LazyLock<String> = LazyLock::new(|| {
+    compose_planner_schema(PLAN_SCHEMA, QUESTIONS_SCHEMA)
+});
+
+/// Composes the planner schema from plan and questions components using oneOf.
+fn compose_planner_schema(plan_schema: &str, questions_schema: &str) -> String {
+    let plan: serde_json::Value = serde_json::from_str(plan_schema)
+        .expect("plan.json should be valid JSON");
+    let questions: serde_json::Value = serde_json::from_str(questions_schema)
+        .expect("questions.json should be valid JSON");
+
+    let composed = serde_json::json!({
         "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "question": { "type": "string" },
-          "context": { "type": "string" },
-          "options": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "label": { "type": "string" },
-                "description": { "type": "string" }
-              },
-              "required": ["label"]
-            }
-          }
-        },
-        "required": ["id", "question", "options"]
-      }
-    },
-    "plan": {
-      "type": "object",
-      "properties": {
-        "summary": { "type": "string" },
-        "files_to_modify": { "type": "array", "items": { "type": "string" } },
-        "implementation_steps": { "type": "array", "items": { "type": "string" } },
-        "testing_strategy": { "type": "string" },
-        "risks": { "type": "string" }
-      },
-      "required": ["summary", "implementation_steps"]
-    }
-  },
-  "required": ["type"]
-}"#;
+        "description": "Planner output: either clarifying questions or an implementation plan",
+        "oneOf": [plan, questions]
+    });
+
+    serde_json::to_string(&composed).expect("composed schema should serialize")
+}
 
 // =============================================================================
 // Template Registry
@@ -461,7 +450,8 @@ mod tests {
         });
         assert!(prompt.contains("<!orkestra-resume>"));
         assert!(prompt.contains("Fix the bug in login"));
-        assert!(prompt.contains("ork task complete TASK-001"));
+        // Now uses JSON output
+        assert!(prompt.contains("output your completion status as JSON"));
     }
 
     #[test]
@@ -478,7 +468,8 @@ mod tests {
         assert!(prompt.contains("src/main.rs"));
         assert!(prompt.contains("Cargo.toml"));
         assert!(prompt.contains("git rebase"));
-        assert!(prompt.contains("ork task complete TASK-001"));
+        // Now uses JSON output
+        assert!(prompt.contains("Output your completion status as JSON"));
     }
 
     #[test]
@@ -527,8 +518,8 @@ mod tests {
         });
         assert!(prompt.contains("<!orkestra-resume>"));
         assert!(prompt.contains("continue reviewing"));
-        assert!(prompt.contains("ork task approve-review TASK-001"));
-        assert!(prompt.contains("ork task reject-review TASK-001"));
+        // Now uses JSON output
+        assert!(prompt.contains("output your review decision as JSON"));
     }
 
     #[test]
@@ -559,9 +550,10 @@ mod tests {
         assert!(prompt.contains("# Worker Agent"));
         assert!(prompt.contains("TASK-001"));
         assert!(prompt.contains("Test Task"));
-        assert!(prompt.contains("ork task complete"));
-        assert!(prompt.contains("ork task fail"));
-        assert!(prompt.contains("ork task block"));
+        // Worker now uses JSON output format
+        assert!(prompt.contains("\"type\": \"completed\""));
+        assert!(prompt.contains("\"type\": \"failed\""));
+        assert!(prompt.contains("\"type\": \"blocked\""));
     }
 
     #[test]
@@ -642,8 +634,9 @@ mod tests {
         assert!(prompt.contains("# Reviewer Agent"));
         assert!(prompt.contains("TASK-001"));
         assert!(prompt.contains("Test Task"));
-        assert!(prompt.contains("ork task approve-review"));
-        assert!(prompt.contains("ork task reject-review"));
+        // Reviewer now uses JSON output format
+        assert!(prompt.contains("\"type\": \"approved\""));
+        assert!(prompt.contains("\"type\": \"rejected\""));
     }
 
     #[test]
@@ -676,8 +669,8 @@ mod tests {
 
         assert!(prompt.contains("# Breakdown Agent"));
         assert!(prompt.contains("TASK-001"));
-        assert!(prompt.contains("ork task set-breakdown-plan"));
-        // New flow uses skip_breakdown in JSON plan rather than separate command
+        // Breakdown now uses JSON output format
+        assert!(prompt.contains("\"type\": \"breakdown\""));
         assert!(prompt.contains("skip_breakdown"));
     }
 
@@ -689,7 +682,8 @@ mod tests {
         let prompt = build_breakdown_prompt(&task, "# Agent");
 
         assert!(prompt.contains("AUTO-APPROVE"));
-        assert!(prompt.contains("ork task approve-breakdown"));
+        // Breakdown now uses JSON output format
+        assert!(prompt.contains("\"type\": \"breakdown\""));
     }
 
     #[test]
@@ -699,5 +693,37 @@ mod tests {
         assert!(prompt.contains("Fix the login button"));
         assert!(prompt.contains("3-8 words"));
         assert!(prompt.contains("sentence case"));
+    }
+
+    #[test]
+    fn test_planner_schema_composition() {
+        // Verify the composed schema is valid JSON with oneOf
+        let schema: serde_json::Value =
+            serde_json::from_str(&PLANNER_OUTPUT_SCHEMA).expect("schema should be valid JSON");
+
+        assert_eq!(schema["type"], "object");
+        assert!(schema["oneOf"].is_array());
+
+        let one_of = schema["oneOf"].as_array().unwrap();
+        assert_eq!(one_of.len(), 2);
+
+        // One should be for "plan", one for "questions"
+        let types: Vec<&str> = one_of
+            .iter()
+            .filter_map(|s| s["properties"]["type"]["const"].as_str())
+            .collect();
+        assert!(types.contains(&"plan"));
+        assert!(types.contains(&"questions"));
+    }
+
+    #[test]
+    fn test_schemas_are_valid_json() {
+        // Verify all agent schemas are valid JSON
+        let _: serde_json::Value =
+            serde_json::from_str(BREAKDOWN_OUTPUT_SCHEMA).expect("breakdown schema should be valid");
+        let _: serde_json::Value =
+            serde_json::from_str(WORKER_OUTPUT_SCHEMA).expect("worker schema should be valid");
+        let _: serde_json::Value =
+            serde_json::from_str(REVIEWER_OUTPUT_SCHEMA).expect("reviewer schema should be valid");
     }
 }

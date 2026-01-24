@@ -29,15 +29,32 @@ Please revise your breakdown plan to address this feedback.
 {{/if}}
 ---
 
-{{#if auto_approve}}
-Remember: This task has AUTO-APPROVE enabled. When your breakdown plan is ready:
-1. Output your JSON breakdown plan (see agent definition for format)
-2. Run `ork task set-breakdown-plan {{task_id}} --plan '<YOUR JSON>'`
-3. Run `ork task approve-breakdown {{task_id}}`
-{{else}}
-Remember: When your breakdown plan is ready:
-1. Output your JSON breakdown plan (see agent definition for format)
-2. Run `ork task set-breakdown-plan {{task_id}} --plan '<YOUR JSON>'`
+## Output Format
 
-If the task is simple and doesn't need breakdown, set skip_breakdown to true in your JSON plan.
+When you have analyzed the task and created your breakdown plan, output ONLY valid JSON in this format:
+
+```json
+{
+  "type": "breakdown",
+  "plan": {
+    "rationale": "explanation of how you decomposed the task",
+    "skip_breakdown": false,
+    "subtasks": [
+      {
+        "temp_id": "st1",
+        "title": "First subtask title",
+        "description": "What this subtask accomplishes",
+        "complexity": "small|medium|large",
+        "depends_on": [],
+        "work_items": [{"title": "specific work item"}]
+      }
+    ]
+  }
+}
+```
+
+If the task is simple and doesn't need breakdown, set `skip_breakdown: true` and leave `subtasks` empty.
+{{#if auto_approve}}
+
+Note: This task has AUTO-APPROVE enabled. Your plan will be automatically approved.
 {{/if}}

@@ -53,7 +53,41 @@ Please address this feedback and continue your implementation.
 {{/if}}
 ---
 
-Remember: When you are done with ALL work, you MUST run one of these commands:
-- `ork task complete {{task_id}} --summary "what you did"` - if successful
-- `ork task fail {{task_id}} --reason "why"` - if you cannot complete it
-- `ork task block {{task_id}} --reason "what you need"` - if you need clarification
+## Output Format
+
+When you have completed ALL work, output ONLY valid JSON in one of these formats:
+
+**If work is completed successfully:**
+```json
+{
+  "type": "completed",
+  "summary": "description of what was accomplished",
+  "metadata": {
+    "files_modified": ["path/to/file.rs"],
+    "files_created": [],
+    "files_deleted": [],
+    "tests_run": true,
+    "tests_passed": true,
+    "build_checked": true,
+    "build_passed": true
+  }
+}
+```
+
+**If work cannot be completed:**
+```json
+{
+  "type": "failed",
+  "reason": "explanation of why the work cannot be completed"
+}
+```
+
+**If work is blocked waiting for clarification:**
+```json
+{
+  "type": "blocked",
+  "reason": "what information or access you need to proceed"
+}
+```
+
+The `metadata` field is optional but helps track what was done.

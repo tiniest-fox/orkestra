@@ -1,0 +1,61 @@
+{
+  "type": "object",
+  "description": "Breakdown plan for decomposing a task into subtasks",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "breakdown"
+    },
+    "plan": {
+      "type": "object",
+      "properties": {
+        "rationale": {
+          "type": "string",
+          "description": "Explanation of how the task was decomposed"
+        },
+        "skip_breakdown": {
+          "type": "boolean",
+          "description": "Set to true if the task is simple enough to complete directly"
+        },
+        "subtasks": {
+          "type": "array",
+          "description": "List of subtasks (empty if skip_breakdown is true)",
+          "items": {
+            "type": "object",
+            "properties": {
+              "temp_id": {
+                "type": "string",
+                "description": "Temporary ID for dependency references (e.g., st1, st2)"
+              },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "complexity": {
+                "type": "string",
+                "enum": ["small", "medium", "large"]
+              },
+              "depends_on": {
+                "type": "array",
+                "description": "temp_ids of subtasks this depends on",
+                "items": { "type": "string" }
+              },
+              "work_items": {
+                "type": "array",
+                "description": "Specific work items within this subtask",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "title": { "type": "string" }
+                  },
+                  "required": ["title"]
+                }
+              }
+            },
+            "required": ["temp_id", "title", "description"]
+          }
+        }
+      },
+      "required": ["rationale", "subtasks"]
+    }
+  },
+  "required": ["type", "plan"]
+}

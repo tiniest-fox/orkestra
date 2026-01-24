@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "description": "Worker output indicating task completion status",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["completed", "failed", "blocked"],
+      "description": "The outcome of the work"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Summary of what was accomplished (for completed)"
+    },
+    "reason": {
+      "type": "string",
+      "description": "Explanation of failure or blocker (for failed/blocked)"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional metadata about the work performed",
+      "properties": {
+        "files_modified": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "files_created": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "files_deleted": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "tests_run": { "type": "boolean" },
+        "tests_passed": { "type": "boolean" },
+        "build_checked": { "type": "boolean" },
+        "build_passed": { "type": "boolean" }
+      }
+    }
+  },
+  "required": ["type"]
+}

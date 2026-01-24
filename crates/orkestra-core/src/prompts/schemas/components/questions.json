@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "description": "Clarifying questions before planning",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "questions"
+    },
+    "questions": {
+      "type": "array",
+      "description": "Questions that need answers before creating a plan",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for the question (e.g., q1, q2)"
+          },
+          "question": {
+            "type": "string",
+            "description": "The question text"
+          },
+          "context": {
+            "type": "string",
+            "description": "Why this question matters for planning"
+          },
+          "options": {
+            "type": "array",
+            "description": "Available answer options",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "Short display label for the option"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Optional longer description explaining this choice"
+                }
+              },
+              "required": ["label"]
+            }
+          }
+        },
+        "required": ["id", "question", "options"]
+      },
+      "minItems": 1
+    }
+  },
+  "required": ["type", "questions"]
+}

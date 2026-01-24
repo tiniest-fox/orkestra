@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "description": "A structured implementation plan",
+  "properties": {
+    "type": {
+      "type": "string",
+      "const": "plan"
+    },
+    "plan": {
+      "type": "object",
+      "description": "The implementation plan details",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Brief overview of what will be done"
+        },
+        "files_to_modify": {
+          "type": "array",
+          "description": "List of files that will be modified",
+          "items": { "type": "string" }
+        },
+        "implementation_steps": {
+          "type": "array",
+          "description": "Numbered implementation steps as strings",
+          "items": { "type": "string" }
+        },
+        "testing_strategy": {
+          "type": "string",
+          "description": "How to verify the changes work"
+        },
+        "risks": {
+          "type": "string",
+          "description": "Potential issues to watch for"
+        }
+      },
+      "required": ["summary", "implementation_steps"]
+    }
+  },
+  "required": ["type", "plan"]
+}

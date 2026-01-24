@@ -5,8 +5,9 @@ use orkestra_core::{
     agents::{self, generate_title_sync, kill_agent, kill_all_agents},
     auto_tasks,
     domain::{PlannerQuestion, QuestionAnswer},
-    find_project_root, is_process_running, orchestrator, recover_session_logs, resume_agent, tasks,
-    AgentType, AutoTask, BreakdownPlan, LogEntry, Project, Task, TaskStatus, WorkLoop,
+    find_project_root, is_process_running, orchestrator, recover_pending_outputs,
+    recover_session_logs, resume_agent, tasks, AgentType, AutoTask, BreakdownPlan, LogEntry,
+    Project, Task, TaskStatus, WorkLoop,
 };
 use tasks::{
     approve_breakdown as core_approve_breakdown,
@@ -699,6 +700,23 @@ fn cleanup_agents() {
     }
 }
 
+/// Recover any pending JSON outputs from crashed sessions.
+/// Called on startup to process outputs that were received but not yet committed.
+fn recover_pending_json_outputs() {
+    println!("[startup] Checking for pending JSON outputs...");
+    let project = match Project::discover() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    let recovered = recover_pending_outputs(&project);
+    if recovered > 0 {
+        println!("[startup] Recovered {recovered} pending JSON output(s)");
+    } else {
+        println!("[startup] No pending outputs to recover");
+    }
+}
+
 /// Clean up any orphaned agent processes from a previous crash.
 /// Called on startup to ensure stale PIDs don't prevent new agents from spawning.
 fn cleanup_orphaned_agents() {
@@ -771,6 +789,9 @@ fn setup_signal_handlers(_stop_flag: Arc<AtomicBool>) {
 pub fn run() {
     // Clean up any orphaned agents from a previous crash before starting
     cleanup_orphaned_agents();
+
+    // Recover any pending JSON outputs from crashed sessions
+    recover_pending_json_outputs();
 
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_flag_for_exit = stop_flag.clone();

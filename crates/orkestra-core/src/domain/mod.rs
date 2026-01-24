@@ -9,6 +9,9 @@ mod work_loop;
 mod worker_output;
 
 pub use breakdown_output::BreakdownOutput;
+// New unified iteration types
+pub use iterations::{Iteration, Outcome, Stage, StageSession};
+// Legacy iteration types (for backwards compatibility during migration)
 pub use iterations::{
     PlanIteration, PlanOutcome, ReviewIteration, ReviewOutcome, WorkIteration, WorkOutcome,
 };

@@ -4,12 +4,15 @@
 #![allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 
 use petname::Generator;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::sync::Mutex;
 
 use crate::domain::{
+    // Legacy types (for backwards compatibility during migration)
     LoopOutcome, PlanIteration, PlanOutcome, ReviewIteration, ReviewOutcome, SessionInfo, Task,
     TaskKind, TaskStatus, WorkIteration, WorkLoop, WorkOutcome,
+    // New unified iteration types
+    Iteration, Outcome, Stage, StageSession,
 };
 use crate::error::{OrkestraError, Result};
 use crate::ports::TaskStore;
@@ -157,6 +160,32 @@ impl SqliteStore {
                 UNIQUE(task_id, iteration)
             );
 
+            -- Unified stage session tracking (one session per task + stage)
+            -- A single Claude session spans all iterations within a stage.
+            CREATE TABLE IF NOT EXISTS stage_sessions (
+                task_id TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                session_id TEXT,
+                agent_pid INTEGER,
+                started_at TEXT NOT NULL,
+                PRIMARY KEY (task_id, stage),
+                FOREIGN KEY (task_id) REFERENCES tasks(id)
+            );
+
+            -- Unified iteration tracking (turns within a stage session)
+            -- Each iteration is a single back-and-forth with the agent.
+            CREATE TABLE IF NOT EXISTS iterations (
+                task_id TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                iteration INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                ended_at TEXT,
+                data TEXT,
+                outcome TEXT,
+                PRIMARY KEY (task_id, stage, iteration),
+                FOREIGN KEY (task_id, stage) REFERENCES stage_sessions(task_id, stage)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_task_id ON sessions(task_id);
@@ -164,6 +193,8 @@ impl SqliteStore {
             CREATE INDEX IF NOT EXISTS idx_plan_iterations_task_id ON plan_iterations(task_id);
             CREATE INDEX IF NOT EXISTS idx_work_iterations_task_id ON work_iterations(task_id);
             CREATE INDEX IF NOT EXISTS idx_review_iterations_task_id ON review_iterations(task_id);
+            CREATE INDEX IF NOT EXISTS idx_stage_sessions_task ON stage_sessions(task_id);
+            CREATE INDEX IF NOT EXISTS idx_iterations_task_stage ON iterations(task_id, stage);
             ",
         )?;
 
@@ -1135,6 +1166,300 @@ impl SqliteStore {
     }
 
     // =========================================================================
+    // Unified Stage Session Operations (NEW)
+    // =========================================================================
+
+    /// Get or create a stage session for a task+stage combination.
+    /// This ensures the foreign key target exists before inserting iterations.
+    pub fn get_or_create_stage_session(&self, task_id: &str, stage: Stage) -> Result<StageSession> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let stage_str = stage.as_str();
+
+        // Try to get existing session
+        let existing: Option<(Option<String>, Option<i32>, String)> = conn
+            .query_row(
+                "SELECT session_id, agent_pid, started_at FROM stage_sessions WHERE task_id = ? AND stage = ?",
+                params![task_id, stage_str],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+
+        if let Some((session_id, agent_pid, started_at)) = existing {
+            Ok(StageSession {
+                task_id: task_id.to_string(),
+                stage,
+                session_id,
+                agent_pid: agent_pid.map(|p| p as u32),
+                started_at,
+            })
+        } else {
+            // Create new session
+            conn.execute(
+                "INSERT INTO stage_sessions (task_id, stage, started_at) VALUES (?, ?, ?)",
+                params![task_id, stage_str, &now],
+            )?;
+
+            Ok(StageSession::new(task_id.to_string(), stage, now))
+        }
+    }
+
+    /// Get a stage session if it exists.
+    pub fn get_stage_session(&self, task_id: &str, stage: Stage) -> Result<Option<StageSession>> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let stage_str = stage.as_str();
+
+        let result: Option<(Option<String>, Option<i32>, String)> = conn
+            .query_row(
+                "SELECT session_id, agent_pid, started_at FROM stage_sessions WHERE task_id = ? AND stage = ?",
+                params![task_id, stage_str],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+
+        Ok(result.map(|(session_id, agent_pid, started_at)| StageSession {
+            task_id: task_id.to_string(),
+            stage,
+            session_id,
+            agent_pid: agent_pid.map(|p| p as u32),
+            started_at,
+        }))
+    }
+
+    /// Set the Claude session ID for a stage session.
+    pub fn set_stage_session_id(&self, task_id: &str, stage: Stage, session_id: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let stage_str = stage.as_str();
+
+        let affected = conn.execute(
+            "UPDATE stage_sessions SET session_id = ? WHERE task_id = ? AND stage = ?",
+            params![session_id, task_id, stage_str],
+        )?;
+
+        if affected == 0 {
+            return Err(OrkestraError::InvalidState {
+                expected: format!("Stage session for {}/{}", task_id, stage_str),
+                actual: "No stage session found".into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Set the agent PID for a stage session (None to clear).
+    pub fn set_stage_agent_pid(&self, task_id: &str, stage: Stage, pid: Option<u32>) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let stage_str = stage.as_str();
+
+        let affected = conn.execute(
+            "UPDATE stage_sessions SET agent_pid = ? WHERE task_id = ? AND stage = ?",
+            params![pid.map(|p| p as i32), task_id, stage_str],
+        )?;
+
+        if affected == 0 {
+            return Err(OrkestraError::InvalidState {
+                expected: format!("Stage session for {}/{}", task_id, stage_str),
+                actual: "No stage session found".into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Delete all stage sessions for a task (used when deleting a task).
+    pub fn delete_stage_sessions(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        // Delete iterations first (foreign key constraint)
+        conn.execute("DELETE FROM iterations WHERE task_id = ?", params![task_id])?;
+        conn.execute(
+            "DELETE FROM stage_sessions WHERE task_id = ?",
+            params![task_id],
+        )?;
+        Ok(())
+    }
+
+    // =========================================================================
+    // Unified Iteration Operations (NEW)
+    // =========================================================================
+
+    /// Start a new iteration for a task+stage.
+    /// Automatically creates the stage session if needed.
+    pub fn start_iteration(&self, task_id: &str, stage: Stage) -> Result<Iteration> {
+        // Ensure stage session exists (handles the foreign key)
+        let _ = self.get_or_create_stage_session(task_id, stage)?;
+
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let stage_str = stage.as_str();
+
+        // Get the next iteration number for this task+stage
+        let max_iter: Option<i32> = conn.query_row(
+            "SELECT MAX(iteration) FROM iterations WHERE task_id = ? AND stage = ?",
+            params![task_id, stage_str],
+            |row| row.get(0),
+        )?;
+        let iteration = (max_iter.unwrap_or(0) + 1) as u32;
+
+        // Insert the new iteration
+        conn.execute(
+            "INSERT INTO iterations (task_id, stage, iteration, started_at) VALUES (?, ?, ?, ?)",
+            params![task_id, stage_str, iteration as i32, &now],
+        )?;
+
+        Ok(Iteration::new(task_id.to_string(), stage, iteration, now))
+    }
+
+    /// Get the current (active) iteration for a task+stage.
+    /// An active iteration has no outcome set.
+    pub fn get_current_iteration(&self, task_id: &str, stage: Stage) -> Result<Option<Iteration>> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let stage_str = stage.as_str();
+
+        let result: Option<(i32, String, Option<String>, Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT iteration, started_at, ended_at, data, outcome
+                 FROM iterations
+                 WHERE task_id = ? AND stage = ? AND outcome IS NULL
+                 ORDER BY iteration DESC LIMIT 1",
+                params![task_id, stage_str],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .optional()?;
+
+        Ok(result.map(|(iteration, started_at, ended_at, data_json, outcome_json)| {
+            Iteration {
+                task_id: task_id.to_string(),
+                stage,
+                iteration: iteration as u32,
+                started_at,
+                ended_at,
+                data: data_json.as_deref().and_then(|j| serde_json::from_str(j).ok()),
+                outcome: outcome_json.as_deref().and_then(|j| serde_json::from_str(j).ok()),
+            }
+        }))
+    }
+
+    /// Get the latest iteration for a task+stage (regardless of status).
+    pub fn get_latest_iteration(&self, task_id: &str, stage: Stage) -> Result<Option<Iteration>> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let stage_str = stage.as_str();
+
+        let result: Option<(i32, String, Option<String>, Option<String>, Option<String>)> = conn
+            .query_row(
+                "SELECT iteration, started_at, ended_at, data, outcome
+                 FROM iterations
+                 WHERE task_id = ? AND stage = ?
+                 ORDER BY iteration DESC LIMIT 1",
+                params![task_id, stage_str],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .optional()?;
+
+        Ok(result.map(|(iteration, started_at, ended_at, data_json, outcome_json)| {
+            Iteration {
+                task_id: task_id.to_string(),
+                stage,
+                iteration: iteration as u32,
+                started_at,
+                ended_at,
+                data: data_json.as_deref().and_then(|j| serde_json::from_str(j).ok()),
+                outcome: outcome_json.as_deref().and_then(|j| serde_json::from_str(j).ok()),
+            }
+        }))
+    }
+
+    /// Set the data for the current (active) iteration.
+    pub fn set_iteration_data(&self, task_id: &str, stage: Stage, data: &serde_json::Value) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let stage_str = stage.as_str();
+        let data_json = serde_json::to_string(data)
+            .map_err(|e| OrkestraError::InvalidInput(e.to_string()))?;
+
+        let affected = conn.execute(
+            "UPDATE iterations SET data = ? WHERE task_id = ? AND stage = ? AND outcome IS NULL",
+            params![&data_json, task_id, stage_str],
+        )?;
+
+        if affected == 0 {
+            return Err(OrkestraError::InvalidState {
+                expected: format!("Active iteration for {}/{}", task_id, stage_str),
+                actual: "No active iteration".into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// End the current (active) iteration with the given outcome.
+    /// Sets both outcome and ended_at timestamp atomically.
+    pub fn end_iteration(&self, task_id: &str, stage: Stage, outcome: &Outcome) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let stage_str = stage.as_str();
+        let ended_at = chrono::Utc::now().to_rfc3339();
+        let outcome_json = serde_json::to_string(outcome)
+            .map_err(|e| OrkestraError::InvalidInput(e.to_string()))?;
+
+        let affected = conn.execute(
+            "UPDATE iterations SET outcome = ?, ended_at = ? WHERE task_id = ? AND stage = ? AND outcome IS NULL",
+            params![&outcome_json, &ended_at, task_id, stage_str],
+        )?;
+
+        if affected == 0 {
+            return Err(OrkestraError::InvalidState {
+                expected: format!("Active iteration for {}/{}", task_id, stage_str),
+                actual: "No active iteration".into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Get all iterations for a task+stage, ordered by iteration number.
+    pub fn get_iterations(&self, task_id: &str, stage: Stage) -> Result<Vec<Iteration>> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let stage_str = stage.as_str();
+
+        let mut stmt = conn.prepare(
+            "SELECT iteration, started_at, ended_at, data, outcome
+             FROM iterations
+             WHERE task_id = ? AND stage = ?
+             ORDER BY iteration",
+        )?;
+
+        let rows = stmt.query_map(params![task_id, stage_str], |row| {
+            let iteration: i32 = row.get(0)?;
+            let started_at: String = row.get(1)?;
+            let ended_at: Option<String> = row.get(2)?;
+            let data_json: Option<String> = row.get(3)?;
+            let outcome_json: Option<String> = row.get(4)?;
+            Ok((iteration, started_at, ended_at, data_json, outcome_json))
+        })?;
+
+        let mut iterations = Vec::new();
+        for row in rows {
+            let (iteration, started_at, ended_at, data_json, outcome_json) = row?;
+            iterations.push(Iteration {
+                task_id: task_id.to_string(),
+                stage,
+                iteration: iteration as u32,
+                started_at,
+                ended_at,
+                data: data_json.as_deref().and_then(|j| serde_json::from_str(j).ok()),
+                outcome: outcome_json.as_deref().and_then(|j| serde_json::from_str(j).ok()),
+            });
+        }
+
+        Ok(iterations)
+    }
+
+    /// Delete all iterations for a task (used when deleting a task).
+    pub fn delete_iterations(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        conn.execute("DELETE FROM iterations WHERE task_id = ?", params![task_id])?;
+        Ok(())
+    }
+
+    // =========================================================================
     // Child/Subtask Operations
     // =========================================================================
 
@@ -1800,5 +2125,289 @@ mod tests {
         let work_iter = work_iter.unwrap();
         assert_eq!(work_iter.summary.as_deref(), Some("Legacy summary"));
         assert!(matches!(work_iter.outcome, Some(WorkOutcome::Approved)));
+    }
+
+    // ==========================================================================
+    // Unified Stage Session & Iteration Tests (NEW)
+    // ==========================================================================
+
+    #[test]
+    fn test_unified_stage_session_lifecycle() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // Create stage session
+        let session = store
+            .get_or_create_stage_session("TASK-001", Stage::Plan)
+            .unwrap();
+        assert_eq!(session.task_id, "TASK-001");
+        assert_eq!(session.stage, Stage::Plan);
+        assert!(session.session_id.is_none());
+        assert!(session.agent_pid.is_none());
+
+        // Get again - should return same session
+        let session2 = store
+            .get_or_create_stage_session("TASK-001", Stage::Plan)
+            .unwrap();
+        assert_eq!(session.started_at, session2.started_at);
+
+        // Set session ID
+        store
+            .set_stage_session_id("TASK-001", Stage::Plan, "claude-session-123")
+            .unwrap();
+        let session3 = store.get_stage_session("TASK-001", Stage::Plan).unwrap().unwrap();
+        assert_eq!(session3.session_id, Some("claude-session-123".to_string()));
+        assert!(session3.can_resume());
+
+        // Set agent PID
+        store
+            .set_stage_agent_pid("TASK-001", Stage::Plan, Some(12345))
+            .unwrap();
+        let session4 = store.get_stage_session("TASK-001", Stage::Plan).unwrap().unwrap();
+        assert_eq!(session4.agent_pid, Some(12345));
+        assert!(session4.is_running());
+        assert!(!session4.can_resume()); // Can't resume while running
+
+        // Clear agent PID
+        store
+            .set_stage_agent_pid("TASK-001", Stage::Plan, None)
+            .unwrap();
+        let session5 = store.get_stage_session("TASK-001", Stage::Plan).unwrap().unwrap();
+        assert!(session5.agent_pid.is_none());
+        assert!(session5.can_resume()); // Can resume now
+    }
+
+    #[test]
+    fn test_unified_iteration_lifecycle() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // Start iteration (auto-creates stage session)
+        let iter = store.start_iteration("TASK-001", Stage::Plan).unwrap();
+        assert_eq!(iter.task_id, "TASK-001");
+        assert_eq!(iter.stage, Stage::Plan);
+        assert_eq!(iter.iteration, 1);
+        assert!(iter.is_active());
+        assert!(!iter.needs_review());
+
+        // Verify stage session was created
+        let session = store.get_stage_session("TASK-001", Stage::Plan).unwrap();
+        assert!(session.is_some());
+
+        // Set data
+        let plan_data = serde_json::json!({
+            "plan": "Step 1: Do X\nStep 2: Do Y"
+        });
+        store
+            .set_iteration_data("TASK-001", Stage::Plan, &plan_data)
+            .unwrap();
+
+        let iter = store
+            .get_current_iteration("TASK-001", Stage::Plan)
+            .unwrap()
+            .unwrap();
+        assert!(iter.needs_review()); // Has data but no outcome
+        assert_eq!(iter.plan(), Some("Step 1: Do X\nStep 2: Do Y".to_string()));
+
+        // End iteration with approval
+        store
+            .end_iteration("TASK-001", Stage::Plan, &Outcome::Approved)
+            .unwrap();
+        let iter = store
+            .get_latest_iteration("TASK-001", Stage::Plan)
+            .unwrap()
+            .unwrap();
+        assert!(!iter.is_active());
+        assert!(iter.ended_at.is_some());
+        assert!(matches!(iter.outcome, Some(Outcome::Approved)));
+    }
+
+    #[test]
+    fn test_unified_iteration_rejection_cycle() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // First iteration - rejected
+        store.start_iteration("TASK-001", Stage::Plan).unwrap();
+        store
+            .set_iteration_data(
+                "TASK-001",
+                Stage::Plan,
+                &serde_json::json!({"plan": "Plan v1"}),
+            )
+            .unwrap();
+        store
+            .end_iteration(
+                "TASK-001",
+                Stage::Plan,
+                &Outcome::Rejected {
+                    feedback: "More detail needed".into(),
+                },
+            )
+            .unwrap();
+
+        // Second iteration - approved
+        let iter2 = store.start_iteration("TASK-001", Stage::Plan).unwrap();
+        assert_eq!(iter2.iteration, 2);
+        store
+            .set_iteration_data(
+                "TASK-001",
+                Stage::Plan,
+                &serde_json::json!({"plan": "Plan v2 with more detail"}),
+            )
+            .unwrap();
+        store
+            .end_iteration("TASK-001", Stage::Plan, &Outcome::Approved)
+            .unwrap();
+
+        // Get all iterations
+        let iters = store.get_iterations("TASK-001", Stage::Plan).unwrap();
+        assert_eq!(iters.len(), 2);
+        assert_eq!(iters[0].iteration, 1);
+        assert!(matches!(iters[0].outcome, Some(Outcome::Rejected { .. })));
+        assert_eq!(iters[1].iteration, 2);
+        assert!(matches!(iters[1].outcome, Some(Outcome::Approved)));
+    }
+
+    #[test]
+    fn test_unified_iteration_multiple_stages() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // Plan stage
+        store.start_iteration("TASK-001", Stage::Plan).unwrap();
+        store
+            .set_iteration_data("TASK-001", Stage::Plan, &serde_json::json!({"plan": "The plan"}))
+            .unwrap();
+        store
+            .end_iteration("TASK-001", Stage::Plan, &Outcome::Approved)
+            .unwrap();
+
+        // Work stage
+        store.start_iteration("TASK-001", Stage::Work).unwrap();
+        store
+            .set_iteration_data("TASK-001", Stage::Work, &serde_json::json!({"summary": "Work done"}))
+            .unwrap();
+        store
+            .end_iteration("TASK-001", Stage::Work, &Outcome::SentToReview)
+            .unwrap();
+
+        // Review stage
+        store.start_iteration("TASK-001", Stage::Review).unwrap();
+        store
+            .set_iteration_data("TASK-001", Stage::Review, &serde_json::json!({"verdict": "LGTM"}))
+            .unwrap();
+        store
+            .end_iteration("TASK-001", Stage::Review, &Outcome::Approved)
+            .unwrap();
+
+        // Verify each stage has independent iterations
+        let plan_iters = store.get_iterations("TASK-001", Stage::Plan).unwrap();
+        let work_iters = store.get_iterations("TASK-001", Stage::Work).unwrap();
+        let review_iters = store.get_iterations("TASK-001", Stage::Review).unwrap();
+
+        assert_eq!(plan_iters.len(), 1);
+        assert_eq!(work_iters.len(), 1);
+        assert_eq!(review_iters.len(), 1);
+
+        // Verify stage-specific data accessors
+        assert!(plan_iters[0].plan().is_some());
+        assert!(plan_iters[0].summary().is_none()); // Wrong stage
+
+        assert!(work_iters[0].summary().is_some());
+        assert!(work_iters[0].plan().is_none()); // Wrong stage
+
+        assert!(review_iters[0].verdict().is_some());
+        assert!(review_iters[0].plan().is_none()); // Wrong stage
+    }
+
+    #[test]
+    fn test_unified_iteration_questions_outcome() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // First iteration - agent asks questions
+        store.start_iteration("TASK-001", Stage::Plan).unwrap();
+        let questions_data = serde_json::json!({
+            "questions": [
+                {
+                    "id": "q1",
+                    "question": "Which database?",
+                    "context": "Need to decide on storage",
+                    "options": [
+                        {"label": "PostgreSQL"},
+                        {"label": "SQLite"}
+                    ]
+                }
+            ]
+        });
+        store
+            .set_iteration_data("TASK-001", Stage::Plan, &questions_data)
+            .unwrap();
+        store
+            .end_iteration("TASK-001", Stage::Plan, &Outcome::NeedsAnswers)
+            .unwrap();
+
+        // Verify questions can be extracted
+        let iter = store
+            .get_latest_iteration("TASK-001", Stage::Plan)
+            .unwrap()
+            .unwrap();
+        let questions = iter.questions();
+        assert!(questions.is_some());
+        let qs = questions.unwrap();
+        assert_eq!(qs.len(), 1);
+        assert_eq!(qs[0].id, "q1");
+        assert_eq!(qs[0].question, "Which database?");
+
+        // Second iteration - agent provides plan after answers
+        store.start_iteration("TASK-001", Stage::Plan).unwrap();
+        store
+            .set_iteration_data("TASK-001", Stage::Plan, &serde_json::json!({"plan": "Using SQLite..."}))
+            .unwrap();
+        store
+            .end_iteration("TASK-001", Stage::Plan, &Outcome::Approved)
+            .unwrap();
+
+        // Verify both iterations exist
+        let iters = store.get_iterations("TASK-001", Stage::Plan).unwrap();
+        assert_eq!(iters.len(), 2);
+        assert!(matches!(iters[0].outcome, Some(Outcome::NeedsAnswers)));
+        assert!(matches!(iters[1].outcome, Some(Outcome::Approved)));
+    }
+
+    #[test]
+    fn test_unified_delete_stage_sessions_and_iterations() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // Create some iterations
+        store.start_iteration("TASK-001", Stage::Plan).unwrap();
+        store.start_iteration("TASK-001", Stage::Work).unwrap();
+
+        // Verify they exist
+        assert!(store.get_stage_session("TASK-001", Stage::Plan).unwrap().is_some());
+        assert!(store.get_stage_session("TASK-001", Stage::Work).unwrap().is_some());
+
+        // Delete all
+        store.delete_stage_sessions("TASK-001").unwrap();
+
+        // Verify they're gone
+        assert!(store.get_stage_session("TASK-001", Stage::Plan).unwrap().is_none());
+        assert!(store.get_stage_session("TASK-001", Stage::Work).unwrap().is_none());
+        assert!(store.get_iterations("TASK-001", Stage::Plan).unwrap().is_empty());
+        assert!(store.get_iterations("TASK-001", Stage::Work).unwrap().is_empty());
     }
 }

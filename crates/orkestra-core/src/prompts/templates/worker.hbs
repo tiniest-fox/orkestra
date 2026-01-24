@@ -28,6 +28,19 @@ Work through these subtasks in order. Mark each complete as you finish:
 {{/each}}
 To mark a subtask complete, run: `ork task complete-subtask SUBTASK_ID`
 {{/if}}
+{{#if work_items}}
+
+## Work Items Checklist
+
+These are the specific work items for this subtask:
+
+{{#each work_items}}
+- [{{#if done}}x{{else}} {{/if}}] {{title}}
+{{/each}}
+
+To toggle a work item's status, run: `ork task toggle-work-item {{../task_id}} <INDEX>`
+(where INDEX is 0-based: 0, 1, 2, etc.)
+{{/if}}
 {{#if review_feedback}}
 
 ## Review Feedback

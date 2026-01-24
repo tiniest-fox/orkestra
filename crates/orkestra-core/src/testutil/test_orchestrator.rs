@@ -243,6 +243,9 @@ impl TestOrchestrator {
             branch_name: task.branch_name,
             worktree_path: None, // Cleaned up after merge
                                  // Note: integration_result now tracked in WorkLoop outcomes
+            depends_on: Vec::new(),
+            work_items: Vec::new(),
+            assigned_worker_task_id: None,
         })
     }
 }

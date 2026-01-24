@@ -25,20 +25,19 @@ The user has requested changes to the previous breakdown:
 
 {{{breakdown_feedback}}}
 
-Please revise your breakdown to address this feedback.
+Please revise your breakdown plan to address this feedback.
 {{/if}}
 ---
 
 {{#if auto_approve}}
-Remember: This task has AUTO-APPROVE enabled. When your breakdown is ready:
-1. Create all subtasks using `ork task create-subtask {{task_id}} --title "..." --description "..."`
-2. Run `ork task set-breakdown {{task_id}} --breakdown "YOUR_BREAKDOWN_SUMMARY"`
+Remember: This task has AUTO-APPROVE enabled. When your breakdown plan is ready:
+1. Output your JSON breakdown plan (see agent definition for format)
+2. Run `ork task set-breakdown-plan {{task_id}} --plan '<YOUR JSON>'`
 3. Run `ork task approve-breakdown {{task_id}}`
 {{else}}
-Remember: When your breakdown is ready:
-1. Create all subtasks using `ork task create-subtask {{task_id}} --title "..." --description "..."`
-2. Run `ork task set-breakdown {{task_id}} --breakdown "YOUR_BREAKDOWN_SUMMARY"`
+Remember: When your breakdown plan is ready:
+1. Output your JSON breakdown plan (see agent definition for format)
+2. Run `ork task set-breakdown-plan {{task_id}} --plan '<YOUR JSON>'`
 
-If the task is simple and doesn't need subtasks, instead run:
-`ork task skip-breakdown {{task_id}}`
+If the task is simple and doesn't need breakdown, set skip_breakdown to true in your JSON plan.
 {{/if}}

@@ -26,6 +26,13 @@ pub enum OrchestratorAction {
     ResumeReviewer { task: Task, session_key: String },
     /// Integrate a done task's branch back to primary, then cleanup
     IntegrateDoneTask(Task),
+    /// Assign a subtask to an existing worker (reuse context)
+    /// Used when a subtask depends on another subtask that was just completed
+    AssignSubtaskToWorker {
+        subtask: Task,
+        /// Task ID of the worker that should handle this subtask
+        worker_task_id: String,
+    },
 }
 
 /// Check if task is waiting for human review.
@@ -141,8 +148,45 @@ pub fn check_tasks(project: &Project) -> crate::error::Result<Vec<OrchestratorAc
                 }
             }
             TaskStatus::WaitingOnSubtasks => {
-                // Parent is waiting - check child tasks
-                // Child tasks will be handled in their own iteration
+                // Parent is waiting - check for ready subtasks (dependencies satisfied)
+                // Subtasks with all dependencies completed can be spawned
+                if let Ok(ready_subtasks) = tasks::get_ready_subtasks(project, &task.id) {
+                    for subtask in ready_subtasks {
+                        // Skip if subtask already has an agent running
+                        if predicates::has_running_agent(&subtask) {
+                            continue;
+                        }
+
+                        // Skip if subtask is not in Working status
+                        if subtask.status != TaskStatus::Working {
+                            continue;
+                        }
+
+                        // Determine worker assignment based on dependencies
+                        let worker_action = if subtask.depends_on.is_empty() {
+                            // No dependencies - spawn a new worker
+                            OrchestratorAction::SpawnWorker(subtask)
+                        } else {
+                            // Has dependencies - try to reuse worker from first completed dependency
+                            let dep_id = &subtask.depends_on[0];
+                            if let Ok(Some(dep_task)) = tasks::get_task(project, dep_id) {
+                                // Reuse the worker that handled the dependency
+                                let worker_id = dep_task
+                                    .assigned_worker_task_id
+                                    .unwrap_or(dep_task.id);
+                                OrchestratorAction::AssignSubtaskToWorker {
+                                    subtask,
+                                    worker_task_id: worker_id,
+                                }
+                            } else {
+                                // Dependency not found, spawn new worker
+                                OrchestratorAction::SpawnWorker(subtask)
+                            }
+                        };
+
+                        actions.push(worker_action);
+                    }
+                }
                 None
             }
             TaskStatus::Done => {

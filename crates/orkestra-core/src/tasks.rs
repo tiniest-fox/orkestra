@@ -8,10 +8,12 @@ use crate::services::Project;
 
 // Re-export domain types for convenience
 pub use crate::domain::{
-    IntegrationResult, LogEntry, LoopOutcome, PlanOutcome, ReviewOutcome, SessionInfo, Task,
-    TaskKind, TaskStatus, ToolInput, WorkLoop, WorkOutcome,
+    BreakdownPlan, IntegrationResult, LogEntry, LoopOutcome, PlanOutcome, PlannedSubtask,
+    ReviewOutcome, SessionInfo, Task, TaskKind, TaskStatus, ToolInput, WorkItem, WorkLoop,
+    WorkOutcome,
 };
 use crate::state::TaskPhase;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 // =============================================================================
 // Integration Helper
@@ -292,6 +294,9 @@ pub fn create_task_with_options(
         agent_pid: None,
         branch_name,
         worktree_path,
+        depends_on: Vec::new(),
+        work_items: Vec::new(),
+        assigned_worker_task_id: None,
     };
 
     store.save(&task)?;
@@ -738,6 +743,9 @@ pub fn create_child_task(
         agent_pid: None,
         branch_name: parent.branch_name.clone(),
         worktree_path: parent.worktree_path.clone(),
+        depends_on: Vec::new(),
+        work_items: Vec::new(),
+        assigned_worker_task_id: None,
     };
 
     store.save(&task)?;
@@ -783,6 +791,9 @@ pub fn create_subtask(
         agent_pid: None,
         branch_name: parent.branch_name.clone(),
         worktree_path: parent.worktree_path.clone(),
+        depends_on: Vec::new(),
+        work_items: Vec::new(),
+        assigned_worker_task_id: None,
     };
 
     store.save(&task)?;
@@ -914,6 +925,257 @@ pub fn skip_breakdown(project: &Project, id: &str) -> Result<Task> {
     store.start_work_iteration(id)?;
 
     require_task(project, id)
+}
+
+// =============================================================================
+// Plan-Based Breakdown (New System)
+// =============================================================================
+
+/// Set a structured breakdown plan on a task.
+/// The plan is stored as JSON in the `breakdown` field.
+pub fn set_breakdown_plan(project: &Project, id: &str, plan: &BreakdownPlan) -> Result<Task> {
+    let store = project.store();
+    let task = require_task(project, id)?;
+
+    if task.status != TaskStatus::BreakingDown {
+        return Err(OrkestraError::InvalidState {
+            expected: "BreakingDown".into(),
+            actual: format!("{:?}", task.status),
+        });
+    }
+
+    let json = serde_json::to_string(plan)?;
+
+    store.update_field(id, "breakdown", Some(&json))?;
+
+    // Set phase to AwaitingReview since breakdown plan is ready
+    store.update_phase(id, TaskPhase::AwaitingReview)?;
+
+    require_task(project, id)
+}
+
+/// Get the breakdown plan from a task (if it's a structured JSON plan).
+pub fn get_breakdown_plan(project: &Project, id: &str) -> Result<Option<BreakdownPlan>> {
+    let task = require_task(project, id)?;
+
+    match &task.breakdown {
+        Some(json) => {
+            let plan: BreakdownPlan = serde_json::from_str(json)?;
+            Ok(Some(plan))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Approve a breakdown plan and create subtasks from it.
+/// This is the new plan-first workflow where subtasks are created AFTER approval.
+pub fn approve_breakdown_plan(project: &Project, id: &str) -> Result<Task> {
+    let store = project.store();
+    let task = require_task(project, id)?;
+
+    if task.status != TaskStatus::BreakingDown || task.breakdown.is_none() {
+        return Err(OrkestraError::InvalidState {
+            expected: "BreakingDown with breakdown set".into(),
+            actual: format!("{:?}", task.status),
+        });
+    }
+
+    // Parse the breakdown plan
+    let plan = get_breakdown_plan(project, id)?.ok_or_else(|| OrkestraError::InvalidState {
+        expected: "Valid breakdown plan JSON".into(),
+        actual: "Could not parse breakdown".into(),
+    })?;
+
+    // If skip_breakdown is recommended, go directly to Working
+    if plan.skip_breakdown || plan.subtasks.is_empty() {
+        return skip_breakdown(project, id);
+    }
+
+    // Topologically sort subtasks by dependencies
+    let sorted = topological_sort(&plan.subtasks)?;
+
+    // Create subtasks in dependency order, mapping temp_id -> real_id
+    let mut id_map: HashMap<String, String> = HashMap::new();
+
+    for planned in sorted {
+        // Map temp_id dependencies to real IDs
+        let real_depends_on: Vec<String> = planned
+            .depends_on
+            .iter()
+            .filter_map(|temp| id_map.get(temp).cloned())
+            .collect();
+
+        let subtask = create_subtask_from_plan(project, id, planned, real_depends_on)?;
+        id_map.insert(planned.temp_id.clone(), subtask.id);
+    }
+
+    // Transition parent to WaitingOnSubtasks
+    store.update_status(id, TaskStatus::WaitingOnSubtasks)?;
+    store.update_phase(id, TaskPhase::Idle)?;
+
+    require_task(project, id)
+}
+
+/// Create a subtask from a planned subtask (internal, called during plan approval).
+fn create_subtask_from_plan(
+    project: &Project,
+    parent_id: &str,
+    planned: &PlannedSubtask,
+    depends_on: Vec<String>,
+) -> Result<Task> {
+    let store = project.store();
+    let parent = require_task(project, parent_id)?;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Convert planned work items to work items
+    let work_items: Vec<WorkItem> = planned.work_items.iter().map(WorkItem::from).collect();
+
+    let task = Task {
+        id: store.next_id()?,
+        title: Some(planned.title.clone()),
+        description: planned.description.clone(),
+        // Subtasks start in Working - they don't need their own planning phase
+        status: TaskStatus::Working,
+        phase: TaskPhase::Idle,
+        kind: TaskKind::Subtask,
+        created_at: now.clone(),
+        updated_at: now,
+        completed_at: None,
+        summary: None,
+        error: None,
+        plan: parent.plan.clone(), // Inherit parent's plan
+        sessions: None,
+        auto_approve: false,
+        parent_id: Some(parent_id.to_string()),
+        breakdown: None,
+        skip_breakdown: true, // Subtasks don't get broken down further
+        agent_pid: None,
+        branch_name: parent.branch_name.clone(),
+        worktree_path: parent.worktree_path.clone(),
+        depends_on,
+        work_items,
+        assigned_worker_task_id: None, // Set by orchestrator when assigning worker
+    };
+
+    store.save(&task)?;
+
+    // Start Loop 1 for new subtask (subtasks start in Working, so use Working status)
+    store.start_loop(&task.id, TaskStatus::Working)?;
+
+    // Start first work iteration (subtasks skip planning phase)
+    store.start_work_iteration(&task.id)?;
+
+    Ok(task)
+}
+
+/// Topologically sort planned subtasks by dependencies using Kahn's algorithm.
+/// Returns an error if a cycle is detected or if a dependency references a non-existent subtask.
+fn topological_sort(subtasks: &[PlannedSubtask]) -> Result<Vec<&PlannedSubtask>> {
+    let mut in_degree: HashMap<&str, usize> = HashMap::new();
+    let mut graph: HashMap<&str, Vec<&str>> = HashMap::new();
+
+    // Collect all valid temp_ids for validation
+    let valid_ids: HashSet<&str> = subtasks.iter().map(|st| st.temp_id.as_str()).collect();
+
+    // Initialize in-degree for all nodes and validate dependencies
+    for st in subtasks {
+        in_degree.entry(&st.temp_id).or_insert(0);
+        for dep in &st.depends_on {
+            // Validate that the dependency exists
+            if !valid_ids.contains(dep.as_str()) {
+                return Err(OrkestraError::InvalidInput(format!(
+                    "Subtask '{}' depends on '{}' which does not exist",
+                    st.temp_id, dep
+                )));
+            }
+            graph.entry(dep.as_str()).or_default().push(&st.temp_id);
+            *in_degree.entry(&st.temp_id).or_insert(0) += 1;
+        }
+    }
+
+    // Find all nodes with no incoming edges
+    let mut queue: VecDeque<&str> = in_degree
+        .iter()
+        .filter(|(_, &deg)| deg == 0)
+        .map(|(&id, _)| id)
+        .collect();
+
+    let mut result: Vec<&PlannedSubtask> = Vec::new();
+    let id_to_subtask: HashMap<&str, &PlannedSubtask> =
+        subtasks.iter().map(|st| (st.temp_id.as_str(), st)).collect();
+
+    while let Some(id) = queue.pop_front() {
+        if let Some(&subtask) = id_to_subtask.get(id) {
+            result.push(subtask);
+        }
+
+        if let Some(neighbors) = graph.get(id) {
+            for &neighbor in neighbors {
+                if let Some(deg) = in_degree.get_mut(neighbor) {
+                    *deg -= 1;
+                    if *deg == 0 {
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+        }
+    }
+
+    if result.len() != subtasks.len() {
+        return Err(OrkestraError::InvalidInput(
+            "Circular dependency detected in subtask plan".into(),
+        ));
+    }
+
+    Ok(result)
+}
+
+/// Get subtasks that are ready to work (all dependencies are satisfied).
+/// A subtask is ready when all its dependencies are in Done status.
+pub fn get_ready_subtasks(project: &Project, parent_id: &str) -> Result<Vec<Task>> {
+    let subtasks = get_subtasks(project, parent_id)?;
+
+    // Collect IDs of completed subtasks (owned strings to avoid borrow issues)
+    let done_ids: HashSet<String> = subtasks
+        .iter()
+        .filter(|t| t.status == TaskStatus::Done)
+        .map(|t| t.id.clone())
+        .collect();
+
+    // Filter to subtasks that are not done and have all dependencies satisfied
+    Ok(subtasks
+        .into_iter()
+        .filter(|t| {
+            t.status != TaskStatus::Done
+                && t.depends_on.iter().all(|dep| done_ids.contains(dep))
+        })
+        .collect())
+}
+
+/// Toggle a work item's done status.
+pub fn toggle_work_item(project: &Project, subtask_id: &str, item_index: usize) -> Result<Task> {
+    let store = project.store();
+    let mut task = require_task(project, subtask_id)?;
+
+    if task.kind != TaskKind::Subtask {
+        return Err(OrkestraError::InvalidInput(
+            "Work items can only be toggled on subtasks".into(),
+        ));
+    }
+
+    if item_index >= task.work_items.len() {
+        return Err(OrkestraError::InvalidInput(format!(
+            "Work item index {} out of bounds (task has {} items)",
+            item_index,
+            task.work_items.len()
+        )));
+    }
+
+    task.work_items[item_index].done = !task.work_items[item_index].done;
+    task.updated_at = chrono::Utc::now().to_rfc3339();
+
+    store.save(&task)?;
+    Ok(task)
 }
 
 /// Get all children of a task.
@@ -1052,4 +1314,163 @@ pub fn check_parent_completion(project: &Project, parent_id: &str) -> Result<Opt
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{PlannedSubtask, PlannedWorkItem, SubtaskComplexity};
+
+    fn make_subtask(temp_id: &str, depends_on: Vec<&str>) -> PlannedSubtask {
+        PlannedSubtask {
+            temp_id: temp_id.to_string(),
+            title: format!("Subtask {temp_id}"),
+            description: "Test subtask".to_string(),
+            complexity: SubtaskComplexity::Small,
+            depends_on: depends_on.into_iter().map(String::from).collect(),
+            work_items: vec![PlannedWorkItem {
+                title: "Work item".to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn test_topological_sort_empty() {
+        let subtasks: Vec<PlannedSubtask> = vec![];
+        let result = topological_sort(&subtasks).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_topological_sort_single_no_deps() {
+        let subtasks = vec![make_subtask("st1", vec![])];
+        let result = topological_sort(&subtasks).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].temp_id, "st1");
+    }
+
+    #[test]
+    fn test_topological_sort_linear_chain() {
+        // st1 -> st2 -> st3
+        let subtasks = vec![
+            make_subtask("st1", vec![]),
+            make_subtask("st2", vec!["st1"]),
+            make_subtask("st3", vec!["st2"]),
+        ];
+        let result = topological_sort(&subtasks).unwrap();
+        assert_eq!(result.len(), 3);
+        // st1 must come before st2, st2 must come before st3
+        let pos: HashMap<&str, usize> = result
+            .iter()
+            .enumerate()
+            .map(|(i, st)| (st.temp_id.as_str(), i))
+            .collect();
+        assert!(pos["st1"] < pos["st2"]);
+        assert!(pos["st2"] < pos["st3"]);
+    }
+
+    #[test]
+    fn test_topological_sort_fan_out() {
+        // st1 -> st2, st1 -> st3
+        let subtasks = vec![
+            make_subtask("st1", vec![]),
+            make_subtask("st2", vec!["st1"]),
+            make_subtask("st3", vec!["st1"]),
+        ];
+        let result = topological_sort(&subtasks).unwrap();
+        assert_eq!(result.len(), 3);
+        let pos: HashMap<&str, usize> = result
+            .iter()
+            .enumerate()
+            .map(|(i, st)| (st.temp_id.as_str(), i))
+            .collect();
+        assert!(pos["st1"] < pos["st2"]);
+        assert!(pos["st1"] < pos["st3"]);
+    }
+
+    #[test]
+    fn test_topological_sort_fan_in() {
+        // st1 -> st3, st2 -> st3
+        let subtasks = vec![
+            make_subtask("st1", vec![]),
+            make_subtask("st2", vec![]),
+            make_subtask("st3", vec!["st1", "st2"]),
+        ];
+        let result = topological_sort(&subtasks).unwrap();
+        assert_eq!(result.len(), 3);
+        let pos: HashMap<&str, usize> = result
+            .iter()
+            .enumerate()
+            .map(|(i, st)| (st.temp_id.as_str(), i))
+            .collect();
+        assert!(pos["st1"] < pos["st3"]);
+        assert!(pos["st2"] < pos["st3"]);
+    }
+
+    #[test]
+    fn test_topological_sort_cycle_detection() {
+        // st1 -> st2 -> st1 (cycle)
+        let subtasks = vec![
+            make_subtask("st1", vec!["st2"]),
+            make_subtask("st2", vec!["st1"]),
+        ];
+        let result = topological_sort(&subtasks);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Circular dependency"));
+    }
+
+    #[test]
+    fn test_topological_sort_self_reference() {
+        // st1 depends on itself
+        let subtasks = vec![make_subtask("st1", vec!["st1"])];
+        let result = topological_sort(&subtasks);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Circular dependency"));
+    }
+
+    #[test]
+    fn test_topological_sort_missing_dependency() {
+        // st2 depends on non-existent st_missing
+        let subtasks = vec![
+            make_subtask("st1", vec![]),
+            make_subtask("st2", vec!["st_missing"]),
+        ];
+        let result = topological_sort(&subtasks);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("does not exist"));
+    }
+
+    #[test]
+    fn test_topological_sort_complex_dag() {
+        // Complex DAG:
+        //   st1 -> st2 -> st4
+        //   st1 -> st3 -> st4
+        //   st2 -> st5
+        let subtasks = vec![
+            make_subtask("st1", vec![]),
+            make_subtask("st2", vec!["st1"]),
+            make_subtask("st3", vec!["st1"]),
+            make_subtask("st4", vec!["st2", "st3"]),
+            make_subtask("st5", vec!["st2"]),
+        ];
+        let result = topological_sort(&subtasks).unwrap();
+        assert_eq!(result.len(), 5);
+        let pos: HashMap<&str, usize> = result
+            .iter()
+            .enumerate()
+            .map(|(i, st)| (st.temp_id.as_str(), i))
+            .collect();
+        // Verify all dependency constraints
+        assert!(pos["st1"] < pos["st2"]);
+        assert!(pos["st1"] < pos["st3"]);
+        assert!(pos["st2"] < pos["st4"]);
+        assert!(pos["st3"] < pos["st4"]);
+        assert!(pos["st2"] < pos["st5"]);
+    }
 }

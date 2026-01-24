@@ -178,6 +178,20 @@ impl SqliteStore {
             [],
         );
 
+        // Migration: add columns for subtask dependencies and work items
+        let _ = conn.execute(
+            "ALTER TABLE tasks ADD COLUMN depends_on TEXT DEFAULT '[]'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE tasks ADD COLUMN work_items TEXT DEFAULT '[]'",
+            [],
+        );
+        let _ = conn.execute(
+            "ALTER TABLE tasks ADD COLUMN assigned_worker_task_id TEXT",
+            [],
+        );
+
         // Migrate legacy tasks: create iteration records for tasks with plan/summary but no iterations
         Self::migrate_legacy_iterations(&conn)?;
 
@@ -415,6 +429,20 @@ impl SqliteStore {
             branch_name: row.get(20)?,
             worktree_path: row.get(21)?,
             // Column 22 (integration_result) kept for backwards compat but not used
+            // New fields for subtask dependencies and work items
+            depends_on: row
+                .get::<_, Option<String>>(24)
+                .ok()
+                .flatten()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default(),
+            work_items: row
+                .get::<_, Option<String>>(25)
+                .ok()
+                .flatten()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default(),
+            assigned_worker_task_id: row.get(26).ok().flatten(),
         })
     }
 
@@ -469,6 +497,7 @@ impl SqliteStore {
             "branch_name",
             "worktree_path",
             "integration_result",
+            "assigned_worker_task_id",
         ];
 
         if !valid_fields.contains(&field) {
@@ -1129,8 +1158,9 @@ impl TaskStore for SqliteStore {
                 id, title, description, status, kind, created_at, updated_at,
                 completed_at, summary, error, plan, plan_feedback,
                 review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
-                skip_breakdown, agent_pid, branch_name, worktree_path, integration_result
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                skip_breakdown, agent_pid, branch_name, worktree_path, integration_result, phase,
+                depends_on, work_items, assigned_worker_task_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ",
             params![
                 task.id,
@@ -1156,6 +1186,10 @@ impl TaskStore for SqliteStore {
                 task.branch_name,
                 task.worktree_path,
                 None::<String>, // integration_result - deprecated, in work_loops
+                phase_to_str(task.phase),
+                serde_json::to_string(&task.depends_on).unwrap_or_else(|_| "[]".to_string()),
+                serde_json::to_string(&task.work_items).unwrap_or_else(|_| "[]".to_string()),
+                task.assigned_worker_task_id,
             ],
         )?;
 
@@ -1185,8 +1219,9 @@ impl TaskStore for SqliteStore {
                     id, title, description, status, kind, created_at, updated_at,
                     completed_at, summary, error, plan, plan_feedback,
                     review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
-                    skip_breakdown, agent_pid, branch_name, worktree_path, integration_result, phase
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    skip_breakdown, agent_pid, branch_name, worktree_path, integration_result, phase,
+                    depends_on, work_items, assigned_worker_task_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ",
                 params![
                     task.id,
@@ -1213,6 +1248,9 @@ impl TaskStore for SqliteStore {
                     task.worktree_path,
                     None::<String>, // integration_result - deprecated, in work_loops
                     phase_to_str(task.phase),
+                    serde_json::to_string(&task.depends_on).unwrap_or_else(|_| "[]".to_string()),
+                    serde_json::to_string(&task.work_items).unwrap_or_else(|_| "[]".to_string()),
+                    task.assigned_worker_task_id,
                 ],
             )?;
 

@@ -2457,6 +2457,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "orkestra-core",
+ "serde_json",
 ]
 
 [[package]]

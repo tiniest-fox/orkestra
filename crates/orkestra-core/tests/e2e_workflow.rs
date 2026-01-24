@@ -81,6 +81,7 @@ fn orchestrator_has_no_action_for(orchestrator: &TestOrchestrator, task_id: &str
         OrchestratorAction::SpawnReviewer(t) => t.id == task_id,
         OrchestratorAction::ResumeReviewer { task: t, .. } => t.id == task_id,
         OrchestratorAction::IntegrateDoneTask(t) => t.id == task_id,
+        OrchestratorAction::AssignSubtaskToWorker { subtask: t, .. } => t.id == task_id,
     })
 }
 

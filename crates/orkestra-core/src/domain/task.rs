@@ -1,3 +1,4 @@
+use crate::domain::subtask_plan::WorkItem;
 use crate::error::{OrkestraError, Result};
 use crate::state::TaskPhase;
 use serde::{Deserialize, Serialize};
@@ -151,6 +152,21 @@ pub struct Task {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_path: Option<String>,
     // Note: integration_result has been moved to WorkLoop outcomes for single source of truth.
+
+    /// IDs of subtasks this subtask depends on (only for subtasks).
+    /// Empty for root tasks. Used for dependency-aware scheduling.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
+
+    /// Work items for this subtask (simple checklist, not full tasks).
+    /// Populated from BreakdownPlan when subtasks are created.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub work_items: Vec<WorkItem>,
+
+    /// Task ID of the worker that should handle this subtask (for worker reuse).
+    /// When set, orchestrator routes work to this existing worker instead of spawning new one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned_worker_task_id: Option<String>,
 }
 
 impl Task {
@@ -179,6 +195,9 @@ impl Task {
             agent_pid: None,
             branch_name: None,
             worktree_path: None,
+            depends_on: Vec::new(),
+            work_items: Vec::new(),
+            assigned_worker_task_id: None,
         }
     }
 

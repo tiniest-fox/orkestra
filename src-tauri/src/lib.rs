@@ -4,13 +4,18 @@
 use orkestra_core::{
     agents::{self, generate_title_sync, kill_agent, kill_all_agents},
     auto_tasks, find_project_root, is_process_running, orchestrator, recover_session_logs,
-    resume_agent, tasks, AgentType, AutoTask, LogEntry, Project, Task, TaskStatus, WorkLoop,
+    resume_agent, tasks, AgentType, AutoTask, BreakdownPlan, LogEntry, Project, Task, TaskStatus,
+    WorkLoop,
 };
 use tasks::{
-    approve_breakdown as core_approve_breakdown, get_child_tasks as core_get_child_tasks,
-    get_subtasks as core_get_subtasks, request_breakdown_changes as core_request_breakdown_changes,
+    approve_breakdown as core_approve_breakdown,
+    approve_breakdown_plan as core_approve_breakdown_plan,
+    get_breakdown_plan as core_get_breakdown_plan, get_child_tasks as core_get_child_tasks,
+    get_ready_subtasks as core_get_ready_subtasks, get_subtasks as core_get_subtasks,
+    request_breakdown_changes as core_request_breakdown_changes,
     request_review_changes as core_request_review_changes, skip_breakdown as core_skip_breakdown,
     start_automated_review as core_start_automated_review,
+    toggle_work_item as core_toggle_work_item,
 };
 use tauri::{AppHandle, Emitter};
 
@@ -295,6 +300,34 @@ fn get_task_loops(id: String) -> Result<Vec<WorkLoop>, String> {
     store.get_loops(&id).map_err(|e| e.to_string())
 }
 
+/// Get the breakdown plan for a task (structured JSON plan, if set)
+#[tauri::command]
+fn get_breakdown_plan(id: String) -> Result<Option<BreakdownPlan>, String> {
+    let project = Project::discover().map_err(|e| e.to_string())?;
+    core_get_breakdown_plan(&project, &id).map_err(|e| e.to_string())
+}
+
+/// Approve a breakdown plan and create subtasks from it (new plan-first flow)
+#[tauri::command]
+fn approve_breakdown_plan(id: String) -> Result<Task, String> {
+    let project = Project::discover().map_err(|e| e.to_string())?;
+    core_approve_breakdown_plan(&project, &id).map_err(|e| e.to_string())
+}
+
+/// Get subtasks that are ready to work (all dependencies satisfied)
+#[tauri::command]
+fn get_ready_subtasks(parent_id: String) -> Result<Vec<Task>, String> {
+    let project = Project::discover().map_err(|e| e.to_string())?;
+    core_get_ready_subtasks(&project, &parent_id).map_err(|e| e.to_string())
+}
+
+/// Toggle a work item's done status within a subtask
+#[tauri::command]
+fn toggle_work_item(subtask_id: String, index: usize) -> Result<Task, String> {
+    let project = Project::discover().map_err(|e| e.to_string())?;
+    core_toggle_work_item(&project, &subtask_id, index).map_err(|e| e.to_string())
+}
+
 /// Start the orchestrator background loop
 #[allow(clippy::too_many_lines)]
 fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
@@ -514,6 +547,48 @@ fn start_orchestrator(app_handle: AppHandle, stop_flag: Arc<AtomicBool>) {
                                     }
                                 }
                             }
+                            orchestrator::OrchestratorAction::AssignSubtaskToWorker {
+                                subtask,
+                                worker_task_id,
+                            } => {
+                                // For now, spawn a new worker for the subtask
+                                // TODO: Implement actual worker reuse by resuming the worker session
+                                // from worker_task_id with the subtask's context
+                                println!(
+                                    "[orchestrator] Assigning subtask {} to worker {} (spawning new for now)",
+                                    subtask.id, worker_task_id
+                                );
+                                match agents::spawn_agent(
+                                    &project,
+                                    &subtask,
+                                    AgentType::Worker,
+                                    on_update,
+                                ) {
+                                    Ok(spawned) => {
+                                        // Store the assigned worker task ID on the subtask
+                                        let _ = project.store().update_field(
+                                            &subtask.id,
+                                            "assigned_worker_task_id",
+                                            Some(&worker_task_id),
+                                        );
+                                        println!(
+                                            "[orchestrator] Spawned worker for subtask {} (pid: {}, assigned to {})",
+                                            spawned.task_id, spawned.process_id, worker_task_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[orchestrator] Failed to spawn worker for subtask {}: {}",
+                                            subtask.id, e
+                                        );
+                                        let _ = tasks::fail_task(
+                                            &project,
+                                            &subtask.id,
+                                            &format!("Failed to spawn worker: {e}"),
+                                        );
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -637,14 +712,18 @@ pub fn run() {
             request_review_changes,
             approve_review,
             approve_breakdown,
+            approve_breakdown_plan,
             request_breakdown_changes,
             skip_breakdown,
             delete_task,
             get_subtasks,
             get_child_tasks,
+            get_ready_subtasks,
             resume_task,
             get_task_logs,
             get_task_loops,
+            get_breakdown_plan,
+            toggle_work_item,
             get_project_root,
             get_current_branch,
             get_branches,

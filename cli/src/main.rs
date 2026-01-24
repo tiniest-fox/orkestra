@@ -119,7 +119,7 @@ enum TaskAction {
         /// Subtask ID
         id: String,
     },
-    /// Set the breakdown for a task (used by breakdown agent)
+    /// Set the breakdown for a task (used by breakdown agent) - LEGACY
     SetBreakdown {
         /// Task ID
         id: String,
@@ -127,10 +127,25 @@ enum TaskAction {
         #[arg(short, long)]
         breakdown: String,
     },
-    /// Approve a task's breakdown and start working on subtasks
+    /// Set a structured breakdown plan (JSON) for a task - NEW
+    SetBreakdownPlan {
+        /// Task ID
+        id: String,
+        /// The breakdown plan (JSON)
+        #[arg(short, long)]
+        plan: String,
+    },
+    /// Approve a task's breakdown and create subtasks from the plan
     ApproveBreakdown {
         /// Task ID
         id: String,
+    },
+    /// Toggle a work item's done status within a subtask
+    ToggleWorkItem {
+        /// Subtask ID
+        subtask_id: String,
+        /// Work item index (0-based)
+        index: usize,
     },
     /// Request changes to a task's breakdown
     RequestBreakdownChanges {
@@ -501,48 +516,126 @@ fn main() {
                         }
                     }
                 }
-                TaskAction::ApproveBreakdown { id } => {
-                    match tasks::approve_breakdown(&project, &id) {
-                        Ok(task) => {
-                            println!(
-                                "Task {} breakdown approved. Status: waiting_on_subtasks",
-                                task.id
-                            );
+                TaskAction::SetBreakdownPlan { id, plan } => {
+                    // Parse the JSON to validate it
+                    let breakdown_plan: orkestra_core::BreakdownPlan = match serde_json::from_str(&plan) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            eprintln!("Error: Invalid JSON breakdown plan: {e}");
+                            std::process::exit(1);
+                        }
+                    };
 
-                            // Spawn worker agents for child tasks only (not subtasks/checklist items)
-                            match tasks::get_child_tasks(&project, &id) {
-                                Ok(child_tasks) => {
-                                    for child in child_tasks {
-                                        match spawn_agent_sync(
-                                            &project,
-                                            &child,
-                                            AgentType::Worker,
-                                            30,
-                                        ) {
-                                            Ok(spawned) => {
-                                                if let Some(sid) = &spawned.session_id {
-                                                    println!("Spawned worker for {} (pid: {}, session: {})", child.id, spawned.process_id, sid);
-                                                } else {
-                                                    println!("Spawned worker for {} (pid: {}, session capture pending)", child.id, spawned.process_id);
-                                                }
-                                            }
-                                            Err(e) => {
-                                                eprintln!(
-                                                    "Warning: Failed to spawn worker for {}: {}",
-                                                    child.id, e
-                                                );
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Warning: Failed to get child tasks: {e}");
-                                }
+                    match tasks::set_breakdown_plan(&project, &id, &breakdown_plan) {
+                        Ok(task) => {
+                            let subtask_count = breakdown_plan.subtasks.len();
+                            if breakdown_plan.skip_breakdown {
+                                println!("Breakdown plan set for task {} (skip recommended). Ready for approval.", task.id);
+                            } else {
+                                println!("Breakdown plan set for task {} ({} subtasks proposed). Ready for approval.", task.id, subtask_count);
                             }
                         }
                         Err(e) => {
-                            eprintln!("Error approving breakdown: {e}");
+                            eprintln!("Error setting breakdown plan: {e}");
                             std::process::exit(1);
+                        }
+                    }
+                }
+                TaskAction::ToggleWorkItem { subtask_id, index } => {
+                    match tasks::toggle_work_item(&project, &subtask_id, index) {
+                        Ok(task) => {
+                            if let Some(item) = task.work_items.get(index) {
+                                let status = if item.done { "done" } else { "not done" };
+                                println!("Work item {} toggled to {} for subtask {}", index, status, task.id);
+                            } else {
+                                println!("Work item {} toggled for subtask {}", index, task.id);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Error toggling work item: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                TaskAction::ApproveBreakdown { id } => {
+                    // Try new plan-based flow first (JSON breakdown)
+                    // If the breakdown is valid JSON, use approve_breakdown_plan which creates subtasks
+                    // Otherwise fall back to the old approve_breakdown flow
+                    let result = tasks::get_breakdown_plan(&project, &id);
+
+                    let is_json_plan = matches!(result, Ok(Some(_)));
+
+                    if is_json_plan {
+                        // New flow: approve_breakdown_plan creates subtasks from the JSON plan
+                        match tasks::approve_breakdown_plan(&project, &id) {
+                            Ok(task) => {
+                                let subtask_count = tasks::get_subtasks(&project, &id)
+                                    .map(|s| s.len())
+                                    .unwrap_or(0);
+
+                                if subtask_count > 0 {
+                                    println!(
+                                        "Task {} breakdown approved. Created {} subtasks. Status: {:?}",
+                                        task.id, subtask_count, task.status
+                                    );
+                                    // Note: Workers for subtasks are spawned by the orchestrator
+                                    // based on dependency order, not here
+                                } else {
+                                    println!(
+                                        "Task {} breakdown approved (skip). Status: {:?}",
+                                        task.id, task.status
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Error approving breakdown plan: {e}");
+                                std::process::exit(1);
+                            }
+                        }
+                    } else {
+                        // Legacy flow: subtasks were already created, just approve
+                        match tasks::approve_breakdown(&project, &id) {
+                            Ok(task) => {
+                                println!(
+                                    "Task {} breakdown approved. Status: waiting_on_subtasks",
+                                    task.id
+                                );
+
+                                // Spawn worker agents for child tasks only (not subtasks/checklist items)
+                                match tasks::get_child_tasks(&project, &id) {
+                                    Ok(child_tasks) => {
+                                        for child in child_tasks {
+                                            match spawn_agent_sync(
+                                                &project,
+                                                &child,
+                                                AgentType::Worker,
+                                                30,
+                                            ) {
+                                                Ok(spawned) => {
+                                                    if let Some(sid) = &spawned.session_id {
+                                                        println!("Spawned worker for {} (pid: {}, session: {})", child.id, spawned.process_id, sid);
+                                                    } else {
+                                                        println!("Spawned worker for {} (pid: {}, session capture pending)", child.id, spawned.process_id);
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    eprintln!(
+                                                        "Warning: Failed to spawn worker for {}: {}",
+                                                        child.id, e
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Warning: Failed to get child tasks: {e}");
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Error approving breakdown: {e}");
+                                std::process::exit(1);
+                            }
                         }
                     }
                 }

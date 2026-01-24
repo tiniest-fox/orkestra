@@ -111,6 +111,13 @@ pub struct SubtaskContext<'a> {
     pub done: bool,
 }
 
+/// Context for work item items in worker prompt (three-level hierarchy).
+#[derive(Serialize)]
+pub struct WorkItemContext<'a> {
+    pub title: &'a str,
+    pub done: bool,
+}
+
 /// Context for worker agent prompts.
 #[derive(Serialize)]
 pub struct WorkerContext<'a> {
@@ -121,6 +128,7 @@ pub struct WorkerContext<'a> {
     pub plan: Option<&'a str>,
     pub review_feedback: Option<&'a str>,
     pub subtasks: Option<Vec<SubtaskContext<'a>>>,
+    pub work_items: Option<Vec<WorkItemContext<'a>>>,
 }
 
 /// Context for planner agent prompts.
@@ -257,6 +265,21 @@ pub fn build_worker_prompt(
             .collect()
     });
 
+    // Build work item contexts from the task's work_items field
+    let work_item_contexts: Option<Vec<WorkItemContext>> = if task.work_items.is_empty() {
+        None
+    } else {
+        Some(
+            task.work_items
+                .iter()
+                .map(|wi| WorkItemContext {
+                    title: &wi.title,
+                    done: wi.done,
+                })
+                .collect(),
+        )
+    };
+
     render_worker(&WorkerContext {
         agent_definition,
         task_id: &task.id,
@@ -266,6 +289,7 @@ pub fn build_worker_prompt(
         // Feedback is passed via resume prompts, not initial spawn
         review_feedback: None,
         subtasks: subtask_contexts,
+        work_items: work_item_contexts,
     })
 }
 
@@ -345,6 +369,9 @@ mod tests {
             agent_pid: None,
             branch_name: None,
             worktree_path: None,
+            depends_on: Vec::new(),
+            work_items: Vec::new(),
+            assigned_worker_task_id: None,
         }
     }
 
@@ -564,9 +591,9 @@ mod tests {
 
         assert!(prompt.contains("# Breakdown Agent"));
         assert!(prompt.contains("TASK-001"));
-        assert!(prompt.contains("ork task create-subtask"));
-        assert!(prompt.contains("ork task set-breakdown"));
-        assert!(prompt.contains("ork task skip-breakdown"));
+        assert!(prompt.contains("ork task set-breakdown-plan"));
+        // New flow uses skip_breakdown in JSON plan rather than separate command
+        assert!(prompt.contains("skip_breakdown"));
     }
 
     #[test]

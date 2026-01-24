@@ -57,13 +57,14 @@ Orkestra is a task orchestration system that spawns Claude Code instances (agent
 - **`.orkestra/`** - Runtime data directory (auto-created)
   - `orkestra.db` - SQLite database for tasks and sessions
   - `worktrees/` - Git worktrees for task isolation (one per task)
+  - `pending-outputs/` - Crash recovery: raw JSON from agents awaiting parse
   - `worktree_setup.sh` - Script that runs when creating new worktrees (customize for project-specific setup like copying .env files)
 
 ### Core Library Architecture (`crates/orkestra-core/`)
 
 The core uses a hexagonal architecture with domain/ports/adapters:
 
-- **`domain/`** - Core domain models (`Task`, `TaskStatus`, `LogEntry`)
+- **`domain/`** - Core domain models (`Task`, `TaskStatus`, `LogEntry`, `WorkerOutput`, `ReviewerOutput`, `BreakdownOutput`)
 - **`ports/`** - Trait interfaces (`TaskStore`, `ProcessSpawner`, `Clock`)
 - **`adapters/`** - Implementations (`SqliteStore`, `ClaudeSpawner`, `SystemClock`)
 - **`services/`** - Business logic (`TaskService`, `AgentService`)
@@ -84,13 +85,15 @@ Any state can transition to `Failed` or `Blocked`.
 ### Agent System
 
 Agents are Claude Code instances spawned with:
-1. A prompt built from agent definition markdown + task details
-2. Streaming JSON output captured as task logs
-3. Access to the `ork` CLI for reporting completion/failure
+1. A prompt built from Handlebars templates + task context
+2. Structured JSON output via `--output-format json --json-schema <schema>`
+3. JSON schemas defined in `crates/orkestra-core/src/prompts/schemas/`
 
 Agent types:
-- **Planner**: Analyzes task, creates implementation plan (does not write code)
-- **Worker**: Implements approved plan, reports completion via `ork task complete`
+- **Planner**: Analyzes task, asks clarifying questions, creates implementation plan (does not write code)
+- **Breakdown**: Decomposes complex tasks into subtasks with dependencies
+- **Worker**: Implements approved plan, outputs completion/failure/blocked status
+- **Reviewer**: Reviews completed work, approves or requests changes
 
 ### Tauri Commands
 
@@ -102,16 +105,15 @@ The desktop app exposes these IPC commands (see `src-tauri/src/lib.rs`):
 
 ### CLI Commands (`ork`)
 
-The `ork` CLI is used for task management. Agents can use `ork` directly as Orkestra adds the CLI to their PATH automatically. From the main repo or git worktrees, the CLI will be found automatically.
+The `ork` CLI is used for manual task management. Agents no longer use CLI commands - they output structured JSON instead.
 
 ```bash
 ork task list [--status STATUS]         # List tasks
 ork task show ID                        # Show task details
 ork task create -t TITLE -d DESC        # Create task
-ork task complete ID --summary MSG      # Mark ready for review (used by workers)
+ork task complete ID --summary MSG      # Mark ready for review
 ork task fail ID --reason MSG           # Mark failed
 ork task block ID --reason MSG          # Mark blocked
-ork task set-plan ID --plan "..."       # Set plan (used by planners)
 ork task approve ID                     # Approve plan, spawn worker
 ork task request-changes ID --feedback  # Request plan revisions
 ```
@@ -131,6 +133,7 @@ Agent processes (Claude Code instances) are managed with multiple cleanup mechan
 - **Startup orphan cleanup**: Kills any orphaned agents from previous crashes on app start
 - **ProcessGuard**: RAII guard that kills processes on drop (defense against panics)
 - **Recursive tree killing**: Kills entire process trees including child shells
+- **Crash recovery**: Agent JSON output is persisted before parsing; recovered on restart
 
 ### Worktree Setup
 

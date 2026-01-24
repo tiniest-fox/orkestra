@@ -12,6 +12,7 @@ pub mod services;
 pub mod session_logs;
 pub mod state;
 pub mod tasks;
+pub mod workflow;
 
 // Test utilities (available for integration tests)
 #[cfg(any(test, feature = "testutil"))]

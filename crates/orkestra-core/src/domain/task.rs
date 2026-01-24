@@ -1,4 +1,5 @@
 use crate::error::{OrkestraError, Result};
+use crate::state::TaskPhase;
 use serde::{Deserialize, Serialize};
 
 /// Task status representing the current state in the workflow.
@@ -105,6 +106,10 @@ pub struct Task {
     pub title: Option<String>,
     pub description: String,
     pub status: TaskStatus,
+    /// Explicit phase within the status - eliminates field-based inference.
+    /// Use `state::predicates` functions to check state instead of this field directly.
+    #[serde(default)]
+    pub phase: TaskPhase,
     /// Kind of task: Task (Kanban, parallel) or Subtask (checklist item)
     #[serde(default)]
     pub kind: TaskKind,
@@ -150,7 +155,7 @@ pub struct Task {
 
 impl Task {
     /// Create a new task with the given ID, title, and description.
-    /// Tasks start in Planning status immediately.
+    /// Tasks start in Planning status immediately with Idle phase.
     /// Title can be None if it will be generated asynchronously.
     pub fn new(id: String, title: Option<String>, description: String, now: &str) -> Self {
         Self {
@@ -158,6 +163,7 @@ impl Task {
             title,
             description,
             status: TaskStatus::Planning,
+            phase: TaskPhase::Idle,
             kind: TaskKind::Task,
             created_at: now.to_string(),
             updated_at: now.to_string(),
@@ -177,16 +183,28 @@ impl Task {
     }
 
     /// Returns true if task is in Planning and has a plan ready for review.
+    ///
+    /// # Deprecated
+    /// Use `task.phase == TaskPhase::AwaitingReview` or `state::predicates::can_approve_plan()` instead.
+    #[deprecated(since = "0.2.0", note = "Use task.phase == TaskPhase::AwaitingReview instead")]
     pub fn needs_plan_review(&self) -> bool {
         self.status == TaskStatus::Planning && self.plan.is_some()
     }
 
     /// Returns true if task is Working and has work ready for review.
+    ///
+    /// # Deprecated
+    /// Use `task.phase == TaskPhase::AwaitingReview` or `state::predicates::can_approve_work()` instead.
+    #[deprecated(since = "0.2.0", note = "Use task.phase == TaskPhase::AwaitingReview instead")]
     pub fn needs_work_review(&self) -> bool {
         self.status == TaskStatus::Working && self.summary.is_some()
     }
 
     /// Returns true if task is `BreakingDown` and has breakdown ready for review.
+    ///
+    /// # Deprecated
+    /// Use `task.phase == TaskPhase::AwaitingReview` or `state::predicates::can_approve_breakdown()` instead.
+    #[deprecated(since = "0.2.0", note = "Use task.phase == TaskPhase::AwaitingReview instead")]
     pub fn needs_breakdown_review(&self) -> bool {
         self.status == TaskStatus::BreakingDown && self.breakdown.is_some()
     }

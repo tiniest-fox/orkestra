@@ -10,6 +10,7 @@ pub mod project;
 pub mod prompts;
 pub mod services;
 pub mod session_logs;
+pub mod state;
 pub mod tasks;
 
 // Test utilities (available for integration tests)
@@ -23,12 +24,16 @@ pub use domain::{
 };
 pub use error::{OrkestraError, Result};
 pub use services::Project;
+pub use state::TaskPhase;
 
 // Agent re-exports
 pub use agents::{
-    generate_title_sync, is_process_running, kill_agent, kill_all_agents, resume_agent,
-    spawn_agent, spawn_agent_sync, AgentType, SpawnedAgent,
+    generate_title_sync, kill_agent, kill_all_agents, resume_agent, spawn_agent, spawn_agent_sync,
+    AgentType, SpawnedAgent,
 };
+
+// State predicates re-export (is_process_running is the canonical version)
+pub use state::predicates::is_process_running;
 
 // Project discovery re-exports
 pub use project::{find_project_root, get_orkestra_dir};

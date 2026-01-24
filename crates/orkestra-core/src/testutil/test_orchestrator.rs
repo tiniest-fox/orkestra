@@ -96,6 +96,9 @@ impl TestOrchestrator {
             )));
         }
 
+        // Force a WAL checkpoint to ensure CLI changes are visible to our connection
+        self.project.store().checkpoint()?;
+
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
@@ -223,6 +226,7 @@ impl TestOrchestrator {
             title: Some(title.to_string()),
             description: description.to_string(),
             status: crate::TaskStatus::Done,
+            phase: crate::TaskPhase::Idle,
             kind: crate::TaskKind::Task,
             created_at: task.created_at,
             updated_at: chrono::Utc::now().to_rfc3339(),

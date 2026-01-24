@@ -6,6 +6,7 @@
 
 use crate::domain::{Task, TaskKind, TaskStatus};
 use crate::services::Project;
+use crate::state::predicates;
 use crate::tasks;
 
 /// Represents an action the orchestrator wants to take
@@ -27,60 +28,35 @@ pub enum OrchestratorAction {
     IntegrateDoneTask(Task),
 }
 
-/// Check if a process with the given PID is still running
-#[allow(clippy::cast_possible_wrap)] // PIDs won't exceed i32::MAX in practice
-fn is_process_running(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        // On Unix, kill with signal 0 checks if process exists without killing it
-        unsafe { libc::kill(pid as i32, 0) == 0 }
-    }
-    #[cfg(windows)]
-    {
-        // On Windows, try to open the process
-        use std::ptr::null_mut;
-        unsafe {
-            let handle = windows_sys::Win32::System::Threading::OpenProcess(
-                windows_sys::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION,
-                0,
-                pid,
-            );
-            if handle.is_null() {
-                false
-            } else {
-                windows_sys::Win32::Foundation::CloseHandle(handle);
-                true
-            }
-        }
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        // Fallback: assume not running
-        let _ = pid;
-        false
-    }
-}
+/// Check if task is waiting for human review.
+///
+/// Delegates to the canonical predicate, fetching the current iteration for
+/// accurate fallback during migration.
+fn needs_human_review(task: &Task, project: &Project) -> bool {
+    use crate::state::NeedsReview;
 
-/// Check if a task has a running agent by checking the task's `agent_pid` field
-fn has_running_agent(task: &Task) -> bool {
-    // Check the top-level agent_pid field (set immediately when spawning)
-    if let Some(pid) = task.agent_pid {
-        if is_process_running(pid) {
-            return true;
-        }
-    }
+    // Get the current iteration based on status for accurate fallback
+    let store = project.store();
+    let current_iter: Option<Box<dyn NeedsReview>> = match task.status {
+        TaskStatus::Planning => store
+            .get_current_plan_iteration(&task.id)
+            .ok()
+            .flatten()
+            .map(|i| Box::new(i) as Box<dyn NeedsReview>),
+        TaskStatus::Working => store
+            .get_current_work_iteration(&task.id)
+            .ok()
+            .flatten()
+            .map(|i| Box::new(i) as Box<dyn NeedsReview>),
+        TaskStatus::Reviewing => store
+            .get_current_review_iteration(&task.id)
+            .ok()
+            .flatten()
+            .map(|i| Box::new(i) as Box<dyn NeedsReview>),
+        _ => None,
+    };
 
-    false
-}
-
-/// Check if task is waiting for human review (has output but needs approval)
-fn needs_human_review(task: &Task) -> bool {
-    match task.status {
-        TaskStatus::Planning => task.plan.is_some(),
-        TaskStatus::BreakingDown => task.breakdown.is_some(),
-        TaskStatus::Working => task.summary.is_some(),
-        _ => false,
-    }
+    predicates::needs_human_review(task, current_iter.as_deref())
 }
 
 /// Get the session key for resuming a task, if one exists
@@ -102,13 +78,13 @@ pub fn check_tasks(project: &Project) -> crate::error::Result<Vec<OrchestratorAc
             continue;
         }
 
-        // Skip if agent is already running
-        if has_running_agent(&task) {
+        // Skip if agent is already running (use canonical predicate)
+        if predicates::has_running_agent(&task) {
             continue;
         }
 
         // Skip if waiting for human review
-        if needs_human_review(&task) {
+        if needs_human_review(&task, project) {
             continue;
         }
 
@@ -206,17 +182,43 @@ pub fn check_tasks(project: &Project) -> crate::error::Result<Vec<OrchestratorAc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::TaskPhase;
 
     #[test]
-    fn test_is_process_running_nonexistent() {
-        // PID 999999999 almost certainly doesn't exist
-        assert!(!is_process_running(999_999_999));
+    fn test_has_running_agent_by_phase() {
+        let mut task = Task::new(
+            "TEST-001".into(),
+            Some("Test".into()),
+            "Description".into(),
+            "2025-01-23T00:00:00Z",
+        );
+
+        // Idle phase - not running
+        task.phase = TaskPhase::Idle;
+        assert!(!predicates::has_running_agent(&task));
+
+        // AgentWorking phase - running
+        task.phase = TaskPhase::AgentWorking;
+        assert!(predicates::has_running_agent(&task));
+
+        // AwaitingReview phase - not running
+        task.phase = TaskPhase::AwaitingReview;
+        assert!(!predicates::has_running_agent(&task));
     }
 
     #[test]
-    fn test_is_process_running_self() {
-        // Our own process should be running
-        let pid = std::process::id();
-        assert!(is_process_running(pid));
+    fn test_has_running_agent_fallback() {
+        let mut task = Task::new(
+            "TEST-001".into(),
+            Some("Test".into()),
+            "Description".into(),
+            "2025-01-23T00:00:00Z",
+        );
+        task.phase = TaskPhase::Idle;
+        // Set our own PID (which is running)
+        task.agent_pid = Some(std::process::id());
+
+        // Fallback check should find running process
+        assert!(predicates::has_running_agent(&task));
     }
 }

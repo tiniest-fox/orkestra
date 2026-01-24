@@ -2,9 +2,9 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use orkestra_core::{
-    agents::{self, generate_title_sync, is_process_running, kill_agent, kill_all_agents},
-    auto_tasks, find_project_root, orchestrator, recover_session_logs, resume_agent, tasks,
-    AgentType, AutoTask, LogEntry, Project, Task, TaskStatus, WorkLoop,
+    agents::{self, generate_title_sync, kill_agent, kill_all_agents},
+    auto_tasks, find_project_root, is_process_running, orchestrator, recover_session_logs,
+    resume_agent, tasks, AgentType, AutoTask, LogEntry, Project, Task, TaskStatus, WorkLoop,
 };
 use tasks::{
     approve_breakdown as core_approve_breakdown, get_child_tasks as core_get_child_tasks,

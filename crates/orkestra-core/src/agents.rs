@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-use crate::domain::{Task, TaskStatus};
+use crate::domain::{Task, TaskStatus, WorkOutcome};
 use crate::project;
 use crate::prompts::{
     build_breakdown_prompt, build_planner_prompt, build_reviewer_prompt,
@@ -16,6 +16,7 @@ use crate::prompts::{
     ResumePlannerContext, ResumeReviewerContext, ResumeWorkerContext,
 };
 use crate::services::Project;
+use crate::state::TaskPhase;
 use crate::tasks;
 
 /// Agent types that can be spawned
@@ -405,21 +406,6 @@ pub fn kill_agent(pid: u32) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Checks if a process with the given PID is still running.
-/// Uses kill(pid, 0) on Unix to check without sending a signal.
-#[cfg(unix)]
-#[allow(clippy::cast_possible_wrap)]
-pub fn is_process_running(pid: u32) -> bool {
-    unsafe { libc::kill(pid as i32, 0) == 0 }
-}
-
-#[cfg(not(unix))]
-pub fn is_process_running(_pid: u32) -> bool {
-    // On Windows, we can't easily check without more complex logic
-    // For now, assume not running (conservative - may cause unnecessary cleanup)
-    false
-}
-
 /// Kills all agents that have tracked PIDs in the task database.
 /// Useful for cleanup on shutdown or when recovering from stuck state.
 pub fn kill_all_agents(project: &Project) -> std::io::Result<()> {
@@ -429,8 +415,9 @@ pub fn kill_all_agents(project: &Project) -> std::io::Result<()> {
     for task in tasks {
         if let Some(pid) = task.agent_pid {
             let _ = kill_agent(pid);
-            // Clear the PID since we killed it
+            // Clear the PID and reset phase since we killed it
             let _ = tasks::set_agent_pid(project, &task.id, None);
+            let _ = tasks::set_phase(project, &task.id, TaskPhase::Idle);
         }
     }
 
@@ -518,9 +505,10 @@ where
     // Create process guard for RAII cleanup if thread panics or takes unexpected path
     let guard = ProcessGuard::new(pid);
 
-    // Record the PID immediately so orchestrator knows agent is running
+    // Record the PID and set phase immediately so orchestrator knows agent is running
     // Note: Background thread will use its own Project instance for subsequent updates
     let _ = tasks::set_agent_pid(project, &task_id, Some(pid));
+    let _ = tasks::set_phase(project, &task_id, TaskPhase::AgentWorking);
 
     let task_id_for_callback = task_id.clone();
 
@@ -574,16 +562,20 @@ where
                     task_id,
                     status.code()
                 );
-                // Clear the PID now that agent is done
+                // Clear the PID and reset phase now that agent is done
+                // Note: Phase will be set to AwaitingReview by task completion functions
+                // (set_task_plan, complete_task, etc.) when they record agent output.
                 let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
+                let _ = tasks::set_phase(&thread_project, &task_id, TaskPhase::Idle);
                 on_update(&task_id_for_callback);
             }
             Err(e) => {
                 // Process wait failed - disarm since we don't know state
                 _guard.disarm();
                 eprintln!("Agent {task_id} error: {e}");
-                // Clear the PID even on error
+                // Clear the PID and reset phase even on error
                 let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
+                let _ = tasks::set_phase(&thread_project, &task_id, TaskPhase::Idle);
                 on_update(&task_id_for_callback);
             }
         }
@@ -761,6 +753,26 @@ where
             )
         })?;
 
+    // Check if previous work iteration ended with IntegrationFailed
+    // This info is passed to the worker so it knows to rebase and resolve conflicts
+    let (integration_error, conflict_files): (Option<String>, Option<Vec<String>>) =
+        if session_key == "work" || session_key.starts_with("work") {
+            match project.store().get_previous_work_iteration(&task.id) {
+                Ok(Some(prev)) => {
+                    if let Some(WorkOutcome::IntegrationFailed { error, conflict_files }) =
+                        prev.outcome
+                    {
+                        (Some(error), conflict_files)
+                    } else {
+                        (None, None)
+                    }
+                }
+                _ => (None, None),
+            }
+        } else {
+            (None, None)
+        };
+
     // Build the resumption prompt using the appropriate template for this session type
     // The continuation_prompt parameter is treated as feedback (if any) for the agent
     let prompt = match session_key {
@@ -768,10 +780,16 @@ where
             task_id: &task.id,
             plan_feedback: continuation_prompt,
         }),
-        "work" => render_resume_worker(&ResumeWorkerContext {
-            task_id: &task.id,
-            review_feedback: continuation_prompt,
-        }),
+        s if s == "work" || s.starts_with("work") => {
+            let conflict_refs: Option<Vec<&str>> =
+                conflict_files.as_ref().map(|v| v.iter().map(String::as_str).collect());
+            render_resume_worker(&ResumeWorkerContext {
+                task_id: &task.id,
+                review_feedback: continuation_prompt,
+                integration_error: integration_error.as_deref(),
+                conflict_files: conflict_refs,
+            })
+        }
         s if s == "review" || s.starts_with("review_") => {
             render_resume_reviewer(&ResumeReviewerContext { task_id: &task.id })
         }
@@ -782,6 +800,8 @@ where
         _ => render_resume_worker(&ResumeWorkerContext {
             task_id: &task.id,
             review_feedback: continuation_prompt,
+            integration_error: None,
+            conflict_files: None,
         }),
     };
 
@@ -805,8 +825,9 @@ where
     // Create process guard for RAII cleanup if thread panics or takes unexpected path
     let guard = ProcessGuard::new(pid);
 
-    // Record the PID immediately so orchestrator knows agent is running
+    // Record the PID and set phase immediately so orchestrator knows agent is running
     let _ = tasks::set_agent_pid(project, &task_id, Some(pid));
+    let _ = tasks::set_phase(project, &task_id, TaskPhase::AgentWorking);
 
     let task_id_for_callback = task_id.clone();
 
@@ -851,16 +872,18 @@ where
                     task_id,
                     status.code()
                 );
-                // Clear the PID now that agent is done
+                // Clear the PID and reset phase now that agent is done
                 let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
+                let _ = tasks::set_phase(&thread_project, &task_id, TaskPhase::Idle);
                 on_update(&task_id_for_callback);
             }
             Err(e) => {
                 // Process wait failed - disarm since we don't know state
                 _guard.disarm();
                 eprintln!("Resumed agent {task_id} error: {e}");
-                // Clear the PID even on error
+                // Clear the PID and reset phase even on error
                 let _ = tasks::set_agent_pid(&thread_project, &task_id, None);
+                let _ = tasks::set_phase(&thread_project, &task_id, TaskPhase::Idle);
                 on_update(&task_id_for_callback);
             }
         }

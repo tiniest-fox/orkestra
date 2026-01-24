@@ -1,5 +1,26 @@
 <!orkestra-resume>
-{{#if review_feedback}}
+{{#if integration_error}}
+## MERGE CONFLICT - Previous Integration Failed
+
+Your previous work was completed but failed to merge into the main branch.
+
+**Error:** {{{integration_error}}}
+
+{{#if conflict_files}}
+**Conflicting files:**
+{{#each conflict_files}}
+- {{this}}
+{{/each}}
+{{/if}}
+
+Please resolve the merge conflict:
+1. Run `git fetch origin main && git rebase origin/main`
+2. Resolve any conflicts in the listed files
+3. Complete the rebase with `git add . && git rebase --continue`
+4. Verify your changes still work correctly
+5. Mark the task complete again with `ork task complete {{task_id}} --summary "what you did"`
+
+{{else if review_feedback}}
 {{{review_feedback}}}
 
 Please address the above and then mark the task complete again with `ork task complete {{task_id}} --summary "what you did"`.

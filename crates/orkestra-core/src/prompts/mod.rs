@@ -71,6 +71,10 @@ pub struct ResumeWorkerContext<'a> {
     pub task_id: &'a str,
     /// Review feedback that needs to be addressed (if any)
     pub review_feedback: Option<&'a str>,
+    /// Error message from a failed integration attempt (merge conflict)
+    pub integration_error: Option<&'a str>,
+    /// Files that had conflicts during integration
+    pub conflict_files: Option<Vec<&'a str>>,
 }
 
 /// Context for planner session resumption.
@@ -317,6 +321,7 @@ pub fn build_title_generator_prompt(description: &str) -> String {
 mod tests {
     use super::*;
     use crate::domain::{TaskKind, TaskStatus};
+    use crate::state::TaskPhase;
 
     fn create_test_task() -> Task {
         Task {
@@ -324,6 +329,7 @@ mod tests {
             title: Some("Test Task".to_string()),
             description: "Test description".to_string(),
             status: TaskStatus::Working,
+            phase: TaskPhase::Idle,
             kind: TaskKind::Task,
             created_at: "now".to_string(),
             updated_at: "now".to_string(),
@@ -347,6 +353,8 @@ mod tests {
         let prompt = render_resume_worker(&ResumeWorkerContext {
             task_id: "TASK-001",
             review_feedback: None,
+            integration_error: None,
+            conflict_files: None,
         });
         assert!(prompt.contains("<!orkestra-resume>"));
         assert!(prompt.contains("continue implementing the task"));
@@ -357,9 +365,28 @@ mod tests {
         let prompt = render_resume_worker(&ResumeWorkerContext {
             task_id: "TASK-001",
             review_feedback: Some("Fix the bug in login"),
+            integration_error: None,
+            conflict_files: None,
         });
         assert!(prompt.contains("<!orkestra-resume>"));
         assert!(prompt.contains("Fix the bug in login"));
+        assert!(prompt.contains("ork task complete TASK-001"));
+    }
+
+    #[test]
+    fn test_resume_worker_with_integration_error() {
+        let prompt = render_resume_worker(&ResumeWorkerContext {
+            task_id: "TASK-001",
+            review_feedback: None,
+            integration_error: Some("Merge conflict during integration"),
+            conflict_files: Some(vec!["src/main.rs", "Cargo.toml"]),
+        });
+        assert!(prompt.contains("<!orkestra-resume>"));
+        assert!(prompt.contains("MERGE CONFLICT"));
+        assert!(prompt.contains("Merge conflict during integration"));
+        assert!(prompt.contains("src/main.rs"));
+        assert!(prompt.contains("Cargo.toml"));
+        assert!(prompt.contains("git rebase"));
         assert!(prompt.contains("ork task complete TASK-001"));
     }
 

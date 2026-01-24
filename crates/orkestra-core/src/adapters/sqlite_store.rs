@@ -7,10 +7,14 @@ use petname::Generator;
 use rusqlite::{params, Connection};
 use std::sync::Mutex;
 
-use crate::domain::{LoopOutcome, SessionInfo, Task, TaskKind, TaskStatus, WorkLoop};
+use crate::domain::{
+    LoopOutcome, PlanIteration, PlanOutcome, ReviewIteration, ReviewOutcome, SessionInfo, Task,
+    TaskKind, TaskStatus, WorkIteration, WorkLoop, WorkOutcome,
+};
 use crate::error::{OrkestraError, Result};
 use crate::ports::TaskStore;
 use crate::project;
+use crate::state::TaskPhase;
 
 /// SQLite-based task storage.
 ///
@@ -119,10 +123,47 @@ impl SqliteStore {
                 UNIQUE(task_id, loop_number)
             );
 
+            -- Stage iteration tables for per-phase tracking
+            CREATE TABLE IF NOT EXISTS plan_iterations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                iteration INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                plan TEXT,
+                outcome TEXT,
+                FOREIGN KEY (task_id) REFERENCES tasks(id),
+                UNIQUE(task_id, iteration)
+            );
+
+            CREATE TABLE IF NOT EXISTS work_iterations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                iteration INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                summary TEXT,
+                outcome TEXT,
+                FOREIGN KEY (task_id) REFERENCES tasks(id),
+                UNIQUE(task_id, iteration)
+            );
+
+            CREATE TABLE IF NOT EXISTS review_iterations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                iteration INTEGER NOT NULL,
+                started_at TEXT NOT NULL,
+                verdict TEXT,
+                outcome TEXT,
+                FOREIGN KEY (task_id) REFERENCES tasks(id),
+                UNIQUE(task_id, iteration)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_parent_id ON tasks(parent_id);
             CREATE INDEX IF NOT EXISTS idx_sessions_task_id ON sessions(task_id);
             CREATE INDEX IF NOT EXISTS idx_work_loops_task_id ON work_loops(task_id);
+            CREATE INDEX IF NOT EXISTS idx_plan_iterations_task_id ON plan_iterations(task_id);
+            CREATE INDEX IF NOT EXISTS idx_work_iterations_task_id ON work_iterations(task_id);
+            CREATE INDEX IF NOT EXISTS idx_review_iterations_task_id ON review_iterations(task_id);
             ",
         )?;
 
@@ -132,6 +173,139 @@ impl SqliteStore {
         let _ = conn.execute("ALTER TABLE tasks ADD COLUMN branch_name TEXT", []);
         let _ = conn.execute("ALTER TABLE tasks ADD COLUMN worktree_path TEXT", []);
         let _ = conn.execute("ALTER TABLE tasks ADD COLUMN integration_result TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE tasks ADD COLUMN phase TEXT NOT NULL DEFAULT 'idle'",
+            [],
+        );
+
+        // Migrate legacy tasks: create iteration records for tasks with plan/summary but no iterations
+        Self::migrate_legacy_iterations(&conn)?;
+
+        // Migrate existing tasks to set correct phase values
+        Self::migrate_task_phases(&conn)?;
+
+        Ok(())
+    }
+
+    /// Migrate legacy tasks that have plan/summary on the task but no iteration records.
+    /// This ensures backward compatibility with tasks created before the iteration system.
+    fn migrate_legacy_iterations(conn: &Connection) -> Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Migrate tasks with plan but no plan_iterations
+        // Tasks past Planning phase have approved plans
+        conn.execute(
+            r#"
+            INSERT INTO plan_iterations (task_id, iteration, started_at, plan, outcome)
+            SELECT t.id, 1, ?, t.plan,
+                   CASE
+                     WHEN t.status IN ('working', 'waiting_on_subtasks', 'reviewing', 'done')
+                     THEN '{"type":"approved"}'
+                     ELSE NULL
+                   END
+            FROM tasks t
+            WHERE t.plan IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM plan_iterations p WHERE p.task_id = t.id)
+            "#,
+            [&now],
+        )?;
+
+        // Migrate tasks with summary but no work_iterations
+        // Done tasks have approved work
+        conn.execute(
+            r#"
+            INSERT INTO work_iterations (task_id, iteration, started_at, summary, outcome)
+            SELECT t.id, 1, ?, t.summary,
+                   CASE
+                     WHEN t.status = 'done' THEN '{"type":"approved"}'
+                     ELSE NULL
+                   END
+            FROM tasks t
+            WHERE t.summary IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM work_iterations w WHERE w.task_id = t.id)
+            "#,
+            [&now],
+        )?;
+
+        Ok(())
+    }
+
+    /// Migrate existing tasks to set correct phase values based on their current state.
+    /// This ensures tasks created before the phase field was added get proper values.
+    fn migrate_task_phases(conn: &Connection) -> Result<()> {
+        // Only run migration if there are tasks with phase='idle' that might need updating
+        // (the default value when column is added)
+
+        // 1. Tasks with agent_pid set -> agent_working
+        conn.execute(
+            r"
+            UPDATE tasks SET phase = 'agent_working'
+            WHERE agent_pid IS NOT NULL
+              AND phase = 'idle'
+            ",
+            [],
+        )?;
+
+        // 2. Tasks in Planning with plan, but plan iteration has no outcome -> awaiting_review
+        conn.execute(
+            r"
+            UPDATE tasks SET phase = 'awaiting_review'
+            WHERE status = 'planning'
+              AND phase = 'idle'
+              AND plan IS NOT NULL
+              AND EXISTS (
+                  SELECT 1 FROM plan_iterations pi
+                  WHERE pi.task_id = tasks.id
+                    AND pi.plan IS NOT NULL
+                    AND pi.outcome IS NULL
+              )
+            ",
+            [],
+        )?;
+
+        // 3. Tasks in Working with summary, but work iteration has no outcome -> awaiting_review
+        conn.execute(
+            r"
+            UPDATE tasks SET phase = 'awaiting_review'
+            WHERE status = 'working'
+              AND phase = 'idle'
+              AND summary IS NOT NULL
+              AND EXISTS (
+                  SELECT 1 FROM work_iterations wi
+                  WHERE wi.task_id = tasks.id
+                    AND wi.summary IS NOT NULL
+                    AND wi.outcome IS NULL
+              )
+            ",
+            [],
+        )?;
+
+        // 4. Tasks in BreakingDown with breakdown -> awaiting_review
+        conn.execute(
+            r"
+            UPDATE tasks SET phase = 'awaiting_review'
+            WHERE status = 'breaking_down'
+              AND phase = 'idle'
+              AND breakdown IS NOT NULL
+            ",
+            [],
+        )?;
+
+        // 5. Tasks in Reviewing with verdict in iteration -> awaiting_review
+        conn.execute(
+            r"
+            UPDATE tasks SET phase = 'awaiting_review'
+            WHERE status = 'reviewing'
+              AND phase = 'idle'
+              AND EXISTS (
+                  SELECT 1 FROM review_iterations ri
+                  WHERE ri.task_id = tasks.id
+                    AND ri.verdict IS NOT NULL
+                    AND ri.outcome IS NULL
+              )
+            ",
+            [],
+        )?;
 
         Ok(())
     }
@@ -204,7 +378,7 @@ impl SqliteStore {
     /// Column order: id, title, description, status, kind, `created_at`, `updated_at`,
     /// `completed_at`, summary, error, plan, (`plan_feedback`), (`review_feedback`),
     /// (`reviewer_feedback`), `auto_approve`, `parent_id`, breakdown, (`breakdown_feedback`),
-    /// `skip_breakdown`, `agent_pid`, `branch_name`, `worktree_path`, (`integration_result`)
+    /// `skip_breakdown`, `agent_pid`, `branch_name`, `worktree_path`, (`integration_result`), phase
     /// Note: columns in parens are deprecated - feedback and integration status now in `work_loops` table
     fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         let status_str: String = row.get(3)?;
@@ -214,12 +388,14 @@ impl SqliteStore {
         let agent_pid: Option<i32> = row.get(19)?;
         // Column 22 (integration_result) kept for backwards compat but not used
         // Integration status is now stored in work_loops table
+        let phase_str: String = row.get(23)?;
 
         Ok(Task {
             id: row.get(0)?,
             title: row.get(1)?,
             description: row.get(2)?,
             status: parse_status(&status_str),
+            phase: parse_phase(&phase_str),
             kind: parse_kind(&kind_str),
             created_at: row.get(5)?,
             updated_at: row.get(6)?,
@@ -340,6 +516,27 @@ impl SqliteStore {
             ],
         )?;
 
+        Ok(())
+    }
+
+    /// Update the `phase` field on a task.
+    /// This is the explicit phase within a status, eliminating field-based inference.
+    pub fn update_phase(&self, task_id: &str, phase: TaskPhase) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        conn.execute(
+            "UPDATE tasks SET phase = ?, updated_at = ? WHERE id = ?",
+            params![phase_to_str(phase), chrono::Utc::now().to_rfc3339(), task_id],
+        )?;
+
+        Ok(())
+    }
+
+    /// Force a WAL checkpoint, writing all pending changes to the main database file.
+    /// This ensures changes made by other connections (e.g., CLI processes) are visible.
+    pub fn checkpoint(&self) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         Ok(())
     }
 
@@ -465,6 +662,387 @@ impl SqliteStore {
             LoopOutcome::Completed { .. } => None,
         }))
     }
+
+    // =========================================================================
+    // Plan Iteration Operations
+    // =========================================================================
+
+    /// Start a new plan iteration for a task.
+    /// Returns the new iteration with its assigned iteration number.
+    pub fn start_plan_iteration(&self, task_id: &str) -> Result<PlanIteration> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Get the next iteration number for this task
+        let max_iter: Option<i32> = conn.query_row(
+            "SELECT MAX(iteration) FROM plan_iterations WHERE task_id = ?",
+            params![task_id],
+            |row| row.get(0),
+        )?;
+        let iteration = (max_iter.unwrap_or(0) + 1) as u32;
+
+        // Insert the new iteration
+        conn.execute(
+            "INSERT INTO plan_iterations (task_id, iteration, started_at) VALUES (?, ?, ?)",
+            params![task_id, iteration as i32, &now],
+        )?;
+
+        Ok(PlanIteration::new(iteration, &now))
+    }
+
+    /// Set the plan for the current (active) plan iteration.
+    pub fn set_iteration_plan(&self, task_id: &str, plan: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        // Update the most recent iteration that has no outcome yet
+        let affected = conn.execute(
+            "UPDATE plan_iterations SET plan = ? WHERE task_id = ? AND outcome IS NULL",
+            params![plan, task_id],
+        )?;
+
+        if affected == 0 {
+            return Err(OrkestraError::InvalidState {
+                expected: "Active plan iteration".into(),
+                actual: "No active plan iteration".into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// End the current plan iteration with the given outcome.
+    pub fn end_plan_iteration(&self, task_id: &str, outcome: &PlanOutcome) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let outcome_json = serde_json::to_string(&outcome)
+            .map_err(|e| OrkestraError::InvalidInput(e.to_string()))?;
+
+        let affected = conn.execute(
+            "UPDATE plan_iterations SET outcome = ? WHERE task_id = ? AND outcome IS NULL",
+            params![&outcome_json, task_id],
+        )?;
+
+        if affected == 0 {
+            return Err(OrkestraError::InvalidState {
+                expected: "Active plan iteration".into(),
+                actual: "No active plan iteration".into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Get all plan iterations for a task, ordered by iteration number.
+    pub fn get_plan_iterations(&self, task_id: &str) -> Result<Vec<PlanIteration>> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        let mut stmt = conn.prepare(
+            "SELECT iteration, started_at, plan, outcome FROM plan_iterations WHERE task_id = ? ORDER BY iteration",
+        )?;
+
+        let rows = stmt.query_map(params![task_id], |row| {
+            let iteration: i32 = row.get(0)?;
+            let started_at: String = row.get(1)?;
+            let plan: Option<String> = row.get(2)?;
+            let outcome_json: Option<String> = row.get(3)?;
+
+            Ok((iteration, started_at, plan, outcome_json))
+        })?;
+
+        let mut iterations = Vec::new();
+        for row in rows {
+            let (iteration, started_at, plan, outcome_json) = row?;
+            let outcome = outcome_json.and_then(|json| serde_json::from_str(&json).ok());
+
+            iterations.push(PlanIteration {
+                iteration: iteration as u32,
+                started_at,
+                plan,
+                outcome,
+            });
+        }
+
+        Ok(iterations)
+    }
+
+    /// Get the current (active) plan iteration for a task, if any.
+    pub fn get_current_plan_iteration(&self, task_id: &str) -> Result<Option<PlanIteration>> {
+        let iterations = self.get_plan_iterations(task_id)?;
+        Ok(iterations.into_iter().find(|i| i.is_active()))
+    }
+
+    /// Get the latest plan iteration for a task (regardless of status).
+    pub fn get_latest_plan_iteration(&self, task_id: &str) -> Result<Option<PlanIteration>> {
+        let iterations = self.get_plan_iterations(task_id)?;
+        Ok(iterations.into_iter().last())
+    }
+
+    /// Get the most recently approved plan for a task.
+    pub fn get_approved_plan(&self, task_id: &str) -> Result<Option<String>> {
+        let iterations = self.get_plan_iterations(task_id)?;
+        Ok(iterations
+            .into_iter()
+            .rev()
+            .find(|i| matches!(i.outcome, Some(PlanOutcome::Approved)))
+            .and_then(|i| i.plan))
+    }
+
+    /// Delete all plan iterations for a task (used when deleting a task).
+    pub fn delete_plan_iterations(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        conn.execute(
+            "DELETE FROM plan_iterations WHERE task_id = ?",
+            params![task_id],
+        )?;
+        Ok(())
+    }
+
+    // =========================================================================
+    // Work Iteration Operations
+    // =========================================================================
+
+    /// Start a new work iteration for a task.
+    pub fn start_work_iteration(&self, task_id: &str) -> Result<WorkIteration> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let max_iter: Option<i32> = conn.query_row(
+            "SELECT MAX(iteration) FROM work_iterations WHERE task_id = ?",
+            params![task_id],
+            |row| row.get(0),
+        )?;
+        let iteration = (max_iter.unwrap_or(0) + 1) as u32;
+
+        conn.execute(
+            "INSERT INTO work_iterations (task_id, iteration, started_at) VALUES (?, ?, ?)",
+            params![task_id, iteration as i32, &now],
+        )?;
+
+        Ok(WorkIteration::new(iteration, &now))
+    }
+
+    /// Set the summary for the current (active) work iteration.
+    pub fn set_iteration_summary(&self, task_id: &str, summary: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        let affected = conn.execute(
+            "UPDATE work_iterations SET summary = ? WHERE task_id = ? AND outcome IS NULL",
+            params![summary, task_id],
+        )?;
+
+        if affected == 0 {
+            return Err(OrkestraError::InvalidState {
+                expected: "Active work iteration".into(),
+                actual: "No active work iteration".into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// End the current work iteration with the given outcome.
+    pub fn end_work_iteration(&self, task_id: &str, outcome: &WorkOutcome) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let outcome_json = serde_json::to_string(&outcome)
+            .map_err(|e| OrkestraError::InvalidInput(e.to_string()))?;
+
+        let affected = conn.execute(
+            "UPDATE work_iterations SET outcome = ? WHERE task_id = ? AND outcome IS NULL",
+            params![&outcome_json, task_id],
+        )?;
+
+        if affected == 0 {
+            return Err(OrkestraError::InvalidState {
+                expected: "Active work iteration".into(),
+                actual: "No active work iteration".into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Get all work iterations for a task, ordered by iteration number.
+    pub fn get_work_iterations(&self, task_id: &str) -> Result<Vec<WorkIteration>> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        let mut stmt = conn.prepare(
+            "SELECT iteration, started_at, summary, outcome FROM work_iterations WHERE task_id = ? ORDER BY iteration",
+        )?;
+
+        let rows = stmt.query_map(params![task_id], |row| {
+            let iteration: i32 = row.get(0)?;
+            let started_at: String = row.get(1)?;
+            let summary: Option<String> = row.get(2)?;
+            let outcome_json: Option<String> = row.get(3)?;
+
+            Ok((iteration, started_at, summary, outcome_json))
+        })?;
+
+        let mut iterations = Vec::new();
+        for row in rows {
+            let (iteration, started_at, summary, outcome_json) = row?;
+            let outcome = outcome_json.and_then(|json| serde_json::from_str(&json).ok());
+
+            iterations.push(WorkIteration {
+                iteration: iteration as u32,
+                started_at,
+                summary,
+                outcome,
+            });
+        }
+
+        Ok(iterations)
+    }
+
+    /// Get the current (active) work iteration for a task, if any.
+    pub fn get_current_work_iteration(&self, task_id: &str) -> Result<Option<WorkIteration>> {
+        let iterations = self.get_work_iterations(task_id)?;
+        Ok(iterations.into_iter().find(|i| i.is_active()))
+    }
+
+    /// Get the latest work iteration for a task (regardless of status).
+    pub fn get_latest_work_iteration(&self, task_id: &str) -> Result<Option<WorkIteration>> {
+        let iterations = self.get_work_iterations(task_id)?;
+        Ok(iterations.into_iter().last())
+    }
+
+    /// Get the previous work iteration (most recently ended).
+    pub fn get_previous_work_iteration(&self, task_id: &str) -> Result<Option<WorkIteration>> {
+        let iterations = self.get_work_iterations(task_id)?;
+        Ok(iterations.into_iter().rev().find(|i| !i.is_active()))
+    }
+
+    /// Delete all work iterations for a task (used when deleting a task).
+    pub fn delete_work_iterations(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        conn.execute(
+            "DELETE FROM work_iterations WHERE task_id = ?",
+            params![task_id],
+        )?;
+        Ok(())
+    }
+
+    // =========================================================================
+    // Review Iteration Operations
+    // =========================================================================
+
+    /// Start a new review iteration for a task.
+    pub fn start_review_iteration(&self, task_id: &str) -> Result<ReviewIteration> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let max_iter: Option<i32> = conn.query_row(
+            "SELECT MAX(iteration) FROM review_iterations WHERE task_id = ?",
+            params![task_id],
+            |row| row.get(0),
+        )?;
+        let iteration = (max_iter.unwrap_or(0) + 1) as u32;
+
+        conn.execute(
+            "INSERT INTO review_iterations (task_id, iteration, started_at) VALUES (?, ?, ?)",
+            params![task_id, iteration as i32, &now],
+        )?;
+
+        Ok(ReviewIteration::new(iteration, &now))
+    }
+
+    /// Set the verdict for the current (active) review iteration.
+    pub fn set_iteration_verdict(&self, task_id: &str, verdict: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        let affected = conn.execute(
+            "UPDATE review_iterations SET verdict = ? WHERE task_id = ? AND outcome IS NULL",
+            params![verdict, task_id],
+        )?;
+
+        if affected == 0 {
+            return Err(OrkestraError::InvalidState {
+                expected: "Active review iteration".into(),
+                actual: "No active review iteration".into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// End the current review iteration with the given outcome.
+    pub fn end_review_iteration(&self, task_id: &str, outcome: &ReviewOutcome) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let outcome_json = serde_json::to_string(&outcome)
+            .map_err(|e| OrkestraError::InvalidInput(e.to_string()))?;
+
+        let affected = conn.execute(
+            "UPDATE review_iterations SET outcome = ? WHERE task_id = ? AND outcome IS NULL",
+            params![&outcome_json, task_id],
+        )?;
+
+        if affected == 0 {
+            return Err(OrkestraError::InvalidState {
+                expected: "Active review iteration".into(),
+                actual: "No active review iteration".into(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Get all review iterations for a task, ordered by iteration number.
+    pub fn get_review_iterations(&self, task_id: &str) -> Result<Vec<ReviewIteration>> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+
+        let mut stmt = conn.prepare(
+            "SELECT iteration, started_at, verdict, outcome FROM review_iterations WHERE task_id = ? ORDER BY iteration",
+        )?;
+
+        let rows = stmt.query_map(params![task_id], |row| {
+            let iteration: i32 = row.get(0)?;
+            let started_at: String = row.get(1)?;
+            let verdict: Option<String> = row.get(2)?;
+            let outcome_json: Option<String> = row.get(3)?;
+
+            Ok((iteration, started_at, verdict, outcome_json))
+        })?;
+
+        let mut iterations = Vec::new();
+        for row in rows {
+            let (iteration, started_at, verdict, outcome_json) = row?;
+            let outcome = outcome_json.and_then(|json| serde_json::from_str(&json).ok());
+
+            iterations.push(ReviewIteration {
+                iteration: iteration as u32,
+                started_at,
+                verdict,
+                outcome,
+            });
+        }
+
+        Ok(iterations)
+    }
+
+    /// Get the current (active) review iteration for a task, if any.
+    pub fn get_current_review_iteration(&self, task_id: &str) -> Result<Option<ReviewIteration>> {
+        let iterations = self.get_review_iterations(task_id)?;
+        Ok(iterations.into_iter().find(|i| i.is_active()))
+    }
+
+    /// Get the latest review iteration for a task (regardless of status).
+    pub fn get_latest_review_iteration(&self, task_id: &str) -> Result<Option<ReviewIteration>> {
+        let iterations = self.get_review_iterations(task_id)?;
+        Ok(iterations.into_iter().last())
+    }
+
+    /// Delete all review iterations for a task (used when deleting a task).
+    pub fn delete_review_iterations(&self, task_id: &str) -> Result<()> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        conn.execute(
+            "DELETE FROM review_iterations WHERE task_id = ?",
+            params![task_id],
+        )?;
+        Ok(())
+    }
+
+    // =========================================================================
+    // Child/Subtask Operations
+    // =========================================================================
 
     /// Get child tasks (tasks with `parent_id` = given id and kind = 'task').
     pub fn get_child_tasks(&self, parent_id: &str) -> Result<Vec<Task>> {
@@ -607,8 +1185,8 @@ impl TaskStore for SqliteStore {
                     id, title, description, status, kind, created_at, updated_at,
                     completed_at, summary, error, plan, plan_feedback,
                     review_feedback, reviewer_feedback, auto_approve, parent_id, breakdown, breakdown_feedback,
-                    skip_breakdown, agent_pid, branch_name, worktree_path, integration_result
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    skip_breakdown, agent_pid, branch_name, worktree_path, integration_result, phase
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ",
                 params![
                     task.id,
@@ -634,6 +1212,7 @@ impl TaskStore for SqliteStore {
                     task.branch_name,
                     task.worktree_path,
                     None::<String>, // integration_result - deprecated, in work_loops
+                    phase_to_str(task.phase),
                 ],
             )?;
 
@@ -660,6 +1239,18 @@ impl TaskStore for SqliteStore {
         // Delete related data first (foreign keys would prevent task deletion)
         conn.execute("DELETE FROM sessions WHERE task_id = ?", params![id])?;
         conn.execute("DELETE FROM work_loops WHERE task_id = ?", params![id])?;
+        conn.execute(
+            "DELETE FROM plan_iterations WHERE task_id = ?",
+            params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM work_iterations WHERE task_id = ?",
+            params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM review_iterations WHERE task_id = ?",
+            params![id],
+        )?;
         conn.execute("DELETE FROM tasks WHERE id = ?", params![id])?;
 
         Ok(())
@@ -735,6 +1326,25 @@ fn parse_kind(s: &str) -> TaskKind {
         "subtask" => TaskKind::Subtask,
         // "task" or unknown defaults to Task
         _ => TaskKind::Task,
+    }
+}
+
+fn phase_to_str(phase: TaskPhase) -> &'static str {
+    match phase {
+        TaskPhase::Idle => "idle",
+        TaskPhase::AgentWorking => "agent_working",
+        TaskPhase::AwaitingReview => "awaiting_review",
+        TaskPhase::Integrating => "integrating",
+    }
+}
+
+fn parse_phase(s: &str) -> TaskPhase {
+    match s {
+        "agent_working" => TaskPhase::AgentWorking,
+        "awaiting_review" => TaskPhase::AwaitingReview,
+        "integrating" => TaskPhase::Integrating,
+        // "idle" or unknown defaults to Idle
+        _ => TaskPhase::Idle,
     }
 }
 
@@ -841,5 +1451,247 @@ mod tests {
         let subtasks = store.get_subtasks("TASK-001").unwrap();
         assert_eq!(subtasks.len(), 1);
         assert_eq!(subtasks[0].id, "TASK-003");
+    }
+
+    // ==========================================================================
+    // Iteration Lifecycle Tests
+    // ==========================================================================
+
+    #[test]
+    fn test_plan_iteration_lifecycle() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // Start plan iteration
+        let iter = store.start_plan_iteration("TASK-001").unwrap();
+        assert_eq!(iter.iteration, 1);
+        assert!(iter.plan.is_none());
+        assert!(iter.outcome.is_none());
+        assert!(iter.is_active());
+        assert!(!iter.needs_review());
+
+        // Set plan
+        store.set_iteration_plan("TASK-001", "My plan").unwrap();
+        let iter = store.get_current_plan_iteration("TASK-001").unwrap().unwrap();
+        assert_eq!(iter.plan.as_deref(), Some("My plan"));
+        assert!(iter.needs_review());
+
+        // Approve plan
+        store
+            .end_plan_iteration("TASK-001", &PlanOutcome::Approved)
+            .unwrap();
+        // After ending, use get_latest_plan_iteration since it's no longer "current" (active)
+        let iter = store.get_latest_plan_iteration("TASK-001").unwrap().unwrap();
+        assert!(!iter.is_active());
+        assert!(!iter.needs_review());
+        assert!(matches!(iter.outcome, Some(PlanOutcome::Approved)));
+
+        // Get approved plan
+        let approved = store.get_approved_plan("TASK-001").unwrap();
+        assert_eq!(approved.as_deref(), Some("My plan"));
+    }
+
+    #[test]
+    fn test_plan_rejection_creates_new_iteration() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // First iteration
+        store.start_plan_iteration("TASK-001").unwrap();
+        store.set_iteration_plan("TASK-001", "Plan v1").unwrap();
+        store
+            .end_plan_iteration(
+                "TASK-001",
+                &PlanOutcome::Rejected {
+                    feedback: "Add more detail".into(),
+                },
+            )
+            .unwrap();
+
+        // Second iteration
+        let iter2 = store.start_plan_iteration("TASK-001").unwrap();
+        assert_eq!(iter2.iteration, 2);
+        assert!(iter2.plan.is_none());
+
+        store.set_iteration_plan("TASK-001", "Plan v2").unwrap();
+        store
+            .end_plan_iteration("TASK-001", &PlanOutcome::Approved)
+            .unwrap();
+
+        // Approved plan should be v2
+        let approved = store.get_approved_plan("TASK-001").unwrap();
+        assert_eq!(approved.as_deref(), Some("Plan v2"));
+    }
+
+    #[test]
+    fn test_work_iteration_lifecycle() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // Start work iteration
+        let iter = store.start_work_iteration("TASK-001").unwrap();
+        assert_eq!(iter.iteration, 1);
+        assert!(iter.summary.is_none());
+        assert!(iter.is_active());
+        assert!(!iter.needs_review());
+
+        // Set summary
+        store
+            .set_iteration_summary("TASK-001", "Work complete")
+            .unwrap();
+        let iter = store.get_current_work_iteration("TASK-001").unwrap().unwrap();
+        assert_eq!(iter.summary.as_deref(), Some("Work complete"));
+        assert!(iter.needs_review());
+
+        // Approve work
+        store
+            .end_work_iteration("TASK-001", &WorkOutcome::Approved)
+            .unwrap();
+        // After ending, use get_latest_work_iteration since it's no longer "current" (active)
+        let iter = store.get_latest_work_iteration("TASK-001").unwrap().unwrap();
+        assert!(!iter.is_active());
+        assert!(matches!(iter.outcome, Some(WorkOutcome::Approved)));
+    }
+
+    #[test]
+    fn test_work_iteration_integration_failed() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // First iteration - ends with integration failure
+        store.start_work_iteration("TASK-001").unwrap();
+        store.set_iteration_summary("TASK-001", "Done").unwrap();
+        store
+            .end_work_iteration(
+                "TASK-001",
+                &WorkOutcome::IntegrationFailed {
+                    error: "Merge conflict".into(),
+                    conflict_files: Some(vec!["main.rs".into()]),
+                },
+            )
+            .unwrap();
+
+        // Start second iteration - previous should be queryable
+        let iter2 = store.start_work_iteration("TASK-001").unwrap();
+        assert_eq!(iter2.iteration, 2);
+        assert!(iter2.summary.is_none());
+
+        // Get previous iteration
+        let prev = store.get_previous_work_iteration("TASK-001").unwrap();
+        assert!(prev.is_some());
+        let prev = prev.unwrap();
+        assert_eq!(prev.iteration, 1);
+        assert!(matches!(
+            prev.outcome,
+            Some(WorkOutcome::IntegrationFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn test_review_iteration_lifecycle() {
+        let store = SqliteStore::in_memory().unwrap();
+
+        let task = Task::new("TASK-001".into(), Some("Test".into()), "Desc".into(), "now");
+        store.save(&task).unwrap();
+
+        // Start review iteration
+        let iter = store.start_review_iteration("TASK-001").unwrap();
+        assert_eq!(iter.iteration, 1);
+        assert!(iter.verdict.is_none());
+        assert!(iter.is_active());
+        assert!(!iter.needs_review());
+
+        // Set verdict
+        store
+            .set_iteration_verdict("TASK-001", "LGTM")
+            .unwrap();
+        let iter = store.get_current_review_iteration("TASK-001").unwrap().unwrap();
+        assert_eq!(iter.verdict.as_deref(), Some("LGTM"));
+        assert!(iter.needs_review());
+
+        // End review
+        store
+            .end_review_iteration("TASK-001", &ReviewOutcome::Approved)
+            .unwrap();
+        // After ending, use get_latest_review_iteration since it's no longer "current" (active)
+        let iter = store.get_latest_review_iteration("TASK-001").unwrap().unwrap();
+        assert!(!iter.is_active());
+    }
+
+    #[test]
+    fn test_migration_creates_iterations_for_legacy_tasks() {
+        // Create a fresh store (without auto-migration)
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Create minimal schema without iterations tables
+        conn.execute_batch(
+            r"
+            CREATE TABLE tasks (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                status TEXT NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'task',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                completed_at TEXT,
+                summary TEXT,
+                error TEXT,
+                plan TEXT,
+                auto_approve INTEGER NOT NULL DEFAULT 0,
+                parent_id TEXT
+            );
+            ",
+        )
+        .unwrap();
+
+        // Insert a legacy task with plan and summary (mimicking old data)
+        conn.execute(
+            r#"
+            INSERT INTO tasks (id, title, description, status, kind, created_at, updated_at, plan, summary)
+            VALUES ('TASK-LEGACY', 'Legacy', 'Desc', 'done', 'task', 'now', 'now', 'Old plan', 'Old summary')
+            "#,
+            [],
+        )
+        .unwrap();
+
+        // Now create full store (will run migrations including iteration tables)
+        drop(conn);
+
+        let store = SqliteStore::in_memory().unwrap();
+        let task = Task::new("TASK-OLD".into(), Some("Old".into()), "Desc".into(), "now");
+        let mut task = task;
+        task.plan = Some("Legacy plan".into());
+        task.summary = Some("Legacy summary".into());
+        task.status = TaskStatus::Done;
+        store.save(&task).unwrap();
+
+        // Manually trigger migration (normally happens in init_schema, but we need to test it)
+        {
+            let conn = store.conn.lock().unwrap();
+            SqliteStore::migrate_legacy_iterations(&conn).unwrap();
+        }
+
+        // Check that iteration records were created
+        // Use get_latest_*_iteration since migrated iterations have outcomes set
+        let plan_iter = store.get_latest_plan_iteration("TASK-OLD").unwrap();
+        assert!(plan_iter.is_some());
+        let plan_iter = plan_iter.unwrap();
+        assert_eq!(plan_iter.plan.as_deref(), Some("Legacy plan"));
+        assert!(matches!(plan_iter.outcome, Some(PlanOutcome::Approved)));
+
+        let work_iter = store.get_latest_work_iteration("TASK-OLD").unwrap();
+        assert!(work_iter.is_some());
+        let work_iter = work_iter.unwrap();
+        assert_eq!(work_iter.summary.as_deref(), Some("Legacy summary"));
+        assert!(matches!(work_iter.outcome, Some(WorkOutcome::Approved)));
     }
 }

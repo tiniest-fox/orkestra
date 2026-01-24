@@ -8,9 +8,10 @@ use crate::services::Project;
 
 // Re-export domain types for convenience
 pub use crate::domain::{
-    IntegrationResult, LogEntry, LoopOutcome, SessionInfo, Task, TaskKind, TaskStatus, ToolInput,
-    WorkLoop,
+    IntegrationResult, LogEntry, LoopOutcome, PlanOutcome, ReviewOutcome, SessionInfo, Task,
+    TaskKind, TaskStatus, ToolInput, WorkLoop, WorkOutcome,
 };
+use crate::state::TaskPhase;
 
 // =============================================================================
 // Integration Helper
@@ -151,11 +152,14 @@ pub fn integrate_done_task(project: &Project, id: &str) -> Result<()> {
         }
     }
 
+    // Set phase to Integrating while we attempt the merge
+    store.update_phase(id, TaskPhase::Integrating)?;
+
     let (new_status, integration_result, conflict_msg) = try_integrate(project, &task);
 
     // If merge conflict or error, reopen the task for user to fix
     if new_status == TaskStatus::Working {
-        // End current loop with IntegrationFailed, start new loop
+        // End current loop with IntegrationFailed, start new loop (for backward compat)
         if let Some(current_loop) = store.get_current_loop(id)? {
             let outcome = match &integration_result {
                 Some(IntegrationResult::Conflict { conflict_files }) => {
@@ -175,10 +179,28 @@ pub fn integrate_done_task(project: &Project, id: &str) -> Result<()> {
             store.start_loop(id, TaskStatus::Working)?;
         }
 
+        // End work iteration with IntegrationFailed, start new one
+        let work_outcome = match &integration_result {
+            Some(IntegrationResult::Conflict { conflict_files }) => WorkOutcome::IntegrationFailed {
+                error: conflict_msg.clone().unwrap_or_default(),
+                conflict_files: Some(conflict_files.clone()),
+            },
+            _ => WorkOutcome::IntegrationFailed {
+                error: conflict_msg
+                    .clone()
+                    .unwrap_or_else(|| "Unknown error".to_string()),
+                conflict_files: None,
+            },
+        };
+        let _ = store.end_work_iteration(id, &work_outcome);
+        store.start_work_iteration(id)?;
+
         store.update_status(id, TaskStatus::Working)?;
         store.update_field(id, "summary", None)?; // Clear summary to reopen
         store.update_field(id, "completed_at", None)?;
-        // Conflict info is stored in the loop outcome, not on the task
+        // Reset phase to Idle so orchestrator will spawn worker to resolve conflict
+        store.update_phase(id, TaskPhase::Idle)?;
+        // Conflict info is stored in the loop/iteration outcome, not on the task
         return Ok(());
     }
 
@@ -254,6 +276,7 @@ pub fn create_task_with_options(
         title: title.map(String::from),
         description: description.to_string(),
         status: TaskStatus::Planning,
+        phase: TaskPhase::Idle,
         kind: TaskKind::Task,
         created_at: now.clone(),
         updated_at: now,
@@ -275,6 +298,9 @@ pub fn create_task_with_options(
 
     // Start Loop 1 for new task
     store.start_loop(&task.id, TaskStatus::Planning)?;
+
+    // Start first plan iteration
+    store.start_plan_iteration(&task.id)?;
 
     Ok(task)
 }
@@ -315,8 +341,20 @@ pub fn update_task_status(project: &Project, id: &str, status: TaskStatus) -> Re
 }
 
 /// Mark task as complete - stays in Working status with summary set.
+/// Sets summary on both the Task (for backward compat) and current WorkIteration.
 pub fn complete_task(project: &Project, id: &str, summary: &str) -> Result<Task> {
-    project.store().update_field(id, "summary", Some(summary))?;
+    let store = project.store();
+
+    // Set on Task for backward compatibility
+    store.update_field(id, "summary", Some(summary))?;
+
+    // Set on current work iteration (if exists)
+    // Ignore error if no active iteration - task may not have been migrated yet
+    let _ = store.set_iteration_summary(id, summary);
+
+    // Set phase to AwaitingReview since work output is ready
+    store.update_phase(id, TaskPhase::AwaitingReview)?;
+
     require_task(project, id)
 }
 
@@ -324,6 +362,8 @@ pub fn fail_task(project: &Project, id: &str, reason: &str) -> Result<Task> {
     let store = project.store();
     store.update_status(id, TaskStatus::Failed)?;
     store.update_field(id, "error", Some(reason))?;
+    // Reset phase to Idle for terminal state
+    store.update_phase(id, TaskPhase::Idle)?;
     require_task(project, id)
 }
 
@@ -331,6 +371,8 @@ pub fn block_task(project: &Project, id: &str, reason: &str) -> Result<Task> {
     let store = project.store();
     store.update_status(id, TaskStatus::Blocked)?;
     store.update_field(id, "error", Some(reason))?;
+    // Reset phase to Idle for terminal state
+    store.update_phase(id, TaskPhase::Idle)?;
     require_task(project, id)
 }
 
@@ -341,6 +383,11 @@ pub fn block_task(project: &Project, id: &str, reason: &str) -> Result<Task> {
 /// Set or clear the `agent_pid` on a task.
 pub fn set_agent_pid(project: &Project, id: &str, pid: Option<u32>) -> Result<()> {
     project.store().update_agent_pid(id, pid)
+}
+
+/// Set the phase on a task.
+pub fn set_phase(project: &Project, id: &str, phase: TaskPhase) -> Result<()> {
+    project.store().update_phase(id, phase)
 }
 
 /// Add a session to a task atomically with optional agent PID.
@@ -361,8 +408,21 @@ pub fn add_task_session(
 // Plan Management
 // =============================================================================
 
+/// Set the plan for a task.
+/// Sets plan on both the Task (for backward compat) and current PlanIteration.
 pub fn set_task_plan(project: &Project, id: &str, plan: &str) -> Result<Task> {
-    project.store().update_field(id, "plan", Some(plan))?;
+    let store = project.store();
+
+    // Set on Task for backward compatibility
+    store.update_field(id, "plan", Some(plan))?;
+
+    // Set on current plan iteration (if exists)
+    // Ignore error if no active iteration - task may not have been migrated yet
+    let _ = store.set_iteration_plan(id, plan);
+
+    // Set phase to AwaitingReview since plan output is ready
+    store.update_phase(id, TaskPhase::AwaitingReview)?;
+
     require_task(project, id)
 }
 
@@ -379,6 +439,7 @@ pub fn update_task_title(project: &Project, id: &str, title: &str) -> Result<()>
 }
 
 /// Approve a task's plan. Transitions to `BreakingDown` or Working based on `skip_breakdown`.
+/// Ends the current PlanIteration with Approved and starts a WorkIteration if going to Working.
 pub fn approve_task_plan(project: &Project, id: &str) -> Result<Task> {
     let store = project.store();
     let task = require_task(project, id)?;
@@ -390,6 +451,9 @@ pub fn approve_task_plan(project: &Project, id: &str) -> Result<Task> {
         });
     }
 
+    // End plan iteration with Approved
+    let _ = store.end_plan_iteration(id, &PlanOutcome::Approved);
+
     let new_status = if task.skip_breakdown {
         TaskStatus::Working
     } else {
@@ -397,10 +461,19 @@ pub fn approve_task_plan(project: &Project, id: &str) -> Result<Task> {
     };
 
     store.update_status(id, new_status)?;
-    // Note: feedback is in WorkLoop outcomes, no need to clear
+
+    // Reset phase to Idle - agent will be spawned by orchestrator
+    store.update_phase(id, TaskPhase::Idle)?;
+
+    // If going to Working, start a work iteration
+    if new_status == TaskStatus::Working {
+        store.start_work_iteration(id)?;
+    }
+
     require_task(project, id)
 }
 
+/// Request changes to a task's plan. Ends current PlanIteration with Rejected, starts new one.
 pub fn request_plan_changes(project: &Project, id: &str, feedback: &str) -> Result<Task> {
     let store = project.store();
     let task = require_task(project, id)?;
@@ -412,7 +485,7 @@ pub fn request_plan_changes(project: &Project, id: &str, feedback: &str) -> Resu
         });
     }
 
-    // End current loop with PlanRejected, start new loop
+    // End current loop with PlanRejected, start new loop (for backward compat)
     if let Some(current_loop) = store.get_current_loop(id)? {
         let outcome = LoopOutcome::PlanRejected {
             feedback: feedback.to_string(),
@@ -421,8 +494,21 @@ pub fn request_plan_changes(project: &Project, id: &str, feedback: &str) -> Resu
         store.start_loop(id, TaskStatus::Planning)?;
     }
 
+    // End plan iteration with Rejected, start new one
+    let _ = store.end_plan_iteration(
+        id,
+        &PlanOutcome::Rejected {
+            feedback: feedback.to_string(),
+        },
+    );
+    store.start_plan_iteration(id)?;
+
     store.update_field(id, "plan", None)?;
-    // Feedback is stored in the loop outcome, not on the task
+
+    // Reset phase to Idle - agent will be spawned by orchestrator for revision
+    store.update_phase(id, TaskPhase::Idle)?;
+
+    // Feedback is stored in the loop/iteration outcome, not on the task
     require_task(project, id)
 }
 
@@ -430,6 +516,7 @@ pub fn request_plan_changes(project: &Project, id: &str, feedback: &str) -> Resu
 // Review Management
 // =============================================================================
 
+/// Request changes to a task's work. Ends current WorkIteration with Rejected, starts new one.
 pub fn request_review_changes(project: &Project, id: &str, feedback: &str) -> Result<Task> {
     let store = project.store();
     let task = require_task(project, id)?;
@@ -441,7 +528,7 @@ pub fn request_review_changes(project: &Project, id: &str, feedback: &str) -> Re
         });
     }
 
-    // End current loop with WorkRejected, start new loop
+    // End current loop with WorkRejected, start new loop (for backward compat)
     if let Some(current_loop) = store.get_current_loop(id)? {
         let outcome = LoopOutcome::WorkRejected {
             feedback: feedback.to_string(),
@@ -450,13 +537,27 @@ pub fn request_review_changes(project: &Project, id: &str, feedback: &str) -> Re
         store.start_loop(id, TaskStatus::Working)?;
     }
 
+    // End work iteration with Rejected, start new one
+    let _ = store.end_work_iteration(
+        id,
+        &WorkOutcome::Rejected {
+            feedback: feedback.to_string(),
+        },
+    );
+    store.start_work_iteration(id)?;
+
     store.update_field(id, "summary", None)?;
-    // Feedback is stored in the loop outcome, not on the task
+
+    // Reset phase to Idle - agent will be spawned by orchestrator for revision
+    store.update_phase(id, TaskPhase::Idle)?;
+
+    // Feedback is stored in the loop/iteration outcome, not on the task
     require_task(project, id)
 }
 
 /// Approve work review and transition to Done.
 /// Orchestrator will handle branch integration and cleanup for Done tasks.
+/// Ends current WorkIteration with Approved.
 pub fn approve_review(project: &Project, id: &str) -> Result<Task> {
     let store = project.store();
     let task = require_task(project, id)?;
@@ -468,15 +569,22 @@ pub fn approve_review(project: &Project, id: &str) -> Result<Task> {
         });
     }
 
+    // End work iteration with Approved
+    let _ = store.end_work_iteration(id, &WorkOutcome::Approved);
+
     let now = chrono::Utc::now().to_rfc3339();
     store.update_status(id, TaskStatus::Done)?;
     store.update_field(id, "completed_at", Some(&now))?;
-    // Note: Integration status is tracked in WorkLoop outcomes, not on Task
+    // Note: Integration status is tracked in WorkLoop/iteration outcomes, not on Task
+
+    // Reset phase to Idle for terminal state (integration happens separately)
+    store.update_phase(id, TaskPhase::Idle)?;
 
     require_task(project, id)
 }
 
 /// Transition task to Reviewing status (spawns reviewer agent).
+/// Ends current WorkIteration with SentToReview and starts a ReviewIteration.
 pub fn start_automated_review(project: &Project, id: &str) -> Result<Task> {
     let store = project.store();
     let task = require_task(project, id)?;
@@ -488,12 +596,23 @@ pub fn start_automated_review(project: &Project, id: &str) -> Result<Task> {
         });
     }
 
+    // End work iteration with SentToReview
+    let _ = store.end_work_iteration(id, &WorkOutcome::SentToReview);
+
+    // Start a review iteration
+    store.start_review_iteration(id)?;
+
     store.update_status(id, TaskStatus::Reviewing)?;
+
+    // Reset phase to Idle - reviewer agent will be spawned by orchestrator
+    store.update_phase(id, TaskPhase::Idle)?;
+
     require_task(project, id)
 }
 
 /// Reviewer agent approves the implementation → Done.
 /// Orchestrator will handle branch integration and cleanup for Done tasks.
+/// Ends current ReviewIteration with Approved.
 pub fn approve_automated_review(project: &Project, id: &str) -> Result<Task> {
     let store = project.store();
     let task = require_task(project, id)?;
@@ -505,15 +624,22 @@ pub fn approve_automated_review(project: &Project, id: &str) -> Result<Task> {
         });
     }
 
+    // End review iteration with Approved
+    let _ = store.end_review_iteration(id, &ReviewOutcome::Approved);
+
     let now = chrono::Utc::now().to_rfc3339();
     store.update_status(id, TaskStatus::Done)?;
     store.update_field(id, "completed_at", Some(&now))?;
-    // Note: feedback is in WorkLoop outcomes, no need to clear
+    // Note: feedback is in WorkLoop/iteration outcomes, no need to clear
+
+    // Reset phase to Idle for terminal state (integration happens separately)
+    store.update_phase(id, TaskPhase::Idle)?;
 
     require_task(project, id)
 }
 
 /// Reviewer agent rejects the implementation → back to Working with feedback.
+/// Ends current ReviewIteration with Rejected, starts new WorkIteration.
 pub fn reject_automated_review(project: &Project, id: &str, feedback: &str) -> Result<Task> {
     let store = project.store();
     let task = require_task(project, id)?;
@@ -525,7 +651,7 @@ pub fn reject_automated_review(project: &Project, id: &str, feedback: &str) -> R
         });
     }
 
-    // End current loop with ReviewerRejected, start new loop
+    // End current loop with ReviewerRejected, start new loop (for backward compat)
     if let Some(current_loop) = store.get_current_loop(id)? {
         let outcome = LoopOutcome::ReviewerRejected {
             feedback: feedback.to_string(),
@@ -534,9 +660,24 @@ pub fn reject_automated_review(project: &Project, id: &str, feedback: &str) -> R
         store.start_loop(id, TaskStatus::Working)?;
     }
 
+    // End review iteration with Rejected
+    let _ = store.end_review_iteration(
+        id,
+        &ReviewOutcome::Rejected {
+            feedback: feedback.to_string(),
+        },
+    );
+
+    // Start a new work iteration for the worker to fix the issues
+    store.start_work_iteration(id)?;
+
     store.update_field(id, "summary", None)?;
-    // Feedback is stored in the loop outcome, not on the task
+    // Feedback is stored in the loop/iteration outcome, not on the task
     store.update_status(id, TaskStatus::Working)?;
+
+    // Reset phase to Idle - worker agent will be spawned by orchestrator for revision
+    store.update_phase(id, TaskPhase::Idle)?;
+
     require_task(project, id)
 }
 
@@ -581,6 +722,7 @@ pub fn create_child_task(
         title: Some(title.to_string()),
         description: description.to_string(),
         status: TaskStatus::Working,
+        phase: TaskPhase::Idle,
         kind: TaskKind::Task,
         created_at: now.clone(),
         updated_at: now,
@@ -625,6 +767,7 @@ pub fn create_subtask(
         title: Some(title.to_string()),
         description: description.to_string(),
         status: TaskStatus::Working,
+        phase: TaskPhase::Idle,
         kind: TaskKind::Subtask,
         created_at: now.clone(),
         updated_at: now,
@@ -680,6 +823,10 @@ pub fn set_breakdown(project: &Project, id: &str, breakdown: &str) -> Result<Tas
     }
 
     store.update_field(id, "breakdown", Some(breakdown))?;
+
+    // Set phase to AwaitingReview since breakdown output is ready
+    store.update_phase(id, TaskPhase::AwaitingReview)?;
+
     require_task(project, id)
 }
 
@@ -705,6 +852,15 @@ pub fn approve_breakdown(project: &Project, id: &str) -> Result<Task> {
 
     store.update_status(id, new_status)?;
     // Note: feedback is in WorkLoop outcomes, no need to clear
+
+    // Reset phase to Idle - agent will be spawned by orchestrator
+    store.update_phase(id, TaskPhase::Idle)?;
+
+    // If going to Working, start a work iteration
+    if new_status == TaskStatus::Working {
+        store.start_work_iteration(id)?;
+    }
+
     require_task(project, id)
 }
 
@@ -730,6 +886,10 @@ pub fn request_breakdown_changes(project: &Project, id: &str, feedback: &str) ->
 
     store.update_field(id, "breakdown", None)?;
     // Feedback is stored in the loop outcome, not on the task
+
+    // Reset phase to Idle - agent will be spawned by orchestrator for revision
+    store.update_phase(id, TaskPhase::Idle)?;
+
     require_task(project, id)
 }
 
@@ -746,6 +906,13 @@ pub fn skip_breakdown(project: &Project, id: &str) -> Result<Task> {
     }
 
     store.update_status(id, TaskStatus::Working)?;
+
+    // Reset phase to Idle - agent will be spawned by orchestrator
+    store.update_phase(id, TaskPhase::Idle)?;
+
+    // Start a work iteration
+    store.start_work_iteration(id)?;
+
     require_task(project, id)
 }
 

@@ -15,14 +15,74 @@
 
 use orkestra_core::{
     domain::{LoopOutcome, TaskStatus},
+    orchestrator::{self, OrchestratorAction},
     tasks,
     testutil::{
         create_orkestra_dirs, create_temp_git_repo, create_test_orchestrator,
-        create_worktree_setup_script,
+        create_worktree_setup_script, TestOrchestrator,
     },
 };
 use std::path::Path;
 use std::process::Command;
+
+// =============================================================================
+// Test Helpers - Orchestrator Action Assertions
+// =============================================================================
+
+/// Check if orchestrator would spawn a planner for the given task
+fn orchestrator_would_spawn_planner(orchestrator: &TestOrchestrator, task_id: &str) -> bool {
+    let actions = orchestrator::check_tasks(&orchestrator.project)
+        .expect("check_tasks should succeed");
+    actions.iter().any(|a| matches!(a, OrchestratorAction::SpawnPlanner(t) if t.id == task_id))
+}
+
+/// Check if orchestrator would spawn a worker for the given task
+fn orchestrator_would_spawn_worker(orchestrator: &TestOrchestrator, task_id: &str) -> bool {
+    let actions = orchestrator::check_tasks(&orchestrator.project)
+        .expect("check_tasks should succeed");
+    actions.iter().any(|a| matches!(a,
+        OrchestratorAction::SpawnWorker(t) | OrchestratorAction::ResumeWorker { task: t, .. }
+        if t.id == task_id))
+}
+
+/// Check if orchestrator would spawn a breakdown agent for the given task
+fn orchestrator_would_spawn_breakdown(orchestrator: &TestOrchestrator, task_id: &str) -> bool {
+    let actions = orchestrator::check_tasks(&orchestrator.project)
+        .expect("check_tasks should succeed");
+    actions.iter().any(|a| matches!(a, OrchestratorAction::SpawnBreakdown(t) if t.id == task_id))
+}
+
+/// Check if orchestrator would spawn a reviewer for the given task
+fn orchestrator_would_spawn_reviewer(orchestrator: &TestOrchestrator, task_id: &str) -> bool {
+    let actions = orchestrator::check_tasks(&orchestrator.project)
+        .expect("check_tasks should succeed");
+    actions.iter().any(|a| matches!(a,
+        OrchestratorAction::SpawnReviewer(t) | OrchestratorAction::ResumeReviewer { task: t, .. }
+        if t.id == task_id))
+}
+
+/// Check if orchestrator would integrate the given task
+fn orchestrator_would_integrate(orchestrator: &TestOrchestrator, task_id: &str) -> bool {
+    let actions = orchestrator::check_tasks(&orchestrator.project)
+        .expect("check_tasks should succeed");
+    actions.iter().any(|a| matches!(a, OrchestratorAction::IntegrateDoneTask(t) if t.id == task_id))
+}
+
+/// Check if orchestrator has NO actions for the given task (e.g., waiting for review)
+fn orchestrator_has_no_action_for(orchestrator: &TestOrchestrator, task_id: &str) -> bool {
+    let actions = orchestrator::check_tasks(&orchestrator.project)
+        .expect("check_tasks should succeed");
+
+    !actions.iter().any(|a| match a {
+        OrchestratorAction::SpawnPlanner(t) => t.id == task_id,
+        OrchestratorAction::SpawnBreakdown(t) => t.id == task_id,
+        OrchestratorAction::SpawnWorker(t) => t.id == task_id,
+        OrchestratorAction::ResumeWorker { task: t, .. } => t.id == task_id,
+        OrchestratorAction::SpawnReviewer(t) => t.id == task_id,
+        OrchestratorAction::ResumeReviewer { task: t, .. } => t.id == task_id,
+        OrchestratorAction::IntegrateDoneTask(t) => t.id == task_id,
+    })
+}
 
 // =============================================================================
 // Full Workflow Tests (realistic code paths)
@@ -234,6 +294,12 @@ fn test_workflow_with_merge_conflict() {
         .expect("Task should exist in Done status");
     assert_eq!(task.status, TaskStatus::Done);
 
+    // ORCHESTRATOR CHECK: Done task with branch should trigger integration
+    assert!(
+        orchestrator_would_integrate(&orchestrator, &task.id),
+        "Orchestrator should want to integrate Done task with branch"
+    );
+
     // Orchestrator tries to integrate - should detect conflict and reopen task
     tasks::integrate_done_task(&orchestrator.project, &task.id)
         .expect("Integration should handle conflict gracefully");
@@ -248,6 +314,12 @@ fn test_workflow_with_merge_conflict() {
         task.status,
         TaskStatus::Working,
         "Task should be reopened due to conflict"
+    );
+
+    // ORCHESTRATOR CHECK: After merge conflict, orchestrator should spawn worker
+    assert!(
+        orchestrator_would_spawn_worker(&orchestrator, &task.id),
+        "Orchestrator should spawn worker after merge conflict to resolve it"
     );
 
     // Verify conflict was recorded in the previous loop's outcome
@@ -559,13 +631,20 @@ fn test_plan_rejection_creates_new_loop() {
     let task = tasks::create_task(&orchestrator.project, Some("Test task"), "Description")
         .expect("Failed to create task");
 
-    // Agent sets plan
+    // Agent sets plan via CLI (simulates what Claude Code does)
     orchestrator
         .run_cli_in_worktree(
             &task.id,
             &["task", "set-plan", &task.id, "--plan", "Initial plan"],
         )
         .expect("Should set plan");
+
+    // ORCHESTRATOR CHECK: After agent sets plan, orchestrator should NOT spawn
+    // (waiting for human review)
+    assert!(
+        orchestrator_has_no_action_for(&orchestrator, &task.id),
+        "Orchestrator should not spawn agent while awaiting plan review"
+    );
 
     // Verify still on Loop 1
     let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
@@ -574,6 +653,12 @@ fn test_plan_rejection_creates_new_loop() {
     // UI rejects the plan
     tasks::request_plan_changes(&orchestrator.project, &task.id, "Need more detail")
         .expect("Should request changes");
+
+    // ORCHESTRATOR CHECK: After rejection, orchestrator should spawn planner
+    assert!(
+        orchestrator_would_spawn_planner(&orchestrator, &task.id),
+        "Orchestrator should spawn planner after plan rejection"
+    );
 
     // Verify Loop 1 ended with PlanRejected, and Loop 2 started
     let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
@@ -609,19 +694,27 @@ fn test_work_rejection_creates_new_loop() {
         .update_field(&task.id, "skip_breakdown", Some("1"))
         .unwrap();
 
+    // Agent sets plan via CLI
     orchestrator
         .run_cli_in_worktree(&task.id, &["task", "set-plan", &task.id, "--plan", "Plan"])
         .unwrap();
 
     tasks::approve_task_plan(&orchestrator.project, &task.id).unwrap();
 
-    // Agent completes work
+    // Agent completes work via CLI
     orchestrator
         .run_cli_in_worktree(
             &task.id,
             &["task", "complete", &task.id, "--summary", "Done"],
         )
         .unwrap();
+
+    // ORCHESTRATOR CHECK: After agent completes work, orchestrator should NOT spawn
+    // (waiting for human review)
+    assert!(
+        orchestrator_has_no_action_for(&orchestrator, &task.id),
+        "Orchestrator should not spawn agent while awaiting work review"
+    );
 
     // Verify still on Loop 1
     let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
@@ -630,6 +723,12 @@ fn test_work_rejection_creates_new_loop() {
     // UI rejects the work
     tasks::request_review_changes(&orchestrator.project, &task.id, "Fix the tests")
         .expect("Should request changes");
+
+    // ORCHESTRATOR CHECK: After rejection, orchestrator should spawn worker
+    assert!(
+        orchestrator_would_spawn_worker(&orchestrator, &task.id),
+        "Orchestrator should spawn worker after work rejection"
+    );
 
     // Verify Loop 1 ended with WorkRejected, and Loop 2 started
     let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
@@ -679,6 +778,12 @@ fn test_reviewer_rejection_creates_new_loop() {
     // Start automated review
     tasks::start_automated_review(&orchestrator.project, &task.id).unwrap();
 
+    // ORCHESTRATOR CHECK: After starting review, orchestrator should spawn reviewer
+    assert!(
+        orchestrator_would_spawn_reviewer(&orchestrator, &task.id),
+        "Orchestrator should spawn reviewer after starting automated review"
+    );
+
     // Verify still on Loop 1
     let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
     assert_eq!(loops.len(), 1);
@@ -696,6 +801,12 @@ fn test_reviewer_rejection_creates_new_loop() {
             ],
         )
         .expect("Should reject review");
+
+    // ORCHESTRATOR CHECK: After reviewer rejection, orchestrator should spawn worker
+    assert!(
+        orchestrator_would_spawn_worker(&orchestrator, &task.id),
+        "Orchestrator should spawn worker after reviewer rejection"
+    );
 
     // Verify Loop 1 ended with ReviewerRejected, and Loop 2 started
     let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
@@ -875,7 +986,7 @@ fn test_breakdown_rejection_creates_new_loop() {
     )
     .unwrap();
 
-    // Set and approve plan
+    // Set and approve plan via CLI
     orchestrator
         .run_cli_in_worktree(
             &task.id,
@@ -885,7 +996,7 @@ fn test_breakdown_rejection_creates_new_loop() {
 
     tasks::approve_task_plan(&orchestrator.project, &task.id).unwrap();
 
-    // Set breakdown
+    // Set breakdown via CLI
     orchestrator
         .run_cli_in_worktree(
             &task.id,
@@ -899,6 +1010,13 @@ fn test_breakdown_rejection_creates_new_loop() {
         )
         .unwrap();
 
+    // ORCHESTRATOR CHECK: After agent sets breakdown, orchestrator should NOT spawn
+    // (waiting for human review)
+    assert!(
+        orchestrator_has_no_action_for(&orchestrator, &task.id),
+        "Orchestrator should not spawn agent while awaiting breakdown review"
+    );
+
     // Verify still on Loop 1
     let loops = orchestrator.project.store().get_loops(&task.id).unwrap();
     assert_eq!(loops.len(), 1);
@@ -906,6 +1024,12 @@ fn test_breakdown_rejection_creates_new_loop() {
     // Reject breakdown
     tasks::request_breakdown_changes(&orchestrator.project, &task.id, "Need more subtasks")
         .expect("Should request breakdown changes");
+
+    // ORCHESTRATOR CHECK: After breakdown rejection, orchestrator should spawn breakdown agent
+    assert!(
+        orchestrator_would_spawn_breakdown(&orchestrator, &task.id),
+        "Orchestrator should spawn breakdown agent after breakdown rejection"
+    );
 
     // Verify new loop created
     let loops = orchestrator.project.store().get_loops(&task.id).unwrap();

@@ -1,6 +1,37 @@
 use crate::domain::{Task, TaskKind, TaskStatus};
 use crate::error::{OrkestraError, Result};
 use crate::ports::{Clock, TaskStore};
+use crate::state::TaskPhase;
+
+/// Check if task is awaiting plan review.
+/// Uses phase as primary, falls back to field check for migration.
+fn is_awaiting_plan_review(task: &Task) -> bool {
+    if task.phase == TaskPhase::AwaitingReview {
+        return task.status == TaskStatus::Planning;
+    }
+    // Fallback for migration
+    task.status == TaskStatus::Planning && task.plan.is_some()
+}
+
+/// Check if task is awaiting work review.
+/// Uses phase as primary, falls back to field check for migration.
+fn is_awaiting_work_review(task: &Task) -> bool {
+    if task.phase == TaskPhase::AwaitingReview {
+        return task.status == TaskStatus::Working;
+    }
+    // Fallback for migration
+    task.status == TaskStatus::Working && task.summary.is_some()
+}
+
+/// Check if task is awaiting breakdown review.
+/// Uses phase as primary, falls back to field check for migration.
+fn is_awaiting_breakdown_review(task: &Task) -> bool {
+    if task.phase == TaskPhase::AwaitingReview {
+        return task.status == TaskStatus::BreakingDown;
+    }
+    // Fallback for migration
+    task.status == TaskStatus::BreakingDown && task.breakdown.is_some()
+}
 
 /// Service for task operations.
 ///
@@ -65,11 +96,11 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
     }
 
     /// Approve a plan. Transitions to `BreakingDown` or Working based on `skip_breakdown`.
-    /// Requires: Planning + plan set.
+    /// Requires: Planning + plan set (awaiting review).
     pub fn approve_plan(&self, id: &str) -> Result<Task> {
         let now = self.clock.now_rfc3339();
         self.update(id, |task| {
-            if !task.needs_plan_review() {
+            if !is_awaiting_plan_review(task) {
                 return Err(OrkestraError::InvalidState {
                     expected: "planning with plan set".to_string(),
                     actual: format!("{:?}", task.status),
@@ -81,21 +112,23 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
             } else {
                 TaskStatus::BreakingDown
             };
+            task.phase = TaskPhase::Idle;
             task.transition_to(next_status, &now)
         })
     }
 
-    /// Request changes to a plan. Requires: Planning + plan set.
+    /// Request changes to a plan. Requires: Planning + plan set (awaiting review).
     /// Clears the plan and stores feedback.
     pub fn request_plan_changes(&self, id: &str, _feedback: &str) -> Result<Task> {
         self.update(id, |task| {
-            if !task.needs_plan_review() {
+            if !is_awaiting_plan_review(task) {
                 return Err(OrkestraError::InvalidState {
                     expected: "planning with plan set".to_string(),
                     actual: format!("{:?}", task.status),
                 });
             }
             task.plan = None;
+            task.phase = TaskPhase::Idle;
             // Note: feedback is stored in WorkLoop outcomes
             Ok(())
         })
@@ -109,33 +142,35 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
         })
     }
 
-    /// Approve work review and transition to Done. Requires: Working + summary set.
+    /// Approve work review and transition to Done. Requires: Working + summary set (awaiting review).
     pub fn approve_review(&self, id: &str) -> Result<Task> {
         let now = self.clock.now_rfc3339();
         self.update(id, |task| {
-            if !task.needs_work_review() {
+            if !is_awaiting_work_review(task) {
                 return Err(OrkestraError::InvalidState {
                     expected: "working with summary set".to_string(),
                     actual: format!("{:?}", task.status),
                 });
             }
             task.completed_at = Some(now.clone());
+            task.phase = TaskPhase::Idle;
             // Note: feedback is in WorkLoop outcomes, not on task
             task.transition_to(TaskStatus::Done, &now)
         })
     }
 
-    /// Request changes during work review. Requires: Working + summary set.
+    /// Request changes during work review. Requires: Working + summary set (awaiting review).
     /// Clears the summary and stores feedback.
     pub fn request_review_changes(&self, id: &str, _feedback: &str) -> Result<Task> {
         self.update(id, |task| {
-            if !task.needs_work_review() {
+            if !is_awaiting_work_review(task) {
                 return Err(OrkestraError::InvalidState {
                     expected: "working with summary set".to_string(),
                     actual: format!("{:?}", task.status),
                 });
             }
             task.summary = None;
+            task.phase = TaskPhase::Idle;
             // Note: feedback is stored in WorkLoop outcomes
             Ok(())
         })
@@ -277,37 +312,40 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
                 });
             }
             task.breakdown = Some(breakdown.to_string());
+            task.phase = TaskPhase::AwaitingReview;
             Ok(())
         })
     }
 
     /// Approve a breakdown and transition to `WaitingOnSubtasks`.
-    /// Requires: `BreakingDown` + breakdown set.
+    /// Requires: `BreakingDown` + breakdown set (awaiting review).
     pub fn approve_breakdown(&self, id: &str) -> Result<Task> {
         let now = self.clock.now_rfc3339();
         self.update(id, |task| {
-            if !task.needs_breakdown_review() {
+            if !is_awaiting_breakdown_review(task) {
                 return Err(OrkestraError::InvalidState {
                     expected: "breaking_down with breakdown set".to_string(),
                     actual: format!("{:?}", task.status),
                 });
             }
+            task.phase = TaskPhase::Idle;
             // Note: feedback is in WorkLoop outcomes, not on task
             task.transition_to(TaskStatus::WaitingOnSubtasks, &now)
         })
     }
 
-    /// Request changes to a breakdown. Requires: `BreakingDown` + breakdown set.
+    /// Request changes to a breakdown. Requires: `BreakingDown` + breakdown set (awaiting review).
     /// Clears the breakdown and stores feedback.
     pub fn request_breakdown_changes(&self, id: &str, _feedback: &str) -> Result<Task> {
         self.update(id, |task| {
-            if !task.needs_breakdown_review() {
+            if !is_awaiting_breakdown_review(task) {
                 return Err(OrkestraError::InvalidState {
                     expected: "breaking_down with breakdown set".to_string(),
                     actual: format!("{:?}", task.status),
                 });
             }
             task.breakdown = None;
+            task.phase = TaskPhase::Idle;
             // Note: feedback is stored in WorkLoop outcomes
             Ok(())
         })
@@ -324,6 +362,7 @@ impl<S: TaskStore, C: Clock> TaskService<S, C> {
                     actual: format!("{:?}", task.status),
                 });
             }
+            task.phase = TaskPhase::Idle;
             task.transition_to(TaskStatus::Working, &now)
         })
     }
@@ -476,7 +515,7 @@ mod tests {
         let parent = service
             .set_breakdown(&parent.id, "Split into 2 parts")
             .unwrap();
-        assert!(parent.needs_breakdown_review());
+        assert!(is_awaiting_breakdown_review(&parent));
 
         // Approve breakdown - transitions to WaitingOnSubtasks
         let parent = service.approve_breakdown(&parent.id).unwrap();
@@ -564,7 +603,7 @@ mod tests {
         let task = service
             .set_breakdown(&task.id, "Initial breakdown")
             .unwrap();
-        assert!(task.needs_breakdown_review());
+        assert!(is_awaiting_breakdown_review(&task));
 
         // Request changes
         let task = service

@@ -12,7 +12,7 @@
 
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStderr, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 
@@ -309,17 +309,6 @@ pub fn spawn_stderr_reader(stderr: Option<ChildStderr>) -> Option<JoinHandle<Vec
     })
 }
 
-/// Logs stderr output if present.
-pub fn log_stderr(task_id: &str, prefix: &str, stderr_handle: Option<JoinHandle<Vec<String>>>) {
-    if let Some(handle) = stderr_handle {
-        if let Ok(lines) = handle.join() {
-            if !lines.is_empty() {
-                eprintln!("{} {} stderr: {}", prefix, task_id, lines.join("\n"));
-            }
-        }
-    }
-}
-
 // ============================================================================
 // Stream Event Parsing
 // ============================================================================
@@ -374,75 +363,6 @@ pub fn parse_stream_event(json_line: &str) -> ParsedStreamEvent {
     ParsedStreamEvent::default()
 }
 
-/// Extracts session_id from a JSON output string.
-pub fn extract_session_id(json_str: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(json_str)
-        .ok()
-        .and_then(|v| v.get("session_id")?.as_str().map(String::from))
-}
-
-/// Extracts structured_output from a Claude JSON response.
-/// Returns the structured_output as a Value if present.
-pub fn extract_structured_output(json_str: &str) -> Option<serde_json::Value> {
-    serde_json::from_str::<serde_json::Value>(json_str)
-        .ok()
-        .and_then(|v| v.get("structured_output").cloned())
-}
-
-/// Waits synchronously for session_id from stdout, with timeout.
-/// Returns the session_id and a receiver for remaining lines.
-pub fn wait_for_session_id_sync(
-    stdout: Option<ChildStdout>,
-    timeout_secs: u64,
-) -> (Option<String>, Option<std::sync::mpsc::Receiver<std::io::Result<String>>>) {
-    let Some(stdout) = stdout else {
-        return (None, None);
-    };
-
-    let reader = std::io::BufReader::new(stdout);
-    let start_time = std::time::Instant::now();
-    let timeout = std::time::Duration::from_secs(timeout_secs);
-
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        for line in reader.lines() {
-            if tx.send(line).is_err() {
-                break;
-            }
-        }
-    });
-
-    let mut captured_session_id: Option<String> = None;
-
-    loop {
-        if start_time.elapsed() > timeout {
-            eprintln!("Warning: Timeout waiting for session_id after {timeout_secs} seconds");
-            break;
-        }
-
-        match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-            Ok(Ok(json_line)) => {
-                if json_line.trim().is_empty() {
-                    continue;
-                }
-                let parsed = parse_stream_event(&json_line);
-                if let Some(sid) = parsed.session_id {
-                    captured_session_id = Some(sid);
-                    break;
-                }
-            }
-            Ok(Err(e)) => {
-                eprintln!("Error reading stdout: {e}");
-                break;
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-        }
-    }
-
-    (captured_session_id, Some(rx))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -477,15 +397,6 @@ mod tests {
         let parsed = parse_stream_event(json);
         assert!(parsed.session_id.is_none());
         assert!(!parsed.has_new_content);
-    }
-
-    #[test]
-    fn test_extract_session_id() {
-        let json = r#"{"session_id":"test-session-123","result":"ok"}"#;
-        assert_eq!(
-            extract_session_id(json),
-            Some("test-session-123".to_string())
-        );
     }
 
     #[test]

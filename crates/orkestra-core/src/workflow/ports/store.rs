@@ -3,7 +3,7 @@
 //! This trait abstracts over storage backends, allowing the workflow system
 //! to work with SQLite, in-memory stores for testing, or other backends.
 
-use crate::workflow::domain::{Iteration, Task};
+use crate::workflow::domain::{Iteration, StageSession, Task};
 
 /// Error type for workflow operations.
 #[derive(Debug, thiserror::Error)]
@@ -15,6 +15,10 @@ pub enum WorkflowError {
     /// Iteration not found.
     #[error("Iteration not found: {0}")]
     IterationNotFound(String),
+
+    /// Stage session not found.
+    #[error("Stage session not found: {0}")]
+    StageSessionNotFound(String),
 
     /// Invalid state transition.
     #[error("Invalid state transition: {0}")]
@@ -93,12 +97,31 @@ pub trait WorkflowStore: Send + Sync {
 
     /// Delete all iterations for a task.
     fn delete_iterations(&self, task_id: &str) -> WorkflowResult<()>;
+
+    // =========================================================================
+    // Stage Session Operations
+    // =========================================================================
+
+    /// Get the stage session for a task and stage.
+    fn get_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<Option<StageSession>>;
+
+    /// Get all stage sessions for a task.
+    fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>>;
+
+    /// Get all active sessions that have a running agent (for crash recovery).
+    fn get_sessions_with_pids(&self) -> WorkflowResult<Vec<StageSession>>;
+
+    /// Save a stage session (insert or update).
+    fn save_stage_session(&self, session: &StageSession) -> WorkflowResult<()>;
+
+    /// Delete all stage sessions for a task.
+    fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::domain::Task;
+    use crate::workflow::domain::{SessionState, Task};
     use crate::workflow::runtime::Phase;
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -107,6 +130,7 @@ mod tests {
     struct TestStore {
         tasks: Mutex<HashMap<String, Task>>,
         iterations: Mutex<Vec<Iteration>>,
+        stage_sessions: Mutex<Vec<StageSession>>,
         next_id: std::sync::atomic::AtomicU32,
     }
 
@@ -115,6 +139,7 @@ mod tests {
             Self {
                 tasks: Mutex::new(HashMap::new()),
                 iterations: Mutex::new(Vec::new()),
+                stage_sessions: Mutex::new(Vec::new()),
                 next_id: std::sync::atomic::AtomicU32::new(1),
             }
         }
@@ -222,6 +247,48 @@ mod tests {
             iterations.retain(|i| i.task_id != task_id);
             Ok(())
         }
+
+        fn get_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<Option<StageSession>> {
+            let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+            Ok(sessions
+                .iter()
+                .find(|s| s.task_id == task_id && s.stage == stage)
+                .cloned())
+        }
+
+        fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {
+            let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+            Ok(sessions
+                .iter()
+                .filter(|s| s.task_id == task_id)
+                .cloned()
+                .collect())
+        }
+
+        fn get_sessions_with_pids(&self) -> WorkflowResult<Vec<StageSession>> {
+            let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+            Ok(sessions
+                .iter()
+                .filter(|s| s.agent_pid.is_some())
+                .cloned()
+                .collect())
+        }
+
+        fn save_stage_session(&self, session: &StageSession) -> WorkflowResult<()> {
+            let mut sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+            if let Some(existing) = sessions.iter_mut().find(|s| s.id == session.id) {
+                *existing = session.clone();
+            } else {
+                sessions.push(session.clone());
+            }
+            Ok(())
+        }
+
+        fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()> {
+            let mut sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+            sessions.retain(|s| s.task_id != task_id);
+            Ok(())
+        }
     }
 
     #[test]
@@ -318,5 +385,59 @@ mod tests {
 
         assert_ne!(id1, id2);
         assert!(id1.starts_with("task-"));
+    }
+
+    #[test]
+    fn test_stage_session_crud() {
+        let store = TestStore::new();
+
+        // Create
+        let session = StageSession::new("ss-1", "task-1", "planning", "now");
+        store.save_stage_session(&session).unwrap();
+
+        // Read
+        let loaded = store.get_stage_session("task-1", "planning").unwrap();
+        assert!(loaded.is_some());
+        assert_eq!(loaded.unwrap().stage, "planning");
+
+        // Update
+        let mut session = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        session.claude_session_id = Some("claude-abc".into());
+        store.save_stage_session(&session).unwrap();
+
+        let loaded = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        assert_eq!(loaded.claude_session_id, Some("claude-abc".into()));
+
+        // Delete
+        store.delete_stage_sessions("task-1").unwrap();
+        assert!(store.get_stage_session("task-1", "planning").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_get_sessions_with_pids() {
+        let store = TestStore::new();
+
+        let mut session1 = StageSession::new("ss-1", "task-1", "planning", "now");
+        session1.agent_pid = Some(12345);
+        store.save_stage_session(&session1).unwrap();
+
+        let session2 = StageSession::new("ss-2", "task-1", "work", "now");
+        store.save_stage_session(&session2).unwrap();
+
+        let with_pids = store.get_sessions_with_pids().unwrap();
+        assert_eq!(with_pids.len(), 1);
+        assert_eq!(with_pids[0].id, "ss-1");
+    }
+
+    #[test]
+    fn test_get_stage_sessions() {
+        let store = TestStore::new();
+
+        store.save_stage_session(&StageSession::new("ss-1", "task-1", "planning", "now")).unwrap();
+        store.save_stage_session(&StageSession::new("ss-2", "task-1", "work", "now")).unwrap();
+        store.save_stage_session(&StageSession::new("ss-3", "task-2", "planning", "now")).unwrap();
+
+        let sessions = store.get_stage_sessions("task-1").unwrap();
+        assert_eq!(sessions.len(), 2);
     }
 }

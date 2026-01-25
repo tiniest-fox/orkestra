@@ -1,5 +1,7 @@
 //! Core WorkflowApi struct and workflow configuration queries.
 
+use std::sync::Arc;
+
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::ports::WorkflowStore;
 
@@ -16,12 +18,12 @@ use crate::workflow::ports::WorkflowStore;
 /// ```
 pub struct WorkflowApi {
     pub(crate) workflow: WorkflowConfig,
-    pub(crate) store: Box<dyn WorkflowStore>,
+    pub(crate) store: Arc<dyn WorkflowStore>,
 }
 
 impl WorkflowApi {
     /// Create a new WorkflowApi with the given config and store.
-    pub fn new(workflow: WorkflowConfig, store: Box<dyn WorkflowStore>) -> Self {
+    pub fn new(workflow: WorkflowConfig, store: Arc<dyn WorkflowStore>) -> Self {
         Self { workflow, store }
     }
 
@@ -80,6 +82,7 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use super::*;
     use crate::workflow::config::{StageCapabilities, StageConfig};
     use crate::workflow::InMemoryWorkflowStore;
@@ -100,7 +103,7 @@ mod tests {
     #[test]
     fn test_new() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         assert_eq!(api.workflow().stages.len(), 4);
@@ -109,7 +112,7 @@ mod tests {
     #[test]
     fn test_is_stage_automated() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         assert!(!api.is_stage_automated("planning"));
@@ -121,7 +124,7 @@ mod tests {
     #[test]
     fn test_next_stage_after() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         assert_eq!(api.next_stage_after("planning"), Some("breakdown"));
@@ -134,7 +137,7 @@ mod tests {
     #[test]
     fn test_compute_next_status_skips_optional() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         // Planning should skip optional breakdown and go to work
@@ -153,7 +156,7 @@ mod tests {
     #[test]
     fn test_integration_failure_stage() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         // Default: "work" stage

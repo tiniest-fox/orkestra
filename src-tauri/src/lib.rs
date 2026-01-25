@@ -30,10 +30,12 @@ fn start_workflow_orchestrator(
     stop_flag: Arc<AtomicBool>,
 ) {
     let api = app_state.api_arc();
+    let workflow = app_state.config().clone();
     let project_root = app_state.project_root().to_path_buf();
+    let store = app_state.create_store();
 
     thread::spawn(move || {
-        let orchestrator = OrchestratorLoop::with_claude_spawner(api, project_root);
+        let orchestrator = OrchestratorLoop::for_project(api, workflow, project_root, store);
 
         // Share the stop flag with the orchestrator
         let orch_stop = orchestrator.stop_flag();
@@ -52,6 +54,10 @@ fn start_workflow_orchestrator(
                 orkestra_core::workflow::OrchestratorEvent::AgentSpawned { task_id, stage, pid } => {
                     println!("[orchestrator] Spawned {stage} agent for {task_id} (pid: {pid})");
                     let _ = app_handle.emit("task-updated", task_id);
+                }
+                orkestra_core::workflow::OrchestratorEvent::SessionIdCaptured { task_id, stage, session_id } => {
+                    println!("[orchestrator] Captured session {session_id} for {task_id}/{stage}");
+                    // No need to emit task-updated for session ID capture
                 }
                 orkestra_core::workflow::OrchestratorEvent::OutputProcessed { task_id, stage, output_type } => {
                     println!("[orchestrator] Processed {output_type} output from {stage} for {task_id}");
@@ -189,7 +195,7 @@ fn cleanup_agents_standalone() {
 
     let workflow_config = load_workflow_for_project(&project_root).unwrap_or_default();
     let store = orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared());
-    let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Box::new(store));
+    let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::new(store));
 
     let Ok(tasks) = api.list_tasks() else {
         return;

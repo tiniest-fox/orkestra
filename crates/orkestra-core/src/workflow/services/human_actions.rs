@@ -157,6 +157,7 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::domain::Question;
     use crate::workflow::runtime::{Artifact, Status};
@@ -177,7 +178,7 @@ mod tests {
 
     fn api_with_task_in_review() -> (WorkflowApi, Task) {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description").unwrap();
@@ -205,7 +206,7 @@ mod tests {
     #[test]
     fn test_approve_from_last_stage_marks_done() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description").unwrap();
@@ -227,7 +228,7 @@ mod tests {
     #[test]
     fn test_approve_invalid_phase() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -279,7 +280,7 @@ mod tests {
     #[test]
     fn test_answer_questions_clears_pending() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description").unwrap();
@@ -306,7 +307,7 @@ mod tests {
     #[test]
     fn test_answer_questions_no_questions() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();

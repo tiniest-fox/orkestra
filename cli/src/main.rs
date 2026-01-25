@@ -2,6 +2,8 @@
 //!
 //! This CLI provides read-only access to the workflow system for debugging purposes.
 
+use std::sync::Arc;
+
 use clap::{Parser, Subcommand};
 use orkestra_core::{
     adapters::sqlite::DatabaseConnection,
@@ -217,7 +219,7 @@ fn init_workflow_api() -> Result<WorkflowApi, String> {
     // Create the store and API
     let store = SqliteWorkflowStore::new(conn.shared());
 
-    Ok(WorkflowApi::new(workflow_config, Box::new(store)))
+    Ok(WorkflowApi::new(workflow_config, Arc::new(store)))
 }
 
 fn matches_status_filter(task: &Task, filter: &str) -> bool {

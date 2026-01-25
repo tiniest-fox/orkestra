@@ -7,13 +7,14 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-use crate::workflow::domain::{Iteration, Task};
+use crate::workflow::domain::{Iteration, StageSession, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 
 /// In-memory implementation of WorkflowStore for testing.
 pub struct InMemoryWorkflowStore {
     tasks: Mutex<HashMap<String, Task>>,
     iterations: Mutex<Vec<Iteration>>,
+    stage_sessions: Mutex<Vec<StageSession>>,
     next_id: AtomicU32,
 }
 
@@ -23,6 +24,7 @@ impl InMemoryWorkflowStore {
         Self {
             tasks: Mutex::new(HashMap::new()),
             iterations: Mutex::new(Vec::new()),
+            stage_sessions: Mutex::new(Vec::new()),
             next_id: AtomicU32::new(1),
         }
     }
@@ -140,6 +142,48 @@ impl WorkflowStore for InMemoryWorkflowStore {
     fn delete_iterations(&self, task_id: &str) -> WorkflowResult<()> {
         let mut iterations = self.iterations.lock().map_err(|_| WorkflowError::Lock)?;
         iterations.retain(|i| i.task_id != task_id);
+        Ok(())
+    }
+
+    fn get_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<Option<StageSession>> {
+        let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+        Ok(sessions
+            .iter()
+            .find(|s| s.task_id == task_id && s.stage == stage)
+            .cloned())
+    }
+
+    fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {
+        let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+        Ok(sessions
+            .iter()
+            .filter(|s| s.task_id == task_id)
+            .cloned()
+            .collect())
+    }
+
+    fn get_sessions_with_pids(&self) -> WorkflowResult<Vec<StageSession>> {
+        let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+        Ok(sessions
+            .iter()
+            .filter(|s| s.agent_pid.is_some())
+            .cloned()
+            .collect())
+    }
+
+    fn save_stage_session(&self, session: &StageSession) -> WorkflowResult<()> {
+        let mut sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+        if let Some(existing) = sessions.iter_mut().find(|s| s.id == session.id) {
+            *existing = session.clone();
+        } else {
+            sessions.push(session.clone());
+        }
+        Ok(())
+    }
+
+    fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()> {
+        let mut sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+        sessions.retain(|s| s.task_id != task_id);
         Ok(())
     }
 }

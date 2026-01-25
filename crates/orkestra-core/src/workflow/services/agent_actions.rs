@@ -205,6 +205,7 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::domain::Question;
     use crate::workflow::InMemoryWorkflowStore;
@@ -226,7 +227,7 @@ mod tests {
     #[test]
     fn test_agent_started() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -238,7 +239,7 @@ mod tests {
     #[test]
     fn test_agent_started_invalid_phase() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description").unwrap();
@@ -252,7 +253,7 @@ mod tests {
     #[test]
     fn test_process_artifact_output() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -270,7 +271,7 @@ mod tests {
     #[test]
     fn test_process_questions_output() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -288,7 +289,7 @@ mod tests {
     #[test]
     fn test_process_restage_output() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description").unwrap();
@@ -311,7 +312,7 @@ mod tests {
     #[test]
     fn test_process_restage_invalid_target() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -330,7 +331,7 @@ mod tests {
     #[test]
     fn test_process_failed_output() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -348,7 +349,7 @@ mod tests {
     #[test]
     fn test_process_blocked_output() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -366,7 +367,7 @@ mod tests {
     #[test]
     fn test_automated_stage_auto_approves() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description").unwrap();
@@ -389,7 +390,7 @@ mod tests {
     #[test]
     fn test_get_tasks_needing_agents() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         // Create some tasks in different states

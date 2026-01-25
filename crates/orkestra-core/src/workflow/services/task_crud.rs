@@ -1,12 +1,19 @@
 //! Task CRUD operations.
 
+use std::sync::Arc;
+use std::thread;
+
+use crate::title::generate_title_sync;
 use crate::workflow::domain::{Iteration, Task};
-use crate::workflow::ports::{WorkflowError, WorkflowResult};
+use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 
 use super::WorkflowApi;
 
 impl WorkflowApi {
     /// Create a new task. Starts in the first workflow stage.
+    ///
+    /// If `title` is empty, a background thread will generate one using AI.
+    /// The task is returned immediately with empty title, which will be filled in asynchronously.
     pub fn create_task(&self, title: &str, description: &str) -> WorkflowResult<Task> {
         let id = self.store.next_task_id()?;
         let first_stage = self
@@ -28,6 +35,11 @@ impl WorkflowApi {
             &now,
         );
         self.store.save_iteration(&iteration)?;
+
+        // If title is empty, generate one in the background
+        if title.trim().is_empty() && !description.trim().is_empty() {
+            spawn_title_generation(self.store.clone(), id.clone(), description.to_string());
+        }
 
         Ok(task)
     }
@@ -100,8 +112,34 @@ impl WorkflowApi {
     }
 }
 
+/// Spawn a background thread to generate a title for a task.
+fn spawn_title_generation(store: Arc<dyn WorkflowStore>, task_id: String, description: String) {
+    thread::spawn(move || {
+        // Generate title with 30 second timeout
+        match generate_title_sync(&description, 30) {
+            Ok(title) => {
+                // Update the task with the generated title
+                if let Ok(Some(mut task)) = store.get_task(&task_id) {
+                    if task.title.trim().is_empty() {
+                        task.title = title;
+                        if let Err(e) = store.save_task(&task) {
+                            eprintln!("[title] Failed to save generated title for {task_id}: {e}");
+                        } else {
+                            println!("[title] Generated title for {task_id}: {}", task.title);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[title] Failed to generate title for {task_id}: {e}");
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::InMemoryWorkflowStore;
 
@@ -118,7 +156,7 @@ mod tests {
     #[test]
     fn test_create_task() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Fix bug", "Fix the login bug").unwrap();
@@ -132,7 +170,7 @@ mod tests {
     #[test]
     fn test_create_subtask() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let parent = api.create_task("Parent", "Parent task").unwrap();
@@ -144,7 +182,7 @@ mod tests {
     #[test]
     fn test_get_task() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -157,7 +195,7 @@ mod tests {
     #[test]
     fn test_get_task_not_found() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let result = api.get_task("nonexistent");
@@ -167,7 +205,7 @@ mod tests {
     #[test]
     fn test_list_tasks_excludes_subtasks() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let parent = api.create_task("Parent", "Parent task").unwrap();
@@ -183,7 +221,7 @@ mod tests {
     #[test]
     fn test_list_subtasks() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let parent = api.create_task("Parent", "Parent task").unwrap();
@@ -199,7 +237,7 @@ mod tests {
     #[test]
     fn test_delete_task() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -212,7 +250,7 @@ mod tests {
     #[test]
     fn test_create_task_creates_iteration() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();

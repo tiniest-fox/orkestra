@@ -76,6 +76,10 @@ impl From<WorkflowError> for TauriError {
                 code: "LOCK_ERROR".into(),
                 message: "Failed to acquire lock".into(),
             },
+            WorkflowError::StageSessionNotFound(id) => TauriError {
+                code: "SESSION_NOT_FOUND".into(),
+                message: format!("Stage session not found: {}", id),
+            },
         }
     }
 }

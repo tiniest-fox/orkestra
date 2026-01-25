@@ -108,6 +108,7 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use crate::workflow::config::{StageConfig, WorkflowConfig};
     use crate::workflow::InMemoryWorkflowStore;
 
@@ -125,7 +126,7 @@ mod tests {
 
     fn api_with_done_task() -> (WorkflowApi, Task) {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description").unwrap();
@@ -147,7 +148,7 @@ mod tests {
     #[test]
     fn test_integration_succeeded_not_done() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -204,7 +205,7 @@ mod tests {
     #[test]
     fn test_integration_failed_not_done() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();

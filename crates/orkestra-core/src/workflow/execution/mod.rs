@@ -3,12 +3,12 @@
 //! This module provides components for executing workflow stages:
 //!
 //! - **StageOutput**: Parsed output from agents (artifacts, questions, restage, etc.)
-//! - **AgentSpawner**: Trait for spawning agents (port)
+//! - **AgentRunner**: Runs agents via ProcessSpawner
 //! - **PromptBuilder**: Generates prompts from workflow configuration
 
 mod output;
 mod prompt;
-mod spawner;
+mod runner;
 
 pub use output::{StageOutput, StageOutputError};
 pub use prompt::{
@@ -16,7 +16,7 @@ pub use prompt::{
     AgentConfigError, ArtifactContext, IntegrationErrorContext, PromptBuilder,
     QuestionAnswerContext, ResolvedAgentConfig, StagePromptContext,
 };
-pub use spawner::{AgentCompletionCallback, AgentSpawner, SpawnError, SpawnResult};
+pub use runner::{parse_agent_output, AgentRunner, AgentRunnerTrait, RunConfig, RunError, RunEvent, RunResult};
 
 #[cfg(any(test, feature = "testutil"))]
-pub use spawner::mock::MockSpawner;
+pub use runner::mock::MockAgentRunner;

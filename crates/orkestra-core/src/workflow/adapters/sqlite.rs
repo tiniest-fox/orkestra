@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use petname::Generator;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::workflow::domain::{Iteration, Task};
+use crate::workflow::domain::{Iteration, SessionState, StageSession, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
 
@@ -184,7 +184,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, session_id
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id
                  FROM workflow_iterations WHERE task_id = ? ORDER BY stage, iteration_number",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -210,7 +210,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, session_id
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id
                  FROM workflow_iterations WHERE task_id = ? AND stage = ? ORDER BY iteration_number",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -236,7 +236,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let result = conn
             .query_row(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, session_id
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id
                  FROM workflow_iterations
                  WHERE task_id = ? AND stage = ? AND ended_at IS NULL
                  ORDER BY iteration_number DESC LIMIT 1",
@@ -258,7 +258,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let result = conn
             .query_row(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, session_id
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id
                  FROM workflow_iterations
                  WHERE task_id = ? AND stage = ?
                  ORDER BY iteration_number DESC LIMIT 1",
@@ -282,7 +282,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         conn.execute(
             "INSERT OR REPLACE INTO workflow_iterations (
-                id, task_id, stage, iteration_number, started_at, ended_at, outcome, session_id
+                id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 iteration.id,
@@ -292,7 +292,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 iteration.started_at,
                 iteration.ended_at,
                 outcome_json,
-                iteration.session_id,
+                iteration.stage_session_id,
             ],
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -304,6 +304,106 @@ impl WorkflowStore for SqliteWorkflowStore {
         let conn = self.lock_conn()?;
         conn.execute(
             "DELETE FROM workflow_iterations WHERE task_id = ?",
+            params![task_id],
+        )
+        .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn get_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<Option<StageSession>> {
+        let conn = self.lock_conn()?;
+
+        let result = conn
+            .query_row(
+                "SELECT id, task_id, stage, claude_session_id, agent_pid, resume_count,
+                        session_state, created_at, updated_at
+                 FROM workflow_stage_sessions WHERE task_id = ? AND stage = ?",
+                params![task_id, stage],
+                row_to_stage_session,
+            )
+            .optional()
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {
+        let conn = self.lock_conn()?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, task_id, stage, claude_session_id, agent_pid, resume_count,
+                        session_state, created_at, updated_at
+                 FROM workflow_stage_sessions WHERE task_id = ? ORDER BY created_at",
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![task_id], row_to_stage_session)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(row.map_err(|e| WorkflowError::Storage(e.to_string()))?);
+        }
+
+        Ok(sessions)
+    }
+
+    fn get_sessions_with_pids(&self) -> WorkflowResult<Vec<StageSession>> {
+        let conn = self.lock_conn()?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, task_id, stage, claude_session_id, agent_pid, resume_count,
+                        session_state, created_at, updated_at
+                 FROM workflow_stage_sessions WHERE agent_pid IS NOT NULL",
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], row_to_stage_session)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(row.map_err(|e| WorkflowError::Storage(e.to_string()))?);
+        }
+
+        Ok(sessions)
+    }
+
+    fn save_stage_session(&self, session: &StageSession) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+
+        let state_str = session_state_to_str(session.session_state);
+
+        conn.execute(
+            "INSERT OR REPLACE INTO workflow_stage_sessions (
+                id, task_id, stage, claude_session_id, agent_pid, resume_count,
+                session_state, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                session.id,
+                session.task_id,
+                session.stage,
+                session.claude_session_id,
+                session.agent_pid.map(|p| p as i32),
+                session.resume_count as i32,
+                state_str,
+                session.created_at,
+                session.updated_at,
+            ],
+        )
+        .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "DELETE FROM workflow_stage_sessions WHERE task_id = ?",
             params![task_id],
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -356,7 +456,7 @@ fn row_to_iteration(row: &rusqlite::Row) -> rusqlite::Result<Iteration> {
         started_at: row.get(4)?,
         ended_at: row.get(5)?,
         outcome: outcome_json.and_then(|j| serde_json::from_str(&j).ok()),
-        session_id: row.get(7)?,
+        stage_session_id: row.get(7)?,
     })
 }
 
@@ -375,6 +475,40 @@ fn parse_phase(s: &str) -> Phase {
         "awaiting_review" => Phase::AwaitingReview,
         "integrating" => Phase::Integrating,
         _ => Phase::Idle,
+    }
+}
+
+fn row_to_stage_session(row: &rusqlite::Row) -> rusqlite::Result<StageSession> {
+    let agent_pid: Option<i32> = row.get(4)?;
+    let resume_count: i32 = row.get(5)?;
+    let state_str: String = row.get(6)?;
+
+    Ok(StageSession {
+        id: row.get(0)?,
+        task_id: row.get(1)?,
+        stage: row.get(2)?,
+        claude_session_id: row.get(3)?,
+        agent_pid: agent_pid.map(|p| p as u32),
+        resume_count: resume_count as u32,
+        session_state: parse_session_state(&state_str),
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+    })
+}
+
+fn session_state_to_str(state: SessionState) -> &'static str {
+    match state {
+        SessionState::Active => "active",
+        SessionState::Completed => "completed",
+        SessionState::Abandoned => "abandoned",
+    }
+}
+
+fn parse_session_state(s: &str) -> SessionState {
+    match s {
+        "completed" => SessionState::Completed,
+        "abandoned" => SessionState::Abandoned,
+        _ => SessionState::Active,
     }
 }
 

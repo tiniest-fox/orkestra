@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
-use orkestra_core::workflow::{SqliteWorkflowStore, WorkflowApi, WorkflowConfig};
+use orkestra_core::workflow::{SqliteWorkflowStore, WorkflowApi, WorkflowConfig, WorkflowStore};
 
 use crate::error::TauriError;
 
@@ -16,6 +16,10 @@ pub struct AppState {
     api: Arc<Mutex<WorkflowApi>>,
     config: WorkflowConfig,
     project_root: PathBuf,
+    /// Database connection, kept alive for the lifetime of the app.
+    /// We use this to create additional stores (e.g., for the orchestrator).
+    #[allow(dead_code)]
+    db_conn: DatabaseConnection,
 }
 
 impl AppState {
@@ -29,8 +33,9 @@ impl AppState {
 
         Ok(Self {
             config: workflow.clone(),
-            api: Arc::new(Mutex::new(WorkflowApi::new(workflow, Box::new(store)))),
+            api: Arc::new(Mutex::new(WorkflowApi::new(workflow, Arc::new(store)))),
             project_root,
+            db_conn: conn,
         })
     }
 
@@ -57,5 +62,10 @@ impl AppState {
     /// Get the project root path.
     pub fn project_root(&self) -> &Path {
         &self.project_root
+    }
+
+    /// Create a new WorkflowStore for the orchestrator.
+    pub fn create_store(&self) -> Arc<dyn WorkflowStore> {
+        Arc::new(SqliteWorkflowStore::new(self.db_conn.shared()))
     }
 }

@@ -11,6 +11,9 @@ use crate::workflow::runtime::Outcome;
 ///
 /// Tracks one agent execution cycle in a stage. Multiple iterations
 /// occur when output is rejected and the agent retries.
+///
+/// All iterations in the same stage share a StageSession which maintains
+/// Claude session continuity across rejections.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Iteration {
     /// Unique identifier for this iteration.
@@ -36,9 +39,10 @@ pub struct Iteration {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<Outcome>,
 
-    /// Claude session ID for resuming interrupted work.
+    /// Reference to the parent StageSession.
+    /// Can be looked up by (task_id, stage) if not set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
+    pub stage_session_id: Option<String>,
 }
 
 impl Iteration {
@@ -58,14 +62,14 @@ impl Iteration {
             started_at: started_at.into(),
             ended_at: None,
             outcome: None,
-            session_id: None,
+            stage_session_id: None,
         }
     }
 
-    /// Builder: set session ID.
+    /// Builder: set stage session ID reference.
     #[must_use]
-    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
-        self.session_id = Some(session_id.into());
+    pub fn with_stage_session_id(mut self, stage_session_id: impl Into<String>) -> Self {
+        self.stage_session_id = Some(stage_session_id.into());
         self
     }
 
@@ -107,10 +111,10 @@ mod tests {
     }
 
     #[test]
-    fn test_iteration_with_session() {
+    fn test_iteration_with_stage_session() {
         let iter = Iteration::new("iter-1", "task-1", "work", 1, "now")
-            .with_session_id("session-abc");
-        assert_eq!(iter.session_id, Some("session-abc".into()));
+            .with_stage_session_id("stage-session-abc");
+        assert_eq!(iter.stage_session_id, Some("stage-session-abc".into()));
     }
 
     #[test]
@@ -139,12 +143,12 @@ mod tests {
     #[test]
     fn test_iteration_serialization() {
         let iter = Iteration::new("iter-1", "task-1", "planning", 1, "2025-01-24T10:00:00Z")
-            .with_session_id("session-123");
+            .with_stage_session_id("stage-session-123");
 
         let json = serde_json::to_string(&iter).unwrap();
         assert!(json.contains("\"id\":\"iter-1\""));
         assert!(json.contains("\"stage\":\"planning\""));
-        assert!(json.contains("\"session_id\":\"session-123\""));
+        assert!(json.contains("\"stage_session_id\":\"stage-session-123\""));
 
         let parsed: Iteration = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, iter);
@@ -158,7 +162,7 @@ mod tests {
         assert!(yaml.contains("id: iter-1"));
         assert!(yaml.contains("iteration_number: 2"));
         // Optional fields should be omitted
-        assert!(!yaml.contains("session_id:"));
+        assert!(!yaml.contains("stage_session_id:"));
         assert!(!yaml.contains("ended_at:"));
 
         let parsed: Iteration = serde_yaml::from_str(&yaml).unwrap();

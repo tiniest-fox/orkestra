@@ -79,6 +79,7 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::execution::StageOutput;
     use crate::workflow::runtime::Status;
@@ -97,7 +98,7 @@ mod tests {
     #[test]
     fn test_get_pending_questions() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description").unwrap();
@@ -112,7 +113,7 @@ mod tests {
     #[test]
     fn test_get_artifact() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -137,7 +138,7 @@ mod tests {
     #[test]
     fn test_get_iterations() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -150,7 +151,7 @@ mod tests {
     #[test]
     fn test_get_latest_iteration() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -166,7 +167,7 @@ mod tests {
     #[test]
     fn test_get_rejection_feedback() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();
@@ -195,7 +196,7 @@ mod tests {
     #[test]
     fn test_has_pending_questions() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description").unwrap();
@@ -210,7 +211,7 @@ mod tests {
     #[test]
     fn test_get_current_stage() {
         let workflow = test_workflow();
-        let store = Box::new(InMemoryWorkflowStore::new());
+        let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description").unwrap();

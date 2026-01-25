@@ -26,9 +26,10 @@ use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
     config::{load_workflow, WorkflowConfig},
     domain::{Question, QuestionAnswer, QuestionOption},
-    execution::{MockSpawner, StageOutput},
+    execution::StageOutput,
     runtime::{Outcome, Phase},
-    OrchestratorLoop, SqliteWorkflowStore, WorkflowApi,
+    InMemoryCrashRecoveryStore, MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore,
+    TaskExecutionService, WorkflowApi,
 };
 
 // =============================================================================
@@ -71,26 +72,42 @@ impl From<MockAgentOutput> for StageOutput {
 struct TestContext {
     api: Arc<Mutex<WorkflowApi>>,
     orchestrator: OrchestratorLoop,
-    spawner: Arc<MockSpawner>,
+    runner: Arc<MockAgentRunner>,
     _temp_dir: TempDir,
 }
 
 impl TestContext {
-    /// Run orchestrator tick and wait for async completion.
+    /// Run orchestrator until all queued agent work completes.
+    /// This handles cases like restage where multiple agents run in sequence.
     fn tick(&self) {
-        self.orchestrator.tick().expect("Tick should succeed");
-        // Give the mock spawner's async callback time to complete
-        std::thread::sleep(Duration::from_millis(50));
+        // Keep ticking until no more agents are running
+        for _ in 0..10 {
+            self.orchestrator.tick().expect("Tick should succeed");
+            // Wait for mock runner's async callback to complete
+            std::thread::sleep(Duration::from_millis(30));
+
+            // Check if any agents are still active
+            if self.orchestrator.active_count() == 0 {
+                // One more tick to ensure all events are processed
+                self.orchestrator.tick().expect("Final tick should succeed");
+                break;
+            }
+        }
     }
 
     /// Set the output for the next agent spawn for a task.
     fn set_output(&self, task_id: &str, output: impl Into<StageOutput>) {
-        self.spawner.set_output(task_id, output.into());
+        self.runner.set_output(task_id, output.into());
     }
 
     /// Get the API lock for human actions.
     fn api(&self) -> std::sync::MutexGuard<'_, WorkflowApi> {
         self.api.lock().unwrap()
+    }
+
+    /// Get the number of calls made to the runner.
+    fn call_count(&self) -> usize {
+        self.runner.calls().len()
     }
 }
 
@@ -121,17 +138,32 @@ fn setup_test() -> TestContext {
     // Create real SQLite database in the temp directory
     let db_path = orkestra_dir.join("orkestra.db");
     let db_conn = DatabaseConnection::open(&db_path).expect("Should open database");
-    let store = Box::new(SqliteWorkflowStore::new(db_conn.shared()));
+    let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
+        Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
 
-    let api = Arc::new(Mutex::new(WorkflowApi::new(loaded_workflow, store)));
+    let api = Arc::new(Mutex::new(WorkflowApi::new(
+        loaded_workflow.clone(),
+        Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
+    )));
     let project_root = PathBuf::from(temp_dir.path());
-    let spawner = Arc::new(MockSpawner::new());
-    let orchestrator = OrchestratorLoop::new(api.clone(), project_root, spawner.clone());
+
+    // Create mock runner and execution service
+    let runner = Arc::new(MockAgentRunner::new());
+    let crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
+    let executor = Arc::new(TaskExecutionService::new(
+        runner.clone(),
+        store,
+        crash_recovery,
+        loaded_workflow,
+        project_root,
+    ));
+
+    let orchestrator = OrchestratorLoop::new(api.clone(), executor);
 
     TestContext {
         api,
         orchestrator,
-        spawner,
+        runner,
         _temp_dir: temp_dir,
     }
 }
@@ -324,19 +356,24 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.phase, Phase::Idle);
 
     // =========================================================================
-    // Step 7: Reviewer restages to Work → Working
+    // Step 7: Reviewer restages to Work → Working → AwaitingReview
     // =========================================================================
 
-    // Orchestrator spawns reviewer, reviewer restages to work
+    // Queue outputs: first for reviewer (restage), then for worker (summary)
+    // Both agents run in the same tick cycle
     ctx.set_output(&task_id, MockAgentOutput::Restage {
         target: "work".to_string(),
         feedback: "Code style issues found - please fix formatting".to_string(),
+    });
+    ctx.set_output(&task_id, MockAgentOutput::Artifact {
+        name: "summary".to_string(),
+        content: "Implementation with fixed formatting".to_string(),
     });
     ctx.tick();
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("work"));
-    assert_eq!(task.phase, Phase::Idle);
+    assert_eq!(task.phase, Phase::AwaitingReview, "Work agent ran and produced artifact");
 
     // Check the iteration recorded the restage
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
@@ -347,13 +384,6 @@ fn test_exhaustive_workflow_flow() {
         )
     });
     assert!(restage_iter.is_some(), "Should have restage iteration");
-
-    // Orchestrator spawns worker to fix formatting
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "summary".to_string(),
-        content: "Implementation with fixed formatting".to_string(),
-    });
-    ctx.tick();
 
     // =========================================================================
     // Step 8: Work approved again → Reviewing
@@ -463,11 +493,11 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.question_history.len(), 2);
     assert_eq!(task.question_history[0].answer, "PostgreSQL");
 
-    // Verify spawner was called the expected number of times
+    // Verify runner was called the expected number of times
     // planning (questions) + planning (plan v1) + planning (plan v2) +
     // work (v1) + work (v2) + review (restage) + work (fix) + review (approve) +
     // work (conflict) + review (final) = 10 spawns
-    let total_spawns = ctx.spawner.calls().len();
+    let total_spawns = ctx.call_count();
     println!("Total agent spawns: {}", total_spawns);
 }
 
@@ -560,17 +590,33 @@ integration:
     // Create real SQLite database
     let db_path = orkestra_dir.join("orkestra.db");
     let db_conn = DatabaseConnection::open(&db_path).expect("Should open database");
-    let store = Box::new(SqliteWorkflowStore::new(db_conn.shared()));
+    let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
+        Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
 
-    let api = Arc::new(Mutex::new(WorkflowApi::new(workflow, store)));
+    let api = Arc::new(Mutex::new(WorkflowApi::new(
+        workflow.clone(),
+        Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
+    )));
     let project_root = PathBuf::from(temp_dir.path());
-    let spawner = Arc::new(MockSpawner::new());
-    let orchestrator = OrchestratorLoop::new(api.clone(), project_root, spawner.clone());
+
+    // Create mock runner and execution service
+    let runner = Arc::new(MockAgentRunner::new());
+    let crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
+    let executor = Arc::new(TaskExecutionService::new(
+        runner.clone(),
+        store,
+        crash_recovery,
+        workflow,
+        project_root,
+    ));
+
+    let orchestrator = OrchestratorLoop::new(api.clone(), executor);
 
     // Helper to tick and wait
     let tick = || {
         orchestrator.tick().expect("Tick should succeed");
         std::thread::sleep(Duration::from_millis(50));
+        orchestrator.tick().expect("Second tick should succeed");
     };
 
     // Create a task and get it to Done
@@ -578,7 +624,7 @@ integration:
     let task_id = task.id.clone();
 
     // Planning stage
-    spawner.set_output(&task_id, MockAgentOutput::Artifact {
+    runner.set_output(&task_id, MockAgentOutput::Artifact {
         name: "plan".to_string(),
         content: "Plan".to_string(),
     }.into());
@@ -586,7 +632,7 @@ integration:
     api.lock().unwrap().approve(&task_id).unwrap();
 
     // Work stage
-    spawner.set_output(&task_id, MockAgentOutput::Artifact {
+    runner.set_output(&task_id, MockAgentOutput::Artifact {
         name: "summary".to_string(),
         content: "Summary".to_string(),
     }.into());
@@ -594,7 +640,7 @@ integration:
     api.lock().unwrap().approve(&task_id).unwrap();
 
     // Review stage (auto-approves to Done)
-    spawner.set_output(&task_id, MockAgentOutput::Artifact {
+    runner.set_output(&task_id, MockAgentOutput::Artifact {
         name: "verdict".to_string(),
         content: "LGTM".to_string(),
     }.into());

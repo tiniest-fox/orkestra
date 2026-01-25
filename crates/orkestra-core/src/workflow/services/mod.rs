@@ -33,8 +33,14 @@ mod api;
 mod human_actions;
 mod integration;
 mod orchestrator;
+mod prompt_service;
 mod queries;
+mod session_service;
 mod task_crud;
+mod task_execution;
 
 pub use api::WorkflowApi;
 pub use orchestrator::{OrchestratorError, OrchestratorEvent, OrchestratorLoop};
+pub use prompt_service::PromptService;
+pub use session_service::{SessionService, SessionSpawnContext};
+pub use task_execution::{ExecutionError, ExecutionHandle, RecoveredOutput, TaskExecutionService};

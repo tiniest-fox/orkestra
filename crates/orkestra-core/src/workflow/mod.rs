@@ -50,5 +50,18 @@ pub use runtime::{
     Artifact, ArtifactStore, Outcome, Phase, Status, Transition, TransitionError,
     TransitionTrigger, TransitionValidator,
 };
-pub use services::{OrchestratorError, OrchestratorEvent, OrchestratorLoop, WorkflowApi};
-pub use adapters::ClaudeAgentSpawner;
+pub use services::{
+    OrchestratorError, OrchestratorEvent, OrchestratorLoop, TaskExecutionService, WorkflowApi,
+};
+
+// Export execution types for testing
+pub use execution::{AgentRunner, AgentRunnerTrait, RunConfig};
+
+#[cfg(any(test, feature = "testutil"))]
+pub use execution::MockAgentRunner;
+
+// Re-export crash recovery types
+pub use ports::CrashRecoveryStore;
+
+#[cfg(any(test, feature = "testutil"))]
+pub use ports::InMemoryCrashRecoveryStore;

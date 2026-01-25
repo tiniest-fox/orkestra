@@ -1,0 +1,805 @@
+//! Stage-agnostic prompt builder.
+//!
+//! Generates prompts for any stage based on workflow configuration
+//! and available artifacts.
+
+use std::fs;
+use std::path::Path;
+
+use serde::Serialize;
+
+use crate::workflow::config::{AgentStageConfig, StageConfig, WorkflowConfig};
+use crate::workflow::domain::{QuestionAnswer, Task};
+
+/// Context for building a stage prompt.
+#[derive(Debug, Clone, Serialize)]
+pub struct StagePromptContext<'a> {
+    /// Stage configuration.
+    pub stage: &'a StageConfig,
+
+    /// Task information.
+    pub task_id: &'a str,
+    pub title: &'a str,
+    pub description: &'a str,
+
+    /// Available artifacts from previous stages.
+    pub artifacts: Vec<ArtifactContext<'a>>,
+
+    /// Question history (if stage can ask questions).
+    pub question_history: Vec<QuestionAnswerContext<'a>>,
+
+    /// Feedback from rejection (if retrying).
+    pub feedback: Option<&'a str>,
+
+    /// Integration error (if resuming after merge conflict).
+    pub integration_error: Option<IntegrationErrorContext<'a>>,
+}
+
+/// Context for an artifact available to the stage.
+#[derive(Debug, Clone, Serialize)]
+pub struct ArtifactContext<'a> {
+    /// Artifact name.
+    pub name: &'a str,
+    /// Artifact content.
+    pub content: &'a str,
+}
+
+/// Context for a question-answer pair.
+#[derive(Debug, Clone, Serialize)]
+pub struct QuestionAnswerContext<'a> {
+    /// The question that was asked.
+    pub question: &'a str,
+    /// The user's answer.
+    pub answer: &'a str,
+}
+
+/// Context for an integration error.
+#[derive(Debug, Clone, Serialize)]
+pub struct IntegrationErrorContext<'a> {
+    /// Error message.
+    pub message: &'a str,
+    /// Files with conflicts.
+    pub conflict_files: Vec<&'a str>,
+}
+
+/// Builder for stage prompts.
+///
+/// Takes workflow configuration and task state to generate
+/// prompts for any stage.
+pub struct PromptBuilder<'a> {
+    workflow: &'a WorkflowConfig,
+}
+
+impl<'a> PromptBuilder<'a> {
+    /// Create a new prompt builder.
+    pub fn new(workflow: &'a WorkflowConfig) -> Self {
+        Self { workflow }
+    }
+
+    /// Build prompt context for a stage.
+    ///
+    /// This provides all the context needed to render a prompt template.
+    pub fn build_context(
+        &self,
+        stage_name: &'a str,
+        task: &'a Task,
+        feedback: Option<&'a str>,
+        integration_error: Option<IntegrationErrorContext<'a>>,
+    ) -> Option<StagePromptContext<'a>> {
+        let stage = self.workflow.stage(stage_name)?;
+
+        // Gather artifacts that this stage needs as inputs
+        let artifacts: Vec<ArtifactContext<'a>> = stage
+            .inputs
+            .iter()
+            .filter_map(|input_name| {
+                task.artifacts.get(input_name).map(|artifact| ArtifactContext {
+                    name: &artifact.name,
+                    content: &artifact.content,
+                })
+            })
+            .collect();
+
+        // Convert question history
+        let question_history: Vec<QuestionAnswerContext<'a>> = task
+            .question_history
+            .iter()
+            .map(|qa| QuestionAnswerContext {
+                question: &qa.question,
+                answer: &qa.answer,
+            })
+            .collect();
+
+        Some(StagePromptContext {
+            stage,
+            task_id: &task.id,
+            title: &task.title,
+            description: &task.description,
+            artifacts,
+            question_history,
+            feedback,
+            integration_error,
+        })
+    }
+
+    /// Build a simple text prompt for a stage.
+    ///
+    /// This generates a basic prompt without using templates.
+    /// For production use, you'd use Handlebars templates.
+    pub fn build_simple_prompt(
+        &self,
+        stage_name: &'a str,
+        task: &'a Task,
+        feedback: Option<&'a str>,
+    ) -> Option<String> {
+        let ctx = self.build_context(stage_name, task, feedback, None)?;
+
+        let mut prompt = String::new();
+
+        // Header
+        let display_name = ctx.stage.display_name.as_deref().unwrap_or(&ctx.stage.name);
+        prompt.push_str(&format!("# Stage: {}\n\n", display_name));
+
+        // Task info
+        prompt.push_str("## Task\n\n");
+        prompt.push_str(&format!("**ID:** {}\n", ctx.task_id));
+        prompt.push_str(&format!("**Title:** {}\n", ctx.title));
+        prompt.push_str(&format!("\n{}\n\n", ctx.description));
+
+        // Input artifacts
+        if !ctx.artifacts.is_empty() {
+            prompt.push_str("## Input Artifacts\n\n");
+            for artifact in &ctx.artifacts {
+                prompt.push_str(&format!("### {}\n\n", artifact.name));
+                prompt.push_str(&format!("{}\n\n", artifact.content));
+            }
+        }
+
+        // Question history
+        if !ctx.question_history.is_empty() {
+            prompt.push_str("## Previous Questions & Answers\n\n");
+            for qa in &ctx.question_history {
+                prompt.push_str(&format!("**Q:** {}\n", qa.question));
+                prompt.push_str(&format!("**A:** {}\n\n", qa.answer));
+            }
+        }
+
+        // Feedback
+        if let Some(fb) = ctx.feedback {
+            prompt.push_str("## Feedback to Address\n\n");
+            prompt.push_str(&format!("{}\n\n", fb));
+        }
+
+        // Expected output
+        prompt.push_str("## Expected Output\n\n");
+        prompt.push_str(&format!(
+            "Produce the `{}` artifact for this stage.\n",
+            ctx.stage.artifact
+        ));
+
+        // Capabilities
+        if ctx.stage.capabilities.ask_questions {
+            prompt.push_str("\nYou may ask clarifying questions if needed.\n");
+        }
+        if ctx.stage.capabilities.produce_subtasks {
+            prompt.push_str("\nYou may break this down into subtasks if appropriate.\n");
+        }
+        if !ctx.stage.capabilities.supports_restage.is_empty() {
+            prompt.push_str(&format!(
+                "\nYou may restage to: {:?}\n",
+                ctx.stage.capabilities.supports_restage
+            ));
+        }
+
+        Some(prompt)
+    }
+}
+
+/// Helper to convert QuestionAnswer to context.
+impl<'a> From<&'a QuestionAnswer> for QuestionAnswerContext<'a> {
+    fn from(qa: &'a QuestionAnswer) -> Self {
+        Self {
+            question: &qa.question,
+            answer: &qa.answer,
+        }
+    }
+}
+
+// ============================================================================
+// Agent Configuration Resolution
+// ============================================================================
+
+/// Resolved configuration for spawning an agent.
+#[derive(Debug, Clone)]
+pub struct ResolvedAgentConfig {
+    /// The complete prompt to send to the agent.
+    pub prompt: String,
+    /// JSON schema for structured output (if available).
+    pub json_schema: Option<String>,
+    /// Session type identifier (e.g., "planning", "work").
+    pub session_type: String,
+}
+
+/// Error type for agent configuration resolution.
+#[derive(Debug, Clone)]
+pub enum AgentConfigError {
+    /// Task is not in an active stage.
+    NotInActiveStage,
+    /// Stage not found in workflow.
+    UnknownStage(String),
+    /// Agent definition file not found.
+    DefinitionNotFound(String),
+    /// Failed to build prompt.
+    PromptBuildError(String),
+}
+
+impl std::fmt::Display for AgentConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotInActiveStage => write!(f, "Task is not in an active stage"),
+            Self::UnknownStage(name) => write!(f, "Unknown stage: {name}"),
+            Self::DefinitionNotFound(msg) => write!(f, "Agent definition not found: {msg}"),
+            Self::PromptBuildError(msg) => write!(f, "Failed to build prompt: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for AgentConfigError {}
+
+/// Load an agent definition from the agents directory.
+///
+/// Search order:
+/// 1. `.orkestra/agents/{path}` in the project
+/// 2. `~/.orkestra/agents/{path}` for global/default agents
+pub fn load_agent_definition(project_root: Option<&Path>, path: &str) -> std::io::Result<String> {
+    // Try project .orkestra/agents/ first
+    if let Some(root) = project_root {
+        let local_path = root.join(".orkestra/agents").join(path);
+        if local_path.exists() {
+            return fs::read_to_string(local_path);
+        }
+    }
+
+    // Fall back to home directory for global/default agents
+    if let Some(home) = dirs::home_dir() {
+        let home_path = home.join(".orkestra/agents").join(path);
+        if home_path.exists() {
+            return fs::read_to_string(home_path);
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!(
+            "Agent definition not found: {path} (searched .orkestra/agents/ and ~/.orkestra/agents/)"
+        ),
+    ))
+}
+
+/// Load a custom JSON schema from the schemas directory.
+pub fn load_custom_schema(project_root: Option<&Path>, path: &str) -> std::io::Result<String> {
+    // Try project .orkestra/schemas/ first
+    if let Some(root) = project_root {
+        let local_path = root.join(".orkestra/schemas").join(path);
+        if local_path.exists() {
+            return fs::read_to_string(local_path);
+        }
+    }
+
+    // Fall back to home directory
+    if let Some(home) = dirs::home_dir() {
+        let home_path = home.join(".orkestra/schemas").join(path);
+        if home_path.exists() {
+            return fs::read_to_string(home_path);
+        }
+    }
+
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        format!("Custom schema not found: {path}"),
+    ))
+}
+
+/// Get the JSON schema for a stage's agent.
+///
+/// Returns the schema string for built-in agent types,
+/// loads custom schema for custom agents.
+pub fn get_agent_schema(
+    agent_config: &AgentStageConfig,
+    project_root: Option<&Path>,
+) -> Option<String> {
+    // Check for custom schema file first
+    if let Some(schema_file) = &agent_config.schema_file {
+        return load_custom_schema(project_root, schema_file).ok();
+    }
+
+    // Use built-in schema for known agent types
+    match agent_config.agent_type.as_str() {
+        "planner" => Some(crate::prompts::PLANNER_OUTPUT_SCHEMA.to_string()),
+        "breakdown" => Some(crate::prompts::BREAKDOWN_OUTPUT_SCHEMA.to_string()),
+        "worker" => Some(crate::prompts::WORKER_OUTPUT_SCHEMA.to_string()),
+        "reviewer" => Some(crate::prompts::REVIEWER_OUTPUT_SCHEMA.to_string()),
+        _ => None, // Custom agent types may not have schemas
+    }
+}
+
+/// Resolve complete agent configuration for a stage.
+///
+/// This is the main entry point for the orchestrator to get everything
+/// needed to spawn an agent: prompt, schema, and session type.
+pub fn resolve_stage_agent_config(
+    workflow: &WorkflowConfig,
+    task: &Task,
+    project_root: Option<&Path>,
+    feedback: Option<&str>,
+    integration_error: Option<IntegrationErrorContext<'_>>,
+) -> Result<ResolvedAgentConfig, AgentConfigError> {
+    // Get current stage
+    let stage_name = task.current_stage().ok_or(AgentConfigError::NotInActiveStage)?;
+
+    let stage = workflow
+        .stage(stage_name)
+        .ok_or_else(|| AgentConfigError::UnknownStage(stage_name.to_string()))?;
+
+    // Load agent definition
+    let definition_path = stage.agent.definition_path();
+    let agent_def = load_agent_definition(project_root, &definition_path)
+        .map_err(|e| AgentConfigError::DefinitionNotFound(e.to_string()))?;
+
+    // Build prompt context
+    let builder = PromptBuilder::new(workflow);
+    let ctx = builder
+        .build_context(stage_name, task, feedback, integration_error)
+        .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;
+
+    // Build complete prompt with agent definition
+    let prompt = build_complete_prompt(&agent_def, &ctx);
+
+    // Get JSON schema
+    let json_schema = get_agent_schema(&stage.agent, project_root);
+
+    Ok(ResolvedAgentConfig {
+        prompt,
+        json_schema,
+        session_type: stage_name.to_string(),
+    })
+}
+
+/// Build a complete prompt by combining agent definition with context.
+pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_>) -> String {
+    let mut prompt = String::new();
+
+    // Agent definition first (system instructions)
+    prompt.push_str(agent_definition);
+    prompt.push_str("\n\n---\n\n");
+
+    // Task information
+    prompt.push_str("## Your Current Task\n\n");
+    prompt.push_str(&format!("**Task ID**: {}\n", ctx.task_id));
+    prompt.push_str(&format!("**Title**: {}\n\n", ctx.title));
+    prompt.push_str("### Description\n");
+    prompt.push_str(ctx.description);
+    prompt.push_str("\n\n");
+
+    // Input artifacts
+    if !ctx.artifacts.is_empty() {
+        prompt.push_str("## Input Artifacts\n\n");
+        for artifact in &ctx.artifacts {
+            prompt.push_str(&format!("### {}\n\n", artifact.name));
+            prompt.push_str(artifact.content);
+            prompt.push_str("\n\n");
+        }
+    }
+
+    // Question history
+    if !ctx.question_history.is_empty() {
+        prompt.push_str("## Previous Questions and Answers\n\n");
+        for qa in &ctx.question_history {
+            prompt.push_str(&format!("**Q: {}**\n", qa.question));
+            prompt.push_str(&format!("A: {}\n\n", qa.answer));
+        }
+    }
+
+    // Feedback
+    if let Some(fb) = ctx.feedback {
+        prompt.push_str("## Feedback to Address\n\n");
+        prompt.push_str(fb);
+        prompt.push_str("\n\n");
+    }
+
+    // Integration error
+    if let Some(ref err) = ctx.integration_error {
+        prompt.push_str("## MERGE CONFLICT - Resolution Required\n\n");
+        prompt.push_str(err.message);
+        prompt.push_str("\n\n");
+        if !err.conflict_files.is_empty() {
+            prompt.push_str("**Conflicting files:**\n");
+            for file in &err.conflict_files {
+                prompt.push_str(&format!("- {file}\n"));
+            }
+            prompt.push_str("\n");
+        }
+        prompt.push_str("Run `git rebase main` and resolve the conflicts, then continue your work.\n\n");
+    }
+
+    // Output format section
+    prompt.push_str("---\n\n");
+    prompt.push_str("## Output Format\n\n");
+    prompt.push_str(&format!(
+        "Produce your output as valid JSON. Your output artifact is: **{}**\n\n",
+        ctx.stage.artifact
+    ));
+
+    // Capability-specific instructions
+    if ctx.stage.capabilities.ask_questions {
+        prompt.push_str("If you need more information, output questions:\n");
+        prompt.push_str("```json\n");
+        prompt.push_str(r#"{"type": "questions", "questions": [{"id": "q1", "question": "...", "options": [...]}]}"#);
+        prompt.push_str("\n```\n\n");
+    }
+
+    if ctx.stage.capabilities.produce_subtasks {
+        prompt.push_str("If breaking into subtasks:\n");
+        prompt.push_str("```json\n");
+        prompt.push_str(r#"{"type": "breakdown", "subtasks": [{"title": "...", "description": "...", "depends_on": [...]}]}"#);
+        prompt.push_str("\n```\n\n");
+    }
+
+    if !ctx.stage.capabilities.supports_restage.is_empty() {
+        prompt.push_str(&format!(
+            "If work needs revisions (restage to: {:?}):\n",
+            ctx.stage.capabilities.supports_restage
+        ));
+        prompt.push_str("```json\n");
+        prompt.push_str(r#"{"type": "rejected", "target": "work", "feedback": "What needs to be fixed"}"#);
+        prompt.push_str("\n```\n\n");
+    }
+
+    prompt.push_str("Standard outputs:\n");
+    prompt.push_str("- Success: `{\"type\": \"completed\", \"summary\": \"...\"}`\n");
+    prompt.push_str("- Failure: `{\"type\": \"failed\", \"error\": \"...\"}`\n");
+    prompt.push_str("- Blocked: `{\"type\": \"blocked\", \"reason\": \"...\"}`\n");
+    prompt.push_str(&format!(
+        "- Artifact: `{{\"type\": \"{}\", \"content\": \"...\"}}`\n",
+        ctx.stage.artifact
+    ));
+
+    prompt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use crate::workflow::domain::QuestionAnswer;
+    use crate::workflow::runtime::Artifact;
+
+    fn test_workflow() -> WorkflowConfig {
+        WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan")
+                .with_display_name("Planning")
+                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("work", "summary")
+                .with_display_name("Working")
+                .with_inputs(vec!["plan".into()]),
+            StageConfig::new("review", "verdict")
+                .with_display_name("Reviewing")
+                .with_inputs(vec!["plan".into(), "summary".into()])
+                .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]))
+                .automated(),
+        ])
+    }
+
+    #[test]
+    fn test_build_context_planning() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Implement login", "Add login feature", "planning", "now");
+
+        let ctx = builder.build_context("planning", &task, None, None).unwrap();
+
+        assert_eq!(ctx.stage.name, "planning");
+        assert_eq!(ctx.task_id, "task-1");
+        assert_eq!(ctx.title, "Implement login");
+        assert!(ctx.artifacts.is_empty()); // Planning has no inputs
+        assert!(ctx.feedback.is_none());
+    }
+
+    #[test]
+    fn test_build_context_with_artifacts() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Implement login", "Add login feature", "work", "now");
+        task.artifacts.set(Artifact::new(
+            "plan",
+            "Step 1: Add form\nStep 2: Add validation",
+            "planning",
+            "now",
+        ));
+
+        let ctx = builder.build_context("work", &task, None, None).unwrap();
+
+        assert_eq!(ctx.stage.name, "work");
+        assert_eq!(ctx.artifacts.len(), 1);
+        assert_eq!(ctx.artifacts[0].name, "plan");
+        assert!(ctx.artifacts[0].content.contains("Step 1"));
+    }
+
+    #[test]
+    fn test_build_context_with_feedback() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Implement login", "Add login feature", "planning", "now");
+
+        let ctx = builder
+            .build_context("planning", &task, Some("Add more detail"), None)
+            .unwrap();
+
+        assert_eq!(ctx.feedback, Some("Add more detail"));
+    }
+
+    #[test]
+    fn test_build_context_review_stage() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Implement login", "Add login feature", "review", "now");
+        task.artifacts.set(Artifact::new("plan", "The plan", "planning", "t1"));
+        task.artifacts.set(Artifact::new("summary", "Work done", "work", "t2"));
+
+        let ctx = builder.build_context("review", &task, None, None).unwrap();
+
+        assert_eq!(ctx.stage.name, "review");
+        assert_eq!(ctx.artifacts.len(), 2);
+        assert!(ctx.stage.capabilities.can_restage_to("work"));
+    }
+
+    #[test]
+    fn test_build_context_missing_stage() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Desc", "planning", "now");
+
+        let ctx = builder.build_context("nonexistent", &task, None, None);
+        assert!(ctx.is_none());
+    }
+
+    #[test]
+    fn test_build_simple_prompt() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Implement login", "Add login feature", "work", "now");
+        task.artifacts.set(Artifact::new("plan", "The implementation plan", "planning", "now"));
+
+        let prompt = builder.build_simple_prompt("work", &task, None).unwrap();
+
+        assert!(prompt.contains("# Stage: Working"));
+        assert!(prompt.contains("**ID:** task-1"));
+        assert!(prompt.contains("Implement login"));
+        assert!(prompt.contains("### plan"));
+        assert!(prompt.contains("The implementation plan"));
+        assert!(prompt.contains("Produce the `summary` artifact"));
+    }
+
+    #[test]
+    fn test_build_simple_prompt_with_capabilities() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+
+        let prompt = builder.build_simple_prompt("planning", &task, None).unwrap();
+
+        assert!(prompt.contains("ask clarifying questions"));
+    }
+
+    #[test]
+    fn test_build_simple_prompt_with_restage() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Test", "Description", "review", "now");
+        task.artifacts.set(Artifact::new("plan", "plan", "planning", "now"));
+        task.artifacts.set(Artifact::new("summary", "summary", "work", "now"));
+
+        let prompt = builder.build_simple_prompt("review", &task, None).unwrap();
+
+        assert!(prompt.contains("restage to"));
+        assert!(prompt.contains("work"));
+    }
+
+    #[test]
+    fn test_build_simple_prompt_with_feedback() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+
+        let prompt = builder
+            .build_simple_prompt("planning", &task, Some("Please add more detail"))
+            .unwrap();
+
+        assert!(prompt.contains("## Feedback to Address"));
+        assert!(prompt.contains("Please add more detail"));
+    }
+
+    #[test]
+    fn test_context_with_question_history() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Test", "Description", "planning", "now");
+        task.question_history.push(QuestionAnswer::new(
+            "q1",
+            "What database?",
+            "PostgreSQL",
+            "now",
+        ));
+
+        let ctx = builder.build_context("planning", &task, None, None).unwrap();
+
+        assert_eq!(ctx.question_history.len(), 1);
+        assert_eq!(ctx.question_history[0].question, "What database?");
+        assert_eq!(ctx.question_history[0].answer, "PostgreSQL");
+    }
+
+    // ========================================================================
+    // Agent Configuration Resolution tests
+    // ========================================================================
+
+    #[test]
+    fn test_get_agent_schema_builtin() {
+        use crate::workflow::config::AgentStageConfig;
+
+        let planner = AgentStageConfig::planner();
+        let schema = get_agent_schema(&planner, None);
+        assert!(schema.is_some());
+        // The schema should contain "type" definitions
+        assert!(schema.unwrap().contains("type"));
+
+        let worker = AgentStageConfig::worker();
+        let schema = get_agent_schema(&worker, None);
+        assert!(schema.is_some());
+
+        let reviewer = AgentStageConfig::reviewer();
+        let schema = get_agent_schema(&reviewer, None);
+        assert!(schema.is_some());
+
+        let breakdown = AgentStageConfig::breakdown();
+        let schema = get_agent_schema(&breakdown, None);
+        assert!(schema.is_some());
+    }
+
+    #[test]
+    fn test_get_agent_schema_custom_no_file() {
+        use crate::workflow::config::AgentStageConfig;
+
+        let custom = AgentStageConfig::new("custom");
+        let schema = get_agent_schema(&custom, None);
+        assert!(schema.is_none()); // Custom agents have no default schema
+    }
+
+    #[test]
+    fn test_build_complete_prompt() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Implement login", "Add login feature", "work", "now");
+        task.artifacts.set(Artifact::new("plan", "The implementation plan", "planning", "now"));
+
+        let ctx = builder.build_context("work", &task, None, None).unwrap();
+        let agent_def = "You are a worker agent. Implement the plan.";
+        let prompt = build_complete_prompt(agent_def, &ctx);
+
+        // Should contain agent definition
+        assert!(prompt.contains("You are a worker agent"));
+
+        // Should contain task info
+        assert!(prompt.contains("Task ID"));
+        assert!(prompt.contains("task-1"));
+        assert!(prompt.contains("Implement login"));
+
+        // Should contain artifacts
+        assert!(prompt.contains("Input Artifacts"));
+        assert!(prompt.contains("The implementation plan"));
+
+        // Should contain output format
+        assert!(prompt.contains("Output Format"));
+        assert!(prompt.contains("summary")); // The stage artifact
+    }
+
+    #[test]
+    fn test_build_complete_prompt_with_feedback() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+        let ctx = builder
+            .build_context("planning", &task, Some("Add more detail"), None)
+            .unwrap();
+
+        let agent_def = "Planner agent";
+        let prompt = build_complete_prompt(agent_def, &ctx);
+
+        assert!(prompt.contains("Feedback to Address"));
+        assert!(prompt.contains("Add more detail"));
+    }
+
+    #[test]
+    fn test_build_complete_prompt_with_integration_error() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Test", "Description", "work", "now");
+        task.artifacts.set(Artifact::new("plan", "Plan", "planning", "now"));
+
+        let error = IntegrationErrorContext {
+            message: "Merge conflict in src/main.rs",
+            conflict_files: vec!["src/main.rs", "src/lib.rs"],
+        };
+
+        let ctx = builder
+            .build_context("work", &task, None, Some(error))
+            .unwrap();
+
+        let agent_def = "Worker agent";
+        let prompt = build_complete_prompt(agent_def, &ctx);
+
+        assert!(prompt.contains("MERGE CONFLICT"));
+        assert!(prompt.contains("Merge conflict in src/main.rs"));
+        assert!(prompt.contains("src/main.rs"));
+        assert!(prompt.contains("src/lib.rs"));
+    }
+
+    #[test]
+    fn test_build_complete_prompt_with_questions_capability() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+        let ctx = builder.build_context("planning", &task, None, None).unwrap();
+
+        let agent_def = "Planner agent";
+        let prompt = build_complete_prompt(agent_def, &ctx);
+
+        // Planning stage has ask_questions capability
+        assert!(prompt.contains("need more information"));
+        assert!(prompt.contains("questions"));
+    }
+
+    #[test]
+    fn test_build_complete_prompt_with_restage_capability() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Test", "Description", "review", "now");
+        task.artifacts.set(Artifact::new("plan", "Plan", "planning", "now"));
+        task.artifacts.set(Artifact::new("summary", "Summary", "work", "now"));
+
+        let ctx = builder.build_context("review", &task, None, None).unwrap();
+
+        let agent_def = "Reviewer agent";
+        let prompt = build_complete_prompt(agent_def, &ctx);
+
+        // Review stage has restage capability
+        assert!(prompt.contains("restage to"));
+        assert!(prompt.contains("work"));
+    }
+
+    #[test]
+    fn test_agent_config_error_display() {
+        let err = AgentConfigError::NotInActiveStage;
+        assert_eq!(err.to_string(), "Task is not in an active stage");
+
+        let err = AgentConfigError::UnknownStage("foo".into());
+        assert_eq!(err.to_string(), "Unknown stage: foo");
+
+        let err = AgentConfigError::DefinitionNotFound("missing.md".into());
+        assert!(err.to_string().contains("missing.md"));
+    }
+}

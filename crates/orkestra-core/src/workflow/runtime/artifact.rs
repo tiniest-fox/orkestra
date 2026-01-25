@@ -1,0 +1,284 @@
+//! Artifact storage and retrieval.
+//!
+//! Artifacts are named outputs from stages. Each stage produces an artifact
+//! (e.g., "plan", "summary") that can be consumed by later stages.
+
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+
+/// A named artifact produced by a stage.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Artifact {
+    /// Name of the artifact (e.g., "plan", "summary").
+    pub name: String,
+
+    /// The artifact content.
+    pub content: String,
+
+    /// Which stage produced this artifact.
+    pub stage: String,
+
+    /// When the artifact was created (RFC3339).
+    pub created_at: String,
+
+    /// Which iteration produced this artifact.
+    #[serde(default)]
+    pub iteration: u32,
+}
+
+impl Artifact {
+    /// Create a new artifact.
+    pub fn new(
+        name: impl Into<String>,
+        content: impl Into<String>,
+        stage: impl Into<String>,
+        created_at: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            content: content.into(),
+            stage: stage.into(),
+            created_at: created_at.into(),
+            iteration: 1,
+        }
+    }
+
+    /// Create an artifact with a specific iteration.
+    #[must_use]
+    pub fn with_iteration(mut self, iteration: u32) -> Self {
+        self.iteration = iteration;
+        self
+    }
+}
+
+/// Collection of artifacts for a task.
+///
+/// Provides convenient access to artifacts by name.
+/// Serializes as a flat map of artifact name to artifact.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(transparent)]
+pub struct ArtifactStore {
+    /// Artifacts keyed by name.
+    artifacts: HashMap<String, Artifact>,
+}
+
+impl ArtifactStore {
+    /// Create a new empty artifact store.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Store an artifact, replacing any existing artifact with the same name.
+    pub fn set(&mut self, artifact: Artifact) {
+        self.artifacts.insert(artifact.name.clone(), artifact);
+    }
+
+    /// Get an artifact by name.
+    pub fn get(&self, name: &str) -> Option<&Artifact> {
+        self.artifacts.get(name)
+    }
+
+    /// Get the content of an artifact by name.
+    pub fn content(&self, name: &str) -> Option<&str> {
+        self.artifacts.get(name).map(|a| a.content.as_str())
+    }
+
+    /// Remove an artifact by name.
+    pub fn remove(&mut self, name: &str) -> Option<Artifact> {
+        self.artifacts.remove(name)
+    }
+
+    /// Check if an artifact exists.
+    pub fn contains(&self, name: &str) -> bool {
+        self.artifacts.contains_key(name)
+    }
+
+    /// Get all artifact names.
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.artifacts.keys().map(String::as_str)
+    }
+
+    /// Get all artifacts.
+    pub fn all(&self) -> impl Iterator<Item = &Artifact> {
+        self.artifacts.values()
+    }
+
+    /// Get the number of artifacts.
+    pub fn len(&self) -> usize {
+        self.artifacts.len()
+    }
+
+    /// Check if the store is empty.
+    pub fn is_empty(&self) -> bool {
+        self.artifacts.is_empty()
+    }
+
+    /// Get multiple artifacts by name, in order.
+    /// Missing artifacts are skipped.
+    pub fn get_many(&self, names: &[String]) -> Vec<&Artifact> {
+        names
+            .iter()
+            .filter_map(|name| self.artifacts.get(name))
+            .collect()
+    }
+
+    /// Check if all required artifacts are present.
+    pub fn has_all(&self, names: &[String]) -> bool {
+        names.iter().all(|name| self.artifacts.contains_key(name))
+    }
+
+    /// Get missing artifact names from a list.
+    pub fn missing<'a>(&self, names: &'a [String]) -> Vec<&'a str> {
+        names
+            .iter()
+            .filter(|name| !self.artifacts.contains_key(*name))
+            .map(String::as_str)
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_artifact_new() {
+        let artifact = Artifact::new("plan", "My plan content", "planning", "2025-01-01T00:00:00Z");
+
+        assert_eq!(artifact.name, "plan");
+        assert_eq!(artifact.content, "My plan content");
+        assert_eq!(artifact.stage, "planning");
+        assert_eq!(artifact.iteration, 1);
+    }
+
+    #[test]
+    fn test_artifact_with_iteration() {
+        let artifact = Artifact::new("plan", "content", "planning", "now").with_iteration(3);
+        assert_eq!(artifact.iteration, 3);
+    }
+
+    #[test]
+    fn test_artifact_store_basic() {
+        let mut store = ArtifactStore::new();
+        assert!(store.is_empty());
+
+        let artifact = Artifact::new("plan", "content", "planning", "now");
+        store.set(artifact);
+
+        assert_eq!(store.len(), 1);
+        assert!(!store.is_empty());
+        assert!(store.contains("plan"));
+        assert!(!store.contains("summary"));
+    }
+
+    #[test]
+    fn test_artifact_store_get() {
+        let mut store = ArtifactStore::new();
+        store.set(Artifact::new("plan", "My plan", "planning", "now"));
+
+        let artifact = store.get("plan");
+        assert!(artifact.is_some());
+        assert_eq!(artifact.unwrap().content, "My plan");
+
+        let content = store.content("plan");
+        assert_eq!(content, Some("My plan"));
+
+        assert!(store.get("missing").is_none());
+        assert!(store.content("missing").is_none());
+    }
+
+    #[test]
+    fn test_artifact_store_replace() {
+        let mut store = ArtifactStore::new();
+        store.set(Artifact::new("plan", "First plan", "planning", "now"));
+        store.set(Artifact::new("plan", "Updated plan", "planning", "later"));
+
+        assert_eq!(store.len(), 1);
+        assert_eq!(store.content("plan"), Some("Updated plan"));
+    }
+
+    #[test]
+    fn test_artifact_store_remove() {
+        let mut store = ArtifactStore::new();
+        store.set(Artifact::new("plan", "content", "planning", "now"));
+
+        let removed = store.remove("plan");
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().content, "content");
+        assert!(store.is_empty());
+
+        assert!(store.remove("missing").is_none());
+    }
+
+    #[test]
+    fn test_artifact_store_names() {
+        let mut store = ArtifactStore::new();
+        store.set(Artifact::new("plan", "p", "planning", "now"));
+        store.set(Artifact::new("summary", "s", "work", "now"));
+
+        let names: Vec<_> = store.names().collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"plan"));
+        assert!(names.contains(&"summary"));
+    }
+
+    #[test]
+    fn test_artifact_store_get_many() {
+        let mut store = ArtifactStore::new();
+        store.set(Artifact::new("plan", "p", "planning", "now"));
+        store.set(Artifact::new("summary", "s", "work", "now"));
+        store.set(Artifact::new("verdict", "v", "review", "now"));
+
+        let artifacts = store.get_many(&["plan".into(), "summary".into()]);
+        assert_eq!(artifacts.len(), 2);
+
+        // Missing artifacts are skipped
+        let artifacts = store.get_many(&["plan".into(), "missing".into()]);
+        assert_eq!(artifacts.len(), 1);
+    }
+
+    #[test]
+    fn test_artifact_store_has_all() {
+        let mut store = ArtifactStore::new();
+        store.set(Artifact::new("plan", "p", "planning", "now"));
+        store.set(Artifact::new("summary", "s", "work", "now"));
+
+        assert!(store.has_all(&["plan".into()]));
+        assert!(store.has_all(&["plan".into(), "summary".into()]));
+        assert!(!store.has_all(&["plan".into(), "missing".into()]));
+    }
+
+    #[test]
+    fn test_artifact_store_missing() {
+        let mut store = ArtifactStore::new();
+        store.set(Artifact::new("plan", "p", "planning", "now"));
+
+        let names: Vec<String> = vec!["plan".into(), "summary".into(), "verdict".into()];
+        let missing = store.missing(&names);
+        assert_eq!(missing, vec!["summary", "verdict"]);
+    }
+
+    #[test]
+    fn test_artifact_serialization() {
+        let artifact = Artifact::new("plan", "content", "planning", "2025-01-01T00:00:00Z");
+        let json = serde_json::to_string(&artifact).unwrap();
+
+        assert!(json.contains("\"name\":\"plan\""));
+        assert!(json.contains("\"content\":\"content\""));
+
+        let parsed: Artifact = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, artifact);
+    }
+
+    #[test]
+    fn test_artifact_store_serialization() {
+        let mut store = ArtifactStore::new();
+        store.set(Artifact::new("plan", "content", "planning", "now"));
+
+        let json = serde_json::to_string(&store).unwrap();
+        let parsed: ArtifactStore = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.content("plan"), Some("content"));
+    }
+}

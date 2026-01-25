@@ -1,9 +1,20 @@
+//! Orkestra CLI - Debug tool for viewing workflow tasks.
+//!
+//! This CLI provides read-only access to the workflow system for debugging purposes.
+
 use clap::{Parser, Subcommand};
-use orkestra_core::{agents, spawn_agent_sync, tasks, AgentType, Project, TaskStatus};
+use orkestra_core::{
+    adapters::sqlite::DatabaseConnection,
+    find_project_root,
+    workflow::{
+        load_workflow_for_project, Phase, SqliteWorkflowStore, Status, Task, WorkflowApi,
+        WorkflowConfig,
+    },
+};
 
 #[derive(Parser)]
-#[command(name = "orkestra")]
-#[command(about = "CLI for Orkestra task management", long_about = None)]
+#[command(name = "ork")]
+#[command(about = "CLI for Orkestra task management (debug)", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -22,779 +33,224 @@ enum Commands {
 enum TaskAction {
     /// List all tasks
     List {
-        /// Filter by status
-        #[arg(short, long)]
+        /// Filter by status (active, done, failed, blocked)
+        #[arg(long)]
         status: Option<String>,
     },
-    /// Show a specific task
+    /// Show details for a specific task
     Show {
-        /// Task ID (e.g., TASK-001)
-        id: String,
-    },
-    /// Create a new task
-    Create {
-        /// Task title
-        #[arg(short, long)]
-        title: String,
-        /// Task description
-        #[arg(short, long, default_value = "")]
-        description: String,
-    },
-    /// Mark a task as complete (moves to `ready_for_review`)
-    Complete {
-        /// Task ID
-        id: String,
-        /// Summary of what was done
-        #[arg(short, long)]
-        summary: String,
-    },
-    /// Mark a task as failed
-    Fail {
-        /// Task ID
-        id: String,
-        /// Reason for failure
-        #[arg(short, long)]
-        reason: String,
-    },
-    /// Mark a task as blocked
-    Block {
-        /// Task ID
-        id: String,
-        /// Blocker description
-        #[arg(short, long)]
-        reason: String,
-    },
-    /// Update task status
-    Status {
-        /// Task ID
-        id: String,
-        /// New status (planning, `breaking_down`, `waiting_on_subtasks`, working, reviewing, done, failed, blocked)
-        status: String,
-    },
-    /// Set the implementation plan for a task (used by planner agent)
-    SetPlan {
-        /// Task ID
-        id: String,
-        /// The implementation plan (markdown)
-        #[arg(short, long)]
-        plan: String,
-    },
-    /// Approve a task's plan and move to breakdown or implementation
-    Approve {
-        /// Task ID
-        id: String,
-    },
-    /// Request changes to a task's plan
-    RequestChanges {
-        /// Task ID
-        id: String,
-        /// Feedback for the planner
-        #[arg(short, long)]
-        feedback: String,
-    },
-    /// Create a child task under a parent (parallel work, appears in Kanban)
-    CreateTask {
-        /// Parent task ID
-        parent_id: String,
-        /// Task title
-        #[arg(short, long)]
-        title: String,
-        /// Task description
-        #[arg(short, long, default_value = "")]
-        description: String,
-    },
-    /// Create a subtask under a parent (checklist item, hidden from Kanban)
-    CreateSubtask {
-        /// Parent task ID
-        parent_id: String,
-        /// Subtask title
-        #[arg(short, long)]
-        title: String,
-        /// Subtask description
-        #[arg(short, long, default_value = "")]
-        description: String,
-    },
-    /// Mark a subtask (checklist item) as complete
-    CompleteSubtask {
-        /// Subtask ID
-        id: String,
-    },
-    /// Set the breakdown for a task (used by breakdown agent) - LEGACY
-    SetBreakdown {
-        /// Task ID
-        id: String,
-        /// The breakdown summary (markdown)
-        #[arg(short, long)]
-        breakdown: String,
-    },
-    /// Set a structured breakdown plan (JSON) for a task - NEW
-    SetBreakdownPlan {
-        /// Task ID
-        id: String,
-        /// The breakdown plan (JSON)
-        #[arg(short, long)]
-        plan: String,
-    },
-    /// Approve a task's breakdown and create subtasks from the plan
-    ApproveBreakdown {
-        /// Task ID
-        id: String,
-    },
-    /// Toggle a work item's done status within a subtask
-    ToggleWorkItem {
-        /// Subtask ID
-        subtask_id: String,
-        /// Work item index (0-based)
-        index: usize,
-    },
-    /// Request changes to a task's breakdown
-    RequestBreakdownChanges {
-        /// Task ID
-        id: String,
-        /// Feedback for the breakdown agent
-        #[arg(short, long)]
-        feedback: String,
-    },
-    /// Skip breakdown and go straight to working
-    SkipBreakdown {
-        /// Task ID
-        id: String,
-    },
-    /// Show subtasks of a parent task
-    Subtasks {
-        /// Parent task ID
-        parent_id: String,
-    },
-    /// Reviewer agent approves the implementation
-    ApproveReview {
-        /// Task ID
-        id: String,
-    },
-    /// Reviewer agent rejects with feedback
-    RejectReview {
-        /// Task ID
-        id: String,
-        /// Feedback for the worker
-        #[arg(short, long)]
-        feedback: String,
-    },
-    /// Set the title for a task
-    SetTitle {
-        /// Task ID
-        id: String,
-        /// The new title
-        #[arg(short, long)]
-        title: String,
-    },
-    /// Generate a title for a task using AI
-    GenerateTitle {
-        /// Task ID
-        id: String,
-    },
-    /// Delete a task and all its children (subtasks, worktree, branch)
-    Delete {
         /// Task ID
         id: String,
     },
 }
 
-#[allow(clippy::too_many_lines)] // CLI dispatch naturally has many branches
 fn main() {
     let cli = Cli::parse();
 
-    // Discover the project from the current directory
-    let project = match Project::discover() {
-        Ok(p) => p,
+    match cli.command {
+        Commands::Task { action } => handle_task_action(action),
+    }
+}
+
+fn handle_task_action(action: TaskAction) {
+    // Initialize workflow API
+    let api = match init_workflow_api() {
+        Ok(api) => api,
         Err(e) => {
-            eprintln!("Error: Failed to discover project: {e}");
-            eprintln!("Make sure you're in an Orkestra project directory.");
+            eprintln!("Error: {e}");
             std::process::exit(1);
         }
     };
 
-    match cli.command {
-        Commands::Task { action } => {
-            match action {
-                TaskAction::List { status } => {
-                    let all_tasks = tasks::load_tasks(&project).unwrap_or_else(|e| {
-                        eprintln!("Error loading tasks: {e}");
-                        std::process::exit(1);
-                    });
+    match action {
+        TaskAction::List { status } => {
+            let tasks = match api.list_tasks() {
+                Ok(tasks) => tasks,
+                Err(e) => {
+                    eprintln!("Error loading tasks: {e}");
+                    std::process::exit(1);
+                }
+            };
 
-                    let filtered: Vec<_> = if let Some(status_filter) = status {
-                        all_tasks
-                            .into_iter()
-                            .filter(|t| {
-                                format!("{:?}", t.status).to_lowercase()
-                                    == status_filter.to_lowercase()
-                            })
-                            .collect()
-                    } else {
-                        all_tasks
-                    };
+            // Filter by status if provided
+            let tasks: Vec<_> = if let Some(ref filter) = status {
+                tasks
+                    .into_iter()
+                    .filter(|t| matches_status_filter(t, filter))
+                    .collect()
+            } else {
+                tasks
+            };
 
-                    if filtered.is_empty() {
-                        println!("No tasks found.");
-                        return;
-                    }
+            if tasks.is_empty() {
+                println!("No tasks found.");
+                return;
+            }
 
-                    for task in filtered {
-                        println!(
-                            "{} [{}] {}",
-                            task.id,
-                            format!("{:?}", task.status).to_lowercase(),
-                            task.title.as_deref().unwrap_or("(untitled)")
-                        );
-                    }
-                }
-                TaskAction::Show { id } => {
-                    let all_tasks = tasks::load_tasks(&project).unwrap_or_else(|e| {
-                        eprintln!("Error loading tasks: {e}");
-                        std::process::exit(1);
-                    });
+            println!(
+                "{:<12} {:<20} {:<15} {:<12} {}",
+                "ID", "TITLE", "STATUS", "PHASE", "STAGE"
+            );
+            println!("{}", "-".repeat(80));
 
-                    if let Some(task) = all_tasks.into_iter().find(|t| t.id == id) {
-                        println!("ID: {}", task.id);
-                        println!("Title: {}", task.title.as_deref().unwrap_or("(untitled)"));
-                        println!("Status: {:?}", task.status);
-                        println!("Description: {}", task.description);
-                        println!("Created: {}", task.created_at);
-                        println!("Updated: {}", task.updated_at);
-                        if let Some(summary) = task.summary {
-                            println!("Summary: {summary}");
-                        }
-                        if let Some(error) = task.error {
-                            println!("Error: {error}");
-                        }
-                    } else {
-                        eprintln!("Task {id} not found");
-                        std::process::exit(1);
-                    }
-                }
-                TaskAction::Create { title, description } => {
-                    match tasks::create_task(&project, Some(&title), &description) {
-                        Ok(task) => {
-                            println!("Created task: {}", task.id);
-                        }
-                        Err(e) => {
-                            eprintln!("Error creating task: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::Complete { id, summary } => {
-                    match tasks::complete_task(&project, &id, &summary) {
-                        Ok(task) => {
-                            if task.auto_approve {
-                                // Auto-approve: transition to Reviewing and spawn reviewer
-                                match tasks::start_automated_review(&project, &id) {
-                                    Ok(reviewing_task) => {
-                                        println!(
-                                            "Task {} completed. Auto-starting review.",
-                                            reviewing_task.id
-                                        );
-                                        // Spawn reviewer agent
-                                        match spawn_agent_sync(
-                                            &project,
-                                            &reviewing_task,
-                                            AgentType::Reviewer,
-                                            30,
-                                        ) {
-                                            Ok(spawned) => {
-                                                if let Some(sid) = &spawned.session_id {
-                                                    println!(
-                                                    "Spawned reviewer agent (pid: {}, session: {})",
-                                                    spawned.process_id, sid
-                                                );
-                                                } else {
-                                                    println!(
-                                                    "Spawned reviewer agent (pid: {}, session capture pending)",
-                                                    spawned.process_id
-                                                );
-                                                }
-                                            }
-                                            Err(e) => {
-                                                eprintln!(
-                                                    "Warning: Failed to spawn reviewer agent: {e}"
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Warning: Failed to start automated review: {e}");
-                                        println!("Task {} marked as ready for review", task.id);
-                                    }
-                                }
-                            } else {
-                                println!("Task {} marked as ready for review", task.id);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error completing task: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::Fail { id, reason } => match tasks::fail_task(&project, &id, &reason) {
-                    Ok(task) => {
-                        println!("Task {} marked as failed", task.id);
-                    }
-                    Err(e) => {
-                        eprintln!("Error failing task: {e}");
-                        std::process::exit(1);
-                    }
-                },
-                TaskAction::Block { id, reason } => match tasks::block_task(&project, &id, &reason)
-                {
-                    Ok(task) => {
-                        println!("Task {} marked as blocked", task.id);
-                    }
-                    Err(e) => {
-                        eprintln!("Error blocking task: {e}");
-                        std::process::exit(1);
-                    }
-                },
-                TaskAction::Status { id, status } => {
-                    let task_status = match status.to_lowercase().as_str() {
-                        "planning" => TaskStatus::Planning,
-                        "breaking_down" => TaskStatus::BreakingDown,
-                        "waiting_on_subtasks" => TaskStatus::WaitingOnSubtasks,
-                        "working" => TaskStatus::Working,
-                        "reviewing" => TaskStatus::Reviewing,
-                        "done" => TaskStatus::Done,
-                        "failed" => TaskStatus::Failed,
-                        "blocked" => TaskStatus::Blocked,
-                        _ => {
-                            eprintln!("Invalid status: {status}. Valid values: planning, breaking_down, waiting_on_subtasks, working, reviewing, done, failed, blocked");
-                            std::process::exit(1);
-                        }
-                    };
+            for task in tasks {
+                let title: String = task.title.chars().take(18).collect();
+                let status_str = format_status(&task.status);
+                let phase_str = format_phase(&task.phase);
+                let stage = task.current_stage().unwrap_or("-");
 
-                    match tasks::update_task_status(&project, &id, task_status) {
-                        Ok(task) => {
-                            println!("Task {} status updated to {:?}", task.id, task.status);
-                        }
-                        Err(e) => {
-                            eprintln!("Error updating task status: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::SetPlan { id, plan } => {
-                    match tasks::set_task_plan(&project, &id, &plan) {
-                        Ok(task) => {
-                            println!("Plan set for task {}. Status: awaiting_approval", task.id);
-                        }
-                        Err(e) => {
-                            eprintln!("Error setting plan: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::Approve { id } => {
-                    match tasks::approve_task_plan(&project, &id) {
-                        Ok(task) => {
-                            match task.status {
-                                TaskStatus::BreakingDown => {
-                                    println!(
-                                        "Task {} plan approved. Status: breaking_down",
-                                        task.id
-                                    );
-                                    // Spawn a breakdown agent
-                                    match spawn_agent_sync(
-                                        &project,
-                                        &task,
-                                        AgentType::Breakdown,
-                                        30,
-                                    ) {
-                                        Ok(spawned) => {
-                                            if let Some(sid) = &spawned.session_id {
-                                                println!("Spawned breakdown agent (pid: {}, session: {})", spawned.process_id, sid);
-                                            } else {
-                                                println!("Spawned breakdown agent (pid: {}, session capture pending)", spawned.process_id);
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!(
-                                                "Warning: Failed to spawn breakdown agent: {e}"
-                                            );
-                                        }
-                                    }
-                                }
-                                TaskStatus::Working => {
-                                    println!("Task {} plan approved. Status: working (breakdown skipped)", task.id);
-                                    // Spawn a worker agent
-                                    match spawn_agent_sync(&project, &task, AgentType::Worker, 30) {
-                                        Ok(spawned) => {
-                                            if let Some(sid) = &spawned.session_id {
-                                                println!(
-                                                    "Spawned worker agent (pid: {}, session: {})",
-                                                    spawned.process_id, sid
-                                                );
-                                            } else {
-                                                println!("Spawned worker agent (pid: {}, session capture pending)", spawned.process_id);
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Warning: Failed to spawn worker agent: {e}");
-                                        }
-                                    }
-                                }
-                                _ => {
-                                    println!(
-                                        "Task {} plan approved. Status: {:?}",
-                                        task.id, task.status
-                                    );
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error approving plan: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::RequestChanges { id, feedback } => {
-                    match tasks::request_plan_changes(&project, &id, &feedback) {
-                        Ok(task) => {
-                            println!("Changes requested for task {}. Status: planning", task.id);
-                        }
-                        Err(e) => {
-                            eprintln!("Error requesting changes: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::CreateTask {
-                    parent_id,
-                    title,
-                    description,
-                } => match tasks::create_child_task(&project, &parent_id, &title, &description) {
-                    Ok(task) => {
-                        println!("Created child task: {} (parent: {})", task.id, parent_id);
-                    }
-                    Err(e) => {
-                        eprintln!("Error creating child task: {e}");
-                        std::process::exit(1);
-                    }
-                },
-                TaskAction::CreateSubtask {
-                    parent_id,
-                    title,
-                    description,
-                } => match tasks::create_subtask(&project, &parent_id, &title, &description) {
-                    Ok(task) => {
-                        println!(
-                            "Created subtask (checklist): {} (parent: {})",
-                            task.id, parent_id
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("Error creating subtask: {e}");
-                        std::process::exit(1);
-                    }
-                },
-                TaskAction::CompleteSubtask { id } => {
-                    match tasks::complete_subtask(&project, &id) {
-                        Ok(task) => {
-                            println!("Subtask {} marked as complete", task.id);
-                        }
-                        Err(e) => {
-                            eprintln!("Error completing subtask: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::SetBreakdown { id, breakdown } => {
-                    match tasks::set_breakdown(&project, &id, &breakdown) {
-                        Ok(task) => {
-                            println!("Breakdown set for task {}. Ready for approval.", task.id);
-                        }
-                        Err(e) => {
-                            eprintln!("Error setting breakdown: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::SetBreakdownPlan { id, plan } => {
-                    // Parse the JSON to validate it
-                    let breakdown_plan: orkestra_core::BreakdownPlan = match serde_json::from_str(&plan) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            eprintln!("Error: Invalid JSON breakdown plan: {e}");
-                            std::process::exit(1);
-                        }
-                    };
-
-                    match tasks::set_breakdown_plan(&project, &id, &breakdown_plan) {
-                        Ok(task) => {
-                            let subtask_count = breakdown_plan.subtasks.len();
-                            if breakdown_plan.skip_breakdown {
-                                println!("Breakdown plan set for task {} (skip recommended). Ready for approval.", task.id);
-                            } else {
-                                println!("Breakdown plan set for task {} ({} subtasks proposed). Ready for approval.", task.id, subtask_count);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error setting breakdown plan: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::ToggleWorkItem { subtask_id, index } => {
-                    match tasks::toggle_work_item(&project, &subtask_id, index) {
-                        Ok(task) => {
-                            if let Some(item) = task.work_items.get(index) {
-                                let status = if item.done { "done" } else { "not done" };
-                                println!("Work item {} toggled to {} for subtask {}", index, status, task.id);
-                            } else {
-                                println!("Work item {} toggled for subtask {}", index, task.id);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error toggling work item: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::ApproveBreakdown { id } => {
-                    // Try new plan-based flow first (JSON breakdown)
-                    // If the breakdown is valid JSON, use approve_breakdown_plan which creates subtasks
-                    // Otherwise fall back to the old approve_breakdown flow
-                    let result = tasks::get_breakdown_plan(&project, &id);
-
-                    let is_json_plan = matches!(result, Ok(Some(_)));
-
-                    if is_json_plan {
-                        // New flow: approve_breakdown_plan creates subtasks from the JSON plan
-                        match tasks::approve_breakdown_plan(&project, &id) {
-                            Ok(task) => {
-                                let subtask_count = tasks::get_subtasks(&project, &id)
-                                    .map(|s| s.len())
-                                    .unwrap_or(0);
-
-                                if subtask_count > 0 {
-                                    println!(
-                                        "Task {} breakdown approved. Created {} subtasks. Status: {:?}",
-                                        task.id, subtask_count, task.status
-                                    );
-                                    // Note: Workers for subtasks are spawned by the orchestrator
-                                    // based on dependency order, not here
-                                } else {
-                                    println!(
-                                        "Task {} breakdown approved (skip). Status: {:?}",
-                                        task.id, task.status
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("Error approving breakdown plan: {e}");
-                                std::process::exit(1);
-                            }
-                        }
-                    } else {
-                        // Legacy flow: subtasks were already created, just approve
-                        match tasks::approve_breakdown(&project, &id) {
-                            Ok(task) => {
-                                println!(
-                                    "Task {} breakdown approved. Status: waiting_on_subtasks",
-                                    task.id
-                                );
-
-                                // Spawn worker agents for child tasks only (not subtasks/checklist items)
-                                match tasks::get_child_tasks(&project, &id) {
-                                    Ok(child_tasks) => {
-                                        for child in child_tasks {
-                                            match spawn_agent_sync(
-                                                &project,
-                                                &child,
-                                                AgentType::Worker,
-                                                30,
-                                            ) {
-                                                Ok(spawned) => {
-                                                    if let Some(sid) = &spawned.session_id {
-                                                        println!("Spawned worker for {} (pid: {}, session: {})", child.id, spawned.process_id, sid);
-                                                    } else {
-                                                        println!("Spawned worker for {} (pid: {}, session capture pending)", child.id, spawned.process_id);
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    eprintln!(
-                                                        "Warning: Failed to spawn worker for {}: {}",
-                                                        child.id, e
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Warning: Failed to get child tasks: {e}");
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("Error approving breakdown: {e}");
-                                std::process::exit(1);
-                            }
-                        }
-                    }
-                }
-                TaskAction::RequestBreakdownChanges { id, feedback } => {
-                    match tasks::request_breakdown_changes(&project, &id, &feedback) {
-                        Ok(task) => {
-                            println!(
-                                "Breakdown changes requested for task {}. Status: breaking_down",
-                                task.id
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("Error requesting breakdown changes: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::SkipBreakdown { id } => {
-                    match tasks::skip_breakdown(&project, &id) {
-                        Ok(task) => {
-                            println!("Task {} breakdown skipped. Status: working", task.id);
-
-                            // Spawn a worker agent
-                            match spawn_agent_sync(&project, &task, AgentType::Worker, 30) {
-                                Ok(spawned) => {
-                                    if let Some(sid) = &spawned.session_id {
-                                        println!(
-                                            "Spawned worker agent (pid: {}, session: {})",
-                                            spawned.process_id, sid
-                                        );
-                                    } else {
-                                        println!("Spawned worker agent (pid: {}, session capture pending)", spawned.process_id);
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Warning: Failed to spawn worker agent: {e}");
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error skipping breakdown: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::Subtasks { parent_id } => {
-                    match tasks::get_children(&project, &parent_id) {
-                        Ok(children) => {
-                            if children.is_empty() {
-                                println!("No children found for {parent_id}.");
-                                return;
-                            }
-
-                            println!("Children of {parent_id}:");
-                            for task in children {
-                                let kind = format!("{:?}", task.kind).to_lowercase();
-                                println!(
-                                    "  {} [{}] ({}) {}",
-                                    task.id,
-                                    format!("{:?}", task.status).to_lowercase(),
-                                    kind,
-                                    task.title.as_deref().unwrap_or("(untitled)")
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error getting children: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::ApproveReview { id } => {
-                    match tasks::approve_automated_review(&project, &id) {
-                        Ok(task) => {
-                            println!("Task {} review approved. Status: done", task.id);
-                        }
-                        Err(e) => {
-                            eprintln!("Error approving review: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::RejectReview { id, feedback } => {
-                    match tasks::reject_automated_review(&project, &id, &feedback) {
-                        Ok(task) => {
-                            println!(
-                                "Task {} review rejected. Status: working (feedback provided)",
-                                task.id
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("Error rejecting review: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::SetTitle { id, title } => {
-                    match tasks::set_task_title(&project, &id, &title) {
-                        Ok(task) => {
-                            println!(
-                                "Task {} title set to: {}",
-                                task.id,
-                                task.title.as_deref().unwrap_or("(untitled)")
-                            );
-                        }
-                        Err(e) => {
-                            eprintln!("Error setting title: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::GenerateTitle { id } => {
-                    // First get the task to retrieve its description
-                    let all_tasks = tasks::load_tasks(&project).unwrap_or_else(|e| {
-                        eprintln!("Error loading tasks: {e}");
-                        std::process::exit(1);
-                    });
-
-                    let Some(task) = all_tasks.iter().find(|t| t.id == id) else {
-                        eprintln!("Task {id} not found");
-                        std::process::exit(1);
-                    };
-
-                    println!("Generating title for task {id}...");
-
-                    // Generate title using AI
-                    match agents::generate_title_sync(&task.description, 30) {
-                        Ok(title) => {
-                            // Set the generated title
-                            match tasks::set_task_title(&project, &id, &title) {
-                                Ok(updated_task) => {
-                                    println!(
-                                        "Task {} title set to: {}",
-                                        updated_task.id,
-                                        updated_task.title.as_deref().unwrap_or("(untitled)")
-                                    );
-                                }
-                                Err(e) => {
-                                    eprintln!("Error setting title: {e}");
-                                    std::process::exit(1);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Error generating title: {e}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                TaskAction::Delete { id } => match tasks::delete_task(&project, &id) {
-                    Ok(()) => {
-                        println!("Deleted task {id} and all its children");
-                    }
-                    Err(e) => {
-                        eprintln!("Error deleting task: {e}");
-                        std::process::exit(1);
-                    }
-                },
+                println!(
+                    "{:<12} {:<20} {:<15} {:<12} {}",
+                    task.id, title, status_str, phase_str, stage
+                );
             }
         }
+
+        TaskAction::Show { id } => {
+            let task = match api.get_task(&id) {
+                Ok(task) => task,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            println!("Task: {}", task.id);
+            println!("Title: {}", task.title);
+            println!("Description: {}", task.description);
+            println!("Status: {}", format_status(&task.status));
+            println!("Phase: {}", format_phase(&task.phase));
+
+            if let Some(stage) = task.current_stage() {
+                println!("Current Stage: {}", stage);
+            }
+
+            if let Some(parent) = &task.parent_id {
+                println!("Parent: {}", parent);
+            }
+
+            if let Some(pid) = task.agent_pid {
+                println!("Agent PID: {}", pid);
+            }
+
+            if let Some(worktree) = &task.worktree_path {
+                println!("Worktree: {}", worktree);
+            }
+
+            // Show artifacts
+            let artifact_names: Vec<_> = task.artifacts.names().collect();
+            if !artifact_names.is_empty() {
+                println!("\nArtifacts:");
+                for name in artifact_names {
+                    if let Some(artifact) = task.artifacts.get(name) {
+                        println!("  - {} (from stage: {})", name, artifact.stage);
+                        // Show first 200 chars of content
+                        let preview: String = artifact.content.chars().take(200).collect();
+                        if !preview.is_empty() {
+                            println!("    {}", preview.replace('\n', "\n    "));
+                            if artifact.content.len() > 200 {
+                                println!("    ... ({} more chars)", artifact.content.len() - 200);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Show pending questions
+            if !task.pending_questions.is_empty() {
+                println!("\nPending Questions:");
+                for q in &task.pending_questions {
+                    println!("  - [{}] {}", q.id, q.question);
+                }
+            }
+
+            // Show iterations
+            match api.get_iterations(&id) {
+                Ok(iterations) if !iterations.is_empty() => {
+                    println!("\nIterations:");
+                    for iter in iterations {
+                        let outcome_str = iter
+                            .outcome
+                            .as_ref()
+                            .map(|o| format!("{:?}", o))
+                            .unwrap_or_else(|| "in progress".to_string());
+                        println!("  - {} (stage: {}, outcome: {})", iter.id, iter.stage, outcome_str);
+                    }
+                }
+                _ => {}
+            }
+
+            println!("\nCreated: {}", task.created_at);
+            println!("Updated: {}", task.updated_at);
+            if let Some(completed) = &task.completed_at {
+                println!("Completed: {}", completed);
+            }
+        }
+    }
+}
+
+/// Initialize the workflow API.
+fn init_workflow_api() -> Result<WorkflowApi, String> {
+    let project_root =
+        find_project_root().map_err(|e| format!("Failed to find project root: {e}"))?;
+
+    let orkestra_dir = project_root.join(".orkestra");
+    let db_path = orkestra_dir.join("workflow.db");
+
+    if !db_path.exists() {
+        return Err(format!(
+            "Workflow database not found at {}. Is the Orkestra app running?",
+            db_path.display()
+        ));
+    }
+
+    // Load workflow config (or use default)
+    let workflow_config = load_workflow_for_project(&project_root).unwrap_or_else(|e| {
+        eprintln!("Warning: Failed to load workflow config: {e}, using default");
+        WorkflowConfig::default()
+    });
+
+    // Open database connection
+    let conn = DatabaseConnection::open(&db_path)
+        .map_err(|e| format!("Failed to open workflow database: {e}"))?;
+
+    // Create the store and API
+    let store = SqliteWorkflowStore::new(conn.shared());
+
+    Ok(WorkflowApi::new(workflow_config, Box::new(store)))
+}
+
+fn matches_status_filter(task: &Task, filter: &str) -> bool {
+    match filter.to_lowercase().as_str() {
+        "active" => task.status.is_active(),
+        "done" => task.is_done(),
+        "failed" => task.is_failed(),
+        "blocked" => task.is_blocked(),
+        _ => true,
+    }
+}
+
+fn format_status(status: &Status) -> String {
+    match status {
+        Status::Active { stage } => format!("Active({})", stage),
+        Status::Done => "Done".to_string(),
+        Status::WaitingOnChildren => "Waiting".to_string(),
+        Status::Failed { error } => {
+            let msg = error.as_deref().unwrap_or("unknown");
+            format!("Failed: {}", msg.chars().take(20).collect::<String>())
+        }
+        Status::Blocked { reason } => {
+            let msg = reason.as_deref().unwrap_or("unknown");
+            format!("Blocked: {}", msg.chars().take(20).collect::<String>())
+        }
+    }
+}
+
+fn format_phase(phase: &Phase) -> String {
+    match phase {
+        Phase::Idle => "Idle".to_string(),
+        Phase::AgentWorking => "Working".to_string(),
+        Phase::AwaitingReview => "Review".to_string(),
+        Phase::Integrating => "Integrating".to_string(),
     }
 }

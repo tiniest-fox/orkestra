@@ -1,0 +1,246 @@
+//! Generic task status.
+//!
+//! Status represents the current state of a task in the workflow.
+//! Active tasks are in a named stage; terminal states are fixed.
+
+use serde::{Deserialize, Serialize};
+
+/// Current status of a task in the workflow.
+///
+/// This is a stage-agnostic version of task status. Instead of having
+/// `Planning`, `Working`, etc., we have `Active { stage }` with the
+/// stage name as a field.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Status {
+    /// Task is actively being worked on in a specific stage.
+    Active {
+        /// The current stage name (e.g., "planning", "work").
+        stage: String,
+    },
+
+    /// Task is waiting for child tasks to complete.
+    WaitingOnChildren,
+
+    /// Task completed successfully.
+    Done,
+
+    /// Task failed and cannot continue.
+    Failed {
+        /// Error message describing the failure.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+
+    /// Task is blocked on external dependency.
+    Blocked {
+        /// Reason for blocking.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+}
+
+impl Status {
+    /// Create an active status in the given stage.
+    pub fn active(stage: impl Into<String>) -> Self {
+        Self::Active {
+            stage: stage.into(),
+        }
+    }
+
+    /// Create a failed status with an error message.
+    pub fn failed(error: impl Into<String>) -> Self {
+        Self::Failed {
+            error: Some(error.into()),
+        }
+    }
+
+    /// Create a blocked status with a reason.
+    pub fn blocked(reason: impl Into<String>) -> Self {
+        Self::Blocked {
+            reason: Some(reason.into()),
+        }
+    }
+
+    /// Get the current stage name, if active.
+    pub fn stage(&self) -> Option<&str> {
+        match self {
+            Status::Active { stage } => Some(stage),
+            _ => None,
+        }
+    }
+
+    /// Check if this is a terminal status (task is done/failed/blocked).
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Status::Done | Status::Failed { .. } | Status::Blocked { .. }
+        )
+    }
+
+    /// Check if this is an active status (task is in a stage).
+    pub fn is_active(&self) -> bool {
+        matches!(self, Status::Active { .. })
+    }
+
+    /// Check if the task can transition to a new stage.
+    pub fn can_transition(&self) -> bool {
+        !self.is_terminal()
+    }
+
+    /// Check if the task is waiting for children.
+    pub fn is_waiting_on_children(&self) -> bool {
+        matches!(self, Status::WaitingOnChildren)
+    }
+}
+
+// Note: Status deliberately does not implement Default because the first stage
+// depends on the workflow configuration. Use `Status::active(workflow.first_stage().name)`
+// to create the initial status for a task.
+
+impl std::fmt::Display for Status {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Status::Active { stage } => write!(f, "{stage}"),
+            Status::WaitingOnChildren => write!(f, "waiting_on_children"),
+            Status::Done => write!(f, "done"),
+            Status::Failed { error } => {
+                if let Some(err) = error {
+                    write!(f, "failed: {err}")
+                } else {
+                    write!(f, "failed")
+                }
+            }
+            Status::Blocked { reason } => {
+                if let Some(r) = reason {
+                    write!(f, "blocked: {r}")
+                } else {
+                    write!(f, "blocked")
+                }
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for Phase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Phase::Idle => write!(f, "idle"),
+            Phase::AgentWorking => write!(f, "agent_working"),
+            Phase::AwaitingReview => write!(f, "awaiting_review"),
+            Phase::Integrating => write!(f, "integrating"),
+        }
+    }
+}
+
+/// Phase within a stage - what the task is currently doing.
+///
+/// This is orthogonal to Status and tracks the sub-state within a stage.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Phase {
+    /// No active work - waiting to start or between operations.
+    #[default]
+    Idle,
+
+    /// Agent is currently working.
+    AgentWorking,
+
+    /// Output is ready for human review.
+    AwaitingReview,
+
+    /// Integration (merge) is in progress.
+    Integrating,
+}
+
+impl Phase {
+    /// Check if a human action is needed.
+    pub fn needs_human_action(&self) -> bool {
+        matches!(self, Phase::AwaitingReview)
+    }
+
+    /// Check if an agent is currently working.
+    pub fn has_active_agent(&self) -> bool {
+        matches!(self, Phase::AgentWorking)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_active_status() {
+        let status = Status::active("planning");
+        assert_eq!(status.stage(), Some("planning"));
+        assert!(status.is_active());
+        assert!(!status.is_terminal());
+        assert!(status.can_transition());
+    }
+
+    #[test]
+    fn test_terminal_statuses() {
+        assert!(Status::Done.is_terminal());
+        assert!(Status::failed("error").is_terminal());
+        assert!(Status::blocked("reason").is_terminal());
+
+        assert!(!Status::Done.can_transition());
+    }
+
+    #[test]
+    fn test_waiting_on_children() {
+        let status = Status::WaitingOnChildren;
+        assert!(!status.is_active());
+        assert!(!status.is_terminal());
+        assert!(status.is_waiting_on_children());
+    }
+
+    #[test]
+    fn test_status_serialization() {
+        let status = Status::active("work");
+        let json = serde_json::to_string(&status).unwrap();
+
+        assert!(json.contains("\"type\":\"active\""));
+        assert!(json.contains("\"stage\":\"work\""));
+
+        let parsed: Status = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, status);
+    }
+
+    #[test]
+    fn test_failed_status() {
+        let status = Status::failed("Something went wrong");
+        match status {
+            Status::Failed { error } => {
+                assert_eq!(error, Some("Something went wrong".into()));
+            }
+            _ => panic!("Expected Failed variant"),
+        }
+    }
+
+    #[test]
+    fn test_phase_default() {
+        let phase = Phase::default();
+        assert_eq!(phase, Phase::Idle);
+        assert!(!phase.needs_human_action());
+        assert!(!phase.has_active_agent());
+    }
+
+    #[test]
+    fn test_phase_states() {
+        assert!(Phase::AwaitingReview.needs_human_action());
+        assert!(Phase::AgentWorking.has_active_agent());
+        assert!(!Phase::Idle.needs_human_action());
+        assert!(!Phase::Integrating.has_active_agent());
+    }
+
+    #[test]
+    fn test_phase_serialization() {
+        let phase = Phase::AwaitingReview;
+        let json = serde_json::to_string(&phase).unwrap();
+        assert_eq!(json, "\"awaiting_review\"");
+
+        let parsed: Phase = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, phase);
+    }
+}

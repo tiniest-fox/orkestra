@@ -1,0 +1,159 @@
+//! Workflow configuration loading.
+//!
+//! Loads workflow configuration from YAML files or uses the default.
+
+use std::path::Path;
+
+use super::workflow::WorkflowConfig;
+
+/// Error type for workflow loading.
+#[derive(Debug, thiserror::Error)]
+pub enum LoadError {
+    /// File could not be read.
+    #[error("Failed to read workflow file: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// YAML parsing failed.
+    #[error("Failed to parse workflow YAML: {0}")]
+    Parse(#[from] serde_yaml::Error),
+
+    /// Workflow validation failed.
+    #[error("Invalid workflow configuration: {0}")]
+    Validation(String),
+}
+
+/// Load workflow configuration from a YAML file.
+///
+/// If the file doesn't exist, returns the default workflow.
+/// Validates the configuration after loading.
+pub fn load_workflow(path: &Path) -> Result<WorkflowConfig, LoadError> {
+    if !path.exists() {
+        return Ok(WorkflowConfig::default());
+    }
+
+    let content = std::fs::read_to_string(path)?;
+    let config: WorkflowConfig = serde_yaml::from_str(&content)?;
+
+    let errors = config.validate();
+    if !errors.is_empty() {
+        return Err(LoadError::Validation(errors.join("; ")));
+    }
+
+    Ok(config)
+}
+
+/// Load workflow from a project directory.
+///
+/// Looks for `.orkestra/workflow.yaml` in the project root.
+/// Returns the default workflow if the file doesn't exist.
+pub fn load_workflow_for_project(project_root: &Path) -> Result<WorkflowConfig, LoadError> {
+    let workflow_path = project_root.join(".orkestra").join("workflow.yaml");
+    load_workflow(&workflow_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_load_nonexistent_returns_default() {
+        let path = Path::new("/nonexistent/workflow.yaml");
+        let result = load_workflow(path);
+        assert!(result.is_ok());
+
+        let config = result.unwrap();
+        assert_eq!(config, WorkflowConfig::default());
+    }
+
+    #[test]
+    fn test_load_valid_yaml() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("workflow.yaml");
+
+        let yaml = r#"
+version: 1
+stages:
+  - name: planning
+    artifact: plan
+  - name: work
+    artifact: summary
+    inputs: [plan]
+"#;
+        std::fs::write(&path, yaml).unwrap();
+
+        let result = load_workflow(&path);
+        assert!(result.is_ok());
+
+        let config = result.unwrap();
+        assert_eq!(config.stages.len(), 2);
+        assert_eq!(config.stage("planning").unwrap().artifact, "plan");
+    }
+
+    #[test]
+    fn test_load_invalid_yaml() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("workflow.yaml");
+
+        std::fs::write(&path, "not: valid: yaml: {{").unwrap();
+
+        let result = load_workflow(&path);
+        assert!(matches!(result, Err(LoadError::Parse(_))));
+    }
+
+    #[test]
+    fn test_load_invalid_workflow() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("workflow.yaml");
+
+        // Duplicate stage names - should fail validation
+        let yaml = r#"
+version: 1
+stages:
+  - name: planning
+    artifact: plan
+  - name: planning
+    artifact: other
+"#;
+        std::fs::write(&path, yaml).unwrap();
+
+        let result = load_workflow(&path);
+        assert!(matches!(result, Err(LoadError::Validation(_))));
+    }
+
+    #[test]
+    fn test_load_workflow_for_project() {
+        let dir = tempdir().unwrap();
+        let orkestra_dir = dir.path().join(".orkestra");
+        std::fs::create_dir(&orkestra_dir).unwrap();
+
+        let workflow_path = orkestra_dir.join("workflow.yaml");
+        let yaml = r#"
+version: 1
+stages:
+  - name: custom_stage
+    artifact: custom_output
+integration:
+  on_failure: custom_stage
+"#;
+        std::fs::write(&workflow_path, yaml).unwrap();
+
+        let result = load_workflow_for_project(dir.path());
+        assert!(result.is_ok());
+
+        let config = result.unwrap();
+        assert_eq!(config.stages.len(), 1);
+        assert_eq!(config.stages[0].name, "custom_stage");
+        assert_eq!(config.integration.on_failure, "custom_stage");
+    }
+
+    #[test]
+    fn test_load_workflow_for_project_no_file() {
+        let dir = tempdir().unwrap();
+        // No .orkestra directory
+
+        let result = load_workflow_for_project(dir.path());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), WorkflowConfig::default());
+    }
+}

@@ -1,17 +1,9 @@
-mod claude_spawner;
-mod sqlite_store;
-mod system_clock;
+//! Adapters for external systems.
+//!
+//! This module provides implementations of ports for external systems.
+//! Currently only contains the SQLite database connection.
 
-// New modular sqlite implementation
 pub mod sqlite;
 
-pub use claude_spawner::ClaudeSpawner;
-// Re-export old SqliteStore for now during migration
-pub use sqlite_store::SqliteStore;
-pub use system_clock::{FixedClock, SystemClock};
-
-// Re-export new types from sqlite module
-pub use sqlite::{
-    DatabaseConnection, IterationRepository, StageSessionRepository, TaskRepository,
-    WorkLoopRepository,
-};
+// Re-export DatabaseConnection for convenience
+pub use sqlite::DatabaseConnection;

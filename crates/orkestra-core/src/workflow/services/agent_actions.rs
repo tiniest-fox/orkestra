@@ -1,0 +1,409 @@
+//! Agent/orchestrator actions: agent started, process output, get pending tasks.
+
+use crate::workflow::domain::{Iteration, Task};
+use crate::workflow::execution::StageOutput;
+use crate::workflow::ports::{WorkflowError, WorkflowResult};
+use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
+
+use super::WorkflowApi;
+
+impl WorkflowApi {
+    /// Mark agent as started on a task. Transitions phase to AgentWorking.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if the task is not in `Idle` phase.
+    pub fn agent_started(&self, task_id: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        if task.phase != Phase::Idle {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Agent cannot start in phase {:?}",
+                task.phase
+            )));
+        }
+
+        task.phase = Phase::AgentWorking;
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    /// Process completed agent output. Handles artifacts, questions, restages, failures.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if the task is not in `AgentWorking` phase.
+    pub fn process_agent_output(
+        &self,
+        task_id: &str,
+        output: StageOutput,
+    ) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        if task.phase != Phase::AgentWorking {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot process agent output in phase {:?}",
+                task.phase
+            )));
+        }
+
+        let current_stage = task
+            .current_stage()
+            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
+            .to_string();
+
+        let now = chrono::Utc::now().to_rfc3339();
+
+        match output {
+            StageOutput::Questions { questions } => {
+                // Agent asked questions - task waits for human answers
+                task.pending_questions = questions;
+                task.phase = Phase::AwaitingReview; // UI needs to show questions
+                task.updated_at = now;
+            }
+
+            StageOutput::Artifact { content } => {
+                // Get artifact name from stage config
+                let artifact_name = self
+                    .workflow
+                    .stage(&current_stage)
+                    .map(|s| s.artifact.clone())
+                    .unwrap_or_else(|| "artifact".to_string());
+
+                // Agent produced artifact
+                task.artifacts
+                    .set(Artifact::new(&artifact_name, &content, &current_stage, &now));
+
+                // Check if this is an automated stage
+                let is_automated = self.is_stage_automated(&current_stage);
+
+                if is_automated {
+                    // Automated stages auto-approve and move to next stage
+                    self.end_current_iteration(&task, Outcome::Approved)?;
+
+                    let next_status = self.compute_next_status_on_approve(&current_stage);
+                    task.status = next_status.clone();
+                    task.phase = Phase::Idle;
+
+                    // Create new iteration if moving to new stage
+                    if let Some(new_stage) = next_status.stage() {
+                        let iteration_count = self.store.get_iterations(&task.id)?.len() as u32;
+                        let iteration = Iteration::new(
+                            format!("{}-iter-{}", task.id, iteration_count + 1),
+                            &task.id,
+                            new_stage,
+                            iteration_count + 1,
+                            &now,
+                        );
+                        self.store.save_iteration(&iteration)?;
+                    }
+
+                    if task.is_done() {
+                        task.completed_at = Some(now.clone());
+                    }
+                } else {
+                    task.phase = Phase::AwaitingReview;
+                }
+                task.updated_at = now;
+            }
+
+            StageOutput::Restage { target, feedback } => {
+                // Validate restage capability
+                let stage_config = self.workflow.stage(&current_stage).ok_or_else(|| {
+                    WorkflowError::InvalidTransition(format!("Unknown stage: {}", current_stage))
+                })?;
+
+                if !stage_config.capabilities.can_restage_to(&target) {
+                    return Err(WorkflowError::InvalidTransition(format!(
+                        "Stage {} cannot restage to {}",
+                        current_stage, target
+                    )));
+                }
+
+                // End current iteration with restage
+                self.end_current_iteration(
+                    &task,
+                    Outcome::restage(&current_stage, &target, &feedback),
+                )?;
+
+                // Move to target stage
+                task.status = Status::active(&target);
+                task.phase = Phase::Idle;
+                task.updated_at = now.clone();
+
+                // Create new iteration in target stage
+                let iteration_count = self.store.get_iterations(&task.id)?.len() as u32;
+                let iteration = Iteration::new(
+                    format!("{}-iter-{}", task.id, iteration_count + 1),
+                    &task.id,
+                    &target,
+                    iteration_count + 1,
+                    &now,
+                );
+                self.store.save_iteration(&iteration)?;
+            }
+
+            StageOutput::Subtasks { subtasks: _ } => {
+                // TODO: Create subtasks from breakdown output
+                // For now, just store as artifact
+                task.phase = Phase::AwaitingReview;
+                task.updated_at = now;
+            }
+
+            StageOutput::Completed { summary } => {
+                // Agent completed without producing stage artifact
+                // Store summary as artifact
+                task.artifacts
+                    .set(Artifact::new("summary", &summary, &current_stage, &now));
+                self.end_current_iteration(&task, Outcome::Approved)?;
+                task.status = Status::Done;
+                task.phase = Phase::Idle;
+                task.completed_at = Some(now.clone());
+                task.updated_at = now;
+            }
+
+            StageOutput::Failed { error } => {
+                // End iteration before changing status (task must still be in active stage)
+                self.end_current_iteration(&task, Outcome::AgentError { error: error.clone() })?;
+                task.status = Status::failed(&error);
+                task.phase = Phase::Idle;
+                task.updated_at = now;
+            }
+
+            StageOutput::Blocked { reason } => {
+                // End iteration before changing status (task must still be in active stage)
+                self.end_current_iteration(&task, Outcome::Blocked { reason: reason.clone() })?;
+                task.status = Status::blocked(&reason);
+                task.phase = Phase::Idle;
+                task.updated_at = now;
+            }
+        }
+
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    /// Get tasks that need agents spawned (in Idle phase with Active status).
+    pub fn get_tasks_needing_agents(&self) -> WorkflowResult<Vec<Task>> {
+        let all_tasks = self.store.list_tasks()?;
+        Ok(all_tasks
+            .into_iter()
+            .filter(|t| t.phase == Phase::Idle && t.status.is_active())
+            .collect())
+    }
+
+    /// Clear the agent PID for a task (used for cleanup of stale PIDs).
+    pub fn clear_agent_pid(&self, task_id: &str) -> WorkflowResult<()> {
+        let mut task = self.get_task(task_id)?;
+        task.agent_pid = None;
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        self.store.save_task(&task)?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use crate::workflow::domain::Question;
+    use crate::workflow::InMemoryWorkflowStore;
+
+    use super::*;
+
+    fn test_workflow() -> WorkflowConfig {
+        WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan")
+                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("review", "verdict")
+                .with_inputs(vec!["summary".into()])
+                .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]))
+                .automated(),
+        ])
+    }
+
+    #[test]
+    fn test_agent_started() {
+        let workflow = test_workflow();
+        let store = Box::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.agent_started(&task.id).unwrap();
+
+        assert_eq!(task.phase, Phase::AgentWorking);
+    }
+
+    #[test]
+    fn test_agent_started_invalid_phase() {
+        let workflow = test_workflow();
+        let store = Box::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description").unwrap();
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        let result = api.agent_started(&task.id);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_process_artifact_output() {
+        let workflow = test_workflow();
+        let store = Box::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.agent_started(&task.id).unwrap();
+
+        let output = StageOutput::Artifact {
+            content: "The plan content".to_string(),
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        assert_eq!(task.phase, Phase::AwaitingReview);
+        assert!(task.artifacts.get("plan").is_some());
+    }
+
+    #[test]
+    fn test_process_questions_output() {
+        let workflow = test_workflow();
+        let store = Box::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.agent_started(&task.id).unwrap();
+
+        let output = StageOutput::Questions {
+            questions: vec![Question::new("q1", "What framework?")],
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        assert_eq!(task.phase, Phase::AwaitingReview);
+        assert_eq!(task.pending_questions.len(), 1);
+    }
+
+    #[test]
+    fn test_process_restage_output() {
+        let workflow = test_workflow();
+        let store = Box::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description").unwrap();
+
+        // Move to review stage
+        task.status = Status::active("review");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        let output = StageOutput::Restage {
+            target: "work".to_string(),
+            feedback: "Tests failing".to_string(),
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        assert_eq!(task.current_stage(), Some("work"));
+        assert_eq!(task.phase, Phase::Idle);
+    }
+
+    #[test]
+    fn test_process_restage_invalid_target() {
+        let workflow = test_workflow();
+        let store = Box::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.agent_started(&task.id).unwrap();
+
+        // Planning stage can't restage
+        let output = StageOutput::Restage {
+            target: "work".to_string(),
+            feedback: "Should fail".to_string(),
+        };
+        let result = api.process_agent_output(&task.id, output);
+
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_process_failed_output() {
+        let workflow = test_workflow();
+        let store = Box::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.agent_started(&task.id).unwrap();
+
+        let output = StageOutput::Failed {
+            error: "Build failed".to_string(),
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        assert!(task.is_failed());
+        assert_eq!(task.phase, Phase::Idle);
+    }
+
+    #[test]
+    fn test_process_blocked_output() {
+        let workflow = test_workflow();
+        let store = Box::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.agent_started(&task.id).unwrap();
+
+        let output = StageOutput::Blocked {
+            reason: "Waiting for API access".to_string(),
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        assert!(task.is_blocked());
+        assert_eq!(task.phase, Phase::Idle);
+    }
+
+    #[test]
+    fn test_automated_stage_auto_approves() {
+        let workflow = test_workflow();
+        let store = Box::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description").unwrap();
+
+        // Move to review stage (automated)
+        task.status = Status::active("review");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        let output = StageOutput::Artifact {
+            content: "Approved".to_string(),
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        // Should auto-approve and be done
+        assert!(task.is_done());
+        assert_eq!(task.phase, Phase::Idle);
+    }
+
+    #[test]
+    fn test_get_tasks_needing_agents() {
+        let workflow = test_workflow();
+        let store = Box::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        // Create some tasks in different states
+        let task1 = api.create_task("Task 1", "Ready for agent").unwrap();
+        let task2 = api.create_task("Task 2", "Also ready").unwrap();
+        let _ = api.agent_started(&task2.id).unwrap(); // Now working
+
+        let mut task3 = api.create_task("Task 3", "Done").unwrap();
+        task3.status = Status::Done;
+        api.store.save_task(&task3).unwrap();
+
+        let needing_agents = api.get_tasks_needing_agents().unwrap();
+
+        assert_eq!(needing_agents.len(), 1);
+        assert_eq!(needing_agents[0].id, task1.id);
+    }
+}

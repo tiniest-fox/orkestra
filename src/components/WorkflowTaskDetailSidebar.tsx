@@ -311,10 +311,13 @@ export function WorkflowTaskDetailSidebar({
 
   // Fetch iterations
   const fetchIterations = useCallback(async () => {
+    console.log("[DEBUG] fetchIterations called for task:", task.id);
     try {
       const result = await getIterations(task.id);
+      console.log("[DEBUG] getIterations result:", result);
       setIterations(result);
-    } catch {
+    } catch (err) {
+      console.error("[DEBUG] getIterations error:", err);
       setIterations([]);
     }
   }, [task.id, getIterations]);
@@ -325,11 +328,14 @@ export function WorkflowTaskDetailSidebar({
 
   // Fetch logs
   const fetchLogs = useCallback(async () => {
+    console.log("[DEBUG] fetchLogs called for task:", task.id);
     setLogsLoading(true);
     try {
       const result = await getLogs(task.id);
+      console.log("[DEBUG] getLogs result:", result);
       setLogs(result);
-    } catch {
+    } catch (err) {
+      console.error("[DEBUG] getLogs error:", err);
       setLogs([]);
     } finally {
       setLogsLoading(false);

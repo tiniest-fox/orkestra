@@ -344,6 +344,7 @@ fn format_status(status: &Status) -> String {
 
 fn format_phase(phase: &Phase) -> String {
     match phase {
+        Phase::SettingUp => "Setting Up".to_string(),
         Phase::Idle => "Idle".to_string(),
         Phase::AgentWorking => "Working".to_string(),
         Phase::AwaitingReview => "Review".to_string(),

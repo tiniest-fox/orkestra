@@ -117,7 +117,7 @@ export function useWorkflowTasks() {
   const createSubtask = useCallback(
     async (parentId: string, title: string, description: string) => {
       const newTask = await invoke<WorkflowTask>("workflow_create_subtask", {
-        parent_id: parentId,
+        parentId,
         title,
         description,
       });
@@ -128,16 +128,16 @@ export function useWorkflowTasks() {
   );
 
   const deleteTask = useCallback(async (taskId: string) => {
-    await invoke<void>("workflow_delete_task", { task_id: taskId });
+    await invoke<void>("workflow_delete_task", { taskId });
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
   }, []);
 
   const getTask = useCallback(async (taskId: string) => {
-    return invoke<WorkflowTask>("workflow_get_task", { task_id: taskId });
+    return invoke<WorkflowTask>("workflow_get_task", { taskId });
   }, []);
 
   const listSubtasks = useCallback(async (parentId: string) => {
-    return invoke<WorkflowTask[]>("workflow_list_subtasks", { parent_id: parentId });
+    return invoke<WorkflowTask[]>("workflow_list_subtasks", { parentId });
   }, []);
 
   return {
@@ -158,16 +158,16 @@ export function useWorkflowTasks() {
  */
 export function useWorkflowActions() {
   const approve = useCallback(async (taskId: string) => {
-    return invoke<WorkflowTask>("workflow_approve", { task_id: taskId });
+    return invoke<WorkflowTask>("workflow_approve", { taskId });
   }, []);
 
   const reject = useCallback(async (taskId: string, feedback: string) => {
-    return invoke<WorkflowTask>("workflow_reject", { task_id: taskId, feedback });
+    return invoke<WorkflowTask>("workflow_reject", { taskId, feedback });
   }, []);
 
   const answerQuestions = useCallback(
     async (taskId: string, answers: WorkflowQuestionAnswer[]) => {
-      return invoke<WorkflowTask>("workflow_answer_questions", { task_id: taskId, answers });
+      return invoke<WorkflowTask>("workflow_answer_questions", { taskId, answers });
     },
     [],
   );
@@ -180,27 +180,27 @@ export function useWorkflowActions() {
  */
 export function useWorkflowQueries() {
   const getIterations = useCallback(async (taskId: string) => {
-    return invoke<WorkflowIteration[]>("workflow_get_iterations", { task_id: taskId });
+    return invoke<WorkflowIteration[]>("workflow_get_iterations", { taskId });
   }, []);
 
   const getArtifact = useCallback(async (taskId: string, name: string) => {
-    return invoke<WorkflowArtifact | null>("workflow_get_artifact", { task_id: taskId, name });
+    return invoke<WorkflowArtifact | null>("workflow_get_artifact", { taskId, name });
   }, []);
 
   const getPendingQuestions = useCallback(async (taskId: string) => {
-    return invoke<WorkflowQuestion[]>("workflow_get_pending_questions", { task_id: taskId });
+    return invoke<WorkflowQuestion[]>("workflow_get_pending_questions", { taskId });
   }, []);
 
   const getCurrentStage = useCallback(async (taskId: string) => {
-    return invoke<string | null>("workflow_get_current_stage", { task_id: taskId });
+    return invoke<string | null>("workflow_get_current_stage", { taskId });
   }, []);
 
   const getRejectionFeedback = useCallback(async (taskId: string) => {
-    return invoke<string | null>("workflow_get_rejection_feedback", { task_id: taskId });
+    return invoke<string | null>("workflow_get_rejection_feedback", { taskId });
   }, []);
 
   const getLogs = useCallback(async (taskId: string, stage?: string) => {
-    return invoke<LogEntry[]>("workflow_get_logs", { task_id: taskId, stage });
+    return invoke<LogEntry[]>("workflow_get_logs", { taskId, stage });
   }, []);
 
   return {

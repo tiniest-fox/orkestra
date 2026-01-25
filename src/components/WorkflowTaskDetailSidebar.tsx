@@ -78,26 +78,30 @@ function formatOutcome(outcome: WorkflowIteration["outcome"]): {
 }
 
 /**
- * Build tabs from task artifacts.
+ * Build tabs from task artifacts in consistent order.
+ * Order: Details, Logs, then artifacts in stage order, then Iterations.
  */
-function buildTabs(task: WorkflowTask): Tab[] {
-  const tabs: Tab[] = [{ id: "details", label: "Details", type: "details" }];
+function buildTabs(task: WorkflowTask, config: WorkflowConfig): Tab[] {
+  const tabs: Tab[] = [
+    { id: "details", label: "Details", type: "details" },
+    { id: "logs", label: "Logs", type: "logs" },
+  ];
 
-  // Add artifact tabs
-  for (const name of Object.keys(task.artifacts)) {
-    tabs.push({
-      id: `artifact-${name}`,
-      label: capitalizeFirst(name),
-      type: "artifact",
-      artifactName: name,
-    });
+  // Add artifact tabs in stage order (using config.stages order)
+  for (const stage of config.stages) {
+    const artifactName = stage.artifact;
+    if (task.artifacts[artifactName]) {
+      tabs.push({
+        id: `artifact-${artifactName}`,
+        label: stage.display_name || capitalizeFirst(stage.name),
+        type: "artifact",
+        artifactName,
+      });
+    }
   }
 
-  // Add iterations tab
+  // Add iterations tab at the end
   tabs.push({ id: "iterations", label: "Iterations", type: "iterations" });
-
-  // Add logs tab (placeholder - would need session/log integration)
-  tabs.push({ id: "logs", label: "Logs", type: "logs" });
 
   return tabs;
 }
@@ -303,8 +307,8 @@ export function WorkflowTaskDetailSidebar({
   const [stagesWithLogs, setStagesWithLogs] = useState<string[]>([]);
   const [activeLogStage, setActiveLogStage] = useState<string | null>(null);
 
-  // Build tabs from task
-  const tabs = useMemo(() => buildTabs(task), [task]);
+  // Build tabs from task in consistent order
+  const tabs = useMemo(() => buildTabs(task, config), [task, config]);
 
   // Get current artifact for artifact tab
   const currentTab = tabs.find((t) => t.id === activeTab);

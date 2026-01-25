@@ -1,7 +1,7 @@
 //! Read-only query commands.
 
 use crate::{error::TauriError, state::AppState};
-use orkestra_core::workflow::{Artifact, Iteration, Question, WorkflowConfig};
+use orkestra_core::workflow::{Artifact, Iteration, LogEntry, Question, WorkflowConfig};
 use serde::Serialize;
 use tauri::State;
 
@@ -101,4 +101,27 @@ pub fn workflow_list_branches(state: State<AppState>) -> Result<BranchList, Taur
         current: git.current_branch().ok(),
         primary: git.detect_primary_branch().ok(),
     })
+}
+
+/// Get session logs for a task.
+///
+/// Parses the Claude Code session file associated with the task's current
+/// (or specified) stage session and returns structured log entries.
+///
+/// # Arguments
+/// * `task_id` - The task ID
+/// * `stage` - Optional stage name. If None, uses the task's current stage.
+///
+/// # Returns
+/// Vec of LogEntry representing agent activity (tool uses, text output, etc.)
+#[tauri::command]
+pub fn workflow_get_logs(
+    state: State<AppState>,
+    task_id: String,
+    stage: Option<String>,
+) -> Result<Vec<LogEntry>, TauriError> {
+    state
+        .api()?
+        .get_task_logs(&task_id, stage.as_deref(), state.project_root())
+        .map_err(Into::into)
 }

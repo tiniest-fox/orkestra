@@ -3,16 +3,18 @@
  * Shows task details with dynamic artifact tabs based on task.artifacts.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type {
   WorkflowTask,
   WorkflowConfig,
   WorkflowIteration,
   WorkflowQuestionAnswer,
+  LogEntry,
 } from "../types/workflow";
 import { needsReview, hasPendingQuestions, getTaskStage, capitalizeFirst } from "../types/workflow";
 import { useWorkflowActions, useWorkflowQueries } from "../hooks/useWorkflow";
+import { LogList } from "./LogEntryView";
 
 /**
  * Tab definition for the sidebar.
@@ -290,9 +292,12 @@ export function WorkflowTaskDetailSidebar({
   const [activeTab, setActiveTab] = useState("details");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [iterations, setIterations] = useState<WorkflowIteration[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
 
   const { approve, reject, answerQuestions } = useWorkflowActions();
-  const { getIterations } = useWorkflowQueries();
+  const { getIterations, getLogs } = useWorkflowQueries();
 
   // Build tabs from task
   const tabs = useMemo(() => buildTabs(task), [task]);
@@ -317,6 +322,41 @@ export function WorkflowTaskDetailSidebar({
   useEffect(() => {
     fetchIterations();
   }, [fetchIterations]);
+
+  // Fetch logs
+  const fetchLogs = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      const result = await getLogs(task.id);
+      setLogs(result);
+    } catch {
+      setLogs([]);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [task.id, getLogs]);
+
+  // Fetch logs when tab is active and agent is running
+  useEffect(() => {
+    if (activeTab !== "logs") return;
+
+    // Initial fetch
+    fetchLogs();
+
+    // Poll while agent is running
+    if (task.agent_pid) {
+      const interval = setInterval(fetchLogs, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab, task.agent_pid, fetchLogs]);
+
+  // Auto-scroll logs to bottom when new entries arrive
+  useEffect(() => {
+    if (activeTab === "logs" && logsContainerRef.current) {
+      const container = logsContainerRef.current;
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [logs, activeTab]);
 
   // Reset tab when task changes
   useEffect(() => {
@@ -508,12 +548,13 @@ export function WorkflowTaskDetailSidebar({
           </div>
         )}
 
-        {/* Logs Tab (placeholder) */}
+        {/* Logs Tab */}
         {activeTab === "logs" && (
-          <div className="flex-1 overflow-auto p-4 bg-gray-900">
-            <div className="text-gray-500 text-sm">
-              Logs feature not yet implemented for new workflow system.
-            </div>
+          <div
+            ref={logsContainerRef}
+            className="flex-1 overflow-auto p-4 bg-gray-900 font-mono text-sm"
+          >
+            <LogList logs={logs} isLoading={logsLoading} />
           </div>
         )}
       </div>

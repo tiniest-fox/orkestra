@@ -13,6 +13,7 @@ import type {
   WorkflowArtifact,
   WorkflowQuestion,
   WorkflowQuestionAnswer,
+  LogEntry,
 } from "../types/workflow";
 
 /**
@@ -198,12 +199,17 @@ export function useWorkflowQueries() {
     return invoke<string | null>("workflow_get_rejection_feedback", { task_id: taskId });
   }, []);
 
+  const getLogs = useCallback(async (taskId: string, stage?: string) => {
+    return invoke<LogEntry[]>("workflow_get_logs", { task_id: taskId, stage });
+  }, []);
+
   return {
     getIterations,
     getArtifact,
     getPendingQuestions,
     getCurrentStage,
     getRejectionFeedback,
+    getLogs,
   };
 }
 
@@ -230,6 +236,7 @@ export function useWorkflow() {
     getPendingQuestions,
     getCurrentStage,
     getRejectionFeedback,
+    getLogs,
   } = useWorkflowQueries();
 
   return {
@@ -260,5 +267,6 @@ export function useWorkflow() {
     getPendingQuestions,
     getCurrentStage,
     getRejectionFeedback,
+    getLogs,
   };
 }

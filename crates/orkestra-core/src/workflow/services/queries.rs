@@ -1,8 +1,11 @@
 //! Read-only query operations.
 
-use crate::workflow::domain::{Iteration, Question};
+use std::path::Path;
+
+use crate::workflow::domain::{Iteration, LogEntry, Question};
 use crate::workflow::ports::WorkflowResult;
 use crate::workflow::runtime::{Artifact, Outcome};
+use crate::workflow::services::session_logs::recover_session_logs;
 
 use super::WorkflowApi;
 
@@ -74,6 +77,56 @@ impl WorkflowApi {
     pub fn get_current_stage(&self, task_id: &str) -> WorkflowResult<Option<String>> {
         let task = self.get_task(task_id)?;
         Ok(task.current_stage().map(|s| s.to_string()))
+    }
+
+    /// Get session logs for a task.
+    ///
+    /// Retrieves parsed log entries from the Claude Code session file associated with
+    /// the task's current (or specified) stage session.
+    ///
+    /// # Arguments
+    /// * `task_id` - The task ID
+    /// * `stage` - Optional stage name. If None, uses the task's current stage.
+    /// * `project_root` - The project root directory (fallback if no worktree)
+    ///
+    /// # Returns
+    /// Vec of LogEntry representing the session activity (tool uses, text output, etc.)
+    pub fn get_task_logs(
+        &self,
+        task_id: &str,
+        stage: Option<&str>,
+        project_root: &Path,
+    ) -> WorkflowResult<Vec<LogEntry>> {
+        let task = self.get_task(task_id)?;
+
+        // Determine which stage to get logs for
+        let stage_name = match stage {
+            Some(s) => s.to_string(),
+            None => match task.current_stage() {
+                Some(s) => s.to_string(),
+                None => return Ok(vec![]), // Terminal state, no active stage
+            },
+        };
+
+        // Get the stage session to find the Claude session ID
+        let session = self.store.get_stage_session(task_id, &stage_name)?;
+        let Some(session) = session else {
+            return Ok(vec![]); // No session for this stage yet
+        };
+        let Some(claude_id) = session.claude_session_id else {
+            return Ok(vec![]); // No Claude session ID captured yet
+        };
+
+        // Determine the working directory - use worktree if available, otherwise project root
+        let cwd = task
+            .worktree_path
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| project_root.to_path_buf());
+
+        // Recover logs from Claude's session file
+        // Return empty if file doesn't exist yet (agent may still be starting)
+        Ok(recover_session_logs(&claude_id, &cwd).unwrap_or_default())
     }
 }
 

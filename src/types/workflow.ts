@@ -235,6 +235,68 @@ export interface WorkflowTask {
 }
 
 // =============================================================================
+// Session Log Types
+// =============================================================================
+
+/**
+ * A single todo item from `TodoWrite` tool.
+ */
+export interface TodoItem {
+  content: string;
+  status: string; // "pending", "in_progress", "completed"
+  activeForm: string;
+}
+
+/**
+ * Ork CLI action types for specialized display.
+ * Uses snake_case action field to match Rust's serde serialization.
+ */
+export type OrkAction =
+  | { action: "set_plan"; task_id: string }
+  | { action: "complete"; task_id: string; summary?: string }
+  | { action: "fail"; task_id: string; reason?: string }
+  | { action: "block"; task_id: string; reason?: string }
+  | { action: "approve"; task_id: string }
+  | { action: "approve_review"; task_id: string }
+  | { action: "reject_review"; task_id: string; feedback?: string }
+  | { action: "create_subtask"; parent_id: string; title: string }
+  | { action: "set_breakdown"; task_id: string }
+  | { action: "approve_breakdown"; task_id: string }
+  | { action: "skip_breakdown"; task_id: string }
+  | { action: "complete_subtask"; subtask_id: string }
+  | { action: "other"; raw: string };
+
+/**
+ * Tool input details for structured logging.
+ * Uses snake_case tool field to match Rust's serde serialization.
+ */
+export type ToolInput =
+  | { tool: "bash"; command: string }
+  | { tool: "read"; file_path: string }
+  | { tool: "write"; file_path: string }
+  | { tool: "edit"; file_path: string }
+  | { tool: "glob"; pattern: string }
+  | { tool: "grep"; pattern: string }
+  | { tool: "task"; description: string }
+  | { tool: "todo_write"; todos: TodoItem[] }
+  | { tool: "ork"; ork_action: OrkAction }
+  | { tool: "other"; summary: string };
+
+/**
+ * Structured log entry for task execution (loaded from Claude's session files).
+ * Uses snake_case type field to match Rust's serde serialization.
+ */
+export type LogEntry =
+  | { type: "text"; content: string }
+  | { type: "user_message"; content: string }
+  | { type: "tool_use"; tool: string; id: string; input: ToolInput }
+  | { type: "tool_result"; tool: string; tool_use_id: string; content: string }
+  | { type: "subagent_tool_use"; tool: string; id: string; input: ToolInput; parent_task_id: string }
+  | { type: "subagent_tool_result"; tool: string; tool_use_id: string; content: string; parent_task_id: string }
+  | { type: "process_exit"; code?: number }
+  | { type: "error"; message: string };
+
+// =============================================================================
 // Helper Functions
 // =============================================================================
 

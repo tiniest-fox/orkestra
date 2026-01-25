@@ -43,7 +43,7 @@ pub use config::{
     load_workflow, load_workflow_for_project, IntegrationConfig, LoadError, StageCapabilities,
     StageConfig, WorkflowConfig,
 };
-pub use domain::{Iteration, Question, QuestionAnswer, QuestionOption, Task};
+pub use domain::{Iteration, LogEntry, OrkAction, Question, QuestionAnswer, QuestionOption, Task, TodoItem, ToolInput};
 pub use execution::{PromptBuilder, StageOutput, StageOutputError, StagePromptContext};
 pub use ports::{GitError, GitService, MergeResult, WorkflowError, WorkflowResult, WorkflowStore, WorktreeCreated};
 pub use runtime::{

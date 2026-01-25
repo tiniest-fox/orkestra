@@ -7,7 +7,7 @@ use crate::title::generate_title_sync;
 use crate::workflow::domain::{Iteration, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 
-use super::WorkflowApi;
+use super::{workflow_warn, WorkflowApi};
 
 impl WorkflowApi {
     /// Create a new task. Starts in the first workflow stage.
@@ -41,7 +41,7 @@ impl WorkflowApi {
                 }
                 Err(e) => {
                     // Log but don't fail task creation
-                    eprintln!("[git] Warning: Failed to create worktree for {id}: {e}");
+                    workflow_warn!("Failed to create worktree for {}: {}", id, e);
                 }
             }
         }
@@ -133,7 +133,7 @@ impl WorkflowApi {
         if let Some(git) = &self.git_service {
             if task.worktree_path.is_some() {
                 if let Err(e) = git.remove_worktree(id, true) {
-                    eprintln!("[git] Warning: Failed to remove worktree for {id}: {e}");
+                    workflow_warn!("Failed to remove worktree for {}: {}", id, e);
                 }
             }
         }
@@ -157,15 +157,13 @@ fn spawn_title_generation(store: Arc<dyn WorkflowStore>, task_id: String, descri
                     if task.title.trim().is_empty() {
                         task.title = title;
                         if let Err(e) = store.save_task(&task) {
-                            eprintln!("[title] Failed to save generated title for {task_id}: {e}");
-                        } else {
-                            println!("[title] Generated title for {task_id}: {}", task.title);
+                            eprintln!("[orkestra] ERROR: Failed to save generated title for {task_id}: {e}");
                         }
                     }
                 }
             }
             Err(e) => {
-                eprintln!("[title] Failed to generate title for {task_id}: {e}");
+                eprintln!("[orkestra] WARNING: Failed to generate title for {task_id}: {e}");
             }
         }
     });

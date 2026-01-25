@@ -6,7 +6,7 @@ use crate::workflow::domain::{Iteration, Task};
 use crate::workflow::ports::{GitError, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase, Status};
 
-use super::WorkflowApi;
+use super::{workflow_warn, WorkflowApi};
 
 impl WorkflowApi {
     /// Attempt to integrate a completed task by merging its branch to primary.
@@ -47,7 +47,7 @@ impl WorkflowApi {
                 Path::new(worktree_path),
                 &format!("Final changes for {}", task_id),
             ) {
-                eprintln!("[git] Warning: Failed to commit pending changes: {e}");
+                workflow_warn!("Failed to commit pending changes for {}: {}", task_id, e);
             }
         }
 
@@ -57,7 +57,7 @@ impl WorkflowApi {
                 // Cleanup worktree but keep branch for history
                 if task.worktree_path.is_some() {
                     if let Err(e) = git.remove_worktree(task_id, false) {
-                        eprintln!("[git] Warning: Failed to remove worktree: {e}");
+                        workflow_warn!("Failed to remove worktree for {}: {}", task_id, e);
                     }
                 }
                 self.integration_succeeded(task_id)
@@ -65,14 +65,14 @@ impl WorkflowApi {
             Err(GitError::MergeConflict { conflict_files, .. }) => {
                 // Abort the failed merge
                 if let Err(e) = git.abort_merge() {
-                    eprintln!("[git] Warning: Failed to abort merge: {e}");
+                    workflow_warn!("Failed to abort merge for {}: {}", task_id, e);
                 }
                 self.integration_failed(task_id, "Merge conflict", conflict_files)
             }
             Err(e) => {
                 // Non-conflict merge error
                 if let Err(abort_err) = git.abort_merge() {
-                    eprintln!("[git] Warning: Failed to abort merge: {abort_err}");
+                    workflow_warn!("Failed to abort merge for {}: {}", task_id, abort_err);
                 }
                 self.integration_failed(task_id, &format!("{e}"), vec![])
             }

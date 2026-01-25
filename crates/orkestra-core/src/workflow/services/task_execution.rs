@@ -319,7 +319,7 @@ impl TaskExecutionService {
                 match result {
                     Ok(output) => Ok(Some(output)),
                     Err(e) => {
-                        eprintln!("[execution] Parse error for {task_id}/{stage}: {e}");
+                        workflow_error!("Parse error for {}/{}: {}", task_id, stage, e);
                         Ok(None)
                     }
                 }

@@ -20,7 +20,7 @@ use crate::workflow::execution::{AgentRunner, RunEvent, StageOutput};
 use crate::workflow::ports::{CrashRecoveryStore, ProcessSpawner, WorkflowError, WorkflowResult, WorkflowStore};
 
 use super::task_execution::{ExecutionHandle, TaskExecutionService};
-use super::WorkflowApi;
+use super::{workflow_error, WorkflowApi};
 
 // ============================================================================
 // Orchestrator Events
@@ -305,8 +305,13 @@ impl OrchestratorLoop {
 
     /// Clean up completed executions.
     fn cleanup_completed(&self) {
-        if let Ok(mut executions) = self.active_executions.lock() {
-            executions.retain(|h| !h.is_complete());
+        match self.active_executions.lock() {
+            Ok(mut executions) => {
+                executions.retain(|h| !h.is_complete());
+            }
+            Err(_) => {
+                workflow_error!("Failed to lock active_executions during cleanup (mutex poisoned)");
+            }
         }
     }
 
@@ -343,8 +348,16 @@ impl OrchestratorLoop {
                         pid: handle.pid,
                     };
 
-                    if let Ok(mut executions) = self.active_executions.lock() {
-                        executions.push(handle);
+                    match self.active_executions.lock() {
+                        Ok(mut executions) => {
+                            executions.push(handle);
+                        }
+                        Err(_) => {
+                            workflow_error!(
+                                "Failed to track execution for {}/{} (mutex poisoned) - agent process will be orphaned",
+                                handle.task_id, handle.stage
+                            );
+                        }
                     }
 
                     events.push(event);

@@ -319,7 +319,11 @@ fn read_output_and_send_events(
             }
             Err(e) => {
                 eprintln!("[agent runner] Error reading stdout: {e}");
-                break;
+                // Send error completion so orchestrator knows something went wrong
+                if tx.send(RunEvent::Completed(Err(format!("Failed to read agent output: {e}")))).is_err() {
+                    eprintln!("[agent runner] Channel closed before read error could be sent");
+                }
+                return; // Exit - don't try to parse partial output
             }
         }
     }

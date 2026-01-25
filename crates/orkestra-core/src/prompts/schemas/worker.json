@@ -1,19 +1,23 @@
 {
   "type": "object",
-  "description": "Worker output indicating task completion status",
+  "description": "Worker output - produces a summary artifact or terminal state",
   "properties": {
     "type": {
       "type": "string",
-      "enum": ["completed", "failed", "blocked"],
-      "description": "The outcome of the work"
+      "enum": ["summary", "failed", "blocked"],
+      "description": "Output type: 'summary' for the work artifact, or terminal states"
     },
-    "summary": {
+    "content": {
       "type": "string",
-      "description": "Summary of what was accomplished (for completed)"
+      "description": "The artifact content (for summary type)"
+    },
+    "error": {
+      "type": "string",
+      "description": "Description of what went wrong (for failed type)"
     },
     "reason": {
       "type": "string",
-      "description": "Explanation of failure or blocker (for failed/blocked)"
+      "description": "Why the task is blocked (for blocked type)"
     },
     "metadata": {
       "type": "object",

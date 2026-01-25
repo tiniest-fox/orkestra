@@ -58,12 +58,6 @@ pub enum StageOutput {
         subtasks: Vec<SubtaskOutput>,
     },
 
-    /// Agent completed work successfully.
-    Completed {
-        /// Summary of what was done.
-        summary: String,
-    },
-
     /// Agent failed to complete.
     Failed {
         /// Error message.
@@ -156,16 +150,6 @@ impl StageOutput {
                 .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
 
                 Ok(StageOutput::Subtasks { subtasks })
-            }
-
-            "completed" => {
-                let summary = value["summary"]
-                    .as_str()
-                    .ok_or_else(|| StageOutputError::MissingField("summary".into()))?;
-
-                Ok(StageOutput::Completed {
-                    summary: summary.to_string(),
-                })
             }
 
             "failed" => {
@@ -369,17 +353,6 @@ mod tests {
                 assert_eq!(subtasks[1].depends_on, vec!["Task 1"]);
             }
             _ => panic!("Expected Subtasks"),
-        }
-    }
-
-    #[test]
-    fn test_parse_completed() {
-        let json = r#"{"type": "completed", "summary": "All done!"}"#;
-        let output = StageOutput::parse(json).unwrap();
-
-        match output {
-            StageOutput::Completed { summary } => assert_eq!(summary, "All done!"),
-            _ => panic!("Expected Completed"),
         }
     }
 

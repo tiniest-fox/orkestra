@@ -85,26 +85,17 @@ impl WorkflowApi {
 
     /// Compute the next status after approving the current stage.
     ///
-    /// Skips optional stages and returns Done if no more stages.
+    /// Returns Done if no more stages.
     pub(crate) fn compute_next_status_on_approve(
         &self,
         current_stage: &str,
     ) -> crate::workflow::runtime::Status {
         use crate::workflow::runtime::Status;
 
-        let mut next = self.workflow.next_stage(current_stage);
-
-        // Skip optional stages
-        while let Some(stage) = next {
-            if stage.is_optional {
-                next = self.workflow.next_stage(&stage.name);
-            } else {
-                return Status::active(&stage.name);
-            }
+        match self.workflow.next_stage(current_stage) {
+            Some(stage) => Status::active(&stage.name),
+            None => Status::Done,
         }
-
-        // No more stages - task is done
-        Status::Done
     }
 }
 
@@ -119,7 +110,7 @@ mod tests {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("breakdown", "subtasks").optional(),
+            StageConfig::new("breakdown", "subtasks"),
             StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
             StageConfig::new("review", "verdict")
                 .with_inputs(vec!["plan".into(), "summary".into()])
@@ -163,13 +154,17 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_next_status_skips_optional() {
+    fn test_compute_next_status() {
         let workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        // Planning should skip optional breakdown and go to work
+        // Planning goes to breakdown
         let status = api.compute_next_status_on_approve("planning");
+        assert_eq!(status.stage(), Some("breakdown"));
+
+        // Breakdown goes to work
+        let status = api.compute_next_status_on_approve("breakdown");
         assert_eq!(status.stage(), Some("work"));
 
         // Work goes to review

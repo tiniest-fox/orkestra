@@ -524,10 +524,6 @@ pub mod mock {
                 "type": "breakdown",
                 "subtasks": subtasks
             }),
-            StageOutput::Completed { summary } => serde_json::json!({
-                "type": "completed",
-                "summary": summary
-            }),
             StageOutput::Failed { error } => serde_json::json!({
                 "type": "failed",
                 "error": error
@@ -578,13 +574,13 @@ mod tests {
         #[test]
         fn test_mock_runner_sync() {
             let runner = MockAgentRunner::new();
-            runner.set_output("task-1", StageOutput::Completed { summary: "Done".into() });
+            runner.set_output("task-1", StageOutput::Artifact { content: "Done".into() });
 
             let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo the work");
             let result = runner.run_sync(config).unwrap();
 
             assert_eq!(result.session_id, Some("mock-session-task-1".to_string()));
-            assert!(matches!(result.parsed_output, StageOutput::Completed { .. }));
+            assert!(matches!(result.parsed_output, StageOutput::Artifact { .. }));
         }
 
         #[test]
@@ -611,7 +607,7 @@ mod tests {
         #[test]
         fn test_mock_runner_records_calls() {
             let runner = MockAgentRunner::new();
-            runner.set_output("task-1", StageOutput::Completed { summary: "Done".into() });
+            runner.set_output("task-1", StageOutput::Artifact { content: "Done".into() });
 
             let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo work");
             let _ = runner.run_sync(config);

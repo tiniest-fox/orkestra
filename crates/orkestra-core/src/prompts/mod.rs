@@ -67,7 +67,6 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     // Build the list of valid type values
     let mut type_enum = vec![
         config.artifact_name.to_string(),
-        "completed".to_string(),
         "failed".to_string(),
         "blocked".to_string(),
     ];
@@ -99,11 +98,6 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     }
 
     // Add terminal state properties
-    if let Some(completed) = terminal.get("completed").and_then(|c| c.get("properties")) {
-        if let Some(summary) = completed.get("summary") {
-            properties["summary"] = summary.clone();
-        }
-    }
     if let Some(failed) = terminal.get("failed").and_then(|f| f.get("properties")) {
         if let Some(error) = failed.get("error") {
             properties["error"] = error.clone();
@@ -226,12 +220,12 @@ mod tests {
         let type_prop = parsed.get("properties").unwrap().get("type").unwrap();
         let type_enum = type_prop.get("enum").unwrap().as_array().unwrap();
         assert!(type_enum.iter().any(|v| v == "plan"));
-        assert!(type_enum.iter().any(|v| v == "completed"));
         assert!(type_enum.iter().any(|v| v == "failed"));
         assert!(type_enum.iter().any(|v| v == "blocked"));
 
-        // Should NOT have questions (no capability)
+        // Should NOT have questions or completed (no capability, completed removed)
         assert!(!type_enum.iter().any(|v| v == "questions"));
+        assert!(!type_enum.iter().any(|v| v == "completed"));
     }
 
     #[test]

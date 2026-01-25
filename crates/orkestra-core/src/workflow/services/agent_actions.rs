@@ -151,18 +151,6 @@ impl WorkflowApi {
                 task.updated_at = now;
             }
 
-            StageOutput::Completed { summary } => {
-                // Agent completed without producing stage artifact
-                // Store summary as artifact
-                task.artifacts
-                    .set(Artifact::new("summary", &summary, &current_stage, &now));
-                self.end_current_iteration(&task, Outcome::Approved)?;
-                task.status = Status::Done;
-                task.phase = Phase::Idle;
-                task.completed_at = Some(now.clone());
-                task.updated_at = now;
-            }
-
             StageOutput::Failed { error } => {
                 // End iteration before changing status (task must still be in active stage)
                 self.end_current_iteration(&task, Outcome::AgentError { error: error.clone() })?;

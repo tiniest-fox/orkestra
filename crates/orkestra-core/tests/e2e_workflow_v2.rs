@@ -5,14 +5,15 @@
 //! 1. Task created → Planning
 //! 2. Planner asks questions → Human answers
 //! 3. Planner produces plan → Plan rejected → Retry planning
-//! 4. Plan approved → Working (skips optional breakdown)
-//! 5. Work rejected → Retry working
-//! 6. Work approved → Reviewing
-//! 7. Reviewer restages to Work → Working
-//! 8. Work approved again → Reviewing
-//! 9. Reviewer approves → Done
-//! 10. Integration fails → Back to Working
-//! 11. Work → Review → Done → Integration succeeds → Complete
+//! 4. Plan approved → Breakdown
+//! 5. Breakdown approved → Working
+//! 6. Work rejected → Retry working
+//! 7. Work approved → Reviewing
+//! 8. Reviewer restages to Work → Working
+//! 9. Work approved again → Reviewing
+//! 10. Reviewer approves → Done
+//! 11. Integration fails → Back to Working
+//! 12. Work → Review → Done → Integration succeeds → Complete
 //!
 //! This test uses real infrastructure (database, files, git) and only mocks
 //! Claude Code responses. The test uses the WorkflowApi from the services layer.
@@ -212,14 +213,15 @@ fn setup_test() -> TestContext {
 /// 1. Task created → Planning
 /// 2. Planner asks questions → Human answers
 /// 3. Planner produces plan → Plan rejected → Retry planning
-/// 4. Plan approved → Working (skips optional breakdown)
-/// 5. Work rejected → Retry working
-/// 6. Work approved → Reviewing
-/// 7. Reviewer restages to Work → Working
-/// 8. Work approved again → Reviewing
-/// 9. Reviewer approves → Done
-/// 10. Integration fails → Back to Working
-/// 11. Work → Review → Done → Integration succeeds → Complete
+/// 4. Plan approved → Breakdown
+/// 5. Breakdown approved → Working
+/// 6. Work rejected → Retry working
+/// 7. Work approved → Reviewing
+/// 8. Reviewer restages to Work → Working
+/// 9. Work approved again → Reviewing
+/// 10. Reviewer approves → Done
+/// 11. Integration fails → Back to Working
+/// 12. Work → Review → Done → Integration succeeds → Complete
 #[test]
 fn test_exhaustive_workflow_flow() {
     let ctx = setup_test();
@@ -337,15 +339,15 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.phase, Phase::AwaitingReview);
 
     // =========================================================================
-    // Step 4: Plan approved → Working (skips optional breakdown)
+    // Step 4: Plan approved → Breakdown
     // =========================================================================
 
     let task = ctx.api().approve(&task_id).expect("Should approve plan");
 
     assert_eq!(
         task.current_stage(),
-        Some("work"),
-        "Should skip breakdown and go to work"
+        Some("breakdown"),
+        "Should go to breakdown stage"
     );
     assert_eq!(task.phase, Phase::Idle);
 
@@ -353,11 +355,41 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(
         iterations.len(),
         3,
-        "Should have 3 iterations (planning x2, work)"
+        "Should have 3 iterations (planning x2, breakdown)"
+    );
+
+    // Orchestrator spawns breakdown agent
+    ctx.set_output(&task_id, MockAgentOutput::Artifact {
+        name: "breakdown".to_string(),
+        content: "Subtasks:\n1. Create module\n2. Add tests".to_string(),
+    });
+    ctx.tick();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // =========================================================================
+    // Step 5: Breakdown approved → Working
+    // =========================================================================
+
+    let task = ctx.api().approve(&task_id).expect("Should approve breakdown");
+
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Should go to work stage"
+    );
+    assert_eq!(task.phase, Phase::Idle);
+
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(
+        iterations.len(),
+        4,
+        "Should have 4 iterations (planning x2, breakdown, work)"
     );
 
     // =========================================================================
-    // Step 5: Work rejected → Retry working
+    // Step 6: Work rejected → Retry working
     // =========================================================================
 
     // Orchestrator spawns worker
@@ -376,7 +408,7 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.phase, Phase::Idle);
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    assert_eq!(iterations.len(), 4);
+    assert_eq!(iterations.len(), 5);
 
     // Orchestrator spawns worker again
     ctx.set_output(&task_id, MockAgentOutput::Artifact {
@@ -386,7 +418,7 @@ fn test_exhaustive_workflow_flow() {
     ctx.tick();
 
     // =========================================================================
-    // Step 6: Work approved → Reviewing
+    // Step 7: Work approved → Reviewing
     // =========================================================================
 
     let task = ctx.api().approve(&task_id).expect("Should approve work");
@@ -395,7 +427,7 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.phase, Phase::Idle);
 
     // =========================================================================
-    // Step 7: Reviewer restages to Work → Working → AwaitingReview
+    // Step 8: Reviewer restages to Work → Working → AwaitingReview
     // =========================================================================
 
     // Queue outputs: first for reviewer (restage), then for worker (summary)
@@ -425,7 +457,7 @@ fn test_exhaustive_workflow_flow() {
     assert!(restage_iter.is_some(), "Should have restage iteration");
 
     // =========================================================================
-    // Step 8: Work approved again → Reviewing
+    // Step 9: Work approved again → Reviewing
     // =========================================================================
 
     let task = ctx.api().approve(&task_id).expect("Should approve work again");
@@ -433,7 +465,7 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.current_stage(), Some("review"));
 
     // =========================================================================
-    // Step 9: Reviewer approves → Done
+    // Step 10: Reviewer approves → Done
     // =========================================================================
 
     // Orchestrator spawns reviewer
@@ -450,7 +482,7 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.artifact("verdict"), Some("LGTM! All checks pass."));
 
     // =========================================================================
-    // Step 10: Integration fails (real merge conflict) → Back to Working
+    // Step 11: Integration fails (real merge conflict) → Back to Working
     // =========================================================================
 
     // Create a real merge conflict:
@@ -498,7 +530,7 @@ fn test_exhaustive_workflow_flow() {
     );
 
     // =========================================================================
-    // Step 11: Work → Review → Done → Integration succeeds → Complete
+    // Step 12: Work → Review → Done → Integration succeeds → Complete
     // =========================================================================
 
     // First, resolve the conflict on main by reverting the conflicting commit
@@ -568,9 +600,9 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.question_history[0].answer, "PostgreSQL");
 
     // Verify runner was called the expected number of times
-    // planning (questions) + planning (plan v1) + planning (plan v2) +
+    // planning (questions) + planning (plan v1) + planning (plan v2) + breakdown +
     // work (v1) + work (v2) + review (restage) + work (fix) + review (approve) +
-    // work (conflict) + review (final) = 10 spawns
+    // work (conflict) + review (final) = 11 spawns
     let total_spawns = ctx.call_count();
     println!("Total agent spawns: {}", total_spawns);
 }
@@ -584,15 +616,23 @@ fn test_restage_validation() {
     let task = ctx.create_task("Test", "Test task");
     let task_id = task.id.clone();
 
+    // Planning stage
     ctx.set_output(&task_id, MockAgentOutput::Artifact {
         name: "plan".to_string(),
         content: "Plan".to_string(),
     });
     ctx.tick();
-
     ctx.api().approve(&task_id).unwrap();
 
-    // Try to restage from work (which doesn't have restage capability)
+    // Breakdown stage
+    ctx.set_output(&task_id, MockAgentOutput::Artifact {
+        name: "breakdown".to_string(),
+        content: "Breakdown".to_string(),
+    });
+    ctx.tick();
+    ctx.api().approve(&task_id).unwrap();
+
+    // Now we're in work stage - try to restage from work (which doesn't have restage capability)
     ctx.set_output(&task_id, MockAgentOutput::Restage {
         target: "planning".to_string(),
         feedback: "Should fail".to_string(),

@@ -1,14 +1,5 @@
 {
   "description": "Terminal output states",
-  "completed": {
-    "properties": {
-      "summary": {
-        "type": "string",
-        "description": "Summary of what was accomplished"
-      }
-    },
-    "required": ["summary"]
-  },
   "failed": {
     "properties": {
       "error": {

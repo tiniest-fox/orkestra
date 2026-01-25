@@ -168,13 +168,13 @@ mod tests {
     #[test]
     fn test_parse_agent_output_structured() {
         let output = r#"{"type": "system", "subtype": "init", "session_id": "abc"}
-{"structured_output": {"type": "completed", "summary": "Work done"}}"#;
+{"structured_output": {"type": "summary", "content": "Work done"}}"#;
 
         let result = parse_agent_output(output);
         assert!(result.is_ok());
         match result.unwrap() {
-            StageOutput::Completed { summary } => assert_eq!(summary, "Work done"),
-            _ => panic!("Expected Completed output"),
+            StageOutput::Artifact { content } => assert_eq!(content, "Work done"),
+            _ => panic!("Expected Artifact output"),
         }
     }
 
@@ -192,13 +192,13 @@ mod tests {
 
     #[test]
     fn test_parse_agent_output_direct_json() {
-        let output = r#"{"type": "completed", "summary": "Done"}"#;
+        let output = r#"{"type": "summary", "content": "Done"}"#;
 
         let result = parse_agent_output(output);
         assert!(result.is_ok());
         match result.unwrap() {
-            StageOutput::Completed { summary } => assert_eq!(summary, "Done"),
-            _ => panic!("Expected Completed output"),
+            StageOutput::Artifact { content } => assert_eq!(content, "Done"),
+            _ => panic!("Expected Artifact output"),
         }
     }
 
@@ -216,14 +216,14 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_agent_output_json_array_completed() {
-        let output = r#"[{"type":"system"},{"structured_output":{"type":"completed","summary":"All done"}}]"#;
+    fn test_parse_agent_output_json_array_artifact() {
+        let output = r#"[{"type":"system"},{"structured_output":{"type":"summary","content":"All done"}}]"#;
 
         let result = parse_agent_output(output);
         assert!(result.is_ok());
         match result.unwrap() {
-            StageOutput::Completed { summary } => assert_eq!(summary, "All done"),
-            _ => panic!("Expected Completed output"),
+            StageOutput::Artifact { content } => assert_eq!(content, "All done"),
+            _ => panic!("Expected Artifact output"),
         }
     }
 

@@ -203,6 +203,10 @@ export function useWorkflowQueries() {
     return invoke<LogEntry[]>("workflow_get_logs", { taskId, stage });
   }, []);
 
+  const getStagesWithLogs = useCallback(async (taskId: string) => {
+    return invoke<string[]>("workflow_get_stages_with_logs", { taskId });
+  }, []);
+
   return {
     getIterations,
     getArtifact,
@@ -210,6 +214,7 @@ export function useWorkflowQueries() {
     getCurrentStage,
     getRejectionFeedback,
     getLogs,
+    getStagesWithLogs,
   };
 }
 
@@ -237,6 +242,7 @@ export function useWorkflow() {
     getCurrentStage,
     getRejectionFeedback,
     getLogs,
+    getStagesWithLogs,
   } = useWorkflowQueries();
 
   return {
@@ -268,5 +274,6 @@ export function useWorkflow() {
     getCurrentStage,
     getRejectionFeedback,
     getLogs,
+    getStagesWithLogs,
   };
 }

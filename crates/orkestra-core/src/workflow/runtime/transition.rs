@@ -33,8 +33,6 @@ pub enum TransitionTrigger {
     Rejected { feedback: String },
     /// Human answered questions.
     QuestionsAnswered,
-    /// Stage was skipped.
-    Skipped { reason: String },
     /// Agent finished working.
     AgentCompleted,
     /// Agent produced output.
@@ -80,18 +78,9 @@ impl<'a> TransitionValidator<'a> {
     }
 
     /// Compute the next status after approval.
-    pub fn next_status_on_approve(
-        &self,
-        current_stage: &str,
-        skip_optional_next: bool,
-    ) -> Status {
+    pub fn next_status_on_approve(&self, current_stage: &str) -> Status {
         // Find the next stage
         if let Some(next_stage) = self.workflow.next_stage(current_stage) {
-            // Skip optional stages if requested
-            if next_stage.is_optional && skip_optional_next {
-                // Try to find the next non-optional stage
-                return self.next_status_on_approve(&next_stage.name, false);
-            }
             Status::active(&next_stage.name)
         } else {
             // No more stages - task is done
@@ -104,7 +93,6 @@ impl<'a> TransitionValidator<'a> {
         &self,
         current_status: &Status,
         current_phase: Phase,
-        skip_optional: bool,
     ) -> Result<Transition, TransitionError> {
         let current_stage = current_status
             .stage()
@@ -118,7 +106,7 @@ impl<'a> TransitionValidator<'a> {
             });
         }
 
-        let next_status = self.next_status_on_approve(current_stage, skip_optional);
+        let next_status = self.next_status_on_approve(current_stage);
 
         Ok(Transition::new(
             current_status.clone(),
@@ -156,40 +144,6 @@ impl<'a> TransitionValidator<'a> {
             Phase::Idle,
             TransitionTrigger::Rejected {
                 feedback: feedback.into(),
-            },
-        ))
-    }
-
-    /// Compute the transition for skipping a stage.
-    pub fn skip(
-        &self,
-        current_status: &Status,
-        current_phase: Phase,
-        reason: impl Into<String>,
-    ) -> Result<Transition, TransitionError> {
-        let current_stage = current_status
-            .stage()
-            .ok_or(TransitionError::NotInStage)?;
-
-        // Verify the stage is optional
-        let stage_config = self
-            .workflow
-            .stage(current_stage)
-            .ok_or_else(|| TransitionError::UnknownStage(current_stage.into()))?;
-
-        if !stage_config.is_optional {
-            return Err(TransitionError::CannotSkip(current_stage.into()));
-        }
-
-        let next_status = self.next_status_on_approve(current_stage, false);
-
-        Ok(Transition::new(
-            current_status.clone(),
-            next_status,
-            current_phase,
-            Phase::Idle,
-            TransitionTrigger::Skipped {
-                reason: reason.into(),
             },
         ))
     }
@@ -337,9 +291,6 @@ pub enum TransitionError {
     #[error("Invalid phase: expected {expected:?}, got {actual:?}")]
     InvalidPhase { expected: Phase, actual: Phase },
 
-    #[error("Cannot skip non-optional stage: {0}")]
-    CannotSkip(String),
-
     #[error("Task is already in terminal state")]
     AlreadyTerminal,
 
@@ -357,8 +308,7 @@ mod tests {
             StageConfig::new("planning", "plan")
                 .with_capabilities(StageCapabilities::with_questions()),
             StageConfig::new("breakdown", "breakdown")
-                .with_inputs(vec!["plan".into()])
-                .optional(),
+                .with_inputs(vec!["plan".into()]),
             StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
             StageConfig::new("review", "verdict")
                 .with_inputs(vec!["summary".into()])
@@ -372,23 +322,11 @@ mod tests {
         let validator = TransitionValidator::new(&workflow);
 
         let status = Status::active("planning");
-        let transition = validator.approve(&status, Phase::AwaitingReview, false).unwrap();
+        let transition = validator.approve(&status, Phase::AwaitingReview).unwrap();
 
         assert_eq!(transition.to, Status::active("breakdown"));
         assert_eq!(transition.to_phase, Phase::Idle);
         assert!(matches!(transition.trigger, TransitionTrigger::Approved));
-    }
-
-    #[test]
-    fn test_approve_skips_optional_stage() {
-        let workflow = test_workflow();
-        let validator = TransitionValidator::new(&workflow);
-
-        let status = Status::active("planning");
-        let transition = validator.approve(&status, Phase::AwaitingReview, true).unwrap();
-
-        // Should skip breakdown (optional) and go to work
-        assert_eq!(transition.to, Status::active("work"));
     }
 
     #[test]
@@ -397,7 +335,7 @@ mod tests {
         let validator = TransitionValidator::new(&workflow);
 
         let status = Status::active("review");
-        let transition = validator.approve(&status, Phase::AwaitingReview, false).unwrap();
+        let transition = validator.approve(&status, Phase::AwaitingReview).unwrap();
 
         assert_eq!(transition.to, Status::Done);
     }
@@ -408,7 +346,7 @@ mod tests {
         let validator = TransitionValidator::new(&workflow);
 
         let status = Status::active("planning");
-        let result = validator.approve(&status, Phase::Idle, false);
+        let result = validator.approve(&status, Phase::Idle);
 
         assert!(matches!(result, Err(TransitionError::InvalidPhase { .. })));
     }
@@ -429,29 +367,6 @@ mod tests {
             transition.trigger,
             TransitionTrigger::Rejected { .. }
         ));
-    }
-
-    #[test]
-    fn test_skip_optional_stage() {
-        let workflow = test_workflow();
-        let validator = TransitionValidator::new(&workflow);
-
-        let status = Status::active("breakdown");
-        let transition = validator.skip(&status, Phase::Idle, "Simple task").unwrap();
-
-        assert_eq!(transition.to, Status::active("work"));
-        assert!(matches!(transition.trigger, TransitionTrigger::Skipped { .. }));
-    }
-
-    #[test]
-    fn test_skip_non_optional_fails() {
-        let workflow = test_workflow();
-        let validator = TransitionValidator::new(&workflow);
-
-        let status = Status::active("planning");
-        let result = validator.skip(&status, Phase::Idle, "reason");
-
-        assert!(matches!(result, Err(TransitionError::CannotSkip(_))));
     }
 
     #[test]
@@ -511,44 +426,6 @@ mod tests {
             .unwrap();
 
         assert!(matches!(transition.to, Status::Blocked { .. }));
-    }
-
-    #[test]
-    fn test_consecutive_optional_stages() {
-        // Workflow with multiple consecutive optional stages
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
-            StageConfig::new("design", "design").optional(),
-            StageConfig::new("breakdown", "breakdown").optional(),
-            StageConfig::new("work", "summary"),
-        ]);
-        let validator = TransitionValidator::new(&workflow);
-
-        // skip_optional_next only skips the immediate next optional stage
-        let status = Status::active("planning");
-        let transition = validator.approve(&status, Phase::AwaitingReview, true).unwrap();
-
-        // Skips "design" (optional), goes to "breakdown" (also optional but not skipped)
-        assert_eq!(transition.to, Status::active("breakdown"));
-
-        // To skip all optional stages, caller would need to loop or use skip()
-    }
-
-    #[test]
-    fn test_all_remaining_stages_optional() {
-        // Workflow where all remaining stages are optional
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
-            StageConfig::new("review1", "review1").optional(),
-            StageConfig::new("review2", "review2").optional(),
-        ]);
-        let validator = TransitionValidator::new(&workflow);
-
-        let status = Status::active("planning");
-        let transition = validator.approve(&status, Phase::AwaitingReview, true).unwrap();
-
-        // Skips review1, goes to review2 (not skipped since recursive call uses false)
-        assert_eq!(transition.to, Status::active("review2"));
     }
 
     #[test]

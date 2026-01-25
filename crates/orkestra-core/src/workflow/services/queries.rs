@@ -103,6 +103,19 @@ impl WorkflowApi {
         Ok(())
     }
 
+    /// Get stages that have logs for a task.
+    ///
+    /// Returns the names of stages that have a Claude session ID recorded,
+    /// meaning they have session logs available.
+    pub fn get_stages_with_logs(&self, task_id: &str) -> WorkflowResult<Vec<String>> {
+        let sessions = self.store.get_stage_sessions(task_id)?;
+        Ok(sessions
+            .into_iter()
+            .filter(|s| s.claude_session_id.is_some())
+            .map(|s| s.stage)
+            .collect())
+    }
+
     /// Get session logs for a task.
     ///
     /// Retrieves parsed log entries from the Claude Code session file associated with

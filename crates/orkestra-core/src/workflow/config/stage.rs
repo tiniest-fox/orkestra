@@ -37,10 +37,6 @@ pub struct StageConfig {
     #[serde(default)]
     pub agent: AgentStageConfig,
 
-    /// Whether this stage can be skipped.
-    #[serde(default)]
-    pub is_optional: bool,
-
     /// Whether this stage runs automatically without human approval.
     #[serde(default)]
     pub is_automated: bool,
@@ -56,7 +52,6 @@ impl StageConfig {
             inputs: Vec::new(),
             capabilities: StageCapabilities::default(),
             agent: AgentStageConfig::default(),
-            is_optional: false,
             is_automated: false,
         }
     }
@@ -79,13 +74,6 @@ impl StageConfig {
     #[must_use]
     pub fn with_capabilities(mut self, capabilities: StageCapabilities) -> Self {
         self.capabilities = capabilities;
-        self
-    }
-
-    /// Builder: mark as optional.
-    #[must_use]
-    pub fn optional(mut self) -> Self {
-        self.is_optional = true;
         self
     }
 
@@ -301,7 +289,6 @@ mod tests {
         assert_eq!(stage.name, "planning");
         assert_eq!(stage.artifact, "plan");
         assert!(stage.inputs.is_empty());
-        assert!(!stage.is_optional);
         assert!(!stage.is_automated);
     }
 
@@ -309,12 +296,10 @@ mod tests {
     fn test_stage_config_builder() {
         let stage = StageConfig::new("work", "summary")
             .with_display_name("Working")
-            .with_inputs(vec!["plan".into()])
-            .optional();
+            .with_inputs(vec!["plan".into()]);
 
         assert_eq!(stage.display(), "Working");
         assert_eq!(stage.inputs, vec!["plan"]);
-        assert!(stage.is_optional);
     }
 
     #[test]

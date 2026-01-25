@@ -199,8 +199,7 @@ impl Default for WorkflowConfig {
                 .with_display_name("Breaking Down")
                 .with_agent(AgentStageConfig::breakdown())
                 .with_inputs(vec!["plan".into()])
-                .with_capabilities(StageCapabilities::with_subtasks())
-                .optional(),
+                .with_capabilities(StageCapabilities::with_subtasks()),
             StageConfig::new("work", "summary")
                 .with_display_name("Working")
                 .with_agent(AgentStageConfig::worker())
@@ -342,9 +341,8 @@ mod tests {
         assert!(planning.capabilities.ask_questions);
         assert!(!planning.capabilities.produce_subtasks);
 
-        // Breakdown is optional and can produce subtasks
+        // Breakdown can produce subtasks
         let breakdown = workflow.stage("breakdown").unwrap();
-        assert!(breakdown.is_optional);
         assert!(breakdown.capabilities.produce_subtasks);
 
         // Review is automated and can restage to work

@@ -488,7 +488,6 @@ fn output_type_string(output: &StageOutput) -> String {
         StageOutput::Questions { .. } => "questions".to_string(),
         StageOutput::Subtasks { .. } => "subtasks".to_string(),
         StageOutput::Restage { .. } => "restage".to_string(),
-        StageOutput::Completed { .. } => "completed".to_string(),
         StageOutput::Failed { .. } => "failed".to_string(),
         StageOutput::Blocked { .. } => "blocked".to_string(),
     }
@@ -547,7 +546,6 @@ mod tests {
 
     #[test]
     fn test_output_type_string() {
-        assert_eq!(output_type_string(&StageOutput::Completed { summary: "done".into() }), "completed");
         assert_eq!(output_type_string(&StageOutput::Failed { error: "err".into() }), "failed");
         assert_eq!(output_type_string(&StageOutput::Artifact { content: "test".into() }), "artifact");
     }

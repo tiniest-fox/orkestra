@@ -103,6 +103,21 @@ pub fn workflow_list_branches(state: State<AppState>) -> Result<BranchList, Taur
     })
 }
 
+/// Get stages that have logs for a task.
+///
+/// Returns the names of stages that have session logs available.
+/// Used by the UI to show tabs for each stage that has been executed.
+#[tauri::command]
+pub fn workflow_get_stages_with_logs(
+    state: State<AppState>,
+    task_id: String,
+) -> Result<Vec<String>, TauriError> {
+    state
+        .api()?
+        .get_stages_with_logs(&task_id)
+        .map_err(Into::into)
+}
+
 /// Get session logs for a task.
 ///
 /// Parses the Claude Code session file associated with the task's current

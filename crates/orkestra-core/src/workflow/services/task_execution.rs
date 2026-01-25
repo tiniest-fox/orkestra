@@ -448,9 +448,9 @@ mod tests {
         let _store = Arc::new(InMemoryWorkflowStore::new());
         let crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
 
-        // Pre-populate crash recovery with a pending output
+        // Pre-populate crash recovery with a pending output (artifact output)
         crash_recovery
-            .persist("task-1", "planning", r#"{"type": "completed", "summary": "Done"}"#)
+            .persist("task-1", "planning", r#"{"type": "plan", "content": "Done"}"#)
             .unwrap();
 
         // Create service - needs a mock runner, but recover_pending doesn't use it

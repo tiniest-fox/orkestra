@@ -297,7 +297,11 @@ export function WorkflowTaskDetailSidebar({
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
   const { approve, reject, answerQuestions } = useWorkflowActions();
-  const { getIterations, getLogs } = useWorkflowQueries();
+  const { getIterations, getLogs, getStagesWithLogs } = useWorkflowQueries();
+
+  // Stage tabs for logs
+  const [stagesWithLogs, setStagesWithLogs] = useState<string[]>([]);
+  const [activeLogStage, setActiveLogStage] = useState<string | null>(null);
 
   // Build tabs from task
   const tabs = useMemo(() => buildTabs(task), [task]);
@@ -311,13 +315,11 @@ export function WorkflowTaskDetailSidebar({
 
   // Fetch iterations
   const fetchIterations = useCallback(async () => {
-    console.log("[DEBUG] fetchIterations called for task:", task.id);
     try {
       const result = await getIterations(task.id);
-      console.log("[DEBUG] getIterations result:", result);
       setIterations(result);
     } catch (err) {
-      console.error("[DEBUG] getIterations error:", err);
+      console.error("Failed to fetch iterations:", err);
       setIterations([]);
     }
   }, [task.id, getIterations]);
@@ -326,35 +328,97 @@ export function WorkflowTaskDetailSidebar({
     fetchIterations();
   }, [fetchIterations]);
 
-  // Fetch logs
+  // Error state for logs
+  const [logsError, setLogsError] = useState<string | null>(null);
+
+  // Fetch stages with logs when switching to logs tab
+  useEffect(() => {
+    if (activeTab !== "logs") return;
+
+    // Clear any previous error when entering logs tab
+    setLogsError(null);
+
+    const fetchStages = async () => {
+      try {
+        const stages = await getStagesWithLogs(task.id);
+        setStagesWithLogs(stages);
+
+        // Auto-select current stage if available, otherwise last stage
+        // Note: We use a callback to avoid needing activeLogStage in dependencies
+        setActiveLogStage((current) => {
+          if (current) return current; // Already selected
+          if (stages.length === 0) return null;
+
+          const currentStage = getTaskStage(task.status);
+          if (currentStage && stages.includes(currentStage)) {
+            return currentStage;
+          }
+          return stages[stages.length - 1];
+        });
+      } catch (err) {
+        console.error("Failed to fetch stages with logs:", err);
+        setStagesWithLogs([]);
+        setLogsError("Failed to load session stages");
+      }
+    };
+
+    fetchStages();
+  }, [activeTab, task.id, task.status, getStagesWithLogs]);
+
+  // Fetch logs for active stage with race condition protection
   const fetchLogs = useCallback(async () => {
-    console.log("[DEBUG] fetchLogs called for task:", task.id);
+    if (!activeLogStage) return;
+
+    // Capture the stage we're fetching for to detect race conditions
+    const stageToFetch = activeLogStage;
+
     setLogsLoading(true);
+    setLogsError(null);
     try {
-      const result = await getLogs(task.id);
-      console.log("[DEBUG] getLogs result:", result);
-      setLogs(result);
+      const result = await getLogs(task.id, stageToFetch);
+      // Only update state if the stage hasn't changed during the fetch
+      setActiveLogStage((currentStage) => {
+        if (currentStage === stageToFetch) {
+          setLogs(result);
+        }
+        return currentStage;
+      });
     } catch (err) {
-      console.error("[DEBUG] getLogs error:", err);
-      setLogs([]);
+      console.error("Failed to fetch logs:", err);
+      setActiveLogStage((currentStage) => {
+        if (currentStage === stageToFetch) {
+          setLogs([]);
+          setLogsError("Failed to load session logs");
+        }
+        return currentStage;
+      });
     } finally {
       setLogsLoading(false);
     }
-  }, [task.id, getLogs]);
+  }, [task.id, activeLogStage, getLogs]);
 
-  // Fetch logs when tab is active and agent is running
+  // Fetch logs when tab is active and stage is selected
   useEffect(() => {
-    if (activeTab !== "logs") return;
+    if (activeTab !== "logs" || !activeLogStage) return;
 
     // Initial fetch
     fetchLogs();
 
-    // Poll while agent is running
-    if (task.phase === "agent_working") {
+    // Poll while agent is running on current stage (but not if there's an error)
+    const currentStage = getTaskStage(task.status);
+    const shouldPoll =
+      task.phase === "agent_working" &&
+      activeLogStage === currentStage &&
+      !logsError;
+
+    if (shouldPoll) {
       const interval = setInterval(fetchLogs, 2000);
       return () => clearInterval(interval);
     }
-  }, [activeTab, task.phase, fetchLogs]);
+
+    // Return empty cleanup when not polling
+    return undefined;
+  }, [activeTab, activeLogStage, task.phase, task.status, fetchLogs, logsError]);
 
   // Auto-scroll logs to bottom when new entries arrive
   useEffect(() => {
@@ -367,6 +431,10 @@ export function WorkflowTaskDetailSidebar({
   // Reset tab when task changes
   useEffect(() => {
     setActiveTab("details");
+    setActiveLogStage(null);
+    setStagesWithLogs([]);
+    setLogsError(null);
+    setLogs([]);
   }, [task.id]);
 
   // Validate active tab exists
@@ -556,11 +624,49 @@ export function WorkflowTaskDetailSidebar({
 
         {/* Logs Tab */}
         {activeTab === "logs" && (
-          <div
-            ref={logsContainerRef}
-            className="flex-1 overflow-auto p-4 bg-gray-900 font-mono text-sm"
-          >
-            <LogList logs={logs} isLoading={logsLoading} />
+          <div className="flex-1 flex flex-col min-h-0">
+            {/* Stage tab bar */}
+            {stagesWithLogs.length > 0 && (
+              <div className="flex-shrink-0 flex gap-1 p-2 border-b border-gray-700 bg-gray-800">
+                {stagesWithLogs.map((stage) => {
+                  const currentStage = getTaskStage(task.status);
+                  const isCurrentStage = stage === currentStage;
+                  const isActiveTab = activeLogStage === stage;
+
+                  return (
+                    <button
+                      key={stage}
+                      type="button"
+                      onClick={() => {
+                        if (stage !== activeLogStage) {
+                          setLogsError(null);
+                          setLogs([]);
+                          setActiveLogStage(stage);
+                        }
+                      }}
+                      className={`px-3 py-1 text-xs rounded capitalize flex items-center gap-1.5 transition-colors ${
+                        isActiveTab
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                      }`}
+                    >
+                      {stage}
+                      {isCurrentStage && task.phase === "agent_working" && (
+                        <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Log list */}
+            <div
+              ref={logsContainerRef}
+              className="flex-1 overflow-auto p-4 bg-gray-900 font-mono text-sm"
+            >
+              <LogList logs={logs} isLoading={logsLoading} error={logsError} />
+            </div>
           </div>
         )}
       </div>

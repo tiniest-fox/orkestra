@@ -264,14 +264,14 @@ export function needsReview(task: WorkflowTask): boolean {
  * Check if a task has pending questions.
  */
 export function hasPendingQuestions(task: WorkflowTask): boolean {
-  return task.pending_questions.length > 0;
+  return (task.pending_questions?.length ?? 0) > 0;
 }
 
 /**
  * Get the artifact content for a specific artifact name.
  */
 export function getArtifactContent(task: WorkflowTask, name: string): string | undefined {
-  return task.artifacts[name]?.content;
+  return task.artifacts?.[name]?.content;
 }
 
 /**

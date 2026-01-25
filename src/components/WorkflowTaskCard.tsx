@@ -104,9 +104,9 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
         </p>
       )}
 
-      {isDone && Object.keys(task.artifacts).length > 0 && (
+      {isDone && Object.keys(task.artifacts ?? {}).length > 0 && (
         <div className="text-gray-500 text-xs mt-2">
-          {Object.keys(task.artifacts).length} artifact(s)
+          {Object.keys(task.artifacts ?? {}).length} artifact(s)
         </div>
       )}
     </button>

@@ -9,8 +9,8 @@ use orkestra_core::{
     adapters::sqlite::DatabaseConnection,
     find_project_root,
     workflow::{
-        load_workflow_for_project, Phase, SqliteWorkflowStore, Status, Task, WorkflowApi,
-        WorkflowConfig,
+        load_workflow_for_project, Git2GitService, GitService, Phase, SqliteWorkflowStore, Status,
+        Task, WorkflowApi, WorkflowConfig,
     },
 };
 
@@ -43,6 +43,31 @@ enum TaskAction {
     Show {
         /// Task ID
         id: String,
+    },
+    /// Create a new task
+    Create {
+        /// Task title
+        #[arg(short, long)]
+        title: String,
+        /// Task description
+        #[arg(short, long)]
+        description: String,
+        /// Base branch for the task worktree
+        #[arg(short, long)]
+        base_branch: Option<String>,
+    },
+    /// Approve the current stage artifact
+    Approve {
+        /// Task ID
+        id: String,
+    },
+    /// Reject the current stage artifact with feedback
+    Reject {
+        /// Task ID
+        id: String,
+        /// Feedback explaining why the artifact was rejected
+        #[arg(short, long)]
+        feedback: String,
     },
 }
 
@@ -135,6 +160,10 @@ fn handle_task_action(action: TaskAction) {
                 println!("Agent PID: {}", pid);
             }
 
+            if let Some(branch) = &task.branch_name {
+                println!("Branch: {}", branch);
+            }
+
             if let Some(worktree) = &task.worktree_path {
                 println!("Worktree: {}", worktree);
             }
@@ -188,6 +217,60 @@ fn handle_task_action(action: TaskAction) {
                 println!("Completed: {}", completed);
             }
         }
+
+        TaskAction::Create {
+            title,
+            description,
+            base_branch,
+        } => {
+            let task = match api.create_task(&title, &description, base_branch.as_deref()) {
+                Ok(task) => task,
+                Err(e) => {
+                    eprintln!("Error creating task: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            println!("Created task: {}", task.id);
+            println!("Title: {}", task.title);
+            println!("Stage: {}", task.current_stage().unwrap_or("-"));
+            if let Some(branch) = &task.branch_name {
+                println!("Branch: {}", branch);
+            }
+            if let Some(worktree) = &task.worktree_path {
+                println!("Worktree: {}", worktree);
+            }
+        }
+
+        TaskAction::Approve { id } => {
+            let task = match api.approve(&id) {
+                Ok(task) => task,
+                Err(e) => {
+                    eprintln!("Error approving task: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            println!("Approved task: {}", task.id);
+            if task.is_done() {
+                println!("Status: Done");
+            } else {
+                println!("New stage: {}", task.current_stage().unwrap_or("-"));
+            }
+        }
+
+        TaskAction::Reject { id, feedback } => {
+            let task = match api.reject(&id, &feedback) {
+                Ok(task) => task,
+                Err(e) => {
+                    eprintln!("Error rejecting task: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            println!("Rejected task: {}", task.id);
+            println!("Stage: {} (new iteration)", task.current_stage().unwrap_or("-"));
+        }
     }
 }
 
@@ -199,11 +282,10 @@ fn init_workflow_api() -> Result<WorkflowApi, String> {
     let orkestra_dir = project_root.join(".orkestra");
     let db_path = orkestra_dir.join("workflow.db");
 
-    if !db_path.exists() {
-        return Err(format!(
-            "Workflow database not found at {}. Is the Orkestra app running?",
-            db_path.display()
-        ));
+    // Create .orkestra directory if it doesn't exist
+    if !orkestra_dir.exists() {
+        std::fs::create_dir_all(&orkestra_dir)
+            .map_err(|e| format!("Failed to create .orkestra directory: {e}"))?;
     }
 
     // Load workflow config (or use default)
@@ -212,14 +294,30 @@ fn init_workflow_api() -> Result<WorkflowApi, String> {
         WorkflowConfig::default()
     });
 
-    // Open database connection
+    // Open database connection (creates if doesn't exist)
     let conn = DatabaseConnection::open(&db_path)
         .map_err(|e| format!("Failed to open workflow database: {e}"))?;
 
-    // Create the store and API
+    // Create the store
     let store = SqliteWorkflowStore::new(conn.shared());
 
-    Ok(WorkflowApi::new(workflow_config, Arc::new(store)))
+    // Try to initialize git service
+    let git_service: Option<Arc<dyn GitService>> = match Git2GitService::new(&project_root) {
+        Ok(git) => Some(Arc::new(git)),
+        Err(e) => {
+            eprintln!("Warning: Git service unavailable: {e:?}");
+            None
+        }
+    };
+
+    // Create API with or without git
+    let api = if let Some(git) = git_service {
+        WorkflowApi::with_git(workflow_config, Arc::new(store), git)
+    } else {
+        WorkflowApi::new(workflow_config, Arc::new(store))
+    };
+
+    Ok(api)
 }
 
 fn matches_status_filter(task: &Task, filter: &str) -> bool {

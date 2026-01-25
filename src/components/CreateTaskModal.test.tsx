@@ -18,8 +18,7 @@ describe("CreateTaskModal", () => {
     );
 
     expect(screen.getByText("New Task")).toBeInTheDocument();
-    expect(screen.getByLabelText(/title/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/what do you want to do/i)).toBeInTheDocument();
   });
 
   it("does not render when closed", () => {

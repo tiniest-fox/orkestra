@@ -7,7 +7,6 @@ interface CreateTaskModalProps {
 }
 
 export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalProps) {
-  const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +28,6 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
-      setTitle("");
       setDescription("");
       setError(null);
     }
@@ -39,14 +37,13 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !description.trim()) return;
+    if (!description.trim()) return;
 
     setSubmitting(true);
     setError(null);
 
     try {
-      await onSubmit(title.trim(), description.trim());
-      setTitle("");
+      await onSubmit("", description.trim());
       setDescription("");
       onClose();
     } catch (err) {
@@ -75,32 +72,16 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="px-6 py-4 space-y-4">
+          <div className="px-6 py-4">
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                 {error}
               </div>
             )}
 
             <div>
-              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
-                Title
-              </label>
-              <input
-                id="title"
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Brief summary of the task..."
-                // biome-ignore lint/a11y/noAutofocus: intentional focus for modal UX
-                autoFocus
-              />
-            </div>
-
-            <div>
               <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-                Description
+                What do you want to do?
               </label>
               <textarea
                 id="description"
@@ -108,7 +89,9 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
                 onChange={(e) => setDescription(e.target.value)}
                 rows={4}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                placeholder="Describe the task in detail..."
+                placeholder="Describe the task..."
+                // biome-ignore lint/a11y/noAutofocus: intentional focus for modal UX
+                autoFocus
               />
             </div>
           </div>
@@ -123,7 +106,7 @@ export function CreateTaskModal({ isOpen, onClose, onSubmit }: CreateTaskModalPr
             </button>
             <button
               type="submit"
-              disabled={submitting || !title.trim() || !description.trim()}
+              disabled={submitting || !description.trim()}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {submitting ? "Creating..." : "Create Task"}

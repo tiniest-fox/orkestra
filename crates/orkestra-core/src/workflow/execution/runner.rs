@@ -365,41 +365,91 @@ fn check_for_api_error(line: &str) -> Option<String> {
 
 /// Parse the agent output from the full stdout.
 ///
-/// Claude outputs JSON in two modes:
-/// 1. Stream JSON: Multiple JSON objects per line (system events, assistant messages)
-/// 2. Structured output: A final JSON object with `structured_output` field
+/// Claude outputs JSON in multiple formats:
+/// 1. JSON array: All stream events in a single array (current Claude Code format)
+/// 2. Newline-delimited JSON: One JSON object per line
+/// 3. Single JSON object with `structured_output` field
+/// 4. Direct StageOutput JSON
 pub fn parse_agent_output(full_output: &str) -> Result<StageOutput, String> {
-    // Try to find structured_output in the last JSON object
-    for line in full_output.lines().rev() {
-        if line.trim().is_empty() {
+    let trimmed = full_output.trim();
+
+    // Try to parse the whole output as JSON first
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Some(result) = extract_structured_output(&v) {
+            return result;
+        }
+    }
+
+    // Try newline-delimited JSON (search from end for most recent)
+    for line in trimmed.lines().rev() {
+        let line = line.trim();
+        if line.is_empty() {
             continue;
         }
 
-        // Try to parse as JSON
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-            // Check for structured_output
-            if let Some(structured) = v.get("structured_output") {
-                if !structured.is_null() {
-                    // Convert to string for StageOutput parsing
-                    let structured_str = structured.to_string();
-                    return StageOutput::parse(&structured_str)
-                        .map_err(|e| format!("Failed to parse structured_output: {e}"));
-                }
-            }
-
-            // Check for result field (older format)
-            if let Some(result) = v.get("result") {
-                if let Some(result_str) = result.as_str() {
-                    return StageOutput::parse(result_str)
-                        .map_err(|e| format!("Failed to parse result: {e}"));
-                }
+            if let Some(result) = extract_structured_output(&v) {
+                return result;
             }
         }
     }
 
-    // Fallback: try to parse the entire output as a single JSON
-    StageOutput::parse(full_output.trim())
+    // Fallback: try to parse the entire output as StageOutput directly
+    StageOutput::parse(trimmed)
         .map_err(|e| format!("Failed to parse agent output: {e}"))
+}
+
+/// Extract structured output from a JSON value.
+/// Handles arrays (searches for structured_output in elements) and objects.
+fn extract_structured_output(v: &serde_json::Value) -> Option<Result<StageOutput, String>> {
+    match v {
+        // JSON array: search all elements for structured_output (check from end first)
+        serde_json::Value::Array(arr) => {
+            for item in arr.iter().rev() {
+                if let Some(result) = extract_from_object(item) {
+                    return Some(result);
+                }
+            }
+            None
+        }
+        // JSON object: check directly
+        serde_json::Value::Object(_) => extract_from_object(v),
+        _ => None,
+    }
+}
+
+/// Extract structured output from a JSON object.
+fn extract_from_object(v: &serde_json::Value) -> Option<Result<StageOutput, String>> {
+    // Check for structured_output field
+    if let Some(structured) = v.get("structured_output") {
+        if !structured.is_null() {
+            let structured_str = structured.to_string();
+            return Some(
+                StageOutput::parse(&structured_str)
+                    .map_err(|e| format!("Failed to parse structured_output: {e}"))
+            );
+        }
+    }
+
+    // Check for result field (older format)
+    if let Some(result) = v.get("result") {
+        if let Some(result_str) = result.as_str() {
+            return Some(
+                StageOutput::parse(result_str)
+                    .map_err(|e| format!("Failed to parse result: {e}"))
+            );
+        }
+    }
+
+    // Check if this object itself is a valid StageOutput (has "type" field)
+    if v.get("type").is_some() {
+        let v_str = v.to_string();
+        if let Ok(output) = StageOutput::parse(&v_str) {
+            return Some(Ok(output));
+        }
+    }
+
+    None
 }
 
 // ============================================================================
@@ -650,6 +700,31 @@ mod tests {
         assert!(result.is_ok());
         match result.unwrap() {
             StageOutput::Completed { summary } => assert_eq!(summary, "Done"),
+            _ => panic!("Expected Completed output"),
+        }
+    }
+
+    #[test]
+    fn test_parse_agent_output_json_array() {
+        // Claude Code outputs a JSON array of stream events
+        let output = r#"[{"type":"system","subtype":"init","session_id":"abc"},{"type":"assistant","message":"thinking..."},{"structured_output":{"type":"plan","content":"The plan content"}}]"#;
+
+        let result = parse_agent_output(output);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        match result.unwrap() {
+            StageOutput::Artifact { content } => assert_eq!(content, "The plan content"),
+            other => panic!("Expected Artifact output, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_parse_agent_output_json_array_completed() {
+        let output = r#"[{"type":"system"},{"structured_output":{"type":"completed","summary":"All done"}}]"#;
+
+        let result = parse_agent_output(output);
+        assert!(result.is_ok());
+        match result.unwrap() {
+            StageOutput::Completed { summary } => assert_eq!(summary, "All done"),
             _ => panic!("Expected Completed output"),
         }
     }

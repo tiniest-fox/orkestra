@@ -66,10 +66,6 @@ pub struct Task {
     pub worktree_path: Option<String>,
 
     // === Tracking ===
-    /// Currently running agent process ID.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agent_pid: Option<u32>,
-
     /// When the task was created (RFC3339).
     pub created_at: String,
 
@@ -104,7 +100,6 @@ impl Task {
             depends_on: Vec::new(),
             branch_name: None,
             worktree_path: None,
-            agent_pid: None,
             created_at: created.clone(),
             updated_at: created,
             completed_at: None,
@@ -184,11 +179,6 @@ impl Task {
     /// Check if the task has pending questions.
     pub fn has_pending_questions(&self) -> bool {
         !self.pending_questions.is_empty()
-    }
-
-    /// Check if an agent is currently running.
-    pub fn has_agent(&self) -> bool {
-        self.agent_pid.is_some()
     }
 
     /// Get artifact content by name.
@@ -287,15 +277,6 @@ mod tests {
         task.pending_questions
             .push(Question::new("q1", "What framework?"));
         assert!(task.has_pending_questions());
-    }
-
-    #[test]
-    fn test_task_agent_tracking() {
-        let mut task = Task::new("task-1", "Task", "desc", "work", "now");
-        assert!(!task.has_agent());
-
-        task.agent_pid = Some(12345);
-        assert!(task.has_agent());
     }
 
     #[test]

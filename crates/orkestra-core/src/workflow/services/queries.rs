@@ -79,6 +79,30 @@ impl WorkflowApi {
         Ok(task.current_stage().map(|s| s.to_string()))
     }
 
+    /// Get all running agent processes.
+    ///
+    /// Returns tuples of (task_id, stage, pid) for all agents that have PIDs
+    /// recorded in their stage sessions. Used for cleanup on shutdown/startup.
+    pub fn get_running_agent_pids(&self) -> WorkflowResult<Vec<(String, String, u32)>> {
+        let sessions = self.store.get_sessions_with_pids()?;
+        Ok(sessions
+            .into_iter()
+            .filter_map(|s| s.agent_pid.map(|pid| (s.task_id, s.stage, pid)))
+            .collect())
+    }
+
+    /// Clear the agent PID for a stage session.
+    ///
+    /// Used after killing an orphaned agent to remove the stale PID.
+    pub fn clear_session_agent_pid(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
+        if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
+            session.agent_pid = None;
+            session.updated_at = chrono::Utc::now().to_rfc3339();
+            self.store.save_stage_session(&session)?;
+        }
+        Ok(())
+    }
+
     /// Get session logs for a task.
     ///
     /// Retrieves parsed log entries from the Claude Code session file associated with

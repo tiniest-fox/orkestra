@@ -192,15 +192,6 @@ impl WorkflowApi {
             .filter(|t| t.phase == Phase::Idle && t.status.is_active())
             .collect())
     }
-
-    /// Clear the agent PID for a task (used for cleanup of stale PIDs).
-    pub fn clear_agent_pid(&self, task_id: &str) -> WorkflowResult<()> {
-        let mut task = self.get_task(task_id)?;
-        task.agent_pid = None;
-        task.updated_at = chrono::Utc::now().to_rfc3339();
-        self.store.save_task(&task)?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]

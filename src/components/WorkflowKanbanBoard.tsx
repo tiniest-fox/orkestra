@@ -96,7 +96,7 @@ function getTasksForColumn(tasks: WorkflowTask[], columnId: string): WorkflowTas
     return false;
   });
 
-  // Sort: needs review/questions first, then active (has agent_pid), then by creation date
+  // Sort: needs review/questions first, then active (agent_working phase), then by creation date
   return columnTasks.sort((a, b) => {
     // Needs review/questions items at top
     const aReview = needsReview(a) || hasPendingQuestions(a) ? 0 : 1;
@@ -104,8 +104,8 @@ function getTasksForColumn(tasks: WorkflowTask[], columnId: string): WorkflowTas
     if (aReview !== bReview) return aReview - bReview;
 
     // Active items (with agent running) above idle items
-    const aActive = a.agent_pid ? 0 : 1;
-    const bActive = b.agent_pid ? 0 : 1;
+    const aActive = a.phase === "agent_working" ? 0 : 1;
+    const bActive = b.phase === "agent_working" ? 0 : 1;
     if (aActive !== bActive) return aActive - bActive;
 
     // Sort by created_at (oldest first)

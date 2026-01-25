@@ -121,7 +121,7 @@ pub trait WorkflowStore: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::domain::{SessionState, Task};
+    use crate::workflow::domain::Task;
     use crate::workflow::runtime::Phase;
     use std::collections::HashMap;
     use std::sync::Mutex;

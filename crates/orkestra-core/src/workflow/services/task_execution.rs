@@ -389,8 +389,8 @@ mod tests {
 
     #[test]
     fn test_recover_pending() {
-        let workflow = test_workflow();
-        let store = Arc::new(InMemoryWorkflowStore::new());
+        let _workflow = test_workflow();
+        let _store = Arc::new(InMemoryWorkflowStore::new());
         let crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
 
         // Pre-populate crash recovery with a pending output
@@ -422,9 +422,9 @@ mod tests {
 
     #[test]
     fn test_handle_event_session_id() {
-        let workflow = test_workflow();
+        let _workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
-        let crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
+        let _crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
 
         // Create session service directly for testing
         let session_service = SessionService::new(store.clone());

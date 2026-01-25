@@ -344,11 +344,11 @@ export function WorkflowTaskDetailSidebar({
     fetchLogs();
 
     // Poll while agent is running
-    if (task.agent_pid) {
+    if (task.phase === "agent_working") {
       const interval = setInterval(fetchLogs, 2000);
       return () => clearInterval(interval);
     }
-  }, [activeTab, task.agent_pid, fetchLogs]);
+  }, [activeTab, task.phase, fetchLogs]);
 
   // Auto-scroll logs to bottom when new entries arrive
   useEffect(() => {
@@ -488,7 +488,7 @@ export function WorkflowTaskDetailSidebar({
             }`}
           >
             {tab.label}
-            {tab.id === "logs" && task.agent_pid && (
+            {tab.id === "logs" && task.phase === "agent_working" && (
               <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
             )}
           </button>

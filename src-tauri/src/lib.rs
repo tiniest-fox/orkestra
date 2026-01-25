@@ -93,11 +93,11 @@ fn cleanup_agents(app_handle: &AppHandle) {
         return;
     };
 
-    let tasks = match app_state.api() {
-        Ok(api) => match api.list_tasks() {
-            Ok(tasks) => tasks,
+    let running_agents = match app_state.api() {
+        Ok(api) => match api.get_running_agent_pids() {
+            Ok(agents) => agents,
             Err(e) => {
-                eprintln!("[cleanup] Failed to list tasks: {e}");
+                eprintln!("[cleanup] Failed to get running agents: {e}");
                 return;
             }
         },
@@ -108,13 +108,11 @@ fn cleanup_agents(app_handle: &AppHandle) {
     };
 
     let mut killed = 0;
-    for task in tasks {
-        if let Some(pid) = task.agent_pid {
-            if is_process_running(pid) {
-                println!("[cleanup] Killing agent for task {} (pid: {pid})", task.id);
-                let _ = kill_process_tree(pid);
-                killed += 1;
-            }
+    for (task_id, stage, pid) in running_agents {
+        if is_process_running(pid) {
+            println!("[cleanup] Killing agent for task {task_id}/{stage} (pid: {pid})");
+            let _ = kill_process_tree(pid);
+            killed += 1;
         }
     }
 
@@ -128,15 +126,15 @@ fn cleanup_agents(app_handle: &AppHandle) {
 /// Clean up any orphaned agent processes from a previous crash.
 ///
 /// Called on startup to ensure stale PIDs don't prevent new agents from spawning.
-/// Uses the workflow API to check for tasks with stale agent PIDs.
+/// Uses the workflow API to check for sessions with stale agent PIDs.
 fn cleanup_orphaned_agents(app_state: &state::AppState) {
     println!("[startup] Checking for orphaned agents...");
 
-    let tasks = match app_state.api() {
-        Ok(api) => match api.list_tasks() {
-            Ok(tasks) => tasks,
+    let running_agents = match app_state.api() {
+        Ok(api) => match api.get_running_agent_pids() {
+            Ok(agents) => agents,
             Err(e) => {
-                eprintln!("[startup] Failed to load tasks: {e}");
+                eprintln!("[startup] Failed to get running agents: {e}");
                 return;
             }
         },
@@ -147,20 +145,17 @@ fn cleanup_orphaned_agents(app_state: &state::AppState) {
     };
 
     let mut orphans_found = 0;
-    for task in tasks {
-        if let Some(pid) = task.agent_pid {
-            if is_process_running(pid) {
-                eprintln!(
-                    "[startup] Found orphaned agent for task {} (pid: {pid}), killing...",
-                    task.id
-                );
-                let _ = kill_process_tree(pid);
-                orphans_found += 1;
-            }
-            // Clear the stale PID
-            if let Ok(api) = app_state.api() {
-                let _ = api.clear_agent_pid(&task.id);
-            }
+    for (task_id, stage, pid) in running_agents {
+        if is_process_running(pid) {
+            eprintln!(
+                "[startup] Found orphaned agent for task {task_id}/{stage} (pid: {pid}), killing..."
+            );
+            let _ = kill_process_tree(pid);
+            orphans_found += 1;
+        }
+        // Clear the stale PID from the session
+        if let Ok(api) = app_state.api() {
+            let _ = api.clear_session_agent_pid(&task_id, &stage);
         }
     }
 
@@ -187,7 +182,7 @@ fn cleanup_agents_standalone() {
         return;
     }
 
-    // Open database and query for tasks with PIDs
+    // Open database and query for sessions with PIDs
     let Ok(conn) = orkestra_core::adapters::sqlite::DatabaseConnection::open(&db_path) else {
         eprintln!("[cleanup] Could not open database");
         return;
@@ -197,16 +192,14 @@ fn cleanup_agents_standalone() {
     let store = orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared());
     let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::new(store));
 
-    let Ok(tasks) = api.list_tasks() else {
+    let Ok(running_agents) = api.get_running_agent_pids() else {
         return;
     };
 
-    for task in tasks {
-        if let Some(pid) = task.agent_pid {
-            if is_process_running(pid) {
-                println!("[cleanup] Killing agent (pid: {pid})");
-                let _ = kill_process_tree(pid);
-            }
+    for (task_id, stage, pid) in running_agents {
+        if is_process_running(pid) {
+            println!("[cleanup] Killing agent for {task_id}/{stage} (pid: {pid})");
+            let _ = kill_process_tree(pid);
         }
     }
 }

@@ -30,7 +30,7 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
   const isFailed = task.status.type === "failed";
   const isBlocked = task.status.type === "blocked";
   const isDone = task.status.type === "done";
-  const hasActiveProcess = task.agent_pid !== undefined;
+  const hasActiveProcess = task.phase === "agent_working";
   const taskNeedsReview = needsReview(task);
   const hasQuestions = hasPendingQuestions(task);
 

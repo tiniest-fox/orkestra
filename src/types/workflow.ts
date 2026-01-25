@@ -224,8 +224,6 @@ export interface WorkflowTask {
   branch_name?: string;
   /** Git worktree path. */
   worktree_path?: string;
-  /** PID of running agent (if any). */
-  agent_pid?: number;
   /** When the task was created. */
   created_at: string;
   /** When the task was last updated. */

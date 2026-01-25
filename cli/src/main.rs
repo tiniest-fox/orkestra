@@ -156,10 +156,6 @@ fn handle_task_action(action: TaskAction) {
                 println!("Parent: {}", parent);
             }
 
-            if let Some(pid) = task.agent_pid {
-                println!("Agent PID: {}", pid);
-            }
-
             if let Some(branch) = &task.branch_name {
                 println!("Branch: {}", branch);
             }

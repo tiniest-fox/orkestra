@@ -215,6 +215,12 @@ impl AgentRunnerTrait for AgentRunner {
                             session_id = Some(sid);
                         }
                     }
+
+                    // Check for API errors
+                    if let Some(error_msg) = check_for_api_error(&line) {
+                        // Don't disarm - let guard kill the looping process
+                        return Err(RunError::ParseFailed(format!("API error: {error_msg}")));
+                    }
                 }
                 Err(e) => {
                     return Err(RunError::OutputReadFailed(e.to_string()));
@@ -294,6 +300,16 @@ fn read_output_and_send_events(
                         let _ = tx.send(RunEvent::SessionIdCaptured(sid));
                     }
                 }
+
+                // Check for API errors in the stream
+                if let Some(error_msg) = check_for_api_error(&line) {
+                    eprintln!("[agent runner] API error detected: {error_msg}");
+                    // Send raw output (for debugging)
+                    let _ = tx.send(RunEvent::RawOutputReady(full_output.clone()));
+                    // Send error completion - do NOT disarm, let guard kill the process
+                    let _ = tx.send(RunEvent::Completed(Err(error_msg)));
+                    return; // Exit early, guard will kill the looping process on drop
+                }
             }
             Err(e) => {
                 eprintln!("[agent runner] Error reading stdout: {e}");
@@ -302,7 +318,7 @@ fn read_output_and_send_events(
         }
     }
 
-    // Process completed
+    // Process completed normally
     handle.disarm();
 
     // Send raw output event
@@ -311,6 +327,36 @@ fn read_output_and_send_events(
     // Parse and send completion event
     let result = parse_agent_output(&full_output);
     let _ = tx.send(RunEvent::Completed(result));
+}
+
+/// Check if a stream line contains an API error.
+///
+/// Returns the error message if found, None otherwise.
+/// API errors appear as assistant messages with an `error` field present.
+fn check_for_api_error(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+
+    // Must be an assistant message
+    if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
+        return None;
+    }
+
+    // Must have an `error` field (its presence indicates an error, regardless of value)
+    if v.get("error").is_none() {
+        return None;
+    }
+
+    // Extract the error message from message.content[0].text
+    let error_text = v
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|item| item.get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("Unknown API error");
+
+    Some(error_text.to_string())
 }
 
 // ============================================================================
@@ -658,5 +704,43 @@ mod tests {
             assert_eq!(calls.len(), 1);
             assert!(calls[0].prompt.contains("task-1"));
         }
+    }
+
+    #[test]
+    fn test_check_for_api_error_detects_error() {
+        // Real API error from Claude Code
+        let line = r#"{"type":"assistant","message":{"id":"test","content":[{"type":"text","text":"API Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"schema error\"}}"}]},"session_id":"abc","error":"unknown"}"#;
+
+        let result = check_for_api_error(line);
+        assert!(result.is_some());
+        let msg = result.unwrap();
+        assert!(msg.contains("API Error"));
+        assert!(msg.contains("400"));
+    }
+
+    #[test]
+    fn test_check_for_api_error_ignores_normal_assistant() {
+        // Normal assistant message without error field
+        let line = r#"{"type":"assistant","message":{"id":"test","content":[{"type":"text","text":"Hello!"}]},"session_id":"abc"}"#;
+
+        let result = check_for_api_error(line);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_check_for_api_error_ignores_other_types() {
+        // System message
+        let line = r#"{"type":"system","subtype":"init","session_id":"abc"}"#;
+        assert!(check_for_api_error(line).is_none());
+
+        // User message
+        let line = r#"{"type":"user","message":{"content":"test"},"session_id":"abc"}"#;
+        assert!(check_for_api_error(line).is_none());
+    }
+
+    #[test]
+    fn test_check_for_api_error_handles_invalid_json() {
+        let line = "not valid json";
+        assert!(check_for_api_error(line).is_none());
     }
 }

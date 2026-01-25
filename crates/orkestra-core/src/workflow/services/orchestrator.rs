@@ -14,7 +14,6 @@ use std::sync::mpsc::TryRecvError;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::process::is_process_running;
 use crate::workflow::adapters::{ClaudeProcessSpawner, FsCrashRecoveryStore};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::execution::{AgentRunner, RunEvent, StageOutput};
@@ -209,12 +208,21 @@ impl OrchestratorLoop {
             loop {
                 match handle.events.try_recv() {
                     Ok(event) => {
-                        if let Some(e) = self.handle_execution_event(
+                        // Handle errors per-task, don't let one task's error stop others
+                        match self.handle_execution_event(
                             &handle.task_id,
                             &handle.stage,
                             event,
-                        )? {
-                            events.push(e);
+                        ) {
+                            Ok(Some(e)) => events.push(e),
+                            Ok(None) => {}
+                            Err(e) => {
+                                // Convert error to error event instead of propagating
+                                events.push(OrchestratorEvent::Error {
+                                    task_id: Some(handle.task_id.clone()),
+                                    error: e.to_string(),
+                                });
+                            }
                         }
                     }
                     Err(TryRecvError::Empty) => break,
@@ -272,14 +280,15 @@ impl OrchestratorLoop {
                     }
                 } else if is_err {
                     let error = err_msg.unwrap_or_else(|| "Unknown error".to_string());
-                    {
-                        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                        api.process_agent_output(
+                    // Try to mark task as failed, but don't propagate errors.
+                    // Even if this fails, we still want to report the error event.
+                    if let Ok(api) = self.api.lock() {
+                        let _ = api.process_agent_output(
                             task_id,
                             StageOutput::Failed {
-                                error: format!("Agent output parse error: {error}"),
+                                error: format!("Agent error: {error}"),
                             },
-                        )?;
+                        );
                     }
                     Ok(Some(OrchestratorEvent::Error {
                         task_id: Some(task_id.to_string()),
@@ -314,14 +323,9 @@ impl OrchestratorLoop {
         };
 
         for task in tasks {
+            // Skip if we already have an active execution for this task
             if active_task_ids.contains(&task.id) {
                 continue;
-            }
-
-            if let Some(pid) = task.agent_pid {
-                if is_process_running(pid) {
-                    continue;
-                }
             }
 
             {

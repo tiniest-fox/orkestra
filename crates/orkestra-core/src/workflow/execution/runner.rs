@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::thread;
 
 use super::output::StageOutput;
-use crate::process::parse_stream_event;
+use super::parser::{check_for_api_error, extract_session_id, parse_agent_output};
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessSpawner};
 
 // ============================================================================
@@ -210,10 +210,7 @@ impl AgentRunnerTrait for AgentRunner {
 
                     // Try to extract session ID
                     if session_id.is_none() {
-                        let parsed = parse_stream_event(&line);
-                        if let Some(sid) = parsed.session_id {
-                            session_id = Some(sid);
-                        }
+                        session_id = extract_session_id(&line);
                     }
 
                     // Check for API errors
@@ -230,6 +227,12 @@ impl AgentRunnerTrait for AgentRunner {
 
         // Process completed normally
         handle.disarm();
+
+        // Try to extract session ID from full output if not found during streaming
+        // (handles case where output is a single JSON array line)
+        if session_id.is_none() {
+            session_id = extract_session_id(&full_output);
+        }
 
         // Parse the output
         let parsed_output = parse_agent_output(&full_output)
@@ -294,8 +297,7 @@ fn read_output_and_send_events(
 
                 // Try to extract and send session ID (once)
                 if !session_id_sent {
-                    let parsed = parse_stream_event(&line);
-                    if let Some(sid) = parsed.session_id {
+                    if let Some(sid) = extract_session_id(&line) {
                         session_id_sent = true;
                         let _ = tx.send(RunEvent::SessionIdCaptured(sid));
                     }
@@ -324,132 +326,17 @@ fn read_output_and_send_events(
     // Send raw output event
     let _ = tx.send(RunEvent::RawOutputReady(full_output.clone()));
 
+    // Try to extract session ID from full output if not already sent
+    // (handles case where output is a single JSON array line)
+    if !session_id_sent {
+        if let Some(sid) = extract_session_id(&full_output) {
+            let _ = tx.send(RunEvent::SessionIdCaptured(sid));
+        }
+    }
+
     // Parse and send completion event
     let result = parse_agent_output(&full_output);
     let _ = tx.send(RunEvent::Completed(result));
-}
-
-/// Check if a stream line contains an API error.
-///
-/// Returns the error message if found, None otherwise.
-/// API errors appear as assistant messages with an `error` field present.
-fn check_for_api_error(line: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(line).ok()?;
-
-    // Must be an assistant message
-    if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
-        return None;
-    }
-
-    // Must have an `error` field (its presence indicates an error, regardless of value)
-    if v.get("error").is_none() {
-        return None;
-    }
-
-    // Extract the error message from message.content[0].text
-    let error_text = v
-        .get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|item| item.get("text"))
-        .and_then(|t| t.as_str())
-        .unwrap_or("Unknown API error");
-
-    Some(error_text.to_string())
-}
-
-// ============================================================================
-// Output Parsing
-// ============================================================================
-
-/// Parse the agent output from the full stdout.
-///
-/// Claude outputs JSON in multiple formats:
-/// 1. JSON array: All stream events in a single array (current Claude Code format)
-/// 2. Newline-delimited JSON: One JSON object per line
-/// 3. Single JSON object with `structured_output` field
-/// 4. Direct StageOutput JSON
-pub fn parse_agent_output(full_output: &str) -> Result<StageOutput, String> {
-    let trimmed = full_output.trim();
-
-    // Try to parse the whole output as JSON first
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
-        if let Some(result) = extract_structured_output(&v) {
-            return result;
-        }
-    }
-
-    // Try newline-delimited JSON (search from end for most recent)
-    for line in trimmed.lines().rev() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-            if let Some(result) = extract_structured_output(&v) {
-                return result;
-            }
-        }
-    }
-
-    // Fallback: try to parse the entire output as StageOutput directly
-    StageOutput::parse(trimmed)
-        .map_err(|e| format!("Failed to parse agent output: {e}"))
-}
-
-/// Extract structured output from a JSON value.
-/// Handles arrays (searches for structured_output in elements) and objects.
-fn extract_structured_output(v: &serde_json::Value) -> Option<Result<StageOutput, String>> {
-    match v {
-        // JSON array: search all elements for structured_output (check from end first)
-        serde_json::Value::Array(arr) => {
-            for item in arr.iter().rev() {
-                if let Some(result) = extract_from_object(item) {
-                    return Some(result);
-                }
-            }
-            None
-        }
-        // JSON object: check directly
-        serde_json::Value::Object(_) => extract_from_object(v),
-        _ => None,
-    }
-}
-
-/// Extract structured output from a JSON object.
-fn extract_from_object(v: &serde_json::Value) -> Option<Result<StageOutput, String>> {
-    // Check for structured_output field
-    if let Some(structured) = v.get("structured_output") {
-        if !structured.is_null() {
-            let structured_str = structured.to_string();
-            return Some(
-                StageOutput::parse(&structured_str)
-                    .map_err(|e| format!("Failed to parse structured_output: {e}"))
-            );
-        }
-    }
-
-    // Check for result field (older format)
-    if let Some(result) = v.get("result") {
-        if let Some(result_str) = result.as_str() {
-            return Some(
-                StageOutput::parse(result_str)
-                    .map_err(|e| format!("Failed to parse result: {e}"))
-            );
-        }
-    }
-
-    // Check if this object itself is a valid StageOutput (has "type" field)
-    if v.get("type").is_some() {
-        let v_str = v.to_string();
-        if let Ok(output) = StageOutput::parse(&v_str) {
-            return Some(Ok(output));
-        }
-    }
-
-    None
 }
 
 // ============================================================================
@@ -667,67 +554,7 @@ mod tests {
         assert!(err.to_string().contains("parse"));
     }
 
-    #[test]
-    fn test_parse_agent_output_structured() {
-        let output = r#"{"type": "system", "subtype": "init", "session_id": "abc"}
-{"structured_output": {"type": "completed", "summary": "Work done"}}"#;
-
-        let result = parse_agent_output(output);
-        assert!(result.is_ok());
-        match result.unwrap() {
-            StageOutput::Completed { summary } => assert_eq!(summary, "Work done"),
-            _ => panic!("Expected Completed output"),
-        }
-    }
-
-    #[test]
-    fn test_parse_agent_output_artifact() {
-        let output = r#"{"structured_output": {"type": "plan", "content": "The implementation plan"}}"#;
-
-        let result = parse_agent_output(output);
-        assert!(result.is_ok());
-        match result.unwrap() {
-            StageOutput::Artifact { content } => assert!(content.contains("implementation plan")),
-            _ => panic!("Expected Artifact output"),
-        }
-    }
-
-    #[test]
-    fn test_parse_agent_output_direct_json() {
-        let output = r#"{"type": "completed", "summary": "Done"}"#;
-
-        let result = parse_agent_output(output);
-        assert!(result.is_ok());
-        match result.unwrap() {
-            StageOutput::Completed { summary } => assert_eq!(summary, "Done"),
-            _ => panic!("Expected Completed output"),
-        }
-    }
-
-    #[test]
-    fn test_parse_agent_output_json_array() {
-        // Claude Code outputs a JSON array of stream events
-        let output = r#"[{"type":"system","subtype":"init","session_id":"abc"},{"type":"assistant","message":"thinking..."},{"structured_output":{"type":"plan","content":"The plan content"}}]"#;
-
-        let result = parse_agent_output(output);
-        assert!(result.is_ok(), "Failed to parse: {:?}", result);
-        match result.unwrap() {
-            StageOutput::Artifact { content } => assert_eq!(content, "The plan content"),
-            other => panic!("Expected Artifact output, got {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_parse_agent_output_json_array_completed() {
-        let output = r#"[{"type":"system"},{"structured_output":{"type":"completed","summary":"All done"}}]"#;
-
-        let result = parse_agent_output(output);
-        assert!(result.is_ok());
-        match result.unwrap() {
-            StageOutput::Completed { summary } => assert_eq!(summary, "All done"),
-            _ => panic!("Expected Completed output"),
-        }
-    }
+    // Note: parse_agent_output tests are in parser.rs
 
     #[cfg(any(test, feature = "testutil"))]
     mod mock_tests {
@@ -779,43 +606,5 @@ mod tests {
             assert_eq!(calls.len(), 1);
             assert!(calls[0].prompt.contains("task-1"));
         }
-    }
-
-    #[test]
-    fn test_check_for_api_error_detects_error() {
-        // Real API error from Claude Code
-        let line = r#"{"type":"assistant","message":{"id":"test","content":[{"type":"text","text":"API Error: 400 {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"schema error\"}}"}]},"session_id":"abc","error":"unknown"}"#;
-
-        let result = check_for_api_error(line);
-        assert!(result.is_some());
-        let msg = result.unwrap();
-        assert!(msg.contains("API Error"));
-        assert!(msg.contains("400"));
-    }
-
-    #[test]
-    fn test_check_for_api_error_ignores_normal_assistant() {
-        // Normal assistant message without error field
-        let line = r#"{"type":"assistant","message":{"id":"test","content":[{"type":"text","text":"Hello!"}]},"session_id":"abc"}"#;
-
-        let result = check_for_api_error(line);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_check_for_api_error_ignores_other_types() {
-        // System message
-        let line = r#"{"type":"system","subtype":"init","session_id":"abc"}"#;
-        assert!(check_for_api_error(line).is_none());
-
-        // User message
-        let line = r#"{"type":"user","message":{"content":"test"},"session_id":"abc"}"#;
-        assert!(check_for_api_error(line).is_none());
-    }
-
-    #[test]
-    fn test_check_for_api_error_handles_invalid_json() {
-        let line = "not valid json";
-        assert!(check_for_api_error(line).is_none());
     }
 }

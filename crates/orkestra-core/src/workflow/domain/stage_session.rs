@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
+    /// Session created, spawn in progress. Transitions to Active on success.
+    Spawning,
+
     /// Session is active - agent may be running or waiting to resume.
     #[default]
     Active,
@@ -224,12 +227,24 @@ mod tests {
 
     #[test]
     fn test_session_state_serialization() {
+        let spawning = SessionState::Spawning;
         let active = SessionState::Active;
         let completed = SessionState::Completed;
         let abandoned = SessionState::Abandoned;
 
+        assert_eq!(serde_json::to_string(&spawning).unwrap(), "\"spawning\"");
         assert_eq!(serde_json::to_string(&active).unwrap(), "\"active\"");
         assert_eq!(serde_json::to_string(&completed).unwrap(), "\"completed\"");
         assert_eq!(serde_json::to_string(&abandoned).unwrap(), "\"abandoned\"");
+    }
+
+    #[test]
+    fn test_spawning_state_not_resumable() {
+        let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
+        session.session_state = SessionState::Spawning;
+
+        // Spawning sessions should not be resumable
+        assert!(!session.can_resume());
+        assert!(!session.is_active());
     }
 }

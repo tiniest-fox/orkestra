@@ -495,6 +495,7 @@ fn row_to_stage_session(row: &rusqlite::Row) -> rusqlite::Result<StageSession> {
 
 fn session_state_to_str(state: SessionState) -> &'static str {
     match state {
+        SessionState::Spawning => "spawning",
         SessionState::Active => "active",
         SessionState::Completed => "completed",
         SessionState::Abandoned => "abandoned",
@@ -503,6 +504,7 @@ fn session_state_to_str(state: SessionState) -> &'static str {
 
 fn parse_session_state(s: &str) -> SessionState {
     match s {
+        "spawning" => SessionState::Spawning,
         "completed" => SessionState::Completed,
         "abandoned" => SessionState::Abandoned,
         _ => SessionState::Active,

@@ -58,6 +58,12 @@ pub enum Outcome {
         error: String,
     },
 
+    /// Agent spawn failed before execution could begin.
+    SpawnFailed {
+        /// Error message from the spawn attempt.
+        error: String,
+    },
+
     /// Task was blocked on external dependency.
     Blocked {
         /// Reason for blocking.
@@ -184,7 +190,10 @@ impl Outcome {
     pub fn requires_retry(&self) -> bool {
         matches!(
             self,
-            Outcome::Rejected { .. } | Outcome::IntegrationFailed { .. } | Outcome::AgentError { .. }
+            Outcome::Rejected { .. }
+                | Outcome::IntegrationFailed { .. }
+                | Outcome::AgentError { .. }
+                | Outcome::SpawnFailed { .. }
         )
     }
 }
@@ -198,6 +207,7 @@ impl std::fmt::Display for Outcome {
             Outcome::Completed { .. } => write!(f, "completed"),
             Outcome::IntegrationFailed { .. } => write!(f, "integration failed"),
             Outcome::AgentError { .. } => write!(f, "agent error"),
+            Outcome::SpawnFailed { .. } => write!(f, "spawn failed"),
             Outcome::Blocked { .. } => write!(f, "blocked"),
             Outcome::Skipped { stage, .. } => write!(f, "{stage} skipped"),
             Outcome::Restage { target, .. } => write!(f, "restage to {target}"),
@@ -313,5 +323,29 @@ mod tests {
     fn test_restage_display() {
         let outcome = Outcome::restage("review", "work", "feedback");
         assert_eq!(outcome.to_string(), "restage to work");
+    }
+
+    #[test]
+    fn test_spawn_failed() {
+        let outcome = Outcome::SpawnFailed {
+            error: "Failed to spawn claude process".into(),
+        };
+        assert!(outcome.requires_retry());
+        assert!(!outcome.is_terminal());
+        assert_eq!(outcome.to_string(), "spawn failed");
+    }
+
+    #[test]
+    fn test_spawn_failed_serialization() {
+        let outcome = Outcome::SpawnFailed {
+            error: "Process not found".into(),
+        };
+        let json = serde_json::to_string(&outcome).unwrap();
+
+        assert!(json.contains("\"type\":\"spawn_failed\""));
+        assert!(json.contains("\"error\":\"Process not found\""));
+
+        let parsed: Outcome = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, outcome);
     }
 }

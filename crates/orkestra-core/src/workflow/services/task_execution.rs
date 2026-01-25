@@ -194,20 +194,35 @@ impl TaskExecutionService {
             run_config = run_config.with_resume(session_id);
         }
 
-        // 4. Run the agent
-        let (pid, events) = self.runner.run_async(run_config)?;
+        // 4. Create session and iteration BEFORE spawn attempt (critical - must succeed)
+        self.session_service
+            .on_spawn_starting(&task.id, stage)
+            .map_err(|e| ExecutionError::SessionError(format!("Failed to create spawn session: {e}")))?;
 
-        // 5. Record agent started (critical for session tracking)
-        if let Err(e) = self.session_service.on_agent_started(&task.id, stage, pid) {
-            workflow_error!("Failed to record agent start for {}/{}: {}", task.id, stage, e);
+        // 5. Run the agent
+        match self.runner.run_async(run_config) {
+            Ok((pid, events)) => {
+                // 6a. Record successful spawn (non-fatal if fails - spawn already happened)
+                if let Err(e) = self.session_service.on_agent_spawned(&task.id, stage, pid) {
+                    workflow_warn!("Failed to record agent spawn for {}/{}: {}", task.id, stage, e);
+                }
+
+                Ok(ExecutionHandle {
+                    task_id: task.id.clone(),
+                    stage: stage.to_string(),
+                    pid,
+                    events,
+                })
+            }
+            Err(e) => {
+                // 6b. Record spawn failure in iteration (non-fatal - spawn already failed)
+                if let Err(session_err) = self.session_service.on_spawn_failed(&task.id, stage, &e.to_string()) {
+                    workflow_warn!("Failed to record spawn failure for {}/{}: {}", task.id, stage, session_err);
+                }
+
+                Err(e.into())
+            }
         }
-
-        Ok(ExecutionHandle {
-            task_id: task.id.clone(),
-            stage: stage.to_string(),
-            pid,
-            events,
-        })
     }
 
     /// Execute a stage synchronously (blocking).
@@ -253,11 +268,29 @@ impl TaskExecutionService {
             run_config = run_config.with_resume(session_id);
         }
 
+        // Create session and iteration BEFORE spawn attempt (critical - must succeed)
+        self.session_service
+            .on_spawn_starting(&task.id, stage)
+            .map_err(|e| ExecutionError::SessionError(format!("Failed to create spawn session: {e}")))?;
+
         // Run synchronously
-        let result = self
-            .runner
-            .run_sync(run_config)
-            .map_err(ExecutionError::from)?;
+        let result = match self.runner.run_sync(run_config) {
+            Ok(result) => {
+                // Record successful spawn (non-fatal - spawn already happened)
+                if let Err(e) = self.session_service.on_agent_spawned(&task.id, stage, 0) {
+                    // Note: sync execution doesn't have real PID, using 0 as placeholder
+                    workflow_warn!("Failed to record agent spawn for {}/{}: {}", task.id, stage, e);
+                }
+                result
+            }
+            Err(e) => {
+                // Record spawn/execution failure (non-fatal - spawn already failed)
+                if let Err(session_err) = self.session_service.on_spawn_failed(&task.id, stage, &e.to_string()) {
+                    workflow_warn!("Failed to record spawn failure for {}/{}: {}", task.id, stage, session_err);
+                }
+                return Err(e.into());
+            }
+        };
 
         // Record session ID if captured (critical for resume)
         if let Some(session_id) = &result.session_id {
@@ -295,7 +328,10 @@ impl TaskExecutionService {
     ) -> WorkflowResult<Option<StageOutput>> {
         match event {
             RunEvent::SessionIdCaptured(session_id) => {
-                self.session_service.on_session_id(task_id, stage, &session_id)?;
+                // Record session ID (critical for resume, but don't fail the event)
+                if let Err(e) = self.session_service.on_session_id(task_id, stage, &session_id) {
+                    workflow_error!("Failed to record session ID for {}/{}: {}", task_id, stage, e);
+                }
                 Ok(None)
             }
             RunEvent::RawOutputReady(raw_output) => {
@@ -312,8 +348,10 @@ impl TaskExecutionService {
                     }
                 }
 
-                // Record agent exited
-                self.session_service.on_agent_exited(task_id, stage)?;
+                // Record agent exited (cleanup, non-critical)
+                if let Err(e) = self.session_service.on_agent_exited(task_id, stage) {
+                    workflow_warn!("Failed to record agent exit for {}/{}: {}", task_id, stage, e);
+                }
 
                 // Return parsed output
                 match result {
@@ -446,8 +484,9 @@ mod tests {
         // Create session service directly for testing
         let session_service = SessionService::new(store.clone());
 
-        // Start an agent first
-        session_service.on_agent_started("task-1", "planning", 12345).unwrap();
+        // Start an agent using new spawn lifecycle
+        session_service.on_spawn_starting("task-1", "planning").unwrap();
+        session_service.on_agent_spawned("task-1", "planning", 12345).unwrap();
 
         // Handle session ID event
         session_service

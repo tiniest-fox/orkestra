@@ -13,8 +13,9 @@
 
 use std::sync::Arc;
 
-use crate::workflow::domain::{SessionState, StageSession};
+use crate::workflow::domain::{Iteration, SessionState, StageSession};
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
+use crate::workflow::runtime::Outcome;
 
 // ============================================================================
 // Spawn Context
@@ -76,43 +77,131 @@ impl SessionService {
             }
         }
     }
+    // ========================================================================
+    // Spawn Lifecycle Methods
+    // ========================================================================
 
-    /// Record that an agent was started.
+    /// Create session and iteration before spawn attempt.
     ///
-    /// Creates or updates the session with the agent PID.
-    /// Call this immediately after spawning the agent process.
-    pub fn on_agent_started(
-        &self,
-        task_id: &str,
-        stage: &str,
-        pid: u32,
-    ) -> WorkflowResult<()> {
+    /// This is called BEFORE attempting to spawn the agent process.
+    /// Creates or updates a session in `Spawning` state.
+    /// Creates a new iteration only if there's no active one for this stage.
+    /// Returns the iteration ID for tracking.
+    pub fn on_spawn_starting(&self, task_id: &str, stage: &str) -> WorkflowResult<String> {
         let now = chrono::Utc::now().to_rfc3339();
+        let session_id = format!("{}-{}", task_id, stage);
 
+        // Get or create session in Spawning state
         let session = match self.store.get_stage_session(task_id, stage)? {
             Some(mut session) => {
-                // Update existing session
-                session.agent_pid = Some(pid);
-                session.resume_count += 1;
-                session.updated_at = now;
+                // Existing session - transition to Spawning
+                session.session_state = SessionState::Spawning;
+                session.updated_at = now.clone();
                 session
             }
             None => {
-                // Create new session
-                let id = format!("{}-{}", task_id, stage);
-                let mut session = StageSession::new(id, task_id, stage, &now);
-                session.agent_pid = Some(pid);
+                // New session in Spawning state
+                let mut session = StageSession::new(&session_id, task_id, stage, &now);
+                session.session_state = SessionState::Spawning;
                 session
             }
         };
 
+        self.store.save_stage_session(&session)?;
+
+        // Check for existing active iteration - reuse if present
+        // (task creation already creates an initial iteration)
+        if let Some(active_iter) = self.store.get_active_iteration(task_id, stage)? {
+            return Ok(active_iter.id);
+        }
+
+        // No active iteration - create one for this spawn attempt
+        let iterations = self.store.get_iterations(task_id)?;
+        let stage_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == stage).collect();
+        let next_num = stage_iterations.len() as u32 + 1;
+
+        let iteration_id = format!("{}-{}-iter-{}", task_id, stage, next_num);
+        let iteration = Iteration::new(&iteration_id, task_id, stage, next_num, &now)
+            .with_stage_session_id(&session_id);
+
+        self.store.save_iteration(&iteration)?;
+
+        Ok(iteration_id)
+    }
+
+    /// Update session after successful spawn.
+    ///
+    /// Transitions session from `Spawning` to `Active` and records PID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no session exists (on_spawn_starting should have been called first).
+    pub fn on_agent_spawned(&self, task_id: &str, stage: &str, pid: u32) -> WorkflowResult<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let mut session = self
+            .store
+            .get_stage_session(task_id, stage)?
+            .ok_or_else(|| {
+                crate::workflow::ports::WorkflowError::StageSessionNotFound(format!(
+                    "{}/{} - on_spawn_starting must be called first",
+                    task_id, stage
+                ))
+            })?;
+
+        session.session_state = SessionState::Active;
+        session.agent_pid = Some(pid);
+        session.updated_at = now;
         self.store.save_stage_session(&session)
+    }
+
+    /// Record spawn failure in iteration.
+    ///
+    /// Sets the current iteration's outcome to `SpawnFailed` and transitions
+    /// session back to `Active` (ready for retry).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no session exists (on_spawn_starting should have been called first).
+    pub fn on_spawn_failed(&self, task_id: &str, stage: &str, error: &str) -> WorkflowResult<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Update session state to Active (ready for retry)
+        let mut session = self
+            .store
+            .get_stage_session(task_id, stage)?
+            .ok_or_else(|| {
+                crate::workflow::ports::WorkflowError::StageSessionNotFound(format!(
+                    "{}/{} - on_spawn_starting must be called first",
+                    task_id, stage
+                ))
+            })?;
+
+        session.session_state = SessionState::Active;
+        session.updated_at = now.clone();
+        self.store.save_stage_session(&session)?;
+
+        // Find and end the active iteration with SpawnFailed outcome
+        if let Some(mut iteration) = self.store.get_active_iteration(task_id, stage)? {
+            iteration.end(
+                &now,
+                Outcome::SpawnFailed {
+                    error: error.to_string(),
+                },
+            );
+            self.store.save_iteration(&iteration)?;
+        }
+
+        Ok(())
     }
 
     /// Record the Claude session ID.
     ///
     /// Called when the session ID is captured from the agent's output stream.
     /// Only the first session ID is recorded (subsequent calls are ignored).
+    ///
+    /// Note: Session must already exist (on_spawn_starting creates it before agent runs).
+    /// If no session exists, this is logged as a warning but doesn't fail.
     pub fn on_session_id(
         &self,
         task_id: &str,
@@ -129,17 +218,18 @@ impl SessionService {
                     session.updated_at = now;
                     self.store.save_stage_session(&session)?;
                 }
+                Ok(())
             }
             None => {
-                // Create session with ID (edge case: session ID before agent_started)
-                let id = format!("{}-{}", task_id, stage);
-                let mut session = StageSession::new(id, task_id, stage, &now);
-                session.claude_session_id = Some(session_id.to_string());
-                self.store.save_stage_session(&session)?;
+                // Session should exist - on_spawn_starting creates it before agent runs
+                // Log warning but don't fail - session ID is informational
+                eprintln!(
+                    "[orkestra] WARNING: Received session ID for {}/{} but no session exists",
+                    task_id, stage
+                );
+                Ok(())
             }
         }
-
-        Ok(())
     }
 
     /// Record that the agent process exited.
@@ -217,10 +307,12 @@ mod tests {
 
     #[test]
     fn test_spawn_context_with_resume() {
-        let service = create_service();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = SessionService::new(store);
 
-        // Start agent
-        service.on_agent_started("task-1", "planning", 12345).unwrap();
+        // Start agent using new lifecycle
+        service.on_spawn_starting("task-1", "planning").unwrap();
+        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
 
         // Record session ID
         service
@@ -238,10 +330,12 @@ mod tests {
 
     #[test]
     fn test_completed_session_no_resume() {
-        let service = create_service();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = SessionService::new(store);
 
-        // Start and complete session
-        service.on_agent_started("task-1", "planning", 12345).unwrap();
+        // Start and complete session using new lifecycle
+        service.on_spawn_starting("task-1", "planning").unwrap();
+        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
         service
             .on_session_id("task-1", "planning", "claude-session-abc")
             .unwrap();
@@ -255,10 +349,12 @@ mod tests {
 
     #[test]
     fn test_abandoned_session_no_resume() {
-        let service = create_service();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = SessionService::new(store);
 
-        // Start and abandon session
-        service.on_agent_started("task-1", "planning", 12345).unwrap();
+        // Start and abandon session using new lifecycle
+        service.on_spawn_starting("task-1", "planning").unwrap();
+        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
         service
             .on_session_id("task-1", "planning", "claude-session-abc")
             .unwrap();
@@ -272,10 +368,12 @@ mod tests {
 
     #[test]
     fn test_first_session_id_wins() {
-        let service = create_service();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = SessionService::new(store);
 
-        // Start agent
-        service.on_agent_started("task-1", "planning", 12345).unwrap();
+        // Start agent using new lifecycle
+        service.on_spawn_starting("task-1", "planning").unwrap();
+        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
 
         // Record first session ID
         service
@@ -293,18 +391,116 @@ mod tests {
 
     #[test]
     fn test_get_running_agents() {
-        let service = create_service();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = SessionService::new(store);
 
         // Task 1 has running agent
-        service.on_agent_started("task-1", "planning", 12345).unwrap();
+        service.on_spawn_starting("task-1", "planning").unwrap();
+        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
 
         // Task 2 agent finished
-        service.on_agent_started("task-2", "planning", 12346).unwrap();
+        service.on_spawn_starting("task-2", "planning").unwrap();
+        service.on_agent_spawned("task-2", "planning", 12346).unwrap();
         service.on_agent_exited("task-2", "planning").unwrap();
 
         let running = service.get_running_agents().unwrap();
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].0, "task-1");
         assert_eq!(running[0].2, 12345);
+    }
+
+    // ========================================================================
+    // Spawn Lifecycle Tests
+    // ========================================================================
+
+    #[test]
+    fn test_spawn_starting_creates_session_and_iteration() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = SessionService::new(store.clone());
+
+        let iter_id = service.on_spawn_starting("task-1", "planning").unwrap();
+
+        // Session should be in Spawning state
+        let session = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        assert_eq!(session.session_state, SessionState::Spawning);
+
+        // Iteration should exist and be active
+        let iteration = store.get_active_iteration("task-1", "planning").unwrap().unwrap();
+        assert_eq!(iteration.id, iter_id);
+        assert!(iteration.is_active());
+    }
+
+    #[test]
+    fn test_agent_spawned_transitions_to_active() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = SessionService::new(store.clone());
+
+        // Start spawn
+        service.on_spawn_starting("task-1", "planning").unwrap();
+
+        // Spawn succeeded
+        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
+
+        // Session should be Active with PID
+        let session = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        assert_eq!(session.session_state, SessionState::Active);
+        assert_eq!(session.agent_pid, Some(12345));
+    }
+
+    #[test]
+    fn test_spawn_failed_records_outcome() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = SessionService::new(store.clone());
+
+        // Start spawn
+        service.on_spawn_starting("task-1", "planning").unwrap();
+
+        // Spawn failed
+        service.on_spawn_failed("task-1", "planning", "Process not found").unwrap();
+
+        // Session should be Active (ready for retry)
+        let session = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        assert_eq!(session.session_state, SessionState::Active);
+
+        // Iteration should have SpawnFailed outcome
+        let iterations = store.get_iterations("task-1").unwrap();
+        let iteration = iterations.iter().find(|i| i.stage == "planning").unwrap();
+        assert!(!iteration.is_active());
+
+        match iteration.outcome.as_ref().unwrap() {
+            Outcome::SpawnFailed { error } => {
+                assert_eq!(error, "Process not found");
+            }
+            other => panic!("Expected SpawnFailed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_multiple_spawn_attempts() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = SessionService::new(store.clone());
+
+        // First attempt - fails
+        service.on_spawn_starting("task-1", "planning").unwrap();
+        service.on_spawn_failed("task-1", "planning", "First failure").unwrap();
+
+        // Second attempt - also fails
+        service.on_spawn_starting("task-1", "planning").unwrap();
+        service.on_spawn_failed("task-1", "planning", "Second failure").unwrap();
+
+        // Third attempt - succeeds
+        service.on_spawn_starting("task-1", "planning").unwrap();
+        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
+
+        // Should have 3 iterations
+        let iterations = store.get_iterations("task-1").unwrap();
+        assert_eq!(iterations.len(), 3);
+
+        // First two should have SpawnFailed outcomes
+        assert!(matches!(iterations[0].outcome, Some(Outcome::SpawnFailed { .. })));
+        assert!(matches!(iterations[1].outcome, Some(Outcome::SpawnFailed { .. })));
+
+        // Third should still be active (agent running)
+        assert!(iterations[2].is_active());
     }
 }

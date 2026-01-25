@@ -38,14 +38,14 @@ pub mod runtime;
 pub mod services;
 
 // Re-export main types for convenience
-pub use adapters::{InMemoryWorkflowStore, SqliteWorkflowStore};
+pub use adapters::{Git2GitService, InMemoryWorkflowStore, SqliteWorkflowStore};
 pub use config::{
     load_workflow, load_workflow_for_project, IntegrationConfig, LoadError, StageCapabilities,
     StageConfig, WorkflowConfig,
 };
 pub use domain::{Iteration, Question, QuestionAnswer, QuestionOption, Task};
 pub use execution::{PromptBuilder, StageOutput, StageOutputError, StagePromptContext};
-pub use ports::{WorkflowError, WorkflowResult, WorkflowStore};
+pub use ports::{GitError, GitService, MergeResult, WorkflowError, WorkflowResult, WorkflowStore, WorktreeCreated};
 pub use runtime::{
     Artifact, ArtifactStore, Outcome, Phase, Status, Transition, TransitionError,
     TransitionTrigger, TransitionValidator,

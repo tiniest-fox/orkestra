@@ -132,6 +132,25 @@ impl Task {
         self
     }
 
+    /// Builder: set worktree path.
+    #[must_use]
+    pub fn with_worktree(mut self, worktree_path: impl Into<String>) -> Self {
+        self.worktree_path = Some(worktree_path.into());
+        self
+    }
+
+    /// Builder: set both branch and worktree (convenience for git worktree creation).
+    #[must_use]
+    pub fn with_git_worktree(
+        mut self,
+        branch_name: impl Into<String>,
+        worktree_path: impl Into<String>,
+    ) -> Self {
+        self.branch_name = Some(branch_name.into());
+        self.worktree_path = Some(worktree_path.into());
+        self
+    }
+
     /// Get the current stage name, if active.
     pub fn current_stage(&self) -> Option<&str> {
         self.status.stage()

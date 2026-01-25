@@ -41,3 +41,15 @@ pub fn workflow_answer_questions(
         .answer_questions(&task_id, answers)
         .map_err(Into::into)
 }
+
+/// Integrate a completed task by merging its branch to primary.
+///
+/// Commits any pending changes, merges the task branch, and cleans up.
+/// On merge conflict, the task is moved back to the work stage.
+#[tauri::command]
+pub fn workflow_integrate_task(
+    state: State<AppState>,
+    task_id: String,
+) -> Result<Task, TauriError> {
+    state.api()?.integrate_task(&task_id).map_err(Into::into)
+}

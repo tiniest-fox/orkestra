@@ -230,7 +230,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         let task = api.agent_started(&task.id).unwrap();
 
         assert_eq!(task.phase, Phase::AgentWorking);
@@ -242,7 +242,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description").unwrap();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
         task.phase = Phase::AgentWorking;
         api.store.save_task(&task).unwrap();
 
@@ -256,7 +256,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         let task = api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Artifact {
@@ -274,7 +274,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         let task = api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Questions {
@@ -292,7 +292,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description").unwrap();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Move to review stage
         task.status = Status::active("review");
@@ -315,7 +315,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         let task = api.agent_started(&task.id).unwrap();
 
         // Planning stage can't restage
@@ -334,7 +334,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         let task = api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Failed {
@@ -352,7 +352,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         let task = api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Blocked {
@@ -370,7 +370,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description").unwrap();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Move to review stage (automated)
         task.status = Status::active("review");
@@ -394,11 +394,11 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         // Create some tasks in different states
-        let task1 = api.create_task("Task 1", "Ready for agent").unwrap();
-        let task2 = api.create_task("Task 2", "Also ready").unwrap();
+        let task1 = api.create_task("Task 1", "Ready for agent", None).unwrap();
+        let task2 = api.create_task("Task 2", "Also ready", None).unwrap();
         let _ = api.agent_started(&task2.id).unwrap(); // Now working
 
-        let mut task3 = api.create_task("Task 3", "Done").unwrap();
+        let mut task3 = api.create_task("Task 3", "Done", None).unwrap();
         task3.status = Status::Done;
         api.store.save_task(&task3).unwrap();
 

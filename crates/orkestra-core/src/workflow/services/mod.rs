@@ -23,7 +23,7 @@
 //! let store = Box::new(SqliteWorkflowStore::new(conn));
 //! let api = WorkflowApi::new(workflow, store);
 //!
-//! let task = api.create_task("Fix bug", "Fix the login bug")?;
+//! let task = api.create_task("Fix bug", "Fix the login bug", None)?;
 //! // ... agent does work ...
 //! let task = api.approve(&task.id)?;
 //! ```

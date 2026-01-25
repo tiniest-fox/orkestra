@@ -101,7 +101,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description").unwrap();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
         task.pending_questions = vec![Question::new("q1", "What framework?")];
         api.store.save_task(&task).unwrap();
 
@@ -116,7 +116,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         let task = api.agent_started(&task.id).unwrap();
         let _ = api
             .process_agent_output(
@@ -141,7 +141,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
 
         let iterations = api.get_iterations(&task.id).unwrap();
         assert_eq!(iterations.len(), 1);
@@ -154,7 +154,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
 
         let latest = api.get_latest_iteration(&task.id, "planning").unwrap();
         assert!(latest.is_some());
@@ -170,7 +170,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
 
         // Initially no feedback
         let feedback = api.get_rejection_feedback(&task.id).unwrap();
@@ -199,7 +199,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description").unwrap();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
         assert!(!api.has_pending_questions(&task.id).unwrap());
 
         task.pending_questions = vec![Question::new("q1", "What framework?")];
@@ -214,13 +214,13 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         assert_eq!(
             api.get_current_stage(&task.id).unwrap(),
             Some("planning".to_string())
         );
 
-        let mut done_task = api.create_task("Done", "Done task").unwrap();
+        let mut done_task = api.create_task("Done", "Done task", None).unwrap();
         done_task.status = Status::Done;
         api.store.save_task(&done_task).unwrap();
 

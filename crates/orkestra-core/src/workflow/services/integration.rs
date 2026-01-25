@@ -1,12 +1,84 @@
 //! Git integration operations: success/failure handling.
 
+use std::path::Path;
+
 use crate::workflow::domain::{Iteration, Task};
-use crate::workflow::ports::{WorkflowError, WorkflowResult};
+use crate::workflow::ports::{GitError, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase, Status};
 
 use super::WorkflowApi;
 
 impl WorkflowApi {
+    /// Attempt to integrate a completed task by merging its branch to primary.
+    ///
+    /// This method orchestrates the full integration process:
+    /// 1. Commits any pending changes in the worktree
+    /// 2. Merges the task branch to the primary branch (main/master)
+    /// 3. On success: cleans up worktree, records success
+    /// 4. On conflict: aborts merge, moves task back to recovery stage
+    ///
+    /// If no git service is configured, silently succeeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if the task is not Done.
+    pub fn integrate_task(&self, task_id: &str) -> WorkflowResult<Task> {
+        let task = self.get_task(task_id)?;
+
+        if !task.is_done() {
+            return Err(WorkflowError::InvalidTransition(
+                "Cannot integrate task that is not Done".into(),
+            ));
+        }
+
+        // If no git service, just record success
+        let Some(git) = &self.git_service else {
+            return self.integration_succeeded(task_id);
+        };
+
+        // If no branch, nothing to merge
+        let Some(branch_name) = &task.branch_name else {
+            return self.integration_succeeded(task_id);
+        };
+
+        // Commit any pending changes in the worktree
+        if let Some(worktree_path) = &task.worktree_path {
+            if let Err(e) = git.commit_pending_changes(
+                Path::new(worktree_path),
+                &format!("Final changes for {}", task_id),
+            ) {
+                eprintln!("[git] Warning: Failed to commit pending changes: {e}");
+            }
+        }
+
+        // Attempt the merge
+        match git.merge_to_primary(branch_name) {
+            Ok(_merge_result) => {
+                // Cleanup worktree but keep branch for history
+                if task.worktree_path.is_some() {
+                    if let Err(e) = git.remove_worktree(task_id, false) {
+                        eprintln!("[git] Warning: Failed to remove worktree: {e}");
+                    }
+                }
+                self.integration_succeeded(task_id)
+            }
+            Err(GitError::MergeConflict { conflict_files, .. }) => {
+                // Abort the failed merge
+                if let Err(e) = git.abort_merge() {
+                    eprintln!("[git] Warning: Failed to abort merge: {e}");
+                }
+                self.integration_failed(task_id, "Merge conflict", conflict_files)
+            }
+            Err(e) => {
+                // Non-conflict merge error
+                if let Err(abort_err) = git.abort_merge() {
+                    eprintln!("[git] Warning: Failed to abort merge: {abort_err}");
+                }
+                self.integration_failed(task_id, &format!("{e}"), vec![])
+            }
+        }
+    }
+
     /// Record successful integration (merge).
     ///
     /// This marks the task as fully complete after its branch has been merged.
@@ -129,7 +201,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description").unwrap();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
         task.status = Status::Done;
         task.completed_at = Some(chrono::Utc::now().to_rfc3339());
         api.store.save_task(&task).unwrap();
@@ -151,7 +223,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
 
         let result = api.integration_succeeded(&task.id);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
@@ -208,7 +280,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
 
         let result = api.integration_failed(&task.id, "Error", vec![]);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));

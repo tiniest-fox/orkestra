@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::ports::WorkflowStore;
+use crate::workflow::ports::{GitService, WorkflowStore};
 
 /// The main API for workflow operations.
 ///
@@ -14,17 +14,45 @@ use crate::workflow::ports::WorkflowStore;
 ///
 /// ```ignore
 /// let api = WorkflowApi::new(workflow, store);
-/// let task = api.create_task("Fix bug", "Fix the login bug")?;
+/// let task = api.create_task("Fix bug", "Fix the login bug", None)?;
 /// ```
 pub struct WorkflowApi {
     pub(crate) workflow: WorkflowConfig,
     pub(crate) store: Arc<dyn WorkflowStore>,
+    pub(crate) git_service: Option<Arc<dyn GitService>>,
 }
 
 impl WorkflowApi {
     /// Create a new WorkflowApi with the given config and store.
+    ///
+    /// Git service is not configured by default. Use `with_git()` to add it.
     pub fn new(workflow: WorkflowConfig, store: Arc<dyn WorkflowStore>) -> Self {
-        Self { workflow, store }
+        Self {
+            workflow,
+            store,
+            git_service: None,
+        }
+    }
+
+    /// Create a new WorkflowApi with git worktree support.
+    ///
+    /// Git worktrees enable parallel task development by isolating each task
+    /// in its own worktree with a dedicated branch.
+    pub fn with_git(
+        workflow: WorkflowConfig,
+        store: Arc<dyn WorkflowStore>,
+        git_service: Arc<dyn GitService>,
+    ) -> Self {
+        Self {
+            workflow,
+            store,
+            git_service: Some(git_service),
+        }
+    }
+
+    /// Get the git service, if configured.
+    pub fn git_service(&self) -> Option<&Arc<dyn GitService>> {
+        self.git_service.as_ref()
     }
 
     /// Get the workflow configuration.

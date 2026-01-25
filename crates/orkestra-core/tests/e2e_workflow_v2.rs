@@ -23,13 +23,14 @@ use std::time::Duration;
 use tempfile::TempDir;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
+use orkestra_core::testutil::create_temp_git_repo;
 use orkestra_core::workflow::{
     config::{load_workflow, WorkflowConfig},
     domain::{Question, QuestionAnswer, QuestionOption},
     execution::StageOutput,
     runtime::{Outcome, Phase},
-    InMemoryCrashRecoveryStore, MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore,
-    TaskExecutionService, WorkflowApi,
+    Git2GitService, GitService, InMemoryCrashRecoveryStore, MockAgentRunner, OrchestratorLoop,
+    SqliteWorkflowStore, TaskExecutionService, WorkflowApi,
 };
 
 // =============================================================================
@@ -109,10 +110,16 @@ impl TestContext {
     fn call_count(&self) -> usize {
         self.runner.calls().len()
     }
+
+    /// Get the repository path for creating conflicts on main branch.
+    fn repo_path(&self) -> &std::path::Path {
+        self._temp_dir.path()
+    }
 }
 
 fn setup_test() -> TestContext {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    // Create git repo instead of plain temp dir
+    let temp_dir = create_temp_git_repo().expect("Failed to create git repo");
 
     // Create workflow config file
     let orkestra_dir = temp_dir.path().join(".orkestra");
@@ -141,9 +148,15 @@ fn setup_test() -> TestContext {
     let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
         Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
 
-    let api = Arc::new(Mutex::new(WorkflowApi::new(
+    // Initialize git service for worktree support
+    let git_service: Arc<dyn GitService> =
+        Arc::new(Git2GitService::new(temp_dir.path()).expect("Git service should init"));
+
+    // Use WorkflowApi::with_git for real git integration
+    let api = Arc::new(Mutex::new(WorkflowApi::with_git(
         loaded_workflow.clone(),
         Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
+        git_service,
     )));
     let project_root = PathBuf::from(temp_dir.path());
 
@@ -200,6 +213,7 @@ fn test_exhaustive_workflow_flow() {
         .create_task(
             "Implement feature X",
             "Add the new feature X with full test coverage",
+            None,
         )
         .expect("Should create task");
 
@@ -207,6 +221,16 @@ fn test_exhaustive_workflow_flow() {
 
     assert_eq!(task.current_stage(), Some("planning"));
     assert_eq!(task.phase, Phase::Idle);
+
+    // Verify worktree was created by git service
+    assert!(task.branch_name.is_some(), "Task should have a branch");
+    assert!(task.worktree_path.is_some(), "Task should have a worktree");
+    let worktree_path = task.worktree_path.as_ref().unwrap();
+    assert!(
+        std::path::Path::new(worktree_path).exists(),
+        "Worktree directory should exist at {}",
+        worktree_path
+    );
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     assert_eq!(iterations.len(), 1);
@@ -411,14 +435,40 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.artifact("verdict"), Some("LGTM! All checks pass."));
 
     // =========================================================================
-    // Step 10: Integration fails → Back to Working
+    // Step 10: Integration fails (real merge conflict) → Back to Working
     // =========================================================================
 
-    let task = ctx.api()
-        .integration_failed(&task_id, "Merge conflict in src/main.rs", vec!["src/main.rs".to_string()])
-        .expect("Should handle integration failure");
+    // Create a real merge conflict:
+    // 1. Create a file in the task's worktree and commit it
+    let worktree_path = std::path::Path::new(task.worktree_path.as_ref().unwrap());
+    std::fs::write(worktree_path.join("conflict.txt"), "Task's version of the file").unwrap();
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(worktree_path)
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["commit", "-m", "Add conflict file from task"])
+        .current_dir(worktree_path)
+        .output()
+        .unwrap();
 
-    assert_eq!(task.current_stage(), Some("work"));
+    // 2. Create the same file on main with different content
+    orkestra_core::testutil::create_and_commit_file(
+        ctx.repo_path(),
+        "conflict.txt",
+        "Main's conflicting version of the file",
+        "Add conflicting file on main",
+    )
+    .unwrap();
+
+    // 3. Try to integrate - should fail with merge conflict
+    let task = ctx
+        .api()
+        .integrate_task(&task_id)
+        .expect("integrate_task should handle conflict gracefully");
+
+    assert_eq!(task.current_stage(), Some("work"), "Should return to work on conflict");
     assert_eq!(task.phase, Phase::Idle);
     assert!(!task.is_done());
 
@@ -436,7 +486,15 @@ fn test_exhaustive_workflow_flow() {
     // Step 11: Work → Review → Done → Integration succeeds → Complete
     // =========================================================================
 
-    // Orchestrator spawns worker to resolve conflict
+    // First, resolve the conflict on main by reverting the conflicting commit
+    // This simulates someone resolving the conflict so the task can be integrated
+    std::process::Command::new("git")
+        .args(["reset", "--hard", "HEAD~1"])
+        .current_dir(ctx.repo_path())
+        .output()
+        .unwrap();
+
+    // Orchestrator spawns worker to "resolve" conflict (in reality main was fixed)
     ctx.set_output(&task_id, MockAgentOutput::Artifact {
         name: "summary".to_string(),
         content: "Resolved merge conflict".to_string(),
@@ -457,9 +515,10 @@ fn test_exhaustive_workflow_flow() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(task.is_done(), "Automated review should auto-transition to Done");
 
-    // Integration succeeds
-    let task = ctx.api()
-        .integration_succeeded(&task_id)
+    // Integration succeeds with real git merge
+    let task = ctx
+        .api()
+        .integrate_task(&task_id)
         .expect("Should integrate successfully");
 
     assert!(task.is_done());
@@ -507,7 +566,7 @@ fn test_restage_validation() {
     let ctx = setup_test();
 
     // Create task and get to work stage
-    let task = ctx.api().create_task("Test", "Test task").unwrap();
+    let task = ctx.api().create_task("Test", "Test task", None).unwrap();
     let task_id = task.id.clone();
 
     ctx.set_output(&task_id, MockAgentOutput::Artifact {
@@ -620,7 +679,7 @@ integration:
     };
 
     // Create a task and get it to Done
-    let task = api.lock().unwrap().create_task("Test", "Test task").unwrap();
+    let task = api.lock().unwrap().create_task("Test", "Test task", None).unwrap();
     let task_id = task.id.clone();
 
     // Planning stage

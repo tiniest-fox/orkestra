@@ -315,12 +315,14 @@ pub fn run() {
             commands::workflow_approve,
             commands::workflow_reject,
             commands::workflow_answer_questions,
+            commands::workflow_integrate_task,
             commands::workflow_get_config,
             commands::workflow_get_iterations,
             commands::workflow_get_artifact,
             commands::workflow_get_pending_questions,
             commands::workflow_get_current_stage,
             commands::workflow_get_rejection_feedback,
+            commands::workflow_list_branches,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

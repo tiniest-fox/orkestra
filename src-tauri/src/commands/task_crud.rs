@@ -11,15 +11,19 @@ pub fn workflow_get_tasks(state: State<AppState>) -> Result<Vec<Task>, TauriErro
 }
 
 /// Create a new task.
+///
+/// If git service is configured, creates a worktree and branch.
+/// `base_branch` specifies which branch to create from (defaults to current).
 #[tauri::command]
 pub fn workflow_create_task(
     state: State<AppState>,
     title: String,
     description: String,
+    base_branch: Option<String>,
 ) -> Result<Task, TauriError> {
     state
         .api()?
-        .create_task(&title, &description)
+        .create_task(&title, &description, base_branch.as_deref())
         .map_err(Into::into)
 }
 

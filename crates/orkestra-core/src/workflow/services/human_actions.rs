@@ -181,7 +181,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description").unwrap();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Simulate agent producing artifact and going to review
         let now = chrono::Utc::now().to_rfc3339();
@@ -209,7 +209,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description").unwrap();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Move to review stage
         task.status = Status::active("review");
@@ -231,7 +231,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         // Task is in Idle phase, not AwaitingReview
 
         let result = api.approve(&task.id);
@@ -283,7 +283,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description").unwrap();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Simulate agent asking questions
         task.pending_questions = vec![Question::new("q1", "What framework?")];
@@ -310,7 +310,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
 
         let result = api.answer_questions(&task.id, vec![]);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));

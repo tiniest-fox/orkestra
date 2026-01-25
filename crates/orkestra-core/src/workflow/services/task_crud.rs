@@ -14,7 +14,15 @@ impl WorkflowApi {
     ///
     /// If `title` is empty, a background thread will generate one using AI.
     /// The task is returned immediately with empty title, which will be filled in asynchronously.
-    pub fn create_task(&self, title: &str, description: &str) -> WorkflowResult<Task> {
+    ///
+    /// If git service is configured, creates a worktree and branch for the task.
+    /// The `base_branch` parameter specifies which branch to create from (defaults to current branch).
+    pub fn create_task(
+        &self,
+        title: &str,
+        description: &str,
+        base_branch: Option<&str>,
+    ) -> WorkflowResult<Task> {
         let id = self.store.next_task_id()?;
         let first_stage = self
             .workflow
@@ -22,7 +30,21 @@ impl WorkflowApi {
             .ok_or_else(|| WorkflowError::InvalidTransition("No stages in workflow".into()))?;
 
         let now = chrono::Utc::now().to_rfc3339();
-        let task = Task::new(&id, title, description, &first_stage.name, &now);
+        let mut task = Task::new(&id, title, description, &first_stage.name, &now);
+
+        // Create git worktree if git service is configured
+        if let Some(git) = &self.git_service {
+            match git.create_worktree(&id, base_branch) {
+                Ok(result) => {
+                    task.branch_name = Some(result.branch_name);
+                    task.worktree_path = Some(result.worktree_path.to_string_lossy().to_string());
+                }
+                Err(e) => {
+                    // Log but don't fail task creation
+                    eprintln!("[git] Warning: Failed to create worktree for {id}: {e}");
+                }
+            }
+        }
 
         self.store.save_task(&task)?;
 
@@ -99,10 +121,22 @@ impl WorkflowApi {
 
     /// Delete a task and its iterations.
     ///
+    /// If git service is configured and the task has a worktree, it will be cleaned up
+    /// along with its branch.
+    ///
     /// Note: This does not delete child tasks. Call recursively if needed.
     pub fn delete_task(&self, id: &str) -> WorkflowResult<()> {
-        // Verify task exists
-        let _ = self.get_task(id)?;
+        // Verify task exists and get worktree info
+        let task = self.get_task(id)?;
+
+        // Clean up git worktree and branch if present
+        if let Some(git) = &self.git_service {
+            if task.worktree_path.is_some() {
+                if let Err(e) = git.remove_worktree(id, true) {
+                    eprintln!("[git] Warning: Failed to remove worktree for {id}: {e}");
+                }
+            }
+        }
 
         // Delete iterations first
         self.store.delete_iterations(id)?;
@@ -159,7 +193,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Fix bug", "Fix the login bug").unwrap();
+        let task = api.create_task("Fix bug", "Fix the login bug", None).unwrap();
 
         assert_eq!(task.title, "Fix bug");
         assert_eq!(task.description, "Fix the login bug");
@@ -173,7 +207,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let parent = api.create_task("Parent", "Parent task").unwrap();
+        let parent = api.create_task("Parent", "Parent task", None).unwrap();
         let subtask = api.create_subtask(&parent.id, "Child", "Child task").unwrap();
 
         assert_eq!(subtask.parent_id, Some(parent.id.clone()));
@@ -185,7 +219,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         let fetched = api.get_task(&task.id).unwrap();
 
         assert_eq!(fetched.id, task.id);
@@ -208,9 +242,9 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let parent = api.create_task("Parent", "Parent task").unwrap();
+        let parent = api.create_task("Parent", "Parent task", None).unwrap();
         let _ = api.create_subtask(&parent.id, "Child", "Child task").unwrap();
-        let task2 = api.create_task("Task 2", "Second task").unwrap();
+        let task2 = api.create_task("Task 2", "Second task", None).unwrap();
 
         let tasks = api.list_tasks().unwrap();
         assert_eq!(tasks.len(), 2);
@@ -224,7 +258,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let parent = api.create_task("Parent", "Parent task").unwrap();
+        let parent = api.create_task("Parent", "Parent task", None).unwrap();
         let child1 = api.create_subtask(&parent.id, "Child 1", "First").unwrap();
         let child2 = api.create_subtask(&parent.id, "Child 2", "Second").unwrap();
 
@@ -240,7 +274,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         api.delete_task(&task.id).unwrap();
 
         let result = api.get_task(&task.id);
@@ -253,7 +287,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description").unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         let iterations = api.get_iterations(&task.id).unwrap();
 
         assert_eq!(iterations.len(), 1);

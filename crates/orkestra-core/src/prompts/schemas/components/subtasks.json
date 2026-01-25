@@ -1,0 +1,30 @@
+{
+  "description": "Breakdown into subtasks",
+  "properties": {
+    "subtasks": {
+      "type": "array",
+      "description": "List of subtasks to create",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Short title for the subtask"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed description of what to do"
+          },
+          "depends_on": {
+            "type": "array",
+            "description": "Indices of subtasks this depends on (0-based)",
+            "items": { "type": "integer" }
+          }
+        },
+        "required": ["title", "description"]
+      },
+      "minItems": 1
+    }
+  },
+  "required": ["subtasks"]
+}

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::workflow::config::{AgentStageConfig, StageConfig, WorkflowConfig};
+use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::{QuestionAnswer, Task};
 
 /// Context for building a stage prompt.
@@ -302,25 +302,23 @@ pub fn load_custom_schema(project_root: Option<&Path>, path: &str) -> std::io::R
 
 /// Get the JSON schema for a stage's agent.
 ///
-/// Returns the schema string for built-in agent types,
-/// loads custom schema for custom agents.
+/// Generates schema dynamically based on stage configuration,
+/// or loads custom schema if specified.
 pub fn get_agent_schema(
-    agent_config: &AgentStageConfig,
+    stage_config: &StageConfig,
     project_root: Option<&Path>,
 ) -> Option<String> {
     // Check for custom schema file first
-    if let Some(schema_file) = &agent_config.schema_file {
+    if let Some(schema_file) = &stage_config.agent.schema_file {
         return load_custom_schema(project_root, schema_file).ok();
     }
 
-    // Use built-in schema for known agent types
-    match agent_config.agent_type.as_str() {
-        "planner" => Some(crate::prompts::PLANNER_OUTPUT_SCHEMA.to_string()),
-        "breakdown" => Some(crate::prompts::BREAKDOWN_OUTPUT_SCHEMA.to_string()),
-        "worker" => Some(crate::prompts::WORKER_OUTPUT_SCHEMA.to_string()),
-        "reviewer" => Some(crate::prompts::REVIEWER_OUTPUT_SCHEMA.to_string()),
-        _ => None, // Custom agent types may not have schemas
-    }
+    // Generate schema dynamically based on stage config
+    let schema_config = crate::prompts::SchemaConfig {
+        artifact_name: &stage_config.artifact,
+        capabilities: &stage_config.capabilities,
+    };
+    Some(crate::prompts::generate_stage_schema(&schema_config))
 }
 
 /// Resolve complete agent configuration for a stage.
@@ -355,8 +353,8 @@ pub fn resolve_stage_agent_config(
     // Build complete prompt with agent definition
     let prompt = build_complete_prompt(&agent_def, &ctx);
 
-    // Get JSON schema
-    let json_schema = get_agent_schema(&stage.agent, project_root);
+    // Get JSON schema dynamically based on stage config
+    let json_schema = get_agent_schema(stage, project_root);
 
     Ok(ResolvedAgentConfig {
         prompt,
@@ -653,35 +651,35 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_get_agent_schema_builtin() {
-        use crate::workflow::config::AgentStageConfig;
-
-        let planner = AgentStageConfig::planner();
-        let schema = get_agent_schema(&planner, None);
+    fn test_get_agent_schema_generates_dynamically() {
+        // Planning stage with questions capability
+        let planning = StageConfig::new("planning", "plan")
+            .with_capabilities(StageCapabilities::with_questions());
+        let schema = get_agent_schema(&planning, None);
         assert!(schema.is_some());
-        // The schema should contain "type" definitions
-        assert!(schema.unwrap().contains("type"));
+        let schema_str = schema.unwrap();
+        // Should contain the artifact name in the type enum
+        assert!(schema_str.contains("\"plan\""));
+        // Should have questions capability
+        assert!(schema_str.contains("\"questions\""));
 
-        let worker = AgentStageConfig::worker();
-        let schema = get_agent_schema(&worker, None);
+        // Work stage without questions
+        let work = StageConfig::new("work", "summary");
+        let schema = get_agent_schema(&work, None);
         assert!(schema.is_some());
+        let schema_str = schema.unwrap();
+        assert!(schema_str.contains("\"summary\""));
+        // Should NOT have questions (no capability)
+        assert!(!schema_str.contains("\"questions\""));
 
-        let reviewer = AgentStageConfig::reviewer();
-        let schema = get_agent_schema(&reviewer, None);
+        // Review stage with restage capability
+        let review = StageConfig::new("review", "verdict")
+            .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]));
+        let schema = get_agent_schema(&review, None);
         assert!(schema.is_some());
-
-        let breakdown = AgentStageConfig::breakdown();
-        let schema = get_agent_schema(&breakdown, None);
-        assert!(schema.is_some());
-    }
-
-    #[test]
-    fn test_get_agent_schema_custom_no_file() {
-        use crate::workflow::config::AgentStageConfig;
-
-        let custom = AgentStageConfig::new("custom");
-        let schema = get_agent_schema(&custom, None);
-        assert!(schema.is_none()); // Custom agents have no default schema
+        let schema_str = schema.unwrap();
+        assert!(schema_str.contains("\"verdict\""));
+        assert!(schema_str.contains("\"rejected\"")); // restage type
     }
 
     #[test]

@@ -1,20 +1,15 @@
 {
-  "type": "object",
-  "description": "Clarifying questions before planning",
+  "description": "Clarifying questions before proceeding",
   "properties": {
-    "type": {
-      "type": "string",
-      "const": "questions"
-    },
     "questions": {
       "type": "array",
-      "description": "Questions that need answers before creating a plan",
+      "description": "Questions that need answers",
       "items": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
-            "description": "Unique identifier for the question (e.g., q1, q2)"
+            "description": "Unique identifier (e.g., q1, q2)"
           },
           "question": {
             "type": "string",
@@ -22,7 +17,7 @@
           },
           "context": {
             "type": "string",
-            "description": "Why this question matters for planning"
+            "description": "Why this question matters"
           },
           "options": {
             "type": "array",
@@ -32,11 +27,11 @@
               "properties": {
                 "label": {
                   "type": "string",
-                  "description": "Short display label for the option"
+                  "description": "Short display label"
                 },
                 "description": {
                   "type": "string",
-                  "description": "Optional longer description explaining this choice"
+                  "description": "Explanation of this choice"
                 }
               },
               "required": ["label"]
@@ -48,5 +43,5 @@
       "minItems": 1
     }
   },
-  "required": ["type", "questions"]
+  "required": ["questions"]
 }

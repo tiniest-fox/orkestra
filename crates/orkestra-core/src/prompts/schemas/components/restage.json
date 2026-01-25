@@ -1,0 +1,14 @@
+{
+  "description": "Request to restage work to a previous stage",
+  "properties": {
+    "target": {
+      "type": "string",
+      "description": "The stage to return to (e.g., 'work')"
+    },
+    "feedback": {
+      "type": "string",
+      "description": "What needs to be fixed or improved"
+    }
+  },
+  "required": ["target", "feedback"]
+}

@@ -1,0 +1,10 @@
+{
+  "description": "Stage artifact output - the main deliverable",
+  "properties": {
+    "content": {
+      "type": "string",
+      "description": "The artifact content (usually markdown)"
+    }
+  },
+  "required": ["content"]
+}

@@ -1,51 +1,183 @@
 //! Agent output schemas and title generation prompt.
 //!
 //! This module provides:
-//! - JSON schemas for agent structured output (planner, breakdown, worker, reviewer)
+//! - Dynamic JSON schema generation based on stage configuration
+//! - Reusable schema components loaded from files
 //! - Title generator prompt template
 
 use handlebars::Handlebars;
 use serde::Serialize;
+use serde_json::{json, Value};
 use std::sync::LazyLock;
 
+use crate::workflow::config::StageCapabilities;
+
 // =============================================================================
-// JSON Schemas (loaded from files)
+// Schema Components (loaded from files)
 // =============================================================================
 
-// Component schemas (for composition)
-const PLAN_SCHEMA: &str = include_str!("schemas/components/plan.json");
-const QUESTIONS_SCHEMA: &str = include_str!("schemas/components/questions.json");
+/// Artifact schema component - generic artifact with content field.
+const ARTIFACT_COMPONENT: &str = include_str!("schemas/components/artifact.json");
 
-/// JSON schema for breakdown output - used with Claude's --json-schema flag.
-pub const BREAKDOWN_OUTPUT_SCHEMA: &str = include_str!("schemas/breakdown.json");
+/// Questions schema component - for stages with ask_questions capability.
+const QUESTIONS_COMPONENT: &str = include_str!("schemas/components/questions.json");
 
-/// JSON schema for worker output - used with Claude's --json-schema flag.
-pub const WORKER_OUTPUT_SCHEMA: &str = include_str!("schemas/worker.json");
+/// Subtasks schema component - for stages with produce_subtasks capability.
+const SUBTASKS_COMPONENT: &str = include_str!("schemas/components/subtasks.json");
 
-/// JSON schema for reviewer output - used with Claude's --json-schema flag.
-pub const REVIEWER_OUTPUT_SCHEMA: &str = include_str!("schemas/reviewer.json");
+/// Restage schema component - for stages with supports_restage capability.
+const RESTAGE_COMPONENT: &str = include_str!("schemas/components/restage.json");
 
-/// Composed planner schema (plan OR questions) - built at runtime from components.
-/// The planner outputs either questions (needs more info) or a plan (ready).
-pub static PLANNER_OUTPUT_SCHEMA: LazyLock<String> = LazyLock::new(|| {
-    compose_planner_schema(PLAN_SCHEMA, QUESTIONS_SCHEMA)
-});
+/// Terminal states schema component - completed, failed, blocked.
+const TERMINAL_COMPONENT: &str = include_str!("schemas/components/terminal.json");
 
-/// Composes the planner schema from plan and questions components using oneOf.
-fn compose_planner_schema(plan_schema: &str, questions_schema: &str) -> String {
-    let plan: serde_json::Value =
-        serde_json::from_str(plan_schema).expect("plan.json should be valid JSON");
-    let questions: serde_json::Value =
-        serde_json::from_str(questions_schema).expect("questions.json should be valid JSON");
+// Note: The legacy schema files (breakdown.json, worker.json, reviewer.json, plan.json)
+// are kept for reference but schemas are now generated dynamically via generate_stage_schema().
+// The component files in schemas/components/ are the source of truth.
 
-    let composed = serde_json::json!({
-        "type": "object",
-        "description": "Planner output: either clarifying questions or an implementation plan",
-        "oneOf": [plan, questions]
+// =============================================================================
+// Dynamic Schema Generation
+// =============================================================================
+
+/// Configuration for schema generation.
+#[derive(Debug, Clone)]
+pub struct SchemaConfig<'a> {
+    /// Name of the artifact this stage produces.
+    pub artifact_name: &'a str,
+    /// Stage capabilities.
+    pub capabilities: &'a StageCapabilities,
+}
+
+/// Generate a JSON schema for a stage based on its configuration.
+///
+/// The schema is a flat discriminated union (no oneOf at top level)
+/// that includes all valid output types for the stage:
+/// - The stage's artifact (type = artifact_name)
+/// - Terminal states: completed, failed, blocked
+/// - Questions (if ask_questions capability)
+/// - Subtasks/breakdown (if produce_subtasks capability)
+/// - Restage/rejected (if supports_restage capability)
+pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
+    let artifact = load_component(ARTIFACT_COMPONENT);
+    let terminal = load_component(TERMINAL_COMPONENT);
+    let questions = load_component(QUESTIONS_COMPONENT);
+    let subtasks = load_component(SUBTASKS_COMPONENT);
+    let restage = load_component(RESTAGE_COMPONENT);
+
+    // Build the list of valid type values
+    let mut type_enum = vec![
+        config.artifact_name.to_string(),
+        "completed".to_string(),
+        "failed".to_string(),
+        "blocked".to_string(),
+    ];
+
+    if config.capabilities.ask_questions {
+        type_enum.push("questions".to_string());
+    }
+    if config.capabilities.produce_subtasks {
+        type_enum.push("breakdown".to_string());
+    }
+    if !config.capabilities.supports_restage.is_empty() {
+        type_enum.push("rejected".to_string());
+    }
+
+    // Build properties object
+    let mut properties = json!({
+        "type": {
+            "type": "string",
+            "enum": type_enum,
+            "description": format!("Output type. Use '{}' for the main artifact.", config.artifact_name)
+        }
     });
 
-    serde_json::to_string(&composed).expect("composed schema should serialize")
+    // Add artifact content property
+    if let Some(artifact_props) = artifact.get("properties") {
+        if let Some(content) = artifact_props.get("content") {
+            properties["content"] = content.clone();
+        }
+    }
+
+    // Add terminal state properties
+    if let Some(completed) = terminal.get("completed").and_then(|c| c.get("properties")) {
+        if let Some(summary) = completed.get("summary") {
+            properties["summary"] = summary.clone();
+        }
+    }
+    if let Some(failed) = terminal.get("failed").and_then(|f| f.get("properties")) {
+        if let Some(error) = failed.get("error") {
+            properties["error"] = error.clone();
+        }
+    }
+    if let Some(blocked) = terminal.get("blocked").and_then(|b| b.get("properties")) {
+        if let Some(reason) = blocked.get("reason") {
+            properties["reason"] = reason.clone();
+        }
+    }
+
+    // Add questions property if capability enabled
+    if config.capabilities.ask_questions {
+        if let Some(q_props) = questions.get("properties") {
+            if let Some(q) = q_props.get("questions") {
+                properties["questions"] = q.clone();
+            }
+        }
+    }
+
+    // Add subtasks property if capability enabled
+    if config.capabilities.produce_subtasks {
+        if let Some(s_props) = subtasks.get("properties") {
+            if let Some(s) = s_props.get("subtasks") {
+                properties["subtasks"] = s.clone();
+            }
+        }
+    }
+
+    // Add restage properties if capability enabled
+    if !config.capabilities.supports_restage.is_empty() {
+        if let Some(r_props) = restage.get("properties") {
+            if let Some(target) = r_props.get("target") {
+                properties["target"] = target.clone();
+            }
+            if let Some(feedback) = r_props.get("feedback") {
+                properties["feedback"] = feedback.clone();
+            }
+        }
+    }
+
+    // Build the complete schema
+    let schema = json!({
+        "type": "object",
+        "description": format!(
+            "Stage output. Set 'type' to '{}' with 'content' for the artifact, or use terminal types (completed/failed/blocked).",
+            config.artifact_name
+        ),
+        "properties": properties,
+        "required": ["type"],
+        "additionalProperties": false
+    });
+
+    serde_json::to_string(&schema).expect("schema should serialize")
 }
+
+/// Load and parse a component schema.
+fn load_component(json_str: &str) -> Value {
+    serde_json::from_str(json_str).expect("component schema should be valid JSON")
+}
+
+// =============================================================================
+// Legacy Schema Support (for backwards compatibility)
+// =============================================================================
+
+/// Composed planner schema - kept for backwards compatibility.
+/// New code should use `generate_stage_schema` instead.
+pub static PLANNER_OUTPUT_SCHEMA: LazyLock<String> = LazyLock::new(|| {
+    // Use the new generator with planning stage defaults
+    generate_stage_schema(&SchemaConfig {
+        artifact_name: "plan",
+        capabilities: &StageCapabilities::with_questions(),
+    })
+});
 
 // =============================================================================
 // Title Generator
@@ -82,10 +214,115 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_planner_schema_composition() {
+    fn test_generate_schema_basic() {
+        let config = SchemaConfig {
+            artifact_name: "plan",
+            capabilities: &StageCapabilities::default(),
+        };
+        let schema = generate_stage_schema(&config);
+        let parsed: Value = serde_json::from_str(&schema).unwrap();
+
+        // Should have type property with enum
+        let type_prop = parsed.get("properties").unwrap().get("type").unwrap();
+        let type_enum = type_prop.get("enum").unwrap().as_array().unwrap();
+        assert!(type_enum.iter().any(|v| v == "plan"));
+        assert!(type_enum.iter().any(|v| v == "completed"));
+        assert!(type_enum.iter().any(|v| v == "failed"));
+        assert!(type_enum.iter().any(|v| v == "blocked"));
+
+        // Should NOT have questions (no capability)
+        assert!(!type_enum.iter().any(|v| v == "questions"));
+    }
+
+    #[test]
+    fn test_generate_schema_with_questions() {
+        let config = SchemaConfig {
+            artifact_name: "plan",
+            capabilities: &StageCapabilities::with_questions(),
+        };
+        let schema = generate_stage_schema(&config);
+        let parsed: Value = serde_json::from_str(&schema).unwrap();
+
+        let type_enum = parsed
+            .get("properties")
+            .unwrap()
+            .get("type")
+            .unwrap()
+            .get("enum")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        // Should have questions
+        assert!(type_enum.iter().any(|v| v == "questions"));
+
+        // Should have questions property
+        assert!(parsed.get("properties").unwrap().get("questions").is_some());
+    }
+
+    #[test]
+    fn test_generate_schema_with_subtasks() {
+        let caps = StageCapabilities {
+            produce_subtasks: true,
+            ..Default::default()
+        };
+        let config = SchemaConfig {
+            artifact_name: "breakdown",
+            capabilities: &caps,
+        };
+        let schema = generate_stage_schema(&config);
+        let parsed: Value = serde_json::from_str(&schema).unwrap();
+
+        let type_enum = parsed
+            .get("properties")
+            .unwrap()
+            .get("type")
+            .unwrap()
+            .get("enum")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        assert!(type_enum.iter().any(|v| v == "breakdown"));
+        assert!(parsed.get("properties").unwrap().get("subtasks").is_some());
+    }
+
+    #[test]
+    fn test_generate_schema_with_restage() {
+        let caps = StageCapabilities::with_restage(vec!["work".into()]);
+        let config = SchemaConfig {
+            artifact_name: "verdict",
+            capabilities: &caps,
+        };
+        let schema = generate_stage_schema(&config);
+        let parsed: Value = serde_json::from_str(&schema).unwrap();
+
+        let type_enum = parsed
+            .get("properties")
+            .unwrap()
+            .get("type")
+            .unwrap()
+            .get("enum")
+            .unwrap()
+            .as_array()
+            .unwrap();
+
+        assert!(type_enum.iter().any(|v| v == "rejected"));
+        assert!(parsed.get("properties").unwrap().get("target").is_some());
+        assert!(parsed.get("properties").unwrap().get("feedback").is_some());
+    }
+
+    #[test]
+    fn test_planner_schema_no_oneof() {
         let schema = PLANNER_OUTPUT_SCHEMA.as_str();
-        let parsed: serde_json::Value = serde_json::from_str(schema).unwrap();
-        assert!(parsed.get("oneOf").is_some());
+        let parsed: Value = serde_json::from_str(schema).unwrap();
+
+        // Should NOT have oneOf at top level
+        assert!(parsed.get("oneOf").is_none());
+
+        // Should have flat properties with type discriminator
+        assert!(parsed.get("properties").is_some());
+        assert!(parsed.get("properties").unwrap().get("type").is_some());
     }
 
     #[test]

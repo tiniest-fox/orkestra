@@ -1,0 +1,30 @@
+{
+  "description": "Terminal output states",
+  "completed": {
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "Summary of what was accomplished"
+      }
+    },
+    "required": ["summary"]
+  },
+  "failed": {
+    "properties": {
+      "error": {
+        "type": "string",
+        "description": "Description of what went wrong"
+      }
+    },
+    "required": ["error"]
+  },
+  "blocked": {
+    "properties": {
+      "reason": {
+        "type": "string",
+        "description": "Why the task is blocked"
+      }
+    },
+    "required": ["reason"]
+  }
+}

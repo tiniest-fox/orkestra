@@ -22,6 +22,7 @@ use crate::workflow::ports::{CrashRecoveryStore, WorkflowResult, WorkflowStore};
 
 use super::prompt_service::PromptService;
 use super::session_service::SessionService;
+use super::{workflow_error, workflow_warn};
 
 // ============================================================================
 // Execution Handle
@@ -196,8 +197,10 @@ impl TaskExecutionService {
         // 4. Run the agent
         let (pid, events) = self.runner.run_async(run_config)?;
 
-        // 5. Record agent started
-        let _ = self.session_service.on_agent_started(&task.id, stage, pid);
+        // 5. Record agent started (critical for session tracking)
+        if let Err(e) = self.session_service.on_agent_started(&task.id, stage, pid) {
+            workflow_error!("Failed to record agent start for {}/{}: {}", task.id, stage, e);
+        }
 
         Ok(ExecutionHandle {
             task_id: task.id.clone(),
@@ -256,19 +259,27 @@ impl TaskExecutionService {
             .run_sync(run_config)
             .map_err(ExecutionError::from)?;
 
-        // Record session ID if captured
+        // Record session ID if captured (critical for resume)
         if let Some(session_id) = &result.session_id {
-            let _ = self.session_service.on_session_id(&task.id, stage, session_id);
+            if let Err(e) = self.session_service.on_session_id(&task.id, stage, session_id) {
+                workflow_error!("Failed to record session ID for {}/{}: {}", task.id, stage, e);
+            }
         }
 
-        // Persist raw output for crash recovery
-        let _ = self.crash_recovery.persist(&task.id, stage, &result.raw_output);
+        // Persist raw output for crash recovery (critical)
+        if let Err(e) = self.crash_recovery.persist(&task.id, stage, &result.raw_output) {
+            workflow_error!("Failed to persist crash recovery for {}/{}: {}", task.id, stage, e);
+        }
 
-        // Clear on success
-        let _ = self.crash_recovery.clear(&task.id, stage);
+        // Clear on success (cleanup, non-critical)
+        if let Err(e) = self.crash_recovery.clear(&task.id, stage) {
+            workflow_warn!("Failed to clear crash recovery for {}/{}: {}", task.id, stage, e);
+        }
 
-        // Record agent exited
-        let _ = self.session_service.on_agent_exited(&task.id, stage);
+        // Record agent exited (cleanup)
+        if let Err(e) = self.session_service.on_agent_exited(&task.id, stage) {
+            workflow_warn!("Failed to record agent exit for {}/{}: {}", task.id, stage, e);
+        }
 
         Ok(result.parsed_output)
     }
@@ -288,13 +299,17 @@ impl TaskExecutionService {
                 Ok(None)
             }
             RunEvent::RawOutputReady(raw_output) => {
-                let _ = self.crash_recovery.persist(task_id, stage, &raw_output);
+                if let Err(e) = self.crash_recovery.persist(task_id, stage, &raw_output) {
+                    workflow_error!("Failed to persist raw output for {}/{}: {}", task_id, stage, e);
+                }
                 Ok(None)
             }
             RunEvent::Completed(result) => {
-                // Clear crash recovery on success
+                // Clear crash recovery on success (cleanup, non-critical)
                 if result.is_ok() {
-                    let _ = self.crash_recovery.clear(task_id, stage);
+                    if let Err(e) = self.crash_recovery.clear(task_id, stage) {
+                        workflow_warn!("Failed to clear crash recovery for {}/{}: {}", task_id, stage, e);
+                    }
                 }
 
                 // Record agent exited
@@ -353,8 +368,10 @@ impl TaskExecutionService {
     }
 
     /// Clear a pending output after processing.
-    pub fn clear_pending(&self, task_id: &str, stage: &str) {
-        let _ = self.crash_recovery.clear(task_id, stage);
+    pub fn clear_pending(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
+        self.crash_recovery
+            .clear(task_id, stage)
+            .map_err(|e| crate::workflow::ports::WorkflowError::Storage(e.to_string()))
     }
 }
 

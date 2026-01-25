@@ -283,12 +283,14 @@ impl OrchestratorLoop {
                     // Try to mark task as failed, but don't propagate errors.
                     // Even if this fails, we still want to report the error event.
                     if let Ok(api) = self.api.lock() {
-                        let _ = api.process_agent_output(
+                        if let Err(e) = api.process_agent_output(
                             task_id,
                             StageOutput::Failed {
                                 error: format!("Agent error: {error}"),
                             },
-                        );
+                        ) {
+                            eprintln!("[orkestra] ERROR: Failed to mark task {} as failed: {}", task_id, e);
+                        }
                     }
                     Ok(Some(OrchestratorEvent::Error {
                         task_id: Some(task_id.to_string()),
@@ -369,7 +371,9 @@ impl OrchestratorLoop {
                     if let Ok(api) = self.api.lock() {
                         match api.process_agent_output(&recovered.task_id, output) {
                             Ok(_) => {
-                                self.executor.clear_pending(&recovered.task_id, &recovered.stage);
+                                if let Err(e) = self.executor.clear_pending(&recovered.task_id, &recovered.stage) {
+                                    eprintln!("[orkestra] WARNING: Failed to clear pending for {}/{}: {}", recovered.task_id, recovered.stage, e);
+                                }
                                 events.push(OrchestratorEvent::RecoveredPending {
                                     task_id: recovered.task_id,
                                     stage: recovered.stage,

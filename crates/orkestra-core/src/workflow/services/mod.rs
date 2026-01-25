@@ -40,6 +40,28 @@ mod session_service;
 mod task_crud;
 mod task_execution;
 
+// ============================================================================
+// Logging Macros
+// ============================================================================
+
+/// Log workflow warnings (non-critical failures that should be visible for debugging).
+macro_rules! workflow_warn {
+    ($($arg:tt)*) => {
+        eprintln!("[orkestra] WARNING: {}", format!($($arg)*));
+    };
+}
+
+/// Log workflow errors (critical failures that impact functionality).
+macro_rules! workflow_error {
+    ($($arg:tt)*) => {
+        eprintln!("[orkestra] ERROR: {}", format!($($arg)*));
+    };
+}
+
+// Make macros available within the services module
+pub(crate) use workflow_error;
+pub(crate) use workflow_warn;
+
 pub use api::WorkflowApi;
 pub use orchestrator::{OrchestratorError, OrchestratorEvent, OrchestratorLoop};
 pub use prompt_service::PromptService;

@@ -307,9 +307,13 @@ fn read_output_and_send_events(
                 if let Some(error_msg) = check_for_api_error(&line) {
                     eprintln!("[agent runner] API error detected: {error_msg}");
                     // Send raw output (for debugging)
-                    let _ = tx.send(RunEvent::RawOutputReady(full_output.clone()));
+                    if tx.send(RunEvent::RawOutputReady(full_output.clone())).is_err() {
+                        eprintln!("[agent runner] Channel closed, raw output not delivered");
+                    }
                     // Send error completion - do NOT disarm, let guard kill the process
-                    let _ = tx.send(RunEvent::Completed(Err(error_msg)));
+                    if tx.send(RunEvent::Completed(Err(error_msg))).is_err() {
+                        eprintln!("[agent runner] Channel closed before error completion could be sent");
+                    }
                     return; // Exit early, guard will kill the looping process on drop
                 }
             }
@@ -323,20 +327,26 @@ fn read_output_and_send_events(
     // Process completed normally
     handle.disarm();
 
-    // Send raw output event
-    let _ = tx.send(RunEvent::RawOutputReady(full_output.clone()));
+    // Send raw output event (for crash recovery)
+    if tx.send(RunEvent::RawOutputReady(full_output.clone())).is_err() {
+        eprintln!("[agent runner] Channel closed, raw output not delivered");
+    }
 
     // Try to extract session ID from full output if not already sent
     // (handles case where output is a single JSON array line)
     if !session_id_sent {
         if let Some(sid) = extract_session_id(&full_output) {
-            let _ = tx.send(RunEvent::SessionIdCaptured(sid));
+            if tx.send(RunEvent::SessionIdCaptured(sid)).is_err() {
+                eprintln!("[agent runner] Channel closed, session ID not delivered");
+            }
         }
     }
 
-    // Parse and send completion event
+    // Parse and send completion event (critical - caller needs this)
     let result = parse_agent_output(&full_output);
-    let _ = tx.send(RunEvent::Completed(result));
+    if tx.send(RunEvent::Completed(result)).is_err() {
+        eprintln!("[agent runner] Channel closed before completion could be sent");
+    }
 }
 
 // ============================================================================

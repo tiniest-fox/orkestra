@@ -320,8 +320,10 @@ impl GitService for Git2GitService {
 
         // Delete the branch if requested
         if delete_branch {
-            // Ignore errors when deleting branch (it may not exist)
-            let _ = self.delete_branch(&branch_name);
+            if let Err(e) = self.delete_branch(&branch_name) {
+                // Branch may not exist or may be checked out elsewhere - log but don't fail
+                eprintln!("[orkestra] WARNING: Failed to delete branch {}: {}", branch_name, e);
+            }
         }
 
         Ok(())

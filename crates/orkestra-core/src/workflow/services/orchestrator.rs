@@ -18,6 +18,7 @@ use crate::workflow::adapters::{ClaudeProcessSpawner, FsCrashRecoveryStore};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::execution::{AgentRunner, RunEvent, StageOutput};
 use crate::workflow::ports::{CrashRecoveryStore, ProcessSpawner, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::runtime::{Phase, Status};
 
 use super::task_execution::{ExecutionHandle, TaskExecutionService};
 use super::{workflow_error, WorkflowApi};
@@ -159,6 +160,9 @@ impl OrchestratorLoop {
     where
         F: FnMut(OrchestratorEvent) + Send,
     {
+        // Recover stale setup tasks on startup (tasks stuck in SettingUp phase)
+        self.recover_stale_setup_tasks();
+
         // Recover pending outputs on startup
         for event in self.recover_pending() {
             on_event(event);
@@ -372,6 +376,61 @@ impl OrchestratorLoop {
         }
 
         Ok(events)
+    }
+
+    /// Recover tasks stuck in SettingUp phase (from app crash during setup).
+    ///
+    /// Tasks that were being set up when the app crashed will be stuck in SettingUp.
+    /// We mark them as Failed since the setup was interrupted and cannot be resumed.
+    /// Any partially-created worktrees are cleaned up.
+    fn recover_stale_setup_tasks(&self) {
+        let Ok(api) = self.api.lock() else {
+            eprintln!("[recovery] Failed to acquire API lock for stale setup recovery");
+            return;
+        };
+
+        // Use store.list_tasks() directly to get ALL tasks including subtasks
+        // (api.list_tasks() filters out subtasks)
+        let Ok(tasks) = api.store.list_tasks() else {
+            eprintln!("[recovery] Failed to list tasks for stale setup recovery");
+            return;
+        };
+
+        for task in tasks {
+            if task.phase == Phase::SettingUp {
+                eprintln!("[recovery] Found stale SettingUp task: {}", task.id);
+
+                // Only clean up worktrees for parent tasks (subtasks don't own worktrees)
+                if task.parent_id.is_none() {
+                    if let Some(ref git) = api.git_service {
+                        // Try to remove worktree - it may or may not exist depending on when crash occurred
+                        if let Err(e) = git.remove_worktree(&task.id, true) {
+                            // This is expected if worktree wasn't created yet, only warn for unexpected errors
+                            if !e.to_string().contains("not found") && !e.to_string().contains("does not exist") {
+                                eprintln!("[recovery] WARNING: Failed to clean up worktree for {}: {}", task.id, e);
+                            }
+                        }
+                    }
+                }
+
+                let mut task = task;
+                task.status = Status::Failed {
+                    error: Some("Setup interrupted by app restart - please delete and recreate task".into()),
+                };
+                task.phase = Phase::Idle;
+
+                // Only clear worktree info for parent tasks that own their worktrees.
+                // Subtasks inherit parent's worktree and shouldn't have it cleared.
+                if task.parent_id.is_none() {
+                    task.worktree_path = None;
+                    task.branch_name = None;
+                }
+
+                if let Err(e) = api.store.save_task(&task) {
+                    eprintln!("[recovery] Failed to mark stale task {} as failed: {}", task.id, e);
+                }
+            }
+        }
     }
 
     /// Recover pending outputs from crash.

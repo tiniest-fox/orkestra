@@ -197,11 +197,23 @@ impl WorkflowApi {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
+
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::domain::Question;
     use crate::workflow::InMemoryWorkflowStore;
 
     use super::*;
+
+    /// Create a task and wait for async setup to complete (transition to Idle).
+    /// In tests without git configured, this is nearly instant but we need a small delay.
+    fn create_task_ready(api: &WorkflowApi, title: &str, desc: &str) -> Task {
+        let task = api.create_task(title, desc, None).unwrap();
+        // Wait for async setup to complete (no-op without git, but still async)
+        std::thread::sleep(Duration::from_millis(10));
+        // Re-fetch to get updated phase
+        api.get_task(&task.id).unwrap()
+    }
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
@@ -221,7 +233,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description", None).unwrap();
+        let task = create_task_ready(&api, "Test", "Description");
         let task = api.agent_started(&task.id).unwrap();
 
         assert_eq!(task.phase, Phase::AgentWorking);
@@ -247,7 +259,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description", None).unwrap();
+        let task = create_task_ready(&api, "Test", "Description");
         let task = api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Artifact {
@@ -265,7 +277,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description", None).unwrap();
+        let task = create_task_ready(&api, "Test", "Description");
         let task = api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Questions {
@@ -306,7 +318,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description", None).unwrap();
+        let task = create_task_ready(&api, "Test", "Description");
         let task = api.agent_started(&task.id).unwrap();
 
         // Planning stage can't restage
@@ -325,7 +337,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description", None).unwrap();
+        let task = create_task_ready(&api, "Test", "Description");
         let task = api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Failed {
@@ -343,7 +355,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description", None).unwrap();
+        let task = create_task_ready(&api, "Test", "Description");
         let task = api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Blocked {
@@ -385,11 +397,11 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         // Create some tasks in different states
-        let task1 = api.create_task("Task 1", "Ready for agent", None).unwrap();
-        let task2 = api.create_task("Task 2", "Also ready", None).unwrap();
+        let task1 = create_task_ready(&api, "Task 1", "Ready for agent");
+        let task2 = create_task_ready(&api, "Task 2", "Also ready");
         let _ = api.agent_started(&task2.id).unwrap(); // Now working
 
-        let mut task3 = api.create_task("Task 3", "Done", None).unwrap();
+        let mut task3 = create_task_ready(&api, "Task 3", "Done");
         task3.status = Status::Done;
         api.store.save_task(&task3).unwrap();
 

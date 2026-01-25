@@ -26,7 +26,7 @@ use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::testutil::create_temp_git_repo;
 use orkestra_core::workflow::{
     config::{load_workflow, WorkflowConfig},
-    domain::{Question, QuestionAnswer, QuestionOption},
+    domain::{Question, QuestionAnswer, QuestionOption, Task},
     execution::StageOutput,
     runtime::{Outcome, Phase},
     Git2GitService, GitService, InMemoryCrashRecoveryStore, MockAgentRunner, OrchestratorLoop,
@@ -78,6 +78,24 @@ struct TestContext {
 }
 
 impl TestContext {
+    /// Create a task and wait for async setup to complete.
+    /// Returns the task in Idle phase (or Failed if setup failed).
+    fn create_task(&self, title: &str, desc: &str) -> Task {
+        let task = self.api().create_task(title, desc, None).expect("Should create task");
+        let task_id = task.id.clone();
+
+        // Wait for async setup to complete (worktree creation)
+        for _ in 0..100 {
+            std::thread::sleep(Duration::from_millis(20));
+            let task = self.api().get_task(&task_id).expect("Should get task");
+            if task.phase != Phase::SettingUp {
+                return task;
+            }
+        }
+
+        panic!("Task setup did not complete in time for task {}", task_id);
+    }
+
     /// Run orchestrator until all queued agent work completes.
     /// This handles cases like restage where multiple agents run in sequence.
     fn tick(&self) {
@@ -209,18 +227,15 @@ fn test_exhaustive_workflow_flow() {
     // =========================================================================
     // Step 1: Task created → Planning
     // =========================================================================
-    let task = ctx.api()
-        .create_task(
-            "Implement feature X",
-            "Add the new feature X with full test coverage",
-            None,
-        )
-        .expect("Should create task");
+    let task = ctx.create_task(
+        "Implement feature X",
+        "Add the new feature X with full test coverage",
+    );
 
     let task_id = task.id.clone();
 
     assert_eq!(task.current_stage(), Some("planning"));
-    assert_eq!(task.phase, Phase::Idle);
+    assert_eq!(task.phase, Phase::Idle, "Task should be Idle after setup completes");
 
     // Verify worktree was created by git service
     assert!(task.branch_name.is_some(), "Task should have a branch");
@@ -565,8 +580,8 @@ fn test_exhaustive_workflow_flow() {
 fn test_restage_validation() {
     let ctx = setup_test();
 
-    // Create task and get to work stage
-    let task = ctx.api().create_task("Test", "Test task", None).unwrap();
+    // Create task and get to work stage (waits for async setup)
+    let task = ctx.create_task("Test", "Test task");
     let task_id = task.id.clone();
 
     ctx.set_output(&task_id, MockAgentOutput::Artifact {
@@ -681,6 +696,9 @@ integration:
     // Create a task and get it to Done
     let task = api.lock().unwrap().create_task("Test", "Test task", None).unwrap();
     let task_id = task.id.clone();
+
+    // Wait for async setup to complete (even without git, setup runs async)
+    std::thread::sleep(Duration::from_millis(20));
 
     // Planning stage
     runner.set_output(&task_id, MockAgentOutput::Artifact {

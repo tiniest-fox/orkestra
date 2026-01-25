@@ -181,7 +181,26 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description", None).unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
+        let task_id = task.id.clone();
+
+        // Wait for async setup to complete with bounded polling (robust for slow CI)
+        let mut task = {
+            let mut result = None;
+            for _ in 0..100 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                let task = api.get_task(&task_id).unwrap();
+                if task.phase != Phase::SettingUp {
+                    result = Some(task);
+                    break;
+                }
+            }
+            result.expect("Task setup should complete within 1 second")
+        };
+
+        // Verify setup succeeded
+        assert_eq!(task.phase, Phase::Idle, "Task setup should complete");
+        assert!(task.status.is_active(), "Task should not fail during setup");
 
         // Simulate agent producing artifact and going to review
         let now = chrono::Utc::now().to_rfc3339();
@@ -209,7 +228,22 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description", None).unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
+        let task_id = task.id.clone();
+
+        // Wait for async setup to complete with bounded polling
+        let mut task = {
+            let mut result = None;
+            for _ in 0..100 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                let task = api.get_task(&task_id).unwrap();
+                if task.phase != Phase::SettingUp {
+                    result = Some(task);
+                    break;
+                }
+            }
+            result.expect("Task setup should complete within 1 second")
+        };
 
         // Move to review stage
         task.status = Status::active("review");

@@ -157,12 +157,21 @@ impl WorkflowApi {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use crate::workflow::domain::Task;
     use crate::workflow::execution::StageOutput;
     use crate::workflow::runtime::Status;
     use crate::workflow::InMemoryWorkflowStore;
 
     use super::*;
+
+    /// Create a task and wait for async setup to complete.
+    fn create_task_ready(api: &WorkflowApi, title: &str, desc: &str) -> Task {
+        let task = api.create_task(title, desc, None).unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        api.get_task(&task.id).unwrap()
+    }
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
@@ -193,7 +202,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description", None).unwrap();
+        let task = create_task_ready(&api, "Test", "Description");
         let task = api.agent_started(&task.id).unwrap();
         let _ = api
             .process_agent_output(
@@ -247,7 +256,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description", None).unwrap();
+        let task = create_task_ready(&api, "Test", "Description");
 
         // Initially no feedback
         let feedback = api.get_rejection_feedback(&task.id).unwrap();

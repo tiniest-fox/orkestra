@@ -39,16 +39,18 @@ impl Git2GitService {
         })
     }
 
-    /// Run the worktree setup script if it exists.
+    /// Run the worktree setup script if it exists (synchronous, returns errors).
     ///
     /// Looks for `.orkestra/worktree_setup.sh` in the main repo and runs it
     /// with the worktree path as an argument. This allows projects to customize
     /// worktree setup (e.g., copying .env files, running pnpm install).
+    ///
+    /// Returns an error if the script fails - setup failures should fail the task.
     fn run_worktree_setup(&self, worktree_path: &Path) -> Result<(), GitError> {
         let setup_script = self.repo_path.join(".orkestra/worktree_setup.sh");
 
         if !setup_script.exists() {
-            return Ok(());
+            return Ok(()); // No script = success
         }
 
         eprintln!(
@@ -61,19 +63,19 @@ impl Git2GitService {
             .arg(worktree_path)
             .current_dir(&self.repo_path)
             .output()
-            .map_err(|e| {
-                GitError::WorktreeError(format!("Failed to run worktree setup script: {e}"))
-            })?;
+            .map_err(|e| GitError::WorktreeError(format!("Setup script failed to run: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("[worktree] Setup script failed: {stderr}");
-            // Don't fail worktree creation if setup script fails - just warn
-        } else {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if !stdout.trim().is_empty() {
-                eprintln!("[worktree] Setup output: {stdout}");
-            }
+            return Err(GitError::WorktreeError(format!(
+                "Setup script failed: {}",
+                stderr.trim()
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if !stdout.trim().is_empty() {
+            eprintln!("[worktree] Setup output: {stdout}");
         }
 
         Ok(())

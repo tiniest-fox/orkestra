@@ -79,29 +79,28 @@ function formatOutcome(outcome: WorkflowIteration["outcome"]): {
 
 /**
  * Build tabs from task artifacts in consistent order.
- * Order: Details, Logs, then artifacts in stage order, then Iterations.
+ * Order: Details, Iterations, Logs, then artifacts in stage order.
  */
 function buildTabs(task: WorkflowTask, config: WorkflowConfig): Tab[] {
   const tabs: Tab[] = [
     { id: "details", label: "Details", type: "details" },
+    { id: "iterations", label: "Iterations", type: "iterations" },
     { id: "logs", label: "Logs", type: "logs" },
   ];
 
   // Add artifact tabs in stage order (using config.stages order)
+  // Label uses the artifact name (e.g., "Plan", "Breakdown", "Summary")
   for (const stage of config.stages) {
     const artifactName = stage.artifact;
     if (task.artifacts[artifactName]) {
       tabs.push({
         id: `artifact-${artifactName}`,
-        label: stage.display_name || capitalizeFirst(stage.name),
+        label: capitalizeFirst(artifactName),
         type: "artifact",
         artifactName,
       });
     }
   }
-
-  // Add iterations tab at the end
-  tabs.push({ id: "iterations", label: "Iterations", type: "iterations" });
 
   return tabs;
 }

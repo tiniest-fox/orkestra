@@ -222,43 +222,6 @@ impl SessionService {
         Ok(())
     }
 
-    /// Record the Claude session ID.
-    ///
-    /// Called when the session ID is captured from the agent's output stream.
-    /// Only the first session ID is recorded (subsequent calls are ignored).
-    ///
-    /// Note: Session must already exist (on_spawn_starting creates it before agent runs).
-    /// If no session exists, this is logged as a warning but doesn't fail.
-    pub fn on_session_id(
-        &self,
-        task_id: &str,
-        stage: &str,
-        session_id: &str,
-    ) -> WorkflowResult<()> {
-        let now = chrono::Utc::now().to_rfc3339();
-
-        match self.store.get_stage_session(task_id, stage)? {
-            Some(mut session) => {
-                // Only set if not already set (first session ID wins)
-                if session.claude_session_id.is_none() {
-                    session.claude_session_id = Some(session_id.to_string());
-                    session.updated_at = now;
-                    self.store.save_stage_session(&session)?;
-                }
-                Ok(())
-            }
-            None => {
-                // Session should exist - on_spawn_starting creates it before agent runs
-                // Log warning but don't fail - session ID is informational
-                eprintln!(
-                    "[orkestra] WARNING: Received session ID for {}/{} but no session exists",
-                    task_id, stage
-                );
-                Ok(())
-            }
-        }
-    }
-
     /// Record that the agent process exited.
     ///
     /// Clears the PID, increments resume_count, and keeps the session active for potential resume.

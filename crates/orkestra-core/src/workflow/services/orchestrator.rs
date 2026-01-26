@@ -37,12 +37,6 @@ pub enum OrchestratorEvent {
         stage: String,
         pid: u32,
     },
-    /// Session ID was captured from agent output.
-    SessionIdCaptured {
-        task_id: String,
-        stage: String,
-        session_id: String,
-    },
     /// Agent completed and output was processed.
     OutputProcessed {
         task_id: String,
@@ -292,15 +286,6 @@ impl OrchestratorLoop {
         event: RunEvent,
     ) -> WorkflowResult<Option<OrchestratorEvent>> {
         match event {
-            RunEvent::SessionIdCaptured(ref session_id) => {
-                let session_id = session_id.clone();
-                self.executor.handle_event(task_id, stage, event)?;
-                Ok(Some(OrchestratorEvent::SessionIdCaptured {
-                    task_id: task_id.to_string(),
-                    stage: stage.to_string(),
-                    session_id,
-                }))
-            }
             RunEvent::RawOutputReady(_) => {
                 self.executor.handle_event(task_id, stage, event)?;
                 Ok(None)

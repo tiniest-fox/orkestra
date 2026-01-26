@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::thread;
 
 use super::output::StageOutput;
-use super::parser::{check_for_api_error, extract_session_id, parse_agent_output};
+use super::parser::{check_for_api_error, parse_agent_output};
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessSpawner};
 
 // ============================================================================
@@ -72,8 +72,6 @@ impl RunConfig {
 /// Result of running an agent to completion.
 #[derive(Debug, Clone)]
 pub struct RunResult {
-    /// The Claude session ID (for future resumes).
-    pub session_id: Option<String>,
     /// The raw stdout output (for crash recovery).
     pub raw_output: String,
     /// The parsed stage output.
@@ -87,8 +85,6 @@ pub struct RunResult {
 /// Events emitted during async agent execution.
 #[derive(Debug, Clone)]
 pub enum RunEvent {
-    /// Session ID was captured from the agent's output stream.
-    SessionIdCaptured(String),
     /// Agent process completed, raw output ready (before parsing).
     RawOutputReady(String),
     /// Agent completed with parsed output.
@@ -202,7 +198,6 @@ impl AgentRunnerTrait for AgentRunner {
 
         // Read all output
         let mut full_output = String::new();
-        let mut session_id: Option<String> = None;
 
         for line_result in handle.lines() {
             match line_result {
@@ -212,11 +207,6 @@ impl AgentRunnerTrait for AgentRunner {
                     }
                     full_output.push_str(&line);
                     full_output.push('\n');
-
-                    // Try to extract session ID
-                    if session_id.is_none() {
-                        session_id = extract_session_id(&line);
-                    }
 
                     // Check for API errors
                     if let Some(error_msg) = check_for_api_error(&line) {
@@ -233,18 +223,11 @@ impl AgentRunnerTrait for AgentRunner {
         // Process completed normally
         handle.disarm();
 
-        // Try to extract session ID from full output if not found during streaming
-        // (handles case where output is a single JSON array line)
-        if session_id.is_none() {
-            session_id = extract_session_id(&full_output);
-        }
-
         // Parse the output
         let parsed_output = parse_agent_output(&full_output)
             .map_err(RunError::ParseFailed)?;
 
         Ok(RunResult {
-            session_id,
             raw_output: full_output,
             parsed_output,
         })
@@ -290,7 +273,6 @@ fn read_output_and_send_events(
     tx: Sender<RunEvent>,
 ) {
     let mut full_output = String::new();
-    let mut session_id_sent = false;
 
     for line_result in handle.lines() {
         match line_result {
@@ -300,14 +282,6 @@ fn read_output_and_send_events(
                 }
                 full_output.push_str(&line);
                 full_output.push('\n');
-
-                // Try to extract and send session ID (once)
-                if !session_id_sent {
-                    if let Some(sid) = extract_session_id(&line) {
-                        session_id_sent = true;
-                        let _ = tx.send(RunEvent::SessionIdCaptured(sid));
-                    }
-                }
 
                 // Check for API errors in the stream
                 if let Some(error_msg) = check_for_api_error(&line) {
@@ -340,16 +314,6 @@ fn read_output_and_send_events(
     // Send raw output event (for crash recovery)
     if tx.send(RunEvent::RawOutputReady(full_output.clone())).is_err() {
         eprintln!("[agent runner] Channel closed, raw output not delivered");
-    }
-
-    // Try to extract session ID from full output if not already sent
-    // (handles case where output is a single JSON array line)
-    if !session_id_sent {
-        if let Some(sid) = extract_session_id(&full_output) {
-            if tx.send(RunEvent::SessionIdCaptured(sid)).is_err() {
-                eprintln!("[agent runner] Channel closed, session ID not delivered");
-            }
-        }
     }
 
     // Parse and send completion event (critical - caller needs this)
@@ -458,7 +422,6 @@ pub mod mock {
             })).unwrap();
 
             Ok(RunResult {
-                session_id: Some(format!("mock-session-{task_id}")),
                 raw_output,
                 parsed_output: output,
             })
@@ -486,10 +449,7 @@ pub mod mock {
                 // Small delay to simulate async behavior
                 thread::sleep(std::time::Duration::from_millis(10));
 
-                if let Some(task_id) = task_id {
-                    // Send session ID
-                    let _ = tx.send(RunEvent::SessionIdCaptured(format!("mock-session-{task_id}")));
-                }
+                let _ = task_id; // Silence unused warning
 
                 if let Some(output) = output {
                     // Send raw output
@@ -586,7 +546,6 @@ mod tests {
             let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo the work");
             let result = runner.run_sync(config).unwrap();
 
-            assert_eq!(result.session_id, Some("mock-session-task-1".to_string()));
             assert!(matches!(result.parsed_output, StageOutput::Artifact { .. }));
         }
 
@@ -606,7 +565,6 @@ mod tests {
                 events.push(event);
             }
 
-            assert!(events.iter().any(|e| matches!(e, RunEvent::SessionIdCaptured(_))));
             assert!(events.iter().any(|e| matches!(e, RunEvent::RawOutputReady(_))));
             assert!(events.iter().any(|e| matches!(e, RunEvent::Completed(Ok(_)))));
         }

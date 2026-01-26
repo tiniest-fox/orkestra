@@ -122,40 +122,6 @@ fn extract_from_object(v: &serde_json::Value) -> Option<Result<StageOutput, Stri
     None
 }
 
-/// Extract session ID from JSON output.
-/// Handles both single JSON objects and JSON arrays.
-pub fn extract_session_id(json_str: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(json_str.trim()).ok()?;
-
-    match &v {
-        // JSON array: search for session_id in any element
-        serde_json::Value::Array(arr) => {
-            for item in arr {
-                if let Some(sid) = get_session_id_from_object(item) {
-                    return Some(sid);
-                }
-            }
-            None
-        }
-        // JSON object: check directly
-        serde_json::Value::Object(_) => get_session_id_from_object(&v),
-        _ => None,
-    }
-}
-
-/// Extract session ID from a JSON object.
-fn get_session_id_from_object(v: &serde_json::Value) -> Option<String> {
-    // Try session_id field (snake_case)
-    if let Some(sid) = v.get("session_id").and_then(|s| s.as_str()) {
-        return Some(sid.to_string());
-    }
-    // Try sessionId field (camelCase)
-    if let Some(sid) = v.get("sessionId").and_then(|s| s.as_str()) {
-        return Some(sid.to_string());
-    }
-    None
-}
-
 /// Check if a stream line contains an API error.
 ///
 /// Returns the error message if found, None otherwise.
@@ -250,30 +216,6 @@ mod tests {
             StageOutput::Artifact { content } => assert_eq!(content, "All done"),
             _ => panic!("Expected Artifact output"),
         }
-    }
-
-    #[test]
-    fn test_extract_session_id_from_object() {
-        let json = r#"{"type":"system","subtype":"init","session_id":"abc-123"}"#;
-        assert_eq!(extract_session_id(json), Some("abc-123".to_string()));
-    }
-
-    #[test]
-    fn test_extract_session_id_camel_case() {
-        let json = r#"{"type":"user","sessionId":"xyz-789"}"#;
-        assert_eq!(extract_session_id(json), Some("xyz-789".to_string()));
-    }
-
-    #[test]
-    fn test_extract_session_id_from_array() {
-        let json = r#"[{"type":"other"},{"type":"system","subtype":"init","session_id":"found-it"}]"#;
-        assert_eq!(extract_session_id(json), Some("found-it".to_string()));
-    }
-
-    #[test]
-    fn test_extract_session_id_not_found() {
-        let json = r#"{"type":"system","data":"no session"}"#;
-        assert_eq!(extract_session_id(json), None);
     }
 
     #[test]

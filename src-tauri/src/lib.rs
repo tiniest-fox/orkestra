@@ -55,10 +55,6 @@ fn start_workflow_orchestrator(
                     println!("[orchestrator] Spawned {stage} agent for {task_id} (pid: {pid})");
                     let _ = app_handle.emit("task-updated", task_id);
                 }
-                orkestra_core::workflow::OrchestratorEvent::SessionIdCaptured { task_id, stage, session_id } => {
-                    println!("[orchestrator] Captured session {session_id} for {task_id}/{stage}");
-                    // No need to emit task-updated for session ID capture
-                }
                 orkestra_core::workflow::OrchestratorEvent::OutputProcessed { task_id, stage, output_type } => {
                     println!("[orchestrator] Processed {output_type} output from {stage} for {task_id}");
                     let _ = app_handle.emit("task-updated", task_id);

@@ -290,13 +290,6 @@ impl TaskExecutionService {
             }
         };
 
-        // Record session ID if captured (critical for resume)
-        if let Some(session_id) = &result.session_id {
-            if let Err(e) = self.session_service.on_session_id(&task.id, stage, session_id) {
-                workflow_error!("Failed to record session ID for {}/{}: {}", task.id, stage, e);
-            }
-        }
-
         // Persist raw output for crash recovery (critical)
         if let Err(e) = self.crash_recovery.persist(&task.id, stage, &result.raw_output) {
             workflow_error!("Failed to persist crash recovery for {}/{}: {}", task.id, stage, e);
@@ -325,13 +318,6 @@ impl TaskExecutionService {
         event: RunEvent,
     ) -> WorkflowResult<Option<StageOutput>> {
         match event {
-            RunEvent::SessionIdCaptured(session_id) => {
-                // Record session ID (critical for resume, but don't fail the event)
-                if let Err(e) = self.session_service.on_session_id(task_id, stage, &session_id) {
-                    workflow_error!("Failed to record session ID for {}/{}: {}", task_id, stage, e);
-                }
-                Ok(None)
-            }
             RunEvent::RawOutputReady(raw_output) => {
                 if let Err(e) = self.crash_recovery.persist(task_id, stage, &raw_output) {
                     workflow_error!("Failed to persist raw output for {}/{}: {}", task_id, stage, e);

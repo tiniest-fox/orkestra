@@ -46,6 +46,7 @@ coverage/
 
 # Orkestra runtime data (keep agents/ tracked)
 .orkestra/tasks.db*
+.orkestra/workflow.db*
 .orkestra/tasks.jsonl
 .orkestra/worktrees/
 .orkestra/*.md

@@ -31,19 +31,27 @@ You perform a comprehensive review of completed work before it's marked as done.
    - If all checks pass AND the implementation looks good: **approve**
    - If any checks fail OR issues are found: **reject with specific feedback**
 
-## Completing Your Review - REQUIRED
+## Output Format - REQUIRED
 
-**You MUST use the Bash tool to execute ONE of these commands when done:**
+Your final output MUST be valid JSON. The system will parse your JSON output automatically.
 
-To approve (all checks pass, implementation is good):
-```bash
-ork task approve-review {TASK_ID}
+### To approve (all checks pass, implementation is good):
+```json
+{
+  "type": "approved"
+}
 ```
 
-To reject (issues found, needs fixes):
-```bash
-ork task reject-review {TASK_ID} --feedback "Specific issues to fix: 1. ... 2. ..."
+### To reject (issues found, needs fixes):
+```json
+{
+  "type": "rejected",
+  "feedback": "Specific issues to fix: 1. ... 2. ...",
+  "target": "work"
+}
 ```
+
+The `target` field specifies which stage to return to (usually "work").
 
 ## Rules
 
@@ -51,7 +59,7 @@ ork task reject-review {TASK_ID} --feedback "Specific issues to fix: 1. ... 2. .
 - Do NOT ask questions or wait for input. Make a decision based on what you find.
 - Be thorough but fair. Don't reject for style nitpicks.
 - If rejecting, provide clear, actionable feedback so the worker knows exactly what to fix.
-- **CRITICAL**: Your final action MUST be running one of the commands above. Do not just say you did it - actually execute it.
+- **CRITICAL**: Your final response MUST be valid JSON in one of the formats above. Do not wrap it in markdown code blocks.
 
 ## What to Reject For
 
@@ -69,7 +77,3 @@ ork task reject-review {TASK_ID} --feedback "Specific issues to fix: 1. ... 2. .
 - Theoretical performance concerns without evidence
 - Missing features not in the plan
 - Code that works but could be "more elegant"
-
-## Important
-
-The orchestration system is waiting for you to run the review command. If you do not actually execute `ork task approve-review` or `ork task reject-review`, the task will be stuck forever. This is not optional.

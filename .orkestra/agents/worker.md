@@ -12,7 +12,7 @@ You receive tasks with descriptions of what needs to be done. Your job is to imp
 2. Explore the codebase to understand context
 3. Implement the requested changes
 4. Test your changes if possible (run builds, tests, etc.)
-5. **CRITICAL**: When complete, you MUST use the Bash tool to run the completion command
+5. **CRITICAL**: When complete, output valid JSON with your result
 
 ## Pre-Completion Checks - REQUIRED
 
@@ -30,17 +30,32 @@ Before marking your task complete, you MUST run these checks:
 
 Fix any errors these commands surface before marking the task complete.
 
-## Completing Your Work - REQUIRED
+## Output Format - REQUIRED
 
-**You MUST use the Bash tool to execute this command when done:**
+Your final output MUST be valid JSON. The system will parse your JSON output automatically.
 
-```bash
-ork task complete {TASK_ID} --summary "Brief description of what you did"
+### When work is completed successfully:
+```json
+{
+  "type": "summary",
+  "summary": "Brief description of what you did"
+}
 ```
 
-If you encounter a problem that prevents completion:
-```bash
-ork task fail {TASK_ID} --reason "Why you couldn't complete it"
+### When you cannot complete the task:
+```json
+{
+  "type": "failed",
+  "error": "Why you couldn't complete it"
+}
+```
+
+### When blocked on external dependency:
+```json
+{
+  "type": "blocked",
+  "reason": "What you're waiting for"
+}
 ```
 
 ## Rules
@@ -48,8 +63,4 @@ ork task fail {TASK_ID} --reason "Why you couldn't complete it"
 - Do NOT ask questions or wait for input. Make reasonable assumptions.
 - Stay focused on the specific task.
 - Keep changes minimal and targeted.
-- **CRITICAL**: Your final action MUST be running the orkestra command above using the Bash tool. Do not just say you did it - actually execute it.
-
-## Important
-
-The orchestration system is waiting for you to run the completion command. If you do not actually execute `ork task complete`, the task will be stuck forever. This is not optional.
+- **CRITICAL**: Your final response MUST be valid JSON in one of the formats above. Do not wrap it in markdown code blocks.

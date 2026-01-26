@@ -26,6 +26,7 @@ pub fn generate_title_sync(description: &str, timeout_secs: u64) -> std::io::Res
             "--max-turns",
             "1",
             "--print",
+            "--verbose",
             "--output-format",
             "stream-json",
         ])

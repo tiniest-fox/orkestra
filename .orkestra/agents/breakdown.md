@@ -30,35 +30,22 @@ Output a JSON breakdown plan with this exact structure:
 
 ```json
 {
+  "type": "subtasks",
   "rationale": "Brief explanation of how you divided the work and why",
-  "skip_breakdown": false,
   "subtasks": [
     {
-      "temp_id": "st1",
       "title": "First subtask title",
-      "description": "What needs to be done and acceptance criteria...",
-      "complexity": "small",
-      "depends_on": [],
-      "work_items": [
-        {"title": "Step 1 within this subtask"},
-        {"title": "Step 2 within this subtask"}
-      ]
+      "description": "What needs to be done and acceptance criteria..."
     },
     {
-      "temp_id": "st2",
       "title": "Second subtask title",
       "description": "This depends on st1 completing first...",
-      "complexity": "medium",
-      "depends_on": ["st1"],
-      "work_items": []
+      "depends_on": ["First subtask title"]
     },
     {
-      "temp_id": "st3",
       "title": "Third subtask (parallel with st2)",
       "description": "This also depends on st1 but can run parallel to st2...",
-      "complexity": "small",
-      "depends_on": ["st1"],
-      "work_items": []
+      "depends_on": ["First subtask title"]
     }
   ]
 }
@@ -66,22 +53,16 @@ Output a JSON breakdown plan with this exact structure:
 
 ### Field Definitions
 
-- **temp_id**: Temporary identifier for dependency references (e.g., "st1", "st2")
-- **title**: Short, clear title for the subtask
+- **type**: Must be `"subtasks"` for breakdown output
+- **rationale**: Brief explanation of how you divided the work
+- **title**: Short, clear title for each subtask
 - **description**: What needs to be done, context, and acceptance criteria
-- **complexity**: Estimate - "small" (quick), "medium" (moderate), "large" (significant)
-- **depends_on**: Array of temp_ids this subtask depends on (empty if independent)
-- **work_items**: Optional checklist of steps within this subtask
+- **depends_on**: Array of subtask titles this subtask depends on (omit if independent)
 
-## Completing Your Work - REQUIRED
+## Output - REQUIRED
 
-After creating your breakdown plan JSON, run:
-
-```bash
-ork task set-breakdown-plan {TASK_ID} --plan '<YOUR JSON HERE>'
-```
-
-Make sure the JSON is valid and properly escaped for the shell command.
+Your final output must be valid JSON. The system will parse your JSON output automatically.
+Do NOT run any CLI commands - just output the JSON directly as your final response.
 
 ## Rules
 
@@ -104,40 +85,32 @@ Then output:
 
 ```json
 {
-  "rationale": "Task is simple enough to complete directly without breakdown",
-  "skip_breakdown": true,
-  "subtasks": []
+  "type": "skip_breakdown"
 }
-```
-
-And run:
-
-```bash
-ork task set-breakdown-plan {TASK_ID} --plan '{"rationale":"Task is simple enough to complete directly without breakdown","skip_breakdown":true,"subtasks":[]}'
 ```
 
 ## Dependency Examples
 
 **Sequential chain**: A -> B -> C
 ```json
-{"temp_id": "st1", "depends_on": []},
-{"temp_id": "st2", "depends_on": ["st1"]},
-{"temp_id": "st3", "depends_on": ["st2"]}
+{"title": "Task A", "description": "...", "depends_on": []},
+{"title": "Task B", "description": "...", "depends_on": ["Task A"]},
+{"title": "Task C", "description": "...", "depends_on": ["Task B"]}
 ```
 
 **Fan-out (parallel after shared start)**: A -> (B, C, D)
 ```json
-{"temp_id": "st1", "depends_on": []},
-{"temp_id": "st2", "depends_on": ["st1"]},
-{"temp_id": "st3", "depends_on": ["st1"]},
-{"temp_id": "st4", "depends_on": ["st1"]}
+{"title": "Setup", "description": "...", "depends_on": []},
+{"title": "Feature B", "description": "...", "depends_on": ["Setup"]},
+{"title": "Feature C", "description": "...", "depends_on": ["Setup"]},
+{"title": "Feature D", "description": "...", "depends_on": ["Setup"]}
 ```
 
 **Fan-in (merge before final)**: (A, B) -> C
 ```json
-{"temp_id": "st1", "depends_on": []},
-{"temp_id": "st2", "depends_on": []},
-{"temp_id": "st3", "depends_on": ["st1", "st2"]}
+{"title": "Part A", "description": "...", "depends_on": []},
+{"title": "Part B", "description": "...", "depends_on": []},
+{"title": "Integration", "description": "...", "depends_on": ["Part A", "Part B"]}
 ```
 
 ## If You Have Feedback to Address

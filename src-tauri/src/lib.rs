@@ -59,10 +59,6 @@ fn start_workflow_orchestrator(
                     println!("[orchestrator] Processed {output_type} output from {stage} for {task_id}");
                     let _ = app_handle.emit("task-updated", task_id);
                 }
-                orkestra_core::workflow::OrchestratorEvent::RecoveredPending { task_id, stage } => {
-                    println!("[orchestrator] Recovered pending output for {task_id}/{stage}");
-                    let _ = app_handle.emit("task-updated", task_id);
-                }
                 orkestra_core::workflow::OrchestratorEvent::Error { task_id, error } => {
                     eprintln!("[orchestrator] Error: {error}");
                     if let Some(id) = task_id {

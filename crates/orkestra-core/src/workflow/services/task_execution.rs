@@ -4,7 +4,6 @@
 //! - PromptService: for building agent prompts
 //! - SessionService: for session continuity across resumes
 //! - AgentRunner: for running the actual agent
-//! - CrashRecoveryStore: for persisting output before parsing
 //!
 //! The orchestrator delegates to this service for all agent execution.
 
@@ -19,7 +18,7 @@ use crate::workflow::execution::{
     AgentConfigError, AgentRunnerTrait, IntegrationErrorContext, RunConfig, RunError, RunEvent,
     StageOutput,
 };
-use crate::workflow::ports::{CrashRecoveryStore, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 
 use super::prompt_service::PromptService;
 use super::session_service::SessionService;
@@ -53,21 +52,6 @@ impl ExecutionHandle {
             _ => false,
         }
     }
-}
-
-// ============================================================================
-// Recovered Output
-// ============================================================================
-
-/// A recovered pending output from crash recovery.
-#[derive(Debug)]
-pub struct RecoveredOutput {
-    /// Task ID.
-    pub task_id: String,
-    /// Stage name.
-    pub stage: String,
-    /// Parsed output (or parse error).
-    pub result: Result<StageOutput, String>,
 }
 
 // ============================================================================
@@ -119,8 +103,7 @@ impl From<RunError> for ExecutionError {
 /// 1. Builds the prompt from task context
 /// 2. Gets session resume info
 /// 3. Runs the agent
-/// 4. Handles events (session ID, raw output, completion)
-/// 5. Manages crash recovery
+/// 4. Handles events (completion)
 pub struct TaskExecutionService {
     /// Agent runner for executing Claude processes.
     runner: Arc<dyn AgentRunnerTrait>,
@@ -128,8 +111,6 @@ pub struct TaskExecutionService {
     prompt_service: PromptService,
     /// Session management service.
     session_service: SessionService,
-    /// Crash recovery store.
-    crash_recovery: Arc<dyn CrashRecoveryStore>,
     /// Workflow configuration.
     workflow: WorkflowConfig,
 }
@@ -139,7 +120,6 @@ impl TaskExecutionService {
     pub fn new(
         runner: Arc<dyn AgentRunnerTrait>,
         store: Arc<dyn WorkflowStore>,
-        crash_recovery: Arc<dyn CrashRecoveryStore>,
         workflow: WorkflowConfig,
         project_root: PathBuf,
     ) -> Self {
@@ -147,7 +127,6 @@ impl TaskExecutionService {
             runner,
             prompt_service: PromptService::new(project_root),
             session_service: SessionService::new(store),
-            crash_recovery,
             workflow,
         }
     }
@@ -326,16 +305,6 @@ impl TaskExecutionService {
             }
         };
 
-        // Persist raw output for crash recovery (critical)
-        if let Err(e) = self.crash_recovery.persist(&task.id, stage, &result.raw_output) {
-            workflow_error!("Failed to persist crash recovery for {}/{}: {}", task.id, stage, e);
-        }
-
-        // Clear on success (cleanup, non-critical)
-        if let Err(e) = self.crash_recovery.clear(&task.id, stage) {
-            workflow_warn!("Failed to clear crash recovery for {}/{}: {}", task.id, stage, e);
-        }
-
         // Record agent exited (cleanup)
         if let Err(e) = self.session_service.on_agent_exited(&task.id, stage) {
             workflow_warn!("Failed to record agent exit for {}/{}: {}", task.id, stage, e);
@@ -354,30 +323,6 @@ impl TaskExecutionService {
         event: RunEvent,
     ) -> WorkflowResult<Option<StageOutput>> {
         match event {
-            RunEvent::RawOutputReady(raw_output) => {
-                orkestra_debug!(
-                    "exec",
-                    "handle_event {}/{}: raw_output_len={}",
-                    task_id,
-                    stage,
-                    raw_output.len()
-                );
-                // Only persist non-empty outputs - empty outputs are never valid
-                // and would cause parse errors on crash recovery
-                if !raw_output.trim().is_empty() {
-                    if let Err(e) = self.crash_recovery.persist(task_id, stage, &raw_output) {
-                        workflow_error!("Failed to persist raw output for {}/{}: {}", task_id, stage, e);
-                    }
-                } else {
-                    orkestra_debug!(
-                        "exec",
-                        "handle_event {}/{}: skipping persist of empty output",
-                        task_id,
-                        stage
-                    );
-                }
-                Ok(None)
-            }
             RunEvent::Completed(result) => {
                 orkestra_debug!(
                     "exec",
@@ -386,12 +331,6 @@ impl TaskExecutionService {
                     stage,
                     result.is_ok()
                 );
-                // Clear crash recovery on success (cleanup, non-critical)
-                if result.is_ok() {
-                    if let Err(e) = self.crash_recovery.clear(task_id, stage) {
-                        workflow_warn!("Failed to clear crash recovery for {}/{}: {}", task_id, stage, e);
-                    }
-                }
 
                 // Record agent exited (cleanup, non-critical)
                 if let Err(e) = self.session_service.on_agent_exited(task_id, stage) {
@@ -430,32 +369,6 @@ impl TaskExecutionService {
     pub fn get_running_agents(&self) -> WorkflowResult<Vec<(String, String, u32)>> {
         self.session_service.get_running_agents()
     }
-
-    /// Recover pending outputs from crash recovery.
-    ///
-    /// Returns parsed outputs for all pending files.
-    pub fn recover_pending(&self) -> Vec<RecoveredOutput> {
-        self.crash_recovery
-            .list_pending()
-            .into_iter()
-            .filter_map(|(task_id, stage)| {
-                let raw = self.crash_recovery.read(&task_id, &stage)?;
-                let result = crate::workflow::execution::parse_agent_output(&raw);
-                Some(RecoveredOutput {
-                    task_id,
-                    stage,
-                    result,
-                })
-            })
-            .collect()
-    }
-
-    /// Clear a pending output after processing.
-    pub fn clear_pending(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
-        self.crash_recovery
-            .clear(task_id, stage)
-            .map_err(|e| crate::workflow::ports::WorkflowError::Storage(e.to_string()))
-    }
 }
 
 #[cfg(test)]
@@ -463,7 +376,6 @@ mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
     use crate::workflow::config::StageConfig;
-    use crate::workflow::ports::InMemoryCrashRecoveryStore;
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
@@ -488,43 +400,9 @@ mod tests {
     }
 
     #[test]
-    fn test_recover_pending() {
-        let _workflow = test_workflow();
-        let _store = Arc::new(InMemoryWorkflowStore::new());
-        let crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
-
-        // Pre-populate crash recovery with a pending output (artifact output)
-        crash_recovery
-            .persist("task-1", "planning", r#"{"type": "plan", "content": "Done"}"#)
-            .unwrap();
-
-        // Create service - needs a mock runner, but recover_pending doesn't use it
-        // For this test, we just verify the crash recovery integration
-        let recovered = crash_recovery
-            .list_pending()
-            .into_iter()
-            .filter_map(|(task_id, stage)| {
-                let raw = crash_recovery.read(&task_id, &stage)?;
-                let result = crate::workflow::execution::parse_agent_output(&raw);
-                Some(RecoveredOutput {
-                    task_id,
-                    stage,
-                    result,
-                })
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(recovered.len(), 1);
-        assert_eq!(recovered[0].task_id, "task-1");
-        assert_eq!(recovered[0].stage, "planning");
-        assert!(recovered[0].result.is_ok());
-    }
-
-    #[test]
     fn test_session_id_generated_upfront() {
         let _workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
-        let _crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
 
         // Create session service directly for testing
         let session_service = SessionService::new(store.clone());

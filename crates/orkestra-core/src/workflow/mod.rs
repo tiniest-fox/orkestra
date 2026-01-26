@@ -59,9 +59,3 @@ pub use execution::{AgentRunner, AgentRunnerTrait, RunConfig};
 
 #[cfg(any(test, feature = "testutil"))]
 pub use execution::MockAgentRunner;
-
-// Re-export crash recovery types
-pub use ports::CrashRecoveryStore;
-
-#[cfg(any(test, feature = "testutil"))]
-pub use ports::InMemoryCrashRecoveryStore;

@@ -67,4 +67,4 @@ pub use orchestrator::{OrchestratorError, OrchestratorEvent, OrchestratorLoop};
 pub use prompt_service::PromptService;
 pub use session_logs::{get_claude_session_path, recover_session_logs};
 pub use session_service::{SessionService, SessionSpawnContext};
-pub use task_execution::{ExecutionError, ExecutionHandle, RecoveredOutput, TaskExecutionService};
+pub use task_execution::{ExecutionError, ExecutionHandle, TaskExecutionService};

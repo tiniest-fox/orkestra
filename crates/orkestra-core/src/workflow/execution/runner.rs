@@ -8,7 +8,6 @@
 //!
 //! The runner does NOT handle:
 //! - Session management (caller's responsibility)
-//! - Crash recovery (caller persists raw output)
 //! - Prompt building (receives prompt as input)
 
 use std::path::PathBuf;
@@ -74,7 +73,7 @@ impl RunConfig {
 /// Result of running an agent to completion.
 #[derive(Debug, Clone)]
 pub struct RunResult {
-    /// The raw stdout output (for crash recovery).
+    /// The raw stdout output.
     pub raw_output: String,
     /// The parsed stage output.
     pub parsed_output: StageOutput,
@@ -87,8 +86,6 @@ pub struct RunResult {
 /// Events emitted during async agent execution.
 #[derive(Debug, Clone)]
 pub enum RunEvent {
-    /// Agent process completed, raw output ready (before parsing).
-    RawOutputReady(String),
     /// Agent completed with parsed output.
     Completed(Result<StageOutput, String>),
 }
@@ -164,7 +161,6 @@ pub trait AgentRunnerTrait: Send + Sync {
 /// The runner is NOT responsible for:
 /// - Building prompts (receives them)
 /// - Managing sessions (returns session_id)
-/// - Crash recovery (returns raw output)
 /// - Task state updates (caller handles)
 pub struct AgentRunner {
     spawner: Arc<dyn ProcessSpawner>,
@@ -309,10 +305,6 @@ fn read_output_and_send_events(
                 // Check for API errors in the stream
                 if let Some(error_msg) = check_for_api_error(&line) {
                     eprintln!("[agent runner] API error detected: {error_msg}");
-                    // Send raw output (for debugging)
-                    if tx.send(RunEvent::RawOutputReady(full_output.clone())).is_err() {
-                        eprintln!("[agent runner] Channel closed, raw output not delivered");
-                    }
                     // Send error completion - do NOT disarm, let guard kill the process
                     if tx.send(RunEvent::Completed(Err(error_msg))).is_err() {
                         eprintln!("[agent runner] Channel closed before error completion could be sent");
@@ -334,12 +326,7 @@ fn read_output_and_send_events(
     // Process completed normally
     handle.disarm();
 
-    // Send raw output event (for crash recovery)
-    if tx.send(RunEvent::RawOutputReady(full_output.clone())).is_err() {
-        eprintln!("[agent runner] Channel closed, raw output not delivered");
-    }
-
-    // Parse and send completion event (critical - caller needs this)
+    // Parse and send completion event
     let result = parse_agent_output(&full_output);
     if tx.send(RunEvent::Completed(result)).is_err() {
         eprintln!("[agent runner] Channel closed before completion could be sent");
@@ -475,16 +462,9 @@ pub mod mock {
                 let _ = task_id; // Silence unused warning
 
                 if let Some(output) = output {
-                    // Send raw output
-                    let raw = serde_json::to_string(&serde_json::json!({
-                        "structured_output": output_to_json(&output)
-                    })).unwrap();
-                    let _ = tx.send(RunEvent::RawOutputReady(raw));
-
                     // Send completion
                     let _ = tx.send(RunEvent::Completed(Ok(output)));
                 } else {
-                    let _ = tx.send(RunEvent::RawOutputReady("{}".to_string()));
                     let _ = tx.send(RunEvent::Completed(Err("No output configured".to_string())));
                 }
             });
@@ -588,7 +568,6 @@ mod tests {
                 events.push(event);
             }
 
-            assert!(events.iter().any(|e| matches!(e, RunEvent::RawOutputReady(_))));
             assert!(events.iter().any(|e| matches!(e, RunEvent::Completed(Ok(_)))));
         }
 

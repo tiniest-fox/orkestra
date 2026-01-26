@@ -30,7 +30,7 @@ use orkestra_core::workflow::{
     domain::{Question, QuestionAnswer, QuestionOption, Task},
     execution::StageOutput,
     runtime::{Outcome, Phase},
-    Git2GitService, GitService, InMemoryCrashRecoveryStore, MockAgentRunner, OrchestratorLoop,
+    Git2GitService, GitService, MockAgentRunner, OrchestratorLoop,
     SqliteWorkflowStore, TaskExecutionService, WorkflowApi,
 };
 
@@ -181,11 +181,9 @@ fn setup_test() -> TestContext {
 
     // Create mock runner and execution service
     let runner = Arc::new(MockAgentRunner::new());
-    let crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
     let executor = Arc::new(TaskExecutionService::new(
         runner.clone(),
         store,
-        crash_recovery,
         loaded_workflow,
         project_root,
     ));
@@ -709,11 +707,9 @@ integration:
 
     // Create mock runner and execution service
     let runner = Arc::new(MockAgentRunner::new());
-    let crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
     let executor = Arc::new(TaskExecutionService::new(
         runner.clone(),
         store,
-        crash_recovery,
         workflow,
         project_root,
     ));

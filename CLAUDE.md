@@ -57,7 +57,6 @@ Orkestra is a task orchestration system that spawns Claude Code instances (agent
 - **`.orkestra/`** - Runtime data directory (auto-created)
   - `orkestra.db` - SQLite database for tasks and sessions
   - `worktrees/` - Git worktrees for task isolation (one per task)
-  - `pending-outputs/` - Crash recovery: raw JSON from agents awaiting parse
   - `worktree_setup.sh` - Script that runs when creating new worktrees (customize for project-specific setup like copying .env files)
   - `agents/` - Agent prompt templates (markdown files: planner.md, worker.md, etc.)
   - `workflow.yaml` - Optional workflow configuration file (uses default if not present)
@@ -70,7 +69,7 @@ The core library is organized around the `workflow/` module, which provides a co
 - **`workflow/config/`** - Workflow configuration loading and stage definitions
 - **`workflow/domain/`** - Core domain models (`Task`, `Iteration`, `Question`, `LogEntry`, `StageSession`)
 - **`workflow/execution/`** - Agent execution logic (`AgentRunner`, `PromptBuilder`, `StageOutput`)
-- **`workflow/ports/`** - Trait interfaces (`WorkflowStore`, `GitService`, `CrashRecoveryStore`)
+- **`workflow/ports/`** - Trait interfaces (`WorkflowStore`, `GitService`, `ProcessSpawner`)
 - **`workflow/runtime/`** - Runtime state management (`Artifact`, `ArtifactStore`, `Phase`, `Status`, `Transition`)
 - **`workflow/services/`** - Business logic (`WorkflowApi`, `TaskExecutionService`, `OrchestratorLoop`)
 
@@ -159,7 +158,7 @@ Agent processes (Claude Code instances) are managed with multiple cleanup mechan
 - **Startup orphan cleanup**: Kills any orphaned agents from previous crashes on app start
 - **ProcessGuard**: RAII guard that kills processes on drop (defense against panics)
 - **Recursive tree killing**: Kills entire process trees including child shells
-- **Crash recovery**: Agent JSON output is persisted before parsing; recovered on restart
+- **Session-based recovery**: Session IDs are stored in the database before agent spawn, enabling `--resume` on restart
 
 ### Worktree Setup
 

@@ -16,10 +16,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::orkestra_debug;
-use crate::workflow::adapters::{ClaudeProcessSpawner, FsCrashRecoveryStore};
+use crate::workflow::adapters::ClaudeProcessSpawner;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::execution::{AgentRunner, RunEvent, StageOutput};
-use crate::workflow::ports::{CrashRecoveryStore, ProcessSpawner, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{ProcessSpawner, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
 
 use super::task_execution::{ExecutionHandle, TaskExecutionService};
@@ -43,11 +43,6 @@ pub enum OrchestratorEvent {
         task_id: String,
         stage: String,
         output_type: String,
-    },
-    /// Pending output was recovered from crash.
-    RecoveredPending {
-        task_id: String,
-        stage: String,
     },
     /// Error occurred during orchestration.
     Error {
@@ -137,13 +132,10 @@ impl OrchestratorLoop {
     ) -> Self {
         let spawner: Arc<dyn ProcessSpawner> = Arc::new(ClaudeProcessSpawner::new());
         let runner = Arc::new(AgentRunner::new(spawner));
-        let crash_recovery: Arc<dyn CrashRecoveryStore> =
-            Arc::new(FsCrashRecoveryStore::from_project_root(&project_root));
 
         let executor = Arc::new(TaskExecutionService::new(
             runner,
             store,
-            crash_recovery,
             workflow,
             project_root,
         ));
@@ -181,11 +173,6 @@ impl OrchestratorLoop {
 
         // Recover stale integrations on startup (tasks stuck in Integrating phase)
         for event in self.recover_stale_integrations() {
-            on_event(event);
-        }
-
-        // Recover pending outputs on startup
-        for event in self.recover_pending() {
             on_event(event);
         }
 
@@ -287,10 +274,6 @@ impl OrchestratorLoop {
         event: RunEvent,
     ) -> WorkflowResult<Option<OrchestratorEvent>> {
         match event {
-            RunEvent::RawOutputReady(_) => {
-                self.executor.handle_event(task_id, stage, event)?;
-                Ok(None)
-            }
             RunEvent::Completed(ref result) => {
                 let is_err = result.is_err();
                 let err_msg = result.as_ref().err().cloned();
@@ -625,76 +608,6 @@ impl OrchestratorLoop {
         }
     }
 
-    /// Recover pending outputs from crash.
-    fn recover_pending(&self) -> Vec<OrchestratorEvent> {
-        let mut events = Vec::new();
-
-        let pending = self.executor.recover_pending();
-        orkestra_debug!("recovery", "recover_pending: found {} pending outputs", pending.len());
-
-        for recovered in pending {
-            orkestra_debug!(
-                "recovery",
-                "recovering {}_{}: result_is_ok={}",
-                recovered.task_id,
-                recovered.stage,
-                recovered.result.is_ok()
-            );
-
-            match recovered.result {
-                Ok(output) => {
-                    if let Ok(api) = self.api.lock() {
-                        match api.process_agent_output(&recovered.task_id, output) {
-                            Ok(_) => {
-                                orkestra_debug!(
-                                    "recovery",
-                                    "recovered {}_{}: success",
-                                    recovered.task_id,
-                                    recovered.stage
-                                );
-                                if let Err(e) = self.executor.clear_pending(&recovered.task_id, &recovered.stage) {
-                                    eprintln!("[orkestra] WARNING: Failed to clear pending for {}/{}: {}", recovered.task_id, recovered.stage, e);
-                                }
-                                events.push(OrchestratorEvent::RecoveredPending {
-                                    task_id: recovered.task_id,
-                                    stage: recovered.stage,
-                                });
-                            }
-                            Err(e) => {
-                                orkestra_debug!(
-                                    "recovery",
-                                    "recovered {}_{}: process_agent_output failed: {}",
-                                    recovered.task_id,
-                                    recovered.stage,
-                                    e
-                                );
-                                events.push(OrchestratorEvent::Error {
-                                    task_id: Some(recovered.task_id),
-                                    error: format!("Failed to process recovered output: {e}"),
-                                });
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    orkestra_debug!(
-                        "recovery",
-                        "recovered {}_{}: parse failed: {}",
-                        recovered.task_id,
-                        recovered.stage,
-                        e
-                    );
-                    events.push(OrchestratorEvent::Error {
-                        task_id: Some(recovered.task_id),
-                        error: format!("Failed to parse recovered output: {e}"),
-                    });
-                }
-            }
-        }
-
-        events
-    }
-
     /// Get count of active executions.
     pub fn active_count(&self) -> usize {
         self.active_executions
@@ -721,7 +634,6 @@ mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
     use crate::workflow::config::StageConfig;
-    use crate::workflow::ports::InMemoryCrashRecoveryStore;
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
@@ -740,11 +652,9 @@ mod tests {
 
         let spawner: Arc<dyn ProcessSpawner> = Arc::new(ClaudeProcessSpawner::new());
         let runner = Arc::new(AgentRunner::new(spawner));
-        let crash_recovery: Arc<dyn CrashRecoveryStore> = Arc::new(InMemoryCrashRecoveryStore::new());
         let executor = Arc::new(TaskExecutionService::new(
             runner,
             store,
-            crash_recovery,
             workflow,
             PathBuf::from("/tmp"),
         ));

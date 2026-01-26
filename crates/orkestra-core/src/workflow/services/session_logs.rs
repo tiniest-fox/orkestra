@@ -211,8 +211,11 @@ pub fn recover_session_logs(session_id: &str, cwd: &Path) -> std::io::Result<Vec
                         Some("text") => {
                             // Capture user text messages (e.g., session resumption prompts)
                             if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                                if let Some(content) = extract_resumption_content(text) {
-                                    parser.entries.push(LogEntry::UserMessage { content });
+                                if let Some(marker) = parse_resume_marker(text) {
+                                    parser.entries.push(LogEntry::UserMessage {
+                                        resume_type: marker.marker_type.as_str().to_string(),
+                                        content: marker.content,
+                                    });
                                 }
                             }
                         }
@@ -222,8 +225,11 @@ pub fn recover_session_logs(session_id: &str, cwd: &Path) -> std::io::Result<Vec
             }
             // Handle content as string (simple text message, e.g., initial prompt or resumption)
             else if let Some(text) = content.and_then(|c| c.as_str()) {
-                if let Some(content) = extract_resumption_content(text) {
-                    parser.entries.push(LogEntry::UserMessage { content });
+                if let Some(marker) = parse_resume_marker(text) {
+                    parser.entries.push(LogEntry::UserMessage {
+                        resume_type: marker.marker_type.as_str().to_string(),
+                        content: marker.content,
+                    });
                 }
             }
         }
@@ -251,24 +257,83 @@ fn extract_tool_result_content(item: &serde_json::Value) -> String {
     }
 }
 
-/// Marker used to identify Orkestra resumption prompts in session logs.
-const RESUME_MARKER: &str = "<!orkestra-resume>";
+// ============================================================================
+// Resume Marker Types
+// ============================================================================
 
-/// Extract resumption prompt content from a user message.
-/// Returns Some(content) if this is a resumption prompt, None otherwise.
-fn extract_resumption_content(text: &str) -> Option<String> {
+/// Types of session resumption.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResumeMarkerType {
+    /// Agent was interrupted, continue from where left off.
+    Continue,
+    /// Human provided feedback to address.
+    Feedback,
+    /// Integration failed with merge conflict.
+    Integration,
+    /// Human provided answers to questions.
+    Answers,
+}
+
+impl ResumeMarkerType {
+    /// Get the string representation for serialization.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Continue => "continue",
+            Self::Feedback => "feedback",
+            Self::Integration => "integration",
+            Self::Answers => "answers",
+        }
+    }
+}
+
+/// Parsed resume marker from a user message.
+#[derive(Debug, Clone)]
+pub struct ResumeMarker {
+    /// Type of resume (continue, feedback, integration).
+    pub marker_type: ResumeMarkerType,
+    /// Content after the marker.
+    pub content: String,
+}
+
+/// Legacy marker (untyped).
+const LEGACY_RESUME_MARKER: &str = "<!orkestra-resume>";
+
+/// Parse a resume marker from a user message.
+///
+/// Returns Some(ResumeMarker) if this is a resumption prompt, None otherwise.
+/// Supports both typed markers (<!orkestra-resume:TYPE>) and legacy markers.
+fn parse_resume_marker(text: &str) -> Option<ResumeMarker> {
     let trimmed = text.trim();
 
-    // New format: explicit marker
-    if let Some(rest) = trimmed.strip_prefix(RESUME_MARKER) {
-        let content = rest.trim();
-        if !content.is_empty() {
-            return Some(content.to_string());
+    // New format: typed markers <!orkestra-resume:TYPE>
+    if let Some(rest) = trimmed.strip_prefix("<!orkestra-resume:") {
+        // Find the closing >
+        if let Some(end_idx) = rest.find('>') {
+            let marker_type = match &rest[..end_idx] {
+                "continue" => ResumeMarkerType::Continue,
+                "feedback" => ResumeMarkerType::Feedback,
+                "integration" => ResumeMarkerType::Integration,
+                "answers" => ResumeMarkerType::Answers,
+                _ => return None, // Unknown marker type
+            };
+            let content = rest[end_idx + 1..].trim().to_string();
+            return Some(ResumeMarker {
+                marker_type,
+                content,
+            });
         }
-        return None;
     }
 
-    // Legacy detection: use heuristics
+    // Legacy format: untyped marker <!orkestra-resume> (treat as continue)
+    if let Some(rest) = trimmed.strip_prefix(LEGACY_RESUME_MARKER) {
+        let content = rest.trim().to_string();
+        return Some(ResumeMarker {
+            marker_type: ResumeMarkerType::Continue,
+            content,
+        });
+    }
+
+    // Legacy detection: use heuristics for sessions without markers
     if trimmed.is_empty() {
         return None;
     }
@@ -289,7 +354,11 @@ fn extract_resumption_content(text: &str) -> Option<String> {
         return None;
     }
 
-    Some(trimmed.to_string())
+    // Legacy: treat as continue type
+    Some(ResumeMarker {
+        marker_type: ResumeMarkerType::Continue,
+        content: trimmed.to_string(),
+    })
 }
 
 /// Parses a tool input JSON into a structured `ToolInput`.
@@ -595,20 +664,70 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_resumption_content() {
+    fn test_parse_resume_marker_typed() {
+        // Test typed continue marker
+        let marker = parse_resume_marker("<!orkestra-resume:continue>\n\nContinue working");
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::Continue);
+        assert_eq!(marker.content, "Continue working");
+
+        // Test typed feedback marker
+        let marker = parse_resume_marker("<!orkestra-resume:feedback>\n\nPlease fix this bug");
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::Feedback);
+        assert_eq!(marker.content, "Please fix this bug");
+
+        // Test typed integration marker
+        let marker = parse_resume_marker("<!orkestra-resume:integration>\n\nMerge conflict in file.rs");
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::Integration);
+        assert_eq!(marker.content, "Merge conflict in file.rs");
+    }
+
+    #[test]
+    fn test_parse_resume_marker_legacy() {
+        // Legacy untyped marker should be treated as continue
+        let marker = parse_resume_marker("<!orkestra-resume>User feedback here");
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::Continue);
+        assert_eq!(marker.content, "User feedback here");
+    }
+
+    #[test]
+    fn test_parse_resume_marker_heuristics() {
         // Should skip long prompts
         let long_text = "a".repeat(600);
-        assert!(extract_resumption_content(&long_text).is_none());
+        assert!(parse_resume_marker(&long_text).is_none());
 
         // Should skip agent prompts
-        assert!(extract_resumption_content("# Worker Agent\nDo stuff").is_none());
+        assert!(parse_resume_marker("# Worker Agent\nDo stuff").is_none());
 
-        // Should extract normal content
-        let content = extract_resumption_content("Fix the bug please");
-        assert_eq!(content, Some("Fix the bug please".to_string()));
+        // Short text without marker should be treated as legacy continue
+        let marker = parse_resume_marker("Fix the bug please");
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::Continue);
+        assert_eq!(marker.content, "Fix the bug please");
+    }
 
-        // Should handle resume marker
-        let content = extract_resumption_content("<!orkestra-resume>User feedback here");
-        assert_eq!(content, Some("User feedback here".to_string()));
+    #[test]
+    fn test_parse_resume_marker_answers() {
+        let marker = parse_resume_marker("<!orkestra-resume:answers>\n\nHere are the answers:\n\nQ: What? A: Something");
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::Answers);
+        assert!(marker.content.contains("answers"));
+    }
+
+    #[test]
+    fn test_resume_marker_type_as_str() {
+        assert_eq!(ResumeMarkerType::Continue.as_str(), "continue");
+        assert_eq!(ResumeMarkerType::Feedback.as_str(), "feedback");
+        assert_eq!(ResumeMarkerType::Integration.as_str(), "integration");
+        assert_eq!(ResumeMarkerType::Answers.as_str(), "answers");
     }
 }

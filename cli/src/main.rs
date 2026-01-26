@@ -199,11 +199,13 @@ fn handle_task_action(action: TaskAction) {
                 }
             }
 
-            // Show pending questions
-            if !task.pending_questions.is_empty() {
-                println!("\nPending Questions:");
-                for q in &task.pending_questions {
-                    println!("  - [{}] {}", q.id, q.question);
+            // Show pending questions (from iteration outcome)
+            if let Ok(questions) = api.get_pending_questions(&id) {
+                if !questions.is_empty() {
+                    println!("\nPending Questions:");
+                    for q in &questions {
+                        println!("  - [{}] {}", q.id, q.question);
+                    }
                 }
             }
 

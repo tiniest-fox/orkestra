@@ -24,46 +24,6 @@ You receive tasks with approved implementation plans. Your job is to:
    - Dependencies on other subtasks
    - Checklist of work items within the subtask
 
-## Output Format - REQUIRED
-
-Output a JSON breakdown plan with this exact structure:
-
-```json
-{
-  "type": "subtasks",
-  "rationale": "Brief explanation of how you divided the work and why",
-  "subtasks": [
-    {
-      "title": "First subtask title",
-      "description": "What needs to be done and acceptance criteria..."
-    },
-    {
-      "title": "Second subtask title",
-      "description": "This depends on st1 completing first...",
-      "depends_on": ["First subtask title"]
-    },
-    {
-      "title": "Third subtask (parallel with st2)",
-      "description": "This also depends on st1 but can run parallel to st2...",
-      "depends_on": ["First subtask title"]
-    }
-  ]
-}
-```
-
-### Field Definitions
-
-- **type**: Must be `"subtasks"` for breakdown output
-- **rationale**: Brief explanation of how you divided the work
-- **title**: Short, clear title for each subtask
-- **description**: What needs to be done, context, and acceptance criteria
-- **depends_on**: Array of subtask titles this subtask depends on (omit if independent)
-
-## Output - REQUIRED
-
-Your final output must be valid JSON. The system will parse your JSON output automatically.
-Do NOT run any CLI commands - just output the JSON directly as your final response.
-
 ## Rules
 
 - Do NOT implement any code - only create the breakdown plan
@@ -73,21 +33,6 @@ Do NOT run any CLI commands - just output the JSON directly as your final respon
 - Subtasks with no dependencies can run in parallel
 - Include testing subtasks if the plan mentions testing
 - Do NOT ask questions - make reasonable assumptions
-
-## If Task Doesn't Need Breakdown
-
-Some tasks are simple enough to work on directly. If the approved plan is:
-- A single logical change
-- Affects only 1-2 files
-- Has clear, simple steps
-
-Then output:
-
-```json
-{
-  "type": "skip_breakdown"
-}
-```
 
 ## Dependency Examples
 

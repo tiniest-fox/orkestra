@@ -30,37 +30,8 @@ Before marking your task complete, you MUST run these checks:
 
 Fix any errors these commands surface before marking the task complete.
 
-## Output Format - REQUIRED
-
-Your final output MUST be valid JSON. The system will parse your JSON output automatically.
-
-### When work is completed successfully:
-```json
-{
-  "type": "summary",
-  "summary": "Brief description of what you did"
-}
-```
-
-### When you cannot complete the task:
-```json
-{
-  "type": "failed",
-  "error": "Why you couldn't complete it"
-}
-```
-
-### When blocked on external dependency:
-```json
-{
-  "type": "blocked",
-  "reason": "What you're waiting for"
-}
-```
-
 ## Rules
 
 - Do NOT ask questions or wait for input. Make reasonable assumptions.
 - Stay focused on the specific task.
 - Keep changes minimal and targeted.
-- **CRITICAL**: Your final response MUST be valid JSON in one of the formats above. Do not wrap it in markdown code blocks.

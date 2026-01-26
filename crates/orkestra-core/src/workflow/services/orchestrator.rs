@@ -376,6 +376,7 @@ impl OrchestratorLoop {
                 continue;
             }
 
+            let current_stage = task.current_stage().unwrap_or("unknown");
             orkestra_debug!(
                 "orchestrator",
                 "starting execution for {} in stage {:?}",
@@ -383,12 +384,20 @@ impl OrchestratorLoop {
                 task.current_stage()
             );
 
+            // Get incoming context from active iteration
+            let trigger = {
+                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+                api.store
+                    .get_active_iteration(&task.id, current_stage)?
+                    .and_then(|iter| iter.incoming_context)
+            };
+
             {
                 let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
                 api.agent_started(&task.id)?;
             }
 
-            match self.executor.execute_stage(&task, None, None) {
+            match self.executor.execute_stage(&task, trigger.as_ref()) {
                 Ok(handle) => {
                     let event = OrchestratorEvent::AgentSpawned {
                         task_id: handle.task_id.clone(),

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{Iteration, Task};
+use crate::workflow::domain::{Iteration, IterationTrigger, Task};
 use crate::workflow::ports::{GitError, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase, Status};
 
@@ -182,14 +182,18 @@ impl WorkflowApi {
         task.completed_at = None;
         task.updated_at = now.clone();
 
-        // Create new iteration in recovery stage
+        // Create new iteration in recovery stage with integration error context
         let iteration = Iteration::new(
             format!("{}-iter-{}", task.id, iteration_count + 2),
             &task.id,
             &recovery_stage,
             iteration_count + 2,
             &now,
-        );
+        )
+        .with_context(IterationTrigger::Integration {
+            message: error.to_string(),
+            conflict_files: conflict_files.clone(),
+        });
         self.store.save_iteration(&iteration)?;
 
         self.store.save_task(&task)?;

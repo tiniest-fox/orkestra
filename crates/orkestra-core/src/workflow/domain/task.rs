@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::workflow::runtime::{ArtifactStore, Phase, Status};
 
-use super::question::{Question, QuestionAnswer};
-
 /// A task in the workflow system.
 ///
 /// Represents a unit of work that progresses through workflow stages.
@@ -37,15 +35,6 @@ pub struct Task {
     /// Stage outputs (plan, summary, etc.) stored by name.
     #[serde(default)]
     pub artifacts: ArtifactStore,
-
-    // === Questions ===
-    /// Pending questions waiting for answers.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub pending_questions: Vec<Question>,
-
-    /// History of answered questions.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub question_history: Vec<QuestionAnswer>,
 
     // === Hierarchy ===
     /// Parent task ID (if this is a subtask).
@@ -94,8 +83,6 @@ impl Task {
             status: Status::active(first_stage),
             phase: Phase::Idle,
             artifacts: ArtifactStore::new(),
-            pending_questions: Vec::new(),
-            question_history: Vec::new(),
             parent_id: None,
             depends_on: Vec::new(),
             branch_name: None,
@@ -179,11 +166,6 @@ impl Task {
     /// Check if the task is a subtask.
     pub fn is_subtask(&self) -> bool {
         self.parent_id.is_some()
-    }
-
-    /// Check if the task has pending questions.
-    pub fn has_pending_questions(&self) -> bool {
-        !self.pending_questions.is_empty()
     }
 
     /// Get artifact content by name.
@@ -279,16 +261,6 @@ mod tests {
     }
 
     #[test]
-    fn test_task_questions() {
-        let mut task = Task::new("task-1", "Task", "desc", "planning", "now");
-        assert!(!task.has_pending_questions());
-
-        task.pending_questions
-            .push(Question::new("q1", "What framework?"));
-        assert!(task.has_pending_questions());
-    }
-
-    #[test]
     fn test_task_awaiting_review() {
         let mut task = Task::new("task-1", "Task", "desc", "planning", "now");
         assert!(!task.is_awaiting_review());
@@ -324,7 +296,6 @@ mod tests {
         assert!(yaml.contains("id: task-1"));
         assert!(yaml.contains("title: Task"));
         // Empty collections should be omitted
-        assert!(!yaml.contains("pending_questions:"));
         assert!(!yaml.contains("depends_on:"));
 
         let parsed: Task = serde_yaml::from_str(&yaml).unwrap();

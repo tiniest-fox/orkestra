@@ -9,7 +9,7 @@ mod question;
 mod stage_session;
 mod task;
 
-pub use iteration::Iteration;
+pub use iteration::{Iteration, IterationTrigger};
 pub use log_entry::{LogEntry, OrkAction, TodoItem, ToolInput};
 pub use question::{Question, QuestionAnswer, QuestionOption};
 pub use stage_session::{SessionState, StageSession};

@@ -11,9 +11,21 @@ use super::WorkflowApi;
 
 impl WorkflowApi {
     /// Get pending questions for a task.
+    ///
+    /// Reads questions from the latest iteration's outcome.
     pub fn get_pending_questions(&self, task_id: &str) -> WorkflowResult<Vec<Question>> {
         let task = self.get_task(task_id)?;
-        Ok(task.pending_questions)
+
+        // Get questions from iteration outcome
+        if let Some(stage) = task.current_stage() {
+            if let Some(iter) = self.store.get_latest_iteration(task_id, stage)? {
+                if let Some(Outcome::AwaitingAnswers { questions, .. }) = &iter.outcome {
+                    return Ok(questions.clone());
+                }
+            }
+        }
+
+        Ok(vec![])
     }
 
     /// Get a specific artifact by name.
@@ -69,8 +81,8 @@ impl WorkflowApi {
 
     /// Check if a task has pending questions.
     pub fn has_pending_questions(&self, task_id: &str) -> WorkflowResult<bool> {
-        let task = self.get_task(task_id)?;
-        Ok(!task.pending_questions.is_empty())
+        let questions = self.get_pending_questions(task_id)?;
+        Ok(!questions.is_empty())
     }
 
     /// Get the current stage name for a task.
@@ -200,9 +212,16 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.pending_questions = vec![Question::new("q1", "What framework?")];
-        api.store.save_task(&task).unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
+
+        // Simulate agent asking questions via iteration outcome
+        let iter = api.store.get_latest_iteration(&task.id, "planning").unwrap().unwrap();
+        let mut iter = iter;
+        iter.outcome = Some(Outcome::awaiting_answers("planning", vec![
+            Question::new("q1", "What framework?"),
+        ]));
+        iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
+        api.store.save_iteration(&iter).unwrap();
 
         let questions = api.get_pending_questions(&task.id).unwrap();
         assert_eq!(questions.len(), 1);
@@ -298,11 +317,17 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description", None).unwrap();
+        let task = api.create_task("Test", "Description", None).unwrap();
         assert!(!api.has_pending_questions(&task.id).unwrap());
 
-        task.pending_questions = vec![Question::new("q1", "What framework?")];
-        api.store.save_task(&task).unwrap();
+        // Simulate agent asking questions via iteration outcome
+        let iter = api.store.get_latest_iteration(&task.id, "planning").unwrap().unwrap();
+        let mut iter = iter;
+        iter.outcome = Some(Outcome::awaiting_answers("planning", vec![
+            Question::new("q1", "What framework?"),
+        ]));
+        iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
+        api.store.save_iteration(&iter).unwrap();
 
         assert!(api.has_pending_questions(&task.id).unwrap());
     }

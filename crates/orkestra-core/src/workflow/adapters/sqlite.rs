@@ -41,8 +41,8 @@ impl WorkflowStore for SqliteWorkflowStore {
         let result = conn
             .query_row(
                 "SELECT id, title, description, status, phase, artifacts,
-                        pending_questions, question_history, parent_id, depends_on,
-                        branch_name, worktree_path, created_at, updated_at, completed_at
+                        parent_id, depends_on, branch_name, worktree_path,
+                        created_at, updated_at, completed_at
                  FROM workflow_tasks WHERE id = ?",
                 params![id],
                 row_to_task,
@@ -61,10 +61,6 @@ impl WorkflowStore for SqliteWorkflowStore {
         let phase_str = phase_to_str(task.phase);
         let artifacts_json = serde_json::to_string(&task.artifacts)
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
-        let pending_json = serde_json::to_string(&task.pending_questions)
-            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
-        let history_json = serde_json::to_string(&task.question_history)
-            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
         let depends_json = serde_json::to_string(&task.depends_on)
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
@@ -79,9 +75,9 @@ impl WorkflowStore for SqliteWorkflowStore {
         conn.execute(
             "INSERT OR REPLACE INTO workflow_tasks (
                 id, title, description, status, phase, artifacts,
-                pending_questions, question_history, parent_id, depends_on,
-                branch_name, worktree_path, created_at, updated_at, completed_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                parent_id, depends_on, branch_name, worktree_path,
+                created_at, updated_at, completed_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 task.id,
                 task.title,
@@ -89,8 +85,6 @@ impl WorkflowStore for SqliteWorkflowStore {
                 status_json,
                 phase_str,
                 artifacts_json,
-                pending_json,
-                history_json,
                 task.parent_id,
                 depends_json,
                 task.branch_name,
@@ -111,8 +105,8 @@ impl WorkflowStore for SqliteWorkflowStore {
         let mut stmt = conn
             .prepare(
                 "SELECT id, title, description, status, phase, artifacts,
-                        pending_questions, question_history, parent_id, depends_on,
-                        branch_name, worktree_path, created_at, updated_at, completed_at
+                        parent_id, depends_on, branch_name, worktree_path,
+                        created_at, updated_at, completed_at
                  FROM workflow_tasks ORDER BY created_at",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -135,8 +129,8 @@ impl WorkflowStore for SqliteWorkflowStore {
         let mut stmt = conn
             .prepare(
                 "SELECT id, title, description, status, phase, artifacts,
-                        pending_questions, question_history, parent_id, depends_on,
-                        branch_name, worktree_path, created_at, updated_at, completed_at
+                        parent_id, depends_on, branch_name, worktree_path,
+                        created_at, updated_at, completed_at
                  FROM workflow_tasks WHERE parent_id = ? ORDER BY created_at",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -192,7 +186,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
                  FROM workflow_iterations WHERE task_id = ? ORDER BY stage, iteration_number",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -218,7 +212,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
                  FROM workflow_iterations WHERE task_id = ? AND stage = ? ORDER BY iteration_number",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -244,7 +238,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let result = conn
             .query_row(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
                  FROM workflow_iterations
                  WHERE task_id = ? AND stage = ? AND ended_at IS NULL
                  ORDER BY iteration_number DESC LIMIT 1",
@@ -266,7 +260,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let result = conn
             .query_row(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
                  FROM workflow_iterations
                  WHERE task_id = ? AND stage = ?
                  ORDER BY iteration_number DESC LIMIT 1",
@@ -288,10 +282,16 @@ impl WorkflowStore for SqliteWorkflowStore {
             .map(|o| serde_json::to_string(o).map_err(|e| WorkflowError::Storage(e.to_string())))
             .transpose()?;
 
+        let incoming_context_json = iteration
+            .incoming_context
+            .as_ref()
+            .map(|c| serde_json::to_string(c).map_err(|e| WorkflowError::Storage(e.to_string())))
+            .transpose()?;
+
         conn.execute(
             "INSERT OR REPLACE INTO workflow_iterations (
-                id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 iteration.id,
                 iteration.task_id,
@@ -301,6 +301,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 iteration.ended_at,
                 outcome_json,
                 iteration.stage_session_id,
+                incoming_context_json,
             ],
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -436,9 +437,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let status_json: String = row.get(3)?;
     let phase_str: String = row.get(4)?;
     let artifacts_json: String = row.get(5)?;
-    let pending_json: String = row.get(6)?;
-    let history_json: String = row.get(7)?;
-    let depends_json: String = row.get(9)?;
+    let depends_json: String = row.get(7)?;
 
     Ok(Task {
         id: row.get(0)?,
@@ -447,21 +446,22 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         status: serde_json::from_str(&status_json).unwrap_or(Status::active("unknown")),
         phase: parse_phase(&phase_str),
         artifacts: serde_json::from_str(&artifacts_json).unwrap_or_default(),
-        pending_questions: serde_json::from_str(&pending_json).unwrap_or_default(),
-        question_history: serde_json::from_str(&history_json).unwrap_or_default(),
-        parent_id: row.get(8)?,
+        parent_id: row.get(6)?,
         depends_on: serde_json::from_str(&depends_json).unwrap_or_default(),
-        branch_name: row.get(10)?,
-        worktree_path: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
-        completed_at: row.get(14)?,
+        branch_name: row.get(8)?,
+        worktree_path: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+        completed_at: row.get(12)?,
     })
 }
 
 fn row_to_iteration(row: &rusqlite::Row) -> rusqlite::Result<Iteration> {
     let iteration_number: i32 = row.get(3)?;
     let outcome_json: Option<String> = row.get(6)?;
+
+    // Column 8 is incoming_context (added in V9 migration)
+    let incoming_context_json: Option<String> = row.get(8).unwrap_or(None);
 
     Ok(Iteration {
         id: row.get(0)?,
@@ -472,6 +472,7 @@ fn row_to_iteration(row: &rusqlite::Row) -> rusqlite::Result<Iteration> {
         ended_at: row.get(5)?,
         outcome: outcome_json.and_then(|j| serde_json::from_str(&j).ok()),
         stage_session_id: row.get(7)?,
+        incoming_context: incoming_context_json.and_then(|j| serde_json::from_str(&j).ok()),
     })
 }
 
@@ -535,7 +536,6 @@ fn parse_session_state(s: &str) -> SessionState {
 mod tests {
     use super::*;
     use crate::adapters::sqlite::DatabaseConnection;
-    use crate::workflow::domain::Question;
     use crate::workflow::runtime::{Artifact, Outcome};
 
     fn test_store() -> SqliteWorkflowStore {
@@ -583,18 +583,8 @@ mod tests {
         assert_eq!(loaded.artifact("plan"), Some("The plan content"));
     }
 
-    #[test]
-    fn test_task_with_questions() {
-        let store = test_store();
-
-        let mut task = Task::new("task-1", "Test", "Desc", "planning", "now");
-        task.pending_questions.push(Question::new("q1", "What framework?"));
-        store.save_task(&task).unwrap();
-
-        let loaded = store.get_task("task-1").unwrap().unwrap();
-        assert!(loaded.has_pending_questions());
-        assert_eq!(loaded.pending_questions[0].question, "What framework?");
-    }
+    // Note: Questions are now stored in iteration outcomes, not on tasks.
+    // See test_iteration_with_questions_in_outcome for the new behavior.
 
     #[test]
     fn test_list_tasks() {

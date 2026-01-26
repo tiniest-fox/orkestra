@@ -100,15 +100,9 @@ impl<'a> PromptBuilder<'a> {
             })
             .collect();
 
-        // Convert question history
-        let question_history: Vec<QuestionAnswerContext<'a>> = task
-            .question_history
-            .iter()
-            .map(|qa| QuestionAnswerContext {
-                question: &qa.question,
-                answer: &qa.answer,
-            })
-            .collect();
+        // Question history is now passed via resume prompts (IterationTrigger::Answers)
+        // Initial prompts don't include question history since no questions have been asked yet
+        let question_history = Vec::new();
 
         Some(StagePromptContext {
             stage,
@@ -465,11 +459,188 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
     prompt
 }
 
+// ============================================================================
+// Resume Prompts
+// ============================================================================
+
+/// Type of resume prompt to use.
+///
+/// When resuming a session (via Claude Code's --resume), we send a SHORT prompt
+/// since Claude already remembers the full task context. The resume type determines
+/// what the short prompt should say.
+#[derive(Debug, Clone)]
+pub enum ResumeType {
+    /// Agent was interrupted, continue from where left off.
+    Continue,
+    /// Human provided feedback to address.
+    Feedback { feedback: String },
+    /// Integration failed with merge conflict.
+    Integration {
+        message: String,
+        conflict_files: Vec<String>,
+    },
+    /// Human provided answers to questions the agent asked.
+    Answers {
+        answers: Vec<ResumeQuestionAnswer>,
+    },
+}
+
+/// Owned question-answer pair for use in resume prompts.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ResumeQuestionAnswer {
+    pub question: String,
+    pub answer: String,
+}
+
+// Builtin default templates (used when .orkestra/agents/resume/ doesn't exist)
+const DEFAULT_CONTINUE_PROMPT: &str = r#"<!orkestra-resume:continue>
+
+Your previous session was interrupted. Please continue from where you left off and produce your final output as valid JSON."#;
+
+const DEFAULT_FEEDBACK_PROMPT: &str = r#"<!orkestra-resume:feedback>
+
+Your previous output needs revision. Please address this feedback:
+
+{{feedback}}
+
+Make the requested changes and produce your revised output as valid JSON."#;
+
+const DEFAULT_INTEGRATION_PROMPT: &str = r#"<!orkestra-resume:integration>
+
+Integration failed: {{error_message}}
+
+{{#if conflict_files}}
+Conflicting files:
+{{#each conflict_files}}
+- {{this}}
+{{/each}}
+{{/if}}
+
+Please run `git rebase main` to resolve conflicts, then continue and output your result."#;
+
+const DEFAULT_ANSWERS_PROMPT: &str = r#"<!orkestra-resume:answers>
+
+Here are the answers to your questions:
+
+{{#each answers}}
+**Q: {{this.question}}**
+A: {{this.answer}}
+
+{{/each}}
+
+Please continue your work with this information and produce your final output as valid JSON."#;
+
+/// Load and render a resume prompt template.
+///
+/// This loads the appropriate template for the resume type and renders it
+/// with any required context (feedback, error details, etc.).
+pub fn build_resume_prompt(
+    resume_type: ResumeType,
+    project_root: Option<&Path>,
+) -> Result<String, AgentConfigError> {
+    let (template_name, context) = match &resume_type {
+        ResumeType::Continue => ("continue.md", serde_json::json!({})),
+        ResumeType::Feedback { feedback } => {
+            ("feedback.md", serde_json::json!({ "feedback": feedback }))
+        }
+        ResumeType::Integration {
+            message,
+            conflict_files,
+        } => (
+            "integration.md",
+            serde_json::json!({
+                "error_message": message,
+                "conflict_files": conflict_files
+            }),
+        ),
+        ResumeType::Answers { answers } => {
+            ("answers.md", serde_json::json!({ "answers": answers }))
+        }
+    };
+
+    let template = load_resume_template(project_root, template_name)?;
+    render_template(&template, &context)
+}
+
+/// Load a resume template from file or return builtin default.
+fn load_resume_template(
+    project_root: Option<&Path>,
+    name: &str,
+) -> Result<String, AgentConfigError> {
+    // Try project .orkestra/agents/resume/ first
+    if let Some(root) = project_root {
+        let path = root.join(".orkestra/agents/resume").join(name);
+        if path.exists() {
+            let content = fs::read_to_string(&path).map_err(|e| {
+                AgentConfigError::DefinitionNotFound(format!("Failed to read {}: {}", path.display(), e))
+            })?;
+            // Warn if custom template missing marker
+            if !content.starts_with("<!orkestra-resume:") {
+                eprintln!("[warn] Resume template {} missing marker prefix", name);
+            }
+            return Ok(content);
+        }
+    }
+
+    // Fall back to builtin defaults
+    match name {
+        "continue.md" => Ok(DEFAULT_CONTINUE_PROMPT.to_string()),
+        "feedback.md" => Ok(DEFAULT_FEEDBACK_PROMPT.to_string()),
+        "integration.md" => Ok(DEFAULT_INTEGRATION_PROMPT.to_string()),
+        "answers.md" => Ok(DEFAULT_ANSWERS_PROMPT.to_string()),
+        _ => Err(AgentConfigError::DefinitionNotFound(format!(
+            "Unknown resume template: {name}"
+        ))),
+    }
+}
+
+/// Render a Handlebars template with the given context.
+fn render_template(
+    template: &str,
+    context: &serde_json::Value,
+) -> Result<String, AgentConfigError> {
+    let reg = handlebars::Handlebars::new();
+    reg.render_template(template, context)
+        .map_err(|e| AgentConfigError::PromptBuildError(e.to_string()))
+}
+
+/// Determine the resume type from context.
+///
+/// This is used by TaskExecutionService to decide which resume prompt to use.
+/// Priority: integration_error > feedback > answers > continue
+pub fn determine_resume_type(
+    feedback: Option<&str>,
+    integration_error: Option<&IntegrationErrorContext<'_>>,
+    question_history: &[crate::workflow::domain::QuestionAnswer],
+) -> ResumeType {
+    if let Some(err) = integration_error {
+        ResumeType::Integration {
+            message: err.message.to_string(),
+            conflict_files: err.conflict_files.iter().map(|s| s.to_string()).collect(),
+        }
+    } else if let Some(fb) = feedback {
+        ResumeType::Feedback {
+            feedback: fb.to_string(),
+        }
+    } else if !question_history.is_empty() {
+        ResumeType::Answers {
+            answers: question_history
+                .iter()
+                .map(|qa| ResumeQuestionAnswer {
+                    question: qa.question.clone(),
+                    answer: qa.answer.clone(),
+                })
+                .collect(),
+        }
+    } else {
+        ResumeType::Continue
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
-    use crate::workflow::domain::QuestionAnswer;
     use crate::workflow::runtime::Artifact;
 
     fn test_workflow() -> WorkflowConfig {
@@ -627,23 +798,16 @@ mod tests {
     }
 
     #[test]
-    fn test_context_with_question_history() {
+    fn test_context_question_history_is_empty() {
+        // Question history is now passed via resume prompts (IterationTrigger::Answers),
+        // not in the initial prompt context. So question_history is always empty.
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
-        let mut task = Task::new("task-1", "Test", "Description", "planning", "now");
-        task.question_history.push(QuestionAnswer::new(
-            "q1",
-            "What database?",
-            "PostgreSQL",
-            "now",
-        ));
-
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder.build_context("planning", &task, None, None).unwrap();
 
-        assert_eq!(ctx.question_history.len(), 1);
-        assert_eq!(ctx.question_history[0].question, "What database?");
-        assert_eq!(ctx.question_history[0].answer, "PostgreSQL");
+        assert!(ctx.question_history.is_empty());
     }
 
     // ========================================================================
@@ -799,5 +963,122 @@ mod tests {
 
         let err = AgentConfigError::DefinitionNotFound("missing.md".into());
         assert!(err.to_string().contains("missing.md"));
+    }
+
+    // ========================================================================
+    // Resume Prompt tests
+    // ========================================================================
+
+    #[test]
+    fn test_build_resume_prompt_continue() {
+        let prompt = build_resume_prompt(ResumeType::Continue, None).unwrap();
+        assert!(prompt.starts_with("<!orkestra-resume:continue>"));
+        assert!(prompt.contains("interrupted"));
+        assert!(prompt.contains("JSON"));
+    }
+
+    #[test]
+    fn test_build_resume_prompt_feedback() {
+        let prompt = build_resume_prompt(
+            ResumeType::Feedback {
+                feedback: "Add more error handling".to_string(),
+            },
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra-resume:feedback>"));
+        assert!(prompt.contains("Add more error handling"));
+        assert!(prompt.contains("revision"));
+    }
+
+    #[test]
+    fn test_build_resume_prompt_integration() {
+        let prompt = build_resume_prompt(
+            ResumeType::Integration {
+                message: "Merge conflict detected".to_string(),
+                conflict_files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
+            },
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra-resume:integration>"));
+        assert!(prompt.contains("Merge conflict detected"));
+        assert!(prompt.contains("src/main.rs"));
+        assert!(prompt.contains("src/lib.rs"));
+        assert!(prompt.contains("git rebase main"));
+    }
+
+    #[test]
+    fn test_build_resume_prompt_answers() {
+        let prompt = build_resume_prompt(
+            ResumeType::Answers {
+                answers: vec![
+                    ResumeQuestionAnswer {
+                        question: "Which database?".to_string(),
+                        answer: "PostgreSQL".to_string(),
+                    },
+                    ResumeQuestionAnswer {
+                        question: "Add caching?".to_string(),
+                        answer: "Yes, use Redis".to_string(),
+                    },
+                ],
+            },
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra-resume:answers>"));
+        assert!(prompt.contains("Which database?"));
+        assert!(prompt.contains("PostgreSQL"));
+        assert!(prompt.contains("Add caching?"));
+        assert!(prompt.contains("Yes, use Redis"));
+    }
+
+    #[test]
+    fn test_determine_resume_type_integration_takes_priority() {
+        use crate::workflow::domain::QuestionAnswer;
+        let error = IntegrationErrorContext {
+            message: "conflict",
+            conflict_files: vec!["file.rs"],
+        };
+        let answers = vec![QuestionAnswer::new("q1", "What?", "Something", "now")];
+        let result = determine_resume_type(Some("feedback"), Some(&error), &answers);
+        // Integration error takes priority over everything
+        assert!(matches!(result, ResumeType::Integration { .. }));
+    }
+
+    #[test]
+    fn test_determine_resume_type_feedback_over_answers() {
+        use crate::workflow::domain::QuestionAnswer;
+        let answers = vec![QuestionAnswer::new("q1", "What?", "Something", "now")];
+        let result = determine_resume_type(Some("please fix"), None, &answers);
+        // Feedback takes priority over answers
+        match result {
+            ResumeType::Feedback { feedback } => assert_eq!(feedback, "please fix"),
+            _ => panic!("Expected Feedback variant"),
+        }
+    }
+
+    #[test]
+    fn test_determine_resume_type_answers() {
+        use crate::workflow::domain::QuestionAnswer;
+        let answers = vec![
+            QuestionAnswer::new("q1", "Which DB?", "PostgreSQL", "now"),
+            QuestionAnswer::new("q2", "Add cache?", "Yes", "now"),
+        ];
+        let result = determine_resume_type(None, None, &answers);
+        match result {
+            ResumeType::Answers { answers } => {
+                assert_eq!(answers.len(), 2);
+                assert_eq!(answers[0].question, "Which DB?");
+                assert_eq!(answers[0].answer, "PostgreSQL");
+            }
+            _ => panic!("Expected Answers variant"),
+        }
+    }
+
+    #[test]
+    fn test_determine_resume_type_continue() {
+        let result = determine_resume_type(None, None, &[]);
+        assert!(matches!(result, ResumeType::Continue));
     }
 }

@@ -31,35 +31,12 @@ You perform a comprehensive review of completed work before it's marked as done.
    - If all checks pass AND the implementation looks good: **approve**
    - If any checks fail OR issues are found: **reject with specific feedback**
 
-## Output Format - REQUIRED
-
-Your final output MUST be valid JSON. The system will parse your JSON output automatically.
-
-### To approve (all checks pass, implementation is good):
-```json
-{
-  "type": "approved"
-}
-```
-
-### To reject (issues found, needs fixes):
-```json
-{
-  "type": "rejected",
-  "feedback": "Specific issues to fix: 1. ... 2. ...",
-  "target": "work"
-}
-```
-
-The `target` field specifies which stage to return to (usually "work").
-
 ## Rules
 
 - Only run auto-fix commands - do NOT make manual code changes beyond that.
 - Do NOT ask questions or wait for input. Make a decision based on what you find.
 - Be thorough but fair. Don't reject for style nitpicks.
 - If rejecting, provide clear, actionable feedback so the worker knows exactly what to fix.
-- **CRITICAL**: Your final response MUST be valid JSON in one of the formats above. Do not wrap it in markdown code blocks.
 
 ## What to Reject For
 

@@ -7,6 +7,33 @@ use serde::{Deserialize, Serialize};
 
 use crate::workflow::runtime::Outcome;
 
+use super::question::QuestionAnswer;
+
+/// Why this iteration was created - determines the resume prompt type.
+///
+/// This is stored as `incoming_context` on an iteration to track why it exists.
+/// The orchestrator reads this when spawning agents to send the appropriate resume prompt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum IterationTrigger {
+    /// Human rejected previous output.
+    Feedback { feedback: String },
+    /// Agent (reviewer) restaged to this stage.
+    Restage {
+        from_stage: String,
+        feedback: String,
+    },
+    /// Integration (merge) failed.
+    Integration {
+        message: String,
+        conflict_files: Vec<String>,
+    },
+    /// Human answered questions.
+    Answers { answers: Vec<QuestionAnswer> },
+    /// Crash recovery (session interrupted).
+    Interrupted,
+}
+
 /// A single iteration (attempt) within a stage.
 ///
 /// Tracks one agent execution cycle in a stage. Multiple iterations
@@ -43,6 +70,11 @@ pub struct Iteration {
     /// Can be looked up by (task_id, stage) if not set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_session_id: Option<String>,
+
+    /// Context explaining why this iteration was created.
+    /// None = first iteration of stage (fresh start, no special context).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub incoming_context: Option<IterationTrigger>,
 }
 
 impl Iteration {
@@ -63,7 +95,15 @@ impl Iteration {
             ended_at: None,
             outcome: None,
             stage_session_id: None,
+            incoming_context: None,
         }
+    }
+
+    /// Builder: set incoming context (why this iteration was created).
+    #[must_use]
+    pub fn with_context(mut self, context: IterationTrigger) -> Self {
+        self.incoming_context = Some(context);
+        self
     }
 
     /// Builder: set stage session ID reference.
@@ -180,5 +220,113 @@ mod tests {
 
         let parsed: Iteration = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, iter);
+    }
+
+    #[test]
+    fn test_iteration_trigger_feedback() {
+        let trigger = IterationTrigger::Feedback {
+            feedback: "Tests are failing".to_string(),
+        };
+        let json = serde_json::to_string(&trigger).unwrap();
+        assert!(json.contains("\"type\":\"feedback\""));
+        assert!(json.contains("Tests are failing"));
+
+        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, trigger);
+    }
+
+    #[test]
+    fn test_iteration_trigger_restage() {
+        let trigger = IterationTrigger::Restage {
+            from_stage: "review".to_string(),
+            feedback: "Needs more tests".to_string(),
+        };
+        let json = serde_json::to_string(&trigger).unwrap();
+        assert!(json.contains("\"type\":\"restage\""));
+        assert!(json.contains("\"from_stage\":\"review\""));
+
+        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, trigger);
+    }
+
+    #[test]
+    fn test_iteration_trigger_integration() {
+        let trigger = IterationTrigger::Integration {
+            message: "Merge conflict".to_string(),
+            conflict_files: vec!["src/main.rs".to_string()],
+        };
+        let json = serde_json::to_string(&trigger).unwrap();
+        assert!(json.contains("\"type\":\"integration\""));
+        assert!(json.contains("\"conflict_files\""));
+
+        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, trigger);
+    }
+
+    #[test]
+    fn test_iteration_trigger_answers() {
+        use super::super::question::QuestionAnswer;
+
+        let trigger = IterationTrigger::Answers {
+            answers: vec![QuestionAnswer::new("q1", "Which DB?", "PostgreSQL", "now")],
+        };
+        let json = serde_json::to_string(&trigger).unwrap();
+        assert!(json.contains("\"type\":\"answers\""));
+        assert!(json.contains("PostgreSQL"));
+
+        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, trigger);
+    }
+
+    #[test]
+    fn test_iteration_trigger_interrupted() {
+        let trigger = IterationTrigger::Interrupted;
+        let json = serde_json::to_string(&trigger).unwrap();
+        assert!(json.contains("\"type\":\"interrupted\""));
+
+        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, trigger);
+    }
+
+    #[test]
+    fn test_iteration_with_context() {
+        let iter = Iteration::new("iter-1", "task-1", "work", 2, "now").with_context(
+            IterationTrigger::Feedback {
+                feedback: "Add error handling".to_string(),
+            },
+        );
+
+        assert!(iter.incoming_context.is_some());
+        match &iter.incoming_context {
+            Some(IterationTrigger::Feedback { feedback }) => {
+                assert_eq!(feedback, "Add error handling");
+            }
+            _ => panic!("Expected Feedback trigger"),
+        }
+    }
+
+    #[test]
+    fn test_iteration_with_context_serialization() {
+        let iter = Iteration::new("iter-1", "task-1", "work", 2, "now").with_context(
+            IterationTrigger::Feedback {
+                feedback: "Fix tests".to_string(),
+            },
+        );
+
+        let json = serde_json::to_string(&iter).unwrap();
+        assert!(json.contains("\"incoming_context\""));
+        assert!(json.contains("\"type\":\"feedback\""));
+        assert!(json.contains("Fix tests"));
+
+        let parsed: Iteration = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, iter);
+    }
+
+    #[test]
+    fn test_iteration_without_context_omits_field() {
+        let iter = Iteration::new("iter-1", "task-1", "planning", 1, "now");
+        let yaml = serde_yaml::to_string(&iter).unwrap();
+        // incoming_context should be omitted when None
+        assert!(!yaml.contains("incoming_context"));
     }
 }

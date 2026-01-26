@@ -1,7 +1,7 @@
 //! Human/UI actions: approve, reject, answer questions.
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{Iteration, QuestionAnswer, Task};
+use crate::workflow::domain::{Iteration, IterationTrigger, QuestionAnswer, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase};
 
@@ -108,7 +108,7 @@ impl WorkflowApi {
         task.phase = Phase::Idle;
         task.updated_at = now.clone();
 
-        // Create new iteration in same stage
+        // Create new iteration in same stage with feedback context
         let iteration_count = self.store.get_iterations(&task.id)?.len() as u32;
         let iteration = Iteration::new(
             format!("{}-iter-{}", task.id, iteration_count + 1),
@@ -116,7 +116,10 @@ impl WorkflowApi {
             &current_stage,
             iteration_count + 1,
             &now,
-        );
+        )
+        .with_context(IterationTrigger::Feedback {
+            feedback: feedback.to_string(),
+        });
         self.store.save_iteration(&iteration)?;
 
         self.store.save_task(&task)?;
@@ -135,11 +138,28 @@ impl WorkflowApi {
     ) -> WorkflowResult<Task> {
         let mut task = self.get_task(task_id)?;
 
-        if task.pending_questions.is_empty() {
-            return Err(WorkflowError::InvalidTransition(
-                "No pending questions to answer".into(),
-            ));
-        }
+        let current_stage = task
+            .current_stage()
+            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
+            .to_string();
+
+        // Get questions from latest iteration's outcome
+        let prev_iter = self
+            .store
+            .get_latest_iteration(&task.id, &current_stage)?
+            .ok_or_else(|| {
+                WorkflowError::InvalidTransition("No iteration to answer".into())
+            })?;
+
+        // Verify there are pending questions in the outcome
+        let _questions = match &prev_iter.outcome {
+            Some(Outcome::AwaitingAnswers { questions, .. }) if !questions.is_empty() => questions,
+            _ => {
+                return Err(WorkflowError::InvalidTransition(
+                    "No pending questions to answer".into(),
+                ))
+            }
+        };
 
         orkestra_debug!(
             "action",
@@ -148,13 +168,23 @@ impl WorkflowApi {
             answers.len()
         );
 
-        // Move questions to history with answers
-        task.question_history.extend(answers);
-        task.pending_questions.clear();
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Create new iteration with Answers context
+        let iteration_count = self.store.get_iterations(&task.id)?.len() as u32;
+        let iteration = Iteration::new(
+            format!("{}-iter-{}", task.id, iteration_count + 1),
+            &task.id,
+            &current_stage,
+            iteration_count + 1,
+            &now,
+        )
+        .with_context(IterationTrigger::Answers { answers });
+        self.store.save_iteration(&iteration)?;
 
         // Task stays in same stage, phase goes back to Idle so agent can resume
         task.phase = Phase::Idle;
-        task.updated_at = chrono::Utc::now().to_rfc3339();
+        task.updated_at = now;
 
         self.store.save_task(&task)?;
         Ok(task)
@@ -338,15 +368,21 @@ mod tests {
     }
 
     #[test]
-    fn test_answer_questions_clears_pending() {
+    fn test_answer_questions_creates_new_iteration() {
         let workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
-        // Simulate agent asking questions
-        task.pending_questions = vec![Question::new("q1", "What framework?")];
+        // Simulate agent asking questions by ending iteration with AwaitingAnswers outcome
+        let iter = api.store.get_latest_iteration(&task.id, "planning").unwrap().unwrap();
+        let mut iter = iter;
+        iter.outcome = Some(Outcome::awaiting_answers("planning", vec![
+            Question::new("q1", "What framework?"),
+        ]));
+        iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
+        api.store.save_iteration(&iter).unwrap();
         task.phase = Phase::AwaitingReview;
         api.store.save_task(&task).unwrap();
 
@@ -357,10 +393,21 @@ mod tests {
             chrono::Utc::now().to_rfc3339(),
         )];
 
-        let task = api.answer_questions(&task.id, answers).unwrap();
+        let task = api.answer_questions(&task.id, answers.clone()).unwrap();
 
-        assert!(task.pending_questions.is_empty());
-        assert_eq!(task.question_history.len(), 1);
+        // Check that a new iteration was created with Answers context
+        let iterations = api.store.get_iterations(&task.id).unwrap();
+        assert_eq!(iterations.len(), 2);
+
+        let new_iter = iterations.last().unwrap();
+        match &new_iter.incoming_context {
+            Some(IterationTrigger::Answers { answers: ctx_answers }) => {
+                assert_eq!(ctx_answers.len(), 1);
+                assert_eq!(ctx_answers[0].answer, "React");
+            }
+            _ => panic!("Expected Answers context"),
+        }
+
         assert_eq!(task.phase, Phase::Idle);
     }
 

@@ -37,46 +37,6 @@ Keep exploring and asking questions until you're confident you understand what n
    - **Testing Strategy**: How to verify the changes work
    - **Risks/Considerations**: Any potential issues to watch for
 
-## Output Format
-
-Your response MUST be valid JSON matching one of these formats:
-
-### When asking questions:
-```json
-{
-  "type": "questions",
-  "questions": [
-    {
-      "id": "q1",
-      "question": "Which authentication approach should we use?",
-      "context": "The codebase has both JWT and session-based patterns.",
-      "options": [
-        {"label": "JWT tokens", "description": "Stateless, good for APIs"},
-        {"label": "Session-based", "description": "Traditional, requires server state"}
-      ]
-    }
-  ]
-}
-```
-
-### When ready with a plan:
-```json
-{
-  "type": "plan",
-  "plan": {
-    "summary": "Brief overview of what will be done",
-    "files_to_modify": ["src/auth.rs", "src/routes.rs"],
-    "implementation_steps": [
-      "Create auth module with JWT handling",
-      "Add login/logout endpoints",
-      "Add middleware for protected routes"
-    ],
-    "testing_strategy": "Unit tests for JWT, integration tests for endpoints",
-    "risks": "Token expiration handling needs careful testing"
-  }
-}
-```
-
 ## Question Guidelines
 
 - Ask 1-4 questions at a time (not too many at once)
@@ -91,7 +51,6 @@ Your response MUST be valid JSON matching one of these formats:
 - ASK questions when uncertain - don't make assumptions about user preferences
 - Be specific about file paths and function names in your plan
 - Keep the plan concise but complete
-- Output ONLY valid JSON - no markdown formatting around it
 
 ## Previous Questions and Answers
 

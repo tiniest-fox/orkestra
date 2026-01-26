@@ -9,10 +9,11 @@ import type {
   WorkflowTask,
   WorkflowConfig,
   WorkflowIteration,
+  WorkflowQuestion,
   WorkflowQuestionAnswer,
   LogEntry,
 } from "../types/workflow";
-import { needsReview, hasPendingQuestions, getTaskStage, capitalizeFirst } from "../types/workflow";
+import { needsReview, getTaskStage, capitalizeFirst } from "../types/workflow";
 import { useWorkflowActions, useWorkflowQueries } from "../hooks/useWorkflow";
 import { LogList } from "./LogEntryView";
 
@@ -109,18 +110,18 @@ function buildTabs(task: WorkflowTask, config: WorkflowConfig): Tab[] {
  * Question form component for answering pending questions.
  */
 function QuestionFormSection({
-  task,
+  questions,
   onSubmit,
   isSubmitting,
 }: {
-  task: WorkflowTask;
+  questions: WorkflowQuestion[];
   onSubmit: (answers: WorkflowQuestionAnswer[]) => void;
   isSubmitting: boolean;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
   const handleSubmit = () => {
-    const formattedAnswers: WorkflowQuestionAnswer[] = task.pending_questions.map((q) => ({
+    const formattedAnswers: WorkflowQuestionAnswer[] = questions.map((q) => ({
       question_id: q.id,
       question: q.question,
       answer: answers[q.id] || "",
@@ -129,13 +130,13 @@ function QuestionFormSection({
     onSubmit(formattedAnswers);
   };
 
-  const allAnswered = task.pending_questions.every((q) => answers[q.id]?.trim());
+  const allAnswered = questions.every((q) => answers[q.id]?.trim());
 
   return (
     <div className="p-4 bg-blue-50 border-t border-gray-200">
       <div className="text-sm font-medium text-blue-800 mb-3">Questions</div>
       <div className="space-y-4">
-        {task.pending_questions.map((question) => (
+        {questions.map((question) => (
           <div key={question.id}>
             <div className="text-sm font-medium text-gray-900 mb-1">{question.question}</div>
             {question.context && (
@@ -300,7 +301,10 @@ export function WorkflowTaskDetailSidebar({
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
   const { approve, reject, answerQuestions } = useWorkflowActions();
-  const { getIterations, getLogs, getStagesWithLogs } = useWorkflowQueries();
+  const { getIterations, getLogs, getStagesWithLogs, getPendingQuestions } = useWorkflowQueries();
+
+  // Pending questions (fetched from iteration outcome)
+  const [pendingQuestions, setPendingQuestions] = useState<WorkflowQuestion[]>([]);
 
   // Stage tabs for logs
   const [stagesWithLogs, setStagesWithLogs] = useState<string[]>([]);
@@ -330,6 +334,20 @@ export function WorkflowTaskDetailSidebar({
   useEffect(() => {
     fetchIterations();
   }, [fetchIterations]);
+
+  // Fetch pending questions when task is in awaiting_review phase
+  useEffect(() => {
+    if (task.phase === "awaiting_review" && task.status.type === "active") {
+      getPendingQuestions(task.id)
+        .then(setPendingQuestions)
+        .catch((err) => {
+          console.error("Failed to fetch pending questions:", err);
+          setPendingQuestions([]);
+        });
+    } else {
+      setPendingQuestions([]);
+    }
+  }, [task.id, task.phase, task.status.type, getPendingQuestions]);
 
   // Error state for logs
   const [logsError, setLogsError] = useState<string | null>(null);
@@ -449,7 +467,7 @@ export function WorkflowTaskDetailSidebar({
 
   // Check review state
   const taskNeedsReview = needsReview(task);
-  const taskHasQuestions = hasPendingQuestions(task);
+  const taskHasQuestions = pendingQuestions.length > 0;
   const currentStage = getTaskStage(task.status);
 
   // Get current stage config for review label
@@ -677,7 +695,7 @@ export function WorkflowTaskDetailSidebar({
       {/* Question Form */}
       {taskHasQuestions && (
         <QuestionFormSection
-          task={task}
+          questions={pendingQuestions}
           onSubmit={handleAnswerQuestions}
           isSubmitting={isSubmitting}
         />

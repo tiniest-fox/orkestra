@@ -1,7 +1,7 @@
 //! Agent/orchestrator actions: agent started, process output, get pending tasks.
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{Iteration, Task};
+use crate::workflow::domain::{Iteration, IterationTrigger, Task};
 use crate::workflow::execution::StageOutput;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
@@ -84,8 +84,12 @@ impl WorkflowApi {
 
         match output {
             StageOutput::Questions { questions } => {
-                // Agent asked questions - task waits for human answers
-                task.pending_questions = questions;
+                // Agent asked questions - end iteration with questions in outcome
+                self.end_current_iteration(
+                    &task,
+                    Outcome::awaiting_answers(&current_stage, questions),
+                )?;
+
                 task.phase = Phase::AwaitingReview; // UI needs to show questions
                 task.updated_at = now;
             }
@@ -159,7 +163,7 @@ impl WorkflowApi {
                 task.phase = Phase::Idle;
                 task.updated_at = now.clone();
 
-                // Create new iteration in target stage
+                // Create new iteration in target stage with restage context
                 let iteration_count = self.store.get_iterations(&task.id)?.len() as u32;
                 let iteration = Iteration::new(
                     format!("{}-iter-{}", task.id, iteration_count + 1),
@@ -167,7 +171,11 @@ impl WorkflowApi {
                     &target,
                     iteration_count + 1,
                     &now,
-                );
+                )
+                .with_context(IterationTrigger::Restage {
+                    from_stage: current_stage.clone(),
+                    feedback: feedback.clone(),
+                });
                 self.store.save_iteration(&iteration)?;
             }
 
@@ -309,7 +317,10 @@ mod tests {
         let task = api.process_agent_output(&task.id, output).unwrap();
 
         assert_eq!(task.phase, Phase::AwaitingReview);
-        assert_eq!(task.pending_questions.len(), 1);
+
+        // Questions are now stored in iteration outcome, not on task
+        let questions = api.get_pending_questions(&task.id).unwrap();
+        assert_eq!(questions.len(), 1);
     }
 
     #[test]

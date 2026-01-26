@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::workflow::domain::Question;
+
 /// How a work loop or iteration ended.
 ///
 /// This is a stage-agnostic version of outcomes. Instead of having
@@ -25,9 +27,12 @@ pub enum Outcome {
     },
 
     /// Stage is waiting for human to answer questions.
+    /// Questions are stored here as OUTPUT of the iteration.
     AwaitingAnswers {
         /// The stage that asked questions.
         stage: String,
+        /// The questions that need answers.
+        questions: Vec<Question>,
     },
 
     /// Task completed successfully.
@@ -107,10 +112,11 @@ impl Outcome {
         }
     }
 
-    /// Create an awaiting answers outcome.
-    pub fn awaiting_answers(stage: impl Into<String>) -> Self {
+    /// Create an awaiting answers outcome with the questions that need answers.
+    pub fn awaiting_answers(stage: impl Into<String>, questions: Vec<Question>) -> Self {
         Self::AwaitingAnswers {
             stage: stage.into(),
+            questions,
         }
     }
 
@@ -163,7 +169,7 @@ impl Outcome {
     pub fn stage(&self) -> Option<&str> {
         match self {
             Outcome::Rejected { stage, .. }
-            | Outcome::AwaitingAnswers { stage }
+            | Outcome::AwaitingAnswers { stage, .. }
             | Outcome::Skipped { stage, .. } => Some(stage),
             Outcome::Restage { from_stage, .. } => Some(from_stage),
             _ => None,
@@ -174,6 +180,14 @@ impl Outcome {
     pub fn restage_target(&self) -> Option<&str> {
         match self {
             Outcome::Restage { target, .. } => Some(target),
+            _ => None,
+        }
+    }
+
+    /// Get the pending questions, if this is an awaiting answers outcome.
+    pub fn questions(&self) -> Option<&Vec<Question>> {
+        match self {
+            Outcome::AwaitingAnswers { questions, .. } => Some(questions),
             _ => None,
         }
     }
@@ -203,7 +217,7 @@ impl std::fmt::Display for Outcome {
         match self {
             Outcome::Approved => write!(f, "approved"),
             Outcome::Rejected { stage, .. } => write!(f, "{stage} rejected"),
-            Outcome::AwaitingAnswers { stage } => write!(f, "{stage} awaiting answers"),
+            Outcome::AwaitingAnswers { stage, .. } => write!(f, "{stage} awaiting answers"),
             Outcome::Completed { .. } => write!(f, "completed"),
             Outcome::IntegrationFailed { .. } => write!(f, "integration failed"),
             Outcome::AgentError { .. } => write!(f, "agent error"),

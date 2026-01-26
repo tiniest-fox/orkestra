@@ -164,7 +164,7 @@ export interface WorkflowQuestionAnswer {
 export type WorkflowOutcome =
   | { type: "approved" }
   | { type: "rejected"; stage: string; feedback: string }
-  | { type: "awaiting_answers"; stage: string }
+  | { type: "awaiting_answers"; stage: string; questions: WorkflowQuestion[] }
   | { type: "completed"; merged_at?: string; commit_sha?: string; target_branch?: string }
   | { type: "integration_failed"; error: string; conflict_files: string[] }
   | { type: "agent_error"; error: string }
@@ -200,6 +200,9 @@ export interface WorkflowIteration {
 
 /**
  * A workflow task.
+ *
+ * Note: Questions are now stored in iteration outcomes (Outcome::AwaitingAnswers),
+ * not on the task itself. Use the workflow_get_pending_questions API to fetch them.
  */
 export interface WorkflowTask {
   /** Unique task ID (e.g., "gentle-fuzzy-otter"). */
@@ -214,10 +217,6 @@ export interface WorkflowTask {
   phase: WorkflowTaskPhase;
   /** Artifacts produced so far, keyed by artifact name. */
   artifacts: Record<string, WorkflowArtifact>;
-  /** Pending questions awaiting answers. */
-  pending_questions: WorkflowQuestion[];
-  /** History of answered questions. */
-  question_history: WorkflowQuestionAnswer[];
   /** Parent task ID (for subtasks). */
   parent_id?: string;
   /** Task IDs this task depends on. */
@@ -283,12 +282,26 @@ export type ToolInput =
   | { tool: "other"; summary: string };
 
 /**
+ * Resume type for session resumption markers.
+ * - "continue": Agent was interrupted, continue from where left off
+ * - "feedback": Human provided feedback to address
+ * - "integration": Integration failed with merge conflict
+ * - "answers": Human provided answers to questions
+ */
+export type ResumeType = "continue" | "feedback" | "integration" | "answers";
+
+/**
  * Structured log entry for task execution (loaded from Claude's session files).
  * Uses snake_case type field to match Rust's serde serialization.
  */
 export type LogEntry =
   | { type: "text"; content: string }
-  | { type: "user_message"; content: string }
+  | {
+      type: "user_message";
+      /** Type of resume: "continue", "feedback", or "integration". Defaults to "continue". */
+      resume_type?: ResumeType;
+      content: string;
+    }
   | { type: "tool_use"; tool: string; id: string; input: ToolInput }
   | { type: "tool_result"; tool: string; tool_use_id: string; content: string }
   | { type: "subagent_tool_use"; tool: string; id: string; input: ToolInput; parent_task_id: string }
@@ -330,10 +343,17 @@ export function needsReview(task: WorkflowTask): boolean {
 }
 
 /**
- * Check if a task has pending questions.
+ * Check if a task might have pending questions based on phase.
+ *
+ * Note: This is a heuristic check. To get actual pending questions,
+ * use the workflow_get_pending_questions Tauri command.
+ *
+ * @deprecated Use workflow_get_pending_questions API instead
  */
 export function hasPendingQuestions(task: WorkflowTask): boolean {
-  return (task.pending_questions?.length ?? 0) > 0;
+  // A task in awaiting_review phase with active status might have questions
+  // The actual questions must be fetched via API
+  return task.phase === "awaiting_review" && task.status.type === "active";
 }
 
 /**

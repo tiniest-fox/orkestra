@@ -4,7 +4,7 @@
  */
 
 import { useState } from "react";
-import type { LogEntry, ToolInput, OrkAction, TodoItem } from "../types/workflow";
+import type { LogEntry, ToolInput, OrkAction, TodoItem, ResumeType } from "../types/workflow";
 
 /**
  * Get icon for tool type.
@@ -206,23 +206,57 @@ export function LogEntryView({ entry }: { entry: LogEntry }) {
         </div>
       );
 
-    case "user_message":
+    case "user_message": {
+      // Determine styling based on resume_type
+      const resumeType: ResumeType = entry.resume_type ?? "continue";
+      const resumeStyles: Record<
+        ResumeType,
+        { label: string; textColor: string; bgColor: string; borderColor: string }
+      > = {
+        continue: {
+          label: "Session Resumed",
+          textColor: "text-blue-400",
+          bgColor: "bg-blue-900/30",
+          borderColor: "border-blue-500",
+        },
+        feedback: {
+          label: "Feedback Requested",
+          textColor: "text-amber-400",
+          bgColor: "bg-amber-900/30",
+          borderColor: "border-amber-500",
+        },
+        integration: {
+          label: "Integration Conflict",
+          textColor: "text-red-400",
+          bgColor: "bg-red-900/30",
+          borderColor: "border-red-500",
+        },
+        answers: {
+          label: "Questions Answered",
+          textColor: "text-green-400",
+          bgColor: "bg-green-900/30",
+          borderColor: "border-green-500",
+        },
+      };
+      const style = resumeStyles[resumeType] ?? resumeStyles.continue;
+
       return (
         <div className="py-3 my-4">
           {/* Iteration separator */}
           <div className="flex items-center gap-3 mb-2">
             <div className="flex-1 h-px bg-gray-600" />
-            <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">
-              Session Resumed
+            <span className={`text-xs ${style.textColor} font-medium uppercase tracking-wider`}>
+              {style.label}
             </span>
             <div className="flex-1 h-px bg-gray-600" />
           </div>
           {/* Resumption context */}
-          <div className="px-3 py-2 bg-blue-900/30 border-l-2 border-blue-500 rounded-r">
+          <div className={`px-3 py-2 ${style.bgColor} border-l-2 ${style.borderColor} rounded-r`}>
             <div className="text-gray-200 text-sm">{entry.content}</div>
           </div>
         </div>
       );
+    }
 
     case "tool_use":
       return (

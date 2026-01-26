@@ -134,6 +134,97 @@ impl TestContext {
     fn repo_path(&self) -> &std::path::Path {
         self._temp_dir.path()
     }
+
+    // =========================================================================
+    // Prompt Verification Helpers
+    // =========================================================================
+
+    /// Get the last prompt sent to the agent.
+    fn last_prompt(&self) -> String {
+        let calls = self.runner.calls();
+        calls.last().expect("No agent calls recorded").prompt.clone()
+    }
+
+    /// Assert that the last prompt has a specific resume marker type.
+    /// Resume markers are: <!orkestra-resume:continue>, <!orkestra-resume:feedback>, etc.
+    fn assert_resume_prompt(&self, expected_type: &str) {
+        self.assert_resume_prompt_contains(expected_type, &[]);
+    }
+
+    /// Assert that the last prompt has a specific resume marker type and contains expected strings.
+    fn assert_resume_prompt_contains(&self, expected_type: &str, expected_content: &[&str]) {
+        let prompt = self.last_prompt();
+        let expected_marker = format!("<!orkestra-resume:{}>", expected_type);
+        assert!(
+            prompt.starts_with(&expected_marker),
+            "Expected resume marker '{}', got prompt starting with: {}...",
+            expected_marker,
+            &prompt[..prompt.len().min(100)]
+        );
+
+        for content in expected_content {
+            assert!(
+                prompt.contains(content),
+                "Resume prompt should contain '{}'. Full prompt:\n{}",
+                content,
+                prompt
+            );
+        }
+    }
+
+    /// Assert that the last prompt is a full prompt with expected stage characteristics.
+    ///
+    /// # Arguments
+    /// * `artifact` - The artifact name this stage produces (e.g., "plan", "summary", "verdict")
+    /// * `can_ask_questions` - Whether the stage has ask_questions capability
+    /// * `restage_targets` - Stages this stage can restage to (empty if no restage capability)
+    fn assert_full_prompt(&self, artifact: &str, can_ask_questions: bool, restage_targets: &[&str]) {
+        let prompt = self.last_prompt();
+
+        // Should NOT be a resume prompt
+        assert!(
+            !prompt.starts_with("<!orkestra-resume:"),
+            "Expected full prompt (not resume), but got resume prompt starting with: {}...",
+            &prompt[..prompt.len().min(100)]
+        );
+
+        // Full prompts should contain the task section
+        assert!(
+            prompt.contains("## Your Current Task"),
+            "Full prompt should contain '## Your Current Task' section"
+        );
+
+        // Should contain the expected artifact name in output format
+        let artifact_pattern = format!("\"{}\"", artifact);
+        assert!(
+            prompt.contains(&artifact_pattern),
+            "Full prompt should reference artifact '{}'. Got prompt: {}...",
+            artifact,
+            &prompt[..prompt.len().min(500)]
+        );
+
+        // Check questions capability
+        if can_ask_questions {
+            assert!(
+                prompt.contains("\"questions\""),
+                "Prompt for stage with ask_questions should mention questions output type"
+            );
+        }
+
+        // Check restage capability
+        for target in restage_targets {
+            assert!(
+                prompt.contains("restage") || prompt.contains("rejected"),
+                "Prompt for stage with restage capability should mention restage/rejected"
+            );
+            assert!(
+                prompt.contains(target),
+                "Prompt should mention restage target '{}' but doesn't. Prompt: {}...",
+                target,
+                &prompt[..prompt.len().min(500)]
+            );
+        }
+    }
 }
 
 fn setup_test() -> TestContext {
@@ -270,11 +361,16 @@ fn test_exhaustive_workflow_flow() {
     ctx.set_output(&task_id, MockAgentOutput::Questions(questions));
     ctx.tick();
 
+    // VERIFY: First spawn of planning stage → full prompt with questions capability
+    ctx.assert_full_prompt("plan", true, &[]);
+
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.phase, Phase::AwaitingReview);
-    assert_eq!(task.pending_questions.len(), 2);
-    assert!(task.pending_questions[0].is_multiple_choice());
-    assert!(!task.pending_questions[1].is_multiple_choice());
+    // Questions are now stored in iteration outcome, not on task
+    let questions = ctx.api().get_pending_questions(&task_id).unwrap();
+    assert_eq!(questions.len(), 2);
+    assert!(questions[0].is_multiple_choice());
+    assert!(!questions[1].is_multiple_choice());
 
     // Human answers questions
     let answers = vec![
@@ -287,8 +383,10 @@ fn test_exhaustive_workflow_flow() {
         .expect("Should answer questions");
 
     assert_eq!(task.phase, Phase::Idle);
-    assert!(task.pending_questions.is_empty());
-    assert_eq!(task.question_history.len(), 2);
+    // After answering, no pending questions (new iteration was created)
+    let questions = ctx.api().get_pending_questions(&task_id).unwrap();
+    assert!(questions.is_empty());
+    // Answers are stored in iteration context (IterationTrigger::Answers), not on task
 
     // =========================================================================
     // Step 3: Planner produces plan → Plan rejected → Retry planning
@@ -300,6 +398,14 @@ fn test_exhaustive_workflow_flow() {
         content: "Initial plan v1 - not detailed enough".to_string(),
     });
     ctx.tick();
+
+    // VERIFY: After answering questions → resume with answers prompt containing the Q&A
+    ctx.assert_resume_prompt_contains("answers", &[
+        "Which database should we use?",
+        "PostgreSQL",
+        "Should we add caching?",
+        "Yes, use Redis",
+    ]);
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.phase, Phase::AwaitingReview);
@@ -317,14 +423,25 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.phase, Phase::Idle);
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    assert_eq!(iterations.len(), 2, "Should have 2 iterations after rejection");
+    // With new model: iter1 (questions), iter2 (answers→rejected), iter3 (feedback)
+    assert_eq!(iterations.len(), 3, "Should have 3 iterations after rejection");
 
-    // Check first iteration ended with rejection
+    // Check first iteration ended with AwaitingAnswers (agent asked questions)
     assert!(iterations[0].outcome.is_some());
     assert!(matches!(
         iterations[0].outcome.as_ref().unwrap(),
+        Outcome::AwaitingAnswers { .. }
+    ));
+
+    // Check second iteration ended with rejection (plan was rejected)
+    assert!(iterations[1].outcome.is_some());
+    assert!(matches!(
+        iterations[1].outcome.as_ref().unwrap(),
         Outcome::Rejected { .. }
     ));
+
+    // Check third iteration has feedback context (for retry)
+    assert!(iterations[2].incoming_context.is_some());
 
     // Orchestrator spawns planner again, produces better plan
     ctx.set_output(&task_id, MockAgentOutput::Artifact {
@@ -332,6 +449,11 @@ fn test_exhaustive_workflow_flow() {
         content: "Detailed plan v2:\n1. Create module\n2. Add tests\n3. Update docs".to_string(),
     });
     ctx.tick();
+
+    // VERIFY: Planner retry after rejection → resume with feedback prompt containing the feedback
+    ctx.assert_resume_prompt_contains("feedback", &[
+        "Need more detail on the implementation steps",
+    ]);
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.phase, Phase::AwaitingReview);
@@ -350,10 +472,11 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.phase, Phase::Idle);
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    // With new model: iter1 (questions), iter2 (answers→rejected), iter3 (feedback→approved), iter4 (breakdown)
     assert_eq!(
         iterations.len(),
-        3,
-        "Should have 3 iterations (planning x2, breakdown)"
+        4,
+        "Should have 4 iterations (planning x3, breakdown)"
     );
 
     // Orchestrator spawns breakdown agent
@@ -362,6 +485,9 @@ fn test_exhaustive_workflow_flow() {
         content: "Subtasks:\n1. Create module\n2. Add tests".to_string(),
     });
     ctx.tick();
+
+    // VERIFY: First spawn of breakdown stage → full prompt
+    ctx.assert_full_prompt("breakdown", false, &[]);
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.phase, Phase::AwaitingReview);
@@ -380,10 +506,11 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.phase, Phase::Idle);
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    // With new model: planning x3, breakdown, work
     assert_eq!(
         iterations.len(),
-        4,
-        "Should have 4 iterations (planning x2, breakdown, work)"
+        5,
+        "Should have 5 iterations (planning x3, breakdown, work)"
     );
 
     // =========================================================================
@@ -397,6 +524,9 @@ fn test_exhaustive_workflow_flow() {
     });
     ctx.tick();
 
+    // VERIFY: First spawn of work stage → full prompt
+    ctx.assert_full_prompt("summary", false, &[]);
+
     // Human rejects the work
     let task = ctx.api()
         .reject(&task_id, "Tests are failing, please fix them")
@@ -406,7 +536,8 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.phase, Phase::Idle);
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    assert_eq!(iterations.len(), 5);
+    // With new model: planning x3, breakdown, work x2
+    assert_eq!(iterations.len(), 6);
 
     // Orchestrator spawns worker again
     ctx.set_output(&task_id, MockAgentOutput::Artifact {
@@ -414,6 +545,11 @@ fn test_exhaustive_workflow_flow() {
         content: "Implementation complete with passing tests".to_string(),
     });
     ctx.tick();
+
+    // VERIFY: Work retry after rejection → resume with feedback prompt containing the feedback
+    ctx.assert_resume_prompt_contains("feedback", &[
+        "Tests are failing, please fix them",
+    ]);
 
     // =========================================================================
     // Step 7: Work approved → Reviewing
@@ -439,6 +575,12 @@ fn test_exhaustive_workflow_flow() {
         content: "Implementation with fixed formatting".to_string(),
     });
     ctx.tick();
+
+    // VERIFY: Work agent after restage → resume with feedback prompt containing reviewer's feedback
+    // (The reviewer ran first with full prompt, then work agent ran with resume prompt)
+    ctx.assert_resume_prompt_contains("feedback", &[
+        "Code style issues found - please fix formatting",
+    ]);
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("work"));
@@ -545,6 +687,12 @@ fn test_exhaustive_workflow_flow() {
     });
     ctx.tick();
 
+    // VERIFY: Work agent after integration failure → resume with integration marker
+    // containing error details (same session as previous work iterations)
+    ctx.assert_resume_prompt_contains("integration", &[
+        "conflict",  // Should mention conflict
+    ]);
+
     // Approve work
     let task = ctx.api().approve(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
@@ -587,9 +735,8 @@ fn test_exhaustive_workflow_flow() {
     assert!(task.artifact("summary").is_some(), "Should have summary");
     assert!(task.artifact("verdict").is_some(), "Should have verdict");
 
-    // Verify question history was preserved
-    assert_eq!(task.question_history.len(), 2);
-    assert_eq!(task.question_history[0].answer, "PostgreSQL");
+    // Question history is now stored in iteration contexts (IterationTrigger::Answers),
+    // not on the task. The answers were already verified in the resume prompt assertions above.
 
     // Verify runner was called the expected number of times
     // planning (questions) + planning (plan v1) + planning (plan v2) + breakdown +

@@ -14,8 +14,6 @@ export function createMockWorkflowTask(
     status: { type: "active", stage: "planning" },
     phase: "idle",
     artifacts: {},
-    pending_questions: [],
-    question_history: [],
     depends_on: [],
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",

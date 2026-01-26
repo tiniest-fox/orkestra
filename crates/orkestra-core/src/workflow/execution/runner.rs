@@ -38,6 +38,9 @@ pub struct RunConfig {
     pub session_id: Option<String>,
     /// Whether this is a resume (use --resume) or first spawn (use --session-id).
     pub is_resume: bool,
+    /// Task ID (used by mock runner for output queue lookup).
+    /// Not used by the real runner.
+    pub task_id: Option<String>,
 }
 
 impl RunConfig {
@@ -49,7 +52,14 @@ impl RunConfig {
             json_schema: None,
             session_id: None,
             is_resume: false,
+            task_id: None,
         }
+    }
+
+    /// Set the task ID (for mock runner output queue lookup).
+    pub fn with_task_id(mut self, task_id: impl Into<String>) -> Self {
+        self.task_id = Some(task_id.into());
+        self
     }
 
     /// Set the JSON schema for structured output.
@@ -416,9 +426,10 @@ pub mod mock {
             // Record the call
             self.calls.lock().unwrap().push(config.clone());
 
-            // Extract task_id from prompt
-            let task_id = Self::extract_task_id(&config.prompt)
-                .ok_or_else(|| RunError::SpawnFailed("Could not extract task_id from prompt".into()))?;
+            // Use task_id from config, or extract from prompt as fallback
+            let task_id = config.task_id.clone()
+                .or_else(|| Self::extract_task_id(&config.prompt))
+                .ok_or_else(|| RunError::SpawnFailed("Could not determine task_id".into()))?;
 
             // Get and remove the next configured output (consume from queue)
             let output = self.outputs.lock().unwrap()
@@ -444,8 +455,9 @@ pub mod mock {
             let pid = self.next_pid.fetch_add(1, Ordering::Relaxed);
             let (tx, rx) = mpsc::channel();
 
-            // Extract task_id from prompt
-            let task_id = Self::extract_task_id(&config.prompt);
+            // Use task_id from config, or extract from prompt as fallback
+            let task_id = config.task_id.clone()
+                .or_else(|| Self::extract_task_id(&config.prompt));
 
             // Get and remove the next configured output (consume from queue)
             let output = task_id.as_ref().and_then(|id| {
@@ -455,17 +467,20 @@ pub mod mock {
             });
 
             // Spawn thread to send events
+            let task_id_for_error = task_id.clone();
             thread::spawn(move || {
                 // Small delay to simulate async behavior
                 thread::sleep(std::time::Duration::from_millis(10));
-
-                let _ = task_id; // Silence unused warning
 
                 if let Some(output) = output {
                     // Send completion
                     let _ = tx.send(RunEvent::Completed(Ok(output)));
                 } else {
-                    let _ = tx.send(RunEvent::Completed(Err("No output configured".to_string())));
+                    let err_msg = match task_id_for_error {
+                        Some(id) => format!("No output configured for task {id}"),
+                        None => "No output configured (task_id unknown)".to_string(),
+                    };
+                    let _ = tx.send(RunEvent::Completed(Err(err_msg)));
                 }
             });
 

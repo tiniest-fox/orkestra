@@ -80,6 +80,11 @@ pub enum ToolInput {
     Other { summary: String },
 }
 
+/// Default resume type for backwards compatibility.
+fn default_resume_type() -> String {
+    "continue".to_string()
+}
+
 /// Structured log entry for task execution (loaded from Claude's session files).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -87,7 +92,14 @@ pub enum LogEntry {
     /// Text output from the assistant.
     Text { content: String },
     /// User/system message (e.g., session resumption with feedback).
-    UserMessage { content: String },
+    UserMessage {
+        /// Type of resume: "continue", "feedback", or "integration".
+        /// Defaults to "continue" for backwards compatibility with existing sessions.
+        #[serde(default = "default_resume_type")]
+        resume_type: String,
+        /// Content of the resumption message.
+        content: String,
+    },
     /// Tool use by the main agent.
     ToolUse {
         tool: String,

@@ -13,10 +13,10 @@ use std::sync::Arc;
 
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::Task;
+use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
-    AgentConfigError, AgentRunnerTrait, IntegrationErrorContext, RunConfig, RunError, RunEvent,
-    StageOutput,
+    build_resume_prompt, AgentConfigError, AgentRunnerTrait, ResumeQuestionAnswer, ResumeType,
+    RunConfig, RunError, RunEvent, StageOutput,
 };
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 
@@ -135,11 +135,14 @@ impl TaskExecutionService {
     ///
     /// This starts the agent and returns immediately with a handle.
     /// The caller should poll the handle's event receiver for progress.
+    ///
+    /// # Arguments
+    /// * `task` - The task to execute
+    /// * `trigger` - Why this iteration was created (determines resume prompt type)
     pub fn execute_stage(
         &self,
         task: &Task,
-        feedback: Option<&str>,
-        integration_error: Option<IntegrationErrorContext<'_>>,
+        trigger: Option<&IterationTrigger>,
     ) -> Result<ExecutionHandle, ExecutionError> {
         let stage = task
             .current_stage()
@@ -147,39 +150,16 @@ impl TaskExecutionService {
 
         orkestra_debug!("exec", "execute_stage {}/{}: starting", task.id, stage);
 
-        // 1. Build prompt
-        let config = self.prompt_service.resolve_config(
-            &self.workflow,
-            task,
-            feedback,
-            integration_error,
-        )?;
-
-        orkestra_debug!(
-            "exec",
-            "execute_stage {}/{}: prompt_len={}",
-            task.id,
-            stage,
-            config.prompt.len()
-        );
-
-        // 2. Create session FIRST (generates UUID if new session)
+        // 1. Create session FIRST (generates UUID if new session)
         self.session_service
             .on_spawn_starting(&task.id, stage)
             .map_err(|e| ExecutionError::SessionError(format!("Failed to create spawn session: {e}")))?;
 
-        // 3. Get session context (session must exist now)
+        // 2. Get session context to determine if this is a resume
         let spawn_ctx = self
             .session_service
             .get_spawn_context(&task.id, stage)
             .map_err(|e| ExecutionError::SessionError(e.to_string()))?;
-
-        // 4. Build run config with session info
-        let working_dir = task
-            .worktree_path
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.prompt_service.project_root().to_path_buf());
 
         orkestra_debug!(
             "exec",
@@ -190,10 +170,51 @@ impl TaskExecutionService {
             spawn_ctx.is_resume
         );
 
-        let mut run_config = RunConfig::new(working_dir, config.prompt)
-            .with_session(spawn_ctx.session_id, spawn_ctx.is_resume);
+        // 3. Build prompt based on whether this is a resume
+        // If resuming, Claude already has the full context - send a short resume prompt
+        // If first spawn, send the full prompt with agent definition + task context
+        let (prompt, json_schema) = if spawn_ctx.is_resume {
+            // Convert IterationTrigger to ResumeType for prompt building
+            let resume_type = trigger_to_resume_type(trigger);
+            let prompt = build_resume_prompt(resume_type, Some(self.prompt_service.project_root()))?;
+            orkestra_debug!(
+                "exec",
+                "execute_stage {}/{}: using resume prompt (len={})",
+                task.id,
+                stage,
+                prompt.len()
+            );
+            // Resume prompts don't need a schema - Claude already knows the expected output format
+            (prompt, None)
+        } else {
+            let config = self.prompt_service.resolve_config(
+                &self.workflow,
+                task,
+                None, // No feedback on first spawn
+                None, // No integration error on first spawn
+            )?;
+            orkestra_debug!(
+                "exec",
+                "execute_stage {}/{}: using full prompt (len={})",
+                task.id,
+                stage,
+                config.prompt.len()
+            );
+            (config.prompt, config.json_schema)
+        };
 
-        if let Some(schema) = config.json_schema {
+        // 4. Build run config with session info
+        let working_dir = task
+            .worktree_path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.prompt_service.project_root().to_path_buf());
+
+        let mut run_config = RunConfig::new(working_dir, prompt)
+            .with_session(spawn_ctx.session_id, spawn_ctx.is_resume)
+            .with_task_id(&task.id);
+
+        if let Some(schema) = json_schema {
             run_config = run_config.with_schema(schema);
         }
 
@@ -243,34 +264,44 @@ impl TaskExecutionService {
     ///
     /// This runs the agent to completion and returns the result.
     /// Useful for simpler orchestration or testing.
+    ///
+    /// # Arguments
+    /// * `task` - The task to execute
+    /// * `trigger` - Why this iteration was created (determines resume prompt type)
     pub fn execute_stage_sync(
         &self,
         task: &Task,
-        feedback: Option<&str>,
-        integration_error: Option<IntegrationErrorContext<'_>>,
+        trigger: Option<&IterationTrigger>,
     ) -> Result<StageOutput, ExecutionError> {
         let stage = task
             .current_stage()
             .ok_or_else(|| ExecutionError::ConfigError("Task not in active stage".into()))?;
-
-        // Build prompt
-        let config = self.prompt_service.resolve_config(
-            &self.workflow,
-            task,
-            feedback,
-            integration_error,
-        )?;
 
         // Create session FIRST (generates UUID if new session)
         self.session_service
             .on_spawn_starting(&task.id, stage)
             .map_err(|e| ExecutionError::SessionError(format!("Failed to create spawn session: {e}")))?;
 
-        // Get session context (session must exist now)
+        // Get session context to determine if this is a resume
         let spawn_ctx = self
             .session_service
             .get_spawn_context(&task.id, stage)
             .map_err(|e| ExecutionError::SessionError(e.to_string()))?;
+
+        // Build prompt based on whether this is a resume
+        let (prompt, json_schema) = if spawn_ctx.is_resume {
+            let resume_type = trigger_to_resume_type(trigger);
+            let prompt = build_resume_prompt(resume_type, Some(self.prompt_service.project_root()))?;
+            (prompt, None)
+        } else {
+            let config = self.prompt_service.resolve_config(
+                &self.workflow,
+                task,
+                None, // No feedback on first spawn
+                None, // No integration error on first spawn
+            )?;
+            (config.prompt, config.json_schema)
+        };
 
         // Build run config with session info
         let working_dir = task
@@ -279,10 +310,11 @@ impl TaskExecutionService {
             .map(PathBuf::from)
             .unwrap_or_else(|| self.prompt_service.project_root().to_path_buf());
 
-        let mut run_config = RunConfig::new(working_dir, config.prompt)
-            .with_session(spawn_ctx.session_id, spawn_ctx.is_resume);
+        let mut run_config = RunConfig::new(working_dir, prompt)
+            .with_session(spawn_ctx.session_id, spawn_ctx.is_resume)
+            .with_task_id(&task.id);
 
-        if let Some(schema) = config.json_schema {
+        if let Some(schema) = json_schema {
             run_config = run_config.with_schema(schema);
         }
 
@@ -368,6 +400,38 @@ impl TaskExecutionService {
     /// Returns (task_id, stage, pid) tuples for orphan cleanup.
     pub fn get_running_agents(&self) -> WorkflowResult<Vec<(String, String, u32)>> {
         self.session_service.get_running_agents()
+    }
+}
+
+/// Convert IterationTrigger to ResumeType for prompt building.
+///
+/// This maps the iteration context (stored in DB) to the prompt type (for agent).
+fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
+    match trigger {
+        None => ResumeType::Continue, // First iteration or no special context
+        Some(IterationTrigger::Feedback { feedback }) => ResumeType::Feedback {
+            feedback: feedback.clone(),
+        },
+        Some(IterationTrigger::Restage { feedback, .. }) => ResumeType::Feedback {
+            feedback: feedback.clone(),
+        },
+        Some(IterationTrigger::Integration {
+            message,
+            conflict_files,
+        }) => ResumeType::Integration {
+            message: message.clone(),
+            conflict_files: conflict_files.clone(),
+        },
+        Some(IterationTrigger::Answers { answers }) => ResumeType::Answers {
+            answers: answers
+                .iter()
+                .map(|qa| ResumeQuestionAnswer {
+                    question: qa.question.clone(),
+                    answer: qa.answer.clone(),
+                })
+                .collect(),
+        },
+        Some(IterationTrigger::Interrupted) => ResumeType::Continue,
     }
 }
 

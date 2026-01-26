@@ -173,31 +173,30 @@ impl TaskExecutionService {
             integration_error,
         )?;
 
-        // 2. Get session resume context
+        // 2. Create session FIRST (generates UUID if new session)
+        self.session_service
+            .on_spawn_starting(&task.id, stage)
+            .map_err(|e| ExecutionError::SessionError(format!("Failed to create spawn session: {e}")))?;
+
+        // 3. Get session context (session must exist now)
         let spawn_ctx = self
             .session_service
             .get_spawn_context(&task.id, stage)
             .map_err(|e| ExecutionError::SessionError(e.to_string()))?;
 
-        // 3. Build run config
+        // 4. Build run config with session info
         let working_dir = task
             .worktree_path
             .as_ref()
             .map(PathBuf::from)
             .unwrap_or_else(|| self.prompt_service.project_root().to_path_buf());
 
-        let mut run_config = RunConfig::new(working_dir, config.prompt);
+        let mut run_config = RunConfig::new(working_dir, config.prompt)
+            .with_session(spawn_ctx.session_id, spawn_ctx.is_resume);
+
         if let Some(schema) = config.json_schema {
             run_config = run_config.with_schema(schema);
         }
-        if let Some(session_id) = spawn_ctx.resume_session_id {
-            run_config = run_config.with_resume(session_id);
-        }
-
-        // 4. Create session and iteration BEFORE spawn attempt (critical - must succeed)
-        self.session_service
-            .on_spawn_starting(&task.id, stage)
-            .map_err(|e| ExecutionError::SessionError(format!("Failed to create spawn session: {e}")))?;
 
         // 5. Run the agent
         match self.runner.run_async(run_config) {
@@ -247,31 +246,30 @@ impl TaskExecutionService {
             integration_error,
         )?;
 
-        // Get session context
+        // Create session FIRST (generates UUID if new session)
+        self.session_service
+            .on_spawn_starting(&task.id, stage)
+            .map_err(|e| ExecutionError::SessionError(format!("Failed to create spawn session: {e}")))?;
+
+        // Get session context (session must exist now)
         let spawn_ctx = self
             .session_service
             .get_spawn_context(&task.id, stage)
             .map_err(|e| ExecutionError::SessionError(e.to_string()))?;
 
-        // Build run config
+        // Build run config with session info
         let working_dir = task
             .worktree_path
             .as_ref()
             .map(PathBuf::from)
             .unwrap_or_else(|| self.prompt_service.project_root().to_path_buf());
 
-        let mut run_config = RunConfig::new(working_dir, config.prompt);
+        let mut run_config = RunConfig::new(working_dir, config.prompt)
+            .with_session(spawn_ctx.session_id, spawn_ctx.is_resume);
+
         if let Some(schema) = config.json_schema {
             run_config = run_config.with_schema(schema);
         }
-        if let Some(session_id) = spawn_ctx.resume_session_id {
-            run_config = run_config.with_resume(session_id);
-        }
-
-        // Create session and iteration BEFORE spawn attempt (critical - must succeed)
-        self.session_service
-            .on_spawn_starting(&task.id, stage)
-            .map_err(|e| ExecutionError::SessionError(format!("Failed to create spawn session: {e}")))?;
 
         // Run synchronously
         let result = match self.runner.run_sync(run_config) {
@@ -476,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_event_session_id() {
+    fn test_session_id_generated_upfront() {
         let _workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
         let _crash_recovery = Arc::new(InMemoryCrashRecoveryStore::new());
@@ -484,17 +482,21 @@ mod tests {
         // Create session service directly for testing
         let session_service = SessionService::new(store.clone());
 
-        // Start an agent using new spawn lifecycle
+        // Start an agent - session ID is generated upfront
         session_service.on_spawn_starting("task-1", "planning").unwrap();
         session_service.on_agent_spawned("task-1", "planning", 12345).unwrap();
 
-        // Handle session ID event
-        session_service
-            .on_session_id("task-1", "planning", "session-abc")
-            .unwrap();
-
-        // Verify session ID was recorded
+        // Session ID should be available immediately (generated in on_spawn_starting)
         let ctx = session_service.get_spawn_context("task-1", "planning").unwrap();
-        assert_eq!(ctx.resume_session_id, Some("session-abc".to_string()));
+        assert!(!ctx.session_id.is_empty(), "Session ID should be generated upfront");
+        assert!(!ctx.is_resume, "First spawn should not be a resume");
+
+        // Simulate agent finishing and spawning again
+        session_service.on_agent_exited("task-1", "planning").unwrap();
+
+        // Get context again - should now be a resume
+        let ctx2 = session_service.get_spawn_context("task-1", "planning").unwrap();
+        assert_eq!(ctx2.session_id, ctx.session_id, "Session ID should remain the same");
+        assert!(ctx2.is_resume, "Second spawn should be a resume");
     }
 }

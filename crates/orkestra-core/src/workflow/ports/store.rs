@@ -24,6 +24,10 @@ pub enum WorkflowError {
     #[error("Invalid state transition: {0}")]
     InvalidTransition(String),
 
+    /// Invalid state (missing required data).
+    #[error("Invalid state: {0}")]
+    InvalidState(String),
+
     /// Storage error.
     #[error("Storage error: {0}")]
     Storage(String),

@@ -4,6 +4,7 @@
 //! maintaining Claude session continuity across rejections and crash recovery.
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// State of a StageSession.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -40,7 +41,8 @@ pub struct StageSession {
     /// Stage name (e.g., "planning", "work", "review").
     pub stage: String,
 
-    /// Claude session ID for --resume flag. Captured from first spawn, reused on all subsequent.
+    /// Claude session ID. Generated upfront at session creation so log polling can find
+    /// the JSONL file immediately. Used with --session-id on first spawn, --resume on subsequent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_session_id: Option<String>,
 
@@ -65,6 +67,9 @@ pub struct StageSession {
 
 impl StageSession {
     /// Create a new stage session.
+    ///
+    /// Generates a UUID for `claude_session_id` upfront so that log polling
+    /// can find the Claude session JSONL file immediately when the agent starts.
     pub fn new(
         id: impl Into<String>,
         task_id: impl Into<String>,
@@ -76,7 +81,7 @@ impl StageSession {
             id: id.into(),
             task_id: task_id.into(),
             stage: stage.into(),
-            claude_session_id: None,
+            claude_session_id: Some(Uuid::new_v4().to_string()),
             agent_pid: None,
             resume_count: 0,
             session_state: SessionState::Active,
@@ -115,26 +120,18 @@ impl StageSession {
     }
 
     /// Record that an agent was spawned.
-    pub fn agent_spawned(
-        &mut self,
-        pid: u32,
-        claude_session_id: Option<String>,
-        updated_at: impl Into<String>,
-    ) {
+    pub fn agent_spawned(&mut self, pid: u32, updated_at: impl Into<String>) {
         self.agent_pid = Some(pid);
-        // Only set session_id on first spawn
-        if self.claude_session_id.is_none() {
-            self.claude_session_id = claude_session_id;
-        } else {
-            // This is a resume
-            self.resume_count += 1;
-        }
         self.updated_at = updated_at.into();
     }
 
     /// Record that the agent finished (process ended).
+    ///
+    /// Increments `resume_count` so the next spawn knows it's a resume.
+    /// Check `resume_count > 0` to determine if the next spawn should use `--resume`.
     pub fn agent_finished(&mut self, updated_at: impl Into<String>) {
         self.agent_pid = None;
+        self.resume_count += 1;
         self.updated_at = updated_at.into();
     }
 }
@@ -150,47 +147,60 @@ mod tests {
         assert_eq!(session.id, "ss-1");
         assert_eq!(session.task_id, "task-1");
         assert_eq!(session.stage, "planning");
-        assert!(session.claude_session_id.is_none());
+        // UUID is generated upfront for immediate log access
+        assert!(session.claude_session_id.is_some());
         assert!(session.agent_pid.is_none());
         assert_eq!(session.resume_count, 0);
         assert!(session.is_active());
-        assert!(!session.can_resume());
+        assert!(session.can_resume()); // Can resume since session ID exists
     }
 
     #[test]
     fn test_agent_spawned_first_time() {
         let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
+        let original_session_id = session.claude_session_id.clone();
 
-        session.agent_spawned(12345, Some("claude-session-abc".into()), "later");
+        session.agent_spawned(12345, "later");
 
         assert_eq!(session.agent_pid, Some(12345));
-        assert_eq!(session.claude_session_id, Some("claude-session-abc".into()));
+        // Session ID should remain unchanged (set at creation)
+        assert_eq!(session.claude_session_id, original_session_id);
         assert_eq!(session.resume_count, 0); // First spawn, not a resume
         assert!(session.has_agent());
         assert!(session.can_resume());
     }
 
     #[test]
-    fn test_agent_spawned_resume() {
+    fn test_resume_count_after_exit() {
         let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
+        let original_session_id = session.claude_session_id.clone();
 
         // First spawn
-        session.agent_spawned(12345, Some("claude-session-abc".into()), "t1");
-        session.agent_finished("t2");
+        session.agent_spawned(12345, "t1");
+        assert_eq!(session.resume_count, 0);
 
-        // Resume spawn
-        session.agent_spawned(12346, Some("claude-session-xyz".into()), "t3");
+        // First exit - increments resume_count
+        session.agent_finished("t2");
+        assert_eq!(session.resume_count, 1);
+
+        // Second spawn (resume)
+        session.agent_spawned(12346, "t3");
 
         assert_eq!(session.agent_pid, Some(12346));
-        // Should keep original session_id
-        assert_eq!(session.claude_session_id, Some("claude-session-abc".into()));
-        assert_eq!(session.resume_count, 1); // Incremented on resume
+        // Session ID should be unchanged
+        assert_eq!(session.claude_session_id, original_session_id);
+        // resume_count is still 1 (was incremented on exit, not on spawn)
+        assert_eq!(session.resume_count, 1);
+
+        // Second exit
+        session.agent_finished("t4");
+        assert_eq!(session.resume_count, 2);
     }
 
     #[test]
     fn test_session_complete() {
         let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
-        session.agent_spawned(12345, Some("abc".into()), "t1");
+        session.agent_spawned(12345, "t1");
 
         session.complete("t2");
 
@@ -213,12 +223,11 @@ mod tests {
     #[test]
     fn test_serialization() {
         let mut session = StageSession::new("ss-1", "task-1", "work", "2025-01-24T10:00:00Z");
-        session.claude_session_id = Some("claude-abc".into());
         session.resume_count = 2;
 
         let json = serde_json::to_string(&session).unwrap();
         assert!(json.contains("\"id\":\"ss-1\""));
-        assert!(json.contains("\"claude_session_id\":\"claude-abc\""));
+        assert!(json.contains("\"claude_session_id\":")); // UUID is generated
         assert!(json.contains("\"resume_count\":2"));
 
         let parsed: StageSession = serde_json::from_str(&json).unwrap();
@@ -243,8 +252,9 @@ mod tests {
         let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
         session.session_state = SessionState::Spawning;
 
-        // Spawning sessions should not be resumable
-        assert!(!session.can_resume());
+        // Spawning sessions should not be resumable (even with session ID)
+        assert!(session.claude_session_id.is_some()); // Has UUID
+        assert!(!session.can_resume()); // But can't resume in Spawning state
         assert!(!session.is_active());
     }
 }

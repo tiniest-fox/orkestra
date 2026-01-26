@@ -80,6 +80,10 @@ impl From<WorkflowError> for TauriError {
                 code: "SESSION_NOT_FOUND".into(),
                 message: format!("Stage session not found: {}", id),
             },
+            WorkflowError::InvalidState(msg) => TauriError {
+                code: "INVALID_STATE".into(),
+                message: msg,
+            },
         }
     }
 }

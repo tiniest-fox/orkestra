@@ -16,8 +16,10 @@ use crate::process::ProcessGuard;
 /// Configuration for spawning a Claude process.
 #[derive(Debug, Clone, Default)]
 pub struct ProcessConfig {
-    /// Session ID to resume, if continuing a previous session.
-    pub resume_session_id: Option<String>,
+    /// Session ID (generated upfront). Always present for agent spawns.
+    pub session_id: Option<String>,
+    /// Whether this is a resume (use `--resume`) or first spawn (use `--session-id`).
+    pub is_resume: bool,
     /// JSON schema for structured output.
     pub json_schema: Option<String>,
 }
@@ -28,9 +30,10 @@ impl ProcessConfig {
         Self::default()
     }
 
-    /// Set the resume session ID.
-    pub fn with_resume(mut self, session_id: impl Into<String>) -> Self {
-        self.resume_session_id = Some(session_id.into());
+    /// Set the session ID and whether it's a resume.
+    pub fn with_session(mut self, session_id: impl Into<String>, is_resume: bool) -> Self {
+        self.session_id = Some(session_id.into());
+        self.is_resume = is_resume;
         self
     }
 
@@ -273,10 +276,11 @@ mod tests {
     #[test]
     fn test_process_config_builder() {
         let config = ProcessConfig::new()
-            .with_resume("session-123")
+            .with_session("session-123", true)
             .with_schema(r#"{"type":"object"}"#);
 
-        assert_eq!(config.resume_session_id, Some("session-123".to_string()));
+        assert_eq!(config.session_id, Some("session-123".to_string()));
+        assert!(config.is_resume);
         assert_eq!(config.json_schema, Some(r#"{"type":"object"}"#.to_string()));
     }
 

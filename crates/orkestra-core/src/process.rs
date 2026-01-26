@@ -129,18 +129,27 @@ pub fn prepare_path_env() -> String {
 /// # Arguments
 /// * `project_root` - Working directory for the process
 /// * `path_env` - PATH environment variable value
-/// * `resume_session` - Optional session ID to resume
+/// * `session_id` - Session ID (generated upfront). If provided:
+///   - `is_resume=false`: passes `--session-id <uuid>` (first spawn)
+///   - `is_resume=true`: passes `--resume <uuid>` (continuing session)
+/// * `is_resume` - Whether this is resuming an existing session
 /// * `json_schema` - Optional JSON schema for structured output (uses --output-format json)
 pub fn spawn_claude_process(
     project_root: &Path,
     path_env: &str,
-    resume_session: Option<&str>,
+    session_id: Option<&str>,
+    is_resume: bool,
     json_schema: Option<&str>,
 ) -> std::io::Result<Child> {
     let mut cmd = Command::new("claude");
 
-    if let Some(session_id) = resume_session {
-        cmd.args(["--resume", session_id]);
+    // Pass session ID with appropriate flag
+    if let Some(sid) = session_id {
+        if is_resume {
+            cmd.args(["--resume", sid]);
+        } else {
+            cmd.args(["--session-id", sid]);
+        }
     }
 
     cmd.args(["--print", "--verbose"]);

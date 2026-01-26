@@ -22,11 +22,15 @@ use crate::workflow::runtime::Outcome;
 // ============================================================================
 
 /// Context needed before spawning an agent.
+///
+/// The session ID is always present (generated at session creation).
+/// Use `is_resume` to determine whether to pass `--session-id` or `--resume` to Claude.
 #[derive(Debug, Clone)]
 pub struct SessionSpawnContext {
-    /// The Claude session ID to resume, if continuing a previous session.
-    pub resume_session_id: Option<String>,
-    /// Whether this is a resume (for logging/UI purposes).
+    /// The Claude session ID. Always present (generated when session is created).
+    pub session_id: String,
+    /// Whether this is a resume (use `--resume`) or first spawn (use `--session-id`).
+    /// Based on `resume_count > 0` - if the agent has previously exited, it's a resume.
     pub is_resume: bool,
 }
 
@@ -52,28 +56,51 @@ impl SessionService {
 
     /// Get spawn context before launching an agent.
     ///
-    /// Returns the resume session ID if this stage has been started before
-    /// and the session is still active.
+    /// Returns the session ID and whether this is a resume.
+    /// The session must exist and be in Active or Spawning state.
+    ///
+    /// # Errors
+    ///
+    /// Returns `StageSessionNotFound` if no session exists for this task+stage.
+    /// Returns `InvalidState` if the session exists but has no `claude_session_id`
+    /// (should never happen - sessions are created with a UUID).
     pub fn get_spawn_context(
         &self,
         task_id: &str,
         stage: &str,
     ) -> WorkflowResult<SessionSpawnContext> {
         match self.store.get_stage_session(task_id, stage)? {
-            Some(session) if session.session_state == SessionState::Active => {
-                // Existing active session - we're resuming
-                let is_resume = session.claude_session_id.is_some();
+            Some(session)
+                if session.session_state == SessionState::Active
+                    || session.session_state == SessionState::Spawning =>
+            {
+                // Session must have a claude_session_id (generated at creation)
+                let session_id = session.claude_session_id.ok_or_else(|| {
+                    crate::workflow::ports::WorkflowError::InvalidState(format!(
+                        "Session {}/{} exists but has no claude_session_id - this is a bug",
+                        task_id, stage
+                    ))
+                })?;
+
+                // It's a resume if the agent has previously exited (resume_count > 0)
+                let is_resume = session.resume_count > 0;
+
                 Ok(SessionSpawnContext {
-                    resume_session_id: session.claude_session_id,
+                    session_id,
                     is_resume,
                 })
             }
-            _ => {
-                // No session or abandoned - starting fresh
-                Ok(SessionSpawnContext {
-                    resume_session_id: None,
-                    is_resume: false,
-                })
+            Some(_) => {
+                // Session exists but is Completed or Abandoned
+                Err(crate::workflow::ports::WorkflowError::StageSessionNotFound(
+                    format!("{}/{} - session is not active", task_id, stage),
+                ))
+            }
+            None => {
+                // No session exists - caller should call on_spawn_starting first
+                Err(crate::workflow::ports::WorkflowError::StageSessionNotFound(
+                    format!("{}/{} - call on_spawn_starting first", task_id, stage),
+                ))
             }
         }
     }
@@ -234,11 +261,11 @@ impl SessionService {
 
     /// Record that the agent process exited.
     ///
-    /// Clears the PID but keeps the session active for potential resume.
+    /// Clears the PID, increments resume_count, and keeps the session active for potential resume.
     pub fn on_agent_exited(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
         if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
-            session.agent_pid = None;
-            session.updated_at = chrono::Utc::now().to_rfc3339();
+            let now = chrono::Utc::now().to_rfc3339();
+            session.agent_finished(&now);
             self.store.save_stage_session(&session)?;
         }
         Ok(())
@@ -296,13 +323,28 @@ mod tests {
     }
 
     #[test]
-    fn test_get_spawn_context_fresh() {
+    fn test_get_spawn_context_no_session() {
         let service = create_service();
 
+        // No session exists yet - should error
+        let result = service.get_spawn_context("task-1", "planning");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_spawn_context_first_spawn() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = SessionService::new(store);
+
+        // Create session (simulates on_spawn_starting)
+        service.on_spawn_starting("task-1", "planning").unwrap();
+
+        // Get context for first spawn
         let ctx = service.get_spawn_context("task-1", "planning").unwrap();
 
-        assert!(ctx.resume_session_id.is_none());
-        assert!(!ctx.is_resume);
+        // Should have session ID but not be a resume
+        assert!(!ctx.session_id.is_empty());
+        assert!(!ctx.is_resume); // resume_count is 0
     }
 
     #[test]
@@ -310,22 +352,19 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let service = SessionService::new(store);
 
-        // Start agent using new lifecycle
+        // Start agent
         service.on_spawn_starting("task-1", "planning").unwrap();
+        let first_ctx = service.get_spawn_context("task-1", "planning").unwrap();
         service.on_agent_spawned("task-1", "planning", 12345).unwrap();
 
-        // Record session ID
-        service
-            .on_session_id("task-1", "planning", "claude-session-abc")
-            .unwrap();
-
-        // Agent exits
+        // Agent exits - this increments resume_count
         service.on_agent_exited("task-1", "planning").unwrap();
 
-        // Next spawn should resume
+        // Next spawn should be a resume with SAME session ID
+        service.on_spawn_starting("task-1", "planning").unwrap();
         let ctx = service.get_spawn_context("task-1", "planning").unwrap();
-        assert_eq!(ctx.resume_session_id, Some("claude-session-abc".to_string()));
-        assert!(ctx.is_resume);
+        assert_eq!(ctx.session_id, first_ctx.session_id); // Same session ID
+        assert!(ctx.is_resume); // resume_count > 0
     }
 
     #[test]
@@ -333,18 +372,14 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let service = SessionService::new(store);
 
-        // Start and complete session using new lifecycle
+        // Start and complete session
         service.on_spawn_starting("task-1", "planning").unwrap();
         service.on_agent_spawned("task-1", "planning", 12345).unwrap();
-        service
-            .on_session_id("task-1", "planning", "claude-session-abc")
-            .unwrap();
         service.on_stage_completed("task-1", "planning").unwrap();
 
-        // Completed sessions don't resume
-        let ctx = service.get_spawn_context("task-1", "planning").unwrap();
-        assert!(ctx.resume_session_id.is_none());
-        assert!(!ctx.is_resume);
+        // Completed sessions should error on get_spawn_context
+        let result = service.get_spawn_context("task-1", "planning");
+        assert!(result.is_err());
     }
 
     #[test]
@@ -352,41 +387,31 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let service = SessionService::new(store);
 
-        // Start and abandon session using new lifecycle
+        // Start and abandon session
         service.on_spawn_starting("task-1", "planning").unwrap();
         service.on_agent_spawned("task-1", "planning", 12345).unwrap();
-        service
-            .on_session_id("task-1", "planning", "claude-session-abc")
-            .unwrap();
         service.on_stage_abandoned("task-1", "planning").unwrap();
 
-        // Abandoned sessions don't resume
-        let ctx = service.get_spawn_context("task-1", "planning").unwrap();
-        assert!(ctx.resume_session_id.is_none());
-        assert!(!ctx.is_resume);
+        // Abandoned sessions should error on get_spawn_context
+        let result = service.get_spawn_context("task-1", "planning");
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_first_session_id_wins() {
+    fn test_session_id_generated_upfront() {
         let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store);
+        let service = SessionService::new(store.clone());
 
-        // Start agent using new lifecycle
+        // Create session
         service.on_spawn_starting("task-1", "planning").unwrap();
-        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
 
-        // Record first session ID
-        service
-            .on_session_id("task-1", "planning", "first-session")
-            .unwrap();
+        // Session should have a UUID already
+        let session = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        assert!(session.claude_session_id.is_some());
 
-        // Try to record second - should be ignored
-        service
-            .on_session_id("task-1", "planning", "second-session")
-            .unwrap();
-
+        // Context should have the same session ID
         let ctx = service.get_spawn_context("task-1", "planning").unwrap();
-        assert_eq!(ctx.resume_session_id, Some("first-session".to_string()));
+        assert_eq!(Some(ctx.session_id), session.claude_session_id);
     }
 
     #[test]

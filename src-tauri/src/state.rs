@@ -1,4 +1,4 @@
-//! Application state holding the WorkflowApi.
+//! Application state holding the `WorkflowApi`.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -25,7 +25,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Create a new AppState with the given workflow config and database path.
+    /// Create a new `AppState` with the given workflow config and database path.
     pub fn new(
         workflow: WorkflowConfig,
         db_path: &Path,
@@ -68,7 +68,7 @@ impl AppState {
         })
     }
 
-    /// Get a lock on the WorkflowApi.
+    /// Get a lock on the `WorkflowApi`.
     ///
     /// Returns an error if the mutex is poisoned (another thread panicked while holding the lock).
     /// This is preferable to panicking in a GUI application.
@@ -93,7 +93,7 @@ impl AppState {
         &self.project_root
     }
 
-    /// Create a new WorkflowStore for the orchestrator.
+    /// Create a new `WorkflowStore` for the orchestrator.
     pub fn create_store(&self) -> Arc<dyn WorkflowStore> {
         Arc::new(SqliteWorkflowStore::new(self.db_conn.shared()))
     }

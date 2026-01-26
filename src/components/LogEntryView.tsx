@@ -4,16 +4,23 @@
  */
 
 import {
+  AlertCircle,
   Command,
+  FileOutput,
   FilePlus,
   FileText,
   FolderSearch,
   GitBranch,
   HelpCircle,
   ListTodo,
+  MessageCircle,
+  Network,
   Pencil,
+  RotateCcw,
   Search,
+  Send,
   Terminal,
+  XCircle,
 } from "lucide-react";
 import { useState } from "react";
 import type { LogEntry, OrkAction, ResumeType, TodoItem, ToolInput } from "../types/workflow";
@@ -69,8 +76,100 @@ function getToolColor(tool: string): string {
       return "bg-green-600";
     case "ork":
       return "bg-orange-600";
+    case "structuredoutput":
+      return "bg-violet-600";
     default:
       return "bg-gray-600";
+  }
+}
+
+/**
+ * Get icon and styling for structured output based on output type.
+ */
+function getStructuredOutputStyle(outputType: string): {
+  icon: React.ReactNode;
+  color: string;
+  textColor: string;
+  label: string;
+} {
+  const iconProps = { size: 14, strokeWidth: 2.5 };
+
+  switch (outputType.toLowerCase()) {
+    // Artifacts - purple/violet theme
+    case "plan":
+      return {
+        icon: <FileOutput {...iconProps} />,
+        color: "bg-violet-600",
+        textColor: "text-violet-300",
+        label: "Generating plan",
+      };
+    case "summary":
+      return {
+        icon: <FileOutput {...iconProps} />,
+        color: "bg-violet-600",
+        textColor: "text-violet-300",
+        label: "Generating summary",
+      };
+    case "verdict":
+      return {
+        icon: <FileOutput {...iconProps} />,
+        color: "bg-violet-600",
+        textColor: "text-violet-300",
+        label: "Generating verdict",
+      };
+
+    // Questions - yellow/amber theme
+    case "questions":
+      return {
+        icon: <MessageCircle {...iconProps} />,
+        color: "bg-amber-600",
+        textColor: "text-amber-300",
+        label: "Asking questions",
+      };
+
+    // Subtasks/breakdown - teal theme
+    case "subtasks":
+    case "breakdown":
+      return {
+        icon: <Network {...iconProps} />,
+        color: "bg-teal-600",
+        textColor: "text-teal-300",
+        label: "Presenting task breakdown",
+      };
+
+    // Terminal states - red/orange theme
+    case "failed":
+      return {
+        icon: <XCircle {...iconProps} />,
+        color: "bg-red-600",
+        textColor: "text-red-300",
+        label: "Task failed",
+      };
+    case "blocked":
+      return {
+        icon: <AlertCircle {...iconProps} />,
+        color: "bg-orange-600",
+        textColor: "text-orange-300",
+        label: "Task blocked",
+      };
+
+    // Control flow - blue theme
+    case "restage":
+      return {
+        icon: <RotateCcw {...iconProps} />,
+        color: "bg-blue-600",
+        textColor: "text-blue-300",
+        label: "Requesting restage",
+      };
+
+    // Unknown/generic - indigo theme
+    default:
+      return {
+        icon: <Send {...iconProps} />,
+        color: "bg-indigo-600",
+        textColor: "text-indigo-300",
+        label: `Generating ${outputType}`,
+      };
   }
 }
 
@@ -113,6 +212,10 @@ function ToolInputSummary({ input }: { input: ToolInput }) {
       return <TodoDisplay todos={input.todos} />;
     case "ork":
       return <OrkActionDisplay action={input.ork_action} />;
+    case "structured_output": {
+      const style = getStructuredOutputStyle(input.output_type);
+      return <span className={`${style.textColor} text-xs`}>{style.label}</span>;
+    }
     case "other":
       return <span className="text-gray-400 text-xs">{input.summary}</span>;
     default:
@@ -267,19 +370,30 @@ export function LogEntryView({ entry }: { entry: LogEntry }) {
       );
     }
 
-    case "tool_use":
+    case "tool_use": {
+      // Special handling for StructuredOutput to get type-specific styling
+      let icon = getToolIcon(entry.tool, 14);
+      let color = getToolColor(entry.tool);
+
+      if (entry.input.tool === "structured_output") {
+        const style = getStructuredOutputStyle(entry.input.output_type);
+        icon = style.icon;
+        color = style.color;
+      }
+
       return (
         <div className="py-1.5 flex items-start gap-2">
           <span
-            className={`flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-white ${getToolColor(entry.tool)}`}
+            className={`flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-white ${color}`}
           >
-            {getToolIcon(entry.tool, 14)}
+            {icon}
           </span>
           <div className="flex-1 min-w-0">
             <ToolInputSummary input={entry.input} />
           </div>
         </div>
       );
+    }
 
     case "tool_result":
       // Only show Task results (subagent output)

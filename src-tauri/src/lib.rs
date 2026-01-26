@@ -182,7 +182,7 @@ fn cleanup_orphaned_agents(app_state: &state::AppState) {
     }
 }
 
-/// Standalone cleanup that can work without app_state (for signal handlers).
+/// Standalone cleanup that can work without `app_state` (for signal handlers).
 ///
 /// Opens its own database connection to find and kill tracked agents.
 fn cleanup_agents_standalone() {
@@ -235,7 +235,7 @@ fn setup_signal_handlers(stop_flag: Arc<AtomicBool>) {
             }
         };
 
-        for sig in signals.forever() {
+        if let Some(sig) = signals.forever().next() {
             eprintln!("[signal] Received signal {sig}, cleaning up...");
             stop_flag.store(true, Ordering::Relaxed);
             cleanup_agents_standalone();
@@ -255,7 +255,7 @@ fn setup_signal_handlers(_stop_flag: Arc<AtomicBool>) {
 
 /// Initialize the workflow API state.
 ///
-/// Loads the workflow configuration and creates the AppState with the database.
+/// Loads the workflow configuration and creates the `AppState` with the database.
 fn init_workflow_state() -> Result<state::AppState, String> {
     let project_root =
         find_project_root().map_err(|e| format!("Failed to find project root: {e}"))?;

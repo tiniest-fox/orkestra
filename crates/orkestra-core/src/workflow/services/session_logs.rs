@@ -451,6 +451,15 @@ fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
                 .unwrap_or_default();
             ToolInput::TodoWrite { todos }
         }
+        "StructuredOutput" => {
+            // Extract the "type" field from the input to know what kind of output
+            let output_type = input
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            ToolInput::StructuredOutput { output_type }
+        }
         _ => {
             // For other tools, create a compact summary
             let summary = serde_json::to_string(input).map_or_else(

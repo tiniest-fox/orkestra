@@ -37,14 +37,14 @@ use serde::Serialize;
 /// convert it to an `InvokeError` for returning from commands.
 #[derive(Debug, Serialize)]
 pub struct TauriError {
-    /// Error code for programmatic handling (e.g., "TASK_NOT_FOUND")
+    /// Error code for programmatic handling (e.g., "`TASK_NOT_FOUND`")
     pub code: String,
     /// Human-readable error message
     pub message: String,
 }
 
 impl TauriError {
-    /// Create a new TauriError with the given code and message.
+    /// Create a new `TauriError` with the given code and message.
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
@@ -58,11 +58,11 @@ impl From<WorkflowError> for TauriError {
         match e {
             WorkflowError::TaskNotFound(id) => TauriError {
                 code: "TASK_NOT_FOUND".into(),
-                message: format!("Task not found: {}", id),
+                message: format!("Task not found: {id}"),
             },
             WorkflowError::IterationNotFound(id) => TauriError {
                 code: "ITERATION_NOT_FOUND".into(),
-                message: format!("Iteration not found: {}", id),
+                message: format!("Iteration not found: {id}"),
             },
             WorkflowError::InvalidTransition(msg) => TauriError {
                 code: "INVALID_TRANSITION".into(),
@@ -78,7 +78,7 @@ impl From<WorkflowError> for TauriError {
             },
             WorkflowError::StageSessionNotFound(id) => TauriError {
                 code: "SESSION_NOT_FOUND".into(),
-                message: format!("Stage session not found: {}", id),
+                message: format!("Stage session not found: {id}"),
             },
             WorkflowError::InvalidState(msg) => TauriError {
                 code: "INVALID_STATE".into(),

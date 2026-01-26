@@ -61,3 +61,11 @@ pub fn workflow_list_subtasks(
 ) -> Result<Vec<Task>, TauriError> {
     state.api()?.list_subtasks(&parent_id).map_err(Into::into)
 }
+
+/// Get all archived tasks.
+///
+/// Archived tasks are completed tasks that have been integrated (branch merged).
+#[tauri::command]
+pub fn workflow_get_archived_tasks(state: State<AppState>) -> Result<Vec<Task>, TauriError> {
+    state.api()?.list_archived_tasks().map_err(Into::into)
+}

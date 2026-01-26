@@ -559,14 +559,11 @@ fn test_exhaustive_workflow_flow() {
     });
     ctx.tick();
 
-    // Auto-integration should have completed successfully
+    // Auto-integration should have completed successfully and task becomes Archived
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(task.is_done(), "Task should still be Done after integration");
+    assert!(task.is_archived(), "Task should be Archived after integration");
     assert!(task.completed_at.is_some(), "Should have completed_at set");
-    assert!(
-        task.worktree_path.is_none(),
-        "Worktree path should be cleared after successful integration"
-    );
+    // Note: worktree_path is preserved for log access even after integration
 
     // =========================================================================
     // Final Verification

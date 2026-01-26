@@ -25,6 +25,10 @@ pub enum Status {
     /// Task completed successfully.
     Done,
 
+    /// Task was completed and integrated (branch merged).
+    /// This is a terminal state - archived tasks are hidden from the main view.
+    Archived,
+
     /// Task failed and cannot continue.
     Failed {
         /// Error message describing the failure.
@@ -70,12 +74,17 @@ impl Status {
         }
     }
 
-    /// Check if this is a terminal status (task is done/failed/blocked).
+    /// Check if this is a terminal status (task is done/archived/failed/blocked).
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
-            Status::Done | Status::Failed { .. } | Status::Blocked { .. }
+            Status::Done | Status::Archived | Status::Failed { .. } | Status::Blocked { .. }
         )
+    }
+
+    /// Check if the task is archived (completed and integrated).
+    pub fn is_archived(&self) -> bool {
+        matches!(self, Status::Archived)
     }
 
     /// Check if this is an active status (task is in a stage).
@@ -104,6 +113,7 @@ impl std::fmt::Display for Status {
             Status::Active { stage } => write!(f, "{stage}"),
             Status::WaitingOnChildren => write!(f, "waiting_on_children"),
             Status::Done => write!(f, "done"),
+            Status::Archived => write!(f, "archived"),
             Status::Failed { error } => {
                 if let Some(err) = error {
                     write!(f, "failed: {err}")
@@ -186,10 +196,29 @@ mod tests {
     #[test]
     fn test_terminal_statuses() {
         assert!(Status::Done.is_terminal());
+        assert!(Status::Archived.is_terminal());
         assert!(Status::failed("error").is_terminal());
         assert!(Status::blocked("reason").is_terminal());
 
         assert!(!Status::Done.can_transition());
+        assert!(!Status::Archived.can_transition());
+    }
+
+    #[test]
+    fn test_archived_status() {
+        let status = Status::Archived;
+        assert!(status.is_archived());
+        assert!(status.is_terminal());
+        assert!(!status.is_active());
+        assert!(!status.can_transition());
+        assert_eq!(status.to_string(), "archived");
+
+        // Test serialization
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(json.contains("\"type\":\"archived\""));
+
+        let parsed: Status = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, status);
     }
 
     #[test]

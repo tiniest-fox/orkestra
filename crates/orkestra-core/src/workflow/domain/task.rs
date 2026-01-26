@@ -171,6 +171,11 @@ impl Task {
         matches!(self.status, Status::Failed { .. })
     }
 
+    /// Check if the task is archived (completed and integrated).
+    pub fn is_archived(&self) -> bool {
+        matches!(self.status, Status::Archived)
+    }
+
     /// Check if the task is a subtask.
     pub fn is_subtask(&self) -> bool {
         self.parent_id.is_some()
@@ -249,6 +254,10 @@ mod tests {
         task.status = Status::Done;
         assert!(task.is_terminal());
         assert!(task.is_done());
+
+        task.status = Status::Archived;
+        assert!(task.is_terminal());
+        assert!(task.is_archived());
 
         task.status = Status::failed("error");
         assert!(task.is_terminal());

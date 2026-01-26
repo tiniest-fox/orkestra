@@ -55,6 +55,24 @@ pub trait WorkflowStore: Send + Sync {
     /// List all tasks.
     fn list_tasks(&self) -> WorkflowResult<Vec<Task>>;
 
+    /// List all tasks excluding archived ones.
+    ///
+    /// Default implementation filters `list_tasks()` results.
+    /// Implementations may override with more efficient queries.
+    fn list_active_tasks(&self) -> WorkflowResult<Vec<Task>> {
+        let tasks = self.list_tasks()?;
+        Ok(tasks.into_iter().filter(|t| !t.is_archived()).collect())
+    }
+
+    /// List only archived tasks.
+    ///
+    /// Default implementation filters `list_tasks()` results.
+    /// Implementations may override with more efficient queries.
+    fn list_archived_tasks(&self) -> WorkflowResult<Vec<Task>> {
+        let tasks = self.list_tasks()?;
+        Ok(tasks.into_iter().filter(|t| t.is_archived()).collect())
+    }
+
     /// List tasks by parent ID.
     fn list_subtasks(&self, parent_id: &str) -> WorkflowResult<Vec<Task>>;
 

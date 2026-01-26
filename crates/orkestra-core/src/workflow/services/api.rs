@@ -103,9 +103,9 @@ impl WorkflowApi {
     /// Get tasks that are Done and ready for integration.
     ///
     /// Returns tasks that:
-    /// - Are in Done status
+    /// - Are in Done status (not Archived - integrated tasks become Archived)
     /// - Are in Idle phase (not already integrating)
-    /// - Have a worktree path (need merging - cleared after successful integration)
+    /// - Have a worktree path (need merging)
     /// - Are not subtasks (subtasks share parent's worktree)
     pub fn get_tasks_needing_integration(&self) -> WorkflowResult<Vec<Task>> {
         let tasks = self.store.list_tasks()?;

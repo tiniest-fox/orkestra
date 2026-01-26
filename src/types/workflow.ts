@@ -70,6 +70,7 @@ export interface WorkflowConfig {
  * - active: Task is in a specific stage
  * - waiting_on_children: Task is waiting for subtasks to complete
  * - done: Task completed successfully
+ * - archived: Task completed and integrated (branch merged)
  * - failed: Task failed with an error
  * - blocked: Task is blocked waiting for something
  */
@@ -77,6 +78,7 @@ export type WorkflowTaskStatus =
   | { type: "active"; stage: string }
   | { type: "waiting_on_children" }
   | { type: "done" }
+  | { type: "archived" }
   | { type: "failed"; error?: string }
   | { type: "blocked"; reason?: string };
 
@@ -84,7 +86,7 @@ export type WorkflowTaskStatus =
  * Task phase - what's happening right now.
  * Uses snake_case to match Rust's serde serialization.
  */
-export type WorkflowTaskPhase = "idle" | "agent_working" | "awaiting_review" | "integrating";
+export type WorkflowTaskPhase = "setting_up" | "idle" | "agent_working" | "awaiting_review" | "integrating";
 
 // =============================================================================
 // Artifacts
@@ -311,6 +313,13 @@ export function getTaskStage(status: WorkflowTaskStatus): string | undefined {
  */
 export function isTaskTerminal(status: WorkflowTaskStatus): boolean {
   return status.type !== "active" && status.type !== "waiting_on_children";
+}
+
+/**
+ * Check if a task is archived (completed and integrated).
+ */
+export function isTaskArchived(status: WorkflowTaskStatus): boolean {
+  return status.type === "archived";
 }
 
 /**

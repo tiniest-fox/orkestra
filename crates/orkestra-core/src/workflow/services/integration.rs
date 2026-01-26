@@ -81,9 +81,9 @@ impl WorkflowApi {
 
     /// Record successful integration (merge).
     ///
-    /// This marks the task as fully complete after its branch has been merged.
-    /// Resets the phase from `Integrating` to `Idle` and clears `worktree_path`
-    /// to indicate integration is complete (prevents re-integration on next tick).
+    /// This moves the task from Done to Archived after its branch has been merged.
+    /// The worktree_path is preserved for log access even though the physical
+    /// worktree has been removed.
     ///
     /// # Errors
     ///
@@ -97,15 +97,12 @@ impl WorkflowApi {
             ));
         }
 
-        // Reset phase from Integrating to Idle, and clear worktree_path
-        // to indicate integration is complete (prevents re-integration)
-        let needs_update = task.phase == Phase::Integrating || task.worktree_path.is_some();
-        if needs_update {
-            task.phase = Phase::Idle;
-            task.worktree_path = None;
-            task.updated_at = chrono::Utc::now().to_rfc3339();
-            self.store.save_task(&task)?;
-        }
+        // Transition from Done to Archived
+        // Keep worktree_path for log access even though physical worktree is removed
+        task.status = Status::Archived;
+        task.phase = Phase::Idle;
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        self.store.save_task(&task)?;
 
         Ok(task)
     }
@@ -224,7 +221,9 @@ mod tests {
         let (api, task) = api_with_done_task();
 
         let result = api.integration_succeeded(&task.id).unwrap();
-        assert!(result.is_done());
+        assert!(result.is_archived());
+        assert!(!result.is_done());
+        assert_eq!(result.phase, Phase::Idle);
     }
 
     #[test]

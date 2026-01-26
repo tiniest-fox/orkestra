@@ -317,6 +317,7 @@ pub fn run() {
             commands::workflow_get_task,
             commands::workflow_delete_task,
             commands::workflow_list_subtasks,
+            commands::workflow_get_archived_tasks,
             commands::workflow_approve,
             commands::workflow_reject,
             commands::workflow_answer_questions,

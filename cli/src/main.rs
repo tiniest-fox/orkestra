@@ -91,20 +91,36 @@ fn handle_task_action(action: TaskAction) {
 
     match action {
         TaskAction::List { status } => {
-            let tasks = match api.list_tasks() {
-                Ok(tasks) => tasks,
-                Err(e) => {
-                    eprintln!("Error loading tasks: {e}");
-                    std::process::exit(1);
+            // Use list_archived_tasks() for archived filter, list_tasks() otherwise
+            let is_archived_filter = status.as_ref().map(|s| s.to_lowercase() == "archived").unwrap_or(false);
+            let tasks = if is_archived_filter {
+                match api.list_archived_tasks() {
+                    Ok(tasks) => tasks,
+                    Err(e) => {
+                        eprintln!("Error loading archived tasks: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                match api.list_tasks() {
+                    Ok(tasks) => tasks,
+                    Err(e) => {
+                        eprintln!("Error loading tasks: {e}");
+                        std::process::exit(1);
+                    }
                 }
             };
 
-            // Filter by status if provided
+            // Filter by status if provided (not needed for archived since we already fetched them)
             let tasks: Vec<_> = if let Some(ref filter) = status {
-                tasks
-                    .into_iter()
-                    .filter(|t| matches_status_filter(t, filter))
-                    .collect()
+                if is_archived_filter {
+                    tasks // Already filtered by list_archived_tasks
+                } else {
+                    tasks
+                        .into_iter()
+                        .filter(|t| matches_status_filter(t, filter))
+                        .collect()
+                }
             } else {
                 tasks
             };
@@ -320,6 +336,7 @@ fn matches_status_filter(task: &Task, filter: &str) -> bool {
     match filter.to_lowercase().as_str() {
         "active" => task.status.is_active(),
         "done" => task.is_done(),
+        "archived" => task.is_archived(),
         "failed" => task.is_failed(),
         "blocked" => task.is_blocked(),
         _ => true,
@@ -330,6 +347,7 @@ fn format_status(status: &Status) -> String {
     match status {
         Status::Active { stage } => format!("Active({})", stage),
         Status::Done => "Done".to_string(),
+        Status::Archived => "Archived".to_string(),
         Status::WaitingOnChildren => "Waiting".to_string(),
         Status::Failed { error } => {
             let msg = error.as_deref().unwrap_or("unknown");

@@ -134,9 +134,15 @@ impl WorkflowApi {
             .ok_or_else(|| WorkflowError::TaskNotFound(id.into()))
     }
 
-    /// List all top-level tasks (tasks without parents).
+    /// List all active top-level tasks (excluding archived, without parents).
     pub fn list_tasks(&self) -> WorkflowResult<Vec<Task>> {
-        let all_tasks = self.store.list_tasks()?;
+        let all_tasks = self.store.list_active_tasks()?;
+        Ok(all_tasks.into_iter().filter(|t| t.parent_id.is_none()).collect())
+    }
+
+    /// List all archived top-level tasks (tasks without parents).
+    pub fn list_archived_tasks(&self) -> WorkflowResult<Vec<Task>> {
+        let all_tasks = self.store.list_archived_tasks()?;
         Ok(all_tasks.into_iter().filter(|t| t.parent_id.is_none()).collect())
     }
 
@@ -447,5 +453,42 @@ mod tests {
         assert_eq!(iterations.len(), 1);
         assert_eq!(iterations[0].stage, "planning");
         assert_eq!(iterations[0].iteration_number, 1);
+    }
+
+    #[test]
+    fn test_list_tasks_excludes_archived() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task1 = api.create_task("Active", "Active task", None).unwrap();
+        let mut task2 = api.create_task("Archived", "Will be archived", None).unwrap();
+
+        // Archive task2
+        task2.status = Status::Archived;
+        api.store.save_task(&task2).unwrap();
+
+        let tasks = api.list_tasks().unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].id, task1.id);
+    }
+
+    #[test]
+    fn test_list_archived_tasks() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let _task1 = api.create_task("Active", "Active task", None).unwrap();
+        let mut task2 = api.create_task("Archived", "Will be archived", None).unwrap();
+
+        // Archive task2
+        task2.status = Status::Archived;
+        api.store.save_task(&task2).unwrap();
+
+        let archived = api.list_archived_tasks().unwrap();
+        assert_eq!(archived.len(), 1);
+        assert_eq!(archived[0].id, task2.id);
+        assert!(archived[0].is_archived());
     }
 }

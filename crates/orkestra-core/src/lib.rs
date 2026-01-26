@@ -6,6 +6,7 @@ pub mod process;
 pub mod project;
 pub mod prompts;
 pub mod title;
+pub mod utility;
 pub mod workflow;
 
 // Test utilities (available for integration tests)

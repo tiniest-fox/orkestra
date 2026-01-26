@@ -1,15 +1,12 @@
-//! Agent output schemas and title generation prompt.
+//! Agent output schemas.
 //!
 //! This module provides:
 //! - Dynamic JSON schema generation based on stage configuration
 //! - Reusable schema components loaded from files
 //! - Schema-validated example generators for prompts
-//! - Title generator prompt template
 
 pub mod examples;
 
-use handlebars::Handlebars;
-use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::LazyLock;
 
@@ -175,36 +172,6 @@ pub static PLANNER_OUTPUT_SCHEMA: LazyLock<String> = LazyLock::new(|| {
     })
 });
 
-// =============================================================================
-// Title Generator
-// =============================================================================
-
-const TITLE_GENERATOR_TEMPLATE: &str = include_str!("templates/title_generator.md");
-
-static TEMPLATES: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
-    let mut hb = Handlebars::new();
-    hb.register_escape_fn(handlebars::no_escape);
-    hb.register_template_string("title_generator", TITLE_GENERATOR_TEMPLATE)
-        .expect("title_generator template");
-    hb
-});
-
-#[derive(Serialize)]
-struct TitleGeneratorContext<'a> {
-    description: &'a str,
-}
-
-fn render_title_generator(ctx: &TitleGeneratorContext<'_>) -> String {
-    TEMPLATES
-        .render("title_generator", ctx)
-        .expect("title_generator template should render")
-}
-
-/// Build a prompt for the title generator agent.
-pub fn build_title_generator_prompt(description: &str) -> String {
-    render_title_generator(&TitleGeneratorContext { description })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,11 +290,5 @@ mod tests {
         // Should have flat properties with type discriminator
         assert!(parsed.get("properties").is_some());
         assert!(parsed.get("properties").unwrap().get("type").is_some());
-    }
-
-    #[test]
-    fn test_title_generator_prompt() {
-        let prompt = build_title_generator_prompt("Fix the bug in login");
-        assert!(prompt.contains("Fix the bug in login"));
     }
 }

@@ -362,8 +362,19 @@ impl TaskExecutionService {
                     stage,
                     raw_output.len()
                 );
-                if let Err(e) = self.crash_recovery.persist(task_id, stage, &raw_output) {
-                    workflow_error!("Failed to persist raw output for {}/{}: {}", task_id, stage, e);
+                // Only persist non-empty outputs - empty outputs are never valid
+                // and would cause parse errors on crash recovery
+                if !raw_output.trim().is_empty() {
+                    if let Err(e) = self.crash_recovery.persist(task_id, stage, &raw_output) {
+                        workflow_error!("Failed to persist raw output for {}/{}: {}", task_id, stage, e);
+                    }
+                } else {
+                    orkestra_debug!(
+                        "exec",
+                        "handle_event {}/{}: skipping persist of empty output",
+                        task_id,
+                        stage
+                    );
                 }
                 Ok(None)
             }

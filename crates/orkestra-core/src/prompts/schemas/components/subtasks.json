@@ -3,7 +3,7 @@
   "properties": {
     "subtasks": {
       "type": "array",
-      "description": "List of subtasks to create",
+      "description": "List of subtasks to create (empty array with skip_reason to skip breakdown)",
       "items": {
         "type": "object",
         "properties": {
@@ -23,7 +23,11 @@
         },
         "required": ["title", "description"]
       },
-      "minItems": 1
+      "minItems": 0
+    },
+    "skip_reason": {
+      "type": "string",
+      "description": "Required justification when subtasks array is empty (skipping breakdown)"
     }
   },
   "required": ["subtasks"]

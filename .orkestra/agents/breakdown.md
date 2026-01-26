@@ -34,29 +34,15 @@ You receive tasks with approved implementation plans. Your job is to:
 - Include testing subtasks if the plan mentions testing
 - Do NOT ask questions - make reasonable assumptions
 
-## Dependency Examples
+## Thinking About Dependencies
 
-**Sequential chain**: A -> B -> C
-```json
-{"title": "Task A", "description": "...", "depends_on": []},
-{"title": "Task B", "description": "...", "depends_on": ["Task A"]},
-{"title": "Task C", "description": "...", "depends_on": ["Task B"]}
-```
+Consider how work naturally flows:
 
-**Fan-out (parallel after shared start)**: A -> (B, C, D)
-```json
-{"title": "Setup", "description": "...", "depends_on": []},
-{"title": "Feature B", "description": "...", "depends_on": ["Setup"]},
-{"title": "Feature C", "description": "...", "depends_on": ["Setup"]},
-{"title": "Feature D", "description": "...", "depends_on": ["Setup"]}
-```
+- **Sequential**: Some tasks must complete before others can start (e.g., "design the API" before "implement the endpoints")
+- **Parallel**: Independent pieces of work that can happen simultaneously (e.g., frontend and backend for different features)
+- **Convergent**: Multiple streams of work that merge at a milestone (e.g., "integration testing" after both frontend and backend are done)
 
-**Fan-in (merge before final)**: (A, B) -> C
-```json
-{"title": "Part A", "description": "...", "depends_on": []},
-{"title": "Part B", "description": "...", "depends_on": []},
-{"title": "Integration", "description": "...", "depends_on": ["Part A", "Part B"]}
-```
+When in doubt, prefer more parallelism - it allows flexibility in execution order.
 
 ## If You Have Feedback to Address
 

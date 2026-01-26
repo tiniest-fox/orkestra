@@ -25,6 +25,7 @@ refinery = { version = "0.8", features = ["rusqlite"] }
 git2 = "0.18"
 tempfile = { version = "3", optional = true }
 handlebars = "6"
+jsonschema = "0.26"
 once_cell = "1"
 petname = "2"
 uuid = { version = "1", features = ["v4"] }

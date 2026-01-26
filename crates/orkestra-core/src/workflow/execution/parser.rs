@@ -5,6 +5,9 @@
 //! - Newline-delimited JSON objects
 //! - Single JSON object with `structured_output`
 //! - Direct StageOutput JSON
+//!
+//! When a schema is provided, output is validated against it (schema-driven validation).
+//! Without a schema, basic parsing is done without type validation.
 
 use super::StageOutput;
 
@@ -38,12 +41,22 @@ fn strip_markdown_code_fences(s: &str) -> String {
 /// 2. Newline-delimited JSON: One JSON object per line
 /// 3. Single JSON object with `structured_output` field
 /// 4. Direct StageOutput JSON
-pub fn parse_agent_output(full_output: &str) -> Result<StageOutput, String> {
+///
+/// When a schema is provided, the output is validated against it. This is the
+/// recommended usage - the same schema sent to Claude is used to validate the response.
+///
+/// # Arguments
+/// * `full_output` - The raw output from Claude
+/// * `schema` - Optional JSON schema for validation (same schema sent to Claude)
+pub fn parse_agent_output(
+    full_output: &str,
+    schema: Option<&serde_json::Value>,
+) -> Result<StageOutput, String> {
     let trimmed = full_output.trim();
 
     // Try to parse the whole output as JSON first
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
-        if let Some(result) = extract_structured_output(&v) {
+        if let Some(result) = extract_structured_output(&v, schema) {
             return result;
         }
     }
@@ -56,45 +69,62 @@ pub fn parse_agent_output(full_output: &str) -> Result<StageOutput, String> {
         }
 
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-            if let Some(result) = extract_structured_output(&v) {
+            if let Some(result) = extract_structured_output(&v, schema) {
                 return result;
             }
         }
     }
 
     // Fallback: try to parse the entire output as StageOutput directly
-    StageOutput::parse(trimmed)
+    parse_json_output(trimmed, schema)
         .map_err(|e| format!("Failed to parse agent output: {e}"))
+}
+
+/// Parse a JSON string as StageOutput with optional schema validation.
+fn parse_json_output(
+    json: &str,
+    schema: Option<&serde_json::Value>,
+) -> Result<StageOutput, String> {
+    match schema {
+        Some(s) => StageOutput::parse(json, s).map_err(|e| e.to_string()),
+        None => StageOutput::parse_unvalidated(json).map_err(|e| e.to_string()),
+    }
 }
 
 /// Extract structured output from a JSON value.
 /// Handles arrays (searches for structured_output in elements) and objects.
-fn extract_structured_output(v: &serde_json::Value) -> Option<Result<StageOutput, String>> {
+fn extract_structured_output(
+    v: &serde_json::Value,
+    schema: Option<&serde_json::Value>,
+) -> Option<Result<StageOutput, String>> {
     match v {
         // JSON array: search all elements for structured_output (check from end first)
         serde_json::Value::Array(arr) => {
             for item in arr.iter().rev() {
-                if let Some(result) = extract_from_object(item) {
+                if let Some(result) = extract_from_object(item, schema) {
                     return Some(result);
                 }
             }
             None
         }
         // JSON object: check directly
-        serde_json::Value::Object(_) => extract_from_object(v),
+        serde_json::Value::Object(_) => extract_from_object(v, schema),
         _ => None,
     }
 }
 
 /// Extract structured output from a JSON object.
-fn extract_from_object(v: &serde_json::Value) -> Option<Result<StageOutput, String>> {
+fn extract_from_object(
+    v: &serde_json::Value,
+    schema: Option<&serde_json::Value>,
+) -> Option<Result<StageOutput, String>> {
     // Check for structured_output field
     if let Some(structured) = v.get("structured_output") {
         if !structured.is_null() {
             let structured_str = structured.to_string();
             return Some(
-                StageOutput::parse(&structured_str)
-                    .map_err(|e| format!("Failed to parse structured_output: {e}"))
+                parse_json_output(&structured_str, schema)
+                    .map_err(|e| format!("Failed to parse structured_output: {e}")),
             );
         }
     }
@@ -105,8 +135,8 @@ fn extract_from_object(v: &serde_json::Value) -> Option<Result<StageOutput, Stri
             // Strip markdown code fences if present
             let cleaned = strip_markdown_code_fences(result_str);
             return Some(
-                StageOutput::parse(&cleaned)
-                    .map_err(|e| format!("Failed to parse result: {e}"))
+                parse_json_output(&cleaned, schema)
+                    .map_err(|e| format!("Failed to parse result: {e}")),
             );
         }
     }
@@ -114,7 +144,7 @@ fn extract_from_object(v: &serde_json::Value) -> Option<Result<StageOutput, Stri
     // Check if this object itself is a valid StageOutput (has "type" field)
     if v.get("type").is_some() {
         let v_str = v.to_string();
-        if let Ok(output) = StageOutput::parse(&v_str) {
+        if let Ok(output) = parse_json_output(&v_str, schema) {
             return Some(Ok(output));
         }
     }
@@ -161,7 +191,7 @@ mod tests {
         let output = r#"{"type": "system", "subtype": "init", "session_id": "abc"}
 {"structured_output": {"type": "summary", "content": "Work done"}}"#;
 
-        let result = parse_agent_output(output);
+        let result = parse_agent_output(output, None);
         assert!(result.is_ok());
         match result.unwrap() {
             StageOutput::Artifact { content } => assert_eq!(content, "Work done"),
@@ -173,7 +203,7 @@ mod tests {
     fn test_parse_agent_output_artifact() {
         let output = r#"{"structured_output": {"type": "plan", "content": "The implementation plan"}}"#;
 
-        let result = parse_agent_output(output);
+        let result = parse_agent_output(output, None);
         assert!(result.is_ok());
         match result.unwrap() {
             StageOutput::Artifact { content } => assert!(content.contains("implementation plan")),
@@ -185,7 +215,7 @@ mod tests {
     fn test_parse_agent_output_direct_json() {
         let output = r#"{"type": "summary", "content": "Done"}"#;
 
-        let result = parse_agent_output(output);
+        let result = parse_agent_output(output, None);
         assert!(result.is_ok());
         match result.unwrap() {
             StageOutput::Artifact { content } => assert_eq!(content, "Done"),
@@ -198,7 +228,7 @@ mod tests {
         // Claude Code outputs a JSON array of stream events
         let output = r#"[{"type":"system","subtype":"init","session_id":"abc"},{"type":"assistant","message":"thinking..."},{"structured_output":{"type":"plan","content":"The plan content"}}]"#;
 
-        let result = parse_agent_output(output);
+        let result = parse_agent_output(output, None);
         assert!(result.is_ok(), "Failed to parse: {:?}", result);
         match result.unwrap() {
             StageOutput::Artifact { content } => assert_eq!(content, "The plan content"),
@@ -210,7 +240,7 @@ mod tests {
     fn test_parse_agent_output_json_array_artifact() {
         let output = r#"[{"type":"system"},{"structured_output":{"type":"summary","content":"All done"}}]"#;
 
-        let result = parse_agent_output(output);
+        let result = parse_agent_output(output, None);
         assert!(result.is_ok());
         match result.unwrap() {
             StageOutput::Artifact { content } => assert_eq!(content, "All done"),
@@ -270,13 +300,14 @@ mod tests {
     #[test]
     fn test_parse_result_with_markdown_fences() {
         // This simulates what we get from Claude's result field
-        let output = r#"[{"type":"result","result":"```json\n{\"type\": \"skip_breakdown\"}\n```"}]"#;
+        // Now with the unified schema system, arbitrary artifact types work
+        let output = r#"[{"type":"result","result":"```json\n{\"type\": \"myartifact\", \"content\": \"done\"}\n```"}]"#;
 
-        let result = parse_agent_output(output);
+        let result = parse_agent_output(output, None);
         assert!(result.is_ok(), "Failed to parse: {:?}", result);
         match result.unwrap() {
-            StageOutput::Artifact { content } => assert_eq!(content, "skip"),
-            other => panic!("Expected Artifact output with 'skip', got {:?}", other),
+            StageOutput::Artifact { content } => assert_eq!(content, "done"),
+            other => panic!("Expected Artifact output, got {:?}", other),
         }
     }
 }

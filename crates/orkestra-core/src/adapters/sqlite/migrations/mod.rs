@@ -31,7 +31,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         run(&mut conn).unwrap();
 
-        // Verify tables exist
+        // Verify workflow tables exist (legacy tables were dropped in V10)
         let tables: Vec<String> = conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
             .unwrap()
@@ -40,10 +40,9 @@ mod tests {
             .filter_map(|r| r.ok())
             .collect();
 
-        assert!(tables.contains(&"tasks".to_string()));
-        assert!(tables.contains(&"work_loops".to_string()));
-        assert!(tables.contains(&"stage_sessions".to_string()));
-        assert!(tables.contains(&"iterations".to_string()));
+        assert!(tables.contains(&"workflow_tasks".to_string()));
+        assert!(tables.contains(&"workflow_iterations".to_string()));
+        assert!(tables.contains(&"workflow_stage_sessions".to_string()));
     }
 
     #[test]

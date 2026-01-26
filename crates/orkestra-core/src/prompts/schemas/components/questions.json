@@ -38,7 +38,7 @@
             }
           }
         },
-        "required": ["id", "question", "options"]
+        "required": ["question", "options"]
       },
       "minItems": 1
     }

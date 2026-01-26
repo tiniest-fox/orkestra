@@ -179,11 +179,29 @@ impl WorkflowApi {
                 self.store.save_iteration(&iteration)?;
             }
 
-            StageOutput::Subtasks { subtasks: _ } => {
-                // TODO: Create subtasks from breakdown output
-                // For now, just store as artifact
-                task.phase = Phase::AwaitingReview;
-                task.updated_at = now;
+            StageOutput::Subtasks {
+                subtasks,
+                skip_reason,
+            } => {
+                if subtasks.is_empty() {
+                    // Empty subtasks with skip_reason means skipping breakdown
+                    // Log the reason and treat as completing the stage
+                    if let Some(reason) = skip_reason {
+                        orkestra_debug!(
+                            "agent_actions",
+                            "Skipping subtask breakdown: {}",
+                            reason
+                        );
+                    }
+                    // Store as artifact that breakdown was skipped
+                    task.phase = Phase::AwaitingReview;
+                    task.updated_at = now;
+                } else {
+                    // TODO: Create subtasks from breakdown output
+                    // For now, just store as artifact
+                    task.phase = Phase::AwaitingReview;
+                    task.updated_at = now;
+                }
             }
 
             StageOutput::Failed { error } => {

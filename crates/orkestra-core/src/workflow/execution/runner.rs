@@ -193,6 +193,12 @@ impl AgentRunnerTrait for AgentRunner {
             config.is_resume
         );
 
+        // Parse the schema for validation (before moving json_schema to process_config)
+        let schema: Option<serde_json::Value> = config
+            .json_schema
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok());
+
         // Build process config
         let process_config = ProcessConfig {
             session_id: config.session_id,
@@ -242,8 +248,8 @@ impl AgentRunnerTrait for AgentRunner {
 
         orkestra_debug!("runner", "run_sync: output_len={}", full_output.len());
 
-        // Parse the output
-        let parsed_output = parse_agent_output(&full_output)
+        // Parse the output with schema validation
+        let parsed_output = parse_agent_output(&full_output, schema.as_ref())
             .map_err(RunError::ParseFailed)?;
 
         orkestra_debug!("runner", "run_sync: parsed output successfully");
@@ -287,9 +293,14 @@ impl AgentRunnerTrait for AgentRunner {
         // Create event channel
         let (tx, rx) = mpsc::channel();
 
+        // Parse the schema for validation
+        let schema: Option<serde_json::Value> = config
+            .json_schema
+            .and_then(|s| serde_json::from_str(&s).ok());
+
         // Spawn background thread to read output
         thread::spawn(move || {
-            read_output_and_send_events(handle, tx);
+            read_output_and_send_events(handle, tx, schema);
         });
 
         Ok((pid, rx))
@@ -300,6 +311,7 @@ impl AgentRunnerTrait for AgentRunner {
 fn read_output_and_send_events(
     mut handle: crate::workflow::ports::ProcessHandle,
     tx: Sender<RunEvent>,
+    schema: Option<serde_json::Value>,
 ) {
     let mut full_output = String::new();
 
@@ -336,8 +348,8 @@ fn read_output_and_send_events(
     // Process completed normally
     handle.disarm();
 
-    // Parse and send completion event
-    let result = parse_agent_output(&full_output);
+    // Parse and send completion event with schema validation
+    let result = parse_agent_output(&full_output, schema.as_ref());
     if tx.send(RunEvent::Completed(result)).is_err() {
         eprintln!("[agent runner] Channel closed before completion could be sent");
     }
@@ -500,14 +512,20 @@ pub mod mock {
                 "questions": questions
             }),
             StageOutput::Restage { target, feedback } => serde_json::json!({
-                "type": "rejected",
+                "type": "restage",
                 "target": target,
                 "feedback": feedback
             }),
-            StageOutput::Subtasks { subtasks } => serde_json::json!({
-                "type": "breakdown",
-                "subtasks": subtasks
-            }),
+            StageOutput::Subtasks { subtasks, skip_reason } => {
+                let mut json = serde_json::json!({
+                    "type": "subtasks",
+                    "subtasks": subtasks
+                });
+                if let Some(reason) = skip_reason {
+                    json["skip_reason"] = serde_json::json!(reason);
+                }
+                json
+            }
             StageOutput::Failed { error } => serde_json::json!({
                 "type": "failed",
                 "error": error

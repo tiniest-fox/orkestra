@@ -3,7 +3,10 @@
 //! This module provides:
 //! - Dynamic JSON schema generation based on stage configuration
 //! - Reusable schema components loaded from files
+//! - Schema-validated example generators for prompts
 //! - Title generator prompt template
+
+pub mod examples;
 
 use handlebars::Handlebars;
 use serde::Serialize;
@@ -53,15 +56,15 @@ pub struct SchemaConfig<'a> {
 /// The schema is a flat discriminated union (no oneOf at top level)
 /// that includes all valid output types for the stage:
 /// - The stage's artifact (type = artifact_name)
-/// - Terminal states: completed, failed, blocked
+/// - Terminal states: failed, blocked
 /// - Questions (if ask_questions capability)
-/// - Subtasks/breakdown (if produce_subtasks capability)
-/// - Restage/rejected (if supports_restage capability)
+/// - Subtasks (if produce_subtasks capability)
+/// - Restage (if supports_restage capability)
 pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     let artifact = load_component(ARTIFACT_COMPONENT);
     let terminal = load_component(TERMINAL_COMPONENT);
     let questions = load_component(QUESTIONS_COMPONENT);
-    let subtasks = load_component(SUBTASKS_COMPONENT);
+    let subtasks_component = load_component(SUBTASKS_COMPONENT);
     let restage = load_component(RESTAGE_COMPONENT);
 
     // Build the list of valid type values
@@ -75,10 +78,10 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
         type_enum.push("questions".to_string());
     }
     if config.capabilities.produce_subtasks {
-        type_enum.push("breakdown".to_string());
+        type_enum.push("subtasks".to_string());
     }
     if !config.capabilities.supports_restage.is_empty() {
-        type_enum.push("rejected".to_string());
+        type_enum.push("restage".to_string());
     }
 
     // Build properties object
@@ -118,11 +121,14 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
         }
     }
 
-    // Add subtasks property if capability enabled
+    // Add subtasks properties if capability enabled
     if config.capabilities.produce_subtasks {
-        if let Some(s_props) = subtasks.get("properties") {
+        if let Some(s_props) = subtasks_component.get("properties") {
             if let Some(s) = s_props.get("subtasks") {
                 properties["subtasks"] = s.clone();
+            }
+            if let Some(sr) = s_props.get("skip_reason") {
+                properties["skip_reason"] = sr.clone();
             }
         }
     }
@@ -143,7 +149,7 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     let schema = json!({
         "type": "object",
         "description": format!(
-            "Stage output. Set 'type' to '{}' with 'content' for the artifact, or use terminal types (completed/failed/blocked).",
+            "Stage output. Set 'type' to '{}' with 'content' for the artifact, or use terminal types (failed/blocked).",
             config.artifact_name
         ),
         "properties": properties,
@@ -277,8 +283,11 @@ mod tests {
             .as_array()
             .unwrap();
 
-        assert!(type_enum.iter().any(|v| v == "breakdown"));
+        // Type should be "subtasks" (not the legacy "breakdown")
+        assert!(type_enum.iter().any(|v| v == "subtasks"));
         assert!(parsed.get("properties").unwrap().get("subtasks").is_some());
+        // Should also have skip_reason property for skipping breakdown
+        assert!(parsed.get("properties").unwrap().get("skip_reason").is_some());
     }
 
     #[test]
@@ -301,7 +310,8 @@ mod tests {
             .as_array()
             .unwrap();
 
-        assert!(type_enum.iter().any(|v| v == "rejected"));
+        // Type should be "restage" (not the legacy "rejected")
+        assert!(type_enum.iter().any(|v| v == "restage"));
         assert!(parsed.get("properties").unwrap().get("target").is_some());
         assert!(parsed.get("properties").unwrap().get("feedback").is_some());
     }

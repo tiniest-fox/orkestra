@@ -5,11 +5,108 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 
+use handlebars::Handlebars;
 use serde::Serialize;
 
+use crate::prompts::examples::{
+    question_example, questions_output_example, subtask_example, subtasks_output_example,
+};
 use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::{QuestionAnswer, Task};
+
+// =============================================================================
+// Template Loading
+// =============================================================================
+
+const OUTPUT_FORMAT_TEMPLATE: &str =
+    include_str!("../../prompts/templates/output_format.md");
+
+static TEMPLATES: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
+    let mut hb = Handlebars::new();
+    hb.register_escape_fn(handlebars::no_escape);
+    hb.register_template_string("output_format", OUTPUT_FORMAT_TEMPLATE)
+        .expect("output_format template should be valid");
+    hb
+});
+
+/// Context for rendering the output format template.
+#[derive(Debug, Serialize)]
+struct OutputFormatContext {
+    artifact_name: String,
+    can_ask_questions: bool,
+    questions_example: Option<String>,
+    can_produce_subtasks: bool,
+    subtasks_example: Option<String>,
+    skip_example: Option<String>,
+    can_restage: bool,
+    restage_targets: Option<String>,
+    restage_first_target: Option<String>,
+}
+
+/// Build the output format context with schema-validated examples.
+fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatContext {
+    let questions_example = if ctx.stage.capabilities.ask_questions {
+        let examples = vec![question_example(
+            "Which approach should we take?",
+            &["Option A", "Option B"],
+        )];
+        Some(questions_output_example(&examples))
+    } else {
+        None
+    };
+
+    let (subtasks_example, skip_example) = if ctx.stage.capabilities.produce_subtasks {
+        let examples = vec![
+            subtask_example("First task", "What needs to be done first", &[]),
+            subtask_example("Second task", "Depends on first task", &[0]),
+        ];
+        (
+            Some(subtasks_output_example(&examples, None)),
+            Some(subtasks_output_example(
+                &[],
+                Some("Task is simple enough to complete directly"),
+            )),
+        )
+    } else {
+        (None, None)
+    };
+
+    let (restage_targets, restage_first_target) =
+        if !ctx.stage.capabilities.supports_restage.is_empty() {
+            (
+                Some(ctx.stage.capabilities.supports_restage.join(", ")),
+                ctx.stage
+                    .capabilities
+                    .supports_restage
+                    .first()
+                    .map(|s| s.to_string()),
+            )
+        } else {
+            (None, None)
+        };
+
+    OutputFormatContext {
+        artifact_name: ctx.stage.artifact.clone(),
+        can_ask_questions: ctx.stage.capabilities.ask_questions,
+        questions_example,
+        can_produce_subtasks: ctx.stage.capabilities.produce_subtasks,
+        subtasks_example,
+        skip_example,
+        can_restage: !ctx.stage.capabilities.supports_restage.is_empty(),
+        restage_targets,
+        restage_first_target,
+    }
+}
+
+/// Render the output format section using the template.
+fn render_output_format(ctx: &StagePromptContext<'_>) -> String {
+    let format_ctx = build_output_format_context(ctx);
+    TEMPLATES
+        .render("output_format", &format_ctx)
+        .expect("output_format template should render")
+}
 
 /// Context for building a stage prompt.
 #[derive(Debug, Clone, Serialize)]
@@ -414,47 +511,9 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
         prompt.push_str("Run `git rebase main` and resolve the conflicts, then continue your work.\n\n");
     }
 
-    // Output format section
+    // Output format section (rendered from template with validated examples)
     prompt.push_str("---\n\n");
-    prompt.push_str("## Output Format\n\n");
-    prompt.push_str(&format!(
-        "Produce your output as valid JSON. Your output artifact is: **{}**\n\n",
-        ctx.stage.artifact
-    ));
-
-    // Capability-specific instructions
-    if ctx.stage.capabilities.ask_questions {
-        prompt.push_str("If you need more information, output questions:\n");
-        prompt.push_str("```json\n");
-        prompt.push_str(r#"{"type": "questions", "questions": [{"id": "q1", "question": "...", "options": [...]}]}"#);
-        prompt.push_str("\n```\n\n");
-    }
-
-    if ctx.stage.capabilities.produce_subtasks {
-        prompt.push_str("If breaking into subtasks:\n");
-        prompt.push_str("```json\n");
-        prompt.push_str(r#"{"type": "breakdown", "subtasks": [{"title": "...", "description": "...", "depends_on": [...]}]}"#);
-        prompt.push_str("\n```\n\n");
-    }
-
-    if !ctx.stage.capabilities.supports_restage.is_empty() {
-        prompt.push_str(&format!(
-            "If work needs revisions (restage to: {:?}):\n",
-            ctx.stage.capabilities.supports_restage
-        ));
-        prompt.push_str("```json\n");
-        prompt.push_str(r#"{"type": "rejected", "target": "work", "feedback": "What needs to be fixed"}"#);
-        prompt.push_str("\n```\n\n");
-    }
-
-    prompt.push_str("Standard outputs:\n");
-    prompt.push_str("- Success: `{\"type\": \"completed\", \"summary\": \"...\"}`\n");
-    prompt.push_str("- Failure: `{\"type\": \"failed\", \"error\": \"...\"}`\n");
-    prompt.push_str("- Blocked: `{\"type\": \"blocked\", \"reason\": \"...\"}`\n");
-    prompt.push_str(&format!(
-        "- Artifact: `{{\"type\": \"{}\", \"content\": \"...\"}}`\n",
-        ctx.stage.artifact
-    ));
+    prompt.push_str(&render_output_format(ctx));
 
     prompt
 }
@@ -843,7 +902,7 @@ mod tests {
         assert!(schema.is_some());
         let schema_str = schema.unwrap();
         assert!(schema_str.contains("\"verdict\""));
-        assert!(schema_str.contains("\"rejected\"")); // restage type
+        assert!(schema_str.contains("\"restage\"")); // restage type
     }
 
     #[test]
@@ -930,7 +989,7 @@ mod tests {
         let prompt = build_complete_prompt(agent_def, &ctx);
 
         // Planning stage has ask_questions capability
-        assert!(prompt.contains("need more information"));
+        assert!(prompt.contains("Ask clarifying questions"));
         assert!(prompt.contains("questions"));
     }
 

@@ -179,7 +179,7 @@ pub static PLANNER_OUTPUT_SCHEMA: LazyLock<String> = LazyLock::new(|| {
 // Title Generator
 // =============================================================================
 
-const TITLE_GENERATOR_TEMPLATE: &str = include_str!("templates/title_generator.hbs");
+const TITLE_GENERATOR_TEMPLATE: &str = include_str!("templates/title_generator.md");
 
 static TEMPLATES: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
     let mut hb = Handlebars::new();

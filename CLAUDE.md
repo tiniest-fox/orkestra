@@ -109,9 +109,10 @@ Agent prompt templates (in `.orkestra/agents/`):
 - **breakdown.md**: Decomposes complex tasks into subtasks with dependencies
 - **worker.md**: Implements approved plan, outputs completion/failure/blocked status
 - **reviewer.md**: Reviews completed work, approves or requests changes
-- **title-generator.md**: Generates concise task titles from descriptions
 
 The prompt builder injects task context (description, artifacts, questions, feedback) into these templates.
+
+Note: Title generation uses a separate internal template (`prompts/templates/title_generator.md`) since it's a utility function, not a configurable stage agent.
 
 ### Tauri Commands
 

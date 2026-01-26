@@ -31,12 +31,8 @@ const SUBTASKS_COMPONENT: &str = include_str!("schemas/components/subtasks.json"
 /// Restage schema component - for stages with supports_restage capability.
 const RESTAGE_COMPONENT: &str = include_str!("schemas/components/restage.json");
 
-/// Terminal states schema component - completed, failed, blocked.
+/// Terminal states schema component - failed, blocked.
 const TERMINAL_COMPONENT: &str = include_str!("schemas/components/terminal.json");
-
-// Note: The legacy schema files (breakdown.json, worker.json, reviewer.json, plan.json)
-// are kept for reference but schemas are now generated dynamically via generate_stage_schema().
-// The component files in schemas/components/ are the source of truth.
 
 // =============================================================================
 // Dynamic Schema Generation

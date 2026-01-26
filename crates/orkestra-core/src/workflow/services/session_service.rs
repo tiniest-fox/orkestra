@@ -133,6 +133,17 @@ impl SessionService {
         let session = match self.store.get_stage_session(task_id, stage)? {
             Some(mut session) => {
                 // Existing session - transition to Spawning
+                // Ensure session ID exists (might be missing from older sessions or bugs)
+                if session.claude_session_id.as_ref().map_or(true, |s| s.is_empty()) {
+                    session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
+                    orkestra_debug!(
+                        "session",
+                        "on_spawn_starting {}/{}: regenerated missing session_id={}",
+                        task_id,
+                        stage,
+                        session.claude_session_id.as_ref().unwrap()
+                    );
+                }
                 session.session_state = SessionState::Spawning;
                 session.updated_at = now.clone();
                 session

@@ -8,6 +8,7 @@
 //! It is driven by the workflow configuration and is stage-agnostic -
 //! it doesn't know about specific stages like "planning" or "work".
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::TryRecvError;
@@ -58,6 +59,21 @@ pub enum OrchestratorEvent {
         task_id: Option<String>,
         error: String,
     },
+    /// Integration (merge to primary) started for a task.
+    IntegrationStarted {
+        task_id: String,
+        branch: String,
+    },
+    /// Integration completed successfully.
+    IntegrationCompleted {
+        task_id: String,
+    },
+    /// Integration failed (e.g., merge conflict).
+    IntegrationFailed {
+        task_id: String,
+        error: String,
+        conflict_files: Vec<String>,
+    },
 }
 
 // ============================================================================
@@ -98,6 +114,10 @@ pub struct OrchestratorLoop {
     api: Arc<Mutex<WorkflowApi>>,
     executor: Arc<TaskExecutionService>,
     active_executions: Mutex<Vec<ExecutionHandle>>,
+    /// Task IDs that were Done at the START of the previous tick.
+    /// Only these tasks are eligible for integration, implementing a one-tick delay.
+    /// This prevents integrating a task in the same tick where it became Done.
+    ready_for_integration: Mutex<HashSet<String>>,
     stop_flag: Arc<AtomicBool>,
 }
 
@@ -108,6 +128,7 @@ impl OrchestratorLoop {
             api,
             executor,
             active_executions: Mutex::new(Vec::new()),
+            ready_for_integration: Mutex::new(HashSet::new()),
             stop_flag: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -163,6 +184,11 @@ impl OrchestratorLoop {
         // Recover stale setup tasks on startup (tasks stuck in SettingUp phase)
         self.recover_stale_setup_tasks();
 
+        // Recover stale integrations on startup (tasks stuck in Integrating phase)
+        for event in self.recover_stale_integrations() {
+            on_event(event);
+        }
+
         // Recover pending outputs on startup
         for event in self.recover_pending() {
             on_event(event);
@@ -192,6 +218,7 @@ impl OrchestratorLoop {
         let mut events = Vec::new();
 
         // Phase 1: Process events from active executions
+        // (This may transition tasks to Done)
         events.extend(self.process_active_executions()?);
 
         // Phase 2: Clean up completed executions
@@ -199,6 +226,25 @@ impl OrchestratorLoop {
 
         // Phase 3: Start new executions for tasks needing agents
         events.extend(self.start_new_executions()?);
+
+        // Phase 4: Start integrations for Done tasks (that were Done at end of PREVIOUS tick)
+        events.extend(self.start_integrations()?);
+
+        // Snapshot Done tasks AFTER agent processing.
+        // Tasks that became Done this tick will be eligible for integration
+        // on the NEXT tick (one-tick delay).
+        let current_done_tasks: HashSet<String> = {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            api.get_tasks_needing_integration()?
+                .into_iter()
+                .map(|t| t.id)
+                .collect()
+        };
+
+        // Update ready_for_integration for next tick
+        if let Ok(mut ready) = self.ready_for_integration.lock() {
+            *ready = current_done_tasks;
+        }
 
         Ok(events)
     }
@@ -376,6 +422,137 @@ impl OrchestratorLoop {
         }
 
         Ok(events)
+    }
+
+    /// Start integrations for Done tasks that need merging.
+    ///
+    /// Only processes one task per tick to avoid concurrent merge issues.
+    /// Integration is synchronous but fast (~100ms for git merge).
+    ///
+    /// Uses a one-tick delay: only tasks that were Done at the END of the
+    /// PREVIOUS tick are eligible. This prevents integrating a task in the
+    /// same tick where it became Done.
+    fn start_integrations(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
+        let mut events = Vec::new();
+
+        // Get tasks eligible for integration (were Done at end of previous tick)
+        let ready = self.ready_for_integration.lock().map_err(|_| WorkflowError::Lock)?;
+        if ready.is_empty() {
+            return Ok(events);
+        }
+
+        // Hold API lock for entire operation to ensure consistent state
+        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+
+        // Get current Done tasks and filter to those that were ready last tick
+        let tasks: Vec<_> = api
+            .get_tasks_needing_integration()?
+            .into_iter()
+            .filter(|t| ready.contains(&t.id))
+            .collect();
+        drop(ready); // Release ready lock, keep API lock
+
+        // Only integrate one task per tick to avoid concurrent merge issues
+        let Some(task) = tasks.first() else {
+            return Ok(events);
+        };
+
+        let task_id = task.id.clone();
+        let branch = task.branch_name.clone().unwrap_or_default();
+
+        // Mark as integrating (prevents double-processing)
+        if let Err(e) = api.mark_integrating(&task_id) {
+            return Ok(vec![OrchestratorEvent::Error {
+                task_id: Some(task_id),
+                error: format!("Failed to mark task as integrating: {e}"),
+            }]);
+        }
+
+        events.push(OrchestratorEvent::IntegrationStarted {
+            task_id: task_id.clone(),
+            branch: branch.clone(),
+        });
+
+        // Perform the integration (synchronous but fast)
+        match api.integrate_task(&task_id) {
+            Ok(_task) => {
+                events.push(OrchestratorEvent::IntegrationCompleted {
+                    task_id: task_id.clone(),
+                });
+            }
+            Err(e) => {
+                // integration_failed() is called internally by integrate_task on conflict,
+                // so the task is already moved to recovery stage
+                events.push(OrchestratorEvent::IntegrationFailed {
+                    task_id: task_id.clone(),
+                    error: e.to_string(),
+                    conflict_files: vec![], // Conflict files are in the iteration record
+                });
+            }
+        }
+
+        Ok(events)
+    }
+
+    /// Recover tasks stuck in Integrating phase (from app crash during merge).
+    ///
+    /// Tasks that were being integrated when the app crashed will be stuck in Integrating.
+    /// We re-attempt the integration since merge operations are idempotent (git handles
+    /// already-merged branches gracefully).
+    ///
+    /// On failure, the task is moved back to recovery stage by `integration_failed()`.
+    /// As a fallback, if that fails, we reset the phase to Idle so the task can be retried.
+    fn recover_stale_integrations(&self) -> Vec<OrchestratorEvent> {
+        let mut events = Vec::new();
+
+        let Ok(api) = self.api.lock() else {
+            eprintln!("[recovery] Failed to acquire API lock for stale integration recovery");
+            return events;
+        };
+
+        let Ok(tasks) = api.store.list_tasks() else {
+            eprintln!("[recovery] Failed to list tasks for stale integration recovery");
+            return events;
+        };
+
+        for task in tasks {
+            if task.phase == Phase::Integrating && task.is_done() {
+                eprintln!("[recovery] Found stale Integrating task: {}", task.id);
+
+                // Re-attempt integration
+                match api.integrate_task(&task.id) {
+                    Ok(_) => {
+                        eprintln!("[recovery] Successfully recovered integration for {}", task.id);
+                        events.push(OrchestratorEvent::IntegrationCompleted {
+                            task_id: task.id.clone(),
+                        });
+                    }
+                    Err(e) => {
+                        eprintln!("[recovery] Integration failed for {}: {}", task.id, e);
+
+                        // integration_failed() should have moved task to recovery stage.
+                        // Verify the task is no longer stuck in Integrating phase.
+                        if let Ok(updated_task) = api.get_task(&task.id) {
+                            if updated_task.phase == Phase::Integrating {
+                                // Fallback: reset phase to Idle so orchestrator can retry later
+                                eprintln!("[recovery] Task {} still in Integrating phase, resetting to Idle", task.id);
+                                let mut reset_task = updated_task;
+                                reset_task.phase = Phase::Idle;
+                                let _ = api.store.save_task(&reset_task);
+                            }
+                        }
+
+                        events.push(OrchestratorEvent::IntegrationFailed {
+                            task_id: task.id.clone(),
+                            error: e.to_string(),
+                            conflict_files: vec![],
+                        });
+                    }
+                }
+            }
+        }
+
+        events
     }
 
     /// Recover tasks stuck in SettingUp phase (from app crash during setup).

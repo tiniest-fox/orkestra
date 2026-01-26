@@ -465,29 +465,19 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.current_stage(), Some("review"));
 
     // =========================================================================
-    // Step 10: Reviewer approves → Done
+    // Step 10: Reviewer approves → Done (with merge conflict setup)
     // =========================================================================
 
-    // Orchestrator spawns reviewer
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "verdict".to_string(),
-        content: "LGTM! All checks pass.".to_string(),
-    });
-    ctx.tick();
+    // IMPORTANT: We need to create the merge conflict BEFORE the task becomes Done,
+    // because auto-integration runs as soon as the task is Done and would remove
+    // the worktree before we could set up the conflict.
 
+    // Get current task to access worktree path (task is still in review stage)
     let task = ctx.api().get_task(&task_id).unwrap();
-
-    // Review is automated, so it auto-approves and moves to Done
-    assert!(task.is_done(), "Task should be Done after automated review");
-    assert_eq!(task.artifact("verdict"), Some("LGTM! All checks pass."));
-
-    // =========================================================================
-    // Step 11: Integration fails (real merge conflict) → Back to Working
-    // =========================================================================
+    let worktree_path = std::path::Path::new(task.worktree_path.as_ref().unwrap());
 
     // Create a real merge conflict:
     // 1. Create a file in the task's worktree and commit it
-    let worktree_path = std::path::Path::new(task.worktree_path.as_ref().unwrap());
     std::fs::write(worktree_path.join("conflict.txt"), "Task's version of the file").unwrap();
     std::process::Command::new("git")
         .args(["add", "."])
@@ -509,11 +499,20 @@ fn test_exhaustive_workflow_flow() {
     )
     .unwrap();
 
-    // 3. Try to integrate - should fail with merge conflict
-    let task = ctx
-        .api()
-        .integrate_task(&task_id)
-        .expect("integrate_task should handle conflict gracefully");
+    // NOW let the reviewer complete - task will go Done and auto-integration will fail
+    ctx.set_output(&task_id, MockAgentOutput::Artifact {
+        name: "verdict".to_string(),
+        content: "LGTM! All checks pass.".to_string(),
+    });
+    ctx.tick();
+
+    // =========================================================================
+    // Step 11: Integration fails (auto-triggered) → Back to Working
+    // =========================================================================
+
+    // Auto-integration should have run and failed due to the merge conflict.
+    // The task should have been moved back to work stage.
+    let task = ctx.api().get_task(&task_id).unwrap();
 
     assert_eq!(task.current_stage(), Some("work"), "Should return to work on conflict");
     assert_eq!(task.phase, Phase::Idle);
@@ -530,7 +529,7 @@ fn test_exhaustive_workflow_flow() {
     );
 
     // =========================================================================
-    // Step 12: Work → Review → Done → Integration succeeds → Complete
+    // Step 12: Work → Review → Done → Integration succeeds (auto) → Complete
     // =========================================================================
 
     // First, resolve the conflict on main by reverting the conflicting commit
@@ -553,23 +552,21 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.current_stage(), Some("review"));
 
     // Orchestrator spawns reviewer (automated stage auto-transitions to Done)
+    // Then auto-integration runs and succeeds (no conflict this time)
     ctx.set_output(&task_id, MockAgentOutput::Artifact {
         name: "verdict".to_string(),
         content: "Conflict resolved correctly".to_string(),
     });
     ctx.tick();
 
+    // Auto-integration should have completed successfully
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(task.is_done(), "Automated review should auto-transition to Done");
-
-    // Integration succeeds with real git merge
-    let task = ctx
-        .api()
-        .integrate_task(&task_id)
-        .expect("Should integrate successfully");
-
-    assert!(task.is_done());
-    assert!(task.completed_at.is_some());
+    assert!(task.is_done(), "Task should still be Done after integration");
+    assert!(task.completed_at.is_some(), "Should have completed_at set");
+    assert!(
+        task.worktree_path.is_none(),
+        "Worktree path should be cleared after successful integration"
+    );
 
     // =========================================================================
     // Final Verification

@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::ports::{GitService, WorkflowStore};
+use crate::workflow::domain::Task;
+use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::runtime::Phase;
 
 /// The main API for workflow operations.
 ///
@@ -96,6 +98,56 @@ impl WorkflowApi {
             Some(stage) => Status::active(&stage.name),
             None => Status::Done,
         }
+    }
+
+    /// Get tasks that are Done and ready for integration.
+    ///
+    /// Returns tasks that:
+    /// - Are in Done status
+    /// - Are in Idle phase (not already integrating)
+    /// - Have a worktree path (need merging - cleared after successful integration)
+    /// - Are not subtasks (subtasks share parent's worktree)
+    pub fn get_tasks_needing_integration(&self) -> WorkflowResult<Vec<Task>> {
+        let tasks = self.store.list_tasks()?;
+        Ok(tasks
+            .into_iter()
+            .filter(|t| {
+                t.is_done()
+                    && t.phase == Phase::Idle
+                    && t.worktree_path.is_some()
+                    && t.parent_id.is_none()
+            })
+            .collect())
+    }
+
+    /// Mark a task as being integrated.
+    ///
+    /// This sets the phase to `Integrating` to prevent double-integration
+    /// and to indicate that the merge is in progress.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if the task is not Done or not in Idle phase.
+    pub fn mark_integrating(&self, task_id: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        if !task.is_done() {
+            return Err(WorkflowError::InvalidTransition(
+                "Can only integrate Done tasks".into(),
+            ));
+        }
+
+        if task.phase != Phase::Idle {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Task must be Idle to start integration, but is {:?}",
+                task.phase
+            )));
+        }
+
+        task.phase = Phase::Integrating;
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        self.store.save_task(&task)?;
+        Ok(task)
     }
 }
 

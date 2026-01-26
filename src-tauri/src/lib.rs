@@ -73,6 +73,18 @@ fn start_workflow_orchestrator(
                         let _ = app_handle.emit("task-updated", id);
                     }
                 }
+                orkestra_core::workflow::OrchestratorEvent::IntegrationStarted { task_id, branch } => {
+                    println!("[orchestrator] Starting integration for {task_id} (branch: {branch})");
+                    let _ = app_handle.emit("task-updated", task_id);
+                }
+                orkestra_core::workflow::OrchestratorEvent::IntegrationCompleted { task_id } => {
+                    println!("[orchestrator] Integration completed for {task_id}");
+                    let _ = app_handle.emit("task-updated", task_id);
+                }
+                orkestra_core::workflow::OrchestratorEvent::IntegrationFailed { task_id, error, .. } => {
+                    eprintln!("[orchestrator] Integration failed for {task_id}: {error}");
+                    let _ = app_handle.emit("task-updated", task_id);
+                }
             }
         });
 

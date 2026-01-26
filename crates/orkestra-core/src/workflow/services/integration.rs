@@ -82,12 +82,14 @@ impl WorkflowApi {
     /// Record successful integration (merge).
     ///
     /// This marks the task as fully complete after its branch has been merged.
+    /// Resets the phase from `Integrating` to `Idle` and clears `worktree_path`
+    /// to indicate integration is complete (prevents re-integration on next tick).
     ///
     /// # Errors
     ///
     /// Returns `InvalidTransition` if the task is not Done.
     pub fn integration_succeeded(&self, task_id: &str) -> WorkflowResult<Task> {
-        let task = self.get_task(task_id)?;
+        let mut task = self.get_task(task_id)?;
 
         if !task.is_done() {
             return Err(WorkflowError::InvalidTransition(
@@ -95,8 +97,16 @@ impl WorkflowApi {
             ));
         }
 
-        // Task is already Done - integration is just recording success
-        // Could add an "Integrated" status in the future if needed
+        // Reset phase from Integrating to Idle, and clear worktree_path
+        // to indicate integration is complete (prevents re-integration)
+        let needs_update = task.phase == Phase::Integrating || task.worktree_path.is_some();
+        if needs_update {
+            task.phase = Phase::Idle;
+            task.worktree_path = None;
+            task.updated_at = chrono::Utc::now().to_rfc3339();
+            self.store.save_task(&task)?;
+        }
+
         Ok(task)
     }
 

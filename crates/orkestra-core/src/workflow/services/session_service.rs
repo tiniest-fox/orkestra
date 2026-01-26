@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use crate::orkestra_debug;
 use crate::workflow::domain::{Iteration, SessionState, StageSession};
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Outcome;
@@ -85,6 +86,16 @@ impl SessionService {
                 // It's a resume if the agent has previously exited (resume_count > 0)
                 let is_resume = session.resume_count > 0;
 
+                orkestra_debug!(
+                    "session",
+                    "get_spawn_context {}/{}: session_id={}, is_resume={}, resume_count={}",
+                    task_id,
+                    stage,
+                    session_id,
+                    is_resume,
+                    session.resume_count
+                );
+
                 Ok(SessionSpawnContext {
                     session_id,
                     is_resume,
@@ -134,6 +145,16 @@ impl SessionService {
             }
         };
 
+        orkestra_debug!(
+            "session",
+            "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, resume_count={}",
+            task_id,
+            stage,
+            session.claude_session_id,
+            session.session_state,
+            session.resume_count
+        );
+
         self.store.save_stage_session(&session)?;
 
         // Check for existing active iteration - reuse if present
@@ -179,6 +200,16 @@ impl SessionService {
         session.session_state = SessionState::Active;
         session.agent_pid = Some(pid);
         session.updated_at = now;
+
+        orkestra_debug!(
+            "session",
+            "on_agent_spawned {}/{}: pid={}, claude_session_id={:?}",
+            task_id,
+            stage,
+            pid,
+            session.claude_session_id
+        );
+
         self.store.save_stage_session(&session)
     }
 
@@ -229,6 +260,16 @@ impl SessionService {
         if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
             let now = chrono::Utc::now().to_rfc3339();
             session.agent_finished(&now);
+
+            orkestra_debug!(
+                "session",
+                "on_agent_exited {}/{}: resume_count now {}, claude_session_id={:?}",
+                task_id,
+                stage,
+                session.resume_count,
+                session.claude_session_id
+            );
+
             self.store.save_stage_session(&session)?;
         }
         Ok(())
@@ -239,6 +280,8 @@ impl SessionService {
     /// Called when the stage is approved and we're moving to the next stage.
     /// Completed sessions cannot be resumed.
     pub fn on_stage_completed(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
+        orkestra_debug!("session", "on_stage_completed {}/{}", task_id, stage);
+
         if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
             session.session_state = SessionState::Completed;
             session.agent_pid = None;
@@ -253,6 +296,8 @@ impl SessionService {
     /// Called when the task fails, is blocked, or the stage is restaged.
     /// Abandoned sessions cannot be resumed.
     pub fn on_stage_abandoned(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
+        orkestra_debug!("session", "on_stage_abandoned {}/{}", task_id, stage);
+
         if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
             session.session_state = SessionState::Abandoned;
             session.agent_pid = None;

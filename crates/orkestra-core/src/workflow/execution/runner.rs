@@ -16,6 +16,8 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
 
+use crate::orkestra_debug;
+
 use super::output::StageOutput;
 use super::parser::{check_for_api_error, parse_agent_output};
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessSpawner};
@@ -178,6 +180,13 @@ impl AgentRunner {
 impl AgentRunnerTrait for AgentRunner {
     /// Run an agent synchronously (blocking).
     fn run_sync(&self, config: RunConfig) -> Result<RunResult, RunError> {
+        orkestra_debug!(
+            "runner",
+            "run_sync: session_id={:?}, is_resume={}",
+            config.session_id,
+            config.is_resume
+        );
+
         // Build process config
         let process_config = ProcessConfig {
             session_id: config.session_id,
@@ -190,6 +199,8 @@ impl AgentRunnerTrait for AgentRunner {
             .spawner
             .spawn(&config.working_dir, process_config)
             .map_err(RunError::from)?;
+
+        orkestra_debug!("runner", "run_sync: spawned process");
 
         // Write prompt to stdin
         handle
@@ -223,9 +234,13 @@ impl AgentRunnerTrait for AgentRunner {
         // Process completed normally
         handle.disarm();
 
+        orkestra_debug!("runner", "run_sync: output_len={}", full_output.len());
+
         // Parse the output
         let parsed_output = parse_agent_output(&full_output)
             .map_err(RunError::ParseFailed)?;
+
+        orkestra_debug!("runner", "run_sync: parsed output successfully");
 
         Ok(RunResult {
             raw_output: full_output,
@@ -235,6 +250,12 @@ impl AgentRunnerTrait for AgentRunner {
 
     /// Run an agent asynchronously with events.
     fn run_async(&self, config: RunConfig) -> Result<(u32, Receiver<RunEvent>), RunError> {
+        orkestra_debug!(
+            "runner",
+            "run_async: session_id={:?}, is_resume={}",
+            config.session_id,
+            config.is_resume
+        );
         // Build process config
         let process_config = ProcessConfig {
             session_id: config.session_id.clone(),
@@ -249,6 +270,8 @@ impl AgentRunnerTrait for AgentRunner {
             .map_err(RunError::from)?;
 
         let pid = handle.pid;
+
+        orkestra_debug!("runner", "run_async: spawned pid={}", pid);
 
         // Write prompt to stdin
         handle

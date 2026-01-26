@@ -253,6 +253,9 @@ fn init_workflow_state() -> Result<state::AppState, String> {
 
     let orkestra_dir = project_root.join(".orkestra");
 
+    // Initialize debug logging (controlled by ORKESTRA_DEBUG env var)
+    orkestra_core::debug_log::init(&orkestra_dir);
+
     // Load workflow config (or use default)
     let workflow_config = load_workflow_for_project(&project_root).unwrap_or_else(|e| {
         eprintln!("[workflow] Failed to load workflow config: {e}, using default");

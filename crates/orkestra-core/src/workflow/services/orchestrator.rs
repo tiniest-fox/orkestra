@@ -15,6 +15,7 @@ use std::sync::mpsc::TryRecvError;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::orkestra_debug;
 use crate::workflow::adapters::{ClaudeProcessSpawner, FsCrashRecoveryStore};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::execution::{AgentRunner, RunEvent, StageOutput};
@@ -294,10 +295,25 @@ impl OrchestratorLoop {
                 let is_err = result.is_err();
                 let err_msg = result.as_ref().err().cloned();
 
+                orkestra_debug!(
+                    "orchestrator",
+                    "handle_execution_event {}/{}: completed, is_err={}",
+                    task_id,
+                    stage,
+                    is_err
+                );
+
                 let output = self.executor.handle_event(task_id, stage, event)?;
 
                 if let Some(output) = output {
                     let output_type = output_type_string(&output);
+                    orkestra_debug!(
+                        "orchestrator",
+                        "process_agent_output {}/{}: type={}",
+                        task_id,
+                        stage,
+                        output_type
+                    );
                     let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
                     match api.process_agent_output(task_id, output) {
                         Ok(_) => Ok(Some(OrchestratorEvent::OutputProcessed {
@@ -364,11 +380,25 @@ impl OrchestratorLoop {
             api.get_tasks_needing_agents()?
         };
 
+        orkestra_debug!(
+            "orchestrator",
+            "start_new_executions: {} tasks needing agents, {} active",
+            tasks.len(),
+            active_task_ids.len()
+        );
+
         for task in tasks {
             // Skip if we already have an active execution for this task
             if active_task_ids.contains(&task.id) {
                 continue;
             }
+
+            orkestra_debug!(
+                "orchestrator",
+                "starting execution for {} in stage {:?}",
+                task.id,
+                task.current_stage()
+            );
 
             {
                 let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
@@ -599,12 +629,29 @@ impl OrchestratorLoop {
     fn recover_pending(&self) -> Vec<OrchestratorEvent> {
         let mut events = Vec::new();
 
-        for recovered in self.executor.recover_pending() {
+        let pending = self.executor.recover_pending();
+        orkestra_debug!("recovery", "recover_pending: found {} pending outputs", pending.len());
+
+        for recovered in pending {
+            orkestra_debug!(
+                "recovery",
+                "recovering {}_{}: result_is_ok={}",
+                recovered.task_id,
+                recovered.stage,
+                recovered.result.is_ok()
+            );
+
             match recovered.result {
                 Ok(output) => {
                     if let Ok(api) = self.api.lock() {
                         match api.process_agent_output(&recovered.task_id, output) {
                             Ok(_) => {
+                                orkestra_debug!(
+                                    "recovery",
+                                    "recovered {}_{}: success",
+                                    recovered.task_id,
+                                    recovered.stage
+                                );
                                 if let Err(e) = self.executor.clear_pending(&recovered.task_id, &recovered.stage) {
                                     eprintln!("[orkestra] WARNING: Failed to clear pending for {}/{}: {}", recovered.task_id, recovered.stage, e);
                                 }
@@ -614,6 +661,13 @@ impl OrchestratorLoop {
                                 });
                             }
                             Err(e) => {
+                                orkestra_debug!(
+                                    "recovery",
+                                    "recovered {}_{}: process_agent_output failed: {}",
+                                    recovered.task_id,
+                                    recovered.stage,
+                                    e
+                                );
                                 events.push(OrchestratorEvent::Error {
                                     task_id: Some(recovered.task_id),
                                     error: format!("Failed to process recovered output: {e}"),
@@ -623,6 +677,13 @@ impl OrchestratorLoop {
                     }
                 }
                 Err(e) => {
+                    orkestra_debug!(
+                        "recovery",
+                        "recovered {}_{}: parse failed: {}",
+                        recovered.task_id,
+                        recovered.stage,
+                        e
+                    );
                     events.push(OrchestratorEvent::Error {
                         task_id: Some(recovered.task_id),
                         error: format!("Failed to parse recovered output: {e}"),

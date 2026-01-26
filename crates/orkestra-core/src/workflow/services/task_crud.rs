@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::thread;
 
+use crate::orkestra_debug;
 use crate::title::generate_title_sync;
 use crate::workflow::domain::{Iteration, Task};
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
@@ -65,6 +66,15 @@ impl WorkflowApi {
             spawn_title_generation(self.store.clone(), id.clone(), description.to_string());
         }
 
+        orkestra_debug!(
+            "task",
+            "Created {}: phase={:?}, status={:?}, stage={}",
+            task.id,
+            task.phase,
+            task.status,
+            first_stage.name
+        );
+
         Ok(task)
     }
 
@@ -123,6 +133,14 @@ impl WorkflowApi {
 
         // Spawn async setup - no git work needed, just transitions to Idle
         spawn_async_setup(self.store.clone(), None, id.clone(), None);
+
+        orkestra_debug!(
+            "task",
+            "Created subtask {}: parent={}, phase={:?}",
+            task.id,
+            parent_id,
+            task.phase
+        );
 
         Ok(task)
     }
@@ -233,6 +251,7 @@ fn spawn_async_setup(
     task_id: String,
     base_branch: Option<String>,
 ) {
+    crate::orkestra_debug!("task", "spawn_async_setup {}: starting", task_id);
     thread::spawn(move || {
         // Attempt worktree creation if git is configured
         let result = if let Some(ref git) = git {
@@ -251,12 +270,19 @@ fn spawn_async_setup(
                 match result {
                     Ok(worktree_result) => {
                         // Success - update worktree info and transition to Idle
-                        if let Some(wt) = worktree_result {
-                            task.branch_name = Some(wt.branch_name);
+                        if let Some(ref wt) = worktree_result {
+                            task.branch_name = Some(wt.branch_name.clone());
                             task.worktree_path =
                                 Some(wt.worktree_path.to_string_lossy().to_string());
                         }
                         task.phase = Phase::Idle;
+                        crate::orkestra_debug!(
+                            "task",
+                            "{} setup complete: phase=Idle, worktree={:?}, branch={:?}",
+                            task_id,
+                            task.worktree_path,
+                            task.branch_name
+                        );
                         if let Err(e) = store.save_task(&task) {
                             eprintln!(
                                 "[setup] CRITICAL: Failed to save task {task_id}: {e}"
@@ -266,6 +292,7 @@ fn spawn_async_setup(
                     Err(error) => {
                         // FAIL the task visibly - no silent failures
                         eprintln!("[setup] Setup failed for {task_id}: {error}");
+                        crate::orkestra_debug!("task", "{} setup failed: {}", task_id, error);
                         task.status = Status::Failed {
                             error: Some(error),
                         };

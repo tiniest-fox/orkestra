@@ -1,5 +1,6 @@
 // Core modules - new workflow system
 pub mod adapters;
+pub mod debug_log;
 pub mod error;
 pub mod process;
 pub mod project;

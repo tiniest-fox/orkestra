@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use petname::Generator;
 use rusqlite::{params, Connection, OptionalExtension};
 
+use crate::orkestra_debug;
 use crate::workflow::domain::{Iteration, SessionState, StageSession, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
@@ -66,6 +67,14 @@ impl WorkflowStore for SqliteWorkflowStore {
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
         let depends_json = serde_json::to_string(&task.depends_on)
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        orkestra_debug!(
+            "db",
+            "save_task {}: phase={}, status={}",
+            task.id,
+            phase_str,
+            status_json
+        );
 
         conn.execute(
             "INSERT OR REPLACE INTO workflow_tasks (
@@ -376,6 +385,15 @@ impl WorkflowStore for SqliteWorkflowStore {
         let conn = self.lock_conn()?;
 
         let state_str = session_state_to_str(session.session_state);
+
+        orkestra_debug!(
+            "db",
+            "save_session {}: claude_session_id={:?}, state={}, resume_count={}",
+            session.id,
+            session.claude_session_id,
+            state_str,
+            session.resume_count
+        );
 
         conn.execute(
             "INSERT OR REPLACE INTO workflow_stage_sessions (

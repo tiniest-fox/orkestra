@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
+use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::{
@@ -165,6 +166,8 @@ impl TaskExecutionService {
             .current_stage()
             .ok_or_else(|| ExecutionError::ConfigError("Task not in active stage".into()))?;
 
+        orkestra_debug!("exec", "execute_stage {}/{}: starting", task.id, stage);
+
         // 1. Build prompt
         let config = self.prompt_service.resolve_config(
             &self.workflow,
@@ -172,6 +175,14 @@ impl TaskExecutionService {
             feedback,
             integration_error,
         )?;
+
+        orkestra_debug!(
+            "exec",
+            "execute_stage {}/{}: prompt_len={}",
+            task.id,
+            stage,
+            config.prompt.len()
+        );
 
         // 2. Create session FIRST (generates UUID if new session)
         self.session_service
@@ -191,6 +202,15 @@ impl TaskExecutionService {
             .map(PathBuf::from)
             .unwrap_or_else(|| self.prompt_service.project_root().to_path_buf());
 
+        orkestra_debug!(
+            "exec",
+            "execute_stage {}/{}: session_id={}, is_resume={}",
+            task.id,
+            stage,
+            spawn_ctx.session_id,
+            spawn_ctx.is_resume
+        );
+
         let mut run_config = RunConfig::new(working_dir, config.prompt)
             .with_session(spawn_ctx.session_id, spawn_ctx.is_resume);
 
@@ -201,6 +221,14 @@ impl TaskExecutionService {
         // 5. Run the agent
         match self.runner.run_async(run_config) {
             Ok((pid, events)) => {
+                orkestra_debug!(
+                    "exec",
+                    "execute_stage {}/{}: spawned pid={}",
+                    task.id,
+                    stage,
+                    pid
+                );
+
                 // 6a. Record successful spawn (non-fatal if fails - spawn already happened)
                 if let Err(e) = self.session_service.on_agent_spawned(&task.id, stage, pid) {
                     workflow_warn!("Failed to record agent spawn for {}/{}: {}", task.id, stage, e);
@@ -214,6 +242,14 @@ impl TaskExecutionService {
                 })
             }
             Err(e) => {
+                orkestra_debug!(
+                    "exec",
+                    "execute_stage {}/{}: spawn failed: {}",
+                    task.id,
+                    stage,
+                    e
+                );
+
                 // 6b. Record spawn failure in iteration (non-fatal - spawn already failed)
                 if let Err(session_err) = self.session_service.on_spawn_failed(&task.id, stage, &e.to_string()) {
                     workflow_warn!("Failed to record spawn failure for {}/{}: {}", task.id, stage, session_err);
@@ -319,12 +355,26 @@ impl TaskExecutionService {
     ) -> WorkflowResult<Option<StageOutput>> {
         match event {
             RunEvent::RawOutputReady(raw_output) => {
+                orkestra_debug!(
+                    "exec",
+                    "handle_event {}/{}: raw_output_len={}",
+                    task_id,
+                    stage,
+                    raw_output.len()
+                );
                 if let Err(e) = self.crash_recovery.persist(task_id, stage, &raw_output) {
                     workflow_error!("Failed to persist raw output for {}/{}: {}", task_id, stage, e);
                 }
                 Ok(None)
             }
             RunEvent::Completed(result) => {
+                orkestra_debug!(
+                    "exec",
+                    "handle_event {}/{}: completed, is_ok={}",
+                    task_id,
+                    stage,
+                    result.is_ok()
+                );
                 // Clear crash recovery on success (cleanup, non-critical)
                 if result.is_ok() {
                     if let Err(e) = self.crash_recovery.clear(task_id, stage) {

@@ -7,6 +7,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::orkestra_debug;
 use crate::workflow::ports::CrashRecoveryStore;
 
 // ============================================================================
@@ -55,12 +56,20 @@ impl CrashRecoveryStore for FsCrashRecoveryStore {
     fn persist(&self, task_id: &str, stage: &str, raw_output: &str) -> io::Result<()> {
         self.ensure_dir()?;
         let path = self.output_path(task_id, stage);
+        orkestra_debug!(
+            "recovery",
+            "persist {}_{}: {} bytes",
+            task_id,
+            stage,
+            raw_output.len()
+        );
         fs::write(&path, raw_output)
     }
 
     fn clear(&self, task_id: &str, stage: &str) -> io::Result<()> {
         let path = self.output_path(task_id, stage);
         if path.exists() {
+            orkestra_debug!("recovery", "clear {}_{}", task_id, stage);
             fs::remove_file(&path)?;
         }
         Ok(())
@@ -85,12 +94,23 @@ impl CrashRecoveryStore for FsCrashRecoveryStore {
                 }
             }
         }
+        orkestra_debug!("recovery", "list_pending: found {} files", results.len());
         results
     }
 
     fn read(&self, task_id: &str, stage: &str) -> Option<String> {
         let path = self.output_path(task_id, stage);
-        fs::read_to_string(path).ok()
+        let result = fs::read_to_string(path).ok();
+        if let Some(ref content) = result {
+            orkestra_debug!(
+                "recovery",
+                "read {}_{}: {} bytes",
+                task_id,
+                stage,
+                content.len()
+            );
+        }
+        result
     }
 }
 

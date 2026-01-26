@@ -1,5 +1,6 @@
 //! Human/UI actions: approve, reject, answer questions.
 
+use crate::orkestra_debug;
 use crate::workflow::domain::{Iteration, QuestionAnswer, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase};
@@ -26,6 +27,8 @@ impl WorkflowApi {
             .current_stage()
             .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
             .to_string();
+
+        orkestra_debug!("action", "approve {}: from stage {}", task_id, current_stage);
 
         // End current iteration
         self.end_current_iteration(&task, Outcome::Approved)?;
@@ -55,6 +58,14 @@ impl WorkflowApi {
 
         if task.is_done() {
             task.completed_at = Some(now);
+            orkestra_debug!("action", "approve {}: task is now Done", task_id);
+        } else {
+            orkestra_debug!(
+                "action",
+                "approve {}: moved to stage {:?}",
+                task_id,
+                task.current_stage()
+            );
         }
 
         self.store.save_task(&task)?;
@@ -80,6 +91,14 @@ impl WorkflowApi {
             .current_stage()
             .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
             .to_string();
+
+        orkestra_debug!(
+            "action",
+            "reject {}: stage={}, feedback_len={}",
+            task_id,
+            current_stage,
+            feedback.len()
+        );
 
         // End current iteration with rejection
         self.end_current_iteration(&task, Outcome::rejected(&current_stage, feedback))?;
@@ -121,6 +140,13 @@ impl WorkflowApi {
                 "No pending questions to answer".into(),
             ));
         }
+
+        orkestra_debug!(
+            "action",
+            "answer_questions {}: {} answers provided",
+            task_id,
+            answers.len()
+        );
 
         // Move questions to history with answers
         task.question_history.extend(answers);

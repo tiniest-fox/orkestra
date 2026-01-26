@@ -1,5 +1,6 @@
 //! Agent/orchestrator actions: agent started, process output, get pending tasks.
 
+use crate::orkestra_debug;
 use crate::workflow::domain::{Iteration, Task};
 use crate::workflow::execution::StageOutput;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
@@ -25,6 +26,15 @@ impl WorkflowApi {
 
         task.phase = Phase::AgentWorking;
         task.updated_at = chrono::Utc::now().to_rfc3339();
+
+        orkestra_debug!(
+            "action",
+            "agent_started {}: phase={:?}, stage={:?}",
+            task_id,
+            task.phase,
+            task.current_stage()
+        );
+
         self.store.save_task(&task)?;
         Ok(task)
     }
@@ -52,6 +62,23 @@ impl WorkflowApi {
             .current_stage()
             .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
             .to_string();
+
+        let output_type = match &output {
+            StageOutput::Artifact { .. } => "artifact",
+            StageOutput::Questions { .. } => "questions",
+            StageOutput::Subtasks { .. } => "subtasks",
+            StageOutput::Restage { .. } => "restage",
+            StageOutput::Failed { .. } => "failed",
+            StageOutput::Blocked { .. } => "blocked",
+        };
+
+        orkestra_debug!(
+            "action",
+            "process_agent_output {}: type={}, stage={}",
+            task_id,
+            output_type,
+            current_stage
+        );
 
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -167,6 +194,14 @@ impl WorkflowApi {
                 task.updated_at = now;
             }
         }
+
+        orkestra_debug!(
+            "action",
+            "process_agent_output {} complete: phase={:?}, status={:?}",
+            task_id,
+            task.phase,
+            task.status
+        );
 
         self.store.save_task(&task)?;
         Ok(task)

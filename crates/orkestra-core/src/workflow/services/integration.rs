@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use crate::orkestra_debug;
 use crate::workflow::domain::{Iteration, Task};
 use crate::workflow::ports::{GitError, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase, Status};
@@ -38,8 +39,11 @@ impl WorkflowApi {
 
         // If no branch, nothing to merge
         let Some(branch_name) = &task.branch_name else {
+            orkestra_debug!("integration", "integrate_task {}: no branch, marking success", task_id);
             return self.integration_succeeded(task_id);
         };
+
+        orkestra_debug!("integration", "starting {}: branch={}", task_id, branch_name);
 
         // Commit any pending changes in the worktree
         if let Some(worktree_path) = &task.worktree_path {
@@ -54,6 +58,7 @@ impl WorkflowApi {
         // Attempt the merge
         match git.merge_to_primary(branch_name) {
             Ok(_merge_result) => {
+                orkestra_debug!("integration", "completed {}: merge succeeded", task_id);
                 // Cleanup worktree but keep branch for history
                 if task.worktree_path.is_some() {
                     if let Err(e) = git.remove_worktree(task_id, false) {
@@ -63,6 +68,12 @@ impl WorkflowApi {
                 self.integration_succeeded(task_id)
             }
             Err(GitError::MergeConflict { conflict_files, .. }) => {
+                orkestra_debug!(
+                    "integration",
+                    "failed {}: merge conflict, {} files",
+                    task_id,
+                    conflict_files.len()
+                );
                 // Abort the failed merge
                 if let Err(e) = git.abort_merge() {
                     workflow_warn!("Failed to abort merge for {}: {}", task_id, e);
@@ -70,6 +81,7 @@ impl WorkflowApi {
                 self.integration_failed(task_id, "Merge conflict", conflict_files)
             }
             Err(e) => {
+                orkestra_debug!("integration", "failed {}: {}", task_id, e);
                 // Non-conflict merge error
                 if let Err(abort_err) = git.abort_merge() {
                     workflow_warn!("Failed to abort merge for {}: {}", task_id, abort_err);

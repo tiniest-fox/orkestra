@@ -68,16 +68,41 @@ pub enum OrkAction {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "tool", rename_all = "snake_case")]
 pub enum ToolInput {
-    Bash { command: String },
-    Read { file_path: String },
-    Write { file_path: String },
-    Edit { file_path: String },
-    Glob { pattern: String },
-    Grep { pattern: String },
-    Task { description: String },
-    TodoWrite { todos: Vec<TodoItem> },
-    Ork { ork_action: OrkAction },
-    Other { summary: String },
+    Bash {
+        command: String,
+    },
+    Read {
+        file_path: String,
+    },
+    Write {
+        file_path: String,
+    },
+    Edit {
+        file_path: String,
+    },
+    Glob {
+        pattern: String,
+    },
+    Grep {
+        pattern: String,
+    },
+    Task {
+        description: String,
+    },
+    TodoWrite {
+        todos: Vec<TodoItem>,
+    },
+    Ork {
+        ork_action: OrkAction,
+    },
+    /// Structured output generation (final agent response).
+    StructuredOutput {
+        /// The output type (e.g., "plan", "summary", "questions", "subtasks")
+        output_type: String,
+    },
+    Other {
+        summary: String,
+    },
 }
 
 /// Default resume type for backwards compatibility.

@@ -284,6 +284,7 @@ export type ToolInput =
   | { tool: "task"; description: string }
   | { tool: "todo_write"; todos: TodoItem[] }
   | { tool: "ork"; ork_action: OrkAction }
+  | { tool: "structured_output"; output_type: string }
   | { tool: "other"; summary: string };
 
 /**

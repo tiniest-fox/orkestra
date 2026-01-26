@@ -26,6 +26,10 @@ use serde_json::Value;
 
 use crate::process::spawn_stderr_reader;
 
+/// Shared output format template for all utility tasks.
+const OUTPUT_FORMAT_TEMPLATE: &str =
+    include_str!("../prompts/templates/utilities/output_format.md");
+
 /// Built-in utility task definitions.
 ///
 /// Each task is defined by `include_str!` macros loading the prompt and schema.
@@ -134,7 +138,10 @@ impl UtilityRunner {
             .map_err(|e| UtilityError::SchemaError(e.to_string()))?;
 
         // Render prompt with context
-        let prompt = render_prompt(&prompt_template, context)?;
+        let mut prompt = render_prompt(&prompt_template, context)?;
+
+        // Inject output format section based on schema
+        prompt.push_str(&generate_output_format_section(&schema));
 
         // Execute task
         let output = self.execute(&prompt, &schema_str)?;
@@ -152,8 +159,6 @@ impl UtilityRunner {
             .args([
                 "--model",
                 &self.model,
-                "--max-turns",
-                "1",
                 "--print",
                 "--output-format",
                 "json",
@@ -217,6 +222,15 @@ fn render_prompt(template: &str, context: &Value) -> Result<String, UtilityError
     hb.register_escape_fn(handlebars::no_escape);
     hb.render_template(template, context)
         .map_err(|e| UtilityError::ParseError(format!("Template render failed: {e}")))
+}
+
+/// Generate an output format section from a JSON schema.
+fn generate_output_format_section(schema: &Value) -> String {
+    let schema_pretty = serde_json::to_string_pretty(schema).unwrap_or_default();
+    let mut hb = Handlebars::new();
+    hb.register_escape_fn(handlebars::no_escape);
+    hb.render_template(OUTPUT_FORMAT_TEMPLATE, &serde_json::json!({ "schema": schema_pretty }))
+        .unwrap_or_default()
 }
 
 /// Validate output against a JSON schema.

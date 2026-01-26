@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 use orkestra_core::{
     adapters::sqlite::DatabaseConnection,
     find_project_root,
+    utility::UtilityRunner,
     workflow::{
         load_workflow_for_project, Git2GitService, GitService, Phase, SqliteWorkflowStore, Status,
         Task, WorkflowApi, WorkflowConfig,
@@ -28,6 +29,11 @@ enum Commands {
     Task {
         #[command(subcommand)]
         action: TaskAction,
+    },
+    /// Utility task commands
+    Utility {
+        #[command(subcommand)]
+        action: UtilityAction,
     },
 }
 
@@ -71,11 +77,26 @@ enum TaskAction {
     },
 }
 
+#[derive(Subcommand)]
+enum UtilityAction {
+    /// Run a utility task
+    Run {
+        /// Task name (e.g., "generate_title")
+        name: String,
+        /// Context as JSON (e.g., '{"description": "Fix the login bug"}')
+        #[arg(short, long)]
+        context: String,
+    },
+    /// List available utility tasks
+    List,
+}
+
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Task { action } => handle_task_action(action),
+        Commands::Utility { action } => handle_utility_action(action),
     }
 }
 
@@ -284,6 +305,41 @@ fn handle_task_action(action: TaskAction) {
 
             println!("Rejected task: {}", task.id);
             println!("Stage: {} (new iteration)", task.current_stage().unwrap_or("-"));
+        }
+    }
+}
+
+fn handle_utility_action(action: UtilityAction) {
+    match action {
+        UtilityAction::Run { name, context } => {
+            // Parse context JSON
+            let context: serde_json::Value = match serde_json::from_str(&context) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error parsing context JSON: {e}");
+                    std::process::exit(1);
+                }
+            };
+
+            let runner = UtilityRunner::new();
+            match runner.run(&name, &context) {
+                Ok(output) => {
+                    // Pretty print the output
+                    let formatted = serde_json::to_string_pretty(&output).unwrap_or_else(|_| output.to_string());
+                    println!("{}", formatted);
+                }
+                Err(e) => {
+                    eprintln!("Error running utility task: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        UtilityAction::List => {
+            println!("Available utility tasks:");
+            println!("  - generate_title  Generate a concise title from a description");
+            println!();
+            println!("Usage:");
+            println!("  ork utility run generate_title -c '{{\"description\": \"Fix the login bug\"}}'");
         }
     }
 }

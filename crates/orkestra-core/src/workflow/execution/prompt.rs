@@ -306,8 +306,8 @@ impl<'a> From<&'a QuestionAnswer> for QuestionAnswerContext<'a> {
 pub struct ResolvedAgentConfig {
     /// The complete prompt to send to the agent.
     pub prompt: String,
-    /// JSON schema for structured output (if available).
-    pub json_schema: Option<String>,
+    /// JSON schema for structured output (required).
+    pub json_schema: String,
     /// Session type identifier (e.g., "planning", "work").
     pub session_type: String,
 }
@@ -396,10 +396,17 @@ pub fn load_custom_schema(project_root: Option<&Path>, path: &str) -> std::io::R
 ///
 /// Generates schema dynamically based on stage configuration,
 /// or loads custom schema if specified.
-pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>) -> Option<String> {
+pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>) -> String {
     // Check for custom schema file first
     if let Some(schema_file) = &stage_config.agent.schema_file {
-        return load_custom_schema(project_root, schema_file).ok();
+        if let Ok(custom_schema) = load_custom_schema(project_root, schema_file) {
+            return custom_schema;
+        }
+        // Fall through to dynamic generation if custom file not found
+        eprintln!(
+            "[warn] Custom schema file '{}' not found, using generated schema",
+            schema_file
+        );
     }
 
     // Generate schema dynamically based on stage config
@@ -407,7 +414,7 @@ pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>)
         artifact_name: &stage_config.artifact,
         capabilities: &stage_config.capabilities,
     };
-    Some(crate::prompts::generate_stage_schema(&schema_config))
+    crate::prompts::generate_stage_schema(&schema_config)
 }
 
 /// Resolve complete agent configuration for a stage.
@@ -928,30 +935,24 @@ mod tests {
         let planning = StageConfig::new("planning", "plan")
             .with_capabilities(StageCapabilities::with_questions());
         let schema = get_agent_schema(&planning, None);
-        assert!(schema.is_some());
-        let schema_str = schema.unwrap();
         // Should contain the artifact name in the type enum
-        assert!(schema_str.contains("\"plan\""));
+        assert!(schema.contains("\"plan\""));
         // Should have questions capability
-        assert!(schema_str.contains("\"questions\""));
+        assert!(schema.contains("\"questions\""));
 
         // Work stage without questions
         let work = StageConfig::new("work", "summary");
         let schema = get_agent_schema(&work, None);
-        assert!(schema.is_some());
-        let schema_str = schema.unwrap();
-        assert!(schema_str.contains("\"summary\""));
+        assert!(schema.contains("\"summary\""));
         // Should NOT have questions (no capability)
-        assert!(!schema_str.contains("\"questions\""));
+        assert!(!schema.contains("\"questions\""));
 
         // Review stage with restage capability
         let review = StageConfig::new("review", "verdict")
             .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]));
         let schema = get_agent_schema(&review, None);
-        assert!(schema.is_some());
-        let schema_str = schema.unwrap();
-        assert!(schema_str.contains("\"verdict\""));
-        assert!(schema_str.contains("\"restage\"")); // restage type
+        assert!(schema.contains("\"verdict\""));
+        assert!(schema.contains("\"restage\"")); // restage type
     }
 
     #[test]

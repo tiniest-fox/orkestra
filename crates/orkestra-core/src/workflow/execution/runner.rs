@@ -32,8 +32,8 @@ pub struct RunConfig {
     pub working_dir: PathBuf,
     /// The prompt to send to the agent.
     pub prompt: String,
-    /// Optional JSON schema for structured output.
-    pub json_schema: Option<String>,
+    /// JSON schema for structured output (required).
+    pub json_schema: String,
     /// Session ID (generated upfront, always present).
     pub session_id: Option<String>,
     /// Whether this is a resume (use --resume) or first spawn (use --session-id).
@@ -45,11 +45,17 @@ pub struct RunConfig {
 
 impl RunConfig {
     /// Create a new run configuration.
-    pub fn new(working_dir: impl Into<PathBuf>, prompt: impl Into<String>) -> Self {
+    ///
+    /// JSON schema is required - we always need structured output from agents.
+    pub fn new(
+        working_dir: impl Into<PathBuf>,
+        prompt: impl Into<String>,
+        json_schema: impl Into<String>,
+    ) -> Self {
         Self {
             working_dir: working_dir.into(),
             prompt: prompt.into(),
-            json_schema: None,
+            json_schema: json_schema.into(),
             session_id: None,
             is_resume: false,
             task_id: None,
@@ -59,12 +65,6 @@ impl RunConfig {
     /// Set the task ID (for mock runner output queue lookup).
     pub fn with_task_id(mut self, task_id: impl Into<String>) -> Self {
         self.task_id = Some(task_id.into());
-        self
-    }
-
-    /// Set the JSON schema for structured output.
-    pub fn with_schema(mut self, schema: impl Into<String>) -> Self {
-        self.json_schema = Some(schema.into());
         self
     }
 
@@ -194,10 +194,7 @@ impl AgentRunnerTrait for AgentRunner {
         );
 
         // Parse the schema for validation (before moving json_schema to process_config)
-        let schema: Option<serde_json::Value> = config
-            .json_schema
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok());
+        let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
         // Build process config
         let process_config = ProcessConfig {
@@ -294,9 +291,7 @@ impl AgentRunnerTrait for AgentRunner {
         let (tx, rx) = mpsc::channel();
 
         // Parse the schema for validation
-        let schema: Option<serde_json::Value> = config
-            .json_schema
-            .and_then(|s| serde_json::from_str(&s).ok());
+        let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
         // Spawn background thread to read output
         thread::spawn(move || {
@@ -574,13 +569,12 @@ mod tests {
 
     #[test]
     fn test_run_config_builder() {
-        let config = RunConfig::new("/tmp/work", "Do the thing")
-            .with_schema(r#"{"type":"object"}"#)
+        let config = RunConfig::new("/tmp/work", "Do the thing", r#"{"type":"object"}"#)
             .with_session("session-123", true);
 
         assert_eq!(config.working_dir, PathBuf::from("/tmp/work"));
         assert_eq!(config.prompt, "Do the thing");
-        assert_eq!(config.json_schema, Some(r#"{"type":"object"}"#.to_string()));
+        assert_eq!(config.json_schema, r#"{"type":"object"}"#);
         assert_eq!(config.session_id, Some("session-123".to_string()));
         assert!(config.is_resume);
     }
@@ -604,6 +598,8 @@ mod tests {
         use super::*;
         use mock::MockAgentRunner;
 
+        const TEST_SCHEMA: &str = r#"{"type":"object"}"#;
+
         #[test]
         fn test_mock_runner_sync() {
             let runner = MockAgentRunner::new();
@@ -614,7 +610,7 @@ mod tests {
                 },
             );
 
-            let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo the work");
+            let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo the work", TEST_SCHEMA);
             let result = runner.run_sync(config).unwrap();
 
             assert!(matches!(result.parsed_output, StageOutput::Artifact { .. }));
@@ -630,7 +626,7 @@ mod tests {
                 },
             );
 
-            let config = RunConfig::new("/tmp", "**Task ID**: task-2\nPlan this");
+            let config = RunConfig::new("/tmp", "**Task ID**: task-2\nPlan this", TEST_SCHEMA);
             let (pid, rx) = runner.run_async(config).unwrap();
 
             assert!(pid >= 10000);
@@ -656,7 +652,7 @@ mod tests {
                 },
             );
 
-            let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo work");
+            let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo work", TEST_SCHEMA);
             let _ = runner.run_sync(config);
 
             let calls = runner.calls();

@@ -133,13 +133,13 @@ pub fn prepare_path_env() -> String {
 ///   - `is_resume=false`: passes `--session-id <uuid>` (first spawn)
 ///   - `is_resume=true`: passes `--resume <uuid>` (continuing session)
 /// * `is_resume` - Whether this is resuming an existing session
-/// * `json_schema` - Optional JSON schema for structured output (uses --output-format json)
+/// * `json_schema` - JSON schema for structured output (required)
 pub fn spawn_claude_process(
     project_root: &Path,
     path_env: &str,
     session_id: Option<&str>,
     is_resume: bool,
-    json_schema: Option<&str>,
+    json_schema: &str,
 ) -> std::io::Result<Child> {
     let mut cmd = Command::new("claude");
 
@@ -154,13 +154,8 @@ pub fn spawn_claude_process(
 
     cmd.args(["--print", "--verbose"]);
 
-    // When using JSON schema, use --output-format json for structured output
-    // Otherwise use stream-json for real-time updates
-    if let Some(schema) = json_schema {
-        cmd.args(["--output-format", "json", "--json-schema", schema]);
-    } else {
-        cmd.args(["--output-format", "stream-json"]);
-    }
+    // Always use structured JSON output with schema
+    cmd.args(["--output-format", "json", "--json-schema", json_schema]);
 
     cmd.args(["--dangerously-skip-permissions"])
         .env("PATH", path_env)

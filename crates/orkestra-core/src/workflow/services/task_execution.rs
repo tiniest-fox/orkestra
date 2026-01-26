@@ -172,10 +172,20 @@ impl TaskExecutionService {
             spawn_ctx.is_resume
         );
 
-        // 3. Build prompt based on whether this is a resume
+        // 3. Get JSON schema (needed for BOTH first spawn and resume)
+        // Claude Code requires --json-schema on every invocation to enforce structured output
+        let stage_config = self.workflow.stage(stage).ok_or_else(|| {
+            ExecutionError::ConfigError(format!("Unknown stage: {stage}"))
+        })?;
+        let json_schema = crate::workflow::execution::get_agent_schema(
+            stage_config,
+            Some(self.prompt_service.project_root()),
+        );
+
+        // 4. Build prompt based on whether this is a resume
         // If resuming, Claude already has the full context - send a short resume prompt
         // If first spawn, send the full prompt with agent definition + task context
-        let (prompt, json_schema) = if spawn_ctx.is_resume {
+        let prompt = if spawn_ctx.is_resume {
             // Convert IterationTrigger to ResumeType for prompt building
             let resume_type = trigger_to_resume_type(trigger);
             let prompt =
@@ -187,8 +197,7 @@ impl TaskExecutionService {
                 stage,
                 prompt.len()
             );
-            // Resume prompts don't need a schema - Claude already knows the expected output format
-            (prompt, None)
+            prompt
         } else {
             let config = self.prompt_service.resolve_config(
                 &self.workflow,
@@ -203,25 +212,21 @@ impl TaskExecutionService {
                 stage,
                 config.prompt.len()
             );
-            (config.prompt, config.json_schema)
+            config.prompt
         };
 
-        // 4. Build run config with session info
+        // 5. Build run config with session info
         let working_dir = task
             .worktree_path
             .as_ref()
             .map(PathBuf::from)
             .unwrap_or_else(|| self.prompt_service.project_root().to_path_buf());
 
-        let mut run_config = RunConfig::new(working_dir, prompt)
+        let run_config = RunConfig::new(working_dir, prompt, json_schema)
             .with_session(spawn_ctx.session_id, spawn_ctx.is_resume)
             .with_task_id(&task.id);
 
-        if let Some(schema) = json_schema {
-            run_config = run_config.with_schema(schema);
-        }
-
-        // 5. Run the agent
+        // 6. Run the agent
         match self.runner.run_async(run_config) {
             Ok((pid, events)) => {
                 orkestra_debug!(
@@ -306,12 +311,19 @@ impl TaskExecutionService {
             .get_spawn_context(&task.id, stage)
             .map_err(|e| ExecutionError::SessionError(e.to_string()))?;
 
+        // Get JSON schema (needed for BOTH first spawn and resume)
+        let stage_config = self.workflow.stage(stage).ok_or_else(|| {
+            ExecutionError::ConfigError(format!("Unknown stage: {stage}"))
+        })?;
+        let json_schema = crate::workflow::execution::get_agent_schema(
+            stage_config,
+            Some(self.prompt_service.project_root()),
+        );
+
         // Build prompt based on whether this is a resume
-        let (prompt, json_schema) = if spawn_ctx.is_resume {
+        let prompt = if spawn_ctx.is_resume {
             let resume_type = trigger_to_resume_type(trigger);
-            let prompt =
-                build_resume_prompt(resume_type, Some(self.prompt_service.project_root()))?;
-            (prompt, None)
+            build_resume_prompt(resume_type, Some(self.prompt_service.project_root()))?
         } else {
             let config = self.prompt_service.resolve_config(
                 &self.workflow,
@@ -319,7 +331,7 @@ impl TaskExecutionService {
                 None, // No feedback on first spawn
                 None, // No integration error on first spawn
             )?;
-            (config.prompt, config.json_schema)
+            config.prompt
         };
 
         // Build run config with session info
@@ -329,13 +341,9 @@ impl TaskExecutionService {
             .map(PathBuf::from)
             .unwrap_or_else(|| self.prompt_service.project_root().to_path_buf());
 
-        let mut run_config = RunConfig::new(working_dir, prompt)
+        let run_config = RunConfig::new(working_dir, prompt, json_schema)
             .with_session(spawn_ctx.session_id, spawn_ctx.is_resume)
             .with_task_id(&task.id);
-
-        if let Some(schema) = json_schema {
-            run_config = run_config.with_schema(schema);
-        }
 
         // Run synchronously
         let result = match self.runner.run_sync(run_config) {

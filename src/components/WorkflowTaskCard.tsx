@@ -87,11 +87,8 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
         <p className="text-gray-500 text-xs mt-1 line-clamp-2">{task.description}</p>
       )}
 
-      <div className="flex items-center justify-between mt-3">
+      <div className="mt-3">
         <span className="text-gray-400 text-xs font-mono">{task.id}</span>
-        {task.status.type === "active" && (
-          <span className="text-gray-400 text-xs">{task.status.stage}</span>
-        )}
       </div>
 
       {errorText && (isFailed || isBlocked) && (

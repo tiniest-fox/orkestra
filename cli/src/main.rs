@@ -239,7 +239,8 @@ fn handle_task_action(action: TaskAction) {
                     for iter in iterations {
                         let outcome_str = iter
                             .outcome
-                            .as_ref().map_or_else(|| "in progress".to_string(), |o| format!("{o:?}"));
+                            .as_ref()
+                            .map_or_else(|| "in progress".to_string(), |o| format!("{o:?}"));
                         println!(
                             "  - {} (stage: {}, outcome: {})",
                             iter.id, iter.stage, outcome_str

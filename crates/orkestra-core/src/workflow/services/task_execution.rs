@@ -153,7 +153,9 @@ impl TaskExecutionService {
         // 1. Create session FIRST (generates UUID if new session)
         self.session_service
             .on_spawn_starting(&task.id, stage)
-            .map_err(|e| ExecutionError::SessionError(format!("Failed to create spawn session: {e}")))?;
+            .map_err(|e| {
+                ExecutionError::SessionError(format!("Failed to create spawn session: {e}"))
+            })?;
 
         // 2. Get session context to determine if this is a resume
         let spawn_ctx = self
@@ -176,7 +178,8 @@ impl TaskExecutionService {
         let (prompt, json_schema) = if spawn_ctx.is_resume {
             // Convert IterationTrigger to ResumeType for prompt building
             let resume_type = trigger_to_resume_type(trigger);
-            let prompt = build_resume_prompt(resume_type, Some(self.prompt_service.project_root()))?;
+            let prompt =
+                build_resume_prompt(resume_type, Some(self.prompt_service.project_root()))?;
             orkestra_debug!(
                 "exec",
                 "execute_stage {}/{}: using resume prompt (len={})",
@@ -231,7 +234,12 @@ impl TaskExecutionService {
 
                 // 6a. Record successful spawn (non-fatal if fails - spawn already happened)
                 if let Err(e) = self.session_service.on_agent_spawned(&task.id, stage, pid) {
-                    workflow_warn!("Failed to record agent spawn for {}/{}: {}", task.id, stage, e);
+                    workflow_warn!(
+                        "Failed to record agent spawn for {}/{}: {}",
+                        task.id,
+                        stage,
+                        e
+                    );
                 }
 
                 Ok(ExecutionHandle {
@@ -251,8 +259,16 @@ impl TaskExecutionService {
                 );
 
                 // 6b. Record spawn failure in iteration (non-fatal - spawn already failed)
-                if let Err(session_err) = self.session_service.on_spawn_failed(&task.id, stage, &e.to_string()) {
-                    workflow_warn!("Failed to record spawn failure for {}/{}: {}", task.id, stage, session_err);
+                if let Err(session_err) =
+                    self.session_service
+                        .on_spawn_failed(&task.id, stage, &e.to_string())
+                {
+                    workflow_warn!(
+                        "Failed to record spawn failure for {}/{}: {}",
+                        task.id,
+                        stage,
+                        session_err
+                    );
                 }
 
                 Err(e.into())
@@ -280,7 +296,9 @@ impl TaskExecutionService {
         // Create session FIRST (generates UUID if new session)
         self.session_service
             .on_spawn_starting(&task.id, stage)
-            .map_err(|e| ExecutionError::SessionError(format!("Failed to create spawn session: {e}")))?;
+            .map_err(|e| {
+                ExecutionError::SessionError(format!("Failed to create spawn session: {e}"))
+            })?;
 
         // Get session context to determine if this is a resume
         let spawn_ctx = self
@@ -291,7 +309,8 @@ impl TaskExecutionService {
         // Build prompt based on whether this is a resume
         let (prompt, json_schema) = if spawn_ctx.is_resume {
             let resume_type = trigger_to_resume_type(trigger);
-            let prompt = build_resume_prompt(resume_type, Some(self.prompt_service.project_root()))?;
+            let prompt =
+                build_resume_prompt(resume_type, Some(self.prompt_service.project_root()))?;
             (prompt, None)
         } else {
             let config = self.prompt_service.resolve_config(
@@ -324,14 +343,27 @@ impl TaskExecutionService {
                 // Record successful spawn (non-fatal - spawn already happened)
                 if let Err(e) = self.session_service.on_agent_spawned(&task.id, stage, 0) {
                     // Note: sync execution doesn't have real PID, using 0 as placeholder
-                    workflow_warn!("Failed to record agent spawn for {}/{}: {}", task.id, stage, e);
+                    workflow_warn!(
+                        "Failed to record agent spawn for {}/{}: {}",
+                        task.id,
+                        stage,
+                        e
+                    );
                 }
                 result
             }
             Err(e) => {
                 // Record spawn/execution failure (non-fatal - spawn already failed)
-                if let Err(session_err) = self.session_service.on_spawn_failed(&task.id, stage, &e.to_string()) {
-                    workflow_warn!("Failed to record spawn failure for {}/{}: {}", task.id, stage, session_err);
+                if let Err(session_err) =
+                    self.session_service
+                        .on_spawn_failed(&task.id, stage, &e.to_string())
+                {
+                    workflow_warn!(
+                        "Failed to record spawn failure for {}/{}: {}",
+                        task.id,
+                        stage,
+                        session_err
+                    );
                 }
                 return Err(e.into());
             }
@@ -339,7 +371,12 @@ impl TaskExecutionService {
 
         // Record agent exited (cleanup)
         if let Err(e) = self.session_service.on_agent_exited(&task.id, stage) {
-            workflow_warn!("Failed to record agent exit for {}/{}: {}", task.id, stage, e);
+            workflow_warn!(
+                "Failed to record agent exit for {}/{}: {}",
+                task.id,
+                stage,
+                e
+            );
         }
 
         Ok(result.parsed_output)
@@ -366,7 +403,12 @@ impl TaskExecutionService {
 
                 // Record agent exited (cleanup, non-critical)
                 if let Err(e) = self.session_service.on_agent_exited(task_id, stage) {
-                    workflow_warn!("Failed to record agent exit for {}/{}: {}", task_id, stage, e);
+                    workflow_warn!(
+                        "Failed to record agent exit for {}/{}: {}",
+                        task_id,
+                        stage,
+                        e
+                    );
                 }
 
                 // Return parsed output
@@ -472,20 +514,36 @@ mod tests {
         let session_service = SessionService::new(store.clone());
 
         // Start an agent - session ID is generated upfront
-        session_service.on_spawn_starting("task-1", "planning").unwrap();
-        session_service.on_agent_spawned("task-1", "planning", 12345).unwrap();
+        session_service
+            .on_spawn_starting("task-1", "planning")
+            .unwrap();
+        session_service
+            .on_agent_spawned("task-1", "planning", 12345)
+            .unwrap();
 
         // Session ID should be available immediately (generated in on_spawn_starting)
-        let ctx = session_service.get_spawn_context("task-1", "planning").unwrap();
-        assert!(!ctx.session_id.is_empty(), "Session ID should be generated upfront");
+        let ctx = session_service
+            .get_spawn_context("task-1", "planning")
+            .unwrap();
+        assert!(
+            !ctx.session_id.is_empty(),
+            "Session ID should be generated upfront"
+        );
         assert!(!ctx.is_resume, "First spawn should not be a resume");
 
         // Simulate agent finishing and spawning again
-        session_service.on_agent_exited("task-1", "planning").unwrap();
+        session_service
+            .on_agent_exited("task-1", "planning")
+            .unwrap();
 
         // Get context again - should now be a resume
-        let ctx2 = session_service.get_spawn_context("task-1", "planning").unwrap();
-        assert_eq!(ctx2.session_id, ctx.session_id, "Session ID should remain the same");
+        let ctx2 = session_service
+            .get_spawn_context("task-1", "planning")
+            .unwrap();
+        assert_eq!(
+            ctx2.session_id, ctx.session_id,
+            "Session ID should remain the same"
+        );
         assert!(ctx2.is_resume, "Second spawn should be a resume");
     }
 }

@@ -250,7 +250,11 @@ mod tests {
         assert!(type_enum.iter().any(|v| v == "subtasks"));
         assert!(parsed.get("properties").unwrap().get("subtasks").is_some());
         // Should also have skip_reason property for skipping breakdown
-        assert!(parsed.get("properties").unwrap().get("skip_reason").is_some());
+        assert!(parsed
+            .get("properties")
+            .unwrap()
+            .get("skip_reason")
+            .is_some());
     }
 
     #[test]

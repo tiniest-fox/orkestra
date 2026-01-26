@@ -5,16 +5,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { useWorkflowActions, useWorkflowQueries } from "../hooks/useWorkflow";
 import type {
-  WorkflowTask,
+  LogEntry,
   WorkflowConfig,
   WorkflowIteration,
   WorkflowQuestion,
   WorkflowQuestionAnswer,
-  LogEntry,
+  WorkflowTask,
 } from "../types/workflow";
-import { needsReview, getTaskStage, capitalizeFirst } from "../types/workflow";
-import { useWorkflowActions, useWorkflowQueries } from "../hooks/useWorkflow";
+import { capitalizeFirst, getTaskStage, needsReview } from "../types/workflow";
 import { LogList } from "./LogEntryView";
 
 /**
@@ -428,9 +428,7 @@ export function WorkflowTaskDetailSidebar({
     // Poll while agent is running on current stage (but not if there's an error)
     const currentStage = getTaskStage(task.status);
     const shouldPoll =
-      task.phase === "agent_working" &&
-      activeLogStage === currentStage &&
-      !logsError;
+      task.phase === "agent_working" && activeLogStage === currentStage && !logsError;
 
     if (shouldPoll) {
       const interval = setInterval(fetchLogs, 2000);
@@ -596,9 +594,7 @@ export function WorkflowTaskDetailSidebar({
         {activeTab === "details" && (
           <div className="flex-1 overflow-auto p-4">
             <h2 className="font-semibold text-lg text-gray-900">{task.title}</h2>
-            {task.description && (
-              <p className="text-gray-600 text-sm mt-2">{task.description}</p>
-            )}
+            {task.description && <p className="text-gray-600 text-sm mt-2">{task.description}</p>}
             {task.status.type === "failed" && task.status.error && (
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
                 <div className="text-xs font-medium text-red-700 mb-1">Error</div>

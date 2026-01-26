@@ -16,9 +16,9 @@ embed_migrations!("src/adapters/sqlite/migrations");
 /// This is called automatically when opening a database connection.
 /// It's safe to call multiple times - already-applied migrations are skipped.
 pub fn run(conn: &mut Connection) -> Result<()> {
-    migrations::runner()
-        .run(conn)
-        .map_err(|e| crate::error::OrkestraError::InvalidInput(format!("Migration error: {}", e)))?;
+    migrations::runner().run(conn).map_err(|e| {
+        crate::error::OrkestraError::InvalidInput(format!("Migration error: {}", e))
+    })?;
     Ok(())
 }
 

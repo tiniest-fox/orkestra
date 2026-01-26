@@ -1,12 +1,6 @@
-import type {
-  WorkflowTask,
-  WorkflowConfig,
-  WorkflowArtifact,
-} from "../../types/workflow";
+import type { WorkflowArtifact, WorkflowConfig, WorkflowTask } from "../../types/workflow";
 
-export function createMockWorkflowTask(
-  overrides?: Partial<WorkflowTask>
-): WorkflowTask {
+export function createMockWorkflowTask(overrides?: Partial<WorkflowTask>): WorkflowTask {
   return {
     id: "test-task-123",
     title: "Test Task",
@@ -54,10 +48,7 @@ export function createMockWorkflowConfig(): WorkflowConfig {
   };
 }
 
-export function createMockArtifact(
-  name: string,
-  content: string
-): WorkflowArtifact {
+export function createMockArtifact(name: string, content: string): WorkflowArtifact {
   return {
     name,
     content,

@@ -144,7 +144,12 @@ mod tests {
 
     #[test]
     fn test_artifact_new() {
-        let artifact = Artifact::new("plan", "My plan content", "planning", "2025-01-01T00:00:00Z");
+        let artifact = Artifact::new(
+            "plan",
+            "My plan content",
+            "planning",
+            "2025-01-01T00:00:00Z",
+        );
 
         assert_eq!(artifact.name, "plan");
         assert_eq!(artifact.content, "My plan content");

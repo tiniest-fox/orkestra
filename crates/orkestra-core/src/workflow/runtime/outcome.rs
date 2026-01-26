@@ -194,10 +194,7 @@ impl Outcome {
 
     /// Check if this is a terminal outcome (task is done).
     pub fn is_terminal(&self) -> bool {
-        matches!(
-            self,
-            Outcome::Completed { .. } | Outcome::Blocked { .. }
-        )
+        matches!(self, Outcome::Completed { .. } | Outcome::Blocked { .. })
     }
 
     /// Check if this outcome requires restarting the stage.
@@ -252,13 +249,13 @@ mod tests {
 
     #[test]
     fn test_completed_with_merge() {
-        let outcome = Outcome::completed_with_merge(
-            "2025-01-01T00:00:00Z",
-            "abc123",
-            "main",
-        );
+        let outcome = Outcome::completed_with_merge("2025-01-01T00:00:00Z", "abc123", "main");
         match outcome {
-            Outcome::Completed { merged_at, commit_sha, target_branch } => {
+            Outcome::Completed {
+                merged_at,
+                commit_sha,
+                target_branch,
+            } => {
                 assert_eq!(merged_at, Some("2025-01-01T00:00:00Z".into()));
                 assert_eq!(commit_sha, Some("abc123".into()));
                 assert_eq!(target_branch, Some("main".into()));

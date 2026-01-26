@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { screen, render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
 import { resetMocks } from "../test/mocks/tauri";
 import { CreateTaskModal } from "./CreateTaskModal";
 
@@ -9,13 +9,7 @@ describe("CreateTaskModal", () => {
   });
 
   it("renders when open", () => {
-    render(
-      <CreateTaskModal
-        isOpen={true}
-        onClose={() => {}}
-        onSubmit={() => Promise.resolve()}
-      />
-    );
+    render(<CreateTaskModal isOpen={true} onClose={() => {}} onSubmit={() => Promise.resolve()} />);
 
     expect(screen.getByText("New Task")).toBeInTheDocument();
     expect(screen.getByLabelText(/what do you want to do/i)).toBeInTheDocument();
@@ -23,27 +17,15 @@ describe("CreateTaskModal", () => {
 
   it("does not render when closed", () => {
     render(
-      <CreateTaskModal
-        isOpen={false}
-        onClose={() => {}}
-        onSubmit={() => Promise.resolve()}
-      />
+      <CreateTaskModal isOpen={false} onClose={() => {}} onSubmit={() => Promise.resolve()} />,
     );
 
     expect(screen.queryByText("New Task")).not.toBeInTheDocument();
   });
 
   it("shows create task button", () => {
-    render(
-      <CreateTaskModal
-        isOpen={true}
-        onClose={() => {}}
-        onSubmit={() => Promise.resolve()}
-      />
-    );
+    render(<CreateTaskModal isOpen={true} onClose={() => {}} onSubmit={() => Promise.resolve()} />);
 
-    expect(
-      screen.getByRole("button", { name: /create task/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /create task/i })).toBeInTheDocument();
   });
 });

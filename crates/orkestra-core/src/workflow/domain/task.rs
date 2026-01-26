@@ -204,8 +204,7 @@ mod tests {
 
     #[test]
     fn test_task_with_parent() {
-        let task = Task::new("sub-1", "Subtask", "desc", "work", "now")
-            .with_parent("parent-1");
+        let task = Task::new("sub-1", "Subtask", "desc", "work", "now").with_parent("parent-1");
 
         assert!(task.is_subtask());
         assert_eq!(task.parent_id, Some("parent-1".into()));
@@ -221,8 +220,7 @@ mod tests {
 
     #[test]
     fn test_task_with_branch() {
-        let task = Task::new("task-1", "Task", "desc", "work", "now")
-            .with_branch("feature/login");
+        let task = Task::new("task-1", "Task", "desc", "work", "now").with_branch("feature/login");
 
         assert_eq!(task.branch_name, Some("feature/login".into()));
     }

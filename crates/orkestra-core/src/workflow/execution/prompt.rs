@@ -20,8 +20,7 @@ use crate::workflow::domain::{QuestionAnswer, Task};
 // Template Loading
 // =============================================================================
 
-const OUTPUT_FORMAT_TEMPLATE: &str =
-    include_str!("../../prompts/templates/output_format.md");
+const OUTPUT_FORMAT_TEMPLATE: &str = include_str!("../../prompts/templates/output_format.md");
 
 static TEMPLATES: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
     let mut hb = Handlebars::new();
@@ -190,10 +189,12 @@ impl<'a> PromptBuilder<'a> {
             .inputs
             .iter()
             .filter_map(|input_name| {
-                task.artifacts.get(input_name).map(|artifact| ArtifactContext {
-                    name: &artifact.name,
-                    content: &artifact.content,
-                })
+                task.artifacts
+                    .get(input_name)
+                    .map(|artifact| ArtifactContext {
+                        name: &artifact.name,
+                        content: &artifact.content,
+                    })
             })
             .collect();
 
@@ -395,10 +396,7 @@ pub fn load_custom_schema(project_root: Option<&Path>, path: &str) -> std::io::R
 ///
 /// Generates schema dynamically based on stage configuration,
 /// or loads custom schema if specified.
-pub fn get_agent_schema(
-    stage_config: &StageConfig,
-    project_root: Option<&Path>,
-) -> Option<String> {
+pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>) -> Option<String> {
     // Check for custom schema file first
     if let Some(schema_file) = &stage_config.agent.schema_file {
         return load_custom_schema(project_root, schema_file).ok();
@@ -424,7 +422,9 @@ pub fn resolve_stage_agent_config(
     integration_error: Option<IntegrationErrorContext<'_>>,
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     // Get current stage
-    let stage_name = task.current_stage().ok_or(AgentConfigError::NotInActiveStage)?;
+    let stage_name = task
+        .current_stage()
+        .ok_or(AgentConfigError::NotInActiveStage)?;
 
     let stage = workflow
         .stage(stage_name)
@@ -508,7 +508,9 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
             }
             prompt.push_str("\n");
         }
-        prompt.push_str("Run `git rebase main` and resolve the conflicts, then continue your work.\n\n");
+        prompt.push_str(
+            "Run `git rebase main` and resolve the conflicts, then continue your work.\n\n",
+        );
     }
 
     // Output format section (rendered from template with validated examples)
@@ -539,9 +541,7 @@ pub enum ResumeType {
         conflict_files: Vec<String>,
     },
     /// Human provided answers to questions the agent asked.
-    Answers {
-        answers: Vec<ResumeQuestionAnswer>,
-    },
+    Answers { answers: Vec<ResumeQuestionAnswer> },
 }
 
 /// Owned question-answer pair for use in resume prompts.
@@ -631,7 +631,11 @@ fn load_resume_template(
         let path = root.join(".orkestra/agents/resume").join(name);
         if path.exists() {
             let content = fs::read_to_string(&path).map_err(|e| {
-                AgentConfigError::DefinitionNotFound(format!("Failed to read {}: {}", path.display(), e))
+                AgentConfigError::DefinitionNotFound(format!(
+                    "Failed to read {}: {}",
+                    path.display(),
+                    e
+                ))
             })?;
             // Warn if custom template missing marker
             if !content.starts_with("<!orkestra-resume:") {
@@ -723,9 +727,17 @@ mod tests {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
-        let task = Task::new("task-1", "Implement login", "Add login feature", "planning", "now");
+        let task = Task::new(
+            "task-1",
+            "Implement login",
+            "Add login feature",
+            "planning",
+            "now",
+        );
 
-        let ctx = builder.build_context("planning", &task, None, None).unwrap();
+        let ctx = builder
+            .build_context("planning", &task, None, None)
+            .unwrap();
 
         assert_eq!(ctx.stage.name, "planning");
         assert_eq!(ctx.task_id, "task-1");
@@ -739,7 +751,13 @@ mod tests {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
-        let mut task = Task::new("task-1", "Implement login", "Add login feature", "work", "now");
+        let mut task = Task::new(
+            "task-1",
+            "Implement login",
+            "Add login feature",
+            "work",
+            "now",
+        );
         task.artifacts.set(Artifact::new(
             "plan",
             "Step 1: Add form\nStep 2: Add validation",
@@ -760,7 +778,13 @@ mod tests {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
-        let task = Task::new("task-1", "Implement login", "Add login feature", "planning", "now");
+        let task = Task::new(
+            "task-1",
+            "Implement login",
+            "Add login feature",
+            "planning",
+            "now",
+        );
 
         let ctx = builder
             .build_context("planning", &task, Some("Add more detail"), None)
@@ -774,9 +798,17 @@ mod tests {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
-        let mut task = Task::new("task-1", "Implement login", "Add login feature", "review", "now");
-        task.artifacts.set(Artifact::new("plan", "The plan", "planning", "t1"));
-        task.artifacts.set(Artifact::new("summary", "Work done", "work", "t2"));
+        let mut task = Task::new(
+            "task-1",
+            "Implement login",
+            "Add login feature",
+            "review",
+            "now",
+        );
+        task.artifacts
+            .set(Artifact::new("plan", "The plan", "planning", "t1"));
+        task.artifacts
+            .set(Artifact::new("summary", "Work done", "work", "t2"));
 
         let ctx = builder.build_context("review", &task, None, None).unwrap();
 
@@ -801,8 +833,19 @@ mod tests {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
-        let mut task = Task::new("task-1", "Implement login", "Add login feature", "work", "now");
-        task.artifacts.set(Artifact::new("plan", "The implementation plan", "planning", "now"));
+        let mut task = Task::new(
+            "task-1",
+            "Implement login",
+            "Add login feature",
+            "work",
+            "now",
+        );
+        task.artifacts.set(Artifact::new(
+            "plan",
+            "The implementation plan",
+            "planning",
+            "now",
+        ));
 
         let prompt = builder.build_simple_prompt("work", &task, None).unwrap();
 
@@ -821,7 +864,9 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
 
-        let prompt = builder.build_simple_prompt("planning", &task, None).unwrap();
+        let prompt = builder
+            .build_simple_prompt("planning", &task, None)
+            .unwrap();
 
         assert!(prompt.contains("ask clarifying questions"));
     }
@@ -832,8 +877,10 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
 
         let mut task = Task::new("task-1", "Test", "Description", "review", "now");
-        task.artifacts.set(Artifact::new("plan", "plan", "planning", "now"));
-        task.artifacts.set(Artifact::new("summary", "summary", "work", "now"));
+        task.artifacts
+            .set(Artifact::new("plan", "plan", "planning", "now"));
+        task.artifacts
+            .set(Artifact::new("summary", "summary", "work", "now"));
 
         let prompt = builder.build_simple_prompt("review", &task, None).unwrap();
 
@@ -864,7 +911,9 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
-        let ctx = builder.build_context("planning", &task, None, None).unwrap();
+        let ctx = builder
+            .build_context("planning", &task, None, None)
+            .unwrap();
 
         assert!(ctx.question_history.is_empty());
     }
@@ -910,8 +959,19 @@ mod tests {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
-        let mut task = Task::new("task-1", "Implement login", "Add login feature", "work", "now");
-        task.artifacts.set(Artifact::new("plan", "The implementation plan", "planning", "now"));
+        let mut task = Task::new(
+            "task-1",
+            "Implement login",
+            "Add login feature",
+            "work",
+            "now",
+        );
+        task.artifacts.set(Artifact::new(
+            "plan",
+            "The implementation plan",
+            "planning",
+            "now",
+        ));
 
         let ctx = builder.build_context("work", &task, None, None).unwrap();
         let agent_def = "You are a worker agent. Implement the plan.";
@@ -957,7 +1017,8 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
 
         let mut task = Task::new("task-1", "Test", "Description", "work", "now");
-        task.artifacts.set(Artifact::new("plan", "Plan", "planning", "now"));
+        task.artifacts
+            .set(Artifact::new("plan", "Plan", "planning", "now"));
 
         let error = IntegrationErrorContext {
             message: "Merge conflict in src/main.rs",
@@ -983,7 +1044,9 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
-        let ctx = builder.build_context("planning", &task, None, None).unwrap();
+        let ctx = builder
+            .build_context("planning", &task, None, None)
+            .unwrap();
 
         let agent_def = "Planner agent";
         let prompt = build_complete_prompt(agent_def, &ctx);
@@ -999,8 +1062,10 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
 
         let mut task = Task::new("task-1", "Test", "Description", "review", "now");
-        task.artifacts.set(Artifact::new("plan", "Plan", "planning", "now"));
-        task.artifacts.set(Artifact::new("summary", "Summary", "work", "now"));
+        task.artifacts
+            .set(Artifact::new("plan", "Plan", "planning", "now"));
+        task.artifacts
+            .set(Artifact::new("summary", "Summary", "work", "now"));
 
         let ctx = builder.build_context("review", &task, None, None).unwrap();
 

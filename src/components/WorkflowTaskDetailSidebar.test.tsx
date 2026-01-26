@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { screen, render } from "@testing-library/react";
-import { resetMocks, mockInvoke } from "../test/mocks/tauri";
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  createMockWorkflowTask,
   createMockArtifact,
   createMockWorkflowConfig,
+  createMockWorkflowTask,
 } from "../test/mocks/fixtures";
+import { mockInvoke, resetMocks } from "../test/mocks/tauri";
 import { WorkflowTaskDetailSidebar } from "./WorkflowTaskDetailSidebar";
 
 // Mock the workflow hooks
@@ -44,7 +44,7 @@ describe("WorkflowTaskDetailSidebar", () => {
         config={config}
         onClose={() => {}}
         onTaskUpdated={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByText("Test Task")).toBeInTheDocument();
@@ -64,7 +64,7 @@ describe("WorkflowTaskDetailSidebar", () => {
         config={config}
         onClose={() => {}}
         onTaskUpdated={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
@@ -86,7 +86,7 @@ describe("WorkflowTaskDetailSidebar", () => {
         config={config}
         onClose={() => {}}
         onTaskUpdated={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByText("Test Task")).toBeInTheDocument();
@@ -105,7 +105,7 @@ describe("WorkflowTaskDetailSidebar", () => {
         config={config}
         onClose={() => {}}
         onTaskUpdated={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
@@ -124,7 +124,7 @@ describe("WorkflowTaskDetailSidebar", () => {
         config={config}
         onClose={() => {}}
         onTaskUpdated={() => {}}
-      />
+      />,
     );
 
     expect(screen.getByText(/waiting for dependencies/i)).toBeInTheDocument();
@@ -147,7 +147,7 @@ describe("WorkflowTaskDetailSidebar", () => {
         config={config}
         onClose={() => {}}
         onTaskUpdated={() => {}}
-      />
+      />,
     );
 
     // Should have Details, Plan, Iterations, Logs tabs

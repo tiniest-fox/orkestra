@@ -153,10 +153,10 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use super::*;
     use crate::workflow::config::{StageCapabilities, StageConfig};
     use crate::workflow::InMemoryWorkflowStore;
+    use std::sync::Arc;
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![

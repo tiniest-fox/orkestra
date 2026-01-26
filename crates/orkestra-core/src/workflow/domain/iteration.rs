@@ -170,10 +170,7 @@ mod tests {
     #[test]
     fn test_iteration_rejection() {
         let mut iter = Iteration::new("iter-1", "task-1", "work", 1, "now");
-        iter.end(
-            "later",
-            Outcome::rejected("work", "Tests are failing"),
-        );
+        iter.end("later", Outcome::rejected("work", "Tests are failing"));
 
         assert!(!iter.is_active());
         let outcome = iter.outcome().unwrap();

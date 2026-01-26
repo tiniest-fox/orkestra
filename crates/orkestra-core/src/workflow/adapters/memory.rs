@@ -145,8 +145,15 @@ impl WorkflowStore for InMemoryWorkflowStore {
         Ok(())
     }
 
-    fn get_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<Option<StageSession>> {
-        let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+    fn get_stage_session(
+        &self,
+        task_id: &str,
+        stage: &str,
+    ) -> WorkflowResult<Option<StageSession>> {
+        let sessions = self
+            .stage_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
         Ok(sessions
             .iter()
             .find(|s| s.task_id == task_id && s.stage == stage)
@@ -154,7 +161,10 @@ impl WorkflowStore for InMemoryWorkflowStore {
     }
 
     fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {
-        let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+        let sessions = self
+            .stage_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
         Ok(sessions
             .iter()
             .filter(|s| s.task_id == task_id)
@@ -163,7 +173,10 @@ impl WorkflowStore for InMemoryWorkflowStore {
     }
 
     fn get_sessions_with_pids(&self) -> WorkflowResult<Vec<StageSession>> {
-        let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+        let sessions = self
+            .stage_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
         Ok(sessions
             .iter()
             .filter(|s| s.agent_pid.is_some())
@@ -172,7 +185,10 @@ impl WorkflowStore for InMemoryWorkflowStore {
     }
 
     fn save_stage_session(&self, session: &StageSession) -> WorkflowResult<()> {
-        let mut sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+        let mut sessions = self
+            .stage_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
         if let Some(existing) = sessions.iter_mut().find(|s| s.id == session.id) {
             *existing = session.clone();
         } else {
@@ -182,7 +198,10 @@ impl WorkflowStore for InMemoryWorkflowStore {
     }
 
     fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()> {
-        let mut sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+        let mut sessions = self
+            .stage_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
         sessions.retain(|s| s.task_id != task_id);
         Ok(())
     }

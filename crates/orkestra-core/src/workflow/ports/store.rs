@@ -101,18 +101,12 @@ pub trait WorkflowStore: Send + Sync {
     ) -> WorkflowResult<Vec<Iteration>>;
 
     /// Get the active (not ended) iteration for a task in a stage.
-    fn get_active_iteration(
-        &self,
-        task_id: &str,
-        stage: &str,
-    ) -> WorkflowResult<Option<Iteration>>;
+    fn get_active_iteration(&self, task_id: &str, stage: &str)
+        -> WorkflowResult<Option<Iteration>>;
 
     /// Get the latest iteration for a task in a stage (regardless of status).
-    fn get_latest_iteration(
-        &self,
-        task_id: &str,
-        stage: &str,
-    ) -> WorkflowResult<Option<Iteration>>;
+    fn get_latest_iteration(&self, task_id: &str, stage: &str)
+        -> WorkflowResult<Option<Iteration>>;
 
     /// Save an iteration (insert or update by ID).
     fn save_iteration(&self, iteration: &Iteration) -> WorkflowResult<()>;
@@ -125,7 +119,8 @@ pub trait WorkflowStore: Send + Sync {
     // =========================================================================
 
     /// Get the stage session for a task and stage.
-    fn get_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<Option<StageSession>>;
+    fn get_stage_session(&self, task_id: &str, stage: &str)
+        -> WorkflowResult<Option<StageSession>>;
 
     /// Get all stage sessions for a task.
     fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>>;
@@ -270,8 +265,15 @@ mod tests {
             Ok(())
         }
 
-        fn get_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<Option<StageSession>> {
-            let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+        fn get_stage_session(
+            &self,
+            task_id: &str,
+            stage: &str,
+        ) -> WorkflowResult<Option<StageSession>> {
+            let sessions = self
+                .stage_sessions
+                .lock()
+                .map_err(|_| WorkflowError::Lock)?;
             Ok(sessions
                 .iter()
                 .find(|s| s.task_id == task_id && s.stage == stage)
@@ -279,7 +281,10 @@ mod tests {
         }
 
         fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {
-            let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+            let sessions = self
+                .stage_sessions
+                .lock()
+                .map_err(|_| WorkflowError::Lock)?;
             Ok(sessions
                 .iter()
                 .filter(|s| s.task_id == task_id)
@@ -288,7 +293,10 @@ mod tests {
         }
 
         fn get_sessions_with_pids(&self) -> WorkflowResult<Vec<StageSession>> {
-            let sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+            let sessions = self
+                .stage_sessions
+                .lock()
+                .map_err(|_| WorkflowError::Lock)?;
             Ok(sessions
                 .iter()
                 .filter(|s| s.agent_pid.is_some())
@@ -297,7 +305,10 @@ mod tests {
         }
 
         fn save_stage_session(&self, session: &StageSession) -> WorkflowResult<()> {
-            let mut sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+            let mut sessions = self
+                .stage_sessions
+                .lock()
+                .map_err(|_| WorkflowError::Lock)?;
             if let Some(existing) = sessions.iter_mut().find(|s| s.id == session.id) {
                 *existing = session.clone();
             } else {
@@ -307,7 +318,10 @@ mod tests {
         }
 
         fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()> {
-            let mut sessions = self.stage_sessions.lock().map_err(|_| WorkflowError::Lock)?;
+            let mut sessions = self
+                .stage_sessions
+                .lock()
+                .map_err(|_| WorkflowError::Lock)?;
             sessions.retain(|s| s.task_id != task_id);
             Ok(())
         }
@@ -385,7 +399,10 @@ mod tests {
         assert_eq!(loaded.unwrap().iteration_number, 1);
 
         // Update (end iteration)
-        let mut iter = store.get_active_iteration("task-1", "planning").unwrap().unwrap();
+        let mut iter = store
+            .get_active_iteration("task-1", "planning")
+            .unwrap()
+            .unwrap();
         iter.end("later", crate::workflow::runtime::Outcome::Approved);
         store.save_iteration(&iter).unwrap();
 
@@ -423,16 +440,25 @@ mod tests {
         assert_eq!(loaded.unwrap().stage, "planning");
 
         // Update
-        let mut session = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        let mut session = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
         session.claude_session_id = Some("claude-abc".into());
         store.save_stage_session(&session).unwrap();
 
-        let loaded = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        let loaded = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
         assert_eq!(loaded.claude_session_id, Some("claude-abc".into()));
 
         // Delete
         store.delete_stage_sessions("task-1").unwrap();
-        assert!(store.get_stage_session("task-1", "planning").unwrap().is_none());
+        assert!(store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -455,9 +481,15 @@ mod tests {
     fn test_get_stage_sessions() {
         let store = TestStore::new();
 
-        store.save_stage_session(&StageSession::new("ss-1", "task-1", "planning", "now")).unwrap();
-        store.save_stage_session(&StageSession::new("ss-2", "task-1", "work", "now")).unwrap();
-        store.save_stage_session(&StageSession::new("ss-3", "task-2", "planning", "now")).unwrap();
+        store
+            .save_stage_session(&StageSession::new("ss-1", "task-1", "planning", "now"))
+            .unwrap();
+        store
+            .save_stage_session(&StageSession::new("ss-2", "task-1", "work", "now"))
+            .unwrap();
+        store
+            .save_stage_session(&StageSession::new("ss-3", "task-2", "planning", "now"))
+            .unwrap();
 
         let sessions = store.get_stage_sessions("task-1").unwrap();
         assert_eq!(sessions.len(), 2);

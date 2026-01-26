@@ -16,7 +16,7 @@
 //! 12. Work → Review → Done → Integration succeeds → Complete
 //!
 //! This test uses real infrastructure (database, files, git) and only mocks
-//! Claude Code responses. The test uses the WorkflowApi from the services layer.
+//! Claude Code responses. The test uses the `WorkflowApi` from the services layer.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -30,8 +30,8 @@ use orkestra_core::workflow::{
     domain::{Question, QuestionAnswer, QuestionOption, Task},
     execution::StageOutput,
     runtime::{Outcome, Phase},
-    Git2GitService, GitService, MockAgentRunner, OrchestratorLoop,
-    SqliteWorkflowStore, TaskExecutionService, WorkflowApi,
+    Git2GitService, GitService, MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore,
+    TaskExecutionService, WorkflowApi,
 };
 
 // =============================================================================
@@ -40,7 +40,7 @@ use orkestra_core::workflow::{
 
 /// Simulated output from Claude Code agent.
 ///
-/// This is a test convenience type that converts to the actual StageOutput.
+/// This is a test convenience type that converts to the actual `StageOutput`.
 #[derive(Debug, Clone)]
 pub enum MockAgentOutput {
     /// Agent is asking clarifying questions
@@ -60,7 +60,9 @@ impl From<MockAgentOutput> for StageOutput {
         match mock {
             MockAgentOutput::Questions(questions) => StageOutput::Questions { questions },
             MockAgentOutput::Artifact { content, .. } => StageOutput::Artifact { content },
-            MockAgentOutput::Restage { target, feedback } => StageOutput::Restage { target, feedback },
+            MockAgentOutput::Restage { target, feedback } => {
+                StageOutput::Restage { target, feedback }
+            }
             MockAgentOutput::Failed { error } => StageOutput::Failed { error },
             MockAgentOutput::Blocked { reason } => StageOutput::Blocked { reason },
         }
@@ -82,7 +84,10 @@ impl TestContext {
     /// Create a task and wait for async setup to complete.
     /// Returns the task in Idle phase (or Failed if setup failed).
     fn create_task(&self, title: &str, desc: &str) -> Task {
-        let task = self.api().create_task(title, desc, None).expect("Should create task");
+        let task = self
+            .api()
+            .create_task(title, desc, None)
+            .expect("Should create task");
         let task_id = task.id.clone();
 
         // Wait for async setup to complete (worktree creation)
@@ -94,7 +99,7 @@ impl TestContext {
             }
         }
 
-        panic!("Task setup did not complete in time for task {}", task_id);
+        panic!("Task setup did not complete in time for task {task_id}");
     }
 
     /// Run orchestrator until all queued agent work completes.
@@ -142,7 +147,11 @@ impl TestContext {
     /// Get the last prompt sent to the agent.
     fn last_prompt(&self) -> String {
         let calls = self.runner.calls();
-        calls.last().expect("No agent calls recorded").prompt.clone()
+        calls
+            .last()
+            .expect("No agent calls recorded")
+            .prompt
+            .clone()
     }
 
     /// Assert that the last prompt has a specific resume marker type.
@@ -154,7 +163,7 @@ impl TestContext {
     /// Assert that the last prompt has a specific resume marker type and contains expected strings.
     fn assert_resume_prompt_contains(&self, expected_type: &str, expected_content: &[&str]) {
         let prompt = self.last_prompt();
-        let expected_marker = format!("<!orkestra-resume:{}>", expected_type);
+        let expected_marker = format!("<!orkestra-resume:{expected_type}>");
         assert!(
             prompt.starts_with(&expected_marker),
             "Expected resume marker '{}', got prompt starting with: {}...",
@@ -165,9 +174,7 @@ impl TestContext {
         for content in expected_content {
             assert!(
                 prompt.contains(content),
-                "Resume prompt should contain '{}'. Full prompt:\n{}",
-                content,
-                prompt
+                "Resume prompt should contain '{content}'. Full prompt:\n{prompt}"
             );
         }
     }
@@ -176,9 +183,14 @@ impl TestContext {
     ///
     /// # Arguments
     /// * `artifact` - The artifact name this stage produces (e.g., "plan", "summary", "verdict")
-    /// * `can_ask_questions` - Whether the stage has ask_questions capability
+    /// * `can_ask_questions` - Whether the stage has `ask_questions` capability
     /// * `restage_targets` - Stages this stage can restage to (empty if no restage capability)
-    fn assert_full_prompt(&self, artifact: &str, can_ask_questions: bool, restage_targets: &[&str]) {
+    fn assert_full_prompt(
+        &self,
+        artifact: &str,
+        can_ask_questions: bool,
+        restage_targets: &[&str],
+    ) {
         let prompt = self.last_prompt();
 
         // Should NOT be a resume prompt
@@ -195,7 +207,7 @@ impl TestContext {
         );
 
         // Should contain the expected artifact name in output format
-        let artifact_pattern = format!("\"{}\"", artifact);
+        let artifact_pattern = format!("\"{artifact}\"");
         assert!(
             prompt.contains(&artifact_pattern),
             "Full prompt should reference artifact '{}'. Got prompt: {}...",
@@ -239,7 +251,11 @@ fn setup_test() -> TestContext {
     let agents_dir = orkestra_dir.join("agents");
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(agents_dir.join("planner.md"), "You are a planner agent.").unwrap();
-    std::fs::write(agents_dir.join("breakdown.md"), "You are a breakdown agent.").unwrap();
+    std::fs::write(
+        agents_dir.join("breakdown.md"),
+        "You are a breakdown agent.",
+    )
+    .unwrap();
     std::fs::write(agents_dir.join("worker.md"), "You are a worker agent.").unwrap();
     std::fs::write(agents_dir.join("reviewer.md"), "You are a reviewer agent.").unwrap();
 
@@ -295,7 +311,7 @@ fn setup_test() -> TestContext {
 
 /// The exhaustive e2e test covering all workflow transitions.
 ///
-/// This test uses the OrchestratorLoop to drive agent spawning, making it
+/// This test uses the `OrchestratorLoop` to drive agent spawning, making it
 /// a true end-to-end test of the orchestration system.
 ///
 /// Flow:
@@ -326,7 +342,11 @@ fn test_exhaustive_workflow_flow() {
     let task_id = task.id.clone();
 
     assert_eq!(task.current_stage(), Some("planning"));
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle after setup completes");
+    assert_eq!(
+        task.phase,
+        Phase::Idle,
+        "Task should be Idle after setup completes"
+    );
 
     // Verify worktree was created by git service
     assert!(task.branch_name.is_some(), "Task should have a branch");
@@ -334,8 +354,7 @@ fn test_exhaustive_workflow_flow() {
     let worktree_path = task.worktree_path.as_ref().unwrap();
     assert!(
         std::path::Path::new(worktree_path).exists(),
-        "Worktree directory should exist at {}",
-        worktree_path
+        "Worktree directory should exist at {worktree_path}"
     );
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
@@ -353,8 +372,7 @@ fn test_exhaustive_workflow_flow() {
             .with_options(vec![
                 QuestionOption::new("postgres", "PostgreSQL")
                     .with_description("Best for complex queries"),
-                QuestionOption::new("sqlite", "SQLite")
-                    .with_description("Simple, file-based"),
+                QuestionOption::new("sqlite", "SQLite").with_description("Simple, file-based"),
             ]),
         Question::new("q2", "Should we add caching?"),
     ];
@@ -374,11 +392,22 @@ fn test_exhaustive_workflow_flow() {
 
     // Human answers questions
     let answers = vec![
-        QuestionAnswer::new("q1", "Which database should we use?", "PostgreSQL", chrono::Utc::now().to_rfc3339()),
-        QuestionAnswer::new("q2", "Should we add caching?", "Yes, use Redis", chrono::Utc::now().to_rfc3339()),
+        QuestionAnswer::new(
+            "q1",
+            "Which database should we use?",
+            "PostgreSQL",
+            chrono::Utc::now().to_rfc3339(),
+        ),
+        QuestionAnswer::new(
+            "q2",
+            "Should we add caching?",
+            "Yes, use Redis",
+            chrono::Utc::now().to_rfc3339(),
+        ),
     ];
 
-    let task = ctx.api()
+    let task = ctx
+        .api()
         .answer_questions(&task_id, answers)
         .expect("Should answer questions");
 
@@ -393,19 +422,25 @@ fn test_exhaustive_workflow_flow() {
     // =========================================================================
 
     // Orchestrator spawns planner again, produces plan
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "plan".to_string(),
-        content: "Initial plan v1 - not detailed enough".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Initial plan v1 - not detailed enough".to_string(),
+        },
+    );
     ctx.tick();
 
     // VERIFY: After answering questions → resume with answers prompt containing the Q&A
-    ctx.assert_resume_prompt_contains("answers", &[
-        "Which database should we use?",
-        "PostgreSQL",
-        "Should we add caching?",
-        "Yes, use Redis",
-    ]);
+    ctx.assert_resume_prompt_contains(
+        "answers",
+        &[
+            "Which database should we use?",
+            "PostgreSQL",
+            "Should we add caching?",
+            "Yes, use Redis",
+        ],
+    );
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.phase, Phase::AwaitingReview);
@@ -415,7 +450,8 @@ fn test_exhaustive_workflow_flow() {
     );
 
     // Human rejects the plan
-    let task = ctx.api()
+    let task = ctx
+        .api()
         .reject(&task_id, "Need more detail on the implementation steps")
         .expect("Should reject plan");
 
@@ -424,7 +460,11 @@ fn test_exhaustive_workflow_flow() {
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     // With new model: iter1 (questions), iter2 (answers→rejected), iter3 (feedback)
-    assert_eq!(iterations.len(), 3, "Should have 3 iterations after rejection");
+    assert_eq!(
+        iterations.len(),
+        3,
+        "Should have 3 iterations after rejection"
+    );
 
     // Check first iteration ended with AwaitingAnswers (agent asked questions)
     assert!(iterations[0].outcome.is_some());
@@ -444,16 +484,21 @@ fn test_exhaustive_workflow_flow() {
     assert!(iterations[2].incoming_context.is_some());
 
     // Orchestrator spawns planner again, produces better plan
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "plan".to_string(),
-        content: "Detailed plan v2:\n1. Create module\n2. Add tests\n3. Update docs".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Detailed plan v2:\n1. Create module\n2. Add tests\n3. Update docs"
+                .to_string(),
+        },
+    );
     ctx.tick();
 
     // VERIFY: Planner retry after rejection → resume with feedback prompt containing the feedback
-    ctx.assert_resume_prompt_contains("feedback", &[
-        "Need more detail on the implementation steps",
-    ]);
+    ctx.assert_resume_prompt_contains(
+        "feedback",
+        &["Need more detail on the implementation steps"],
+    );
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.phase, Phase::AwaitingReview);
@@ -480,10 +525,13 @@ fn test_exhaustive_workflow_flow() {
     );
 
     // Orchestrator spawns breakdown agent
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "breakdown".to_string(),
-        content: "Subtasks:\n1. Create module\n2. Add tests".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "Subtasks:\n1. Create module\n2. Add tests".to_string(),
+        },
+    );
     ctx.tick();
 
     // VERIFY: First spawn of breakdown stage → full prompt
@@ -496,7 +544,10 @@ fn test_exhaustive_workflow_flow() {
     // Step 5: Breakdown approved → Working
     // =========================================================================
 
-    let task = ctx.api().approve(&task_id).expect("Should approve breakdown");
+    let task = ctx
+        .api()
+        .approve(&task_id)
+        .expect("Should approve breakdown");
 
     assert_eq!(
         task.current_stage(),
@@ -518,17 +569,21 @@ fn test_exhaustive_workflow_flow() {
     // =========================================================================
 
     // Orchestrator spawns worker
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "summary".to_string(),
-        content: "Initial implementation - tests failing".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial implementation - tests failing".to_string(),
+        },
+    );
     ctx.tick();
 
     // VERIFY: First spawn of work stage → full prompt
     ctx.assert_full_prompt("summary", false, &[]);
 
     // Human rejects the work
-    let task = ctx.api()
+    let task = ctx
+        .api()
         .reject(&task_id, "Tests are failing, please fix them")
         .expect("Should reject work");
 
@@ -540,16 +595,17 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(iterations.len(), 6);
 
     // Orchestrator spawns worker again
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "summary".to_string(),
-        content: "Implementation complete with passing tests".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation complete with passing tests".to_string(),
+        },
+    );
     ctx.tick();
 
     // VERIFY: Work retry after rejection → resume with feedback prompt containing the feedback
-    ctx.assert_resume_prompt_contains("feedback", &[
-        "Tests are failing, please fix them",
-    ]);
+    ctx.assert_resume_prompt_contains("feedback", &["Tests are failing, please fix them"]);
 
     // =========================================================================
     // Step 7: Work approved → Reviewing
@@ -566,25 +622,36 @@ fn test_exhaustive_workflow_flow() {
 
     // Queue outputs: first for reviewer (restage), then for worker (summary)
     // Both agents run in the same tick cycle
-    ctx.set_output(&task_id, MockAgentOutput::Restage {
-        target: "work".to_string(),
-        feedback: "Code style issues found - please fix formatting".to_string(),
-    });
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "summary".to_string(),
-        content: "Implementation with fixed formatting".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Restage {
+            target: "work".to_string(),
+            feedback: "Code style issues found - please fix formatting".to_string(),
+        },
+    );
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation with fixed formatting".to_string(),
+        },
+    );
     ctx.tick();
 
     // VERIFY: Work agent after restage → resume with feedback prompt containing reviewer's feedback
     // (The reviewer ran first with full prompt, then work agent ran with resume prompt)
-    ctx.assert_resume_prompt_contains("feedback", &[
-        "Code style issues found - please fix formatting",
-    ]);
+    ctx.assert_resume_prompt_contains(
+        "feedback",
+        &["Code style issues found - please fix formatting"],
+    );
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("work"));
-    assert_eq!(task.phase, Phase::AwaitingReview, "Work agent ran and produced artifact");
+    assert_eq!(
+        task.phase,
+        Phase::AwaitingReview,
+        "Work agent ran and produced artifact"
+    );
 
     // Check the iteration recorded the restage
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
@@ -600,7 +667,10 @@ fn test_exhaustive_workflow_flow() {
     // Step 9: Work approved again → Reviewing
     // =========================================================================
 
-    let task = ctx.api().approve(&task_id).expect("Should approve work again");
+    let task = ctx
+        .api()
+        .approve(&task_id)
+        .expect("Should approve work again");
 
     assert_eq!(task.current_stage(), Some("review"));
 
@@ -618,7 +688,11 @@ fn test_exhaustive_workflow_flow() {
 
     // Create a real merge conflict:
     // 1. Create a file in the task's worktree and commit it
-    std::fs::write(worktree_path.join("conflict.txt"), "Task's version of the file").unwrap();
+    std::fs::write(
+        worktree_path.join("conflict.txt"),
+        "Task's version of the file",
+    )
+    .unwrap();
     std::process::Command::new("git")
         .args(["add", "."])
         .current_dir(worktree_path)
@@ -640,10 +714,13 @@ fn test_exhaustive_workflow_flow() {
     .unwrap();
 
     // NOW let the reviewer complete - task will go Done and auto-integration will fail
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "verdict".to_string(),
-        content: "LGTM! All checks pass.".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
+            content: "LGTM! All checks pass.".to_string(),
+        },
+    );
     ctx.tick();
 
     // =========================================================================
@@ -654,7 +731,11 @@ fn test_exhaustive_workflow_flow() {
     // The task should have been moved back to work stage.
     let task = ctx.api().get_task(&task_id).unwrap();
 
-    assert_eq!(task.current_stage(), Some("work"), "Should return to work on conflict");
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Should return to work on conflict"
+    );
     assert_eq!(task.phase, Phase::Idle);
     assert!(!task.is_done());
 
@@ -681,17 +762,23 @@ fn test_exhaustive_workflow_flow() {
         .unwrap();
 
     // Orchestrator spawns worker to "resolve" conflict (in reality main was fixed)
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "summary".to_string(),
-        content: "Resolved merge conflict".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Resolved merge conflict".to_string(),
+        },
+    );
     ctx.tick();
 
     // VERIFY: Work agent after integration failure → resume with integration marker
     // containing error details (same session as previous work iterations)
-    ctx.assert_resume_prompt_contains("integration", &[
-        "conflict",  // Should mention conflict
-    ]);
+    ctx.assert_resume_prompt_contains(
+        "integration",
+        &[
+            "conflict", // Should mention conflict
+        ],
+    );
 
     // Approve work
     let task = ctx.api().approve(&task_id).unwrap();
@@ -699,15 +786,21 @@ fn test_exhaustive_workflow_flow() {
 
     // Orchestrator spawns reviewer (automated stage auto-transitions to Done)
     // Then auto-integration runs and succeeds (no conflict this time)
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "verdict".to_string(),
-        content: "Conflict resolved correctly".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
+            content: "Conflict resolved correctly".to_string(),
+        },
+    );
     ctx.tick();
 
     // Auto-integration should have completed successfully and task becomes Archived
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(task.is_archived(), "Task should be Archived after integration");
+    assert!(
+        task.is_archived(),
+        "Task should be Archived after integration"
+    );
     assert!(task.completed_at.is_some(), "Should have completed_at set");
     // Note: worktree_path is preserved for log access even after integration
 
@@ -726,7 +819,7 @@ fn test_exhaustive_workflow_flow() {
             "  Iteration {}: stage={}, outcome={:?}",
             i + 1,
             iter.stage,
-            iter.outcome.as_ref().map(|o| format!("{}", o))
+            iter.outcome.as_ref().map(|o| format!("{o}"))
         );
     }
 
@@ -743,7 +836,7 @@ fn test_exhaustive_workflow_flow() {
     // work (v1) + work (v2) + review (restage) + work (fix) + review (approve) +
     // work (conflict) + review (final) = 11 spawns
     let total_spawns = ctx.call_count();
-    println!("Total agent spawns: {}", total_spawns);
+    println!("Total agent spawns: {total_spawns}");
 }
 
 /// Test that invalid restage is rejected
@@ -756,31 +849,44 @@ fn test_restage_validation() {
     let task_id = task.id.clone();
 
     // Planning stage
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "plan".to_string(),
-        content: "Plan".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan".to_string(),
+        },
+    );
     ctx.tick();
     ctx.api().approve(&task_id).unwrap();
 
     // Breakdown stage
-    ctx.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "breakdown".to_string(),
-        content: "Breakdown".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "Breakdown".to_string(),
+        },
+    );
     ctx.tick();
     ctx.api().approve(&task_id).unwrap();
 
     // Now we're in work stage - try to restage from work (which doesn't have restage capability)
-    ctx.set_output(&task_id, MockAgentOutput::Restage {
-        target: "planning".to_string(),
-        feedback: "Should fail".to_string(),
-    });
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Restage {
+            target: "planning".to_string(),
+            feedback: "Should fail".to_string(),
+        },
+    );
     ctx.tick();
 
     // The task should still be in work stage (restage should have failed)
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.current_stage(), Some("work"), "Restage should have been rejected");
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Restage should have been rejected"
+    );
 }
 
 /// Test the workflow configuration
@@ -804,7 +910,7 @@ fn test_workflow_config_from_file() {
     assert_eq!(api.workflow().integration.on_failure, "work");
 }
 
-/// Test custom integration.on_failure configuration
+/// Test custom `integration.on_failure` configuration
 #[test]
 fn test_custom_integration_on_failure() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
@@ -822,7 +928,7 @@ fn test_custom_integration_on_failure() {
 
     // Create workflow config with custom on_failure (no breakdown stage)
     let workflow_path = orkestra_dir.join("workflow.yaml");
-    let yaml = r#"
+    let yaml = r"
 version: 1
 stages:
   - name: planning
@@ -834,7 +940,7 @@ stages:
     is_automated: true
 integration:
   on_failure: planning
-"#;
+";
     std::fs::write(&workflow_path, yaml).unwrap();
 
     let workflow = load_workflow(&workflow_path).expect("Should load workflow");
@@ -871,40 +977,58 @@ integration:
     };
 
     // Create a task and get it to Done
-    let task = api.lock().unwrap().create_task("Test", "Test task", None).unwrap();
+    let task = api
+        .lock()
+        .unwrap()
+        .create_task("Test", "Test task", None)
+        .unwrap();
     let task_id = task.id.clone();
 
     // Wait for async setup to complete (even without git, setup runs async)
     std::thread::sleep(Duration::from_millis(20));
 
     // Planning stage
-    runner.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "plan".to_string(),
-        content: "Plan".to_string(),
-    }.into());
+    runner.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan".to_string(),
+        }
+        .into(),
+    );
     tick();
     api.lock().unwrap().approve(&task_id).unwrap();
 
     // Work stage
-    runner.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "summary".to_string(),
-        content: "Summary".to_string(),
-    }.into());
+    runner.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Summary".to_string(),
+        }
+        .into(),
+    );
     tick();
     api.lock().unwrap().approve(&task_id).unwrap();
 
     // Review stage (auto-approves to Done)
-    runner.set_output(&task_id, MockAgentOutput::Artifact {
-        name: "verdict".to_string(),
-        content: "LGTM".to_string(),
-    }.into());
+    runner.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
+            content: "LGTM".to_string(),
+        }
+        .into(),
+    );
     tick();
 
     let task = api.lock().unwrap().get_task(&task_id).unwrap();
     assert!(task.is_done());
 
     // Integration fails - should go to planning (not work)
-    let task = api.lock().unwrap()
+    let task = api
+        .lock()
+        .unwrap()
         .integration_failed(&task_id, "Merge conflict", vec![])
         .expect("Should handle integration failure");
 

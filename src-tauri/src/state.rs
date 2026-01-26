@@ -26,7 +26,11 @@ pub struct AppState {
 
 impl AppState {
     /// Create a new AppState with the given workflow config and database path.
-    pub fn new(workflow: WorkflowConfig, db_path: &Path, project_root: PathBuf) -> Result<Self, String> {
+    pub fn new(
+        workflow: WorkflowConfig,
+        db_path: &Path,
+        project_root: PathBuf,
+    ) -> Result<Self, String> {
         // Open database connection (creates file and runs migrations)
         let conn = DatabaseConnection::open(db_path).map_err(|e| e.to_string())?;
 
@@ -36,7 +40,10 @@ impl AppState {
         // Try to create git service for worktree support
         let git_service: Option<Arc<dyn GitService>> = match Git2GitService::new(&project_root) {
             Ok(git) => {
-                eprintln!("[git] Git service initialized for {}", project_root.display());
+                eprintln!(
+                    "[git] Git service initialized for {}",
+                    project_root.display()
+                );
                 Some(Arc::new(git))
             }
             Err(e) => {

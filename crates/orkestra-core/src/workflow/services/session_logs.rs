@@ -680,7 +680,8 @@ mod tests {
         assert_eq!(marker.content, "Please fix this bug");
 
         // Test typed integration marker
-        let marker = parse_resume_marker("<!orkestra-resume:integration>\n\nMerge conflict in file.rs");
+        let marker =
+            parse_resume_marker("<!orkestra-resume:integration>\n\nMerge conflict in file.rs");
         assert!(marker.is_some());
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::Integration);
@@ -716,7 +717,9 @@ mod tests {
 
     #[test]
     fn test_parse_resume_marker_answers() {
-        let marker = parse_resume_marker("<!orkestra-resume:answers>\n\nHere are the answers:\n\nQ: What? A: Something");
+        let marker = parse_resume_marker(
+            "<!orkestra-resume:answers>\n\nHere are the answers:\n\nQ: What? A: Something",
+        );
         assert!(marker.is_some());
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::Answers);

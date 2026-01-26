@@ -21,10 +21,7 @@ pub fn workflow_reject(
     task_id: String,
     feedback: String,
 ) -> Result<Task, TauriError> {
-    state
-        .api()?
-        .reject(&task_id, &feedback)
-        .map_err(Into::into)
+    state.api()?.reject(&task_id, &feedback).map_err(Into::into)
 }
 
 /// Answer pending questions from the agent.

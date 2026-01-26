@@ -436,8 +436,7 @@ mod tests {
 
     #[test]
     fn test_stage_with_agent() {
-        let stage = StageConfig::new("planning", "plan")
-            .with_agent(AgentStageConfig::planner());
+        let stage = StageConfig::new("planning", "plan").with_agent(AgentStageConfig::planner());
 
         assert_eq!(stage.agent.agent_type, "planner");
     }

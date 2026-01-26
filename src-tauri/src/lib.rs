@@ -49,34 +49,46 @@ fn start_workflow_orchestrator(
             orch_stop.store(true, Ordering::Relaxed);
         });
 
-        orchestrator.run(move |event| {
-            match &event {
-                orkestra_core::workflow::OrchestratorEvent::AgentSpawned { task_id, stage, pid } => {
-                    println!("[orchestrator] Spawned {stage} agent for {task_id} (pid: {pid})");
-                    let _ = app_handle.emit("task-updated", task_id);
+        orchestrator.run(move |event| match &event {
+            orkestra_core::workflow::OrchestratorEvent::AgentSpawned {
+                task_id,
+                stage,
+                pid,
+            } => {
+                println!("[orchestrator] Spawned {stage} agent for {task_id} (pid: {pid})");
+                let _ = app_handle.emit("task-updated", task_id);
+            }
+            orkestra_core::workflow::OrchestratorEvent::OutputProcessed {
+                task_id,
+                stage,
+                output_type,
+            } => {
+                println!(
+                    "[orchestrator] Processed {output_type} output from {stage} for {task_id}"
+                );
+                let _ = app_handle.emit("task-updated", task_id);
+            }
+            orkestra_core::workflow::OrchestratorEvent::Error { task_id, error } => {
+                eprintln!("[orchestrator] Error: {error}");
+                if let Some(id) = task_id {
+                    let _ = app_handle.emit("task-updated", id);
                 }
-                orkestra_core::workflow::OrchestratorEvent::OutputProcessed { task_id, stage, output_type } => {
-                    println!("[orchestrator] Processed {output_type} output from {stage} for {task_id}");
-                    let _ = app_handle.emit("task-updated", task_id);
-                }
-                orkestra_core::workflow::OrchestratorEvent::Error { task_id, error } => {
-                    eprintln!("[orchestrator] Error: {error}");
-                    if let Some(id) = task_id {
-                        let _ = app_handle.emit("task-updated", id);
-                    }
-                }
-                orkestra_core::workflow::OrchestratorEvent::IntegrationStarted { task_id, branch } => {
-                    println!("[orchestrator] Starting integration for {task_id} (branch: {branch})");
-                    let _ = app_handle.emit("task-updated", task_id);
-                }
-                orkestra_core::workflow::OrchestratorEvent::IntegrationCompleted { task_id } => {
-                    println!("[orchestrator] Integration completed for {task_id}");
-                    let _ = app_handle.emit("task-updated", task_id);
-                }
-                orkestra_core::workflow::OrchestratorEvent::IntegrationFailed { task_id, error, .. } => {
-                    eprintln!("[orchestrator] Integration failed for {task_id}: {error}");
-                    let _ = app_handle.emit("task-updated", task_id);
-                }
+            }
+            orkestra_core::workflow::OrchestratorEvent::IntegrationStarted { task_id, branch } => {
+                println!("[orchestrator] Starting integration for {task_id} (branch: {branch})");
+                let _ = app_handle.emit("task-updated", task_id);
+            }
+            orkestra_core::workflow::OrchestratorEvent::IntegrationCompleted { task_id } => {
+                println!("[orchestrator] Integration completed for {task_id}");
+                let _ = app_handle.emit("task-updated", task_id);
+            }
+            orkestra_core::workflow::OrchestratorEvent::IntegrationFailed {
+                task_id,
+                error,
+                ..
+            } => {
+                eprintln!("[orchestrator] Integration failed for {task_id}: {error}");
+                let _ = app_handle.emit("task-updated", task_id);
             }
         });
 
@@ -245,7 +257,8 @@ fn setup_signal_handlers(_stop_flag: Arc<AtomicBool>) {
 ///
 /// Loads the workflow configuration and creates the AppState with the database.
 fn init_workflow_state() -> Result<state::AppState, String> {
-    let project_root = find_project_root().map_err(|e| format!("Failed to find project root: {e}"))?;
+    let project_root =
+        find_project_root().map_err(|e| format!("Failed to find project root: {e}"))?;
 
     let orkestra_dir = project_root.join(".orkestra");
 
@@ -295,11 +308,7 @@ pub fn run() {
         .setup(move |app| {
             // Start the workflow orchestrator
             if let Some(app_state) = app.try_state::<state::AppState>() {
-                start_workflow_orchestrator(
-                    app.handle().clone(),
-                    &app_state,
-                    stop_flag.clone(),
-                );
+                start_workflow_orchestrator(app.handle().clone(), &app_state, stop_flag.clone());
             }
 
             Ok(())

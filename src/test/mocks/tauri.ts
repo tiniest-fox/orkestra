@@ -1,6 +1,6 @@
-import { vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import type { WorkflowTask, WorkflowConfig } from "../../types/workflow";
+import type { vi } from "vitest";
+import type { WorkflowConfig, WorkflowTask } from "../../types/workflow";
 
 export const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
@@ -24,7 +24,7 @@ interface MockResponseMap {
 }
 
 export function mockInvokeResponses(
-  responses: Partial<{ [K in InvokeCommand]: MockResponseMap[K] }>
+  responses: Partial<{ [K in InvokeCommand]: MockResponseMap[K] }>,
 ): void {
   mockInvoke.mockImplementation((cmd: string) => {
     const command = cmd as InvokeCommand;

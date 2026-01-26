@@ -181,7 +181,8 @@ mod tests {
 
     #[test]
     fn test_question_answer() {
-        let answer = QuestionAnswer::new("q1", "What database?", "PostgreSQL", "2025-01-24T10:00:00Z");
+        let answer =
+            QuestionAnswer::new("q1", "What database?", "PostgreSQL", "2025-01-24T10:00:00Z");
         assert_eq!(answer.question_id, "q1");
         assert_eq!(answer.question, "What database?");
         assert_eq!(answer.answer, "PostgreSQL");

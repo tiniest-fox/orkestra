@@ -107,8 +107,8 @@ impl StageOutput {
         let value: serde_json::Value = serde_json::from_str(json)?;
 
         // Validate against schema - this is the SINGLE source of truth
-        let validator = Validator::new(schema)
-            .map_err(|e| StageOutputError::InvalidSchema(e.to_string()))?;
+        let validator =
+            Validator::new(schema).map_err(|e| StageOutputError::InvalidSchema(e.to_string()))?;
 
         // Collect all validation errors using iter_errors
         let errors: Vec<String> = validator
@@ -500,7 +500,10 @@ mod tests {
 
         assert!(matches!(result, Err(StageOutputError::SchemaValidation(_))));
         if let Err(StageOutputError::SchemaValidation(msg)) = result {
-            assert!(msg.contains("completed"), "Error should mention invalid type");
+            assert!(
+                msg.contains("completed"),
+                "Error should mention invalid type"
+            );
         }
     }
 

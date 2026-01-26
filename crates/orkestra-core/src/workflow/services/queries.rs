@@ -61,7 +61,9 @@ impl WorkflowApi {
         };
 
         // Get iterations for current stage
-        let iterations = self.store.get_iterations_for_stage(task_id, current_stage)?;
+        let iterations = self
+            .store
+            .get_iterations_for_stage(task_id, current_stage)?;
 
         // Find the most recent rejection or restage outcome
         for iteration in iterations.into_iter().rev() {
@@ -181,13 +183,13 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use std::time::Duration;
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::domain::Task;
     use crate::workflow::execution::StageOutput;
     use crate::workflow::runtime::Status;
     use crate::workflow::InMemoryWorkflowStore;
+    use std::sync::Arc;
+    use std::time::Duration;
 
     use super::*;
 
@@ -215,11 +217,16 @@ mod tests {
         let task = api.create_task("Test", "Description", None).unwrap();
 
         // Simulate agent asking questions via iteration outcome
-        let iter = api.store.get_latest_iteration(&task.id, "planning").unwrap().unwrap();
+        let iter = api
+            .store
+            .get_latest_iteration(&task.id, "planning")
+            .unwrap()
+            .unwrap();
         let mut iter = iter;
-        iter.outcome = Some(Outcome::awaiting_answers("planning", vec![
-            Question::new("q1", "What framework?"),
-        ]));
+        iter.outcome = Some(Outcome::awaiting_answers(
+            "planning",
+            vec![Question::new("q1", "What framework?")],
+        ));
         iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
         api.store.save_iteration(&iter).unwrap();
 
@@ -321,11 +328,16 @@ mod tests {
         assert!(!api.has_pending_questions(&task.id).unwrap());
 
         // Simulate agent asking questions via iteration outcome
-        let iter = api.store.get_latest_iteration(&task.id, "planning").unwrap().unwrap();
+        let iter = api
+            .store
+            .get_latest_iteration(&task.id, "planning")
+            .unwrap()
+            .unwrap();
         let mut iter = iter;
-        iter.outcome = Some(Outcome::awaiting_answers("planning", vec![
-            Question::new("q1", "What framework?"),
-        ]));
+        iter.outcome = Some(Outcome::awaiting_answers(
+            "planning",
+            vec![Question::new("q1", "What framework?")],
+        ));
         iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
         api.store.save_iteration(&iter).unwrap();
 

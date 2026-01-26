@@ -8,6 +8,29 @@
 
 use super::StageOutput;
 
+/// Strip markdown code fences from a string.
+///
+/// Handles patterns like:
+/// - ```json\n{...}\n```
+/// - ```\n{...}\n```
+fn strip_markdown_code_fences(s: &str) -> String {
+    let trimmed = s.trim();
+
+    // Check if it starts with ``` and ends with ```
+    if trimmed.starts_with("```") && trimmed.ends_with("```") {
+        // Find the end of the opening fence line
+        let start = trimmed.find('\n').map(|i| i + 1).unwrap_or(3);
+        // Find the start of the closing fence
+        let end = trimmed.rfind("\n```").unwrap_or(trimmed.len() - 3);
+
+        if start < end {
+            return trimmed[start..end].trim().to_string();
+        }
+    }
+
+    trimmed.to_string()
+}
+
 /// Parse agent output into a StageOutput.
 ///
 /// Claude outputs JSON in multiple formats:
@@ -79,8 +102,10 @@ fn extract_from_object(v: &serde_json::Value) -> Option<Result<StageOutput, Stri
     // Check for result field (older format)
     if let Some(result) = v.get("result") {
         if let Some(result_str) = result.as_str() {
+            // Strip markdown code fences if present
+            let cleaned = strip_markdown_code_fences(result_str);
             return Some(
-                StageOutput::parse(result_str)
+                StageOutput::parse(&cleaned)
                     .map_err(|e| format!("Failed to parse result: {e}"))
             );
         }
@@ -277,5 +302,39 @@ mod tests {
         let line = "not json at all";
         let result = check_for_api_error(line);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_strip_markdown_code_fences() {
+        let input = "```json\n{\"type\": \"skip_breakdown\"}\n```";
+        let result = strip_markdown_code_fences(input);
+        assert_eq!(result, "{\"type\": \"skip_breakdown\"}");
+    }
+
+    #[test]
+    fn test_strip_markdown_code_fences_no_lang() {
+        let input = "```\n{\"type\": \"approved\"}\n```";
+        let result = strip_markdown_code_fences(input);
+        assert_eq!(result, "{\"type\": \"approved\"}");
+    }
+
+    #[test]
+    fn test_strip_markdown_code_fences_none() {
+        let input = "{\"type\": \"summary\", \"content\": \"done\"}";
+        let result = strip_markdown_code_fences(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_parse_result_with_markdown_fences() {
+        // This simulates what we get from Claude's result field
+        let output = r#"[{"type":"result","result":"```json\n{\"type\": \"skip_breakdown\"}\n```"}]"#;
+
+        let result = parse_agent_output(output);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        match result.unwrap() {
+            StageOutput::Artifact { content } => assert_eq!(content, "skip"),
+            other => panic!("Expected Artifact output with 'skip', got {:?}", other),
+        }
     }
 }

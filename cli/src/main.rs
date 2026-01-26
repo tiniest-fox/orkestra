@@ -81,7 +81,7 @@ enum TaskAction {
 enum UtilityAction {
     /// Run a utility task
     Run {
-        /// Task name (e.g., "generate_title")
+        /// Task name (e.g., "`generate_title`")
         name: String,
         /// Context as JSON (e.g., '{"description": "Fix the login bug"}')
         #[arg(short, long)]
@@ -113,7 +113,9 @@ fn handle_task_action(action: TaskAction) {
     match action {
         TaskAction::List { status } => {
             // Use list_archived_tasks() for archived filter, list_tasks() otherwise
-            let is_archived_filter = status.as_ref().map(|s| s.to_lowercase() == "archived").unwrap_or(false);
+            let is_archived_filter = status
+                .as_ref()
+                .is_some_and(|s| s.to_lowercase() == "archived");
             let tasks = if is_archived_filter {
                 match api.list_archived_tasks() {
                     Ok(tasks) => tasks,
@@ -152,8 +154,8 @@ fn handle_task_action(action: TaskAction) {
             }
 
             println!(
-                "{:<12} {:<20} {:<15} {:<12} {}",
-                "ID", "TITLE", "STATUS", "PHASE", "STAGE"
+                "{:<12} {:<20} {:<15} {:<12} STAGE",
+                "ID", "TITLE", "STATUS", "PHASE"
             );
             println!("{}", "-".repeat(80));
 
@@ -186,19 +188,19 @@ fn handle_task_action(action: TaskAction) {
             println!("Phase: {}", format_phase(&task.phase));
 
             if let Some(stage) = task.current_stage() {
-                println!("Current Stage: {}", stage);
+                println!("Current Stage: {stage}");
             }
 
             if let Some(parent) = &task.parent_id {
-                println!("Parent: {}", parent);
+                println!("Parent: {parent}");
             }
 
             if let Some(branch) = &task.branch_name {
-                println!("Branch: {}", branch);
+                println!("Branch: {branch}");
             }
 
             if let Some(worktree) = &task.worktree_path {
-                println!("Worktree: {}", worktree);
+                println!("Worktree: {worktree}");
             }
 
             // Show artifacts
@@ -237,10 +239,11 @@ fn handle_task_action(action: TaskAction) {
                     for iter in iterations {
                         let outcome_str = iter
                             .outcome
-                            .as_ref()
-                            .map(|o| format!("{:?}", o))
-                            .unwrap_or_else(|| "in progress".to_string());
-                        println!("  - {} (stage: {}, outcome: {})", iter.id, iter.stage, outcome_str);
+                            .as_ref().map_or_else(|| "in progress".to_string(), |o| format!("{o:?}"));
+                        println!(
+                            "  - {} (stage: {}, outcome: {})",
+                            iter.id, iter.stage, outcome_str
+                        );
                     }
                 }
                 _ => {}
@@ -249,7 +252,7 @@ fn handle_task_action(action: TaskAction) {
             println!("\nCreated: {}", task.created_at);
             println!("Updated: {}", task.updated_at);
             if let Some(completed) = &task.completed_at {
-                println!("Completed: {}", completed);
+                println!("Completed: {completed}");
             }
         }
 
@@ -270,10 +273,10 @@ fn handle_task_action(action: TaskAction) {
             println!("Title: {}", task.title);
             println!("Stage: {}", task.current_stage().unwrap_or("-"));
             if let Some(branch) = &task.branch_name {
-                println!("Branch: {}", branch);
+                println!("Branch: {branch}");
             }
             if let Some(worktree) = &task.worktree_path {
-                println!("Worktree: {}", worktree);
+                println!("Worktree: {worktree}");
             }
         }
 
@@ -304,7 +307,10 @@ fn handle_task_action(action: TaskAction) {
             };
 
             println!("Rejected task: {}", task.id);
-            println!("Stage: {} (new iteration)", task.current_stage().unwrap_or("-"));
+            println!(
+                "Stage: {} (new iteration)",
+                task.current_stage().unwrap_or("-")
+            );
         }
     }
 }
@@ -325,8 +331,9 @@ fn handle_utility_action(action: UtilityAction) {
             match runner.run(&name, &context) {
                 Ok(output) => {
                     // Pretty print the output
-                    let formatted = serde_json::to_string_pretty(&output).unwrap_or_else(|_| output.to_string());
-                    println!("{}", formatted);
+                    let formatted = serde_json::to_string_pretty(&output)
+                        .unwrap_or_else(|_| output.to_string());
+                    println!("{formatted}");
                 }
                 Err(e) => {
                     eprintln!("Error running utility task: {e}");
@@ -339,7 +346,9 @@ fn handle_utility_action(action: UtilityAction) {
             println!("  - generate_title  Generate a concise title from a description");
             println!();
             println!("Usage:");
-            println!("  ork utility run generate_title -c '{{\"description\": \"Fix the login bug\"}}'");
+            println!(
+                "  ork utility run generate_title -c '{{\"description\": \"Fix the login bug\"}}'"
+            );
         }
     }
 }
@@ -403,7 +412,7 @@ fn matches_status_filter(task: &Task, filter: &str) -> bool {
 
 fn format_status(status: &Status) -> String {
     match status {
-        Status::Active { stage } => format!("Active({})", stage),
+        Status::Active { stage } => format!("Active({stage})"),
         Status::Done => "Done".to_string(),
         Status::Archived => "Archived".to_string(),
         Status::WaitingOnChildren => "Waiting".to_string(),

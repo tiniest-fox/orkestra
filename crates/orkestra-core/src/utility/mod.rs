@@ -125,11 +125,7 @@ impl UtilityRunner {
     ///
     /// # Returns
     /// The validated JSON output from the task.
-    pub fn run(
-        &self,
-        task_name: &str,
-        context: &Value,
-    ) -> Result<Value, UtilityError> {
+    pub fn run(&self, task_name: &str, context: &Value) -> Result<Value, UtilityError> {
         // Load task definition
         let (prompt_template, schema_str) = load_task_definition(task_name)?;
 
@@ -185,8 +181,8 @@ impl UtilityRunner {
         let stderr_handle = spawn_stderr_reader(stderr);
 
         // Extract structured output
-        let output = extract_structured_output(stdout, self.timeout_secs)
-            .ok_or(UtilityError::Timeout)?;
+        let output =
+            extract_structured_output(stdout, self.timeout_secs).ok_or(UtilityError::Timeout)?;
 
         // Log stderr if any
         if let Some(handle) = stderr_handle {
@@ -229,14 +225,17 @@ fn generate_output_format_section(schema: &Value) -> String {
     let schema_pretty = serde_json::to_string_pretty(schema).unwrap_or_default();
     let mut hb = Handlebars::new();
     hb.register_escape_fn(handlebars::no_escape);
-    hb.render_template(OUTPUT_FORMAT_TEMPLATE, &serde_json::json!({ "schema": schema_pretty }))
-        .unwrap_or_default()
+    hb.render_template(
+        OUTPUT_FORMAT_TEMPLATE,
+        &serde_json::json!({ "schema": schema_pretty }),
+    )
+    .unwrap_or_default()
 }
 
 /// Validate output against a JSON schema.
 fn validate_output(output: &Value, schema: &Value) -> Result<(), UtilityError> {
-    let validator = jsonschema::Validator::new(schema)
-        .map_err(|e| UtilityError::SchemaError(e.to_string()))?;
+    let validator =
+        jsonschema::Validator::new(schema).map_err(|e| UtilityError::SchemaError(e.to_string()))?;
 
     let errors: Vec<String> = validator
         .iter_errors(output)

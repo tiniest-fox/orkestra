@@ -94,9 +94,7 @@ impl<'a> TransitionValidator<'a> {
         current_status: &Status,
         current_phase: Phase,
     ) -> Result<Transition, TransitionError> {
-        let current_stage = current_status
-            .stage()
-            .ok_or(TransitionError::NotInStage)?;
+        let current_stage = current_status.stage().ok_or(TransitionError::NotInStage)?;
 
         // Must be awaiting review to approve
         if current_phase != Phase::AwaitingReview {
@@ -124,9 +122,7 @@ impl<'a> TransitionValidator<'a> {
         current_phase: Phase,
         feedback: impl Into<String>,
     ) -> Result<Transition, TransitionError> {
-        let current_stage = current_status
-            .stage()
-            .ok_or(TransitionError::NotInStage)?;
+        let current_stage = current_status.stage().ok_or(TransitionError::NotInStage)?;
 
         // Must be awaiting review to reject
         if current_phase != Phase::AwaitingReview {
@@ -162,9 +158,7 @@ impl<'a> TransitionValidator<'a> {
             });
         }
 
-        let stage = current_status
-            .stage()
-            .ok_or(TransitionError::NotInStage)?;
+        let stage = current_status.stage().ok_or(TransitionError::NotInStage)?;
 
         let stage_config = self
             .workflow
@@ -241,9 +235,7 @@ impl<'a> TransitionValidator<'a> {
         target: impl Into<String>,
         feedback: impl Into<String>,
     ) -> Result<Transition, TransitionError> {
-        let current_stage = current_status
-            .stage()
-            .ok_or(TransitionError::NotInStage)?;
+        let current_stage = current_status.stage().ok_or(TransitionError::NotInStage)?;
 
         let target_str = target.into();
         let feedback_str = feedback.into();
@@ -307,8 +299,7 @@ mod tests {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("breakdown", "breakdown")
-                .with_inputs(vec!["plan".into()]),
+            StageConfig::new("breakdown", "breakdown").with_inputs(vec!["plan".into()]),
             StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
             StageConfig::new("review", "verdict")
                 .with_inputs(vec!["summary".into()])
@@ -375,7 +366,9 @@ mod tests {
         let validator = TransitionValidator::new(&workflow);
 
         let status = Status::active("planning");
-        let transition = validator.agent_output(&status, Phase::AgentWorking).unwrap();
+        let transition = validator
+            .agent_output(&status, Phase::AgentWorking)
+            .unwrap();
 
         // Normal stage goes to awaiting review
         assert_eq!(transition.to_phase, Phase::AwaitingReview);
@@ -387,7 +380,9 @@ mod tests {
         let validator = TransitionValidator::new(&workflow);
 
         let status = Status::active("review");
-        let transition = validator.agent_output(&status, Phase::AgentWorking).unwrap();
+        let transition = validator
+            .agent_output(&status, Phase::AgentWorking)
+            .unwrap();
 
         // Automated stage goes to idle (no human review needed)
         assert_eq!(transition.to_phase, Phase::Idle);
@@ -399,7 +394,9 @@ mod tests {
         let validator = TransitionValidator::new(&workflow);
 
         let status = Status::active("work");
-        let transition = validator.fail(&status, Phase::AgentWorking, "Error").unwrap();
+        let transition = validator
+            .fail(&status, Phase::AgentWorking, "Error")
+            .unwrap();
 
         assert!(matches!(transition.to, Status::Failed { .. }));
     }
@@ -485,19 +482,14 @@ mod tests {
         let status = Status::active("planning");
         let result = validator.restage(&status, Phase::Idle, "work", "Skip to work");
 
-        assert!(matches!(
-            result,
-            Err(TransitionError::CannotRestage { .. })
-        ));
+        assert!(matches!(result, Err(TransitionError::CannotRestage { .. })));
     }
 
     #[test]
     fn test_restage_unknown_target() {
         // Workflow with restage to non-existent stage
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_restage(vec!["nonexistent".into()])),
-        ]);
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("review", "verdict")
+            .with_capabilities(StageCapabilities::with_restage(vec!["nonexistent".into()]))]);
         let validator = TransitionValidator::new(&workflow);
 
         let status = Status::active("review");

@@ -7,13 +7,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import type {
-  WorkflowConfig,
-  WorkflowTask,
-  WorkflowIteration,
+  LogEntry,
   WorkflowArtifact,
+  WorkflowConfig,
+  WorkflowIteration,
   WorkflowQuestion,
   WorkflowQuestionAnswer,
-  LogEntry,
+  WorkflowTask,
 } from "../types/workflow";
 
 /**
@@ -165,12 +165,9 @@ export function useWorkflowActions() {
     return invoke<WorkflowTask>("workflow_reject", { taskId, feedback });
   }, []);
 
-  const answerQuestions = useCallback(
-    async (taskId: string, answers: WorkflowQuestionAnswer[]) => {
-      return invoke<WorkflowTask>("workflow_answer_questions", { taskId, answers });
-    },
-    [],
-  );
+  const answerQuestions = useCallback(async (taskId: string, answers: WorkflowQuestionAnswer[]) => {
+    return invoke<WorkflowTask>("workflow_answer_questions", { taskId, answers });
+  }, []);
 
   return { approve, reject, answerQuestions };
 }

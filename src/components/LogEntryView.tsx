@@ -3,34 +3,47 @@
  * Renders tool uses, text output, and subagent activity.
  */
 
+import {
+  Command,
+  FilePlus,
+  FileText,
+  FolderSearch,
+  GitBranch,
+  HelpCircle,
+  ListTodo,
+  Pencil,
+  Search,
+  Terminal,
+} from "lucide-react";
 import { useState } from "react";
-import type { LogEntry, ToolInput, OrkAction, TodoItem, ResumeType } from "../types/workflow";
+import type { LogEntry, OrkAction, ResumeType, TodoItem, ToolInput } from "../types/workflow";
 
 /**
  * Get icon for tool type.
  */
-function getToolIcon(tool: string): string {
+function getToolIcon(tool: string, size: number): React.ReactNode {
+  const props = { size, strokeWidth: 2.5 };
   switch (tool.toLowerCase()) {
     case "bash":
-      return "$";
+      return <Terminal {...props} />;
     case "read":
-      return "R";
+      return <FileText {...props} />;
     case "write":
-      return "W";
+      return <FilePlus {...props} />;
     case "edit":
-      return "E";
+      return <Pencil {...props} />;
     case "glob":
-      return "*";
+      return <FolderSearch {...props} />;
     case "grep":
-      return "G";
+      return <Search {...props} />;
     case "task":
-      return "T";
+      return <GitBranch {...props} />;
     case "todowrite":
-      return "\u2713";
+      return <ListTodo {...props} />;
     case "ork":
-      return "O";
+      return <Command {...props} />;
     default:
-      return "?";
+      return <HelpCircle {...props} />;
   }
 }
 
@@ -200,11 +213,7 @@ function ToolResultContent({ content }: { content: string }) {
 export function LogEntryView({ entry }: { entry: LogEntry }) {
   switch (entry.type) {
     case "text":
-      return (
-        <div className="py-1 text-gray-100 text-sm whitespace-pre-wrap">
-          {entry.content}
-        </div>
-      );
+      return <div className="py-1 text-gray-100 text-sm whitespace-pre-wrap">{entry.content}</div>;
 
     case "user_message": {
       // Determine styling based on resume_type
@@ -262,9 +271,9 @@ export function LogEntryView({ entry }: { entry: LogEntry }) {
       return (
         <div className="py-1.5 flex items-start gap-2">
           <span
-            className={`flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-white text-xs font-bold ${getToolColor(entry.tool)}`}
+            className={`flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-white ${getToolColor(entry.tool)}`}
           >
-            {getToolIcon(entry.tool)}
+            {getToolIcon(entry.tool, 14)}
           </span>
           <div className="flex-1 min-w-0">
             <ToolInputSummary input={entry.input} />
@@ -288,9 +297,9 @@ export function LogEntryView({ entry }: { entry: LogEntry }) {
       return (
         <div className="py-1 ml-6 flex items-start gap-2 opacity-75">
           <span
-            className={`flex-shrink-0 w-4 h-4 rounded flex items-center justify-center text-white text-[10px] font-bold ${getToolColor(entry.tool)}`}
+            className={`flex-shrink-0 w-4 h-4 rounded flex items-center justify-center text-white ${getToolColor(entry.tool)}`}
           >
-            {getToolIcon(entry.tool)}
+            {getToolIcon(entry.tool, 12)}
           </span>
           <div className="flex-1 min-w-0">
             <ToolInputSummary input={entry.input} />
@@ -339,7 +348,12 @@ export function LogList({
       <div className="flex items-center justify-center h-full text-red-400 text-sm">
         <div className="flex items-center gap-2">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
           </svg>
           {error}
         </div>

@@ -44,13 +44,7 @@ impl WorkflowApi {
         self.store.save_task(&task)?;
 
         // Create initial iteration
-        let iteration = Iteration::new(
-            format!("{}-iter-1", id),
-            &id,
-            &first_stage.name,
-            1,
-            &now,
-        );
+        let iteration = Iteration::new(format!("{}-iter-1", id), &id, &first_stage.name, 1, &now);
         self.store.save_iteration(&iteration)?;
 
         // ALWAYS spawn async setup (handles both git and no-git cases)
@@ -122,13 +116,7 @@ impl WorkflowApi {
         self.store.save_task(&task)?;
 
         // Create initial iteration
-        let iteration = Iteration::new(
-            format!("{}-iter-1", id),
-            &id,
-            &first_stage.name,
-            1,
-            &now,
-        );
+        let iteration = Iteration::new(format!("{}-iter-1", id), &id, &first_stage.name, 1, &now);
         self.store.save_iteration(&iteration)?;
 
         // Spawn async setup - no git work needed, just transitions to Idle
@@ -155,13 +143,19 @@ impl WorkflowApi {
     /// List all active top-level tasks (excluding archived, without parents).
     pub fn list_tasks(&self) -> WorkflowResult<Vec<Task>> {
         let all_tasks = self.store.list_active_tasks()?;
-        Ok(all_tasks.into_iter().filter(|t| t.parent_id.is_none()).collect())
+        Ok(all_tasks
+            .into_iter()
+            .filter(|t| t.parent_id.is_none())
+            .collect())
     }
 
     /// List all archived top-level tasks (tasks without parents).
     pub fn list_archived_tasks(&self) -> WorkflowResult<Vec<Task>> {
         let all_tasks = self.store.list_archived_tasks()?;
-        Ok(all_tasks.into_iter().filter(|t| t.parent_id.is_none()).collect())
+        Ok(all_tasks
+            .into_iter()
+            .filter(|t| t.parent_id.is_none())
+            .collect())
     }
 
     /// List subtasks of a parent task.
@@ -284,18 +278,14 @@ fn spawn_async_setup(
                             task.branch_name
                         );
                         if let Err(e) = store.save_task(&task) {
-                            eprintln!(
-                                "[setup] CRITICAL: Failed to save task {task_id}: {e}"
-                            );
+                            eprintln!("[setup] CRITICAL: Failed to save task {task_id}: {e}");
                         }
                     }
                     Err(error) => {
                         // FAIL the task visibly - no silent failures
                         eprintln!("[setup] Setup failed for {task_id}: {error}");
                         crate::orkestra_debug!("task", "{} setup failed: {}", task_id, error);
-                        task.status = Status::Failed {
-                            error: Some(error),
-                        };
+                        task.status = Status::Failed { error: Some(error) };
                         task.phase = Phase::Idle;
                         if let Err(e) = store.save_task(&task) {
                             eprintln!(
@@ -323,9 +313,9 @@ fn spawn_async_setup(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::InMemoryWorkflowStore;
+    use std::sync::Arc;
 
     use super::*;
 
@@ -343,7 +333,9 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Fix bug", "Fix the login bug", None).unwrap();
+        let task = api
+            .create_task("Fix bug", "Fix the login bug", None)
+            .unwrap();
 
         assert_eq!(task.title, "Fix bug");
         assert_eq!(task.description, "Fix the login bug");
@@ -374,7 +366,9 @@ mod tests {
         // Wait for parent setup to complete
         let parent = wait_for_setup(&api, &parent.id);
 
-        let subtask = api.create_subtask(&parent.id, "Child", "Child task").unwrap();
+        let subtask = api
+            .create_subtask(&parent.id, "Child", "Child task")
+            .unwrap();
 
         assert_eq!(subtask.parent_id, Some(parent.id.clone()));
     }
@@ -426,7 +420,9 @@ mod tests {
         // Wait for parent setup to complete
         let parent = wait_for_setup(&api, &parent.id);
 
-        let _ = api.create_subtask(&parent.id, "Child", "Child task").unwrap();
+        let _ = api
+            .create_subtask(&parent.id, "Child", "Child task")
+            .unwrap();
         let task2 = api.create_task("Task 2", "Second task", None).unwrap();
 
         let tasks = api.list_tasks().unwrap();
@@ -489,7 +485,9 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let task1 = api.create_task("Active", "Active task", None).unwrap();
-        let mut task2 = api.create_task("Archived", "Will be archived", None).unwrap();
+        let mut task2 = api
+            .create_task("Archived", "Will be archived", None)
+            .unwrap();
 
         // Archive task2
         task2.status = Status::Archived;
@@ -507,7 +505,9 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let _task1 = api.create_task("Active", "Active task", None).unwrap();
-        let mut task2 = api.create_task("Archived", "Will be archived", None).unwrap();
+        let mut task2 = api
+            .create_task("Archived", "Will be archived", None)
+            .unwrap();
 
         // Archive task2
         task2.status = Status::Archived;

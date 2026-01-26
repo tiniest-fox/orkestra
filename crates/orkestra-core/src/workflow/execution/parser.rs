@@ -76,8 +76,7 @@ pub fn parse_agent_output(
     }
 
     // Fallback: try to parse the entire output as StageOutput directly
-    parse_json_output(trimmed, schema)
-        .map_err(|e| format!("Failed to parse agent output: {e}"))
+    parse_json_output(trimmed, schema).map_err(|e| format!("Failed to parse agent output: {e}"))
 }
 
 /// Parse a JSON string as StageOutput with optional schema validation.
@@ -201,7 +200,8 @@ mod tests {
 
     #[test]
     fn test_parse_agent_output_artifact() {
-        let output = r#"{"structured_output": {"type": "plan", "content": "The implementation plan"}}"#;
+        let output =
+            r#"{"structured_output": {"type": "plan", "content": "The implementation plan"}}"#;
 
         let result = parse_agent_output(output, None);
         assert!(result.is_ok());
@@ -238,7 +238,8 @@ mod tests {
 
     #[test]
     fn test_parse_agent_output_json_array_artifact() {
-        let output = r#"[{"type":"system"},{"structured_output":{"type":"summary","content":"All done"}}]"#;
+        let output =
+            r#"[{"type":"system"},{"structured_output":{"type":"summary","content":"All done"}}]"#;
 
         let result = parse_agent_output(output, None);
         assert!(result.is_ok());

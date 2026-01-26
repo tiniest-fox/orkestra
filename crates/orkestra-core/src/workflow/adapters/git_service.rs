@@ -309,9 +309,9 @@ impl GitService for Git2GitService {
             if let Ok(worktree) = repo.find_worktree(task_id) {
                 let mut prune_opts = git2::WorktreePruneOptions::new();
                 prune_opts.valid(true);
-                worktree
-                    .prune(Some(&mut prune_opts))
-                    .map_err(|e| GitError::WorktreeError(format!("Failed to prune worktree: {e}")))?;
+                worktree.prune(Some(&mut prune_opts)).map_err(|e| {
+                    GitError::WorktreeError(format!("Failed to prune worktree: {e}"))
+                })?;
             }
         }
 
@@ -324,7 +324,10 @@ impl GitService for Git2GitService {
         if delete_branch {
             if let Err(e) = self.delete_branch(&branch_name) {
                 // Branch may not exist or may be checked out elsewhere - log but don't fail
-                eprintln!("[orkestra] WARNING: Failed to delete branch {}: {}", branch_name, e);
+                eprintln!(
+                    "[orkestra] WARNING: Failed to delete branch {}: {}",
+                    branch_name, e
+                );
             }
         }
 
@@ -339,10 +342,7 @@ impl GitService for Git2GitService {
             return Ok("main".to_string());
         }
         // Check if 'master' branch exists
-        if repo
-            .find_branch("master", git2::BranchType::Local)
-            .is_ok()
-        {
+        if repo.find_branch("master", git2::BranchType::Local).is_ok() {
             return Ok("master".to_string());
         }
         Err(GitError::BranchError(

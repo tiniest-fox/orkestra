@@ -249,8 +249,8 @@ impl AgentRunnerTrait for AgentRunner {
         orkestra_debug!("runner", "run_sync: output_len={}", full_output.len());
 
         // Parse the output with schema validation
-        let parsed_output = parse_agent_output(&full_output, schema.as_ref())
-            .map_err(RunError::ParseFailed)?;
+        let parsed_output =
+            parse_agent_output(&full_output, schema.as_ref()).map_err(RunError::ParseFailed)?;
 
         orkestra_debug!("runner", "run_sync: parsed output successfully");
 
@@ -329,7 +329,9 @@ fn read_output_and_send_events(
                     eprintln!("[agent runner] API error detected: {error_msg}");
                     // Send error completion - do NOT disarm, let guard kill the process
                     if tx.send(RunEvent::Completed(Err(error_msg))).is_err() {
-                        eprintln!("[agent runner] Channel closed before error completion could be sent");
+                        eprintln!(
+                            "[agent runner] Channel closed before error completion could be sent"
+                        );
                     }
                     return; // Exit early, guard will kill the looping process on drop
                 }
@@ -337,7 +339,12 @@ fn read_output_and_send_events(
             Err(e) => {
                 eprintln!("[agent runner] Error reading stdout: {e}");
                 // Send error completion so orchestrator knows something went wrong
-                if tx.send(RunEvent::Completed(Err(format!("Failed to read agent output: {e}")))).is_err() {
+                if tx
+                    .send(RunEvent::Completed(Err(format!(
+                        "Failed to read agent output: {e}"
+                    ))))
+                    .is_err()
+                {
                     eprintln!("[agent runner] Channel closed before read error could be sent");
                 }
                 return; // Exit - don't try to parse partial output
@@ -363,8 +370,8 @@ fn read_output_and_send_events(
 pub mod mock {
     use super::*;
     use std::collections::HashMap;
-    use std::sync::Mutex;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Mutex;
 
     /// Mock agent runner for testing.
     ///
@@ -439,20 +446,34 @@ pub mod mock {
             self.calls.lock().unwrap().push(config.clone());
 
             // Use task_id from config, or extract from prompt as fallback
-            let task_id = config.task_id.clone()
+            let task_id = config
+                .task_id
+                .clone()
                 .or_else(|| Self::extract_task_id(&config.prompt))
                 .ok_or_else(|| RunError::SpawnFailed("Could not determine task_id".into()))?;
 
             // Get and remove the next configured output (consume from queue)
-            let output = self.outputs.lock().unwrap()
+            let output = self
+                .outputs
+                .lock()
+                .unwrap()
                 .get_mut(&task_id)
-                .and_then(|queue| if queue.is_empty() { None } else { Some(queue.remove(0)) })
-                .ok_or_else(|| RunError::SpawnFailed(format!("No output configured for task {task_id}")))?;
+                .and_then(|queue| {
+                    if queue.is_empty() {
+                        None
+                    } else {
+                        Some(queue.remove(0))
+                    }
+                })
+                .ok_or_else(|| {
+                    RunError::SpawnFailed(format!("No output configured for task {task_id}"))
+                })?;
 
             // Generate fake raw output
             let raw_output = serde_json::to_string(&serde_json::json!({
                 "structured_output": output_to_json(&output)
-            })).unwrap();
+            }))
+            .unwrap();
 
             Ok(RunResult {
                 raw_output,
@@ -468,14 +489,20 @@ pub mod mock {
             let (tx, rx) = mpsc::channel();
 
             // Use task_id from config, or extract from prompt as fallback
-            let task_id = config.task_id.clone()
+            let task_id = config
+                .task_id
+                .clone()
                 .or_else(|| Self::extract_task_id(&config.prompt));
 
             // Get and remove the next configured output (consume from queue)
             let output = task_id.as_ref().and_then(|id| {
-                self.outputs.lock().unwrap()
-                    .get_mut(id)
-                    .and_then(|queue| if queue.is_empty() { None } else { Some(queue.remove(0)) })
+                self.outputs.lock().unwrap().get_mut(id).and_then(|queue| {
+                    if queue.is_empty() {
+                        None
+                    } else {
+                        Some(queue.remove(0))
+                    }
+                })
             });
 
             // Spawn thread to send events
@@ -516,7 +543,10 @@ pub mod mock {
                 "target": target,
                 "feedback": feedback
             }),
-            StageOutput::Subtasks { subtasks, skip_reason } => {
+            StageOutput::Subtasks {
+                subtasks,
+                skip_reason,
+            } => {
                 let mut json = serde_json::json!({
                     "type": "subtasks",
                     "subtasks": subtasks
@@ -577,7 +607,12 @@ mod tests {
         #[test]
         fn test_mock_runner_sync() {
             let runner = MockAgentRunner::new();
-            runner.set_output("task-1", StageOutput::Artifact { content: "Done".into() });
+            runner.set_output(
+                "task-1",
+                StageOutput::Artifact {
+                    content: "Done".into(),
+                },
+            );
 
             let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo the work");
             let result = runner.run_sync(config).unwrap();
@@ -588,7 +623,12 @@ mod tests {
         #[test]
         fn test_mock_runner_async() {
             let runner = MockAgentRunner::new();
-            runner.set_output("task-2", StageOutput::Artifact { content: "Plan".into() });
+            runner.set_output(
+                "task-2",
+                StageOutput::Artifact {
+                    content: "Plan".into(),
+                },
+            );
 
             let config = RunConfig::new("/tmp", "**Task ID**: task-2\nPlan this");
             let (pid, rx) = runner.run_async(config).unwrap();
@@ -601,13 +641,20 @@ mod tests {
                 events.push(event);
             }
 
-            assert!(events.iter().any(|e| matches!(e, RunEvent::Completed(Ok(_)))));
+            assert!(events
+                .iter()
+                .any(|e| matches!(e, RunEvent::Completed(Ok(_)))));
         }
 
         #[test]
         fn test_mock_runner_records_calls() {
             let runner = MockAgentRunner::new();
-            runner.set_output("task-1", StageOutput::Artifact { content: "Done".into() });
+            runner.set_output(
+                "task-1",
+                StageOutput::Artifact {
+                    content: "Done".into(),
+                },
+            );
 
             let config = RunConfig::new("/tmp", "**Task ID**: task-1\nDo work");
             let _ = runner.run_sync(config);

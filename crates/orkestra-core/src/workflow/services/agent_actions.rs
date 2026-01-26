@@ -44,11 +44,7 @@ impl WorkflowApi {
     /// # Errors
     ///
     /// Returns `InvalidTransition` if the task is not in `AgentWorking` phase.
-    pub fn process_agent_output(
-        &self,
-        task_id: &str,
-        output: StageOutput,
-    ) -> WorkflowResult<Task> {
+    pub fn process_agent_output(&self, task_id: &str, output: StageOutput) -> WorkflowResult<Task> {
         let mut task = self.get_task(task_id)?;
 
         if task.phase != Phase::AgentWorking {
@@ -103,8 +99,12 @@ impl WorkflowApi {
                     .unwrap_or_else(|| "artifact".to_string());
 
                 // Agent produced artifact
-                task.artifacts
-                    .set(Artifact::new(&artifact_name, &content, &current_stage, &now));
+                task.artifacts.set(Artifact::new(
+                    &artifact_name,
+                    &content,
+                    &current_stage,
+                    &now,
+                ));
 
                 // Check if this is an automated stage
                 let is_automated = self.is_stage_automated(&current_stage);
@@ -187,11 +187,7 @@ impl WorkflowApi {
                     // Empty subtasks with skip_reason means skipping breakdown
                     // Log the reason and treat as completing the stage
                     if let Some(reason) = skip_reason {
-                        orkestra_debug!(
-                            "agent_actions",
-                            "Skipping subtask breakdown: {}",
-                            reason
-                        );
+                        orkestra_debug!("agent_actions", "Skipping subtask breakdown: {}", reason);
                     }
                     // Store as artifact that breakdown was skipped
                     task.phase = Phase::AwaitingReview;
@@ -206,7 +202,12 @@ impl WorkflowApi {
 
             StageOutput::Failed { error } => {
                 // End iteration before changing status (task must still be in active stage)
-                self.end_current_iteration(&task, Outcome::AgentError { error: error.clone() })?;
+                self.end_current_iteration(
+                    &task,
+                    Outcome::AgentError {
+                        error: error.clone(),
+                    },
+                )?;
                 task.status = Status::failed(&error);
                 task.phase = Phase::Idle;
                 task.updated_at = now;
@@ -214,7 +215,12 @@ impl WorkflowApi {
 
             StageOutput::Blocked { reason } => {
                 // End iteration before changing status (task must still be in active stage)
-                self.end_current_iteration(&task, Outcome::Blocked { reason: reason.clone() })?;
+                self.end_current_iteration(
+                    &task,
+                    Outcome::Blocked {
+                        reason: reason.clone(),
+                    },
+                )?;
                 task.status = Status::blocked(&reason);
                 task.phase = Phase::Idle;
                 task.updated_at = now;

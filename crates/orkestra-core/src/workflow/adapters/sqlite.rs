@@ -56,8 +56,8 @@ impl WorkflowStore for SqliteWorkflowStore {
     fn save_task(&self, task: &Task) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
 
-        let status_json =
-            serde_json::to_string(&task.status).map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        let status_json = serde_json::to_string(&task.status)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
         let phase_str = phase_to_str(task.phase);
         let artifacts_json = serde_json::to_string(&task.artifacts)
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -319,7 +319,11 @@ impl WorkflowStore for SqliteWorkflowStore {
         Ok(())
     }
 
-    fn get_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<Option<StageSession>> {
+    fn get_stage_session(
+        &self,
+        task_id: &str,
+        stage: &str,
+    ) -> WorkflowResult<Option<StageSession>> {
         let conn = self.lock_conn()?;
 
         let result = conn
@@ -548,7 +552,13 @@ mod tests {
         let store = test_store();
 
         // Create
-        let task = Task::new("task-1", "Test Task", "Description here", "planning", "2025-01-24T10:00:00Z");
+        let task = Task::new(
+            "task-1",
+            "Test Task",
+            "Description here",
+            "planning",
+            "2025-01-24T10:00:00Z",
+        );
         store.save_task(&task).unwrap();
 
         // Read
@@ -575,8 +585,12 @@ mod tests {
         let store = test_store();
 
         let mut task = Task::new("task-1", "Test", "Desc", "work", "now");
-        task.artifacts
-            .set(Artifact::new("plan", "The plan content", "planning", "earlier"));
+        task.artifacts.set(Artifact::new(
+            "plan",
+            "The plan content",
+            "planning",
+            "earlier",
+        ));
         store.save_task(&task).unwrap();
 
         let loaded = store.get_task("task-1").unwrap().unwrap();
@@ -590,9 +604,27 @@ mod tests {
     fn test_list_tasks() {
         let store = test_store();
 
-        store.save_task(&Task::new("task-1", "Task 1", "Desc", "planning", "2025-01-01")).unwrap();
-        store.save_task(&Task::new("task-2", "Task 2", "Desc", "work", "2025-01-02")).unwrap();
-        store.save_task(&Task::new("task-3", "Task 3", "Desc", "review", "2025-01-03")).unwrap();
+        store
+            .save_task(&Task::new(
+                "task-1",
+                "Task 1",
+                "Desc",
+                "planning",
+                "2025-01-01",
+            ))
+            .unwrap();
+        store
+            .save_task(&Task::new("task-2", "Task 2", "Desc", "work", "2025-01-02"))
+            .unwrap();
+        store
+            .save_task(&Task::new(
+                "task-3",
+                "Task 3",
+                "Desc",
+                "review",
+                "2025-01-03",
+            ))
+            .unwrap();
 
         let tasks = store.list_tasks().unwrap();
         assert_eq!(tasks.len(), 3);
@@ -648,7 +680,10 @@ mod tests {
         assert_eq!(active.unwrap().iteration_number, 1);
 
         // End iteration
-        let mut iter = store.get_active_iteration("task-1", "planning").unwrap().unwrap();
+        let mut iter = store
+            .get_active_iteration("task-1", "planning")
+            .unwrap()
+            .unwrap();
         iter.end("2025-01-24T10:30:00Z", Outcome::Approved);
         store.save_iteration(&iter).unwrap();
 
@@ -680,7 +715,9 @@ mod tests {
         store.save_iteration(&iter2).unwrap();
 
         // Get all iterations for stage
-        let iters = store.get_iterations_for_stage("task-1", "planning").unwrap();
+        let iters = store
+            .get_iterations_for_stage("task-1", "planning")
+            .unwrap();
         assert_eq!(iters.len(), 2);
         assert_eq!(iters[0].iteration_number, 1);
         assert_eq!(iters[1].iteration_number, 2);
@@ -706,7 +743,9 @@ mod tests {
         assert_eq!(all.len(), 2);
 
         // Get by stage
-        let planning = store.get_iterations_for_stage("task-1", "planning").unwrap();
+        let planning = store
+            .get_iterations_for_stage("task-1", "planning")
+            .unwrap();
         assert_eq!(planning.len(), 1);
         let work = store.get_iterations_for_stage("task-1", "work").unwrap();
         assert_eq!(work.len(), 1);
@@ -719,8 +758,12 @@ mod tests {
         let task = Task::new("task-1", "Test", "Desc", "planning", "now");
         store.save_task(&task).unwrap();
 
-        store.save_iteration(&Iteration::new("i1", "task-1", "planning", 1, "t1")).unwrap();
-        store.save_iteration(&Iteration::new("i2", "task-1", "work", 1, "t2")).unwrap();
+        store
+            .save_iteration(&Iteration::new("i1", "task-1", "planning", 1, "t1"))
+            .unwrap();
+        store
+            .save_iteration(&Iteration::new("i2", "task-1", "work", 1, "t2"))
+            .unwrap();
 
         assert_eq!(store.get_iterations("task-1").unwrap().len(), 2);
 

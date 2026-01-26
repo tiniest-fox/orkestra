@@ -28,7 +28,12 @@ impl WorkflowApi {
             .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
             .to_string();
 
-        orkestra_debug!("action", "approve {}: from stage {}", task_id, current_stage);
+        orkestra_debug!(
+            "action",
+            "approve {}: from stage {}",
+            task_id,
+            current_stage
+        );
 
         // End current iteration
         self.end_current_iteration(&task, Outcome::Approved)?;
@@ -147,9 +152,7 @@ impl WorkflowApi {
         let prev_iter = self
             .store
             .get_latest_iteration(&task.id, &current_stage)?
-            .ok_or_else(|| {
-                WorkflowError::InvalidTransition("No iteration to answer".into())
-            })?;
+            .ok_or_else(|| WorkflowError::InvalidTransition("No iteration to answer".into()))?;
 
         // Verify there are pending questions in the outcome
         let _questions = match &prev_iter.outcome {
@@ -213,11 +216,11 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::domain::Question;
     use crate::workflow::runtime::{Artifact, Status};
     use crate::workflow::InMemoryWorkflowStore;
+    use std::sync::Arc;
 
     use super::*;
 
@@ -376,11 +379,16 @@ mod tests {
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Simulate agent asking questions by ending iteration with AwaitingAnswers outcome
-        let iter = api.store.get_latest_iteration(&task.id, "planning").unwrap().unwrap();
+        let iter = api
+            .store
+            .get_latest_iteration(&task.id, "planning")
+            .unwrap()
+            .unwrap();
         let mut iter = iter;
-        iter.outcome = Some(Outcome::awaiting_answers("planning", vec![
-            Question::new("q1", "What framework?"),
-        ]));
+        iter.outcome = Some(Outcome::awaiting_answers(
+            "planning",
+            vec![Question::new("q1", "What framework?")],
+        ));
         iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
         api.store.save_iteration(&iter).unwrap();
         task.phase = Phase::AwaitingReview;
@@ -401,7 +409,9 @@ mod tests {
 
         let new_iter = iterations.last().unwrap();
         match &new_iter.incoming_context {
-            Some(IterationTrigger::Answers { answers: ctx_answers }) => {
+            Some(IterationTrigger::Answers {
+                answers: ctx_answers,
+            }) => {
                 assert_eq!(ctx_answers.len(), 1);
                 assert_eq!(ctx_answers[0].answer, "React");
             }

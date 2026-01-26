@@ -4,7 +4,7 @@
  */
 
 import type { WorkflowTask } from "../types/workflow";
-import { needsReview, hasPendingQuestions } from "../types/workflow";
+import { hasPendingQuestions, needsReview } from "../types/workflow";
 
 interface WorkflowTaskCardProps {
   task: WorkflowTask;

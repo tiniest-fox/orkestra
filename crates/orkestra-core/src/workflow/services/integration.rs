@@ -39,11 +39,20 @@ impl WorkflowApi {
 
         // If no branch, nothing to merge
         let Some(branch_name) = &task.branch_name else {
-            orkestra_debug!("integration", "integrate_task {}: no branch, marking success", task_id);
+            orkestra_debug!(
+                "integration",
+                "integrate_task {}: no branch, marking success",
+                task_id
+            );
             return self.integration_succeeded(task_id);
         };
 
-        orkestra_debug!("integration", "starting {}: branch={}", task_id, branch_name);
+        orkestra_debug!(
+            "integration",
+            "starting {}: branch={}",
+            task_id,
+            branch_name
+        );
 
         // Commit any pending changes in the worktree
         if let Some(worktree_path) = &task.worktree_path {
@@ -171,9 +180,7 @@ impl WorkflowApi {
         // Determine which stage to return to
         let recovery_stage = self
             .integration_failure_stage()
-            .ok_or_else(|| {
-                WorkflowError::InvalidTransition("No recovery stage configured".into())
-            })?
+            .ok_or_else(|| WorkflowError::InvalidTransition("No recovery stage configured".into()))?
             .to_string();
 
         // Move task back to recovery stage
@@ -203,9 +210,9 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use crate::workflow::config::{StageConfig, WorkflowConfig};
     use crate::workflow::InMemoryWorkflowStore;
+    use std::sync::Arc;
 
     use super::*;
 

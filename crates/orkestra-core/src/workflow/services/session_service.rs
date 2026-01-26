@@ -134,7 +134,11 @@ impl SessionService {
             Some(mut session) => {
                 // Existing session - transition to Spawning
                 // Ensure session ID exists (might be missing from older sessions or bugs)
-                if session.claude_session_id.as_ref().map_or(true, |s| s.is_empty()) {
+                if session
+                    .claude_session_id
+                    .as_ref()
+                    .map_or(true, |s| s.is_empty())
+                {
                     session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
                     orkestra_debug!(
                         "session",
@@ -374,7 +378,9 @@ mod tests {
         // Start agent
         service.on_spawn_starting("task-1", "planning").unwrap();
         let first_ctx = service.get_spawn_context("task-1", "planning").unwrap();
-        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
+        service
+            .on_agent_spawned("task-1", "planning", 12345)
+            .unwrap();
 
         // Agent exits - this increments resume_count
         service.on_agent_exited("task-1", "planning").unwrap();
@@ -393,7 +399,9 @@ mod tests {
 
         // Start and complete session
         service.on_spawn_starting("task-1", "planning").unwrap();
-        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
+        service
+            .on_agent_spawned("task-1", "planning", 12345)
+            .unwrap();
         service.on_stage_completed("task-1", "planning").unwrap();
 
         // Completed sessions should error on get_spawn_context
@@ -408,7 +416,9 @@ mod tests {
 
         // Start and abandon session
         service.on_spawn_starting("task-1", "planning").unwrap();
-        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
+        service
+            .on_agent_spawned("task-1", "planning", 12345)
+            .unwrap();
         service.on_stage_abandoned("task-1", "planning").unwrap();
 
         // Abandoned sessions should error on get_spawn_context
@@ -425,7 +435,10 @@ mod tests {
         service.on_spawn_starting("task-1", "planning").unwrap();
 
         // Session should have a UUID already
-        let session = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        let session = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
         assert!(session.claude_session_id.is_some());
 
         // Context should have the same session ID
@@ -440,11 +453,15 @@ mod tests {
 
         // Task 1 has running agent
         service.on_spawn_starting("task-1", "planning").unwrap();
-        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
+        service
+            .on_agent_spawned("task-1", "planning", 12345)
+            .unwrap();
 
         // Task 2 agent finished
         service.on_spawn_starting("task-2", "planning").unwrap();
-        service.on_agent_spawned("task-2", "planning", 12346).unwrap();
+        service
+            .on_agent_spawned("task-2", "planning", 12346)
+            .unwrap();
         service.on_agent_exited("task-2", "planning").unwrap();
 
         let running = service.get_running_agents().unwrap();
@@ -465,11 +482,17 @@ mod tests {
         let iter_id = service.on_spawn_starting("task-1", "planning").unwrap();
 
         // Session should be in Spawning state
-        let session = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        let session = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
         assert_eq!(session.session_state, SessionState::Spawning);
 
         // Iteration should exist and be active
-        let iteration = store.get_active_iteration("task-1", "planning").unwrap().unwrap();
+        let iteration = store
+            .get_active_iteration("task-1", "planning")
+            .unwrap()
+            .unwrap();
         assert_eq!(iteration.id, iter_id);
         assert!(iteration.is_active());
     }
@@ -483,10 +506,15 @@ mod tests {
         service.on_spawn_starting("task-1", "planning").unwrap();
 
         // Spawn succeeded
-        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
+        service
+            .on_agent_spawned("task-1", "planning", 12345)
+            .unwrap();
 
         // Session should be Active with PID
-        let session = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        let session = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
         assert_eq!(session.session_state, SessionState::Active);
         assert_eq!(session.agent_pid, Some(12345));
     }
@@ -500,10 +528,15 @@ mod tests {
         service.on_spawn_starting("task-1", "planning").unwrap();
 
         // Spawn failed
-        service.on_spawn_failed("task-1", "planning", "Process not found").unwrap();
+        service
+            .on_spawn_failed("task-1", "planning", "Process not found")
+            .unwrap();
 
         // Session should be Active (ready for retry)
-        let session = store.get_stage_session("task-1", "planning").unwrap().unwrap();
+        let session = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
         assert_eq!(session.session_state, SessionState::Active);
 
         // Iteration should have SpawnFailed outcome
@@ -526,23 +559,35 @@ mod tests {
 
         // First attempt - fails
         service.on_spawn_starting("task-1", "planning").unwrap();
-        service.on_spawn_failed("task-1", "planning", "First failure").unwrap();
+        service
+            .on_spawn_failed("task-1", "planning", "First failure")
+            .unwrap();
 
         // Second attempt - also fails
         service.on_spawn_starting("task-1", "planning").unwrap();
-        service.on_spawn_failed("task-1", "planning", "Second failure").unwrap();
+        service
+            .on_spawn_failed("task-1", "planning", "Second failure")
+            .unwrap();
 
         // Third attempt - succeeds
         service.on_spawn_starting("task-1", "planning").unwrap();
-        service.on_agent_spawned("task-1", "planning", 12345).unwrap();
+        service
+            .on_agent_spawned("task-1", "planning", 12345)
+            .unwrap();
 
         // Should have 3 iterations
         let iterations = store.get_iterations("task-1").unwrap();
         assert_eq!(iterations.len(), 3);
 
         // First two should have SpawnFailed outcomes
-        assert!(matches!(iterations[0].outcome, Some(Outcome::SpawnFailed { .. })));
-        assert!(matches!(iterations[1].outcome, Some(Outcome::SpawnFailed { .. })));
+        assert!(matches!(
+            iterations[0].outcome,
+            Some(Outcome::SpawnFailed { .. })
+        ));
+        assert!(matches!(
+            iterations[1].outcome,
+            Some(Outcome::SpawnFailed { .. })
+        ));
 
         // Third should still be active (agent running)
         assert!(iterations[2].is_active());

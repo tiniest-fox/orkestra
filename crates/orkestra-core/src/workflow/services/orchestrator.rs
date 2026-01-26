@@ -50,14 +50,9 @@ pub enum OrchestratorEvent {
         error: String,
     },
     /// Integration (merge to primary) started for a task.
-    IntegrationStarted {
-        task_id: String,
-        branch: String,
-    },
+    IntegrationStarted { task_id: String, branch: String },
     /// Integration completed successfully.
-    IntegrationCompleted {
-        task_id: String,
-    },
+    IntegrationCompleted { task_id: String },
     /// Integration failed (e.g., merge conflict).
     IntegrationFailed {
         task_id: String,
@@ -234,18 +229,17 @@ impl OrchestratorLoop {
     /// Process events from active executions.
     fn process_active_executions(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
-        let executions = self.active_executions.lock().map_err(|_| WorkflowError::Lock)?;
+        let executions = self
+            .active_executions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
 
         for handle in executions.iter() {
             loop {
                 match handle.events.try_recv() {
                     Ok(event) => {
                         // Handle errors per-task, don't let one task's error stop others
-                        match self.handle_execution_event(
-                            &handle.task_id,
-                            &handle.stage,
-                            event,
-                        ) {
+                        match self.handle_execution_event(&handle.task_id, &handle.stage, event) {
                             Ok(Some(e)) => events.push(e),
                             Ok(None) => {}
                             Err(e) => {
@@ -323,7 +317,10 @@ impl OrchestratorLoop {
                                 error: format!("Agent error: {error}"),
                             },
                         ) {
-                            eprintln!("[orkestra] ERROR: Failed to mark task {} as failed: {}", task_id, e);
+                            eprintln!(
+                                "[orkestra] ERROR: Failed to mark task {} as failed: {}",
+                                task_id, e
+                            );
                         }
                     }
                     Ok(Some(OrchestratorEvent::Error {
@@ -354,7 +351,10 @@ impl OrchestratorLoop {
         let mut events = Vec::new();
 
         let active_task_ids: Vec<String> = {
-            let executions = self.active_executions.lock().map_err(|_| WorkflowError::Lock)?;
+            let executions = self
+                .active_executions
+                .lock()
+                .map_err(|_| WorkflowError::Lock)?;
             executions.iter().map(|h| h.task_id.clone()).collect()
         };
 
@@ -443,7 +443,10 @@ impl OrchestratorLoop {
         let mut events = Vec::new();
 
         // Get tasks eligible for integration (were Done at end of previous tick)
-        let ready = self.ready_for_integration.lock().map_err(|_| WorkflowError::Lock)?;
+        let ready = self
+            .ready_for_integration
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
         if ready.is_empty() {
             return Ok(events);
         }
@@ -529,7 +532,10 @@ impl OrchestratorLoop {
                 // Re-attempt integration
                 match api.integrate_task(&task.id) {
                     Ok(_) => {
-                        eprintln!("[recovery] Successfully recovered integration for {}", task.id);
+                        eprintln!(
+                            "[recovery] Successfully recovered integration for {}",
+                            task.id
+                        );
                         events.push(OrchestratorEvent::IntegrationCompleted {
                             task_id: task.id.clone(),
                         });
@@ -590,8 +596,13 @@ impl OrchestratorLoop {
                         // Try to remove worktree - it may or may not exist depending on when crash occurred
                         if let Err(e) = git.remove_worktree(&task.id, true) {
                             // This is expected if worktree wasn't created yet, only warn for unexpected errors
-                            if !e.to_string().contains("not found") && !e.to_string().contains("does not exist") {
-                                eprintln!("[recovery] WARNING: Failed to clean up worktree for {}: {}", task.id, e);
+                            if !e.to_string().contains("not found")
+                                && !e.to_string().contains("does not exist")
+                            {
+                                eprintln!(
+                                    "[recovery] WARNING: Failed to clean up worktree for {}: {}",
+                                    task.id, e
+                                );
                             }
                         }
                     }
@@ -599,7 +610,9 @@ impl OrchestratorLoop {
 
                 let mut task = task;
                 task.status = Status::Failed {
-                    error: Some("Setup interrupted by app restart - please delete and recreate task".into()),
+                    error: Some(
+                        "Setup interrupted by app restart - please delete and recreate task".into(),
+                    ),
                 };
                 task.phase = Phase::Idle;
 
@@ -611,7 +624,10 @@ impl OrchestratorLoop {
                 }
 
                 if let Err(e) = api.store.save_task(&task) {
-                    eprintln!("[recovery] Failed to mark stale task {} as failed: {}", task.id, e);
+                    eprintln!(
+                        "[recovery] Failed to mark stale task {} as failed: {}",
+                        task.id, e
+                    );
                 }
             }
         }
@@ -619,10 +635,7 @@ impl OrchestratorLoop {
 
     /// Get count of active executions.
     pub fn active_count(&self) -> usize {
-        self.active_executions
-            .lock()
-            .map(|e| e.len())
-            .unwrap_or(0)
+        self.active_executions.lock().map(|e| e.len()).unwrap_or(0)
     }
 }
 
@@ -688,8 +701,18 @@ mod tests {
 
     #[test]
     fn test_output_type_string() {
-        assert_eq!(output_type_string(&StageOutput::Failed { error: "err".into() }), "failed");
-        assert_eq!(output_type_string(&StageOutput::Artifact { content: "test".into() }), "artifact");
+        assert_eq!(
+            output_type_string(&StageOutput::Failed {
+                error: "err".into()
+            }),
+            "failed"
+        );
+        assert_eq!(
+            output_type_string(&StageOutput::Artifact {
+                content: "test".into()
+            }),
+            "artifact"
+        );
     }
 
     #[test]

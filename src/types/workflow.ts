@@ -86,7 +86,12 @@ export type WorkflowTaskStatus =
  * Task phase - what's happening right now.
  * Uses snake_case to match Rust's serde serialization.
  */
-export type WorkflowTaskPhase = "setting_up" | "idle" | "agent_working" | "awaiting_review" | "integrating";
+export type WorkflowTaskPhase =
+  | "setting_up"
+  | "idle"
+  | "agent_working"
+  | "awaiting_review"
+  | "integrating";
 
 // =============================================================================
 // Artifacts
@@ -304,8 +309,20 @@ export type LogEntry =
     }
   | { type: "tool_use"; tool: string; id: string; input: ToolInput }
   | { type: "tool_result"; tool: string; tool_use_id: string; content: string }
-  | { type: "subagent_tool_use"; tool: string; id: string; input: ToolInput; parent_task_id: string }
-  | { type: "subagent_tool_result"; tool: string; tool_use_id: string; content: string; parent_task_id: string }
+  | {
+      type: "subagent_tool_use";
+      tool: string;
+      id: string;
+      input: ToolInput;
+      parent_task_id: string;
+    }
+  | {
+      type: "subagent_tool_result";
+      tool: string;
+      tool_use_id: string;
+      content: string;
+      parent_task_id: string;
+    }
   | { type: "process_exit"; code?: number }
   | { type: "error"; message: string };
 

@@ -432,7 +432,8 @@ mod tests {
     #[test]
     fn test_parse_stream_event_queue_operation_camelcase() {
         // New Claude format with camelCase sessionId
-        let json = r#"{"type":"queue-operation","operation":"dequeue","sessionId":"da966363-8e89-4469"}"#;
+        let json =
+            r#"{"type":"queue-operation","operation":"dequeue","sessionId":"da966363-8e89-4469"}"#;
         let parsed = parse_stream_event(json);
         assert_eq!(parsed.session_id, Some("da966363-8e89-4469".to_string()));
         assert!(!parsed.has_new_content); // queue-operation doesn't produce content
@@ -441,7 +442,8 @@ mod tests {
     #[test]
     fn test_parse_stream_event_user_camelcase() {
         // New Claude format with camelCase sessionId in user events
-        let json = r#"{"type":"user","sessionId":"abc123","message":{"role":"user","content":"hello"}}"#;
+        let json =
+            r#"{"type":"user","sessionId":"abc123","message":{"role":"user","content":"hello"}}"#;
         let parsed = parse_stream_event(json);
         assert_eq!(parsed.session_id, Some("abc123".to_string()));
         assert!(parsed.has_new_content);

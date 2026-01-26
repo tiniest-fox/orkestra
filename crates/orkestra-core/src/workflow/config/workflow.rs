@@ -395,11 +395,7 @@ mod tests {
                 .with_capabilities(StageCapabilities::with_restage(vec!["work".into()])),
         ]);
         let errors = workflow.validate();
-        assert!(
-            errors.is_empty(),
-            "Expected no errors, got: {:?}",
-            errors
-        );
+        assert!(errors.is_empty(), "Expected no errors, got: {:?}", errors);
     }
 
     #[test]

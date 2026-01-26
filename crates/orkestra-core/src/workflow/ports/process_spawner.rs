@@ -251,12 +251,7 @@ pub mod mock {
             };
 
             // Get output (or empty string)
-            let output = self
-                .outputs
-                .lock()
-                .unwrap()
-                .pop_front()
-                .unwrap_or_default();
+            let output = self.outputs.lock().unwrap().pop_front().unwrap_or_default();
 
             // Create mock handle
             // Note: This is a simplified mock - real implementation would need

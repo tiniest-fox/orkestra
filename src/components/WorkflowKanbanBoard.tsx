@@ -4,7 +4,7 @@
  */
 
 import type { WorkflowConfig, WorkflowTask } from "../types/workflow";
-import { needsReview, hasPendingQuestions, capitalizeFirst } from "../types/workflow";
+import { capitalizeFirst, hasPendingQuestions, needsReview } from "../types/workflow";
 import { WorkflowTaskCard } from "./WorkflowTaskCard";
 
 interface WorkflowKanbanBoardProps {

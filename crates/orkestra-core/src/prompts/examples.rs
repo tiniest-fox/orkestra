@@ -10,17 +10,15 @@ use std::sync::LazyLock;
 
 /// Schema for a single subtask item (extracted from subtasks.json).
 static SUBTASK_ITEM_SCHEMA: LazyLock<Value> = LazyLock::new(|| {
-    let component: Value =
-        serde_json::from_str(include_str!("schemas/components/subtasks.json"))
-            .expect("subtasks.json should be valid");
+    let component: Value = serde_json::from_str(include_str!("schemas/components/subtasks.json"))
+        .expect("subtasks.json should be valid");
     component["properties"]["subtasks"]["items"].clone()
 });
 
 /// Schema for a single question item (extracted from questions.json).
 static QUESTION_ITEM_SCHEMA: LazyLock<Value> = LazyLock::new(|| {
-    let component: Value =
-        serde_json::from_str(include_str!("schemas/components/questions.json"))
-            .expect("questions.json should be valid");
+    let component: Value = serde_json::from_str(include_str!("schemas/components/questions.json"))
+        .expect("questions.json should be valid");
     component["properties"]["questions"]["items"].clone()
 });
 

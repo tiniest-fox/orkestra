@@ -85,7 +85,7 @@ function formatOutcome(outcome: WorkflowIteration["outcome"]): {
 function buildTabs(task: WorkflowTask, config: WorkflowConfig): Tab[] {
   const tabs: Tab[] = [
     { id: "details", label: "Details", type: "details" },
-    { id: "iterations", label: "Iterations", type: "iterations" },
+    { id: "iterations", label: "Activity", type: "iterations" },
     { id: "logs", label: "Logs", type: "logs" },
   ];
 
@@ -716,14 +716,16 @@ export function WorkflowTaskDetailSidebar({
         {/* Iterations Tab */}
         {activeTab === "iterations" && (
           <div className="flex-1 overflow-auto p-4">
-            <div className="text-sm font-medium text-gray-700 mb-4">Iteration History</div>
+            <div className="text-sm font-medium text-gray-700 mb-4">Activity</div>
             {iterations.length === 0 ? (
               <div className="text-gray-500 text-sm">No iterations recorded yet.</div>
             ) : (
               <div className="space-y-4">
-                {iterations.map((iteration) => (
-                  <IterationCard key={iteration.id} iteration={iteration} />
-                ))}
+                {[...iterations]
+                  .sort((a, b) => a.started_at.localeCompare(b.started_at))
+                  .map((iteration) => (
+                    <IterationCard key={iteration.id} iteration={iteration} />
+                  ))}
               </div>
             )}
           </div>

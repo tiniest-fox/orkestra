@@ -1,6 +1,6 @@
 //! Database connection wrapper for shared access.
 //!
-//! Provides thread-safe access to a SQLite connection that can be shared
+//! Provides thread-safe access to a `SQLite` connection that can be shared
 //! across multiple repositories.
 
 use std::path::Path;
@@ -12,7 +12,7 @@ use crate::error::{OrkestraError, Result};
 
 /// Shared database connection wrapper.
 ///
-/// Provides thread-safe access to the SQLite connection. All repositories
+/// Provides thread-safe access to the `SQLite` connection. All repositories
 /// hold a clone of the `Arc<Mutex<Connection>>` to share the same connection.
 pub struct DatabaseConnection {
     conn: Arc<Mutex<Connection>>,

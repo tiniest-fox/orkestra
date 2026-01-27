@@ -1,7 +1,7 @@
-//! SQLite workflow store implementation.
+//! `SQLite` workflow store implementation.
 //!
-//! This adapter stores workflow tasks and iterations in SQLite tables
-//! (workflow_tasks and workflow_iterations) that are separate from legacy tables.
+//! This adapter stores workflow tasks and iterations in `SQLite` tables
+//! (`workflow_tasks` and `workflow_iterations`) that are separate from legacy tables.
 
 use std::sync::{Arc, Mutex};
 
@@ -13,9 +13,9 @@ use crate::workflow::domain::{Iteration, SessionState, StageSession, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
 
-/// SQLite implementation of WorkflowStore.
+/// `SQLite` implementation of `WorkflowStore`.
 ///
-/// Uses the workflow_tasks and workflow_iterations tables.
+/// Uses the `workflow_tasks` and `workflow_iterations` tables.
 pub struct SqliteWorkflowStore {
     conn: Arc<Mutex<Connection>>,
 }

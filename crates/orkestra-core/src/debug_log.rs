@@ -71,7 +71,7 @@ pub fn init(orkestra_dir: &Path) {
 /// Check if debug logging is enabled.
 #[inline]
 pub fn is_enabled() -> bool {
-    DEBUG_STATE.get().map(|s| s.enabled).unwrap_or(false)
+    DEBUG_STATE.get().is_some_and(|s| s.enabled)
 }
 
 /// Log a debug message.
@@ -103,7 +103,7 @@ pub fn log(component: &str, message: &str) {
     }
 }
 
-/// Rotate the log file by keeping only the last TRUNCATE_TO bytes.
+/// Rotate the log file by keeping only the last `TRUNCATE_TO` bytes.
 fn rotate_log(file: &mut File) {
     // Seek to position where we want to start keeping content
     if file.seek(SeekFrom::End(-(TRUNCATE_TO as i64))).is_err() {

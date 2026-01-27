@@ -39,7 +39,7 @@ pub enum IterationTrigger {
 /// Tracks one agent execution cycle in a stage. Multiple iterations
 /// occur when output is rejected and the agent retries.
 ///
-/// All iterations in the same stage share a StageSession which maintains
+/// All iterations in the same stage share a `StageSession` which maintains
 /// Claude session continuity across rejections.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Iteration {
@@ -66,8 +66,8 @@ pub struct Iteration {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<Outcome>,
 
-    /// Reference to the parent StageSession.
-    /// Can be looked up by (task_id, stage) if not set.
+    /// Reference to the parent `StageSession`.
+    /// Can be looked up by (`task_id`, stage) if not set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_session_id: Option<String>,
 

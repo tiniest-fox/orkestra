@@ -1,10 +1,10 @@
 //! Agent runner for executing Claude Code processes.
 //!
 //! This module provides the execution layer for running agents. It handles:
-//! - Process spawning via ProcessSpawner
+//! - Process spawning via `ProcessSpawner`
 //! - Prompt writing to stdin
 //! - Output streaming and session ID extraction
-//! - Output parsing to StageOutput
+//! - Output parsing to `StageOutput`
 //!
 //! The runner does NOT handle:
 //! - Session management (caller's responsibility)
@@ -163,14 +163,14 @@ pub trait AgentRunnerTrait: Send + Sync {
 /// Runs Claude Code agents to completion.
 ///
 /// The runner is responsible for:
-/// - Spawning the process via ProcessSpawner
+/// - Spawning the process via `ProcessSpawner`
 /// - Writing the prompt to stdin
 /// - Reading and parsing output
 /// - Extracting session ID from stream events
 ///
 /// The runner is NOT responsible for:
 /// - Building prompts (receives them)
-/// - Managing sessions (returns session_id)
+/// - Managing sessions (returns `session_id`)
 /// - Task state updates (caller handles)
 pub struct AgentRunner {
     spawner: Arc<dyn ProcessSpawner>,

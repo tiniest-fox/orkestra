@@ -1,4 +1,4 @@
-//! SQLite database connection and migrations.
+//! `SQLite` database connection and migrations.
 //!
 //! This module provides:
 //! - `DatabaseConnection` - Shared connection wrapper with migration support

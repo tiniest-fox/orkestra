@@ -90,12 +90,12 @@ impl WorkflowApi {
     /// Get the current stage name for a task.
     pub fn get_current_stage(&self, task_id: &str) -> WorkflowResult<Option<String>> {
         let task = self.get_task(task_id)?;
-        Ok(task.current_stage().map(|s| s.to_string()))
+        Ok(task.current_stage().map(std::string::ToString::to_string))
     }
 
     /// Get all running agent processes.
     ///
-    /// Returns tuples of (task_id, stage, pid) for all agents that have PIDs
+    /// Returns tuples of (`task_id`, stage, pid) for all agents that have PIDs
     /// recorded in their stage sessions. Used for cleanup on shutdown/startup.
     pub fn get_running_agent_pids(&self) -> WorkflowResult<Vec<(String, String, u32)>> {
         let sessions = self.store.get_sessions_with_pids()?;
@@ -141,7 +141,7 @@ impl WorkflowApi {
     /// * `project_root` - The project root directory (fallback if no worktree)
     ///
     /// # Returns
-    /// Vec of LogEntry representing the session activity (tool uses, text output, etc.)
+    /// Vec of `LogEntry` representing the session activity (tool uses, text output, etc.)
     pub fn get_task_logs(
         &self,
         task_id: &str,
@@ -171,9 +171,7 @@ impl WorkflowApi {
         // Determine the working directory - use worktree if available, otherwise project root
         let cwd = task
             .worktree_path
-            .as_ref()
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| project_root.to_path_buf());
+            .as_ref().map_or_else(|| project_root.to_path_buf(), std::path::PathBuf::from);
 
         // Recover logs from Claude's session file
         // Return empty if file doesn't exist yet (agent may still be starting)

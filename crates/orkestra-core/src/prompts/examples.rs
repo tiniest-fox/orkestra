@@ -78,14 +78,12 @@ fn validate_against_schema(value: &Value, schema: &Value, name: &str) {
         .map(|e| format!("{} at {}", e, e.instance_path))
         .collect();
 
-    if !errors.is_empty() {
-        panic!(
+    assert!(errors.is_empty(), 
             "{} example doesn't match schema!\nGenerated: {}\nErrors: {}",
             name,
             serde_json::to_string_pretty(value).unwrap(),
             errors.join("; ")
-        );
-    }
+        )
 }
 
 #[cfg(test)]

@@ -120,7 +120,7 @@ impl UtilityRunner {
     /// the task with structured JSON output.
     ///
     /// # Arguments
-    /// * `task_name` - Name of the task (e.g., "generate_title")
+    /// * `task_name` - Name of the task (e.g., "`generate_title`")
     /// * `context` - JSON object with variables for the prompt template
     ///
     /// # Returns
@@ -302,7 +302,7 @@ fn extract_structured_output(
     find_structured_output(&full_output)
 }
 
-/// Find the structured_output field in Claude's response.
+/// Find the `structured_output` field in Claude's response.
 fn find_structured_output(output: &str) -> Option<String> {
     let trimmed = output.trim();
 

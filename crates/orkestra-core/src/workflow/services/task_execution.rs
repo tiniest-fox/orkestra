@@ -1,9 +1,9 @@
 //! Task execution service.
 //!
 //! This service coordinates stage execution for tasks. It ties together:
-//! - PromptService: for building agent prompts
-//! - SessionService: for session continuity across resumes
-//! - AgentRunner: for running the actual agent
+//! - `PromptService`: for building agent prompts
+//! - `SessionService`: for session continuity across resumes
+//! - `AgentRunner`: for running the actual agent
 //!
 //! The orchestrator delegates to this service for all agent execution.
 
@@ -218,9 +218,7 @@ impl TaskExecutionService {
         // 5. Build run config with session info
         let working_dir = task
             .worktree_path
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.prompt_service.project_root().to_path_buf());
+            .as_ref().map_or_else(|| self.prompt_service.project_root().to_path_buf(), PathBuf::from);
 
         let run_config = RunConfig::new(working_dir, prompt, json_schema)
             .with_session(spawn_ctx.session_id, spawn_ctx.is_resume)
@@ -338,9 +336,7 @@ impl TaskExecutionService {
         // Build run config with session info
         let working_dir = task
             .worktree_path
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| self.prompt_service.project_root().to_path_buf());
+            .as_ref().map_or_else(|| self.prompt_service.project_root().to_path_buf(), PathBuf::from);
 
         let run_config = RunConfig::new(working_dir, prompt, json_schema)
             .with_session(spawn_ctx.session_id, spawn_ctx.is_resume)
@@ -448,13 +444,13 @@ impl TaskExecutionService {
 
     /// Get all running agent processes.
     ///
-    /// Returns (task_id, stage, pid) tuples for orphan cleanup.
+    /// Returns (`task_id`, stage, pid) tuples for orphan cleanup.
     pub fn get_running_agents(&self) -> WorkflowResult<Vec<(String, String, u32)>> {
         self.session_service.get_running_agents()
     }
 }
 
-/// Convert IterationTrigger to ResumeType for prompt building.
+/// Convert `IterationTrigger` to `ResumeType` for prompt building.
 ///
 /// This maps the iteration context (stored in DB) to the prompt type (for agent).
 fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {

@@ -1,7 +1,7 @@
 //! Adapters for external systems.
 //!
 //! This module provides implementations of ports for external systems.
-//! Currently only contains the SQLite database connection.
+//! Currently only contains the `SQLite` database connection.
 
 pub mod sqlite;
 

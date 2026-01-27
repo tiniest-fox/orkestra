@@ -1,12 +1,12 @@
 //! Stage session tracking for workflow stages.
 //!
-//! A StageSession wraps all iterations for a given task+stage combination,
+//! A `StageSession` wraps all iterations for a given task+stage combination,
 //! maintaining Claude session continuity across rejections and crash recovery.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// State of a StageSession.
+/// State of a `StageSession`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
@@ -26,7 +26,7 @@ pub enum SessionState {
 
 /// A session wrapper that maintains Claude session continuity across iterations within a stage.
 ///
-/// All iterations for a given task+stage share a single StageSession. The session
+/// All iterations for a given task+stage share a single `StageSession`. The session
 /// survives across rejections, questions, and crash recovery. When work is rejected,
 /// the rejection feedback is passed as a continuation message to the same Claude session
 /// rather than starting a new session.

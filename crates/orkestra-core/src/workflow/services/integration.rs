@@ -100,7 +100,7 @@ impl WorkflowApi {
     /// Record successful integration (merge).
     ///
     /// This moves the task from Done to Archived after its branch has been merged.
-    /// The worktree_path is preserved for log access even though the physical
+    /// The `worktree_path` is preserved for log access even though the physical
     /// worktree has been removed.
     ///
     /// # Errors

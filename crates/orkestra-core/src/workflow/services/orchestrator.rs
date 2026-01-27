@@ -2,7 +2,7 @@
 //!
 //! The orchestrator is a reconciliation loop that:
 //! 1. Polls for tasks needing agents
-//! 2. Spawns agents for those tasks via TaskExecutionService
+//! 2. Spawns agents for those tasks via `TaskExecutionService`
 //! 3. Processes agent output when they complete
 //!
 //! It is driven by the workflow configuration and is stage-agnostic -
@@ -93,7 +93,7 @@ impl std::error::Error for OrchestratorError {}
 
 /// The main orchestration loop.
 ///
-/// This orchestrator delegates all execution to TaskExecutionService.
+/// This orchestrator delegates all execution to `TaskExecutionService`.
 /// It handles scheduling and event routing.
 pub struct OrchestratorLoop {
     api: Arc<Mutex<WorkflowApi>>,
@@ -572,9 +572,9 @@ impl OrchestratorLoop {
         events
     }
 
-    /// Recover tasks stuck in SettingUp phase (from app crash during setup).
+    /// Recover tasks stuck in `SettingUp` phase (from app crash during setup).
     ///
-    /// Tasks that were being set up when the app crashed will be stuck in SettingUp.
+    /// Tasks that were being set up when the app crashed will be stuck in `SettingUp`.
     /// We mark them as Failed since the setup was interrupted and cannot be resumed.
     /// Any partially-created worktrees are cleaned up.
     fn recover_stale_setup_tasks(&self) {
@@ -637,9 +637,9 @@ impl OrchestratorLoop {
         }
     }
 
-    /// Recover tasks stuck in AgentWorking phase (from app crash during agent run).
+    /// Recover tasks stuck in `AgentWorking` phase (from app crash during agent run).
     ///
-    /// Tasks that had an agent running when the app crashed will be stuck in AgentWorking.
+    /// Tasks that had an agent running when the app crashed will be stuck in `AgentWorking`.
     /// We reset them to Idle so the orchestrator can respawn the agent.
     fn recover_stale_agent_working_tasks(&self) {
         let Ok(api) = self.api.lock() else {

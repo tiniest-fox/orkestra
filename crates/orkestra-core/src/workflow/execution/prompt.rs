@@ -80,7 +80,7 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
                     .capabilities
                     .supports_restage
                     .first()
-                    .map(|s| s.to_string()),
+                    .map(std::string::ToString::to_string),
             )
         } else {
             (None, None)
@@ -287,7 +287,7 @@ impl<'a> PromptBuilder<'a> {
     }
 }
 
-/// Helper to convert QuestionAnswer to context.
+/// Helper to convert `QuestionAnswer` to context.
 impl<'a> From<&'a QuestionAnswer> for QuestionAnswerContext<'a> {
     fn from(qa: &'a QuestionAnswer) -> Self {
         Self {
@@ -556,19 +556,19 @@ pub struct ResumeQuestionAnswer {
 }
 
 // Builtin default templates (used when .orkestra/agents/resume/ doesn't exist)
-const DEFAULT_CONTINUE_PROMPT: &str = r#"<!orkestra-resume:continue>
+const DEFAULT_CONTINUE_PROMPT: &str = r"<!orkestra-resume:continue>
 
-Your previous session was interrupted. Please continue from where you left off and produce your final output as valid JSON."#;
+Your previous session was interrupted. Please continue from where you left off and produce your final output as valid JSON.";
 
-const DEFAULT_FEEDBACK_PROMPT: &str = r#"<!orkestra-resume:feedback>
+const DEFAULT_FEEDBACK_PROMPT: &str = r"<!orkestra-resume:feedback>
 
 Your previous output needs revision. Please address this feedback:
 
 {{feedback}}
 
-Make the requested changes and produce your revised output as valid JSON."#;
+Make the requested changes and produce your revised output as valid JSON.";
 
-const DEFAULT_INTEGRATION_PROMPT: &str = r#"<!orkestra-resume:integration>
+const DEFAULT_INTEGRATION_PROMPT: &str = r"<!orkestra-resume:integration>
 
 Integration failed: {{error_message}}
 
@@ -579,9 +579,9 @@ Conflicting files:
 {{/each}}
 {{/if}}
 
-Please run `git rebase main` to resolve conflicts, then continue and output your result."#;
+Please run `git rebase main` to resolve conflicts, then continue and output your result.";
 
-const DEFAULT_ANSWERS_PROMPT: &str = r#"<!orkestra-resume:answers>
+const DEFAULT_ANSWERS_PROMPT: &str = r"<!orkestra-resume:answers>
 
 Here are the answers to your questions:
 
@@ -591,7 +591,7 @@ A: {{this.answer}}
 
 {{/each}}
 
-Please continue your work with this information and produce your final output as valid JSON."#;
+Please continue your work with this information and produce your final output as valid JSON.";
 
 /// Load and render a resume prompt template.
 ///
@@ -673,8 +673,8 @@ fn render_template(
 
 /// Determine the resume type from context.
 ///
-/// This is used by TaskExecutionService to decide which resume prompt to use.
-/// Priority: integration_error > feedback > answers > continue
+/// This is used by `TaskExecutionService` to decide which resume prompt to use.
+/// Priority: `integration_error` > feedback > answers > continue
 pub fn determine_resume_type(
     feedback: Option<&str>,
     integration_error: Option<&IntegrationErrorContext<'_>>,
@@ -683,7 +683,7 @@ pub fn determine_resume_type(
     if let Some(err) = integration_error {
         ResumeType::Integration {
             message: err.message.to_string(),
-            conflict_files: err.conflict_files.iter().map(|s| s.to_string()).collect(),
+            conflict_files: err.conflict_files.iter().map(|s| (*s).to_string()).collect(),
         }
     } else if let Some(fb) = feedback {
         ResumeType::Feedback {

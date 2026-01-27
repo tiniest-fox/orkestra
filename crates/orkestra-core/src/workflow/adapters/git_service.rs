@@ -1,4 +1,4 @@
-//! Git2-based implementation of the GitService port.
+//! Git2-based implementation of the `GitService` port.
 //!
 //! Uses git2 crate for repository/branch/worktree operations and git CLI
 //! for merge operations (more reliable than git2's merge API).
@@ -16,7 +16,7 @@ use crate::workflow::ports::{GitError, GitService, MergeResult, WorktreeCreated}
 /// Manages the creation of isolated git worktrees for tasks, allowing
 /// multiple tasks to work in parallel without code conflicts.
 ///
-/// The Repository is wrapped in a Mutex because git2::Repository is not Sync.
+/// The Repository is wrapped in a Mutex because `git2::Repository` is not Sync.
 /// Since git operations generally need exclusive access anyway, this is fine.
 pub struct Git2GitService {
     repo: Mutex<Repository>,

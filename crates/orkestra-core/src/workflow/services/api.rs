@@ -1,4 +1,4 @@
-//! Core WorkflowApi struct and workflow configuration queries.
+//! Core `WorkflowApi` struct and workflow configuration queries.
 
 use std::sync::Arc;
 
@@ -27,7 +27,7 @@ pub struct WorkflowApi {
 }
 
 impl WorkflowApi {
-    /// Create a new WorkflowApi with the given config and store.
+    /// Create a new `WorkflowApi` with the given config and store.
     ///
     /// Git service is not configured by default. Use `with_git()` to add it.
     pub fn new(workflow: WorkflowConfig, store: Arc<dyn WorkflowStore>) -> Self {
@@ -40,7 +40,7 @@ impl WorkflowApi {
         }
     }
 
-    /// Create a new WorkflowApi with git worktree support.
+    /// Create a new `WorkflowApi` with git worktree support.
     ///
     /// Git worktrees enable parallel task development by isolating each task
     /// in its own worktree with a dedicated branch.
@@ -77,8 +77,7 @@ impl WorkflowApi {
     pub fn is_stage_automated(&self, stage: &str) -> bool {
         self.workflow
             .stage(stage)
-            .map(|s| s.is_automated)
-            .unwrap_or(false)
+            .is_some_and(|s| s.is_automated)
     }
 
     /// Get the next stage after approval from the given stage.

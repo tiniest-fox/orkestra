@@ -4,7 +4,7 @@
 //! - JSON array (current Claude Code format)
 //! - Newline-delimited JSON objects
 //! - Single JSON object with `structured_output`
-//! - Direct StageOutput JSON
+//! - Direct `StageOutput` JSON
 //!
 //! When a schema is provided, output is validated against it (schema-driven validation).
 //! Without a schema, basic parsing is done without type validation.
@@ -22,7 +22,7 @@ fn strip_markdown_code_fences(s: &str) -> String {
     // Check if it starts with ``` and ends with ```
     if trimmed.starts_with("```") && trimmed.ends_with("```") {
         // Find the end of the opening fence line
-        let start = trimmed.find('\n').map(|i| i + 1).unwrap_or(3);
+        let start = trimmed.find('\n').map_or(3, |i| i + 1);
         // Find the start of the closing fence
         let end = trimmed.rfind("\n```").unwrap_or(trimmed.len() - 3);
 
@@ -34,13 +34,13 @@ fn strip_markdown_code_fences(s: &str) -> String {
     trimmed.to_string()
 }
 
-/// Parse agent output into a StageOutput.
+/// Parse agent output into a `StageOutput`.
 ///
 /// Claude outputs JSON in multiple formats:
 /// 1. JSON array: All stream events in a single array (current Claude Code format)
 /// 2. Newline-delimited JSON: One JSON object per line
 /// 3. Single JSON object with `structured_output` field
-/// 4. Direct StageOutput JSON
+/// 4. Direct `StageOutput` JSON
 ///
 /// When a schema is provided, the output is validated against it. This is the
 /// recommended usage - the same schema sent to Claude is used to validate the response.
@@ -79,7 +79,7 @@ pub fn parse_agent_output(
     parse_json_output(trimmed, schema).map_err(|e| format!("Failed to parse agent output: {e}"))
 }
 
-/// Parse a JSON string as StageOutput with optional schema validation.
+/// Parse a JSON string as `StageOutput` with optional schema validation.
 fn parse_json_output(
     json: &str,
     schema: Option<&serde_json::Value>,
@@ -91,7 +91,7 @@ fn parse_json_output(
 }
 
 /// Extract structured output from a JSON value.
-/// Handles arrays (searches for structured_output in elements) and objects.
+/// Handles arrays (searches for `structured_output` in elements) and objects.
 fn extract_structured_output(
     v: &serde_json::Value,
     schema: Option<&serde_json::Value>,

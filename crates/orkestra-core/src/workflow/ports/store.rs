@@ -1,7 +1,7 @@
 //! Workflow store port for persistence operations.
 //!
 //! This trait abstracts over storage backends, allowing the workflow system
-//! to work with SQLite, in-memory stores for testing, or other backends.
+//! to work with `SQLite`, in-memory stores for testing, or other backends.
 
 use crate::workflow::domain::{Iteration, StageSession, Task};
 
@@ -43,7 +43,7 @@ pub type WorkflowResult<T> = Result<T, WorkflowError>;
 /// Persistence abstraction for workflow entities.
 ///
 /// This trait defines the contract for storing and retrieving workflow
-/// domain objects. Implementations can use SQLite, in-memory storage,
+/// domain objects. Implementations can use `SQLite`, in-memory storage,
 /// or any other backend.
 pub trait WorkflowStore: Send + Sync {
     // =========================================================================
@@ -74,7 +74,7 @@ pub trait WorkflowStore: Send + Sync {
     /// Implementations may override with more efficient queries.
     fn list_archived_tasks(&self) -> WorkflowResult<Vec<Task>> {
         let tasks = self.list_tasks()?;
-        Ok(tasks.into_iter().filter(|t| t.is_archived()).collect())
+        Ok(tasks.into_iter().filter(Task::is_archived).collect())
     }
 
     /// List tasks by parent ID.

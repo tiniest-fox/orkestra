@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use crate::workflow::domain::{Iteration, StageSession, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 
-/// In-memory implementation of WorkflowStore for testing.
+/// In-memory implementation of `WorkflowStore` for testing.
 pub struct InMemoryWorkflowStore {
     tasks: Mutex<HashMap<String, Task>>,
     iterations: Mutex<Vec<Iteration>>,

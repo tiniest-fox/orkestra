@@ -203,9 +203,7 @@ impl WorkflowApi {
             .map(|i| i.stage.clone())
             .unwrap_or_else(|| {
                 self.workflow
-                    .first_stage()
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| "planning".to_string())
+                    .first_stage().map_or_else(|| "planning".to_string(), |s| s.name.clone())
             });
 
         let now = chrono::Utc::now().to_rfc3339();

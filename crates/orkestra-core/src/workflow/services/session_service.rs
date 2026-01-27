@@ -136,34 +136,31 @@ impl SessionService {
         let session_id = format!("{task_id}-{stage}");
 
         // Get or create session in Spawning state
-        let session = match self.store.get_stage_session(task_id, stage)? {
-            Some(mut session) => {
-                // Existing session - transition to Spawning
-                // Ensure session ID exists (might be missing from older sessions or bugs)
-                if session
-                    .claude_session_id
-                    .as_ref()
-                    .is_none_or(String::is_empty)
-                {
-                    session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
-                    orkestra_debug!(
-                        "session",
-                        "on_spawn_starting {}/{}: regenerated missing session_id={}",
-                        task_id,
-                        stage,
-                        session.claude_session_id.as_ref().unwrap()
-                    );
-                }
-                session.session_state = SessionState::Spawning;
-                session.updated_at.clone_from(&now);
-                session
+        let session = if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
+            // Existing session - transition to Spawning
+            // Ensure session ID exists (might be missing from older sessions or bugs)
+            if session
+                .claude_session_id
+                .as_ref()
+                .is_none_or(String::is_empty)
+            {
+                session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
+                orkestra_debug!(
+                    "session",
+                    "on_spawn_starting {}/{}: regenerated missing session_id={}",
+                    task_id,
+                    stage,
+                    session.claude_session_id.as_ref().unwrap()
+                );
             }
-            None => {
-                // New session in Spawning state
-                let mut session = StageSession::new(&session_id, task_id, stage, &now);
-                session.session_state = SessionState::Spawning;
-                session
-            }
+            session.session_state = SessionState::Spawning;
+            session.updated_at.clone_from(&now);
+            session
+        } else {
+            // New session in Spawning state
+            let mut session = StageSession::new(&session_id, task_id, stage, &now);
+            session.session_state = SessionState::Spawning;
+            session
         };
 
         orkestra_debug!(

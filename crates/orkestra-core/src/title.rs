@@ -23,7 +23,7 @@ pub fn generate_title_sync(description: &str, timeout_secs: u64) -> std::io::Res
 
     output["title"]
         .as_str()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing title in output")
         })

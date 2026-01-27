@@ -1,6 +1,6 @@
 //! Claude Code process spawner adapter.
 //!
-//! This adapter implements the ProcessSpawner trait for spawning
+//! This adapter implements the `ProcessSpawner` trait for spawning
 //! actual Claude Code CLI processes.
 
 use std::path::Path;

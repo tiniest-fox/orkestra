@@ -2,9 +2,9 @@
 //!
 //! This module provides components for executing workflow stages:
 //!
-//! - **StageOutput**: Parsed output from agents (artifacts, questions, restage, etc.)
-//! - **AgentRunner**: Runs agents via ProcessSpawner
-//! - **PromptBuilder**: Generates prompts from workflow configuration
+//! - **`StageOutput`**: Parsed output from agents (artifacts, questions, restage, etc.)
+//! - **`AgentRunner`**: Runs agents via `ProcessSpawner`
+//! - **`PromptBuilder`**: Generates prompts from workflow configuration
 //! - **parser**: Output parsing utilities
 
 mod breakdown;

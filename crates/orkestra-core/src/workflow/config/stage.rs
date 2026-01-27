@@ -181,7 +181,7 @@ pub struct AgentStageConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema_file: Option<String>,
 
-    /// Optional custom template name to use instead of inferring from agent_type.
+    /// Optional custom template name to use instead of inferring from `agent_type`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
 }
@@ -254,7 +254,7 @@ impl AgentStageConfig {
     }
 
     /// Get the effective definition file path.
-    /// Returns the custom definition_file if set, otherwise "{agent_type}.md".
+    /// Returns the custom `definition_file` if set, otherwise "{`agent_type}.md`".
     pub fn definition_path(&self) -> String {
         self.definition_file
             .clone()

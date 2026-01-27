@@ -2,7 +2,7 @@
 //!
 //! This is the main domain entity representing a task in the workflow.
 //! Unlike the legacy Task which has separate plan/summary/breakdown fields,
-//! this uses ArtifactStore for stage-agnostic artifact storage.
+//! this uses `ArtifactStore` for stage-agnostic artifact storage.
 
 use serde::{Deserialize, Serialize};
 

@@ -19,13 +19,13 @@ use crate::workflow::config::StageCapabilities;
 /// Artifact schema component - generic artifact with content field.
 const ARTIFACT_COMPONENT: &str = include_str!("schemas/components/artifact.json");
 
-/// Questions schema component - for stages with ask_questions capability.
+/// Questions schema component - for stages with `ask_questions` capability.
 const QUESTIONS_COMPONENT: &str = include_str!("schemas/components/questions.json");
 
-/// Subtasks schema component - for stages with produce_subtasks capability.
+/// Subtasks schema component - for stages with `produce_subtasks` capability.
 const SUBTASKS_COMPONENT: &str = include_str!("schemas/components/subtasks.json");
 
-/// Restage schema component - for stages with supports_restage capability.
+/// Restage schema component - for stages with `supports_restage` capability.
 const RESTAGE_COMPONENT: &str = include_str!("schemas/components/restage.json");
 
 /// Terminal states schema component - failed, blocked.
@@ -48,11 +48,11 @@ pub struct SchemaConfig<'a> {
 ///
 /// The schema is a flat discriminated union (no oneOf at top level)
 /// that includes all valid output types for the stage:
-/// - The stage's artifact (type = artifact_name)
+/// - The stage's artifact (type = `artifact_name`)
 /// - Terminal states: failed, blocked
-/// - Questions (if ask_questions capability)
-/// - Subtasks (if produce_subtasks capability)
-/// - Restage (if supports_restage capability)
+/// - Questions (if `ask_questions` capability)
+/// - Subtasks (if `produce_subtasks` capability)
+/// - Restage (if `supports_restage` capability)
 pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     let artifact = load_component(ARTIFACT_COMPONENT);
     let terminal = load_component(TERMINAL_COMPONENT);

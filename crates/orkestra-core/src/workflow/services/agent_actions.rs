@@ -9,7 +9,7 @@ use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
 use super::WorkflowApi;
 
 impl WorkflowApi {
-    /// Mark agent as started on a task. Transitions phase to AgentWorking.
+    /// Mark agent as started on a task. Transitions phase to `AgentWorking`.
     ///
     /// # Errors
     ///
@@ -94,9 +94,7 @@ impl WorkflowApi {
                 // Get artifact name from stage config
                 let artifact_name = self
                     .workflow
-                    .stage(&current_stage)
-                    .map(|s| s.artifact.clone())
-                    .unwrap_or_else(|| "artifact".to_string());
+                    .stage(&current_stage).map_or_else(|| "artifact".to_string(), |s| s.artifact.clone());
 
                 // Agent produced artifact
                 task.artifacts.set(Artifact::new(
@@ -178,9 +176,7 @@ impl WorkflowApi {
                 // Get artifact name from stage config (should be "breakdown")
                 let artifact_name = self
                     .workflow
-                    .stage(&current_stage)
-                    .map(|s| s.artifact.clone())
-                    .unwrap_or_else(|| "breakdown".to_string());
+                    .stage(&current_stage).map_or_else(|| "breakdown".to_string(), |s| s.artifact.clone());
 
                 // Store the artifact
                 task.artifacts.set(Artifact::new(

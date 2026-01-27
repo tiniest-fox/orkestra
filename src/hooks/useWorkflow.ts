@@ -169,7 +169,11 @@ export function useWorkflowActions() {
     return invoke<WorkflowTask>("workflow_answer_questions", { taskId, answers });
   }, []);
 
-  return { approve, reject, answerQuestions };
+  const retry = useCallback(async (taskId: string) => {
+    return invoke<WorkflowTask>("workflow_retry", { taskId });
+  }, []);
+
+  return { approve, reject, answerQuestions, retry };
 }
 
 /**
@@ -231,7 +235,7 @@ export function useWorkflow() {
     listSubtasks,
     refetch,
   } = useWorkflowTasks();
-  const { approve, reject, answerQuestions } = useWorkflowActions();
+  const { approve, reject, answerQuestions, retry } = useWorkflowActions();
   const {
     getIterations,
     getArtifact,
@@ -263,6 +267,7 @@ export function useWorkflow() {
     approve,
     reject,
     answerQuestions,
+    retry,
 
     // Queries
     getIterations,

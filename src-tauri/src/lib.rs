@@ -326,6 +326,7 @@ pub fn run() {
             commands::workflow_reject,
             commands::workflow_answer_questions,
             commands::workflow_integrate_task,
+            commands::workflow_retry,
             commands::workflow_get_config,
             commands::workflow_get_iterations,
             commands::workflow_get_artifact,

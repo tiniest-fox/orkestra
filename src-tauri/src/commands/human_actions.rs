@@ -50,3 +50,11 @@ pub fn workflow_integrate_task(
 ) -> Result<Task, TauriError> {
     state.api()?.integrate_task(&task_id).map_err(Into::into)
 }
+
+/// Retry a failed task by resuming from its last active stage.
+///
+/// Assumes the underlying issue has been resolved.
+#[tauri::command]
+pub fn workflow_retry(state: State<AppState>, task_id: String) -> Result<Task, TauriError> {
+    state.api()?.retry(&task_id).map_err(Into::into)
+}

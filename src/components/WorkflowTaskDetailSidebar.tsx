@@ -356,12 +356,13 @@ export function WorkflowTaskDetailSidebar({
 }: WorkflowTaskDetailSidebarProps) {
   const [activeTab, setActiveTab] = useState("details");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const [iterations, setIterations] = useState<WorkflowIteration[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement>(null);
 
-  const { approve, reject, answerQuestions } = useWorkflowActions();
+  const { approve, reject, answerQuestions, retry } = useWorkflowActions();
   const { getIterations, getLogs, getStagesWithLogs, getPendingQuestions } = useWorkflowQueries();
 
   // Pending questions (fetched from iteration outcome)
@@ -571,6 +572,18 @@ export function WorkflowTaskDetailSidebar({
     }
   };
 
+  const handleRetry = async () => {
+    setIsRetrying(true);
+    try {
+      await retry(task.id);
+      onTaskUpdated();
+    } catch (err) {
+      console.error("Failed to retry task:", err);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
   // Status styling
   const statusLabel =
     task.status.type === "active"
@@ -660,10 +673,22 @@ export function WorkflowTaskDetailSidebar({
         {activeTab === "details" && (
           <div className="flex-1 overflow-auto p-4">
             {task.description && <p className="text-gray-600 text-sm">{task.description}</p>}
-            {task.status.type === "failed" && task.status.error && (
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
-                <div className="text-xs font-medium text-red-700 mb-1">Error</div>
-                <p className="text-sm text-red-800">{task.status.error}</p>
+            {task.status.type === "failed" && (
+              <div className="mt-3 space-y-3">
+                {task.status.error && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded">
+                    <div className="text-xs font-medium text-red-700 mb-1">Error</div>
+                    <p className="text-sm text-red-800">{task.status.error}</p>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  disabled={isRetrying}
+                  className="w-full px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  {isRetrying ? "Retrying..." : "Retry Task"}
+                </button>
               </div>
             )}
             {task.status.type === "blocked" && task.status.reason && (

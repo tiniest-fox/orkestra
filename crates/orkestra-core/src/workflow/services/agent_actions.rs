@@ -183,21 +183,34 @@ impl WorkflowApi {
                 subtasks,
                 skip_reason,
             } => {
+                use crate::workflow::execution::subtasks_to_markdown;
+
+                // Convert subtasks to markdown artifact
+                let content = subtasks_to_markdown(&subtasks, skip_reason.as_deref());
+
+                // Get artifact name from stage config (should be "breakdown")
+                let artifact_name = self
+                    .workflow
+                    .stage(&current_stage)
+                    .map(|s| s.artifact.clone())
+                    .unwrap_or_else(|| "breakdown".to_string());
+
+                // Store the artifact
+                task.artifacts.set(Artifact::new(
+                    &artifact_name,
+                    &content,
+                    &current_stage,
+                    &now,
+                ));
+
                 if subtasks.is_empty() {
-                    // Empty subtasks with skip_reason means skipping breakdown
-                    // Log the reason and treat as completing the stage
-                    if let Some(reason) = skip_reason {
+                    if let Some(reason) = &skip_reason {
                         orkestra_debug!("agent_actions", "Skipping subtask breakdown: {}", reason);
                     }
-                    // Store as artifact that breakdown was skipped
-                    task.phase = Phase::AwaitingReview;
-                    task.updated_at = now;
-                } else {
-                    // TODO: Create subtasks from breakdown output
-                    // For now, just store as artifact
-                    task.phase = Phase::AwaitingReview;
-                    task.updated_at = now;
                 }
+
+                task.phase = Phase::AwaitingReview;
+                task.updated_at = now;
             }
 
             StageOutput::Failed { error } => {

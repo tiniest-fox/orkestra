@@ -108,6 +108,7 @@ function buildTabs(task: WorkflowTask, config: WorkflowConfig): Tab[] {
 
 /**
  * Question form component for answering pending questions.
+ * Shows one question at a time with navigation controls.
  */
 function QuestionFormSection({
   questions,
@@ -119,6 +120,14 @@ function QuestionFormSection({
   isSubmitting: boolean;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Reset current index when questions change
+  // Track by length and first question ID to detect meaningful changes
+  const questionsKey = `${questions.length}-${questions[0]?.id ?? "none"}`;
+  useEffect(() => {
+    setCurrentIndex(0);
+  }, [questionsKey]);
 
   const handleSubmit = () => {
     const formattedAnswers: WorkflowQuestionAnswer[] = questions.map((q) => ({
@@ -131,56 +140,108 @@ function QuestionFormSection({
   };
 
   const allAnswered = questions.every((q) => answers[q.id]?.trim());
+  const currentQuestion = questions[currentIndex];
+  const isFirstQuestion = currentIndex === 0;
+  const isLastQuestion = currentIndex === questions.length - 1;
+  const currentAnswered = currentQuestion && answers[currentQuestion.id]?.trim();
+
+  const handlePrevious = () => {
+    if (!isFirstQuestion) {
+      setCurrentIndex((prev) => prev - 1);
+    }
+  };
+
+  const handleNext = () => {
+    if (!isLastQuestion) {
+      setCurrentIndex((prev) => prev + 1);
+    }
+  };
+
+  if (!currentQuestion) return null;
 
   return (
-    <div className="p-4 bg-blue-50 border-t border-gray-200">
-      <div className="text-sm font-medium text-blue-800 mb-3">Questions</div>
-      <div className="space-y-4">
-        {questions.map((question) => (
-          <div key={question.id}>
-            <div className="text-sm font-medium text-gray-900 mb-1">{question.question}</div>
-            {question.context && (
-              <div className="text-xs text-gray-500 mb-2">{question.context}</div>
-            )}
-            {question.options && question.options.length > 0 ? (
-              <div className="space-y-1">
-                {question.options.map((option) => (
-                  <label key={option.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name={question.id}
-                      value={option.id}
-                      checked={answers[question.id] === option.id}
-                      onChange={() => setAnswers((prev) => ({ ...prev, [question.id]: option.id }))}
-                      className="text-blue-600"
-                    />
-                    <span className="text-sm">{option.label}</span>
-                    {option.description && (
-                      <span className="text-xs text-gray-500">- {option.description}</span>
-                    )}
-                  </label>
-                ))}
-              </div>
-            ) : (
-              <textarea
-                value={answers[question.id] || ""}
-                onChange={(e) => setAnswers((prev) => ({ ...prev, [question.id]: e.target.value }))}
-                placeholder="Type your answer..."
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                rows={2}
-              />
-            )}
-          </div>
-        ))}
+    <div className="p-4 bg-blue-50 border-t border-gray-200 flex flex-col">
+      {/* Header with progress indicator */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm font-medium text-blue-800">Questions</div>
+        <div className="text-xs text-blue-600">
+          Question {currentIndex + 1} of {questions.length}
+        </div>
       </div>
-      <button
-        type="button"
-        onClick={handleSubmit}
-        disabled={isSubmitting || !allAnswered}
-        className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-      >
-        {isSubmitting ? "Submitting..." : "Submit Answers"}
-      </button>
+
+      {/* Scrollable question content */}
+      <div className="overflow-auto max-h-[300px] mb-4">
+        <div className="text-sm font-medium text-gray-900 mb-1">{currentQuestion.question}</div>
+        {currentQuestion.context && (
+          <div className="text-xs text-gray-500 mb-2">{currentQuestion.context}</div>
+        )}
+        {currentQuestion.options && currentQuestion.options.length > 0 ? (
+          <div className="space-y-1">
+            {currentQuestion.options.map((option) => (
+              <label key={option.id} className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name={currentQuestion.id}
+                  value={option.id}
+                  checked={answers[currentQuestion.id] === option.id}
+                  onChange={() =>
+                    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: option.id }))
+                  }
+                  className="text-blue-600 mt-0.5"
+                />
+                <div>
+                  <span className="text-sm">{option.label}</span>
+                  {option.description && (
+                    <span className="text-xs text-gray-500 ml-1">- {option.description}</span>
+                  )}
+                </div>
+              </label>
+            ))}
+          </div>
+        ) : (
+          <textarea
+            value={answers[currentQuestion.id] || ""}
+            onChange={(e) =>
+              setAnswers((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))
+            }
+            placeholder="Type your answer..."
+            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            rows={2}
+          />
+        )}
+      </div>
+
+      {/* Navigation controls */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={handlePrevious}
+          disabled={isFirstQuestion || isSubmitting}
+          className="px-4 py-2 text-sm text-blue-600 hover:bg-blue-100 rounded-lg disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+        >
+          Previous
+        </button>
+
+        {isLastQuestion ? (
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSubmitting || !allAnswered}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            {isSubmitting ? "Submitting..." : "Submit Answers"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleNext}
+            disabled={!currentAnswered || isSubmitting}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            Next
+          </button>
+        )}
+      </div>
     </div>
   );
 }

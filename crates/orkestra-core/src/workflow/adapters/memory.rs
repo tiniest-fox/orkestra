@@ -74,7 +74,7 @@ impl WorkflowStore for InMemoryWorkflowStore {
 
     fn next_task_id(&self) -> WorkflowResult<String> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        Ok(format!("task-{:03}", id))
+        Ok(format!("task-{id:03}"))
     }
 
     fn get_iterations(&self, task_id: &str) -> WorkflowResult<Vec<Iteration>> {

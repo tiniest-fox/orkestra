@@ -324,10 +324,7 @@ impl GitService for Git2GitService {
         if delete_branch {
             if let Err(e) = self.delete_branch(&branch_name) {
                 // Branch may not exist or may be checked out elsewhere - log but don't fail
-                eprintln!(
-                    "[orkestra] WARNING: Failed to delete branch {}: {}",
-                    branch_name, e
-                );
+                eprintln!("[orkestra] WARNING: Failed to delete branch {branch_name}: {e}");
             }
         }
 

@@ -16,7 +16,7 @@ use super::output::SubtaskOutput;
 pub fn subtasks_to_markdown(subtasks: &[SubtaskOutput], skip_reason: Option<&str>) -> String {
     if subtasks.is_empty() {
         return match skip_reason {
-            Some(reason) => format!("# Breakdown Skipped\n\n{}", reason),
+            Some(reason) => format!("# Breakdown Skipped\n\n{reason}"),
             None => "# Breakdown Skipped\n\nNo subtasks generated.".to_string(),
         };
     }

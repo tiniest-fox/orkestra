@@ -324,10 +324,7 @@ impl OrchestratorLoop {
                                 error: format!("Agent error: {error}"),
                             },
                         ) {
-                            eprintln!(
-                                "[orkestra] ERROR: Failed to mark task {} as failed: {}",
-                                task_id, e
-                            );
+                            eprintln!("[orkestra] ERROR: Failed to mark task {task_id} as failed: {e}");
                         }
                     }
                     Ok(Some(OrchestratorEvent::Error {

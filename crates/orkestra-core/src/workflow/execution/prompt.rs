@@ -230,7 +230,7 @@ impl<'a> PromptBuilder<'a> {
 
         // Header
         let display_name = ctx.stage.display_name.as_deref().unwrap_or(&ctx.stage.name);
-        prompt.push_str(&format!("# Stage: {}\n\n", display_name));
+        prompt.push_str(&format!("# Stage: {display_name}\n\n"));
 
         // Task info
         prompt.push_str("## Task\n\n");
@@ -259,7 +259,7 @@ impl<'a> PromptBuilder<'a> {
         // Feedback
         if let Some(fb) = ctx.feedback {
             prompt.push_str("## Feedback to Address\n\n");
-            prompt.push_str(&format!("{}\n\n", fb));
+            prompt.push_str(&format!("{fb}\n\n"));
         }
 
         // Expected output
@@ -403,10 +403,7 @@ pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>)
             return custom_schema;
         }
         // Fall through to dynamic generation if custom file not found
-        eprintln!(
-            "[warn] Custom schema file '{}' not found, using generated schema",
-            schema_file
-        );
+        eprintln!("[warn] Custom schema file '{schema_file}' not found, using generated schema");
     }
 
     // Generate schema dynamically based on stage config
@@ -513,7 +510,7 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
             for file in &err.conflict_files {
                 prompt.push_str(&format!("- {file}\n"));
             }
-            prompt.push_str("\n");
+            prompt.push('\n');
         }
         prompt.push_str(
             "Run `git rebase main` and resolve the conflicts, then continue your work.\n\n",
@@ -646,7 +643,7 @@ fn load_resume_template(
             })?;
             // Warn if custom template missing marker
             if !content.starts_with("<!orkestra-resume:") {
-                eprintln!("[warn] Resume template {} missing marker prefix", name);
+                eprintln!("[warn] Resume template {name} missing marker prefix");
             }
             return Ok(content);
         }

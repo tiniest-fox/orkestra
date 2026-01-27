@@ -135,13 +135,12 @@ impl WorkflowApi {
             StageOutput::Restage { target, feedback } => {
                 // Validate restage capability
                 let stage_config = self.workflow.stage(&current_stage).ok_or_else(|| {
-                    WorkflowError::InvalidTransition(format!("Unknown stage: {}", current_stage))
+                    WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
                 })?;
 
                 if !stage_config.capabilities.can_restage_to(&target) {
                     return Err(WorkflowError::InvalidTransition(format!(
-                        "Stage {} cannot restage to {}",
-                        current_stage, target
+                        "Stage {current_stage} cannot restage to {target}"
                     )));
                 }
 

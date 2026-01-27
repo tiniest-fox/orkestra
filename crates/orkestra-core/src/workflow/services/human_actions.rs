@@ -190,8 +190,7 @@ impl WorkflowApi {
         // Verify task is in failed state
         if !matches!(task.status, crate::workflow::runtime::Status::Failed { .. }) {
             return Err(WorkflowError::InvalidTransition(format!(
-                "Cannot retry task {} - not in failed state",
-                task_id
+                "Cannot retry task {task_id} - not in failed state"
             )));
         }
 

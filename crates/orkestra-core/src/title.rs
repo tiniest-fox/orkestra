@@ -19,7 +19,7 @@ pub fn generate_title_sync(description: &str, timeout_secs: u64) -> std::io::Res
 
     let output = runner
         .run("generate_title", &context)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
 
     output["title"]
         .as_str()

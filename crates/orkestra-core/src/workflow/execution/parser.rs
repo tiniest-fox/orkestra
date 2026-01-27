@@ -164,9 +164,7 @@ pub fn check_for_api_error(line: &str) -> Option<String> {
     }
 
     // If there's an error field (not null), this is an API error
-    if v.get("error").is_none() {
-        return None;
-    }
+    v.get("error")?;
 
     // Extract error message from message.content[0].text
     let error_text = v

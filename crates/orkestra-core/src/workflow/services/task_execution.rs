@@ -48,10 +48,7 @@ impl ExecutionHandle {
     pub fn is_complete(&self) -> bool {
         // Try a non-blocking receive - if we get Disconnected, it's complete
         use std::sync::mpsc::TryRecvError;
-        match self.events.try_recv() {
-            Err(TryRecvError::Disconnected) => true,
-            _ => false,
-        }
+        matches!(self.events.try_recv(), Err(TryRecvError::Disconnected))
     }
 }
 

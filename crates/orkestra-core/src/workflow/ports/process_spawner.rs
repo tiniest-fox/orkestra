@@ -268,8 +268,7 @@ mod tests {
 
     #[test]
     fn test_process_config_builder() {
-        let config = ProcessConfig::new(r#"{"type":"object"}"#)
-            .with_session("session-123", true);
+        let config = ProcessConfig::new(r#"{"type":"object"}"#).with_session("session-123", true);
 
         assert_eq!(config.session_id, Some("session-123".to_string()));
         assert!(config.is_resume);

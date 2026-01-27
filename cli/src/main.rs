@@ -101,7 +101,6 @@ fn main() {
 }
 
 fn handle_task_action(action: TaskAction) {
-    // Initialize workflow API
     let api = match init_workflow_api() {
         Ok(api) => api,
         Err(e) => {
@@ -111,207 +110,162 @@ fn handle_task_action(action: TaskAction) {
     };
 
     match action {
-        TaskAction::List { status } => {
-            // Use list_archived_tasks() for archived filter, list_tasks() otherwise
-            let is_archived_filter = status
-                .as_ref()
-                .is_some_and(|s| s.to_lowercase() == "archived");
-            let tasks = if is_archived_filter {
-                match api.list_archived_tasks() {
-                    Ok(tasks) => tasks,
-                    Err(e) => {
-                        eprintln!("Error loading archived tasks: {e}");
-                        std::process::exit(1);
-                    }
-                }
-            } else {
-                match api.list_tasks() {
-                    Ok(tasks) => tasks,
-                    Err(e) => {
-                        eprintln!("Error loading tasks: {e}");
-                        std::process::exit(1);
-                    }
-                }
-            };
-
-            // Filter by status if provided (not needed for archived since we already fetched them)
-            let tasks: Vec<_> = if let Some(ref filter) = status {
-                if is_archived_filter {
-                    tasks // Already filtered by list_archived_tasks
-                } else {
-                    tasks
-                        .into_iter()
-                        .filter(|t| matches_status_filter(t, filter))
-                        .collect()
-                }
-            } else {
-                tasks
-            };
-
-            if tasks.is_empty() {
-                println!("No tasks found.");
-                return;
-            }
-
-            println!(
-                "{:<12} {:<20} {:<15} {:<12} STAGE",
-                "ID", "TITLE", "STATUS", "PHASE"
-            );
-            println!("{}", "-".repeat(80));
-
-            for task in tasks {
-                let title: String = task.title.chars().take(18).collect();
-                let status_str = format_status(&task.status);
-                let phase_str = format_phase(&task.phase);
-                let stage = task.current_stage().unwrap_or("-");
-
-                println!(
-                    "{:<12} {:<20} {:<15} {:<12} {}",
-                    task.id, title, status_str, phase_str, stage
-                );
-            }
-        }
-
-        TaskAction::Show { id } => {
-            let task = match api.get_task(&id) {
-                Ok(task) => task,
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
-            };
-
-            println!("Task: {}", task.id);
-            println!("Title: {}", task.title);
-            println!("Description: {}", task.description);
-            println!("Status: {}", format_status(&task.status));
-            println!("Phase: {}", format_phase(&task.phase));
-
-            if let Some(stage) = task.current_stage() {
-                println!("Current Stage: {stage}");
-            }
-
-            if let Some(parent) = &task.parent_id {
-                println!("Parent: {parent}");
-            }
-
-            if let Some(branch) = &task.branch_name {
-                println!("Branch: {branch}");
-            }
-
-            if let Some(worktree) = &task.worktree_path {
-                println!("Worktree: {worktree}");
-            }
-
-            // Show artifacts
-            let artifact_names: Vec<_> = task.artifacts.names().collect();
-            if !artifact_names.is_empty() {
-                println!("\nArtifacts:");
-                for name in artifact_names {
-                    if let Some(artifact) = task.artifacts.get(name) {
-                        println!("  - {} (from stage: {})", name, artifact.stage);
-                        // Show first 200 chars of content
-                        let preview: String = artifact.content.chars().take(200).collect();
-                        if !preview.is_empty() {
-                            println!("    {}", preview.replace('\n', "\n    "));
-                            if artifact.content.len() > 200 {
-                                println!("    ... ({} more chars)", artifact.content.len() - 200);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Show pending questions (from iteration outcome)
-            if let Ok(questions) = api.get_pending_questions(&id) {
-                if !questions.is_empty() {
-                    println!("\nPending Questions:");
-                    for q in &questions {
-                        println!("  - [{}] {}", q.id, q.question);
-                    }
-                }
-            }
-
-            // Show iterations
-            match api.get_iterations(&id) {
-                Ok(iterations) if !iterations.is_empty() => {
-                    println!("\nIterations:");
-                    for iter in iterations {
-                        let outcome_str = iter
-                            .outcome
-                            .as_ref()
-                            .map_or_else(|| "in progress".to_string(), |o| format!("{o:?}"));
-                        println!(
-                            "  - {} (stage: {}, outcome: {})",
-                            iter.id, iter.stage, outcome_str
-                        );
-                    }
-                }
-                _ => {}
-            }
-
-            println!("\nCreated: {}", task.created_at);
-            println!("Updated: {}", task.updated_at);
-            if let Some(completed) = &task.completed_at {
-                println!("Completed: {completed}");
-            }
-        }
-
+        TaskAction::List { status } => handle_list_tasks(&api, status.as_deref()),
+        TaskAction::Show { id } => handle_show_task(&api, &id),
         TaskAction::Create {
             title,
             description,
             base_branch,
-        } => {
-            let task = match api.create_task(&title, &description, base_branch.as_deref()) {
-                Ok(task) => task,
-                Err(e) => {
-                    eprintln!("Error creating task: {e}");
-                    std::process::exit(1);
-                }
-            };
+        } => handle_create_task(&api, &title, &description, base_branch.as_deref()),
+        TaskAction::Approve { id } => handle_approve_task(&api, &id),
+        TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback),
+    }
+}
 
-            println!("Created task: {}", task.id);
-            println!("Title: {}", task.title);
-            println!("Stage: {}", task.current_stage().unwrap_or("-"));
-            if let Some(branch) = &task.branch_name {
-                println!("Branch: {branch}");
-            }
-            if let Some(worktree) = &task.worktree_path {
-                println!("Worktree: {worktree}");
-            }
+fn handle_create_task(api: &WorkflowApi, title: &str, description: &str, base_branch: Option<&str>) {
+    let task = match api.create_task(title, description, base_branch) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error creating task: {e}");
+            std::process::exit(1);
         }
+    };
 
-        TaskAction::Approve { id } => {
-            let task = match api.approve(&id) {
-                Ok(task) => task,
-                Err(e) => {
-                    eprintln!("Error approving task: {e}");
-                    std::process::exit(1);
-                }
-            };
+    println!("Created task: {}", task.id);
+    println!("Title: {}", task.title);
+    println!("Stage: {}", task.current_stage().unwrap_or("-"));
+    if let Some(branch) = &task.branch_name {
+        println!("Branch: {branch}");
+    }
+    if let Some(worktree) = &task.worktree_path {
+        println!("Worktree: {worktree}");
+    }
+}
 
-            println!("Approved task: {}", task.id);
-            if task.is_done() {
-                println!("Status: Done");
-            } else {
-                println!("New stage: {}", task.current_stage().unwrap_or("-"));
-            }
+fn handle_approve_task(api: &WorkflowApi, id: &str) {
+    let task = match api.approve(id) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error approving task: {e}");
+            std::process::exit(1);
         }
+    };
 
-        TaskAction::Reject { id, feedback } => {
-            let task = match api.reject(&id, &feedback) {
-                Ok(task) => task,
-                Err(e) => {
-                    eprintln!("Error rejecting task: {e}");
-                    std::process::exit(1);
-                }
-            };
+    println!("Approved task: {}", task.id);
+    if task.is_done() {
+        println!("Status: Done");
+    } else {
+        println!("New stage: {}", task.current_stage().unwrap_or("-"));
+    }
+}
 
-            println!("Rejected task: {}", task.id);
-            println!(
-                "Stage: {} (new iteration)",
-                task.current_stage().unwrap_or("-")
-            );
+fn handle_reject_task(api: &WorkflowApi, id: &str, feedback: &str) {
+    let task = match api.reject(id, feedback) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error rejecting task: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    println!("Rejected task: {}", task.id);
+    println!(
+        "Stage: {} (new iteration)",
+        task.current_stage().unwrap_or("-")
+    );
+}
+
+fn handle_list_tasks(api: &WorkflowApi, status_filter: Option<&str>) {
+    let tasks = match api.list_tasks() {
+        Ok(tasks) => tasks,
+        Err(e) => {
+            eprintln!("Error listing tasks: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let tasks: Vec<_> = match status_filter {
+        Some(filter) => tasks
+            .into_iter()
+            .filter(|t| matches_status_filter(t, filter))
+            .collect(),
+        None => tasks,
+    };
+
+    if tasks.is_empty() {
+        println!("No tasks found.");
+        return;
+    }
+
+    println!("{:<36} {:<30} {:<20} {:<10}", "ID", "Title", "Status", "Phase");
+    println!("{}", "-".repeat(96));
+
+    for task in tasks {
+        let title = if task.title.len() > 28 {
+            format!("{}...", &task.title[..25])
+        } else {
+            task.title.clone()
+        };
+        println!(
+            "{:<36} {:<30} {:<20} {:<10}",
+            task.id,
+            title,
+            format_status(&task.status),
+            format_phase(task.phase)
+        );
+    }
+}
+
+fn handle_show_task(api: &WorkflowApi, id: &str) {
+    let task = match api.get_task(id) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error getting task: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    println!("Task: {}", task.id);
+    println!("Title: {}", task.title);
+    println!("Description: {}", task.description);
+    println!("Status: {}", format_status(&task.status));
+    println!("Phase: {}", format_phase(task.phase));
+
+    if let Some(stage) = task.current_stage() {
+        println!("Current Stage: {stage}");
+    }
+
+    if let Some(branch) = &task.branch_name {
+        println!("Branch: {branch}");
+    }
+
+    if let Some(worktree) = &task.worktree_path {
+        println!("Worktree: {worktree}");
+    }
+
+    if let Some(parent) = &task.parent_id {
+        println!("Parent: {parent}");
+    }
+
+    if !task.depends_on.is_empty() {
+        println!("Dependencies: {}", task.depends_on.join(", "));
+    }
+
+    println!("Created: {}", task.created_at);
+    println!("Updated: {}", task.updated_at);
+
+    if let Some(completed) = &task.completed_at {
+        println!("Completed: {completed}");
+    }
+
+    // Show artifacts
+    let artifact_names: Vec<String> = task.artifacts.names().map(String::from).collect();
+    if !artifact_names.is_empty() {
+        println!("\nArtifacts:");
+        for name in &artifact_names {
+            if let Some(artifact) = task.artifacts.get(name) {
+                println!("  [{name}] (stage: {}, created: {})", artifact.stage, artifact.created_at);
+            }
         }
     }
 }
@@ -428,7 +382,7 @@ fn format_status(status: &Status) -> String {
     }
 }
 
-fn format_phase(phase: &Phase) -> String {
+fn format_phase(phase: Phase) -> String {
     match phase {
         Phase::SettingUp => "Setting Up".to_string(),
         Phase::Idle => "Idle".to_string(),

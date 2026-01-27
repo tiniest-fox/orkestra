@@ -11,6 +11,7 @@ use tauri::State;
 /// This is infallible since config is loaded at startup, but returns Result
 /// for API consistency.
 #[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
 pub fn workflow_get_config(state: State<AppState>) -> Result<WorkflowConfig, TauriError> {
     Ok(state.config().clone())
 }
@@ -130,6 +131,7 @@ pub fn workflow_get_stages_with_logs(
 /// # Returns
 /// Vec of LogEntry representing agent activity (tool uses, text output, etc.)
 #[tauri::command]
+#[allow(clippy::similar_names)]
 pub fn workflow_get_logs(
     state: State<AppState>,
     task_id: String,

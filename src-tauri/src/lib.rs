@@ -281,6 +281,11 @@ fn init_workflow_state() -> Result<state::AppState, String> {
 // Application Entry Point
 // =============================================================================
 
+/// Run the Tauri application.
+///
+/// # Panics
+///
+/// Panics if the Tauri application fails to build (e.g., missing resources).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let stop_flag = Arc::new(AtomicBool::new(false));

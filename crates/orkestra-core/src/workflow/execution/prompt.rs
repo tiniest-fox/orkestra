@@ -235,8 +235,8 @@ impl<'a> PromptBuilder<'a> {
 
         // Task info
         prompt.push_str("## Task\n\n");
-        let _ = write!(prompt, "**ID:** {}\n", ctx.task_id);
-        let _ = write!(prompt, "**Title:** {}\n", ctx.title);
+        let _ = writeln!(prompt, "**ID:** {}", ctx.task_id);
+        let _ = writeln!(prompt, "**Title:** {}", ctx.title);
         let _ = write!(prompt, "\n{}\n\n", ctx.description);
 
         // Input artifacts
@@ -252,8 +252,8 @@ impl<'a> PromptBuilder<'a> {
         if !ctx.question_history.is_empty() {
             prompt.push_str("## Previous Questions & Answers\n\n");
             for qa in &ctx.question_history {
-                let _ = write!(prompt, "**Q:** {}\n", qa.question);
-                let _ = write!(prompt, "**A:** {}\n\n", qa.answer);
+                let _ = writeln!(prompt, "**Q:** {}", qa.question);
+                let _ = writeln!(prompt, "**A:** {}\n", qa.answer);
             }
         }
 
@@ -265,9 +265,9 @@ impl<'a> PromptBuilder<'a> {
 
         // Expected output
         prompt.push_str("## Expected Output\n\n");
-        let _ = write!(
+        let _ = writeln!(
             prompt,
-            "Produce the `{}` artifact for this stage.\n",
+            "Produce the `{}` artifact for this stage.",
             ctx.stage.artifact
         );
 
@@ -279,9 +279,9 @@ impl<'a> PromptBuilder<'a> {
             prompt.push_str("\nYou may break this down into subtasks if appropriate.\n");
         }
         if !ctx.stage.capabilities.supports_restage.is_empty() {
-            let _ = write!(
+            let _ = writeln!(
                 prompt,
-                "\nYou may restage to: {:?}\n",
+                "\nYou may restage to: {:?}",
                 ctx.stage.capabilities.supports_restage
             );
         }
@@ -471,8 +471,8 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
 
     // Task information
     prompt.push_str("## Your Current Task\n\n");
-    let _ = write!(prompt, "**Task ID**: {}\n", ctx.task_id);
-    let _ = write!(prompt, "**Title**: {}\n\n", ctx.title);
+    let _ = writeln!(prompt, "**Task ID**: {}", ctx.task_id);
+    let _ = writeln!(prompt, "**Title**: {}\n", ctx.title);
     prompt.push_str("### Description\n");
     prompt.push_str(ctx.description);
     prompt.push_str("\n\n");
@@ -491,8 +491,8 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
     if !ctx.question_history.is_empty() {
         prompt.push_str("## Previous Questions and Answers\n\n");
         for qa in &ctx.question_history {
-            let _ = write!(prompt, "**Q: {}**\n", qa.question);
-            let _ = write!(prompt, "A: {}\n\n", qa.answer);
+            let _ = writeln!(prompt, "**Q: {}**", qa.question);
+            let _ = writeln!(prompt, "A: {}\n", qa.answer);
         }
     }
 
@@ -511,7 +511,7 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
         if !err.conflict_files.is_empty() {
             prompt.push_str("**Conflicting files:**\n");
             for file in &err.conflict_files {
-                let _ = write!(prompt, "- {file}\n");
+                let _ = writeln!(prompt, "- {file}");
             }
             prompt.push('\n');
         }

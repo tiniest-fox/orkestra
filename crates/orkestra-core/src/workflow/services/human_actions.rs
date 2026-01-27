@@ -193,6 +193,71 @@ impl WorkflowApi {
         Ok(task)
     }
 
+    /// Retry a failed task by resuming it from its last active stage.
+    ///
+    /// This retrieves the last stage from the most recent iteration and
+    /// transitions the task back to that stage with an Idle phase.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if the task is not in Failed state.
+    pub fn retry(&self, task_id: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        // Verify task is in failed state
+        if !matches!(task.status, crate::workflow::runtime::Status::Failed { .. }) {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot retry task {} - not in failed state",
+                task_id
+            )));
+        }
+
+        orkestra_debug!("action", "retry {}: recovering from failed state", task_id);
+
+        // Get the last stage from the most recent iteration
+        let iterations = self.store.get_iterations(&task.id)?;
+        let last_stage = iterations
+            .last()
+            .map(|i| i.stage.clone())
+            .unwrap_or_else(|| {
+                self.workflow
+                    .first_stage()
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "planning".to_string())
+            });
+
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Transition task back to its last stage with Idle phase
+        task.status = crate::workflow::runtime::Status::active(&last_stage);
+        task.phase = Phase::Idle;
+        task.updated_at = now.clone();
+
+        // Create new iteration with Interrupted trigger to indicate recovery
+        let iteration_count = iterations.len() as u32;
+        let iteration = Iteration::new(
+            format!("{}-iter-{}", task.id, iteration_count + 1),
+            &task.id,
+            &last_stage,
+            iteration_count + 1,
+            &now,
+        )
+        .with_context(IterationTrigger::Interrupted);
+        self.store.save_iteration(&iteration)?;
+
+        // Save updated task
+        self.store.save_task(&task)?;
+
+        orkestra_debug!(
+            "action",
+            "retry {}: resumed in stage {}",
+            task_id,
+            last_stage
+        );
+
+        Ok(task)
+    }
+
     /// Helper: End the current active iteration with an outcome.
     pub(crate) fn end_current_iteration(
         &self,

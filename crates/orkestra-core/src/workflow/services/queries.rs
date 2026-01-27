@@ -100,9 +100,10 @@ impl WorkflowApi {
             .collect())
     }
 
-    /// Clear the agent PID for a stage session.
+    /// Clear the agent PID for a stage session after an orphaned agent is killed.
     ///
-    /// Used after killing an orphaned agent to remove the stale PID.
+    /// Only clears the PID. The `spawn_count` was already incremented when
+    /// the agent was spawned, so the next spawn will correctly use `--resume`.
     pub fn clear_session_agent_pid(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
         if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
             session.agent_pid = None;
@@ -354,5 +355,57 @@ mod tests {
         api.store.save_task(&done_task).unwrap();
 
         assert_eq!(api.get_current_stage(&done_task.id).unwrap(), None);
+    }
+
+    #[test]
+    fn test_clear_session_agent_pid_preserves_spawn_count() {
+        // This test verifies crash recovery works correctly:
+        // spawn_count is incremented at spawn time, so even if an agent
+        // crashes (and we just clear the PID), the next spawn sees
+        // spawn_count > 0 and uses --resume.
+
+        use crate::workflow::domain::StageSession;
+
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description", None).unwrap();
+
+        // Simulate a session with a running agent that was spawned
+        // (spawn_count = 1 because it was incremented at spawn time)
+        let mut session = StageSession::new(
+            format!("{}-planning", task.id),
+            &task.id,
+            "planning",
+            chrono::Utc::now().to_rfc3339(),
+        );
+        session.agent_pid = Some(12345);
+        session.spawn_count = 1; // Incremented when agent was spawned
+        api.store.save_stage_session(&session).unwrap();
+
+        // Verify initial state
+        let session_before = api
+            .store
+            .get_stage_session(&task.id, "planning")
+            .unwrap()
+            .unwrap();
+        assert_eq!(session_before.agent_pid, Some(12345));
+        assert_eq!(session_before.spawn_count, 1);
+
+        // Simulate orphan cleanup: kill process and clear PID
+        api.clear_session_agent_pid(&task.id, "planning").unwrap();
+
+        // Verify: PID is cleared, spawn_count preserved (still > 0)
+        let session_after = api
+            .store
+            .get_stage_session(&task.id, "planning")
+            .unwrap()
+            .unwrap();
+        assert_eq!(session_after.agent_pid, None, "PID should be cleared");
+        assert_eq!(
+            session_after.spawn_count, 1,
+            "spawn_count should be preserved so next spawn uses --resume"
+        );
     }
 }

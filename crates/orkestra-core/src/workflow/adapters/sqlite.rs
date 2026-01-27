@@ -329,7 +329,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let result = conn
             .query_row(
-                "SELECT id, task_id, stage, claude_session_id, agent_pid, resume_count,
+                "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
                         session_state, created_at, updated_at
                  FROM workflow_stage_sessions WHERE task_id = ? AND stage = ?",
                 params![task_id, stage],
@@ -346,7 +346,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, task_id, stage, claude_session_id, agent_pid, resume_count,
+                "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
                         session_state, created_at, updated_at
                  FROM workflow_stage_sessions WHERE task_id = ? ORDER BY created_at",
             )
@@ -369,7 +369,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, task_id, stage, claude_session_id, agent_pid, resume_count,
+                "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
                         session_state, created_at, updated_at
                  FROM workflow_stage_sessions WHERE agent_pid IS NOT NULL",
             )
@@ -395,16 +395,16 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         orkestra_debug!(
             "db",
-            "save_session {}: claude_session_id={:?}, state={}, resume_count={}",
+            "save_session {}: claude_session_id={:?}, state={}, spawn_count={}",
             session.id,
             session.claude_session_id,
             state_str,
-            session.resume_count
+            session.spawn_count
         );
 
         conn.execute(
             "INSERT OR REPLACE INTO workflow_stage_sessions (
-                id, task_id, stage, claude_session_id, agent_pid, resume_count,
+                id, task_id, stage, claude_session_id, agent_pid, spawn_count,
                 session_state, created_at, updated_at
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
@@ -413,7 +413,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 session.stage,
                 session.claude_session_id,
                 session.agent_pid.map(|p| p as i32),
-                session.resume_count as i32,
+                session.spawn_count as i32,
                 state_str,
                 session.created_at,
                 session.updated_at,
@@ -506,7 +506,7 @@ fn parse_phase(s: &str) -> Phase {
 #[allow(clippy::cast_sign_loss)]
 fn row_to_stage_session(row: &rusqlite::Row) -> rusqlite::Result<StageSession> {
     let agent_pid: Option<i32> = row.get(4)?;
-    let resume_count: i32 = row.get(5)?;
+    let spawn_count: i32 = row.get(5)?;
     let state_str: String = row.get(6)?;
 
     Ok(StageSession {
@@ -515,7 +515,7 @@ fn row_to_stage_session(row: &rusqlite::Row) -> rusqlite::Result<StageSession> {
         stage: row.get(2)?,
         claude_session_id: row.get(3)?,
         agent_pid: agent_pid.map(|p| p as u32),
-        resume_count: resume_count as u32,
+        spawn_count: spawn_count as u32,
         session_state: parse_session_state(&state_str),
         created_at: row.get(7)?,
         updated_at: row.get(8)?,

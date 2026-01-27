@@ -518,15 +518,12 @@ mod tests {
             iteration_service,
         );
 
-        // Start an agent - session ID is generated upfront
+        // Start spawn - session ID is generated upfront in on_spawn_starting
         session_service
             .on_spawn_starting("task-1", "planning")
             .unwrap();
-        session_service
-            .on_agent_spawned("task-1", "planning", 12345)
-            .unwrap();
 
-        // Session ID should be available immediately (generated in on_spawn_starting)
+        // Get context BEFORE on_agent_spawned - should not be a resume yet
         let ctx = session_service
             .get_spawn_context("task-1", "planning")
             .unwrap();
@@ -536,12 +533,17 @@ mod tests {
         );
         assert!(!ctx.is_resume, "First spawn should not be a resume");
 
-        // Simulate agent finishing and spawning again
+        // Now mark agent as spawned - this increments spawn_count
+        session_service
+            .on_agent_spawned("task-1", "planning", 12345)
+            .unwrap();
+
+        // Simulate agent finishing
         session_service
             .on_agent_exited("task-1", "planning")
             .unwrap();
 
-        // Get context again - should now be a resume
+        // Get context again - should now be a resume (spawn_count was incremented at spawn)
         let ctx2 = session_service
             .get_spawn_context("task-1", "planning")
             .unwrap();

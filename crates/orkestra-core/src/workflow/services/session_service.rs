@@ -34,7 +34,7 @@ pub struct SessionSpawnContext {
     /// The Claude session ID. Always present (generated when session is created).
     pub session_id: String,
     /// Whether this is a resume (use `--resume`) or first spawn (use `--session-id`).
-    /// Based on `resume_count > 0` - if the agent has previously exited, it's a resume.
+    /// Based on `spawn_count > 0` - if the agent has previously been spawned, it's a resume.
     pub is_resume: bool,
 }
 
@@ -89,17 +89,17 @@ impl SessionService {
                     ))
                 })?;
 
-                // It's a resume if the agent has previously exited (resume_count > 0)
-                let is_resume = session.resume_count > 0;
+                // It's a resume if the agent has previously been spawned (spawn_count > 0)
+                let is_resume = session.spawn_count > 0;
 
                 orkestra_debug!(
                     "session",
-                    "get_spawn_context {}/{}: session_id={}, is_resume={}, resume_count={}",
+                    "get_spawn_context {}/{}: session_id={}, is_resume={}, spawn_count={}",
                     task_id,
                     stage,
                     session_id,
                     is_resume,
-                    session.resume_count
+                    session.spawn_count
                 );
 
                 Ok(SessionSpawnContext {
@@ -169,12 +169,12 @@ impl SessionService {
 
         orkestra_debug!(
             "session",
-            "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, resume_count={}",
+            "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}",
             task_id,
             stage,
             session.claude_session_id,
             session.session_state,
-            session.resume_count
+            session.spawn_count
         );
 
         self.store.save_stage_session(&session)?;
@@ -205,7 +205,8 @@ impl SessionService {
 
     /// Update session after successful spawn.
     ///
-    /// Transitions session from `Spawning` to `Active` and records PID.
+    /// Transitions session from `Spawning` to `Active`, records PID, and increments
+    /// `spawn_count` so that if the agent crashes, the next spawn uses `--resume`.
     ///
     /// # Errors
     ///
@@ -223,15 +224,15 @@ impl SessionService {
             })?;
 
         session.session_state = SessionState::Active;
-        session.agent_pid = Some(pid);
-        session.updated_at = now;
+        session.agent_spawned(pid, &now);
 
         orkestra_debug!(
             "session",
-            "on_agent_spawned {}/{}: pid={}, claude_session_id={:?}",
+            "on_agent_spawned {}/{}: pid={}, spawn_count={}, claude_session_id={:?}",
             task_id,
             stage,
             pid,
+            session.spawn_count,
             session.claude_session_id
         );
 
@@ -279,7 +280,8 @@ impl SessionService {
 
     /// Record that the agent process exited.
     ///
-    /// Clears the PID, increments `resume_count`, and keeps the session active for potential resume.
+    /// Clears the PID and keeps the session active for potential resume.
+    /// Note: `spawn_count` was already incremented at spawn time in `on_agent_spawned()`.
     pub fn on_agent_exited(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
         if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
             let now = chrono::Utc::now().to_rfc3339();
@@ -287,10 +289,10 @@ impl SessionService {
 
             orkestra_debug!(
                 "session",
-                "on_agent_exited {}/{}: resume_count now {}, claude_session_id={:?}",
+                "on_agent_exited {}/{}: spawn_count now {}, claude_session_id={:?}",
                 task_id,
                 stage,
-                session.resume_count,
+                session.spawn_count,
                 session.claude_session_id
             );
 
@@ -383,7 +385,7 @@ mod tests {
 
         // Should have session ID but not be a resume
         assert!(!ctx.session_id.is_empty());
-        assert!(!ctx.is_resume); // resume_count is 0
+        assert!(!ctx.is_resume); // spawn_count is 0
     }
 
     #[test]
@@ -397,14 +399,14 @@ mod tests {
             .on_agent_spawned("task-1", "planning", 12345)
             .unwrap();
 
-        // Agent exits - this increments resume_count
+        // Agent exits (spawn_count was already incremented in on_agent_spawned)
         service.on_agent_exited("task-1", "planning").unwrap();
 
-        // Next spawn should be a resume with SAME session ID
+        // Next spawn should be a resume with SAME session ID (spawn_count > 0)
         service.on_spawn_starting("task-1", "planning").unwrap();
         let ctx = service.get_spawn_context("task-1", "planning").unwrap();
         assert_eq!(ctx.session_id, first_ctx.session_id); // Same session ID
-        assert!(ctx.is_resume); // resume_count > 0
+        assert!(ctx.is_resume); // spawn_count > 0
     }
 
     #[test]
@@ -581,5 +583,32 @@ mod tests {
             }
             other => panic!("Expected SpawnFailed, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_spawn_failed_retry_is_not_resume() {
+        // Verifies that if a spawn FAILS (process never started), the retry
+        // should NOT use --resume because no Claude session file was created.
+        // This is correct because spawn_count is only incremented in on_agent_spawned,
+        // which is never called when spawn fails.
+        let (service, _store) = create_service();
+
+        // Start spawn attempt
+        service.on_spawn_starting("task-1", "planning").unwrap();
+
+        // Spawn fails before process starts (on_agent_spawned never called)
+        service
+            .on_spawn_failed("task-1", "planning", "Process not found")
+            .unwrap();
+
+        // Retry: get spawn context again
+        service.on_spawn_starting("task-1", "planning").unwrap();
+        let ctx = service.get_spawn_context("task-1", "planning").unwrap();
+
+        // Should NOT be a resume because on_agent_spawned was never called
+        assert!(
+            !ctx.is_resume,
+            "Retry after failed spawn should not be a resume (no Claude session exists)"
+        );
     }
 }

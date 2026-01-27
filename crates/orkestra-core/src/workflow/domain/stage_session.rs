@@ -50,9 +50,11 @@ pub struct StageSession {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_pid: Option<u32>,
 
-    /// Number of times the session has been resumed (for UI markers).
+    /// Number of times an agent has been spawned for this session.
+    /// Used to determine if the next spawn should use `--resume` (count > 0) or `--session-id` (count == 0).
+    /// Incremented at spawn time (not exit time) so crashes still result in correct resume behavior.
     #[serde(default)]
-    pub resume_count: u32,
+    pub spawn_count: u32,
 
     /// Current state of the session.
     #[serde(default)]
@@ -83,7 +85,7 @@ impl StageSession {
             stage: stage.into(),
             claude_session_id: Some(Uuid::new_v4().to_string()),
             agent_pid: None,
-            resume_count: 0,
+            spawn_count: 0,
             session_state: SessionState::Active,
             created_at: created.clone(),
             updated_at: created,
@@ -120,18 +122,21 @@ impl StageSession {
     }
 
     /// Record that an agent was spawned.
+    ///
+    /// Increments `spawn_count` so that if the agent crashes, the next spawn
+    /// knows to use `--resume` instead of `--session-id`. This is more robust
+    /// than incrementing on exit, since crashes skip the exit handler.
     pub fn agent_spawned(&mut self, pid: u32, updated_at: impl Into<String>) {
         self.agent_pid = Some(pid);
+        self.spawn_count += 1;
         self.updated_at = updated_at.into();
     }
 
     /// Record that the agent finished (process ended).
     ///
-    /// Increments `resume_count` so the next spawn knows it's a resume.
-    /// Check `resume_count > 0` to determine if the next spawn should use `--resume`.
+    /// Clears the PID. The `spawn_count` was already incremented at spawn time.
     pub fn agent_finished(&mut self, updated_at: impl Into<String>) {
         self.agent_pid = None;
-        self.resume_count += 1;
         self.updated_at = updated_at.into();
     }
 }
@@ -150,7 +155,7 @@ mod tests {
         // UUID is generated upfront for immediate log access
         assert!(session.claude_session_id.is_some());
         assert!(session.agent_pid.is_none());
-        assert_eq!(session.resume_count, 0);
+        assert_eq!(session.spawn_count, 0);
         assert!(session.is_active());
         assert!(session.can_resume()); // Can resume since session ID exists
     }
@@ -165,36 +170,52 @@ mod tests {
         assert_eq!(session.agent_pid, Some(12345));
         // Session ID should remain unchanged (set at creation)
         assert_eq!(session.claude_session_id, original_session_id);
-        assert_eq!(session.resume_count, 0); // First spawn, not a resume
+        // spawn_count incremented on spawn so crashes still result in --resume
+        assert_eq!(session.spawn_count, 1);
         assert!(session.has_agent());
         assert!(session.can_resume());
     }
 
     #[test]
-    fn test_resume_count_after_exit() {
+    fn test_spawn_count_increments_on_spawn() {
         let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
         let original_session_id = session.claude_session_id.clone();
 
-        // First spawn
+        // First spawn - increments spawn_count immediately
         session.agent_spawned(12345, "t1");
-        assert_eq!(session.resume_count, 0);
+        assert_eq!(session.spawn_count, 1);
 
-        // First exit - increments resume_count
+        // First exit - does NOT increment (already done at spawn)
         session.agent_finished("t2");
-        assert_eq!(session.resume_count, 1);
+        assert_eq!(session.spawn_count, 1);
 
-        // Second spawn (resume)
+        // Second spawn (resume) - increments again
         session.agent_spawned(12346, "t3");
 
         assert_eq!(session.agent_pid, Some(12346));
-        // Session ID should be unchanged
         assert_eq!(session.claude_session_id, original_session_id);
-        // resume_count is still 1 (was incremented on exit, not on spawn)
-        assert_eq!(session.resume_count, 1);
+        assert_eq!(session.spawn_count, 2);
 
         // Second exit
         session.agent_finished("t4");
-        assert_eq!(session.resume_count, 2);
+        assert_eq!(session.spawn_count, 2);
+    }
+
+    #[test]
+    fn test_crash_recovery_uses_resume() {
+        // Verifies that if an agent crashes (no agent_finished call),
+        // the next spawn still sees spawn_count > 0 and uses --resume
+        let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
+
+        // First spawn
+        session.agent_spawned(12345, "t1");
+        assert_eq!(session.spawn_count, 1);
+
+        // Simulate crash: just clear PID without calling agent_finished
+        session.agent_pid = None;
+
+        // Next spawn should see spawn_count > 0
+        assert!(session.spawn_count > 0, "Should use --resume after crash");
     }
 
     #[test]
@@ -223,12 +244,12 @@ mod tests {
     #[test]
     fn test_serialization() {
         let mut session = StageSession::new("ss-1", "task-1", "work", "2025-01-24T10:00:00Z");
-        session.resume_count = 2;
+        session.spawn_count = 2;
 
         let json = serde_json::to_string(&session).unwrap();
         assert!(json.contains("\"id\":\"ss-1\""));
         assert!(json.contains("\"claude_session_id\":")); // UUID is generated
-        assert!(json.contains("\"resume_count\":2"));
+        assert!(json.contains("\"spawn_count\":2"));
 
         let parsed: StageSession = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, session);

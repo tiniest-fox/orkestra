@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use crate::workflow::config::{ScriptStageConfig, StageConfig, WorkflowConfig};
 use crate::workflow::domain::{LogEntry, Task};
-use crate::workflow::execution::{ScriptHandle, ScriptResult};
+use crate::workflow::execution::{ScriptEnv, ScriptHandle, ScriptResult};
 
 // ============================================================================
 // Script Execution Handle
@@ -125,6 +125,21 @@ impl ScriptExecutionService {
     ///
     /// Returns the process ID of the spawned script.
     pub fn spawn_script(&self, task: &Task, stage: &str) -> Result<u32, ScriptError> {
+        self.spawn_script_with_primary_branch(task, stage, None)
+    }
+
+    /// Spawn a script for a task with an optional primary branch.
+    ///
+    /// The primary branch is used to set `ORKESTRA_PRIMARY_BRANCH` environment variable.
+    /// If not provided, scripts can detect it themselves via git.
+    ///
+    /// Returns the process ID of the spawned script.
+    pub fn spawn_script_with_primary_branch(
+        &self,
+        task: &Task,
+        stage: &str,
+        primary_branch: Option<&str>,
+    ) -> Result<u32, ScriptError> {
         let script_config = self
             .get_script_config(stage)
             .ok_or_else(|| ScriptError::NoConfig(stage.to_string()))?;
@@ -133,6 +148,9 @@ impl ScriptExecutionService {
         let timeout = Duration::from_secs(u64::from(script_config.timeout_seconds));
         let recovery_stage = script_config.on_failure.clone();
         let working_dir = self.get_working_dir(task);
+
+        // Build environment variables for the script
+        let env = self.build_script_env(task, primary_branch);
 
         // Create log file path
         let log_path = self.script_log_path(&task.id, stage);
@@ -149,8 +167,8 @@ impl ScriptExecutionService {
             },
         )?;
 
-        // Spawn the script
-        let handle = ScriptHandle::spawn(&command, &working_dir, timeout)
+        // Spawn the script with environment variables
+        let handle = ScriptHandle::spawn_with_env(&command, &working_dir, timeout, &env)
             .map_err(|e| ScriptError::SpawnFailed(e.to_string()))?;
 
         let pid = handle.pid();
@@ -237,6 +255,31 @@ impl ScriptExecutionService {
     /// Get the number of active scripts.
     pub fn active_count(&self) -> usize {
         self.active_scripts.lock().map(|s| s.len()).unwrap_or(0)
+    }
+
+    /// Build environment variables for script execution.
+    ///
+    /// These variables provide task context so scripts can make intelligent
+    /// decisions (e.g., running only relevant checks based on what changed).
+    ///
+    /// Variables set:
+    /// - `ORKESTRA_TASK_ID` - Unique task identifier
+    /// - `ORKESTRA_TASK_TITLE` - Human-readable task title
+    /// - `ORKESTRA_BRANCH` - Task's git branch (if set)
+    /// - `ORKESTRA_WORKTREE_PATH` - Path to task's worktree (if set)
+    /// - `ORKESTRA_PROJECT_ROOT` - Path to main project root
+    /// - `ORKESTRA_PRIMARY_BRANCH` - Primary branch name (if provided)
+    fn build_script_env(&self, task: &Task, primary_branch: Option<&str>) -> ScriptEnv {
+        ScriptEnv::new()
+            .with("ORKESTRA_TASK_ID", &task.id)
+            .with("ORKESTRA_TASK_TITLE", &task.title)
+            .with_opt("ORKESTRA_BRANCH", task.branch_name.as_ref())
+            .with_opt("ORKESTRA_WORKTREE_PATH", task.worktree_path.as_ref())
+            .with(
+                "ORKESTRA_PROJECT_ROOT",
+                self.project_root.to_string_lossy().as_ref(),
+            )
+            .with_opt("ORKESTRA_PRIMARY_BRANCH", primary_branch)
     }
 
     /// Get the log file path for a script execution.

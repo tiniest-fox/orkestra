@@ -3,12 +3,56 @@
 //! Script stages run shell commands instead of spawning Claude agents.
 //! This module provides async execution with timeout support and output capture.
 
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::process::kill_process_tree;
+
+/// Environment variables to pass to script execution.
+///
+/// These provide task context to scripts so they can make intelligent decisions
+/// about what to check based on what changed.
+#[derive(Debug, Clone, Default)]
+pub struct ScriptEnv {
+    vars: HashMap<String, String>,
+}
+
+impl ScriptEnv {
+    /// Create a new empty script environment.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set an environment variable.
+    pub fn set(&mut self, key: impl Into<String>, value: impl Into<String>) -> &mut Self {
+        self.vars.insert(key.into(), value.into());
+        self
+    }
+
+    /// Set an environment variable (builder pattern).
+    #[must_use]
+    pub fn with(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.vars.insert(key.into(), value.into());
+        self
+    }
+
+    /// Set an optional environment variable (only if Some).
+    #[must_use]
+    pub fn with_opt(mut self, key: impl Into<String>, value: Option<impl Into<String>>) -> Self {
+        if let Some(v) = value {
+            self.vars.insert(key.into(), v.into());
+        }
+        self
+    }
+
+    /// Get the environment variables as a reference.
+    pub fn vars(&self) -> &HashMap<String, String> {
+        &self.vars
+    }
+}
 
 /// Result of a completed script execution.
 #[derive(Debug, Clone)]
@@ -52,12 +96,37 @@ impl ScriptHandle {
     /// # Returns
     /// A handle that can be polled for completion.
     pub fn spawn(command: &str, working_dir: &Path, timeout: Duration) -> std::io::Result<Self> {
-        let mut child = Command::new("sh")
-            .args(["-c", command])
+        Self::spawn_with_env(command, working_dir, timeout, &ScriptEnv::new())
+    }
+
+    /// Spawn a script with custom environment variables.
+    ///
+    /// # Arguments
+    /// * `command` - Shell command to execute (runs via `sh -c`)
+    /// * `working_dir` - Directory to run the script in
+    /// * `timeout` - Maximum execution time before the script is killed
+    /// * `env` - Environment variables to pass to the script
+    ///
+    /// # Returns
+    /// A handle that can be polled for completion.
+    pub fn spawn_with_env(
+        command: &str,
+        working_dir: &Path,
+        timeout: Duration,
+        env: &ScriptEnv,
+    ) -> std::io::Result<Self> {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", command])
             .current_dir(working_dir)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped());
+
+        // Add custom environment variables
+        for (key, value) in env.vars() {
+            cmd.env(key, value);
+        }
+
+        let mut child = cmd.spawn()?;
 
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
@@ -187,6 +256,47 @@ mod tests {
     use super::*;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_script_env_builder() {
+        let env = ScriptEnv::new()
+            .with("KEY1", "value1")
+            .with("KEY2", "value2")
+            .with_opt("KEY3", Some("value3"))
+            .with_opt("KEY4", None::<String>);
+
+        assert_eq!(env.vars().get("KEY1"), Some(&"value1".to_string()));
+        assert_eq!(env.vars().get("KEY2"), Some(&"value2".to_string()));
+        assert_eq!(env.vars().get("KEY3"), Some(&"value3".to_string()));
+        assert!(env.vars().get("KEY4").is_none());
+    }
+
+    #[test]
+    fn test_script_with_env_vars() {
+        let temp_dir = TempDir::new().unwrap();
+        let env = ScriptEnv::new()
+            .with("TEST_VAR", "hello_from_orkestra")
+            .with("ANOTHER_VAR", "42");
+
+        let mut handle = ScriptHandle::spawn_with_env(
+            "echo $TEST_VAR $ANOTHER_VAR",
+            temp_dir.path(),
+            Duration::from_secs(10),
+            &env,
+        )
+        .unwrap();
+
+        // Wait for completion
+        loop {
+            if let Some(result) = handle.try_wait().unwrap() {
+                assert!(result.is_success());
+                assert!(result.output.contains("hello_from_orkestra"));
+                assert!(result.output.contains("42"));
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
 
     #[test]
     fn test_script_success() {

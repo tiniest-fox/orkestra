@@ -1072,7 +1072,7 @@ fn test_script_stage_with_recovery() {
     std::fs::write(agents_dir.join("reviewer.md"), "You are a reviewer agent.").unwrap();
 
     // Create a simple toggle script that fails first time, passes second time
-    // The script uses a marker file to track state
+    // The script uses a marker file to track state and verifies ORKESTRA_* env vars
     let scripts_dir = temp_dir.path().join("scripts");
     std::fs::create_dir_all(&scripts_dir).unwrap();
     let script_path = scripts_dir.join("checks.sh");
@@ -1081,13 +1081,21 @@ fn test_script_stage_with_recovery() {
         r#"#!/bin/bash
 MARKER_FILE="${ORKESTRA_MARKER_DIR:-/tmp}/script_passed_once"
 
+# Verify ORKESTRA environment variables are set
+if [ -z "$ORKESTRA_TASK_ID" ]; then
+    echo "ERROR: ORKESTRA_TASK_ID not set!"
+    exit 1
+fi
+
+echo "Running checks for task: $ORKESTRA_TASK_ID"
+
 if [ -f "$MARKER_FILE" ]; then
-    echo "Checks passed!"
+    echo "Checks passed for $ORKESTRA_TASK_ID!"
     exit 0
 else
     mkdir -p "$(dirname "$MARKER_FILE")"
     touch "$MARKER_FILE"
-    echo "Checks failed - missing marker"
+    echo "Checks failed - missing marker (task: $ORKESTRA_TASK_ID)"
     exit 1
 fi
 "#,
@@ -1237,12 +1245,9 @@ fi
 
     // Check iteration recorded script failure
     let iterations = api.lock().unwrap().get_iterations(&task_id).unwrap();
-    let script_fail_iter = iterations.iter().find(|i| {
-        matches!(
-            i.outcome.as_ref(),
-            Some(Outcome::ScriptFailed { .. })
-        )
-    });
+    let script_fail_iter = iterations
+        .iter()
+        .find(|i| matches!(i.outcome.as_ref(), Some(Outcome::ScriptFailed { .. })));
     assert!(
         script_fail_iter.is_some(),
         "Should have ScriptFailed iteration"
@@ -1283,7 +1288,6 @@ fi
     let task = api.lock().unwrap().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("checks"));
 
-
     // Queue review output BEFORE ticking - when script passes, it auto-advances
     // to review, and the automated review stage spawns the agent immediately
     runner.set_output(
@@ -1303,31 +1307,45 @@ fi
     // The entire flow completes in one tick: script passes → review auto-runs → done
 
     let task = api.lock().unwrap().get_task(&task_id).unwrap();
-    assert!(task.is_done() || task.is_archived(), "Task should be done/archived");
+    assert!(
+        task.is_done() || task.is_archived(),
+        "Task should be done/archived"
+    );
 
     // Verify the complete iteration history
     let iterations = api.lock().unwrap().get_iterations(&task_id).unwrap();
 
     // Check that we have script failed iteration
-    let script_fail_iter = iterations.iter().find(|i| {
-        matches!(i.outcome.as_ref(), Some(Outcome::ScriptFailed { .. }))
-    });
+    let script_fail_iter = iterations
+        .iter()
+        .find(|i| matches!(i.outcome.as_ref(), Some(Outcome::ScriptFailed { .. })));
     assert!(
         script_fail_iter.is_some(),
         "Should have ScriptFailed iteration"
     );
 
     // Check that checks stage passed (approved) at some point
-    let checks_passed = iterations.iter().any(|i| {
-        i.stage == "checks" && matches!(i.outcome.as_ref(), Some(Outcome::Approved))
-    });
+    let checks_passed = iterations
+        .iter()
+        .any(|i| i.stage == "checks" && matches!(i.outcome.as_ref(), Some(Outcome::Approved)));
     assert!(checks_passed, "Checks stage should have passed (approved)");
 
     // Check that review completed
-    let review_approved = iterations.iter().any(|i| {
-        i.stage == "review" && matches!(i.outcome.as_ref(), Some(Outcome::Approved))
-    });
+    let review_approved = iterations
+        .iter()
+        .any(|i| i.stage == "review" && matches!(i.outcome.as_ref(), Some(Outcome::Approved)));
     assert!(review_approved, "Review stage should have completed");
+
+    // Verify ORKESTRA_TASK_ID was passed to the script by checking artifact output
+    let check_results = task.artifact("check_results");
+    assert!(
+        check_results.is_some(),
+        "Should have check_results artifact from script"
+    );
+    assert!(
+        check_results.unwrap().contains(&task_id),
+        "Script output should contain task ID (proves ORKESTRA_TASK_ID env var was passed)"
+    );
 
     println!("\n=== Script Stage Recovery Test Complete ===");
     let iterations = api.lock().unwrap().get_iterations(&task_id).unwrap();

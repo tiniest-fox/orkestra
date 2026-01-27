@@ -401,7 +401,7 @@ mod tests {
             Some(Outcome::Rejected { feedback, .. }) => {
                 assert_eq!(feedback, "Please add more detail");
             }
-            other => panic!("Expected Rejected outcome, got {:?}", other),
+            other => panic!("Expected Rejected outcome, got {other:?}"),
         }
     }
 

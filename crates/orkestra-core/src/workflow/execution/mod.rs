@@ -4,6 +4,7 @@
 //!
 //! - **`StageOutput`**: Parsed output from agents (artifacts, questions, restage, etc.)
 //! - **`AgentRunner`**: Runs agents via `ProcessSpawner`
+//! - **`ScriptHandle`**: Async script execution for script-based stages
 //! - **`PromptBuilder`**: Generates prompts from workflow configuration
 //! - **parser**: Output parsing utilities
 
@@ -12,6 +13,7 @@ mod output;
 mod parser;
 mod prompt;
 mod runner;
+mod script_runner;
 
 pub use breakdown::subtasks_to_markdown;
 pub use output::{StageOutput, StageOutputError, SubtaskOutput};
@@ -23,6 +25,7 @@ pub use prompt::{
     ResumeQuestionAnswer, ResumeType, StagePromptContext,
 };
 pub use runner::{AgentRunner, AgentRunnerTrait, RunConfig, RunError, RunEvent, RunResult};
+pub use script_runner::{ScriptHandle, ScriptResult};
 
 #[cfg(any(test, feature = "testutil"))]
 pub use runner::mock::MockAgentRunner;

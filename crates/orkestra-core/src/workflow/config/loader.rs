@@ -71,7 +71,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("workflow.yaml");
 
-        let yaml = r#"
+        let yaml = r"
 version: 1
 stages:
   - name: planning
@@ -79,7 +79,7 @@ stages:
   - name: work
     artifact: summary
     inputs: [plan]
-"#;
+";
         std::fs::write(&path, yaml).unwrap();
 
         let result = load_workflow(&path);
@@ -107,14 +107,14 @@ stages:
         let path = dir.path().join("workflow.yaml");
 
         // Duplicate stage names - should fail validation
-        let yaml = r#"
+        let yaml = r"
 version: 1
 stages:
   - name: planning
     artifact: plan
   - name: planning
     artifact: other
-"#;
+";
         std::fs::write(&path, yaml).unwrap();
 
         let result = load_workflow(&path);
@@ -128,14 +128,14 @@ stages:
         std::fs::create_dir(&orkestra_dir).unwrap();
 
         let workflow_path = orkestra_dir.join("workflow.yaml");
-        let yaml = r#"
+        let yaml = r"
 version: 1
 stages:
   - name: custom_stage
     artifact: custom_output
 integration:
   on_failure: custom_stage
-"#;
+";
         std::fs::write(&workflow_path, yaml).unwrap();
 
         let result = load_workflow_for_project(dir.path());

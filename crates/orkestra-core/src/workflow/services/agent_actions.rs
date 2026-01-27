@@ -67,10 +67,7 @@ impl WorkflowApi {
             )));
         }
 
-        self.end_current_iteration(
-            task,
-            Outcome::restage(current_stage, target, feedback),
-        )?;
+        self.end_current_iteration(task, Outcome::restage(current_stage, target, feedback))?;
 
         task.status = Status::active(target);
         task.phase = Phase::Idle;
@@ -248,6 +245,151 @@ impl WorkflowApi {
             .into_iter()
             .filter(|t| t.phase == Phase::Idle && t.status.is_active())
             .collect())
+    }
+
+    // ========================================================================
+    // Script Stage Methods
+    // ========================================================================
+
+    /// Handle successful script completion. Creates artifact and auto-advances.
+    ///
+    /// Script stages always auto-advance on success (no human approval needed).
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if the task is not in `AgentWorking` phase.
+    pub fn process_script_success(&self, task_id: &str, output: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        if task.phase != Phase::AgentWorking {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot process script output in phase {:?}",
+                task.phase
+            )));
+        }
+
+        let current_stage = task
+            .current_stage()
+            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
+            .to_string();
+
+        orkestra_debug!(
+            "action",
+            "process_script_success {}: stage={}",
+            task_id,
+            current_stage
+        );
+
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Create artifact from script output
+        let artifact_name = self.artifact_name_for_stage(&current_stage, "script_output");
+        task.artifacts
+            .set(Artifact::new(&artifact_name, output, &current_stage, &now));
+
+        // Script stages always auto-approve
+        self.end_current_iteration(&task, Outcome::Approved)?;
+        let next_status = self.compute_next_status_on_approve(&current_stage);
+        task.status = next_status.clone();
+        task.phase = Phase::Idle;
+
+        if let Some(new_stage) = next_status.stage() {
+            self.iteration_service
+                .create_iteration(&task.id, new_stage, None)?;
+        }
+        if task.is_done() {
+            task.completed_at = Some(now.clone());
+        }
+
+        task.updated_at = now;
+
+        orkestra_debug!(
+            "action",
+            "process_script_success {} complete: phase={:?}, status={:?}",
+            task_id,
+            task.phase,
+            task.status
+        );
+
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    /// Handle script failure. Transitions to recovery stage if configured.
+    ///
+    /// If `recovery_stage` is None, the task is marked as failed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if the task is not in `AgentWorking` phase.
+    pub fn process_script_failure(
+        &self,
+        task_id: &str,
+        error: &str,
+        recovery_stage: Option<&str>,
+    ) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        if task.phase != Phase::AgentWorking {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot process script failure in phase {:?}",
+                task.phase
+            )));
+        }
+
+        let current_stage = task
+            .current_stage()
+            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
+            .to_string();
+
+        orkestra_debug!(
+            "action",
+            "process_script_failure {}: stage={}, recovery={:?}",
+            task_id,
+            current_stage,
+            recovery_stage
+        );
+
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // End current iteration with script failure outcome
+        self.end_current_iteration(
+            &task,
+            Outcome::script_failed(&current_stage, error, recovery_stage.map(String::from)),
+        )?;
+
+        if let Some(target) = recovery_stage {
+            // Transition to recovery stage
+            task.status = Status::active(target);
+            task.phase = Phase::Idle;
+
+            // Create new iteration in recovery stage with script failure trigger
+            self.iteration_service.create_iteration(
+                &task.id,
+                target,
+                Some(IterationTrigger::ScriptFailure {
+                    from_stage: current_stage,
+                    error: error.to_string(),
+                }),
+            )?;
+        } else {
+            // No recovery stage - mark task as failed
+            task.status = Status::failed(error);
+            task.phase = Phase::Idle;
+        }
+
+        task.updated_at = now;
+
+        orkestra_debug!(
+            "action",
+            "process_script_failure {} complete: phase={:?}, status={:?}",
+            task_id,
+            task.phase,
+            task.status
+        );
+
+        self.store.save_task(&task)?;
+        Ok(task)
     }
 }
 
@@ -469,5 +611,116 @@ mod tests {
 
         assert_eq!(needing_agents.len(), 1);
         assert_eq!(needing_agents[0].id, task1.id);
+    }
+
+    // ========================================================================
+    // Script stage tests
+    // ========================================================================
+
+    fn test_workflow_with_script() -> WorkflowConfig {
+        use crate::workflow::config::ScriptStageConfig;
+
+        let mut checks_stage = StageConfig::new_script("checks", "check_results", "./run.sh");
+        checks_stage.script = Some(ScriptStageConfig::new("./run.sh").with_on_failure("work"));
+
+        WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            checks_stage.with_inputs(vec!["summary".into()]),
+            StageConfig::new("review", "verdict")
+                .with_inputs(vec!["check_results".into()])
+                .automated(),
+        ])
+    }
+
+    #[test]
+    fn test_process_script_success() {
+        let workflow = test_workflow_with_script();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        // Move to checks stage
+        task.status = Status::active("checks");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        let task = api
+            .process_script_success(&task.id, "All tests passed!\nOK")
+            .unwrap();
+
+        // Should auto-advance to next stage
+        assert_eq!(task.current_stage(), Some("review"));
+        assert_eq!(task.phase, Phase::Idle);
+        // Artifact should be created
+        assert!(task.artifacts.get("check_results").is_some());
+        assert!(task
+            .artifacts
+            .get("check_results")
+            .unwrap()
+            .content
+            .contains("All tests passed"));
+    }
+
+    #[test]
+    fn test_process_script_failure_with_recovery() {
+        let workflow = test_workflow_with_script();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        // Move to checks stage
+        task.status = Status::active("checks");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        let task = api
+            .process_script_failure(
+                &task.id,
+                "npm test failed\nError: test failed",
+                Some("work"),
+            )
+            .unwrap();
+
+        // Should transition to recovery stage
+        assert_eq!(task.current_stage(), Some("work"));
+        assert_eq!(task.phase, Phase::Idle);
+        assert!(!task.is_failed());
+    }
+
+    #[test]
+    fn test_process_script_failure_no_recovery() {
+        let workflow = test_workflow_with_script();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        // Move to checks stage
+        task.status = Status::active("checks");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        let task = api
+            .process_script_failure(&task.id, "Critical error", None)
+            .unwrap();
+
+        // Should mark task as failed
+        assert!(task.is_failed());
+        assert_eq!(task.phase, Phase::Idle);
+    }
+
+    #[test]
+    fn test_process_script_invalid_phase() {
+        let workflow = test_workflow_with_script();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.status = Status::active("checks");
+        task.phase = Phase::Idle; // Not AgentWorking
+        api.store.save_task(&task).unwrap();
+
+        let result = api.process_script_success(&task.id, "output");
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 }

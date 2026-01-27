@@ -155,6 +155,31 @@ pub enum LogEntry {
     ProcessExit { code: Option<i32> },
     /// Error message.
     Error { message: String },
+
+    // =========================================================================
+    // Script Stage Logs
+    // =========================================================================
+    /// Script stage started.
+    ScriptStart {
+        /// The command being run.
+        command: String,
+        /// Stage name.
+        stage: String,
+    },
+    /// Script output (stdout/stderr combined).
+    ScriptOutput {
+        /// Output content.
+        content: String,
+    },
+    /// Script stage completed.
+    ScriptExit {
+        /// Exit code (0 = success).
+        code: i32,
+        /// Whether the script succeeded.
+        success: bool,
+        /// Whether the script was killed due to timeout.
+        timed_out: bool,
+    },
 }
 
 #[cfg(test)]

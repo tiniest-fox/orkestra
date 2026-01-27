@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use super::IterationService;
-use crate::workflow::config::WorkflowConfig;
+use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
@@ -75,9 +75,14 @@ impl WorkflowApi {
 
     /// Check if a stage is automated.
     pub fn is_stage_automated(&self, stage: &str) -> bool {
+        self.workflow.stage(stage).is_some_and(|s| s.is_automated)
+    }
+
+    /// Check if a stage is a script stage (vs an agent stage).
+    pub fn is_script_stage(&self, stage: &str) -> bool {
         self.workflow
             .stage(stage)
-            .is_some_and(|s| s.is_automated)
+            .is_some_and(StageConfig::is_script_stage)
     }
 
     /// Get the next stage after approval from the given stage.

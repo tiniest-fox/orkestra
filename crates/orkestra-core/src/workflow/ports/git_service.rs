@@ -149,7 +149,7 @@ pub trait GitService: Send + Sync {
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod mock {
-    use super::*;
+    use super::{GitError, GitService, MergeResult, Path, PathBuf, WorktreeCreated};
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -195,12 +195,12 @@ pub mod mock {
             *self.current_branch.lock().unwrap() = name.to_string();
         }
 
-        /// Get the list of create_worktree calls for verification.
+        /// Get the list of `create_worktree` calls for verification.
         pub fn get_create_worktree_calls(&self) -> Vec<(String, Option<String>)> {
             self.create_worktree_calls.lock().unwrap().clone()
         }
 
-        /// Get the list of remove_worktree calls for verification.
+        /// Get the list of `remove_worktree` calls for verification.
         pub fn get_remove_worktree_calls(&self) -> Vec<(String, bool)> {
             self.remove_worktree_calls.lock().unwrap().clone()
         }

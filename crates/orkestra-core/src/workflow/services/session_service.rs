@@ -180,21 +180,22 @@ impl SessionService {
         self.store.save_stage_session(&session)?;
 
         // Get or create iteration - same logical flow as before, but delegates to IterationService
-        let iteration = if let Some(active_iter) = self.store.get_active_iteration(task_id, stage)?
-        {
-            active_iter
-        } else {
-            // No active iteration exists - create one via IterationService
-            // This maintains the original behavior where an iteration is always
-            // created before spawning the agent
-            orkestra_debug!(
-                "session",
-                "on_spawn_starting {}/{}: creating iteration via IterationService",
-                task_id,
-                stage
-            );
-            self.iteration_service.create_iteration(task_id, stage, None)?
-        };
+        let iteration =
+            if let Some(active_iter) = self.store.get_active_iteration(task_id, stage)? {
+                active_iter
+            } else {
+                // No active iteration exists - create one via IterationService
+                // This maintains the original behavior where an iteration is always
+                // created before spawning the agent
+                orkestra_debug!(
+                    "session",
+                    "on_spawn_starting {}/{}: creating iteration via IterationService",
+                    task_id,
+                    stage
+                );
+                self.iteration_service
+                    .create_iteration(task_id, stage, None)?
+            };
 
         // Link the session to the iteration for log recovery
         let iteration = iteration.with_stage_session_id(&session_id);
@@ -581,7 +582,7 @@ mod tests {
             Outcome::SpawnFailed { error } => {
                 assert_eq!(error, "Process not found");
             }
-            other => panic!("Expected SpawnFailed, got {:?}", other),
+            other => panic!("Expected SpawnFailed, got {other:?}"),
         }
     }
 

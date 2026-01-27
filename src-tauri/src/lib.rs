@@ -90,6 +90,33 @@ fn start_workflow_orchestrator(
                 eprintln!("[orchestrator] Integration failed for {task_id}: {error}");
                 let _ = app_handle.emit("task-updated", task_id);
             }
+            orkestra_core::workflow::OrchestratorEvent::ScriptSpawned {
+                task_id,
+                stage,
+                command,
+                pid,
+            } => {
+                println!(
+                    "[orchestrator] Spawned script for {task_id}/{stage}: {command} (pid: {pid})"
+                );
+                let _ = app_handle.emit("task-updated", task_id);
+            }
+            orkestra_core::workflow::OrchestratorEvent::ScriptCompleted { task_id, stage } => {
+                println!("[orchestrator] Script completed for {task_id}/{stage}");
+                let _ = app_handle.emit("task-updated", task_id);
+            }
+            orkestra_core::workflow::OrchestratorEvent::ScriptFailed {
+                task_id,
+                stage,
+                error,
+                recovery_stage,
+            } => {
+                let recovery = recovery_stage.as_deref().unwrap_or("none");
+                eprintln!(
+                    "[orchestrator] Script failed for {task_id}/{stage}: {error} (recovery: {recovery})"
+                );
+                let _ = app_handle.emit("task-updated", task_id);
+            }
         });
 
         println!("[orchestrator] Stopped");

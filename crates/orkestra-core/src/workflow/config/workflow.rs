@@ -176,6 +176,44 @@ impl WorkflowConfig {
             ));
         }
 
+        // Validate script stages
+        for stage in &self.stages {
+            // Check that stage doesn't have both agent and script
+            if stage.agent.is_some() && stage.script.is_some() {
+                errors.push(format!(
+                    "Stage '{}' cannot have both 'agent' and 'script' configuration",
+                    stage.name
+                ));
+            }
+
+            // Script-specific validations
+            if let Some(ref script) = stage.script {
+                // Check that script.on_failure references a valid stage
+                if let Some(ref on_failure) = script.on_failure {
+                    if !stage_names.contains(on_failure.as_str()) {
+                        errors.push(format!(
+                            "Stage '{}' script.on_failure references unknown stage: {}",
+                            stage.name, on_failure
+                        ));
+                    }
+                }
+
+                // Script stages cannot have agent-only capabilities
+                if stage.capabilities.ask_questions {
+                    errors.push(format!(
+                        "Script stage '{}' cannot have ask_questions capability",
+                        stage.name
+                    ));
+                }
+                if stage.capabilities.produce_subtasks {
+                    errors.push(format!(
+                        "Script stage '{}' cannot have produce_subtasks capability",
+                        stage.name
+                    ));
+                }
+            }
+        }
+
         errors
     }
 
@@ -357,16 +395,16 @@ mod tests {
 
         // Each stage should have the correct agent type
         let planning = workflow.stage("planning").unwrap();
-        assert_eq!(planning.agent.agent_type, "planner");
+        assert_eq!(planning.agent_config().unwrap().agent_type, "planner");
 
         let breakdown = workflow.stage("breakdown").unwrap();
-        assert_eq!(breakdown.agent.agent_type, "breakdown");
+        assert_eq!(breakdown.agent_config().unwrap().agent_type, "breakdown");
 
         let work = workflow.stage("work").unwrap();
-        assert_eq!(work.agent.agent_type, "worker");
+        assert_eq!(work.agent_config().unwrap().agent_type, "worker");
 
         let review = workflow.stage("review").unwrap();
-        assert_eq!(review.agent.agent_type, "reviewer");
+        assert_eq!(review.agent_config().unwrap().agent_type, "reviewer");
     }
 
     #[test]
@@ -395,7 +433,7 @@ mod tests {
                 .with_capabilities(StageCapabilities::with_restage(vec!["work".into()])),
         ]);
         let errors = workflow.validate();
-        assert!(errors.is_empty(), "Expected no errors, got: {:?}", errors);
+        assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
     }
 
     #[test]
@@ -449,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_integration_config_custom_on_failure() {
-        let yaml = r#"
+        let yaml = r"
 version: 1
 stages:
   - name: planning
@@ -458,9 +496,141 @@ stages:
     artifact: summary
 integration:
   on_failure: planning
-"#;
+";
         let workflow: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(workflow.integration.on_failure, "planning");
+        assert!(workflow.is_valid());
+    }
+
+    // ========================================================================
+    // Script stage validation tests
+    // ========================================================================
+
+    #[test]
+    fn test_workflow_with_script_stage() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+            StageConfig::new_script("checks", "check_results", "./run_checks.sh")
+                .with_inputs(vec!["summary".into()]),
+            StageConfig::new("review", "verdict").with_inputs(vec!["check_results".into()]),
+        ]);
+
+        let errors = workflow.validate();
+        assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
+    }
+
+    #[test]
+    fn test_script_stage_with_valid_on_failure() {
+        use crate::workflow::config::stage::ScriptStageConfig;
+
+        let mut stage = StageConfig::new_script("checks", "check_results", "./run.sh");
+        stage.script = Some(ScriptStageConfig::new("./run.sh").with_on_failure("work"));
+
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage]);
+
+        let errors = workflow.validate();
+        assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
+    }
+
+    #[test]
+    fn test_script_stage_with_invalid_on_failure() {
+        use crate::workflow::config::stage::ScriptStageConfig;
+
+        let mut stage = StageConfig::new_script("checks", "check_results", "./run.sh");
+        stage.script = Some(ScriptStageConfig::new("./run.sh").with_on_failure("nonexistent"));
+
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage]);
+
+        let errors = workflow.validate();
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("script.on_failure references unknown stage")));
+    }
+
+    #[test]
+    fn test_script_stage_cannot_have_ask_questions() {
+        use crate::workflow::config::stage::StageCapabilities;
+
+        let stage = StageConfig::new_script("checks", "check_results", "./run.sh")
+            .with_capabilities(StageCapabilities::with_questions());
+
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage]);
+
+        let errors = workflow.validate();
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Script stage") && e.contains("ask_questions")));
+    }
+
+    #[test]
+    fn test_script_stage_cannot_have_produce_subtasks() {
+        use crate::workflow::config::stage::StageCapabilities;
+
+        let stage = StageConfig::new_script("checks", "check_results", "./run.sh")
+            .with_capabilities(StageCapabilities::with_subtasks());
+
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage]);
+
+        let errors = workflow.validate();
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("Script stage") && e.contains("produce_subtasks")));
+    }
+
+    #[test]
+    fn test_stage_cannot_have_both_agent_and_script() {
+        use crate::workflow::config::stage::{AgentStageConfig, ScriptStageConfig};
+
+        let mut stage = StageConfig::new("checks", "check_results");
+        stage.agent = Some(AgentStageConfig::worker());
+        stage.script = Some(ScriptStageConfig::new("./run.sh"));
+
+        let workflow = WorkflowConfig::new(vec![stage]);
+
+        let errors = workflow.validate();
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("cannot have both 'agent' and 'script'")));
+    }
+
+    #[test]
+    fn test_script_stage_yaml_parsing() {
+        let yaml = r#"
+version: 1
+stages:
+  - name: work
+    artifact: summary
+    agent:
+      agent_type: worker
+  - name: checks
+    artifact: check_results
+    inputs: [summary]
+    script:
+      command: "./scripts/run_checks.sh"
+      timeout_seconds: 300
+      on_failure: work
+  - name: review
+    artifact: verdict
+    inputs: [check_results]
+    agent:
+      agent_type: reviewer
+integration:
+  on_failure: work
+"#;
+        let workflow: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
+
+        assert_eq!(workflow.stages.len(), 3);
+
+        let checks = workflow.stage("checks").unwrap();
+        assert!(checks.is_script_stage());
+        assert!(!checks.is_agent_stage());
+
+        let script = checks.script_config().unwrap();
+        assert_eq!(script.command, "./scripts/run_checks.sh");
+        assert_eq!(script.timeout_seconds, 300);
+        assert_eq!(script.on_failure, Some("work".to_string()));
+
         assert!(workflow.is_valid());
     }
 }

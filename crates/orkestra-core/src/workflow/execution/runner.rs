@@ -366,7 +366,10 @@ fn read_output_and_send_events(
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod mock {
-    use super::*;
+    use super::{
+        mpsc, thread, AgentRunnerTrait, Receiver, RunConfig, RunError, RunEvent, RunResult,
+        StageOutput,
+    };
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Mutex;
@@ -376,7 +379,7 @@ pub mod mock {
     /// Allows setting expected outputs for tasks without spawning real processes.
     /// Outputs are queued per task and consumed in order.
     pub struct MockAgentRunner {
-        /// Queue of outputs per task_id. Each spawn consumes the next output.
+        /// Queue of outputs per `task_id`. Each spawn consumes the next output.
         outputs: Mutex<HashMap<String, Vec<StageOutput>>>,
         /// Next PID to assign.
         next_pid: AtomicU32,
@@ -421,7 +424,7 @@ pub mod mock {
             self.calls.lock().unwrap().clear();
         }
 
-        /// Extract task_id from the prompt (looks for "Task ID: xxx" pattern).
+        /// Extract `task_id` from the prompt (looks for "Task ID: xxx" pattern).
         fn extract_task_id(prompt: &str) -> Option<String> {
             for line in prompt.lines() {
                 if line.contains("Task ID") {
@@ -525,7 +528,7 @@ pub mod mock {
         }
     }
 
-    /// Convert StageOutput to JSON value for mock raw output.
+    /// Convert `StageOutput` to JSON value for mock raw output.
     fn output_to_json(output: &StageOutput) -> serde_json::Value {
         match output {
             StageOutput::Artifact { content } => serde_json::json!({

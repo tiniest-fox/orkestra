@@ -227,10 +227,10 @@ mod tests {
         let output = r#"[{"type":"system","subtype":"init","session_id":"abc"},{"type":"assistant","message":"thinking..."},{"structured_output":{"type":"plan","content":"The plan content"}}]"#;
 
         let result = parse_agent_output(output, None);
-        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        assert!(result.is_ok(), "Failed to parse: {result:?}");
         match result.unwrap() {
             StageOutput::Artifact { content } => assert_eq!(content, "The plan content"),
-            other => panic!("Expected Artifact output, got {:?}", other),
+            other => panic!("Expected Artifact output, got {other:?}"),
         }
     }
 
@@ -303,10 +303,10 @@ mod tests {
         let output = r#"[{"type":"result","result":"```json\n{\"type\": \"myartifact\", \"content\": \"done\"}\n```"}]"#;
 
         let result = parse_agent_output(output, None);
-        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        assert!(result.is_ok(), "Failed to parse: {result:?}");
         match result.unwrap() {
             StageOutput::Artifact { content } => assert_eq!(content, "done"),
-            other => panic!("Expected Artifact output, got {:?}", other),
+            other => panic!("Expected Artifact output, got {other:?}"),
         }
     }
 }

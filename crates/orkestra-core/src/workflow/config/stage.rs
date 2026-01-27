@@ -33,17 +33,24 @@ pub struct StageConfig {
     #[serde(default)]
     pub capabilities: StageCapabilities,
 
-    /// Agent configuration for this stage.
-    #[serde(default)]
-    pub agent: AgentStageConfig,
+    /// Agent configuration for this stage (mutually exclusive with `script`).
+    /// If neither `agent` nor `script` is specified, defaults to agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentStageConfig>,
+
+    /// Script configuration for this stage (mutually exclusive with `agent`).
+    /// Script stages run shell commands instead of spawning agents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<ScriptStageConfig>,
 
     /// Whether this stage runs automatically without human approval.
+    /// Script stages always auto-advance on success regardless of this setting.
     #[serde(default)]
     pub is_automated: bool,
 }
 
 impl StageConfig {
-    /// Create a new stage configuration.
+    /// Create a new agent-based stage configuration.
     pub fn new(name: impl Into<String>, artifact: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -51,7 +58,26 @@ impl StageConfig {
             artifact: artifact.into(),
             inputs: Vec::new(),
             capabilities: StageCapabilities::default(),
-            agent: AgentStageConfig::default(),
+            agent: Some(AgentStageConfig::default()),
+            script: None,
+            is_automated: false,
+        }
+    }
+
+    /// Create a new script-based stage configuration.
+    pub fn new_script(
+        name: impl Into<String>,
+        artifact: impl Into<String>,
+        command: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            display_name: None,
+            artifact: artifact.into(),
+            inputs: Vec::new(),
+            capabilities: StageCapabilities::default(),
+            agent: None,
+            script: Some(ScriptStageConfig::new(command)),
             is_automated: false,
         }
     }
@@ -87,7 +113,16 @@ impl StageConfig {
     /// Builder: set agent configuration.
     #[must_use]
     pub fn with_agent(mut self, agent: AgentStageConfig) -> Self {
-        self.agent = agent;
+        self.agent = Some(agent);
+        self.script = None; // Mutually exclusive
+        self
+    }
+
+    /// Builder: set script configuration.
+    #[must_use]
+    pub fn with_script(mut self, script: ScriptStageConfig) -> Self {
+        self.script = Some(script);
+        self.agent = None; // Mutually exclusive
         self
     }
 
@@ -96,6 +131,33 @@ impl StageConfig {
         self.display_name
             .clone()
             .unwrap_or_else(|| capitalize(&self.name))
+    }
+
+    /// Check if this is a script stage.
+    pub fn is_script_stage(&self) -> bool {
+        self.script.is_some()
+    }
+
+    /// Check if this is an agent stage.
+    /// Returns true if agent is explicitly set, or if neither agent nor script is set
+    /// (defaults to agent for backwards compatibility).
+    pub fn is_agent_stage(&self) -> bool {
+        self.agent.is_some() || (self.agent.is_none() && self.script.is_none())
+    }
+
+    /// Get the agent configuration, returning default if neither agent nor script is set.
+    /// Returns None if this is a script stage.
+    pub fn agent_config(&self) -> Option<AgentStageConfig> {
+        if self.script.is_some() {
+            None
+        } else {
+            Some(self.agent.clone().unwrap_or_default())
+        }
+    }
+
+    /// Get the script configuration if this is a script stage.
+    pub fn script_config(&self) -> Option<&ScriptStageConfig> {
+        self.script.as_ref()
     }
 }
 
@@ -270,6 +332,58 @@ impl AgentStageConfig {
     }
 }
 
+// ============================================================================
+// Script Configuration
+// ============================================================================
+
+/// Configuration for a script-based stage.
+///
+/// Script stages run shell commands instead of spawning Claude agents.
+/// Used for automated checks like linting, testing, and type checking.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ScriptStageConfig {
+    /// Shell command to execute (runs via `sh -c`).
+    pub command: String,
+
+    /// Timeout in seconds. Defaults to 120.
+    #[serde(default = "default_script_timeout")]
+    pub timeout_seconds: u32,
+
+    /// Stage to transition to on script failure.
+    /// If not specified, the task fails permanently.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_failure: Option<String>,
+}
+
+fn default_script_timeout() -> u32 {
+    120
+}
+
+impl ScriptStageConfig {
+    /// Create a new script configuration.
+    pub fn new(command: impl Into<String>) -> Self {
+        Self {
+            command: command.into(),
+            timeout_seconds: default_script_timeout(),
+            on_failure: None,
+        }
+    }
+
+    /// Builder: set timeout in seconds.
+    #[must_use]
+    pub fn with_timeout(mut self, seconds: u32) -> Self {
+        self.timeout_seconds = seconds;
+        self
+    }
+
+    /// Builder: set the stage to go to on failure.
+    #[must_use]
+    pub fn with_on_failure(mut self, stage: impl Into<String>) -> Self {
+        self.on_failure = Some(stage.into());
+        self
+    }
+}
+
 /// Capitalize the first letter of a string.
 fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
@@ -438,7 +552,53 @@ mod tests {
     fn test_stage_with_agent() {
         let stage = StageConfig::new("planning", "plan").with_agent(AgentStageConfig::planner());
 
-        assert_eq!(stage.agent.agent_type, "planner");
+        assert!(stage.is_agent_stage());
+        assert!(!stage.is_script_stage());
+        assert_eq!(stage.agent_config().unwrap().agent_type, "planner");
+    }
+
+    #[test]
+    fn test_stage_with_script() {
+        let stage = StageConfig::new_script("checks", "check_results", "./run_checks.sh")
+            .with_inputs(vec!["summary".into()]);
+
+        assert!(stage.is_script_stage());
+        assert!(!stage.is_agent_stage());
+        assert!(stage.agent_config().is_none());
+        assert_eq!(stage.script_config().unwrap().command, "./run_checks.sh");
+    }
+
+    #[test]
+    fn test_script_config() {
+        let script = ScriptStageConfig::new("npm test")
+            .with_timeout(300)
+            .with_on_failure("work");
+
+        assert_eq!(script.command, "npm test");
+        assert_eq!(script.timeout_seconds, 300);
+        assert_eq!(script.on_failure, Some("work".to_string()));
+    }
+
+    #[test]
+    fn test_script_config_defaults() {
+        let script = ScriptStageConfig::new("cargo test");
+        assert_eq!(script.timeout_seconds, 120);
+        assert!(script.on_failure.is_none());
+    }
+
+    #[test]
+    fn test_script_stage_serialization() {
+        let stage = StageConfig::new_script("lint", "lint_results", "npm run lint")
+            .with_display_name("Linting");
+
+        let yaml = serde_yaml::to_string(&stage).unwrap();
+        assert!(yaml.contains("name: lint"));
+        assert!(yaml.contains("command: npm run lint"));
+        assert!(!yaml.contains("agent:")); // Should not have agent block
+
+        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert!(parsed.is_script_stage());
+        assert_eq!(parsed.script_config().unwrap().command, "npm run lint");
     }
 
     #[test]

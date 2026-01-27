@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn test_claude_process_spawner_default() {
-        let spawner = ClaudeProcessSpawner::default();
+        let spawner = ClaudeProcessSpawner;
         // Can't really test spawn without actual claude CLI
         // but we can verify the struct is created
         let _ = spawner;

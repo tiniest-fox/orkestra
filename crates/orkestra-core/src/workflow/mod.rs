@@ -57,7 +57,7 @@ pub use runtime::{
     TransitionTrigger, TransitionValidator,
 };
 pub use services::{
-    OrchestratorError, OrchestratorEvent, OrchestratorLoop, TaskExecutionService, WorkflowApi,
+    OrchestratorError, OrchestratorEvent, OrchestratorLoop, StageExecutionService, WorkflowApi,
 };
 
 // Export execution types for testing

@@ -399,11 +399,16 @@ pub fn load_custom_schema(project_root: Option<&Path>, path: &str) -> std::io::R
 ///
 /// Generates schema dynamically based on stage configuration,
 /// or loads custom schema if specified.
-pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>) -> String {
+///
+/// Returns None for script stages (they don't use JSON schemas).
+pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>) -> Option<String> {
+    // Script stages don't have schemas
+    let agent_config = stage_config.agent_config()?;
+
     // Check for custom schema file first
-    if let Some(schema_file) = &stage_config.agent.schema_file {
+    if let Some(schema_file) = &agent_config.schema_file {
         if let Ok(custom_schema) = load_custom_schema(project_root, schema_file) {
-            return custom_schema;
+            return Some(custom_schema);
         }
         // Fall through to dynamic generation if custom file not found
         eprintln!("[warn] Custom schema file '{schema_file}' not found, using generated schema");
@@ -414,7 +419,7 @@ pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>)
         artifact_name: &stage_config.artifact,
         capabilities: &stage_config.capabilities,
     };
-    crate::prompts::generate_stage_schema(&schema_config)
+    Some(crate::prompts::generate_stage_schema(&schema_config))
 }
 
 /// Resolve complete agent configuration for a stage.
@@ -437,8 +442,13 @@ pub fn resolve_stage_agent_config(
         .stage(stage_name)
         .ok_or_else(|| AgentConfigError::UnknownStage(stage_name.to_string()))?;
 
+    // Script stages don't use agent config
+    let agent_config = stage
+        .agent_config()
+        .ok_or(AgentConfigError::NotInActiveStage)?; // Script stages shouldn't call this
+
     // Load agent definition
-    let definition_path = stage.agent.definition_path();
+    let definition_path = agent_config.definition_path();
     let agent_def = load_agent_definition(project_root, &definition_path)
         .map_err(|e| AgentConfigError::DefinitionNotFound(e.to_string()))?;
 
@@ -452,7 +462,9 @@ pub fn resolve_stage_agent_config(
     let prompt = build_complete_prompt(&agent_def, &ctx);
 
     // Get JSON schema dynamically based on stage config
-    let json_schema = get_agent_schema(stage, project_root);
+    // Safe to unwrap since we already verified this is an agent stage above
+    let json_schema =
+        get_agent_schema(stage, project_root).expect("Agent stage should have schema");
 
     Ok(ResolvedAgentConfig {
         prompt,
@@ -686,7 +698,11 @@ pub fn determine_resume_type(
     if let Some(err) = integration_error {
         ResumeType::Integration {
             message: err.message.to_string(),
-            conflict_files: err.conflict_files.iter().map(|s| (*s).to_string()).collect(),
+            conflict_files: err
+                .conflict_files
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
         }
     } else if let Some(fb) = feedback {
         ResumeType::Feedback {
@@ -934,7 +950,7 @@ mod tests {
         // Planning stage with questions capability
         let planning = StageConfig::new("planning", "plan")
             .with_capabilities(StageCapabilities::with_questions());
-        let schema = get_agent_schema(&planning, None);
+        let schema = get_agent_schema(&planning, None).unwrap();
         // Should contain the artifact name in the type enum
         assert!(schema.contains("\"plan\""));
         // Should have questions capability
@@ -942,7 +958,7 @@ mod tests {
 
         // Work stage without questions
         let work = StageConfig::new("work", "summary");
-        let schema = get_agent_schema(&work, None);
+        let schema = get_agent_schema(&work, None).unwrap();
         assert!(schema.contains("\"summary\""));
         // Should NOT have questions (no capability)
         assert!(!schema.contains("\"questions\""));
@@ -950,9 +966,15 @@ mod tests {
         // Review stage with restage capability
         let review = StageConfig::new("review", "verdict")
             .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]));
-        let schema = get_agent_schema(&review, None);
+        let schema = get_agent_schema(&review, None).unwrap();
         assert!(schema.contains("\"verdict\""));
         assert!(schema.contains("\"restage\"")); // restage type
+    }
+
+    #[test]
+    fn test_get_agent_schema_returns_none_for_script_stage() {
+        let script_stage = StageConfig::new_script("checks", "check_results", "./run.sh");
+        assert!(get_agent_schema(&script_stage, None).is_none());
     }
 
     #[test]

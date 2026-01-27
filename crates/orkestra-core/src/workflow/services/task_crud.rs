@@ -312,6 +312,7 @@ fn spawn_async_setup(
 }
 
 #[cfg(test)]
+#[allow(clippy::similar_names)] // task1/task2/tasks are clear in test context
 mod tests {
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::InMemoryWorkflowStore;

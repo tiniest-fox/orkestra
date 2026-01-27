@@ -1,9 +1,9 @@
 //! Stage-agnostic orchestrator loop.
 //!
 //! The orchestrator is a reconciliation loop that:
-//! 1. Polls for tasks needing agents
-//! 2. Spawns agents for those tasks via `TaskExecutionService`
-//! 3. Processes agent output when they complete
+//! 1. Polls for tasks needing execution
+//! 2. Spawns executions (agents or scripts) via `StageExecutionService`
+//! 3. Processes output when executions complete
 //!
 //! It is driven by the workflow configuration and is stage-agnostic -
 //! it doesn't know about specific stages like "planning" or "work".
@@ -15,14 +15,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::orkestra_debug;
-use crate::workflow::adapters::ClaudeProcessSpawner;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::execution::{AgentRunner, RunEvent, StageOutput};
-use crate::workflow::ports::{ProcessSpawner, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::execution::StageOutput;
+use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
 
-use super::task_execution::{ExecutionHandle, TaskExecutionService};
-use super::{workflow_error, WorkflowApi};
+use super::stage_execution::{ExecutionComplete, ExecutionResult, StageExecutionService};
+use super::WorkflowApi;
 
 // ============================================================================
 // Orchestrator Events
@@ -58,6 +57,22 @@ pub enum OrchestratorEvent {
         error: String,
         conflict_files: Vec<String>,
     },
+    /// Script was spawned for a task.
+    ScriptSpawned {
+        task_id: String,
+        stage: String,
+        command: String,
+        pid: u32,
+    },
+    /// Script completed successfully.
+    ScriptCompleted { task_id: String, stage: String },
+    /// Script failed.
+    ScriptFailed {
+        task_id: String,
+        stage: String,
+        error: String,
+        recovery_stage: Option<String>,
+    },
 }
 
 // ============================================================================
@@ -92,12 +107,14 @@ impl std::error::Error for OrchestratorError {}
 
 /// The main orchestration loop.
 ///
-/// This orchestrator delegates all execution to `TaskExecutionService`.
+/// This orchestrator delegates all execution to `StageExecutionService`,
+/// which handles both agent and script stages uniformly.
+///
 /// It handles scheduling and event routing.
 pub struct OrchestratorLoop {
     api: Arc<Mutex<WorkflowApi>>,
-    executor: Arc<TaskExecutionService>,
-    active_executions: Mutex<Vec<ExecutionHandle>>,
+    /// Unified stage execution service.
+    stage_executor: Arc<StageExecutionService>,
     /// Task IDs that were Done at the START of the previous tick.
     /// Only these tasks are eligible for integration, implementing a one-tick delay.
     /// This prevents integrating a task in the same tick where it became Done.
@@ -107,11 +124,10 @@ pub struct OrchestratorLoop {
 
 impl OrchestratorLoop {
     /// Create a new orchestrator loop.
-    pub fn new(api: Arc<Mutex<WorkflowApi>>, executor: Arc<TaskExecutionService>) -> Self {
+    pub fn new(api: Arc<Mutex<WorkflowApi>>, stage_executor: Arc<StageExecutionService>) -> Self {
         Self {
             api,
-            executor,
-            active_executions: Mutex::new(Vec::new()),
+            stage_executor,
             ready_for_integration: Mutex::new(HashSet::new()),
             stop_flag: Arc::new(AtomicBool::new(false)),
         }
@@ -128,29 +144,25 @@ impl OrchestratorLoop {
         project_root: PathBuf,
         store: Arc<dyn WorkflowStore>,
     ) -> Self {
-        let spawner: Arc<dyn ProcessSpawner> = Arc::new(ClaudeProcessSpawner::new());
-        let runner = Arc::new(AgentRunner::new(spawner));
-
         // Get iteration service from api to share with executor
         let iteration_service = api.lock().unwrap().iteration_service().clone();
 
-        let executor = Arc::new(TaskExecutionService::new(
-            runner,
-            store,
-            iteration_service,
+        let stage_executor = Arc::new(StageExecutionService::new(
             workflow,
             project_root,
+            store,
+            iteration_service,
         ));
 
-        Self::new(api, executor)
+        Self::new(api, stage_executor)
     }
 
-    /// Create with a custom executor (for testing).
+    /// Create with a custom stage executor (for testing).
     pub fn with_executor(
         api: Arc<Mutex<WorkflowApi>>,
-        executor: Arc<TaskExecutionService>,
+        stage_executor: Arc<StageExecutionService>,
     ) -> Self {
-        Self::new(api, executor)
+        Self::new(api, stage_executor)
     }
 
     /// Get the stop flag for external control.
@@ -204,20 +216,16 @@ impl OrchestratorLoop {
     pub fn tick(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
 
-        // Phase 1: Process events from active executions
-        // (This may transition tasks to Done)
-        events.extend(self.process_active_executions()?);
+        // Phase 1: Process completed executions (agents and scripts)
+        events.extend(self.process_completed_executions()?);
 
-        // Phase 2: Clean up completed executions
-        self.cleanup_completed();
-
-        // Phase 3: Start new executions for tasks needing agents
+        // Phase 2: Start new executions for tasks needing agents or scripts
         events.extend(self.start_new_executions()?);
 
-        // Phase 4: Start integrations for Done tasks (that were Done at end of PREVIOUS tick)
+        // Phase 3: Start integrations for Done tasks (that were Done at end of PREVIOUS tick)
         events.extend(self.start_integrations()?);
 
-        // Snapshot Done tasks AFTER agent processing.
+        // Snapshot Done tasks AFTER processing.
         // Tasks that became Done this tick will be eligible for integration
         // on the NEXT tick (one-tick delay).
         let current_done_tasks: HashSet<String> = {
@@ -236,128 +244,106 @@ impl OrchestratorLoop {
         Ok(events)
     }
 
-    /// Process events from active executions.
-    fn process_active_executions(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
+    /// Process completed executions (both agents and scripts) via the unified service.
+    fn process_completed_executions(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
-        let executions = self
-            .active_executions
-            .lock()
-            .map_err(|_| WorkflowError::Lock)?;
+        let completed = self.stage_executor.poll_active();
 
-        for handle in executions.iter() {
-            while let Ok(event) = handle.events.try_recv() {
-                // Handle errors per-task, don't let one task's error stop others
-                match self.handle_execution_event(&handle.task_id, &handle.stage, event) {
-                    Ok(Some(e)) => events.push(e),
-                    Ok(None) => {}
-                    Err(e) => {
-                        // Convert error to error event instead of propagating
-                        events.push(OrchestratorEvent::Error {
-                            task_id: Some(handle.task_id.clone()),
-                            error: e.to_string(),
-                        });
-                    }
-                }
-            }
+        for exec in completed {
+            let event = self.handle_execution_complete(exec)?;
+            events.push(event);
         }
 
         Ok(events)
     }
 
-    /// Handle an event from an execution.
-    fn handle_execution_event(
+    /// Handle a completed execution.
+    fn handle_execution_complete(
         &self,
-        task_id: &str,
-        stage: &str,
-        event: RunEvent,
-    ) -> WorkflowResult<Option<OrchestratorEvent>> {
-        match event {
-            RunEvent::Completed(ref result) => {
-                let is_err = result.is_err();
-                let err_msg = result.as_ref().err().cloned();
+        exec: ExecutionComplete,
+    ) -> WorkflowResult<OrchestratorEvent> {
+        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
 
+        match exec.result {
+            ExecutionResult::AgentSuccess(stage_output) => {
+                let output_type = output_type_string(&stage_output);
                 orkestra_debug!(
                     "orchestrator",
-                    "handle_execution_event {}/{}: completed, is_err={}",
-                    task_id,
-                    stage,
-                    is_err
+                    "process_agent_output {}/{}: type={}",
+                    exec.task_id,
+                    exec.stage,
+                    output_type
                 );
-
-                let output = self.executor.handle_event(task_id, stage, event)?;
-
-                if let Some(output) = output {
-                    let output_type = output_type_string(&output);
-                    orkestra_debug!(
-                        "orchestrator",
-                        "process_agent_output {}/{}: type={}",
-                        task_id,
-                        stage,
-                        output_type
-                    );
-                    let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                    match api.process_agent_output(task_id, output) {
-                        Ok(_) => Ok(Some(OrchestratorEvent::OutputProcessed {
-                            task_id: task_id.to_string(),
-                            stage: stage.to_string(),
-                            output_type,
-                        })),
-                        Err(e) => {
-                            // Handle invalid output gracefully (e.g., invalid restage)
-                            Ok(Some(OrchestratorEvent::Error {
-                                task_id: Some(task_id.to_string()),
-                                error: e.to_string(),
-                            }))
-                        }
-                    }
-                } else if is_err {
-                    let error = err_msg.unwrap_or_else(|| "Unknown error".to_string());
-                    // Try to mark task as failed, but don't propagate errors.
-                    // Even if this fails, we still want to report the error event.
-                    if let Ok(api) = self.api.lock() {
-                        if let Err(e) = api.process_agent_output(
-                            task_id,
-                            StageOutput::Failed {
-                                error: format!("Agent error: {error}"),
-                            },
-                        ) {
-                            eprintln!("[orkestra] ERROR: Failed to mark task {task_id} as failed: {e}");
-                        }
-                    }
-                    Ok(Some(OrchestratorEvent::Error {
-                        task_id: Some(task_id.to_string()),
-                        error,
-                    }))
-                } else {
-                    Ok(None)
+                match api.process_agent_output(&exec.task_id, stage_output) {
+                    Ok(_) => Ok(OrchestratorEvent::OutputProcessed {
+                        task_id: exec.task_id,
+                        stage: exec.stage,
+                        output_type,
+                    }),
+                    Err(e) => Ok(OrchestratorEvent::Error {
+                        task_id: Some(exec.task_id),
+                        error: e.to_string(),
+                    }),
                 }
             }
+            ExecutionResult::AgentFailed(error) => {
+                let _ = api.process_agent_output(
+                    &exec.task_id,
+                    StageOutput::Failed {
+                        error: format!("Agent error: {error}"),
+                    },
+                );
+                Ok(OrchestratorEvent::Error {
+                    task_id: Some(exec.task_id),
+                    error,
+                })
+            }
+            ExecutionResult::ScriptSuccess { output } => {
+                match api.process_script_success(&exec.task_id, &output) {
+                    Ok(_) => Ok(OrchestratorEvent::ScriptCompleted {
+                        task_id: exec.task_id,
+                        stage: exec.stage,
+                    }),
+                    Err(e) => Ok(OrchestratorEvent::Error {
+                        task_id: Some(exec.task_id),
+                        error: e.to_string(),
+                    }),
+                }
+            }
+            ExecutionResult::ScriptFailed { output, timed_out } => {
+                let error_msg = if timed_out {
+                    format!("Script timed out:\n{output}")
+                } else {
+                    format!("Script failed:\n{output}")
+                };
+
+                match api.process_script_failure(
+                    &exec.task_id,
+                    &error_msg,
+                    exec.recovery_stage.as_deref(),
+                ) {
+                    Ok(_) => Ok(OrchestratorEvent::ScriptFailed {
+                        task_id: exec.task_id,
+                        stage: exec.stage,
+                        error: error_msg,
+                        recovery_stage: exec.recovery_stage,
+                    }),
+                    Err(e) => Ok(OrchestratorEvent::Error {
+                        task_id: Some(exec.task_id),
+                        error: e.to_string(),
+                    }),
+                }
+            }
+            ExecutionResult::PollError { error } => Ok(OrchestratorEvent::Error {
+                task_id: Some(exec.task_id),
+                error,
+            }),
         }
     }
 
-    /// Clean up completed executions.
-    fn cleanup_completed(&self) {
-        match self.active_executions.lock() {
-            Ok(mut executions) => {
-                executions.retain(|h| !h.is_complete());
-            }
-            Err(_) => {
-                workflow_error!("Failed to lock active_executions during cleanup (mutex poisoned)");
-            }
-        }
-    }
-
-    /// Start new executions for tasks needing agents.
+    /// Start new executions for tasks needing agents or scripts.
     fn start_new_executions(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
-
-        let active_task_ids: Vec<String> = {
-            let executions = self
-                .active_executions
-                .lock()
-                .map_err(|_| WorkflowError::Lock)?;
-            executions.iter().map(|h| h.task_id.clone()).collect()
-        };
 
         let tasks = {
             let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
@@ -366,14 +352,14 @@ impl OrchestratorLoop {
 
         orkestra_debug!(
             "orchestrator",
-            "start_new_executions: {} tasks needing agents, {} active",
+            "start_new_executions: {} tasks needing execution, {} active",
             tasks.len(),
-            active_task_ids.len()
+            self.stage_executor.active_count()
         );
 
         for task in tasks {
             // Skip if we already have an active execution for this task
-            if active_task_ids.contains(&task.id) {
+            if self.stage_executor.has_active_execution(&task.id) {
                 continue;
             }
 
@@ -385,7 +371,7 @@ impl OrchestratorLoop {
                 task.current_stage()
             );
 
-            // Get incoming context from active iteration
+            // Get incoming context from active iteration (for agent stages)
             let trigger = {
                 let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
                 api.store
@@ -393,32 +379,29 @@ impl OrchestratorLoop {
                     .and_then(|iter| iter.incoming_context)
             };
 
+            // Mark task as working
             {
                 let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
                 api.agent_started(&task.id)?;
             }
 
-            match self.executor.execute_stage(&task, trigger.as_ref()) {
-                Ok(handle) => {
-                    let event = OrchestratorEvent::AgentSpawned {
-                        task_id: handle.task_id.clone(),
-                        stage: handle.stage.clone(),
-                        pid: handle.pid,
-                    };
-
-                    match self.active_executions.lock() {
-                        Ok(mut executions) => {
-                            executions.push(handle);
-                        }
-                        Err(_) => {
-                            workflow_error!(
-                                "Failed to track execution for {}/{} (mutex poisoned) - agent process will be orphaned",
-                                handle.task_id, handle.stage
-                            );
-                        }
+            // Spawn via unified service
+            match self.stage_executor.spawn(&task, trigger.as_ref()) {
+                Ok(result) => {
+                    if result.is_script {
+                        events.push(OrchestratorEvent::ScriptSpawned {
+                            task_id: result.task_id,
+                            stage: result.stage,
+                            command: result.command.unwrap_or_default(),
+                            pid: result.pid,
+                        });
+                    } else {
+                        events.push(OrchestratorEvent::AgentSpawned {
+                            task_id: result.task_id,
+                            stage: result.stage,
+                            pid: result.pid,
+                        });
                     }
-
-                    events.push(event);
                 }
                 Err(e) => {
                     events.push(OrchestratorEvent::Error {
@@ -669,7 +652,7 @@ impl OrchestratorLoop {
 
     /// Get count of active executions.
     pub fn active_count(&self) -> usize {
-        self.active_executions.lock().map(|e| e.len()).unwrap_or(0)
+        self.stage_executor.active_count()
     }
 }
 
@@ -706,20 +689,17 @@ mod tests {
             Arc::clone(&store),
         )));
 
-        // Get iteration service from api
         let iteration_service = api.lock().unwrap().iteration_service().clone();
+        let project_root = PathBuf::from("/tmp");
 
-        let spawner: Arc<dyn ProcessSpawner> = Arc::new(ClaudeProcessSpawner::new());
-        let runner = Arc::new(AgentRunner::new(spawner));
-        let executor = Arc::new(TaskExecutionService::new(
-            runner,
+        let stage_executor = Arc::new(StageExecutionService::new(
+            workflow,
+            project_root,
             store,
             iteration_service,
-            workflow,
-            PathBuf::from("/tmp"),
         ));
 
-        OrchestratorLoop::new(api, executor)
+        OrchestratorLoop::new(api, stage_executor)
     }
 
     #[test]

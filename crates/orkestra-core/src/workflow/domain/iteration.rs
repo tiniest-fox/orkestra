@@ -32,6 +32,8 @@ pub enum IterationTrigger {
     Answers { answers: Vec<QuestionAnswer> },
     /// Crash recovery (session interrupted).
     Interrupted,
+    /// Script stage failed and redirected to this stage.
+    ScriptFailure { from_stage: String, error: String },
 }
 
 /// A single iteration (attempt) within a stage.
@@ -325,5 +327,39 @@ mod tests {
         let yaml = serde_yaml::to_string(&iter).unwrap();
         // incoming_context should be omitted when None
         assert!(!yaml.contains("incoming_context"));
+    }
+
+    #[test]
+    fn test_iteration_trigger_script_failure() {
+        let trigger = IterationTrigger::ScriptFailure {
+            from_stage: "checks".to_string(),
+            error: "npm test failed with exit code 1".to_string(),
+        };
+        let json = serde_json::to_string(&trigger).unwrap();
+        assert!(json.contains("\"type\":\"script_failure\""));
+        assert!(json.contains("\"from_stage\":\"checks\""));
+        assert!(json.contains("npm test failed"));
+
+        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, trigger);
+    }
+
+    #[test]
+    fn test_iteration_with_script_failure_context() {
+        let iter = Iteration::new("iter-1", "task-1", "work", 2, "now").with_context(
+            IterationTrigger::ScriptFailure {
+                from_stage: "lint".to_string(),
+                error: "eslint found 5 errors".to_string(),
+            },
+        );
+
+        assert!(iter.incoming_context.is_some());
+        match &iter.incoming_context {
+            Some(IterationTrigger::ScriptFailure { from_stage, error }) => {
+                assert_eq!(from_stage, "lint");
+                assert!(error.contains("eslint"));
+            }
+            _ => panic!("Expected ScriptFailure trigger"),
+        }
     }
 }

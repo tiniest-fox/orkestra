@@ -198,7 +198,7 @@ mod tests {
             let id = self
                 .next_id
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(format!("task-{:03}", id))
+            Ok(format!("task-{id:03}"))
         }
 
         fn get_iterations(&self, task_id: &str) -> WorkflowResult<Vec<Iteration>> {

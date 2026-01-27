@@ -16,14 +16,14 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
     build_resume_prompt, AgentConfigError, AgentRunnerTrait, ResumeQuestionAnswer, ResumeType,
-    RunConfig, RunError, RunEvent, StageOutput,
+    RunConfig, RunError, RunEvent,
 };
-use crate::workflow::ports::{WorkflowResult, WorkflowStore};
+use crate::workflow::ports::WorkflowStore;
 
 use super::prompt_service::PromptService;
 use super::session_service::SessionService;
+use super::workflow_warn;
 use super::IterationService;
-use super::{workflow_error, workflow_warn};
 
 // ============================================================================
 // Execution Handle
@@ -43,21 +43,13 @@ pub struct ExecutionHandle {
     pub events: Receiver<RunEvent>,
 }
 
-impl ExecutionHandle {
-    /// Check if the execution is complete (channel closed).
-    pub fn is_complete(&self) -> bool {
-        // Try a non-blocking receive - if we get Disconnected, it's complete
-        use std::sync::mpsc::TryRecvError;
-        matches!(self.events.try_recv(), Err(TryRecvError::Disconnected))
-    }
-}
-
 // ============================================================================
 // Execution Error
 // ============================================================================
 
 /// Errors that can occur during task execution.
 #[derive(Debug, Clone)]
+#[allow(clippy::enum_variant_names)] // Error suffix is intentional for clarity
 pub enum ExecutionError {
     /// Failed to resolve agent configuration.
     ConfigError(String),
@@ -157,9 +149,10 @@ impl TaskExecutionService {
 
     /// Get the working directory for a task.
     fn get_working_dir(&self, task: &Task) -> PathBuf {
-        task.worktree_path
-            .as_ref()
-            .map_or_else(|| self.prompt_service.project_root().to_path_buf(), PathBuf::from)
+        task.worktree_path.as_ref().map_or_else(
+            || self.prompt_service.project_root().to_path_buf(),
+            PathBuf::from,
+        )
     }
 
     /// Execute a stage for a task (async with events).
@@ -209,10 +202,19 @@ impl TaskExecutionService {
             .workflow
             .stage(stage)
             .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
+
+        // This method is for agent stages only - script stages are handled separately
+        if stage_config.is_script_stage() {
+            return Err(ExecutionError::ConfigError(format!(
+                "Stage '{stage}' is a script stage, not an agent stage"
+            )));
+        }
+
         let json_schema = crate::workflow::execution::get_agent_schema(
             stage_config,
             Some(self.prompt_service.project_root()),
-        );
+        )
+        .expect("Agent stage should have schema");
 
         // 4. Build prompt based on whether this is a resume
         let prompt = self.build_stage_prompt(task, spawn_ctx.is_resume, trigger)?;
@@ -286,163 +288,6 @@ impl TaskExecutionService {
             }
         }
     }
-
-    /// Execute a stage synchronously (blocking).
-    ///
-    /// This runs the agent to completion and returns the result.
-    /// Useful for simpler orchestration or testing.
-    ///
-    /// # Arguments
-    /// * `task` - The task to execute
-    /// * `trigger` - Why this iteration was created (determines resume prompt type)
-    pub fn execute_stage_sync(
-        &self,
-        task: &Task,
-        trigger: Option<&IterationTrigger>,
-    ) -> Result<StageOutput, ExecutionError> {
-        let stage = task
-            .current_stage()
-            .ok_or_else(|| ExecutionError::ConfigError("Task not in active stage".into()))?;
-
-        // Create session FIRST (generates UUID if new session)
-        self.session_service
-            .on_spawn_starting(&task.id, stage)
-            .map_err(|e| {
-                ExecutionError::SessionError(format!("Failed to create spawn session: {e}"))
-            })?;
-
-        // Get session context to determine if this is a resume
-        let spawn_ctx = self
-            .session_service
-            .get_spawn_context(&task.id, stage)
-            .map_err(|e| ExecutionError::SessionError(e.to_string()))?;
-
-        // Get JSON schema (needed for BOTH first spawn and resume)
-        let stage_config = self
-            .workflow
-            .stage(stage)
-            .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
-        let json_schema = crate::workflow::execution::get_agent_schema(
-            stage_config,
-            Some(self.prompt_service.project_root()),
-        );
-
-        // Build prompt based on whether this is a resume
-        let prompt = self.build_stage_prompt(task, spawn_ctx.is_resume, trigger)?;
-
-        // Build run config with session info
-        let working_dir = self.get_working_dir(task);
-
-        let run_config = RunConfig::new(working_dir, prompt, json_schema)
-            .with_session(spawn_ctx.session_id, spawn_ctx.is_resume)
-            .with_task_id(&task.id);
-
-        // Run synchronously
-        let result = match self.runner.run_sync(run_config) {
-            Ok(result) => {
-                // Record successful spawn (non-fatal - spawn already happened)
-                if let Err(e) = self.session_service.on_agent_spawned(&task.id, stage, 0) {
-                    // Note: sync execution doesn't have real PID, using 0 as placeholder
-                    workflow_warn!(
-                        "Failed to record agent spawn for {}/{}: {}",
-                        task.id,
-                        stage,
-                        e
-                    );
-                }
-                result
-            }
-            Err(e) => {
-                // Record spawn/execution failure (non-fatal - spawn already failed)
-                if let Err(session_err) =
-                    self.session_service
-                        .on_spawn_failed(&task.id, stage, &e.to_string())
-                {
-                    workflow_warn!(
-                        "Failed to record spawn failure for {}/{}: {}",
-                        task.id,
-                        stage,
-                        session_err
-                    );
-                }
-                return Err(e.into());
-            }
-        };
-
-        // Record agent exited (cleanup)
-        if let Err(e) = self.session_service.on_agent_exited(&task.id, stage) {
-            workflow_warn!(
-                "Failed to record agent exit for {}/{}: {}",
-                task.id,
-                stage,
-                e
-            );
-        }
-
-        Ok(result.parsed_output)
-    }
-
-    /// Handle an event from an async execution.
-    ///
-    /// Returns the parsed output when the agent completes successfully.
-    pub fn handle_event(
-        &self,
-        task_id: &str,
-        stage: &str,
-        event: RunEvent,
-    ) -> WorkflowResult<Option<StageOutput>> {
-        match event {
-            RunEvent::Completed(result) => {
-                orkestra_debug!(
-                    "exec",
-                    "handle_event {}/{}: completed, is_ok={}",
-                    task_id,
-                    stage,
-                    result.is_ok()
-                );
-
-                // Record agent exited (cleanup, non-critical)
-                if let Err(e) = self.session_service.on_agent_exited(task_id, stage) {
-                    workflow_warn!(
-                        "Failed to record agent exit for {}/{}: {}",
-                        task_id,
-                        stage,
-                        e
-                    );
-                }
-
-                // Return parsed output
-                match result {
-                    Ok(output) => Ok(Some(output)),
-                    Err(e) => {
-                        workflow_error!("Parse error for {}/{}: {}", task_id, stage, e);
-                        Ok(None)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Mark a stage session as completed.
-    ///
-    /// Called when the stage is approved and we're moving to the next stage.
-    pub fn complete_stage(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
-        self.session_service.on_stage_completed(task_id, stage)
-    }
-
-    /// Mark a stage session as abandoned.
-    ///
-    /// Called when the task fails, is blocked, or the stage is restaged.
-    pub fn abandon_stage(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
-        self.session_service.on_stage_abandoned(task_id, stage)
-    }
-
-    /// Get all running agent processes.
-    ///
-    /// Returns (`task_id`, stage, pid) tuples for orphan cleanup.
-    pub fn get_running_agents(&self) -> WorkflowResult<Vec<(String, String, u32)>> {
-        self.session_service.get_running_agents()
-    }
 }
 
 /// Convert `IterationTrigger` to `ResumeType` for prompt building.
@@ -472,6 +317,12 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
                     answer: qa.answer.clone(),
                 })
                 .collect(),
+        },
+        // Script failure is treated like feedback - agent needs to fix the issues
+        Some(IterationTrigger::ScriptFailure { from_stage, error }) => ResumeType::Feedback {
+            feedback: format!(
+                "The automated checks in the '{from_stage}' stage failed:\n\n{error}"
+            ),
         },
     }
 }
@@ -509,7 +360,7 @@ mod tests {
         let _workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
         let iteration_service = Arc::new(IterationService::new(
-            Arc::clone(&store) as Arc<dyn WorkflowStore>,
+            Arc::clone(&store) as Arc<dyn WorkflowStore>
         ));
 
         // Create session service with iteration service

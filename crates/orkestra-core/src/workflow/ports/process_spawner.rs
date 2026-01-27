@@ -177,7 +177,7 @@ pub trait ProcessSpawner: Send + Sync {
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod mock {
-    use super::*;
+    use super::{Path, ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
 

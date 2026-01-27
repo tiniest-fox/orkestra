@@ -57,10 +57,7 @@ impl IterationService {
         // Count existing iterations for THIS stage only
         // This matches the DB UNIQUE constraint: (task_id, stage, iteration_number)
         let all_iterations = self.store.get_iterations(task_id)?;
-        let stage_count = all_iterations
-            .iter()
-            .filter(|i| i.stage == stage)
-            .count() as u32;
+        let stage_count = all_iterations.iter().filter(|i| i.stage == stage).count() as u32;
         let next_num = stage_count + 1;
 
         // Consistent ID format: task-stage-N
@@ -112,11 +109,7 @@ impl IterationService {
     }
 
     /// Get the active (unended) iteration for a task/stage.
-    pub fn get_active(
-        &self,
-        task_id: &str,
-        stage: &str,
-    ) -> WorkflowResult<Option<Iteration>> {
+    pub fn get_active(&self, task_id: &str, stage: &str) -> WorkflowResult<Option<Iteration>> {
         self.store.get_active_iteration(task_id, stage)
     }
 }
@@ -188,9 +181,7 @@ mod tests {
             .unwrap();
 
         // Create iteration in work stage - should start at 1, not 3
-        let w1 = service
-            .create_initial_iteration("task-1", "work")
-            .unwrap();
+        let w1 = service.create_initial_iteration("task-1", "work").unwrap();
 
         assert_eq!(p1.iteration_number, 1);
         assert_eq!(p2.iteration_number, 2);
@@ -261,7 +252,7 @@ mod tests {
         ];
 
         for (i, trigger) in triggers.into_iter().enumerate() {
-            let stage = format!("stage-{}", i);
+            let stage = format!("stage-{i}");
             let iteration = service
                 .create_iteration("task-1", &stage, Some(trigger.clone()))
                 .unwrap();

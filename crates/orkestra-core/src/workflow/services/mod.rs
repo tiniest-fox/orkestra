@@ -36,8 +36,10 @@ mod iteration_service;
 mod orchestrator;
 mod prompt_service;
 mod queries;
+mod script_execution;
 mod session_logs;
 mod session_service;
+mod stage_execution;
 mod subtask_service;
 mod task_crud;
 mod task_execution;
@@ -53,24 +55,20 @@ macro_rules! workflow_warn {
     };
 }
 
-/// Log workflow errors (critical failures that impact functionality).
-macro_rules! workflow_error {
-    ($($arg:tt)*) => {
-        eprintln!("[orkestra] ERROR: {}", format!($($arg)*));
-    };
-}
-
 // Make macros available within the services module
-pub(crate) use workflow_error;
 pub(crate) use workflow_warn;
 
 pub use api::WorkflowApi;
 pub use iteration_service::IterationService;
 pub use orchestrator::{OrchestratorError, OrchestratorEvent, OrchestratorLoop};
 pub use prompt_service::PromptService;
+// Note: ScriptExecutionService is internal to StageExecutionService
 pub use session_logs::{
     get_claude_session_path, recover_session_logs, ResumeMarker, ResumeMarkerType,
 };
 pub use session_service::{SessionService, SessionSpawnContext};
+pub use stage_execution::{
+    ExecutionComplete, ExecutionResult, SpawnError, SpawnResult, StageExecutionService,
+};
 pub use subtask_service::SubtaskService;
-pub use task_execution::{ExecutionError, ExecutionHandle, TaskExecutionService};
+// Note: TaskExecutionService is internal to StageExecutionService

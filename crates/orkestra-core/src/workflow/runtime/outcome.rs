@@ -93,6 +93,18 @@ pub enum Outcome {
         /// Feedback explaining why restaging is needed.
         feedback: String,
     },
+
+    /// Script stage failed.
+    /// The task will transition to the recovery stage if configured.
+    ScriptFailed {
+        /// The script stage that failed.
+        stage: String,
+        /// Error output from the script.
+        error: String,
+        /// The recovery stage to transition to (if configured).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        recovery_stage: Option<String>,
+    },
 }
 
 impl Outcome {
@@ -155,6 +167,19 @@ impl Outcome {
         }
     }
 
+    /// Create a script failed outcome.
+    pub fn script_failed(
+        stage: impl Into<String>,
+        error: impl Into<String>,
+        recovery_stage: Option<String>,
+    ) -> Self {
+        Self::ScriptFailed {
+            stage: stage.into(),
+            error: error.into(),
+            recovery_stage,
+        }
+    }
+
     /// Get the feedback from a rejection or restage, if applicable.
     pub fn feedback(&self) -> Option<&str> {
         match self {
@@ -170,7 +195,8 @@ impl Outcome {
         match self {
             Outcome::Rejected { stage, .. }
             | Outcome::AwaitingAnswers { stage, .. }
-            | Outcome::Skipped { stage, .. } => Some(stage),
+            | Outcome::Skipped { stage, .. }
+            | Outcome::ScriptFailed { stage, .. } => Some(stage),
             Outcome::Restage { from_stage, .. } => Some(from_stage),
             _ => None,
         }
@@ -222,6 +248,7 @@ impl std::fmt::Display for Outcome {
             Outcome::Blocked { .. } => write!(f, "blocked"),
             Outcome::Skipped { stage, .. } => write!(f, "{stage} skipped"),
             Outcome::Restage { target, .. } => write!(f, "restage to {target}"),
+            Outcome::ScriptFailed { stage, .. } => write!(f, "{stage} script failed"),
         }
     }
 }
@@ -355,6 +382,57 @@ mod tests {
 
         assert!(json.contains("\"type\":\"spawn_failed\""));
         assert!(json.contains("\"error\":\"Process not found\""));
+
+        let parsed: Outcome = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, outcome);
+    }
+
+    #[test]
+    fn test_script_failed() {
+        let outcome = Outcome::script_failed("checks", "npm test failed", Some("work".into()));
+        assert_eq!(outcome.stage(), Some("checks"));
+        assert!(!outcome.is_terminal());
+        assert_eq!(outcome.to_string(), "checks script failed");
+    }
+
+    #[test]
+    fn test_script_failed_without_recovery() {
+        let outcome = Outcome::script_failed("lint", "eslint error", None);
+        match &outcome {
+            Outcome::ScriptFailed {
+                stage,
+                error,
+                recovery_stage,
+            } => {
+                assert_eq!(stage, "lint");
+                assert!(error.contains("eslint"));
+                assert!(recovery_stage.is_none());
+            }
+            _ => panic!("Expected ScriptFailed"),
+        }
+    }
+
+    #[test]
+    fn test_script_failed_serialization() {
+        let outcome = Outcome::script_failed("checks", "Test failed", Some("work".into()));
+        let json = serde_json::to_string(&outcome).unwrap();
+
+        assert!(json.contains("\"type\":\"script_failed\""));
+        assert!(json.contains("\"stage\":\"checks\""));
+        assert!(json.contains("\"error\":\"Test failed\""));
+        assert!(json.contains("\"recovery_stage\":\"work\""));
+
+        let parsed: Outcome = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, outcome);
+    }
+
+    #[test]
+    fn test_script_failed_serialization_no_recovery() {
+        let outcome = Outcome::script_failed("checks", "Error", None);
+        let json = serde_json::to_string(&outcome).unwrap();
+
+        // recovery_stage should be omitted when None
+        assert!(!json.contains("recovery_stage"));
 
         let parsed: Outcome = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, outcome);

@@ -122,7 +122,12 @@ fn handle_task_action(action: TaskAction) {
     }
 }
 
-fn handle_create_task(api: &WorkflowApi, title: &str, description: &str, base_branch: Option<&str>) {
+fn handle_create_task(
+    api: &WorkflowApi,
+    title: &str,
+    description: &str,
+    base_branch: Option<&str>,
+) {
     let task = match api.create_task(title, description, base_branch) {
         Ok(task) => task,
         Err(e) => {
@@ -197,7 +202,10 @@ fn handle_list_tasks(api: &WorkflowApi, status_filter: Option<&str>) {
         return;
     }
 
-    println!("{:<36} {:<30} {:<20} {:<10}", "ID", "Title", "Status", "Phase");
+    println!(
+        "{:<36} {:<30} {:<20} {:<10}",
+        "ID", "Title", "Status", "Phase"
+    );
     println!("{}", "-".repeat(96));
 
     for task in tasks {
@@ -264,7 +272,10 @@ fn handle_show_task(api: &WorkflowApi, id: &str) {
         println!("\nArtifacts:");
         for name in &artifact_names {
             if let Some(artifact) = task.artifacts.get(name) {
-                println!("  [{name}] (stage: {}, created: {})", artifact.stage, artifact.created_at);
+                println!(
+                    "  [{name}] (stage: {}, created: {})",
+                    artifact.stage, artifact.created_at
+                );
             }
         }
     }

@@ -155,6 +155,13 @@ impl WorkflowApi {
             },
         };
 
+        // Check if this is a script stage
+        if self.is_script_stage(&stage_name) {
+            // Read script logs
+            return Ok(read_script_logs(task_id, &stage_name, project_root));
+        }
+
+        // Agent stage: get logs from Claude session
         // Get the stage session to find the Claude session ID
         let session = self.store.get_stage_session(task_id, &stage_name)?;
         let Some(session) = session else {
@@ -167,12 +174,32 @@ impl WorkflowApi {
         // Determine the working directory - use worktree if available, otherwise project root
         let cwd = task
             .worktree_path
-            .as_ref().map_or_else(|| project_root.to_path_buf(), std::path::PathBuf::from);
+            .as_ref()
+            .map_or_else(|| project_root.to_path_buf(), std::path::PathBuf::from);
 
         // Recover logs from Claude's session file
         // Return empty if file doesn't exist yet (agent may still be starting)
         Ok(recover_session_logs(&claude_id, &cwd).unwrap_or_default())
     }
+}
+
+/// Read logs from a script execution log file.
+///
+/// Script logs are stored in `.orkestra/script_logs/{task_id}_{stage}.jsonl`.
+fn read_script_logs(task_id: &str, stage: &str, project_root: &Path) -> Vec<LogEntry> {
+    let log_path = project_root
+        .join(".orkestra")
+        .join("script_logs")
+        .join(format!("{task_id}_{stage}.jsonl"));
+
+    let Ok(content) = std::fs::read_to_string(&log_path) else {
+        return Vec::new();
+    };
+
+    content
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect()
 }
 
 #[cfg(test)]

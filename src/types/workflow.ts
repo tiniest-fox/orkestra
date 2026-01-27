@@ -325,7 +325,11 @@ export type LogEntry =
       parent_task_id: string;
     }
   | { type: "process_exit"; code?: number }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  // Script stage log entries
+  | { type: "script_start"; command: string; stage: string }
+  | { type: "script_output"; content: string }
+  | { type: "script_exit"; code: number; success: boolean; timed_out: boolean };
 
 // =============================================================================
 // Helper Functions

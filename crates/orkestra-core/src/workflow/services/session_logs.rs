@@ -37,7 +37,7 @@ struct SessionLogParser {
     entries: Vec<LogEntry>,
     tool_use_map: HashMap<String, String>,
     task_tool_ids: HashSet<String>,
-    /// Maps Task tool_use_id to agentId for loading subagent sessions.
+    /// Maps Task `tool_use_id` to agentId for loading subagent sessions.
     task_agent_map: HashMap<String, String>,
     /// Session directory path (for locating subagent sessions).
     session_dir: Option<PathBuf>,
@@ -165,9 +165,8 @@ impl SessionLogParser {
         entry: &serde_json::Value,
     ) {
         // Extract agentId from toolUseResult
-        let agent_id = match tool_use_result.get("agentId").and_then(|a| a.as_str()) {
-            Some(id) => id,
-            None => return,
+        let Some(agent_id) = tool_use_result.get("agentId").and_then(|a| a.as_str()) else {
+            return;
         };
 
         // Find the corresponding tool_use_id from the message content
@@ -231,21 +230,17 @@ impl SessionLogParser {
             return None;
         }
 
-        let file = match fs::File::open(&subagent_path) {
-            Ok(f) => f,
-            Err(_) => {
-                // Silently skip if we can't open the file
-                return None;
-            }
+        let Ok(file) = fs::File::open(&subagent_path) else {
+            // Silently skip if we can't open the file
+            return None;
         };
 
         let reader = std::io::BufReader::new(file);
         let mut tool_uses: Vec<LogEntry> = Vec::new();
 
         for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => continue,
+            let Ok(line) = line else {
+                continue;
             };
 
             if line.trim().is_empty() {

@@ -288,7 +288,7 @@ mod tests {
                 assert_eq!(error, "Merge conflict");
                 assert_eq!(conflict_files, &vec!["src/main.rs".to_string()]);
             }
-            other => panic!("Expected IntegrationFailed outcome, got {:?}", other),
+            other => panic!("Expected IntegrationFailed outcome, got {other:?}"),
         }
     }
 

@@ -31,7 +31,7 @@ use orkestra_core::workflow::{
     execution::StageOutput,
     runtime::{Outcome, Phase},
     Git2GitService, GitService, MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore,
-    TaskExecutionService, WorkflowApi,
+    StageExecutionService, WorkflowApi,
 };
 
 // =============================================================================
@@ -77,7 +77,7 @@ struct TestContext {
     api: Arc<Mutex<WorkflowApi>>,
     orchestrator: OrchestratorLoop,
     runner: Arc<MockAgentRunner>,
-    _temp_dir: TempDir,
+    temp_dir: TempDir,
 }
 
 impl TestContext {
@@ -137,7 +137,7 @@ impl TestContext {
 
     /// Get the repository path for creating conflicts on main branch.
     fn repo_path(&self) -> &std::path::Path {
-        self._temp_dir.path()
+        self.temp_dir.path()
     }
 
     // =========================================================================
@@ -152,12 +152,6 @@ impl TestContext {
             .expect("No agent calls recorded")
             .prompt
             .clone()
-    }
-
-    /// Assert that the last prompt has a specific resume marker type.
-    /// Resume markers are: <!orkestra-resume:continue>, <!orkestra-resume:feedback>, etc.
-    fn assert_resume_prompt(&self, expected_type: &str) {
-        self.assert_resume_prompt_contains(expected_type, &[]);
     }
 
     /// Assert that the last prompt has a specific resume marker type and contains expected strings.
@@ -289,23 +283,24 @@ fn setup_test() -> TestContext {
     // Get iteration service from api
     let iteration_service = api.lock().unwrap().iteration_service().clone();
 
-    // Create mock runner and execution service
+    // Create mock runner for testing
     let runner = Arc::new(MockAgentRunner::new());
-    let executor = Arc::new(TaskExecutionService::new(
-        runner.clone(),
-        store,
-        iteration_service,
+
+    let stage_executor = Arc::new(StageExecutionService::with_runner(
         loaded_workflow,
         project_root,
+        store,
+        iteration_service,
+        runner.clone(),
     ));
 
-    let orchestrator = OrchestratorLoop::new(api.clone(), executor);
+    let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
 
     TestContext {
         api,
         orchestrator,
         runner,
-        _temp_dir: temp_dir,
+        temp_dir,
     }
 }
 
@@ -332,6 +327,7 @@ fn setup_test() -> TestContext {
 /// 11. Integration fails → Back to Working
 /// 12. Work → Review → Done → Integration succeeds → Complete
 #[test]
+#[allow(clippy::too_many_lines)] // Exhaustive e2e test is intentionally comprehensive
 fn test_exhaustive_workflow_flow() {
     let ctx = setup_test();
 
@@ -966,17 +962,17 @@ integration:
     // Get iteration service from api
     let iteration_service = api.lock().unwrap().iteration_service().clone();
 
-    // Create mock runner and execution service
+    // Create mock runner for testing
     let runner = Arc::new(MockAgentRunner::new());
-    let executor = Arc::new(TaskExecutionService::new(
-        runner.clone(),
-        store,
-        iteration_service,
+
+    let stage_executor = Arc::new(StageExecutionService::with_runner(
         workflow,
         project_root,
+        store,
+        iteration_service,
+        runner.clone(),
     ));
-
-    let orchestrator = OrchestratorLoop::new(api.clone(), executor);
+    let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
 
     // Helper to tick and wait
     let tick = || {
@@ -1046,4 +1042,301 @@ integration:
         Some("planning"),
         "Should go to planning (configured on_failure) not work"
     );
+}
+
+/// Test script stage execution with failure recovery.
+///
+/// Flow:
+/// 1. Task created → Work stage (mock agent)
+/// 2. Work approved → Checks stage (real script)
+/// 3. Script fails → Recovers to Work (`on_failure`)
+/// 4. Work produces fix → Checks stage again
+/// 5. Script passes → Review stage
+/// 6. Review approves → Done
+#[test]
+#[allow(clippy::too_many_lines)] // Comprehensive e2e test covering full script recovery flow
+fn test_script_stage_with_recovery() {
+    use orkestra_core::workflow::config::{
+        IntegrationConfig, ScriptStageConfig, StageConfig, WorkflowConfig,
+    };
+
+    // Create git repo for worktree support
+    let temp_dir = create_temp_git_repo().expect("Failed to create git repo");
+    let orkestra_dir = temp_dir.path().join(".orkestra");
+    std::fs::create_dir_all(&orkestra_dir).unwrap();
+
+    // Create agent definition files
+    let agents_dir = orkestra_dir.join("agents");
+    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::write(agents_dir.join("worker.md"), "You are a worker agent.").unwrap();
+    std::fs::write(agents_dir.join("reviewer.md"), "You are a reviewer agent.").unwrap();
+
+    // Create a simple toggle script that fails first time, passes second time
+    // The script uses a marker file to track state
+    let scripts_dir = temp_dir.path().join("scripts");
+    std::fs::create_dir_all(&scripts_dir).unwrap();
+    let script_path = scripts_dir.join("checks.sh");
+    std::fs::write(
+        &script_path,
+        r#"#!/bin/bash
+MARKER_FILE="${ORKESTRA_MARKER_DIR:-/tmp}/script_passed_once"
+
+if [ -f "$MARKER_FILE" ]; then
+    echo "Checks passed!"
+    exit 0
+else
+    mkdir -p "$(dirname "$MARKER_FILE")"
+    touch "$MARKER_FILE"
+    echo "Checks failed - missing marker"
+    exit 1
+fi
+"#,
+    )
+    .unwrap();
+
+    // Make script executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    // Create workflow with script stage: work → checks (script) → review
+    let workflow = WorkflowConfig {
+        version: 1,
+        stages: vec![
+            StageConfig::new("work", "summary"),
+            StageConfig::new("checks", "check_results")
+                .with_display_name("Automated Checks")
+                .with_inputs(vec!["summary".into()])
+                .with_script(ScriptStageConfig {
+                    // Use env var for marker dir so each test run is isolated
+                    command: format!(
+                        "ORKESTRA_MARKER_DIR={} {}",
+                        orkestra_dir.join("markers").display(),
+                        script_path.display()
+                    ),
+                    timeout_seconds: 10,
+                    on_failure: Some("work".into()),
+                }),
+            StageConfig::new("review", "verdict")
+                .with_inputs(vec!["summary".into(), "check_results".into()])
+                .automated(),
+        ],
+        integration: IntegrationConfig::default(),
+    };
+
+    // Save workflow config
+    let workflow_path = orkestra_dir.join("workflow.yaml");
+    let yaml = serde_yaml::to_string(&workflow).unwrap();
+    std::fs::write(&workflow_path, yaml).unwrap();
+
+    // Set up infrastructure
+    let db_path = orkestra_dir.join("orkestra.db");
+    let db_conn = DatabaseConnection::open(&db_path).expect("Should open database");
+    let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
+        Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
+
+    let git_service: Arc<dyn GitService> =
+        Arc::new(Git2GitService::new(temp_dir.path()).expect("Git service should init"));
+
+    let api = Arc::new(Mutex::new(WorkflowApi::with_git(
+        workflow.clone(),
+        Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
+        git_service,
+    )));
+    let project_root = PathBuf::from(temp_dir.path());
+
+    let iteration_service = api.lock().unwrap().iteration_service().clone();
+    let runner = Arc::new(MockAgentRunner::new());
+
+    let stage_executor = Arc::new(StageExecutionService::with_runner(
+        workflow,
+        project_root,
+        store,
+        iteration_service,
+        runner.clone(),
+    ));
+
+    let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
+
+    // Helper to tick until stable
+    let tick = || {
+        for _ in 0..20 {
+            orchestrator.tick().expect("Tick should succeed");
+            std::thread::sleep(Duration::from_millis(50));
+            if orchestrator.active_count() == 0 {
+                orchestrator.tick().expect("Final tick");
+                break;
+            }
+        }
+    };
+
+    // =========================================================================
+    // Step 1: Create task → Work stage
+    // =========================================================================
+    let task = api
+        .lock()
+        .unwrap()
+        .create_task("Test script recovery", "Test that script stages work", None)
+        .expect("Should create task");
+    let task_id = task.id.clone();
+
+    // Wait for async setup
+    for _ in 0..50 {
+        std::thread::sleep(Duration::from_millis(20));
+        let task = api.lock().unwrap().get_task(&task_id).unwrap();
+        if task.phase != Phase::SettingUp {
+            break;
+        }
+    }
+
+    let task = api.lock().unwrap().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("work"));
+    assert_eq!(task.phase, Phase::Idle);
+
+    // =========================================================================
+    // Step 2: Work stage produces artifact
+    // =========================================================================
+    runner.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial implementation".to_string(),
+        }
+        .into(),
+    );
+    tick();
+
+    let task = api.lock().unwrap().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // Approve work → moves to checks (script stage)
+    api.lock().unwrap().approve(&task_id).unwrap();
+
+    let task = api.lock().unwrap().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("checks"));
+    assert_eq!(task.phase, Phase::Idle, "Script stage should start in Idle");
+
+    // =========================================================================
+    // Step 3: Script runs and fails → Recovers to Work
+    // =========================================================================
+
+    // Queue work output BEFORE ticking for script - when script fails and recovers
+    // to work, the orchestrator will immediately spawn the work agent
+    runner.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Fixed implementation after script failure".to_string(),
+        }
+        .into(),
+    );
+
+    tick(); // This spawns script, script fails, recovers to work, spawns work agent
+
+    // Check iteration recorded script failure
+    let iterations = api.lock().unwrap().get_iterations(&task_id).unwrap();
+    let script_fail_iter = iterations.iter().find(|i| {
+        matches!(
+            i.outcome.as_ref(),
+            Some(Outcome::ScriptFailed { .. })
+        )
+    });
+    assert!(
+        script_fail_iter.is_some(),
+        "Should have ScriptFailed iteration"
+    );
+
+    // After tick: script failed → work stage → work agent produced artifact
+    let task = api.lock().unwrap().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Should be in work stage after script failure recovery"
+    );
+    assert_eq!(
+        task.phase,
+        Phase::AwaitingReview,
+        "Work agent should have produced artifact"
+    );
+
+    // =========================================================================
+    // Step 4: Verify feedback prompt → Approve work → Checks again (script passes)
+    // =========================================================================
+
+    // Verify worker got resume prompt with script failure context
+    let last_prompt = runner.calls().last().unwrap().prompt.clone();
+    assert!(
+        last_prompt.starts_with("<!orkestra-resume:feedback>"),
+        "Worker should get feedback prompt after script failure, got: {}...",
+        &last_prompt[..last_prompt.len().min(100)]
+    );
+    assert!(
+        last_prompt.contains("checks") || last_prompt.contains("Checks"),
+        "Feedback should mention the checks stage"
+    );
+
+    // Approve work → moves to checks again
+    api.lock().unwrap().approve(&task_id).unwrap();
+
+    let task = api.lock().unwrap().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("checks"));
+
+
+    // Queue review output BEFORE ticking - when script passes, it auto-advances
+    // to review, and the automated review stage spawns the agent immediately
+    runner.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
+            content: "All checks passed, implementation complete".to_string(),
+        }
+        .into(),
+    );
+
+    tick(); // Script runs and passes → review agent runs → task completes
+
+    // =========================================================================
+    // Step 5 & 6: Script passes → Review (automated) → Task Done/Archived
+    // =========================================================================
+    // The entire flow completes in one tick: script passes → review auto-runs → done
+
+    let task = api.lock().unwrap().get_task(&task_id).unwrap();
+    assert!(task.is_done() || task.is_archived(), "Task should be done/archived");
+
+    // Verify the complete iteration history
+    let iterations = api.lock().unwrap().get_iterations(&task_id).unwrap();
+
+    // Check that we have script failed iteration
+    let script_fail_iter = iterations.iter().find(|i| {
+        matches!(i.outcome.as_ref(), Some(Outcome::ScriptFailed { .. }))
+    });
+    assert!(
+        script_fail_iter.is_some(),
+        "Should have ScriptFailed iteration"
+    );
+
+    // Check that checks stage passed (approved) at some point
+    let checks_passed = iterations.iter().any(|i| {
+        i.stage == "checks" && matches!(i.outcome.as_ref(), Some(Outcome::Approved))
+    });
+    assert!(checks_passed, "Checks stage should have passed (approved)");
+
+    // Check that review completed
+    let review_approved = iterations.iter().any(|i| {
+        i.stage == "review" && matches!(i.outcome.as_ref(), Some(Outcome::Approved))
+    });
+    assert!(review_approved, "Review stage should have completed");
+
+    println!("\n=== Script Stage Recovery Test Complete ===");
+    let iterations = api.lock().unwrap().get_iterations(&task_id).unwrap();
+    for (i, iter) in iterations.iter().enumerate() {
+        println!(
+            "  Iteration {}: stage={}, outcome={:?}",
+            i + 1,
+            iter.stage,
+            iter.outcome.as_ref().map(|o| format!("{o}"))
+        );
+    }
 }

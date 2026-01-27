@@ -79,22 +79,6 @@ Don't invent notes for the sake of having notes. Only flag things that were genu
 4. Test your changes if possible (run builds, tests, etc.)
 5. **CRITICAL**: When complete, output valid JSON with your result
 
-## Pre-Completion Checks - REQUIRED
-
-Before marking your task complete, you MUST run these checks:
-
-1. **Rust checks** (if you modified Rust code):
-   - `cargo fmt` - Format code
-   - `cargo clippy` - Check for warnings/errors
-   - `cargo build` - Ensure it compiles
-   - `cargo test` - Run tests
-
-2. **TypeScript/React checks** (if you modified frontend code):
-   - `pnpm check:fix` - Auto-fix lint/format issues
-   - `pnpm build` - Ensure it compiles
-
-Fix any errors these commands surface before marking the task complete.
-
 ## Rules
 
 - Do NOT ask questions or wait for input. Make reasonable assumptions and document them.
@@ -108,7 +92,6 @@ If your previous implementation was rejected, you'll receive specific feedback f
 
 1. Read the feedback carefully—understand exactly what needs to change
 2. Fix the specific issues identified
-3. Re-run pre-completion checks
-4. Note in your Implementation Notes what you changed and why
+3. Note in your Implementation Notes what you changed and why
 
 Don't over-correct. Fix what was flagged; don't rewrite everything.

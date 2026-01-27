@@ -24,49 +24,37 @@ When principles conflict, earlier ones take precedence. Don't reject for minor p
 
 ## Instructions
 
-1. **Run Auto-Fixes First**
-   - Run TypeScript/React auto-fixes: `pnpm check:fix` (runs biome with --write)
-   - Run Rust formatting: `cargo fmt`
-   - Run Rust clippy fixes: `cargo clippy --fix --allow-dirty --allow-staged`
-   - These commands automatically fix common issues so you don't have to reject for trivial problems
-
-2. **Run All Checks**
-   - Run linting: `cargo clippy` (for Rust) or `pnpm lint` (for TypeScript/React)
-   - Run formatting check: `cargo fmt --check` or `pnpm format`
-   - Run tests: `cargo test` or `pnpm test`
-   - Build the project: `cargo build` or `pnpm build`
-
-3. **Review the Implementation**
+1. **Review the Implementation**
    - Compare the implementation against the approved plan
    - Check for architectural consistency
    - Look for security issues (injection vulnerabilities, exposed secrets, etc.)
    - Verify error handling is appropriate
    - Check for code duplication or unnecessary complexity
 
-4. **Make Your Decision**
-   - If all checks pass AND the implementation looks good: **approve**
-   - If any checks fail OR issues are found: **reject with specific feedback**
+2. **Make Your Decision**
+   - If the implementation looks good and matches the plan: **approve**
+   - If issues are found: **reject with specific feedback**
+
+Note: Automated checks (linting, formatting, tests, builds) are handled by a separate script stage. Focus your review on code quality, architecture, and correctness—not on running commands.
 
 ## Rules
 
-- Only run auto-fix commands - do NOT make manual code changes beyond that.
+- Do NOT make code changes. Your job is to review, not implement.
 - Do NOT ask questions or wait for input. Make a decision based on what you find.
 - Be thorough but fair. Don't reject for style nitpicks.
 - If rejecting, provide clear, actionable feedback so the worker knows exactly what to fix.
 
 ## What to Reject For
 
-- Test failures
-- Lint errors (not just warnings)
-- Build failures
 - Security vulnerabilities
 - Missing error handling for edge cases
 - Implementation doesn't match the plan
 - Obvious bugs or logic errors
+- Architectural principle violations (see above)
 
 ## What NOT to Reject For
 
-- Minor style preferences (if it passes lint, it's fine)
+- Minor style preferences
 - Theoretical performance concerns without evidence
 - Missing features not in the plan
 - Code that works but could be "more elegant"
@@ -78,7 +66,7 @@ Before making your final approve/reject decision, spawn a subagent to review you
 ### Review Process
 1. Complete your review and draft your decision
 2. Spawn a subagent with your findings and ask it to verify:
-   - **Accuracy**: Did you miss any failing tests or lint errors?
+   - **Accuracy**: Did you miss any issues in the code?
    - **Fairness**: Are you rejecting for valid reasons, not nitpicks?
    - **Completeness**: Did you check all modified files?
    - **Actionability**: If rejecting, is feedback specific enough to act on?
@@ -96,10 +84,10 @@ If stopping due to contradictory advice or nitpicks, note this in your output an
 ### Subagent Prompt Template
 ```
 Verify this code review assessment. Check for:
-1. Were all checks actually run (tests, lint, build)?
-2. Is the approve/reject decision justified by the findings?
-3. If rejecting, is the feedback specific and actionable?
-4. Are any rejections actually just style nitpicks?
+1. Is the approve/reject decision justified by the findings?
+2. If rejecting, is the feedback specific and actionable?
+3. Are any rejections actually just style nitpicks?
+4. Were all modified files reviewed?
 
 If issues with the assessment, list them. If the review is sound, say "VERIFIED".
 
@@ -112,10 +100,10 @@ Assessment to verify:
 Whether approving or rejecting, include observations that might be worth documenting:
 
 ### Always Note
-- **Issues you fixed with auto-fix**: Patterns the worker should follow next time
 - **Confusion in the implementation**: Signs the plan or codebase docs were unclear
 - **Non-obvious decisions**: Choices that future developers might question
 - **New patterns introduced**: Approaches that should be followed (or avoided) elsewhere
+- **Architectural concerns**: Potential issues that aren't blocking but worth tracking
 
 ### Format
 Include in your output **only if you noticed something noteworthy**:

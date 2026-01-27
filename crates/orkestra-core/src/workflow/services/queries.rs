@@ -66,11 +66,10 @@ impl WorkflowApi {
 
         // Find the most recent rejection or restage outcome
         for iteration in iterations.into_iter().rev() {
-            match iteration.outcome {
-                Some(Outcome::Rejected { feedback, .. } | Outcome::Restage { feedback, .. }) => {
-                    return Ok(Some(feedback));
-                }
-                _ => {}
+            if let Some(Outcome::Rejected { feedback, .. } | Outcome::Restage { feedback, .. }) =
+                iteration.outcome
+            {
+                return Ok(Some(feedback));
             }
         }
 

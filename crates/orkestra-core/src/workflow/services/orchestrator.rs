@@ -11,7 +11,6 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::TryRecvError;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -242,23 +241,18 @@ impl OrchestratorLoop {
             .map_err(|_| WorkflowError::Lock)?;
 
         for handle in executions.iter() {
-            loop {
-                match handle.events.try_recv() {
-                    Ok(event) => {
-                        // Handle errors per-task, don't let one task's error stop others
-                        match self.handle_execution_event(&handle.task_id, &handle.stage, event) {
-                            Ok(Some(e)) => events.push(e),
-                            Ok(None) => {}
-                            Err(e) => {
-                                // Convert error to error event instead of propagating
-                                events.push(OrchestratorEvent::Error {
-                                    task_id: Some(handle.task_id.clone()),
-                                    error: e.to_string(),
-                                });
-                            }
-                        }
+            while let Ok(event) = handle.events.try_recv() {
+                // Handle errors per-task, don't let one task's error stop others
+                match self.handle_execution_event(&handle.task_id, &handle.stage, event) {
+                    Ok(Some(e)) => events.push(e),
+                    Ok(None) => {}
+                    Err(e) => {
+                        // Convert error to error event instead of propagating
+                        events.push(OrchestratorEvent::Error {
+                            task_id: Some(handle.task_id.clone()),
+                            error: e.to_string(),
+                        });
                     }
-                    Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
                 }
             }
         }

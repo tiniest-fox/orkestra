@@ -10,6 +10,9 @@ use std::path::{Path, PathBuf};
 
 use crate::workflow::domain::{LogEntry, OrkAction, TodoItem, ToolInput};
 
+/// Maximum number of subagent tool uses to include per Task tool invocation.
+const MAX_SUBAGENT_TOOL_USES: usize = 5;
+
 /// Get path to Claude's session file.
 ///
 /// The `cwd` parameter should be the directory where the Claude session was started.
@@ -34,14 +37,23 @@ struct SessionLogParser {
     entries: Vec<LogEntry>,
     tool_use_map: HashMap<String, String>,
     task_tool_ids: HashSet<String>,
+    /// Maps Task tool_use_id to agentId for loading subagent sessions.
+    task_agent_map: HashMap<String, String>,
+    /// Session directory path (for locating subagent sessions).
+    session_dir: Option<PathBuf>,
+    /// Parent session ID (for locating subagent sessions).
+    session_id: Option<String>,
 }
 
 impl SessionLogParser {
-    fn new() -> Self {
+    fn new(session_dir: Option<PathBuf>, session_id: Option<String>) -> Self {
         Self {
             entries: Vec::new(),
             tool_use_map: HashMap::new(),
             task_tool_ids: HashSet::new(),
+            task_agent_map: HashMap::new(),
+            session_dir,
+            session_id,
         }
     }
 
@@ -141,6 +153,160 @@ impl SessionLogParser {
             });
         }
     }
+
+    /// Process a Task tool completion that contains subagent information.
+    ///
+    /// When a Task tool completes, the session entry has a top-level `toolUseResult` field
+    /// containing the agentId. We use this to load the subagent's session file and extract
+    /// its recent tool uses for display.
+    fn process_task_tool_use_result(
+        &mut self,
+        tool_use_result: &serde_json::Value,
+        entry: &serde_json::Value,
+    ) {
+        // Extract agentId from toolUseResult
+        let agent_id = match tool_use_result.get("agentId").and_then(|a| a.as_str()) {
+            Some(id) => id,
+            None => return,
+        };
+
+        // Find the corresponding tool_use_id from the message content
+        let tool_use_id = entry
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_array())
+            .and_then(|arr| {
+                arr.iter().find_map(|item| {
+                    if item.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
+                        item.get("tool_use_id").and_then(|id| id.as_str())
+                    } else {
+                        None
+                    }
+                })
+            });
+
+        let tool_use_id = match tool_use_id {
+            Some(id) => id.to_string(),
+            None => return,
+        };
+
+        // Store the mapping for potential future use
+        self.task_agent_map
+            .insert(tool_use_id.clone(), agent_id.to_string());
+
+        // Load and insert subagent tool uses
+        if let Some(subagent_entries) = self.load_subagent_tool_uses(agent_id, &tool_use_id) {
+            // Find the position of the Task ToolResult to insert subagent entries before it
+            // We search backwards from the end since the Task result was just added
+            let insert_pos = self
+                .entries
+                .iter()
+                .rposition(|e| matches!(e, LogEntry::ToolResult { tool, tool_use_id: id, .. } if tool == "Task" && id == &tool_use_id))
+                .unwrap_or(self.entries.len());
+
+            // Insert subagent entries before the Task result
+            for (i, entry) in subagent_entries.into_iter().enumerate() {
+                self.entries.insert(insert_pos + i, entry);
+            }
+        }
+    }
+
+    /// Load the last N tool uses from a subagent session file.
+    fn load_subagent_tool_uses(
+        &self,
+        agent_id: &str,
+        parent_task_id: &str,
+    ) -> Option<Vec<LogEntry>> {
+        let session_dir = self.session_dir.as_ref()?;
+        let session_id = self.session_id.as_ref()?;
+
+        // Subagent session path: {session_dir}/{session_id}/subagents/agent-{agentId}.jsonl
+        let subagent_path = session_dir
+            .join(session_id)
+            .join("subagents")
+            .join(format!("agent-{agent_id}.jsonl"));
+
+        if !subagent_path.exists() {
+            // Subagent session file may not exist if deleted or crashed
+            return None;
+        }
+
+        let file = match fs::File::open(&subagent_path) {
+            Ok(f) => f,
+            Err(_) => {
+                // Silently skip if we can't open the file
+                return None;
+            }
+        };
+
+        let reader = std::io::BufReader::new(file);
+        let mut tool_uses: Vec<LogEntry> = Vec::new();
+
+        for line in reader.lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            let v: serde_json::Value = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            // Only process assistant messages with tool_use
+            if v.get("type").and_then(|t| t.as_str()) != Some("assistant") {
+                continue;
+            }
+
+            if let Some(content) = v
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_array())
+            {
+                for item in content {
+                    if item.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                        let tool_name = item
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("unknown")
+                            .to_string();
+                        let tool_id = item
+                            .get("id")
+                            .and_then(|i| i.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let input = item.get("input").cloned().unwrap_or(serde_json::json!({}));
+                        let tool_input = parse_tool_input(&tool_name, &input);
+
+                        tool_uses.push(LogEntry::SubagentToolUse {
+                            tool: tool_name,
+                            id: tool_id,
+                            input: tool_input,
+                            parent_task_id: parent_task_id.to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Return only the last N tool uses
+        if tool_uses.len() > MAX_SUBAGENT_TOOL_USES {
+            Some(
+                tool_uses
+                    .into_iter()
+                    .rev()
+                    .take(MAX_SUBAGENT_TOOL_USES)
+                    .rev()
+                    .collect(),
+            )
+        } else {
+            Some(tool_uses)
+        }
+    }
 }
 
 /// Recover logs from Claude's session file.
@@ -162,9 +328,12 @@ pub fn recover_session_logs(session_id: &str, cwd: &Path) -> std::io::Result<Vec
         ));
     }
 
+    // Get session directory for subagent session lookup
+    let session_dir = path.parent().map(PathBuf::from);
+
     let file = fs::File::open(&path)?;
     let reader = std::io::BufReader::new(file);
-    let mut parser = SessionLogParser::new();
+    let mut parser = SessionLogParser::new(session_dir, Some(session_id.to_string()));
 
     for line in reader.lines() {
         let line = line?;
@@ -181,6 +350,11 @@ pub fn recover_session_logs(session_id: &str, cwd: &Path) -> std::io::Result<Vec
             .and_then(|p| p.as_str())
             .map(String::from);
         let is_subagent = parser.is_subagent_event(parent_id.as_ref());
+
+        // Check for toolUseResult at the top level (Task tool completion with subagent info)
+        if let Some(tool_use_result) = v.get("toolUseResult") {
+            parser.process_task_tool_use_result(tool_use_result, &v);
+        }
 
         if msg_type == "assistant" {
             if let Some(content) = v

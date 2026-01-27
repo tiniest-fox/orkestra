@@ -198,13 +198,14 @@ impl WorkflowApi {
 
         // Get the last stage from the most recent iteration
         let iterations = self.store.get_iterations(&task.id)?;
-        let last_stage = iterations
-            .last()
-            .map(|i| i.stage.clone())
-            .unwrap_or_else(|| {
+        let last_stage = iterations.last().map_or_else(
+            || {
                 self.workflow
-                    .first_stage().map_or_else(|| "planning".to_string(), |s| s.name.clone())
-            });
+                    .first_stage()
+                    .map_or_else(|| "planning".to_string(), |s| s.name.clone())
+            },
+            |i| i.stage.clone(),
+        );
 
         let now = chrono::Utc::now().to_rfc3339();
 

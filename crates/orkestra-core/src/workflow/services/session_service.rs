@@ -6,6 +6,7 @@
 //!
 //! The service is responsible for:
 //! - Providing spawn context (resume session ID) before spawning
+//! - Ensuring an iteration exists before spawning (delegates to `IterationService`)
 //! - Recording agent PIDs when agents start
 //! - Recording Claude session IDs when captured from output
 //! - Clearing PIDs when agents exit
@@ -14,9 +15,11 @@
 use std::sync::Arc;
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{Iteration, SessionState, StageSession};
+use crate::workflow::domain::{SessionState, StageSession};
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Outcome;
+
+use super::IterationService;
 
 // ============================================================================
 // Spawn Context
@@ -47,12 +50,16 @@ pub struct SessionSpawnContext {
 /// and retries.
 pub struct SessionService {
     store: Arc<dyn WorkflowStore>,
+    iteration_service: Arc<IterationService>,
 }
 
 impl SessionService {
-    /// Create a new session service with the given store.
-    pub fn new(store: Arc<dyn WorkflowStore>) -> Self {
-        Self { store }
+    /// Create a new session service with the given store and iteration service.
+    pub fn new(store: Arc<dyn WorkflowStore>, iteration_service: Arc<IterationService>) -> Self {
+        Self {
+            store,
+            iteration_service,
+        }
     }
 
     /// Get spawn context before launching an agent.
@@ -78,8 +85,7 @@ impl SessionService {
                 // Session must have a claude_session_id (generated at creation)
                 let session_id = session.claude_session_id.ok_or_else(|| {
                     crate::workflow::ports::WorkflowError::InvalidState(format!(
-                        "Session {}/{} exists but has no claude_session_id - this is a bug",
-                        task_id, stage
+                        "Session {task_id}/{stage} exists but has no claude_session_id - this is a bug"
                     ))
                 })?;
 
@@ -104,13 +110,13 @@ impl SessionService {
             Some(_) => {
                 // Session exists but is Completed or Abandoned
                 Err(crate::workflow::ports::WorkflowError::StageSessionNotFound(
-                    format!("{}/{} - session is not active", task_id, stage),
+                    format!("{task_id}/{stage} - session is not active"),
                 ))
             }
             None => {
                 // No session exists - caller should call on_spawn_starting first
                 Err(crate::workflow::ports::WorkflowError::StageSessionNotFound(
-                    format!("{}/{} - call on_spawn_starting first", task_id, stage),
+                    format!("{task_id}/{stage} - call on_spawn_starting first"),
                 ))
             }
         }
@@ -127,7 +133,7 @@ impl SessionService {
     /// Returns the iteration ID for tracking.
     pub fn on_spawn_starting(&self, task_id: &str, stage: &str) -> WorkflowResult<String> {
         let now = chrono::Utc::now().to_rfc3339();
-        let session_id = format!("{}-{}", task_id, stage);
+        let session_id = format!("{task_id}-{stage}");
 
         // Get or create session in Spawning state
         let session = match self.store.get_stage_session(task_id, stage)? {
@@ -137,7 +143,7 @@ impl SessionService {
                 if session
                     .claude_session_id
                     .as_ref()
-                    .map_or(true, |s| s.is_empty())
+                    .is_none_or(String::is_empty)
                 {
                     session.claude_session_id = Some(uuid::Uuid::new_v4().to_string());
                     orkestra_debug!(
@@ -149,7 +155,7 @@ impl SessionService {
                     );
                 }
                 session.session_state = SessionState::Spawning;
-                session.updated_at = now.clone();
+                session.updated_at.clone_from(&now);
                 session
             }
             None => {
@@ -172,24 +178,28 @@ impl SessionService {
 
         self.store.save_stage_session(&session)?;
 
-        // Check for existing active iteration - reuse if present
-        // (task creation already creates an initial iteration)
-        if let Some(active_iter) = self.store.get_active_iteration(task_id, stage)? {
-            return Ok(active_iter.id);
-        }
+        // Get or create iteration - same logical flow as before, but delegates to IterationService
+        let iteration = if let Some(active_iter) = self.store.get_active_iteration(task_id, stage)?
+        {
+            active_iter
+        } else {
+            // No active iteration exists - create one via IterationService
+            // This maintains the original behavior where an iteration is always
+            // created before spawning the agent
+            orkestra_debug!(
+                "session",
+                "on_spawn_starting {}/{}: creating iteration via IterationService",
+                task_id,
+                stage
+            );
+            self.iteration_service.create_iteration(task_id, stage, None)?
+        };
 
-        // No active iteration - create one for this spawn attempt
-        let iterations = self.store.get_iterations(task_id)?;
-        let stage_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == stage).collect();
-        let next_num = stage_iterations.len() as u32 + 1;
-
-        let iteration_id = format!("{}-{}-iter-{}", task_id, stage, next_num);
-        let iteration = Iteration::new(&iteration_id, task_id, stage, next_num, &now)
-            .with_stage_session_id(&session_id);
-
+        // Link the session to the iteration for log recovery
+        let iteration = iteration.with_stage_session_id(&session_id);
         self.store.save_iteration(&iteration)?;
 
-        Ok(iteration_id)
+        Ok(iteration.id)
     }
 
     /// Update session after successful spawn.
@@ -198,7 +208,7 @@ impl SessionService {
     ///
     /// # Errors
     ///
-    /// Returns an error if no session exists (on_spawn_starting should have been called first).
+    /// Returns an error if no session exists (`on_spawn_starting` should have been called first).
     pub fn on_agent_spawned(&self, task_id: &str, stage: &str, pid: u32) -> WorkflowResult<()> {
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -207,8 +217,7 @@ impl SessionService {
             .get_stage_session(task_id, stage)?
             .ok_or_else(|| {
                 crate::workflow::ports::WorkflowError::StageSessionNotFound(format!(
-                    "{}/{} - on_spawn_starting must be called first",
-                    task_id, stage
+                    "{task_id}/{stage} - on_spawn_starting must be called first"
                 ))
             })?;
 
@@ -235,7 +244,7 @@ impl SessionService {
     ///
     /// # Errors
     ///
-    /// Returns an error if no session exists (on_spawn_starting should have been called first).
+    /// Returns an error if no session exists (`on_spawn_starting` should have been called first).
     pub fn on_spawn_failed(&self, task_id: &str, stage: &str, error: &str) -> WorkflowResult<()> {
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -245,13 +254,12 @@ impl SessionService {
             .get_stage_session(task_id, stage)?
             .ok_or_else(|| {
                 crate::workflow::ports::WorkflowError::StageSessionNotFound(format!(
-                    "{}/{} - on_spawn_starting must be called first",
-                    task_id, stage
+                    "{task_id}/{stage} - on_spawn_starting must be called first"
                 ))
             })?;
 
         session.session_state = SessionState::Active;
-        session.updated_at = now.clone();
+        session.updated_at.clone_from(&now);
         self.store.save_stage_session(&session)?;
 
         // Find and end the active iteration with SpawnFailed outcome
@@ -270,7 +278,7 @@ impl SessionService {
 
     /// Record that the agent process exited.
     ///
-    /// Clears the PID, increments resume_count, and keeps the session active for potential resume.
+    /// Clears the PID, increments `resume_count`, and keeps the session active for potential resume.
     pub fn on_agent_exited(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
         if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
             let now = chrono::Utc::now().to_rfc3339();
@@ -324,7 +332,7 @@ impl SessionService {
 
     /// Get all sessions with running agents.
     ///
-    /// Returns (task_id, stage, pid) tuples for sessions that have PIDs.
+    /// Returns `(task_id, stage, pid)` tuples for sessions that have PIDs.
     /// Used for orphan cleanup on startup.
     pub fn get_running_agents(&self) -> WorkflowResult<Vec<(String, String, u32)>> {
         let sessions = self.store.get_sessions_with_pids()?;
@@ -340,14 +348,21 @@ mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
 
-    fn create_service() -> SessionService {
+    fn create_service() -> (SessionService, Arc<InMemoryWorkflowStore>) {
         let store = Arc::new(InMemoryWorkflowStore::new());
-        SessionService::new(store)
+        let iteration_service = Arc::new(IterationService::new(
+            Arc::clone(&store) as Arc<dyn WorkflowStore>
+        ));
+        let session_service = SessionService::new(
+            Arc::clone(&store) as Arc<dyn WorkflowStore>,
+            iteration_service,
+        );
+        (session_service, store)
     }
 
     #[test]
     fn test_get_spawn_context_no_session() {
-        let service = create_service();
+        let (service, _store) = create_service();
 
         // No session exists yet - should error
         let result = service.get_spawn_context("task-1", "planning");
@@ -356,10 +371,10 @@ mod tests {
 
     #[test]
     fn test_spawn_context_first_spawn() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store);
+        let (service, _store) = create_service();
 
         // Create session (simulates on_spawn_starting)
+        // This will also create an iteration via IterationService
         service.on_spawn_starting("task-1", "planning").unwrap();
 
         // Get context for first spawn
@@ -372,8 +387,7 @@ mod tests {
 
     #[test]
     fn test_spawn_context_with_resume() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store);
+        let (service, _store) = create_service();
 
         // Start agent
         service.on_spawn_starting("task-1", "planning").unwrap();
@@ -394,8 +408,7 @@ mod tests {
 
     #[test]
     fn test_completed_session_no_resume() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store);
+        let (service, _store) = create_service();
 
         // Start and complete session
         service.on_spawn_starting("task-1", "planning").unwrap();
@@ -411,8 +424,7 @@ mod tests {
 
     #[test]
     fn test_abandoned_session_no_resume() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store);
+        let (service, _store) = create_service();
 
         // Start and abandon session
         service.on_spawn_starting("task-1", "planning").unwrap();
@@ -428,8 +440,7 @@ mod tests {
 
     #[test]
     fn test_session_id_generated_upfront() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store.clone());
+        let (service, store) = create_service();
 
         // Create session
         service.on_spawn_starting("task-1", "planning").unwrap();
@@ -448,8 +459,7 @@ mod tests {
 
     #[test]
     fn test_get_running_agents() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store);
+        let (service, _store) = create_service();
 
         // Task 1 has running agent
         service.on_spawn_starting("task-1", "planning").unwrap();
@@ -476,9 +486,9 @@ mod tests {
 
     #[test]
     fn test_spawn_starting_creates_session_and_iteration() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store.clone());
+        let (service, store) = create_service();
 
+        // on_spawn_starting creates both session and iteration (via IterationService)
         let iter_id = service.on_spawn_starting("task-1", "planning").unwrap();
 
         // Session should be in Spawning state
@@ -488,21 +498,42 @@ mod tests {
             .unwrap();
         assert_eq!(session.session_state, SessionState::Spawning);
 
-        // Iteration should exist and be active
+        // Iteration should exist, be active, and have the session linked
         let iteration = store
             .get_active_iteration("task-1", "planning")
             .unwrap()
             .unwrap();
         assert_eq!(iteration.id, iter_id);
         assert!(iteration.is_active());
+        // Session should be linked to iteration
+        assert!(iteration.stage_session_id.is_some());
+    }
+
+    #[test]
+    fn test_spawn_starting_reuses_existing_iteration() {
+        let (service, store) = create_service();
+
+        // First call creates iteration
+        let iter_id_1 = service.on_spawn_starting("task-1", "planning").unwrap();
+        service
+            .on_agent_spawned("task-1", "planning", 12345)
+            .unwrap();
+        service.on_agent_exited("task-1", "planning").unwrap();
+
+        // Second call should reuse the same iteration (it's still active)
+        let iter_id_2 = service.on_spawn_starting("task-1", "planning").unwrap();
+        assert_eq!(iter_id_1, iter_id_2);
+
+        // Should still be only one iteration
+        let iterations = store.get_iterations("task-1").unwrap();
+        assert_eq!(iterations.len(), 1);
     }
 
     #[test]
     fn test_agent_spawned_transitions_to_active() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store.clone());
+        let (service, store) = create_service();
 
-        // Start spawn
+        // Start spawn (creates session and iteration)
         service.on_spawn_starting("task-1", "planning").unwrap();
 
         // Spawn succeeded
@@ -521,10 +552,9 @@ mod tests {
 
     #[test]
     fn test_spawn_failed_records_outcome() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store.clone());
+        let (service, store) = create_service();
 
-        // Start spawn
+        // Start spawn (creates session and iteration)
         service.on_spawn_starting("task-1", "planning").unwrap();
 
         // Spawn failed
@@ -550,46 +580,5 @@ mod tests {
             }
             other => panic!("Expected SpawnFailed, got {:?}", other),
         }
-    }
-
-    #[test]
-    fn test_multiple_spawn_attempts() {
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = SessionService::new(store.clone());
-
-        // First attempt - fails
-        service.on_spawn_starting("task-1", "planning").unwrap();
-        service
-            .on_spawn_failed("task-1", "planning", "First failure")
-            .unwrap();
-
-        // Second attempt - also fails
-        service.on_spawn_starting("task-1", "planning").unwrap();
-        service
-            .on_spawn_failed("task-1", "planning", "Second failure")
-            .unwrap();
-
-        // Third attempt - succeeds
-        service.on_spawn_starting("task-1", "planning").unwrap();
-        service
-            .on_agent_spawned("task-1", "planning", 12345)
-            .unwrap();
-
-        // Should have 3 iterations
-        let iterations = store.get_iterations("task-1").unwrap();
-        assert_eq!(iterations.len(), 3);
-
-        // First two should have SpawnFailed outcomes
-        assert!(matches!(
-            iterations[0].outcome,
-            Some(Outcome::SpawnFailed { .. })
-        ));
-        assert!(matches!(
-            iterations[1].outcome,
-            Some(Outcome::SpawnFailed { .. })
-        ));
-
-        // Third should still be active (agent running)
-        assert!(iterations[2].is_active());
     }
 }

@@ -32,6 +32,7 @@ mod agent_actions;
 mod api;
 mod human_actions;
 mod integration;
+mod iteration_service;
 mod orchestrator;
 mod prompt_service;
 mod queries;
@@ -63,6 +64,7 @@ pub(crate) use workflow_error;
 pub(crate) use workflow_warn;
 
 pub use api::WorkflowApi;
+pub use iteration_service::IterationService;
 pub use orchestrator::{OrchestratorError, OrchestratorEvent, OrchestratorLoop};
 pub use prompt_service::PromptService;
 pub use session_logs::{

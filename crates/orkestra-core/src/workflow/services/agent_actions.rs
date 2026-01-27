@@ -1,7 +1,7 @@
 //! Agent/orchestrator actions: agent started, process output, get pending tasks.
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{Iteration, IterationTrigger, Task};
+use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::StageOutput;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
@@ -117,17 +117,10 @@ impl WorkflowApi {
                     task.status = next_status.clone();
                     task.phase = Phase::Idle;
 
-                    // Create new iteration if moving to new stage
+                    // Create new iteration if moving to new stage via IterationService
                     if let Some(new_stage) = next_status.stage() {
-                        let iteration_count = self.store.get_iterations(&task.id)?.len() as u32;
-                        let iteration = Iteration::new(
-                            format!("{}-iter-{}", task.id, iteration_count + 1),
-                            &task.id,
-                            new_stage,
-                            iteration_count + 1,
-                            &now,
-                        );
-                        self.store.save_iteration(&iteration)?;
+                        self.iteration_service
+                            .create_iteration(&task.id, new_stage, None)?;
                     }
 
                     if task.is_done() {
@@ -163,20 +156,15 @@ impl WorkflowApi {
                 task.phase = Phase::Idle;
                 task.updated_at = now.clone();
 
-                // Create new iteration in target stage with restage context
-                let iteration_count = self.store.get_iterations(&task.id)?.len() as u32;
-                let iteration = Iteration::new(
-                    format!("{}-iter-{}", task.id, iteration_count + 1),
+                // Create new iteration in target stage with restage context via IterationService
+                self.iteration_service.create_iteration(
                     &task.id,
                     &target,
-                    iteration_count + 1,
-                    &now,
-                )
-                .with_context(IterationTrigger::Restage {
-                    from_stage: current_stage.clone(),
-                    feedback: feedback.clone(),
-                });
-                self.store.save_iteration(&iteration)?;
+                    Some(IterationTrigger::Restage {
+                        from_stage: current_stage.clone(),
+                        feedback: feedback.clone(),
+                    }),
+                )?;
             }
 
             StageOutput::Subtasks {

@@ -5,7 +5,7 @@ use std::thread;
 
 use crate::orkestra_debug;
 use crate::title::generate_title_sync;
-use crate::workflow::domain::{Iteration, Task};
+use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
 
@@ -43,9 +43,9 @@ impl WorkflowApi {
         // Save task immediately (non-blocking UI)
         self.store.save_task(&task)?;
 
-        // Create initial iteration
-        let iteration = Iteration::new(format!("{}-iter-1", id), &id, &first_stage.name, 1, &now);
-        self.store.save_iteration(&iteration)?;
+        // Create initial iteration via IterationService
+        self.iteration_service
+            .create_initial_iteration(&id, &first_stage.name)?;
 
         // ALWAYS spawn async setup (handles both git and no-git cases)
         spawn_async_setup(
@@ -115,9 +115,9 @@ impl WorkflowApi {
 
         self.store.save_task(&task)?;
 
-        // Create initial iteration
-        let iteration = Iteration::new(format!("{}-iter-1", id), &id, &first_stage.name, 1, &now);
-        self.store.save_iteration(&iteration)?;
+        // Create initial iteration via IterationService
+        self.iteration_service
+            .create_initial_iteration(&id, &first_stage.name)?;
 
         // Spawn async setup - no git work needed, just transitions to Idle
         spawn_async_setup(self.store.clone(), None, id.clone(), None);

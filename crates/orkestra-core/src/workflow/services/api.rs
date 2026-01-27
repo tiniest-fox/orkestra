@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use super::IterationService;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
@@ -22,6 +23,7 @@ pub struct WorkflowApi {
     pub(crate) workflow: WorkflowConfig,
     pub(crate) store: Arc<dyn WorkflowStore>,
     pub(crate) git_service: Option<Arc<dyn GitService>>,
+    pub(crate) iteration_service: Arc<IterationService>,
 }
 
 impl WorkflowApi {
@@ -29,10 +31,12 @@ impl WorkflowApi {
     ///
     /// Git service is not configured by default. Use `with_git()` to add it.
     pub fn new(workflow: WorkflowConfig, store: Arc<dyn WorkflowStore>) -> Self {
+        let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
         Self {
             workflow,
             store,
             git_service: None,
+            iteration_service,
         }
     }
 
@@ -45,10 +49,12 @@ impl WorkflowApi {
         store: Arc<dyn WorkflowStore>,
         git_service: Arc<dyn GitService>,
     ) -> Self {
+        let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
         Self {
             workflow,
             store,
             git_service: Some(git_service),
+            iteration_service,
         }
     }
 
@@ -60,6 +66,11 @@ impl WorkflowApi {
     /// Get the workflow configuration.
     pub fn workflow(&self) -> &WorkflowConfig {
         &self.workflow
+    }
+
+    /// Get the iteration service (shared reference).
+    pub fn iteration_service(&self) -> &Arc<IterationService> {
+        &self.iteration_service
     }
 
     /// Check if a stage is automated.

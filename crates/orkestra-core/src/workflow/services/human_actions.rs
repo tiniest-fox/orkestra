@@ -1,7 +1,7 @@
 //! Human/UI actions: approve, reject, answer questions.
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{Iteration, IterationTrigger, QuestionAnswer, Task};
+use crate::workflow::domain::{IterationTrigger, QuestionAnswer, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase};
 
@@ -46,18 +46,11 @@ impl WorkflowApi {
         task.phase = Phase::Idle;
         task.updated_at = now.clone();
 
-        // If we moved to a new stage, create new iteration
+        // If we moved to a new stage, create new iteration via IterationService
         if let Some(new_stage) = next_status.stage() {
             if new_stage != current_stage {
-                let iteration_count = self.store.get_iterations(&task.id)?.len() as u32;
-                let iteration = Iteration::new(
-                    format!("{}-iter-{}", task.id, iteration_count + 1),
-                    &task.id,
-                    new_stage,
-                    iteration_count + 1,
-                    &now,
-                );
-                self.store.save_iteration(&iteration)?;
+                self.iteration_service
+                    .create_iteration(&task.id, new_stage, None)?;
             }
         }
 
@@ -113,19 +106,14 @@ impl WorkflowApi {
         task.phase = Phase::Idle;
         task.updated_at = now.clone();
 
-        // Create new iteration in same stage with feedback context
-        let iteration_count = self.store.get_iterations(&task.id)?.len() as u32;
-        let iteration = Iteration::new(
-            format!("{}-iter-{}", task.id, iteration_count + 1),
+        // Create new iteration in same stage with feedback context via IterationService
+        self.iteration_service.create_iteration(
             &task.id,
             &current_stage,
-            iteration_count + 1,
-            &now,
-        )
-        .with_context(IterationTrigger::Feedback {
-            feedback: feedback.to_string(),
-        });
-        self.store.save_iteration(&iteration)?;
+            Some(IterationTrigger::Feedback {
+                feedback: feedback.to_string(),
+            }),
+        )?;
 
         self.store.save_task(&task)?;
         Ok(task)
@@ -173,17 +161,12 @@ impl WorkflowApi {
 
         let now = chrono::Utc::now().to_rfc3339();
 
-        // Create new iteration with Answers context
-        let iteration_count = self.store.get_iterations(&task.id)?.len() as u32;
-        let iteration = Iteration::new(
-            format!("{}-iter-{}", task.id, iteration_count + 1),
+        // Create new iteration with Answers context via IterationService
+        self.iteration_service.create_iteration(
             &task.id,
             &current_stage,
-            iteration_count + 1,
-            &now,
-        )
-        .with_context(IterationTrigger::Answers { answers });
-        self.store.save_iteration(&iteration)?;
+            Some(IterationTrigger::Answers { answers }),
+        )?;
 
         // Task stays in same stage, phase goes back to Idle so agent can resume
         task.phase = Phase::Idle;
@@ -233,17 +216,12 @@ impl WorkflowApi {
         task.phase = Phase::Idle;
         task.updated_at = now.clone();
 
-        // Create new iteration with Interrupted trigger to indicate recovery
-        let iteration_count = iterations.len() as u32;
-        let iteration = Iteration::new(
-            format!("{}-iter-{}", task.id, iteration_count + 1),
+        // Create new iteration with Interrupted trigger to indicate recovery via IterationService
+        self.iteration_service.create_iteration(
             &task.id,
             &last_stage,
-            iteration_count + 1,
-            &now,
-        )
-        .with_context(IterationTrigger::Interrupted);
-        self.store.save_iteration(&iteration)?;
+            Some(IterationTrigger::Interrupted),
+        )?;
 
         // Save updated task
         self.store.save_task(&task)?;
@@ -268,14 +246,8 @@ impl WorkflowApi {
             .current_stage()
             .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?;
 
-        if let Some(mut iteration) = self.store.get_active_iteration(&task.id, current_stage)? {
-            let now = chrono::Utc::now().to_rfc3339();
-            iteration.ended_at = Some(now);
-            iteration.outcome = Some(outcome);
-            self.store.save_iteration(&iteration)?;
-        }
-
-        Ok(())
+        self.iteration_service
+            .end_iteration(&task.id, current_stage, outcome)
     }
 }
 

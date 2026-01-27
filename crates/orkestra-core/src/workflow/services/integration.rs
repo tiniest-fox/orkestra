@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{Iteration, IterationTrigger, Task};
+use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::ports::{GitError, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase, Status};
 
@@ -153,26 +153,18 @@ impl WorkflowApi {
             ));
         }
 
-        let now = chrono::Utc::now().to_rfc3339();
-
-        // Record integration failure in current iteration
-        let iterations = self.store.get_iterations(&task.id)?;
-        let iteration_count = iterations.len() as u32;
-
-        // Create a new iteration to record the integration failure
-        let mut integration_iter = Iteration::new(
-            format!("{}-integration-fail", task.id),
+        // Record integration failure via IterationService
+        // Use "integration" as a pseudo-stage to track the failure
+        self.iteration_service
+            .create_iteration(&task.id, "integration", None)?;
+        self.iteration_service.end_iteration(
             &task.id,
             "integration",
-            iteration_count + 1,
-            &now,
-        );
-        integration_iter.ended_at = Some(now.clone());
-        integration_iter.outcome = Some(Outcome::IntegrationFailed {
-            error: error.to_string(),
-            conflict_files: conflict_files.clone(),
-        });
-        self.store.save_iteration(&integration_iter)?;
+            Outcome::IntegrationFailed {
+                error: error.to_string(),
+                conflict_files: conflict_files.clone(),
+            },
+        )?;
 
         // Determine which stage to return to
         let recovery_stage = self
@@ -181,24 +173,21 @@ impl WorkflowApi {
             .to_string();
 
         // Move task back to recovery stage
+        let now = chrono::Utc::now().to_rfc3339();
         task.status = Status::active(&recovery_stage);
         task.phase = Phase::Idle;
         task.completed_at = None;
-        task.updated_at = now.clone();
+        task.updated_at = now;
 
-        // Create new iteration in recovery stage with integration error context
-        let iteration = Iteration::new(
-            format!("{}-iter-{}", task.id, iteration_count + 2),
+        // Create new iteration in recovery stage with integration error context via IterationService
+        self.iteration_service.create_iteration(
             &task.id,
             &recovery_stage,
-            iteration_count + 2,
-            &now,
-        )
-        .with_context(IterationTrigger::Integration {
-            message: error.to_string(),
-            conflict_files: conflict_files.clone(),
-        });
-        self.store.save_iteration(&iteration)?;
+            Some(IterationTrigger::Integration {
+                message: error.to_string(),
+                conflict_files: conflict_files.clone(),
+            }),
+        )?;
 
         self.store.save_task(&task)?;
         Ok(task)

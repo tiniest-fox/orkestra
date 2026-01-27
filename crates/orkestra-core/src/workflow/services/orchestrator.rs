@@ -128,9 +128,13 @@ impl OrchestratorLoop {
         let spawner: Arc<dyn ProcessSpawner> = Arc::new(ClaudeProcessSpawner::new());
         let runner = Arc::new(AgentRunner::new(spawner));
 
+        // Get iteration service from api to share with executor
+        let iteration_service = api.lock().unwrap().iteration_service().clone();
+
         let executor = Arc::new(TaskExecutionService::new(
             runner,
             store,
+            iteration_service,
             workflow,
             project_root,
         ));
@@ -705,14 +709,18 @@ mod tests {
         let store: Arc<dyn WorkflowStore> = Arc::new(InMemoryWorkflowStore::new());
         let api = Arc::new(Mutex::new(WorkflowApi::new(
             workflow.clone(),
-            Arc::new(InMemoryWorkflowStore::new()),
+            Arc::clone(&store),
         )));
+
+        // Get iteration service from api
+        let iteration_service = api.lock().unwrap().iteration_service().clone();
 
         let spawner: Arc<dyn ProcessSpawner> = Arc::new(ClaudeProcessSpawner::new());
         let runner = Arc::new(AgentRunner::new(spawner));
         let executor = Arc::new(TaskExecutionService::new(
             runner,
             store,
+            iteration_service,
             workflow,
             PathBuf::from("/tmp"),
         ));

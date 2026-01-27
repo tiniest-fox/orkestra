@@ -22,6 +22,7 @@ use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 
 use super::prompt_service::PromptService;
 use super::session_service::SessionService;
+use super::IterationService;
 use super::{workflow_error, workflow_warn};
 
 // ============================================================================
@@ -120,13 +121,14 @@ impl TaskExecutionService {
     pub fn new(
         runner: Arc<dyn AgentRunnerTrait>,
         store: Arc<dyn WorkflowStore>,
+        iteration_service: Arc<IterationService>,
         workflow: WorkflowConfig,
         project_root: PathBuf,
     ) -> Self {
         Self {
             runner,
             prompt_service: PromptService::new(project_root),
-            session_service: SessionService::new(store),
+            session_service: SessionService::new(store, iteration_service),
             workflow,
         }
     }
@@ -519,9 +521,15 @@ mod tests {
     fn test_session_id_generated_upfront() {
         let _workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
+        let iteration_service = Arc::new(IterationService::new(
+            Arc::clone(&store) as Arc<dyn WorkflowStore>,
+        ));
 
-        // Create session service directly for testing
-        let session_service = SessionService::new(store.clone());
+        // Create session service with iteration service
+        let session_service = SessionService::new(
+            Arc::clone(&store) as Arc<dyn WorkflowStore>,
+            iteration_service,
+        );
 
         // Start an agent - session ID is generated upfront
         session_service

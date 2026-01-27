@@ -286,11 +286,15 @@ fn setup_test() -> TestContext {
     )));
     let project_root = PathBuf::from(temp_dir.path());
 
+    // Get iteration service from api
+    let iteration_service = api.lock().unwrap().iteration_service().clone();
+
     // Create mock runner and execution service
     let runner = Arc::new(MockAgentRunner::new());
     let executor = Arc::new(TaskExecutionService::new(
         runner.clone(),
         store,
+        iteration_service,
         loaded_workflow,
         project_root,
     ));
@@ -958,11 +962,15 @@ integration:
     )));
     let project_root = PathBuf::from(temp_dir.path());
 
+    // Get iteration service from api
+    let iteration_service = api.lock().unwrap().iteration_service().clone();
+
     // Create mock runner and execution service
     let runner = Arc::new(MockAgentRunner::new());
     let executor = Arc::new(TaskExecutionService::new(
         runner.clone(),
         store,
+        iteration_service,
         workflow,
         project_root,
     ));

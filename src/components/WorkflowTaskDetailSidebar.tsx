@@ -530,8 +530,33 @@ export function WorkflowTaskDetailSidebar({
   return (
     <div className="w-1/2 flex-shrink-0 bg-white shadow-xl border-l border-gray-200 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex-shrink-0 flex items-center justify-between p-4 border-b border-gray-200">
-        <div className="flex items-center gap-2">
+      <div className="flex-shrink-0 p-4 border-b border-gray-200">
+        {/* Top row: Title and close button */}
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="font-semibold text-lg text-gray-900 line-clamp-2">{task.title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
+          >
+            <svg
+              className="w-5 h-5 text-gray-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        {/* Bottom row: ID and badges */}
+        <div className="flex items-center gap-2 mt-2">
           <span className="font-mono text-sm text-gray-500">{task.id}</span>
           <span className={`px-2 py-0.5 text-xs rounded-full ${statusColor}`}>{statusLabel}</span>
           {taskHasQuestions && (
@@ -545,26 +570,6 @@ export function WorkflowTaskDetailSidebar({
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1 hover:bg-gray-100 rounded transition-colors"
-        >
-          <svg
-            className="w-5 h-5 text-gray-500"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
       </div>
 
       {/* Tab Bar */}
@@ -593,8 +598,7 @@ export function WorkflowTaskDetailSidebar({
         {/* Details Tab */}
         {activeTab === "details" && (
           <div className="flex-1 overflow-auto p-4">
-            <h2 className="font-semibold text-lg text-gray-900">{task.title}</h2>
-            {task.description && <p className="text-gray-600 text-sm mt-2">{task.description}</p>}
+            {task.description && <p className="text-gray-600 text-sm">{task.description}</p>}
             {task.status.type === "failed" && task.status.error && (
               <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
                 <div className="text-xs font-medium text-red-700 mb-1">Error</div>

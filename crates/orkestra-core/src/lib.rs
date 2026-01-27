@@ -1,3 +1,7 @@
+// Suppress pedantic clippy warnings we're not addressing yet
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::must_use_candidate)]
+
 // Core modules - new workflow system
 pub mod adapters;
 pub mod debug_log;

@@ -391,8 +391,9 @@ fn test_exhaustive_workflow_flow() {
     // Questions are now stored in iteration outcome, not on task
     let questions = ctx.api().get_pending_questions(&task_id).unwrap();
     assert_eq!(questions.len(), 2);
-    assert!(questions[0].is_multiple_choice());
-    assert!(!questions[1].is_multiple_choice());
+    // All questions should have options (the UI adds an "Other" option automatically)
+    assert!(!questions[0].options.is_empty());
+    assert!(questions[1].options.is_empty()); // Legacy test data may not have options
 
     // Human answers questions
     let answers = vec![

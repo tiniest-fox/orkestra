@@ -21,7 +21,8 @@
           },
           "options": {
             "type": "array",
-            "description": "Available answer options",
+            "minItems": 1,
+            "description": "Available answer options (required - at least one option)",
             "items": {
               "type": "object",
               "properties": {

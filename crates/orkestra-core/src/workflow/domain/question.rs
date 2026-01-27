@@ -21,14 +21,17 @@ pub struct Question {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
 
-    /// Pre-defined options for multiple choice questions.
-    /// Empty for free-form questions.
+    /// Pre-defined options for the question.
+    /// All questions should have options; the UI automatically adds an "Other" option
+    /// for freeform responses.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub options: Vec<QuestionOption>,
 }
 
 impl Question {
-    /// Create a new free-form question.
+    /// Create a new question.
+    /// Note: Options should be added via `with_options()` or `with_option()`.
+    /// All questions should have at least one option.
     pub fn new(id: impl Into<String>, question: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -66,11 +69,6 @@ impl Question {
         }
         self.options.push(option);
         self
-    }
-
-    /// Check if this is a multiple choice question.
-    pub fn is_multiple_choice(&self) -> bool {
-        !self.options.is_empty()
     }
 }
 
@@ -150,7 +148,6 @@ mod tests {
         assert_eq!(q.question, "What is the target framework?");
         assert!(q.context.is_none());
         assert!(q.options.is_empty());
-        assert!(!q.is_multiple_choice());
     }
 
     #[test]
@@ -162,13 +159,12 @@ mod tests {
     }
 
     #[test]
-    fn test_question_multiple_choice() {
+    fn test_question_with_options() {
         let q = Question::new("q1", "Which database?").with_options(vec![
             QuestionOption::new("postgres", "PostgreSQL"),
             QuestionOption::new("mysql", "MySQL"),
             QuestionOption::new("sqlite", "SQLite"),
         ]);
-        assert!(q.is_multiple_choice());
         assert_eq!(q.options.len(), 3);
     }
 

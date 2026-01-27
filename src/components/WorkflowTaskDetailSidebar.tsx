@@ -121,6 +121,10 @@ function QuestionFormSection({
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
+  // Track which questions have "Other" selected
+  const [otherSelected, setOtherSelected] = useState<Record<string, boolean>>({});
+  // Track custom text for "Other" responses
+  const [otherText, setOtherText] = useState<Record<string, string>>({});
 
   // Reset current index when questions change
   // Track by length and first question ID to detect meaningful changes
@@ -134,17 +138,29 @@ function QuestionFormSection({
     const formattedAnswers: WorkflowQuestionAnswer[] = questions.map((q) => ({
       question_id: q.id,
       question: q.question,
-      answer: answers[q.id] || "",
+      // Use otherText if "Other" was selected, otherwise use the selected option
+      answer: otherSelected[q.id] ? otherText[q.id] || "" : answers[q.id] || "",
       answered_at: new Date().toISOString(),
     }));
     onSubmit(formattedAnswers);
   };
 
-  const allAnswered = questions.every((q) => answers[q.id]?.trim());
+  // Check if all questions are answered (considering "Other" selections)
+  const allAnswered = questions.every((q) => {
+    if (otherSelected[q.id]) {
+      return otherText[q.id]?.trim();
+    }
+    return answers[q.id]?.trim();
+  });
   const currentQuestion = questions[currentIndex];
   const isFirstQuestion = currentIndex === 0;
   const isLastQuestion = currentIndex === questions.length - 1;
-  const currentAnswered = currentQuestion && answers[currentQuestion.id]?.trim();
+  // Check if current question is answered (considering "Other" selection)
+  const currentAnswered =
+    currentQuestion &&
+    (otherSelected[currentQuestion.id]
+      ? otherText[currentQuestion.id]?.trim()
+      : answers[currentQuestion.id]?.trim());
 
   const handlePrevious = () => {
     if (!isFirstQuestion) {
@@ -176,40 +192,61 @@ function QuestionFormSection({
         {currentQuestion.context && (
           <div className="text-xs text-gray-500 mb-2">{currentQuestion.context}</div>
         )}
-        {currentQuestion.options && currentQuestion.options.length > 0 ? (
-          <div className="space-y-1">
-            {currentQuestion.options.map((option) => (
-              <label key={option.id} className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name={currentQuestion.id}
-                  value={option.id}
-                  checked={answers[currentQuestion.id] === option.id}
-                  onChange={() =>
-                    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: option.id }))
-                  }
-                  className="text-blue-600 mt-0.5"
-                />
-                <div>
-                  <span className="text-sm">{option.label}</span>
-                  {option.description && (
-                    <span className="text-xs text-gray-500 ml-1">- {option.description}</span>
-                  )}
-                </div>
-              </label>
-            ))}
-          </div>
-        ) : (
-          <textarea
-            value={answers[currentQuestion.id] || ""}
-            onChange={(e) =>
-              setAnswers((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))
-            }
-            placeholder="Type your answer..."
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            rows={2}
-          />
-        )}
+        <div className="space-y-1">
+          {/* Render predefined options */}
+          {currentQuestion.options?.map((option) => (
+            <label key={option.id} className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name={currentQuestion.id}
+                value={option.id}
+                checked={
+                  answers[currentQuestion.id] === option.id && !otherSelected[currentQuestion.id]
+                }
+                onChange={() => {
+                  setAnswers((prev) => ({ ...prev, [currentQuestion.id]: option.id }));
+                  setOtherSelected((prev) => ({ ...prev, [currentQuestion.id]: false }));
+                }}
+                className="text-blue-600 mt-0.5"
+              />
+              <div>
+                <span className="text-sm">{option.label}</span>
+                {option.description && (
+                  <span className="text-xs text-gray-500 ml-1">- {option.description}</span>
+                )}
+              </div>
+            </label>
+          ))}
+          {/* "Other" option - always present */}
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name={currentQuestion.id}
+              value="__other__"
+              checked={otherSelected[currentQuestion.id] === true}
+              onChange={() => {
+                setOtherSelected((prev) => ({ ...prev, [currentQuestion.id]: true }));
+                setAnswers((prev) => ({ ...prev, [currentQuestion.id]: "" }));
+              }}
+              className="text-blue-600 mt-0.5"
+            />
+            <div>
+              <span className="text-sm">Other (custom response)</span>
+            </div>
+          </label>
+          {/* Text input for "Other" - shown when "Other" is selected */}
+          {otherSelected[currentQuestion.id] && (
+            <textarea
+              value={otherText[currentQuestion.id] || ""}
+              onChange={(e) =>
+                setOtherText((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))
+              }
+              placeholder="Type your custom response..."
+              className="w-full mt-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              rows={2}
+            />
+          )}
+        </div>
       </div>
 
       {/* Navigation controls */}

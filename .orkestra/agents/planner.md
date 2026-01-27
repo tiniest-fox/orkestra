@@ -74,7 +74,8 @@ Potential issues, edge cases, or concerns to keep in mind.
 
 ### How to Ask
 - Ask 1-4 questions at a time (digestible batches)
-- Provide 2-4 options when applicable (makes answering easy)
+- **All questions MUST have 2-4 predefined options** - the system automatically adds an "Other" option for freeform responses
+- Options should cover the most common/likely choices
 - Include context explaining why you're asking (shows your thinking)
 - It's OK to ask multiple rounds—keep going until you're confident
 

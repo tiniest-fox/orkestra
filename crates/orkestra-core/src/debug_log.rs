@@ -104,6 +104,7 @@ pub fn log(component: &str, message: &str) {
 }
 
 /// Rotate the log file by keeping only the last `TRUNCATE_TO` bytes.
+#[allow(clippy::cast_possible_wrap)]
 fn rotate_log(file: &mut File) {
     // Seek to position where we want to start keeping content
     if file.seek(SeekFrom::End(-(TRUNCATE_TO as i64))).is_err() {

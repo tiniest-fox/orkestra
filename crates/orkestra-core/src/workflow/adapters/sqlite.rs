@@ -273,6 +273,7 @@ impl WorkflowStore for SqliteWorkflowStore {
         Ok(result)
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     fn save_iteration(&self, iteration: &Iteration) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
 
@@ -386,6 +387,7 @@ impl WorkflowStore for SqliteWorkflowStore {
         Ok(sessions)
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     fn save_stage_session(&self, session: &StageSession) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
 
@@ -460,6 +462,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     })
 }
 
+#[allow(clippy::cast_sign_loss)]
 fn row_to_iteration(row: &rusqlite::Row) -> rusqlite::Result<Iteration> {
     let iteration_number: i32 = row.get(3)?;
     let outcome_json: Option<String> = row.get(6)?;
@@ -500,6 +503,7 @@ fn parse_phase(s: &str) -> Phase {
     }
 }
 
+#[allow(clippy::cast_sign_loss)]
 fn row_to_stage_session(row: &rusqlite::Row) -> rusqlite::Result<StageSession> {
     let agent_pid: Option<i32> = row.get(4)?;
     let resume_count: i32 = row.get(5)?;

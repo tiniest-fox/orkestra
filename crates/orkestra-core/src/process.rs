@@ -221,7 +221,7 @@ fn get_descendant_pids(pid: u32) -> Vec<u32> {
 /// 2. Kill the main process group (catches direct children in same group)
 /// 3. Kill any remaining descendants that were in different process groups
 #[cfg(unix)]
-#[allow(clippy::cast_possible_wrap)]
+#[allow(clippy::cast_possible_wrap, clippy::similar_names)]
 pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
     // Collect all descendants BEFORE killing (they may reparent to init otherwise)
     let descendants = get_descendant_pids(pid);

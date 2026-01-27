@@ -38,6 +38,7 @@ impl IterationService {
     ///
     /// # Returns
     /// The newly created iteration
+    #[allow(clippy::cast_possible_truncation)]
     pub fn create_iteration(
         &self,
         task_id: &str,

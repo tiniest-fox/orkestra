@@ -8,15 +8,35 @@ import {
 import { mockInvoke, resetMocks } from "../test/mocks/tauri";
 import { WorkflowTaskDetailSidebar } from "./WorkflowTaskDetailSidebar";
 
-// Mock the workflow hooks
+// Create stable mock functions outside the factory
+const mockApprove = vi.fn(() => Promise.resolve());
+const mockReject = vi.fn(() => Promise.resolve());
+const mockAnswerQuestions = vi.fn(() => Promise.resolve());
+const mockRetry = vi.fn(() => Promise.resolve());
+const mockGetIterations = vi.fn(() => Promise.resolve([]));
+const mockGetArtifact = vi.fn(() => Promise.resolve(null));
+const mockGetPendingQuestions = vi.fn(() => Promise.resolve([]));
+const mockGetCurrentStage = vi.fn(() => Promise.resolve(null));
+const mockGetRejectionFeedback = vi.fn(() => Promise.resolve(null));
+const mockGetLogs = vi.fn(() => Promise.resolve([]));
+const mockGetStagesWithLogs = vi.fn(() => Promise.resolve([]));
+
+// Mock the workflow hooks with stable references
 vi.mock("../hooks/useWorkflow", () => ({
   useWorkflowActions: () => ({
-    approve: vi.fn(() => Promise.resolve()),
-    reject: vi.fn(() => Promise.resolve()),
-    answerQuestions: vi.fn(() => Promise.resolve()),
+    approve: mockApprove,
+    reject: mockReject,
+    answerQuestions: mockAnswerQuestions,
+    retry: mockRetry,
   }),
   useWorkflowQueries: () => ({
-    getIterations: vi.fn(() => Promise.resolve([])),
+    getIterations: mockGetIterations,
+    getArtifact: mockGetArtifact,
+    getPendingQuestions: mockGetPendingQuestions,
+    getCurrentStage: mockGetCurrentStage,
+    getRejectionFeedback: mockGetRejectionFeedback,
+    getLogs: mockGetLogs,
+    getStagesWithLogs: mockGetStagesWithLogs,
   }),
 }));
 
@@ -150,10 +170,10 @@ describe("WorkflowTaskDetailSidebar", () => {
       />,
     );
 
-    // Should have Details, Plan, Iterations, Logs tabs
+    // Should have Details, Plan, Activity, Logs tabs
     expect(screen.getByRole("button", { name: "Details" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Plan" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Iterations" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Activity" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Logs" })).toBeInTheDocument();
   });
 });

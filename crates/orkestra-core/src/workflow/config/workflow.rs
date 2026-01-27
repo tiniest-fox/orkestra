@@ -102,38 +102,77 @@ impl WorkflowConfig {
             return errors;
         }
 
-        // Check for duplicate stage names
-        let mut seen_names = std::collections::HashSet::new();
+        // Build validation context
+        let stage_names: Vec<&str> = self.stages.iter().map(|s| s.name.as_str()).collect();
+        let stage_names_set: std::collections::HashSet<_> = stage_names.iter().copied().collect();
+        let artifact_names: Vec<&str> = self.stages.iter().map(|s| s.artifact.as_str()).collect();
+        let artifact_names_set: std::collections::HashSet<_> =
+            artifact_names.iter().copied().collect();
+
+        // Run all validations
+        self.validate_no_duplicate_stage_names(&mut errors);
+        self.validate_no_duplicate_artifact_names(&mut errors);
+        self.validate_input_references(&artifact_names, &artifact_names_set, &mut errors);
+        self.validate_input_ordering(&artifact_names_set, &mut errors);
+        self.validate_restage_targets(&stage_names, &stage_names_set, &mut errors);
+        self.validate_integration_on_failure(&stage_names, &stage_names_set, &mut errors);
+        self.validate_script_stages(&stage_names, &stage_names_set, &mut errors);
+
+        errors
+    }
+
+    /// Check for duplicate stage names.
+    fn validate_no_duplicate_stage_names(&self, errors: &mut Vec<String>) {
+        let mut seen = std::collections::HashSet::new();
         for stage in &self.stages {
-            if !seen_names.insert(&stage.name) {
-                errors.push(format!("Duplicate stage name: {}", stage.name));
+            if !seen.insert(&stage.name) {
+                errors.push(format!(
+                    "Duplicate stage name \"{}\". Each stage must have a unique name.",
+                    stage.name
+                ));
             }
         }
+    }
 
-        // Check for duplicate artifact names
-        let mut seen_artifacts = std::collections::HashSet::new();
+    /// Check for duplicate artifact names.
+    fn validate_no_duplicate_artifact_names(&self, errors: &mut Vec<String>) {
+        let mut seen = std::collections::HashSet::new();
         for stage in &self.stages {
-            if !seen_artifacts.insert(&stage.artifact) {
-                errors.push(format!("Duplicate artifact name: {}", stage.artifact));
+            if !seen.insert(&stage.artifact) {
+                errors.push(format!(
+                    "Duplicate artifact name \"{}\". Each stage must produce a unique artifact.",
+                    stage.artifact
+                ));
             }
         }
+    }
 
-        // Check that input references exist
-        let artifact_names: std::collections::HashSet<_> =
-            self.stages.iter().map(|s| s.artifact.as_str()).collect();
-
+    /// Check that all input references point to existing artifacts.
+    fn validate_input_references(
+        &self,
+        artifact_names: &[&str],
+        artifact_names_set: &std::collections::HashSet<&str>,
+        errors: &mut Vec<String>,
+    ) {
         for stage in &self.stages {
             for input in &stage.inputs {
-                if !artifact_names.contains(input.as_str()) {
+                if !artifact_names_set.contains(input.as_str()) {
                     errors.push(format!(
-                        "Stage '{}' references unknown input artifact: {}",
-                        stage.name, input
+                        "Stage \"{}\" references input artifact \"{}\" which doesn't exist. \
+                         Available artifacts: {:?}",
+                        stage.name, input, artifact_names
                     ));
                 }
             }
         }
+    }
 
-        // Check that inputs come from earlier stages
+    /// Check that inputs come from earlier stages (no forward references).
+    fn validate_input_ordering(
+        &self,
+        artifact_names_set: &std::collections::HashSet<&str>,
+        errors: &mut Vec<String>,
+    ) {
         for (idx, stage) in self.stages.iter().enumerate() {
             let earlier_artifacts: std::collections::HashSet<_> = self.stages[..idx]
                 .iter()
@@ -141,80 +180,111 @@ impl WorkflowConfig {
                 .collect();
 
             for input in &stage.inputs {
-                if !earlier_artifacts.contains(input.as_str()) {
-                    // It exists but comes from a later stage
-                    if artifact_names.contains(input.as_str()) {
-                        errors.push(format!(
-                            "Stage '{}' references input '{}' from a later stage",
-                            stage.name, input
-                        ));
-                    }
-                }
-            }
-        }
-
-        // Check that restage targets are valid stage names
-        let stage_names: std::collections::HashSet<_> =
-            self.stages.iter().map(|s| s.name.as_str()).collect();
-
-        for stage in &self.stages {
-            for target in &stage.capabilities.supports_restage {
-                if !stage_names.contains(target.as_str()) {
+                if !earlier_artifacts.contains(input.as_str())
+                    && artifact_names_set.contains(input.as_str())
+                {
+                    let producing_stage = self
+                        .stages
+                        .iter()
+                        .find(|s| s.artifact == *input)
+                        .map_or("unknown", |s| s.name.as_str());
                     errors.push(format!(
-                        "Stage '{}' has restage target for unknown stage: {}",
-                        stage.name, target
+                        "Stage \"{}\" references input \"{}\" from stage \"{}\", \
+                         but \"{}\" comes later in the workflow. \
+                         Move \"{}\" before \"{}\" or remove this input.",
+                        stage.name,
+                        input,
+                        producing_stage,
+                        producing_stage,
+                        producing_stage,
+                        stage.name
                     ));
                 }
             }
         }
+    }
 
-        // Check that integration.on_failure is a valid stage
-        if !stage_names.contains(self.integration.on_failure.as_str()) {
+    /// Check that all restage targets reference valid stage names.
+    fn validate_restage_targets(
+        &self,
+        stage_names: &[&str],
+        stage_names_set: &std::collections::HashSet<&str>,
+        errors: &mut Vec<String>,
+    ) {
+        for stage in &self.stages {
+            for target in &stage.capabilities.supports_restage {
+                if !stage_names_set.contains(target.as_str()) {
+                    errors.push(format!(
+                        "Stage \"{}\" has restage target \"{}\" which doesn't exist. \
+                         Valid stages: {:?}",
+                        stage.name, target, stage_names
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Check that `integration.on_failure` references a valid stage.
+    fn validate_integration_on_failure(
+        &self,
+        stage_names: &[&str],
+        stage_names_set: &std::collections::HashSet<&str>,
+        errors: &mut Vec<String>,
+    ) {
+        if !stage_names_set.contains(self.integration.on_failure.as_str()) {
             errors.push(format!(
-                "Integration on_failure references unknown stage: {}",
-                self.integration.on_failure
+                "Integration on_failure references stage \"{}\" which doesn't exist. \
+                 Valid stages: {:?}",
+                self.integration.on_failure, stage_names
             ));
         }
+    }
 
-        // Validate script stages
+    /// Validate script stage configurations.
+    fn validate_script_stages(
+        &self,
+        stage_names: &[&str],
+        stage_names_set: &std::collections::HashSet<&str>,
+        errors: &mut Vec<String>,
+    ) {
         for stage in &self.stages {
             // Check that stage doesn't have both agent and script
             if stage.agent.is_some() && stage.script.is_some() {
                 errors.push(format!(
-                    "Stage '{}' cannot have both 'agent' and 'script' configuration",
+                    "Stage \"{}\" has both 'agent' and 'script' configuration. \
+                     Choose one: either run an agent OR a script, not both.",
                     stage.name
                 ));
             }
 
             // Script-specific validations
             if let Some(ref script) = stage.script {
-                // Check that script.on_failure references a valid stage
                 if let Some(ref on_failure) = script.on_failure {
-                    if !stage_names.contains(on_failure.as_str()) {
+                    if !stage_names_set.contains(on_failure.as_str()) {
                         errors.push(format!(
-                            "Stage '{}' script.on_failure references unknown stage: {}",
-                            stage.name, on_failure
+                            "Script stage \"{}\" has on_failure=\"{}\" but stage \"{}\" doesn't exist. \
+                             Valid stages: {:?}",
+                            stage.name, on_failure, on_failure, stage_names
                         ));
                     }
                 }
 
-                // Script stages cannot have agent-only capabilities
                 if stage.capabilities.ask_questions {
                     errors.push(format!(
-                        "Script stage '{}' cannot have ask_questions capability",
+                        "Script stage \"{}\" cannot have ask_questions capability. \
+                         Only agent stages can ask questions.",
                         stage.name
                     ));
                 }
                 if stage.capabilities.produce_subtasks {
                     errors.push(format!(
-                        "Script stage '{}' cannot have produce_subtasks capability",
+                        "Script stage \"{}\" cannot have produce_subtasks capability. \
+                         Only agent stages can produce subtasks.",
                         stage.name
                     ));
                 }
             }
         }
-
-        errors
     }
 
     /// Check if the workflow is valid.
@@ -341,7 +411,9 @@ mod tests {
             StageConfig::new("work", "summary").with_inputs(vec!["nonexistent".into()]),
         ]);
         let errors = workflow.validate();
-        assert!(errors.iter().any(|e| e.contains("unknown input artifact")));
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("nonexistent") && e.contains("doesn't exist")));
     }
 
     #[test]
@@ -351,7 +423,7 @@ mod tests {
             StageConfig::new("work", "summary"),
         ]);
         let errors = workflow.validate();
-        assert!(errors.iter().any(|e| e.contains("from a later stage")));
+        assert!(errors.iter().any(|e| e.contains("comes later")));
     }
 
     #[test]
@@ -419,7 +491,7 @@ mod tests {
         let errors = workflow.validate();
         assert!(errors
             .iter()
-            .any(|e| e.contains("restage target for unknown stage")));
+            .any(|e| e.contains("restage target") && e.contains("doesn't exist")));
     }
 
     #[test]
@@ -469,7 +541,7 @@ mod tests {
         let errors = workflow.validate();
         assert!(errors
             .iter()
-            .any(|e| e.contains("Integration on_failure references unknown stage")));
+            .any(|e| e.contains("Integration on_failure") && e.contains("doesn't exist")));
     }
 
     #[test]
@@ -545,7 +617,7 @@ integration:
         let errors = workflow.validate();
         assert!(errors
             .iter()
-            .any(|e| e.contains("script.on_failure references unknown stage")));
+            .any(|e| e.contains("on_failure") && e.contains("doesn't exist")));
     }
 
     #[test]
@@ -591,7 +663,7 @@ integration:
         let errors = workflow.validate();
         assert!(errors
             .iter()
-            .any(|e| e.contains("cannot have both 'agent' and 'script'")));
+            .any(|e| e.contains("has both 'agent' and 'script'")));
     }
 
     #[test]

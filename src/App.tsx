@@ -1,13 +1,21 @@
 import { useState } from "react";
 import { CreateTaskModal } from "./components/CreateTaskModal";
+import { StartupErrorScreen } from "./components/StartupErrorScreen";
+import { StartupSplashScreen } from "./components/StartupSplashScreen";
 import { WorkflowKanbanBoard } from "./components/WorkflowKanbanBoard";
 import { WorkflowTaskDetailSidebar } from "./components/WorkflowTaskDetailSidebar";
+import { useStartup } from "./hooks/useStartup";
 import { useWorkflow } from "./hooks/useWorkflow";
 import type { WorkflowTask } from "./types/workflow";
 
 function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<WorkflowTask | null>(null);
+
+  // Check startup status first
+  const { isReady, loading: startupLoading, errors: startupErrors, retry } = useStartup();
+
+  // Only load workflow data if startup succeeded
   const { config, tasks, loading, error, createTask, refetch } = useWorkflow();
 
   // Keep selected task in sync with latest data
@@ -15,6 +23,17 @@ function App() {
     ? tasks.find((t) => t.id === selectedTask.id) || selectedTask
     : null;
 
+  // Show splash screen during startup initialization
+  if (startupLoading) {
+    return <StartupSplashScreen />;
+  }
+
+  // Show error screen if startup failed
+  if (!isReady) {
+    return <StartupErrorScreen errors={startupErrors} onRetry={retry} />;
+  }
+
+  // Normal app UI
   return (
     <div className="h-screen bg-gray-100 flex flex-col">
       <header className="flex-shrink-0 bg-white shadow-sm border-b border-gray-200">

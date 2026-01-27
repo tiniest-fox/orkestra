@@ -22,6 +22,8 @@ pub struct AppState {
     /// We use this to create additional stores (e.g., for the orchestrator).
     #[allow(dead_code)]
     db_conn: DatabaseConnection,
+    /// Whether git service is available for worktree isolation.
+    has_git: bool,
 }
 
 impl AppState {
@@ -38,20 +40,21 @@ impl AppState {
         let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
 
         // Try to create git service for worktree support
-        let git_service: Option<Arc<dyn GitService>> = match Git2GitService::new(&project_root) {
-            Ok(git) => {
-                eprintln!(
-                    "[git] Git service initialized for {}",
-                    project_root.display()
-                );
-                Some(Arc::new(git))
-            }
-            Err(e) => {
-                eprintln!("[git] Git service unavailable: {e}");
-                eprintln!("[git] Tasks will run without git worktree isolation");
-                None
-            }
-        };
+        let (git_service, has_git): (Option<Arc<dyn GitService>>, bool) =
+            match Git2GitService::new(&project_root) {
+                Ok(git) => {
+                    eprintln!(
+                        "[git] Git service initialized for {}",
+                        project_root.display()
+                    );
+                    (Some(Arc::new(git)), true)
+                }
+                Err(e) => {
+                    eprintln!("[git] Git service unavailable: {e}");
+                    eprintln!("[git] Tasks will run without git worktree isolation");
+                    (None, false)
+                }
+            };
 
         // Create workflow API with or without git service
         let api = if let Some(git) = git_service {
@@ -65,6 +68,7 @@ impl AppState {
             api: Arc::new(Mutex::new(api)),
             project_root,
             db_conn: conn,
+            has_git,
         })
     }
 
@@ -96,5 +100,10 @@ impl AppState {
     /// Create a new `WorkflowStore` for the orchestrator.
     pub fn create_store(&self) -> Arc<dyn WorkflowStore> {
         Arc::new(SqliteWorkflowStore::new(self.db_conn.shared()))
+    }
+
+    /// Check if git service is available.
+    pub fn has_git_service(&self) -> bool {
+        self.has_git
     }
 }

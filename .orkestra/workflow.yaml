@@ -1,0 +1,59 @@
+# Custom workflow for Orkestra development
+#
+# Based on the default workflow, but adds an automated checks stage
+# between work and review to run linting, tests, and type checking.
+
+version: 1
+
+stages:
+  # Planning: Creates implementation plan, can ask clarifying questions
+  - name: planning
+    display_name: Planning
+    artifact: plan
+    agent:
+      agent_type: planner
+    capabilities:
+      ask_questions: true
+
+  # Breakdown: Decomposes complex tasks into subtasks with dependencies
+  - name: breakdown
+    display_name: Breaking Down
+    artifact: breakdown
+    inputs: [plan]
+    agent:
+      agent_type: breakdown
+    capabilities:
+      produce_subtasks: true
+
+  # Work: Implements the approved plan
+  - name: work
+    display_name: Working
+    artifact: summary
+    inputs: [plan]
+    agent:
+      agent_type: worker
+
+  # Checks: Automated quality gates (lint, test, type check)
+  # Runs in the task's worktree, detects what changed, runs relevant checks
+  - name: checks
+    display_name: Automated Checks
+    artifact: check_results
+    inputs: [summary]
+    script:
+      command: .orkestra/scripts/checks.sh
+      timeout_seconds: 600  # 10 minutes for full test suite
+      on_failure: work      # Return to work stage if checks fail
+
+  # Review: Automated review that can send back to work if needed
+  - name: review
+    display_name: Reviewing
+    artifact: verdict
+    inputs: [plan, summary, check_results]
+    agent:
+      agent_type: reviewer
+    capabilities:
+      supports_restage: [work]
+    is_automated: true
+
+integration:
+  on_failure: work

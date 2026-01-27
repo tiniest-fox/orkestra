@@ -3,12 +3,14 @@
 
 mod commands;
 mod error;
+mod startup;
 mod state;
 
 use orkestra_core::{
     find_project_root, is_process_running, kill_process_tree,
-    workflow::{load_workflow_for_project, OrchestratorLoop, WorkflowConfig},
+    workflow::{load_workflow_for_project, OrchestratorLoop},
 };
+use startup::{run_startup, StartupState};
 use tauri::{AppHandle, Emitter, Manager};
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -277,38 +279,13 @@ fn setup_signal_handlers(_stop_flag: Arc<AtomicBool>) {
 }
 
 // =============================================================================
-// Initialization
-// =============================================================================
-
-/// Initialize the workflow API state.
-///
-/// Loads the workflow configuration and creates the `AppState` with the database.
-fn init_workflow_state() -> Result<state::AppState, String> {
-    let project_root =
-        find_project_root().map_err(|e| format!("Failed to find project root: {e}"))?;
-
-    let orkestra_dir = project_root.join(".orkestra");
-
-    // Initialize debug logging (controlled by ORKESTRA_DEBUG env var)
-    orkestra_core::debug_log::init(&orkestra_dir);
-
-    // Load workflow config (or use default)
-    let workflow_config = load_workflow_for_project(&project_root).unwrap_or_else(|e| {
-        eprintln!("[workflow] Failed to load workflow config: {e}, using default");
-        WorkflowConfig::default()
-    });
-
-    // Database path for the workflow system
-    let db_path = orkestra_dir.join("workflow.db");
-
-    state::AppState::new(workflow_config, &db_path, project_root)
-}
-
-// =============================================================================
 // Application Entry Point
 // =============================================================================
 
 /// Run the Tauri application.
+///
+/// The app always starts (Tauri window opens), even if initialization fails.
+/// If startup fails, the frontend displays an error screen instead of the normal UI.
 ///
 /// # Panics
 ///
@@ -321,32 +298,36 @@ pub fn run() {
     // Set up signal handlers to ensure cleanup on external termination
     setup_signal_handlers(stop_flag.clone());
 
-    // Initialize the workflow API state
-    let app_state = match init_workflow_state() {
-        Ok(state) => state,
-        Err(e) => {
-            eprintln!("[workflow] Failed to initialize: {e}");
-            eprintln!("[workflow] Cannot start without workflow system");
-            return;
-        }
-    };
+    // Run startup tasks and get result
+    let startup_result = run_startup();
 
-    // Clean up orphaned agents from previous crash
-    cleanup_orphaned_agents(&app_state);
+    // Create startup state (always available for frontend to query)
+    let startup_state = StartupState::from_status(startup_result.status.clone());
 
-    tauri::Builder::default()
+    // Build Tauri app with startup state always available
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(app_state)
-        .setup(move |app| {
-            // Start the workflow orchestrator
+        .manage(startup_state);
+
+    // Only manage AppState and start orchestrator if startup succeeded
+    if let Some(app_state) = startup_result.app_state {
+        // Clean up orphaned agents from previous crash
+        cleanup_orphaned_agents(&app_state);
+
+        builder = builder.manage(app_state).setup(move |app| {
+            // Start the workflow orchestrator only on successful startup
             if let Some(app_state) = app.try_state::<state::AppState>() {
                 start_workflow_orchestrator(app.handle().clone(), &app_state, stop_flag.clone());
             }
-
             Ok(())
-        })
+        });
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![
-            // Workflow commands
+            // Startup command (always available)
+            commands::get_startup_status,
+            // Workflow commands (may fail gracefully if startup failed)
             commands::workflow_get_tasks,
             commands::workflow_create_task,
             commands::workflow_create_subtask,

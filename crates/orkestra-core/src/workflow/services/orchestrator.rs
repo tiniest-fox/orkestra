@@ -166,6 +166,9 @@ impl OrchestratorLoop {
         // Recover stale setup tasks on startup (tasks stuck in SettingUp phase)
         self.recover_stale_setup_tasks();
 
+        // Recover stale agent working tasks on startup (tasks stuck in AgentWorking phase)
+        self.recover_stale_agent_working_tasks();
+
         // Recover stale integrations on startup (tasks stuck in Integrating phase)
         for event in self.recover_stale_integrations() {
             on_event(event);
@@ -626,6 +629,39 @@ impl OrchestratorLoop {
                 if let Err(e) = api.store.save_task(&task) {
                     eprintln!(
                         "[recovery] Failed to mark stale task {} as failed: {}",
+                        task.id, e
+                    );
+                }
+            }
+        }
+    }
+
+    /// Recover tasks stuck in AgentWorking phase (from app crash during agent run).
+    ///
+    /// Tasks that had an agent running when the app crashed will be stuck in AgentWorking.
+    /// We reset them to Idle so the orchestrator can respawn the agent.
+    fn recover_stale_agent_working_tasks(&self) {
+        let Ok(api) = self.api.lock() else {
+            eprintln!("[recovery] Failed to acquire API lock for stale agent recovery");
+            return;
+        };
+
+        let Ok(tasks) = api.store.list_tasks() else {
+            eprintln!("[recovery] Failed to list tasks for stale agent recovery");
+            return;
+        };
+
+        for task in tasks {
+            if task.phase == Phase::AgentWorking {
+                eprintln!("[recovery] Found stale AgentWorking task: {}", task.id);
+
+                let mut task = task;
+                task.phase = Phase::Idle;
+                // Keep same status - orchestrator will respawn agent
+
+                if let Err(e) = api.store.save_task(&task) {
+                    eprintln!(
+                        "[recovery] Failed to reset stale task {} to Idle: {}",
                         task.id, e
                     );
                 }

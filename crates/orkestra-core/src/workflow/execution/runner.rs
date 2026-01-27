@@ -63,12 +63,14 @@ impl RunConfig {
     }
 
     /// Set the task ID (for mock runner output queue lookup).
+    #[must_use]
     pub fn with_task_id(mut self, task_id: impl Into<String>) -> Self {
         self.task_id = Some(task_id.into());
         self
     }
 
     /// Set the session ID and whether it's a resume.
+    #[must_use]
     pub fn with_session(mut self, session_id: impl Into<String>, is_resume: bool) -> Self {
         self.session_id = Some(session_id.into());
         self.is_resume = is_resume;
@@ -133,10 +135,11 @@ impl std::error::Error for RunError {}
 impl From<ProcessError> for RunError {
     fn from(err: ProcessError) -> Self {
         match err {
-            ProcessError::SpawnFailed(msg) => Self::SpawnFailed(msg),
+            ProcessError::SpawnFailed(msg) | ProcessError::ProcessNotFound(msg) => {
+                Self::SpawnFailed(msg)
+            }
             ProcessError::StdinWriteFailed(msg) => Self::PromptWriteFailed(msg),
             ProcessError::StdoutReadFailed(msg) => Self::OutputReadFailed(msg),
-            ProcessError::ProcessNotFound(msg) => Self::SpawnFailed(msg),
         }
     }
 }
@@ -295,7 +298,7 @@ impl AgentRunnerTrait for AgentRunner {
 
         // Spawn background thread to read output
         thread::spawn(move || {
-            read_output_and_send_events(handle, tx, schema);
+            read_output_and_send_events(handle, &tx, schema.as_ref());
         });
 
         Ok((pid, rx))
@@ -305,8 +308,8 @@ impl AgentRunnerTrait for AgentRunner {
 /// Read output from process and send events.
 fn read_output_and_send_events(
     mut handle: crate::workflow::ports::ProcessHandle,
-    tx: Sender<RunEvent>,
-    schema: Option<serde_json::Value>,
+    tx: &Sender<RunEvent>,
+    schema: Option<&serde_json::Value>,
 ) {
     let mut full_output = String::new();
 
@@ -351,7 +354,7 @@ fn read_output_and_send_events(
     handle.disarm();
 
     // Parse and send completion event with schema validation
-    let result = parse_agent_output(&full_output, schema.as_ref());
+    let result = parse_agent_output(&full_output, schema);
     if tx.send(RunEvent::Completed(result)).is_err() {
         eprintln!("[agent runner] Channel closed before completion could be sent");
     }

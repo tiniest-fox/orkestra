@@ -258,8 +258,7 @@ impl OrchestratorLoop {
                             }
                         }
                     }
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => break,
+                    Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
                 }
             }
         }

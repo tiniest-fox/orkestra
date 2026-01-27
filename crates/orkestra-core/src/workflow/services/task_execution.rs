@@ -189,7 +189,7 @@ impl TaskExecutionService {
             // Convert IterationTrigger to ResumeType for prompt building
             let resume_type = trigger_to_resume_type(trigger);
             let prompt =
-                build_resume_prompt(resume_type, Some(self.prompt_service.project_root()))?;
+                build_resume_prompt(&resume_type, Some(self.prompt_service.project_root()))?;
             orkestra_debug!(
                 "exec",
                 "execute_stage {}/{}: using resume prompt (len={})",
@@ -322,7 +322,7 @@ impl TaskExecutionService {
         // Build prompt based on whether this is a resume
         let prompt = if spawn_ctx.is_resume {
             let resume_type = trigger_to_resume_type(trigger);
-            build_resume_prompt(resume_type, Some(self.prompt_service.project_root()))?
+            build_resume_prompt(&resume_type, Some(self.prompt_service.project_root()))?
         } else {
             let config = self.prompt_service.resolve_config(
                 &self.workflow,
@@ -455,11 +455,11 @@ impl TaskExecutionService {
 /// This maps the iteration context (stored in DB) to the prompt type (for agent).
 fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
     match trigger {
-        None => ResumeType::Continue, // First iteration or no special context
-        Some(IterationTrigger::Feedback { feedback }) => ResumeType::Feedback {
-            feedback: feedback.clone(),
-        },
-        Some(IterationTrigger::Restage { feedback, .. }) => ResumeType::Feedback {
+        // First iteration or no special context
+        None | Some(IterationTrigger::Interrupted) => ResumeType::Continue,
+        Some(
+            IterationTrigger::Feedback { feedback } | IterationTrigger::Restage { feedback, .. },
+        ) => ResumeType::Feedback {
             feedback: feedback.clone(),
         },
         Some(IterationTrigger::Integration {
@@ -478,7 +478,6 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
                 })
                 .collect(),
         },
-        Some(IterationTrigger::Interrupted) => ResumeType::Continue,
     }
 }
 

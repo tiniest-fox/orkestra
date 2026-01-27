@@ -102,12 +102,14 @@ impl UtilityRunner {
     }
 
     /// Set the timeout in seconds.
+    #[must_use]
     pub fn with_timeout(mut self, secs: u64) -> Self {
         self.timeout_secs = secs;
         self
     }
 
     /// Set the model to use.
+    #[must_use]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
         self

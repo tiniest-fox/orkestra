@@ -3,6 +3,8 @@
 //! Converts structured subtask output from the breakdown stage
 //! into markdown format suitable for artifact storage and display.
 
+use std::fmt::Write;
+
 use super::output::SubtaskOutput;
 
 /// Convert breakdown subtasks to markdown artifact content.
@@ -24,8 +26,8 @@ pub fn subtasks_to_markdown(subtasks: &[SubtaskOutput], skip_reason: Option<&str
     let mut md = String::from("# Task Breakdown\n\n");
 
     for (i, subtask) in subtasks.iter().enumerate() {
-        md.push_str(&format!("## {}. {}\n\n", i + 1, subtask.title));
-        md.push_str(&format!("{}\n\n", subtask.description));
+        let _ = write!(md, "## {}. {}\n\n", i + 1, subtask.title);
+        let _ = write!(md, "{}\n\n", subtask.description);
 
         if subtask.depends_on.is_empty() {
             md.push_str("**Dependencies:** None\n\n");
@@ -35,7 +37,7 @@ pub fn subtasks_to_markdown(subtasks: &[SubtaskOutput], skip_reason: Option<&str
                 .iter()
                 .map(|idx| format!("Subtask {}", idx + 1))
                 .collect();
-            md.push_str(&format!("**Dependencies:** {}\n\n", deps.join(", ")));
+            let _ = write!(md, "**Dependencies:** {}\n\n", deps.join(", "));
         }
     }
 

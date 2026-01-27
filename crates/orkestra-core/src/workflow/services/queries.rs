@@ -55,9 +55,8 @@ impl WorkflowApi {
     pub fn get_rejection_feedback(&self, task_id: &str) -> WorkflowResult<Option<String>> {
         let task = self.get_task(task_id)?;
 
-        let current_stage = match task.current_stage() {
-            Some(s) => s,
-            None => return Ok(None),
+        let Some(current_stage) = task.current_stage() else {
+            return Ok(None);
         };
 
         // Get iterations for current stage
@@ -68,13 +67,10 @@ impl WorkflowApi {
         // Find the most recent rejection or restage outcome
         for iteration in iterations.into_iter().rev() {
             match iteration.outcome {
-                Some(Outcome::Rejected { feedback, .. }) => {
+                Some(Outcome::Rejected { feedback, .. } | Outcome::Restage { feedback, .. }) => {
                     return Ok(Some(feedback));
                 }
-                Some(Outcome::Restage { feedback, .. }) => {
-                    return Ok(Some(feedback));
-                }
-                _ => continue,
+                _ => {}
             }
         }
 

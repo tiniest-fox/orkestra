@@ -151,7 +151,7 @@ impl WorkflowApi {
                 // Move to target stage
                 task.status = Status::active(&target);
                 task.phase = Phase::Idle;
-                task.updated_at = now.clone();
+                task.updated_at.clone_from(&now);
 
                 // Create new iteration in target stage with restage context via IterationService
                 self.iteration_service.create_iteration(

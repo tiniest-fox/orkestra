@@ -1037,7 +1037,7 @@ integration:
     let task = api
         .lock()
         .unwrap()
-        .integration_failed(&task_id, "Merge conflict", vec![])
+        .integration_failed(&task_id, "Merge conflict", &[])
         .expect("Should handle integration failure");
 
     assert_eq!(

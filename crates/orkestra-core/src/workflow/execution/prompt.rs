@@ -3,6 +3,7 @@
 //! Generates prompts for any stage based on workflow configuration
 //! and available artifacts.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
@@ -73,7 +74,9 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
     };
 
     let (restage_targets, restage_first_target) =
-        if !ctx.stage.capabilities.supports_restage.is_empty() {
+        if ctx.stage.capabilities.supports_restage.is_empty() {
+            (None, None)
+        } else {
             (
                 Some(ctx.stage.capabilities.supports_restage.join(", ")),
                 ctx.stage
@@ -82,8 +85,6 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
                     .first()
                     .map(std::string::ToString::to_string),
             )
-        } else {
-            (None, None)
         };
 
     OutputFormatContext {
@@ -230,20 +231,20 @@ impl<'a> PromptBuilder<'a> {
 
         // Header
         let display_name = ctx.stage.display_name.as_deref().unwrap_or(&ctx.stage.name);
-        prompt.push_str(&format!("# Stage: {display_name}\n\n"));
+        let _ = write!(prompt, "# Stage: {display_name}\n\n");
 
         // Task info
         prompt.push_str("## Task\n\n");
-        prompt.push_str(&format!("**ID:** {}\n", ctx.task_id));
-        prompt.push_str(&format!("**Title:** {}\n", ctx.title));
-        prompt.push_str(&format!("\n{}\n\n", ctx.description));
+        let _ = write!(prompt, "**ID:** {}\n", ctx.task_id);
+        let _ = write!(prompt, "**Title:** {}\n", ctx.title);
+        let _ = write!(prompt, "\n{}\n\n", ctx.description);
 
         // Input artifacts
         if !ctx.artifacts.is_empty() {
             prompt.push_str("## Input Artifacts\n\n");
             for artifact in &ctx.artifacts {
-                prompt.push_str(&format!("### {}\n\n", artifact.name));
-                prompt.push_str(&format!("{}\n\n", artifact.content));
+                let _ = write!(prompt, "### {}\n\n", artifact.name);
+                let _ = write!(prompt, "{}\n\n", artifact.content);
             }
         }
 
@@ -251,23 +252,24 @@ impl<'a> PromptBuilder<'a> {
         if !ctx.question_history.is_empty() {
             prompt.push_str("## Previous Questions & Answers\n\n");
             for qa in &ctx.question_history {
-                prompt.push_str(&format!("**Q:** {}\n", qa.question));
-                prompt.push_str(&format!("**A:** {}\n\n", qa.answer));
+                let _ = write!(prompt, "**Q:** {}\n", qa.question);
+                let _ = write!(prompt, "**A:** {}\n\n", qa.answer);
             }
         }
 
         // Feedback
         if let Some(fb) = ctx.feedback {
             prompt.push_str("## Feedback to Address\n\n");
-            prompt.push_str(&format!("{fb}\n\n"));
+            let _ = write!(prompt, "{fb}\n\n");
         }
 
         // Expected output
         prompt.push_str("## Expected Output\n\n");
-        prompt.push_str(&format!(
+        let _ = write!(
+            prompt,
             "Produce the `{}` artifact for this stage.\n",
             ctx.stage.artifact
-        ));
+        );
 
         // Capabilities
         if ctx.stage.capabilities.ask_questions {
@@ -277,10 +279,11 @@ impl<'a> PromptBuilder<'a> {
             prompt.push_str("\nYou may break this down into subtasks if appropriate.\n");
         }
         if !ctx.stage.capabilities.supports_restage.is_empty() {
-            prompt.push_str(&format!(
+            let _ = write!(
+                prompt,
                 "\nYou may restage to: {:?}\n",
                 ctx.stage.capabilities.supports_restage
-            ));
+            );
         }
 
         Some(prompt)
@@ -468,8 +471,8 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
 
     // Task information
     prompt.push_str("## Your Current Task\n\n");
-    prompt.push_str(&format!("**Task ID**: {}\n", ctx.task_id));
-    prompt.push_str(&format!("**Title**: {}\n\n", ctx.title));
+    let _ = write!(prompt, "**Task ID**: {}\n", ctx.task_id);
+    let _ = write!(prompt, "**Title**: {}\n\n", ctx.title);
     prompt.push_str("### Description\n");
     prompt.push_str(ctx.description);
     prompt.push_str("\n\n");
@@ -478,7 +481,7 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
     if !ctx.artifacts.is_empty() {
         prompt.push_str("## Input Artifacts\n\n");
         for artifact in &ctx.artifacts {
-            prompt.push_str(&format!("### {}\n\n", artifact.name));
+            let _ = write!(prompt, "### {}\n\n", artifact.name);
             prompt.push_str(artifact.content);
             prompt.push_str("\n\n");
         }
@@ -488,8 +491,8 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
     if !ctx.question_history.is_empty() {
         prompt.push_str("## Previous Questions and Answers\n\n");
         for qa in &ctx.question_history {
-            prompt.push_str(&format!("**Q: {}**\n", qa.question));
-            prompt.push_str(&format!("A: {}\n\n", qa.answer));
+            let _ = write!(prompt, "**Q: {}**\n", qa.question);
+            let _ = write!(prompt, "A: {}\n\n", qa.answer);
         }
     }
 
@@ -508,7 +511,7 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
         if !err.conflict_files.is_empty() {
             prompt.push_str("**Conflicting files:**\n");
             for file in &err.conflict_files {
-                prompt.push_str(&format!("- {file}\n"));
+                let _ = write!(prompt, "- {file}\n");
             }
             prompt.push('\n');
         }
@@ -598,7 +601,7 @@ Please continue your work with this information and produce your final output as
 /// This loads the appropriate template for the resume type and renders it
 /// with any required context (feedback, error details, etc.).
 pub fn build_resume_prompt(
-    resume_type: ResumeType,
+    resume_type: &ResumeType,
     project_root: Option<&Path>,
 ) -> Result<String, AgentConfigError> {
     let (template_name, context) = match &resume_type {
@@ -1093,7 +1096,7 @@ mod tests {
 
     #[test]
     fn test_build_resume_prompt_continue() {
-        let prompt = build_resume_prompt(ResumeType::Continue, None).unwrap();
+        let prompt = build_resume_prompt(&ResumeType::Continue, None).unwrap();
         assert!(prompt.starts_with("<!orkestra-resume:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -1102,7 +1105,7 @@ mod tests {
     #[test]
     fn test_build_resume_prompt_feedback() {
         let prompt = build_resume_prompt(
-            ResumeType::Feedback {
+            &ResumeType::Feedback {
                 feedback: "Add more error handling".to_string(),
             },
             None,
@@ -1116,7 +1119,7 @@ mod tests {
     #[test]
     fn test_build_resume_prompt_integration() {
         let prompt = build_resume_prompt(
-            ResumeType::Integration {
+            &ResumeType::Integration {
                 message: "Merge conflict detected".to_string(),
                 conflict_files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
             },
@@ -1133,7 +1136,7 @@ mod tests {
     #[test]
     fn test_build_resume_prompt_answers() {
         let prompt = build_resume_prompt(
-            ResumeType::Answers {
+            &ResumeType::Answers {
                 answers: vec![
                     ResumeQuestionAnswer {
                         question: "Which database?".to_string(),

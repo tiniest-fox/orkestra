@@ -44,7 +44,7 @@ impl WorkflowApi {
 
         task.status = next_status.clone();
         task.phase = Phase::Idle;
-        task.updated_at = now.clone();
+        task.updated_at.clone_from(&now);
 
         // If we moved to a new stage, create new iteration via IterationService
         if let Some(new_stage) = next_status.stage() {
@@ -104,7 +104,7 @@ impl WorkflowApi {
         // Stay in same stage, go back to Idle
         let now = chrono::Utc::now().to_rfc3339();
         task.phase = Phase::Idle;
-        task.updated_at = now.clone();
+        task.updated_at.clone_from(&now);
 
         // Create new iteration in same stage with feedback context via IterationService
         self.iteration_service.create_iteration(
@@ -211,7 +211,7 @@ impl WorkflowApi {
         // Transition task back to its last stage with Idle phase
         task.status = crate::workflow::runtime::Status::active(&last_stage);
         task.phase = Phase::Idle;
-        task.updated_at = now.clone();
+        task.updated_at.clone_from(&now);
 
         // Create new iteration with Interrupted trigger to indicate recovery via IterationService
         self.iteration_service.create_iteration(

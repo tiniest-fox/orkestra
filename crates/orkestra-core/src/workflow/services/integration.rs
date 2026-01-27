@@ -84,7 +84,7 @@ impl WorkflowApi {
                 if let Err(e) = git.abort_merge() {
                     workflow_warn!("Failed to abort merge for {}: {}", task_id, e);
                 }
-                self.integration_failed(task_id, "Merge conflict", conflict_files)
+                self.integration_failed(task_id, "Merge conflict", &conflict_files)
             }
             Err(e) => {
                 orkestra_debug!("integration", "failed {}: {}", task_id, e);
@@ -92,7 +92,7 @@ impl WorkflowApi {
                 if let Err(abort_err) = git.abort_merge() {
                     workflow_warn!("Failed to abort merge for {}: {}", task_id, abort_err);
                 }
-                self.integration_failed(task_id, &format!("{e}"), vec![])
+                self.integration_failed(task_id, &format!("{e}"), &[])
             }
         }
     }
@@ -143,7 +143,7 @@ impl WorkflowApi {
         &self,
         task_id: &str,
         error: &str,
-        conflict_files: Vec<String>,
+        conflict_files: &[String],
     ) -> WorkflowResult<Task> {
         let mut task = self.get_task(task_id)?;
 
@@ -162,7 +162,7 @@ impl WorkflowApi {
             "integration",
             Outcome::IntegrationFailed {
                 error: error.to_string(),
-                conflict_files: conflict_files.clone(),
+                conflict_files: conflict_files.to_vec(),
             },
         )?;
 
@@ -185,7 +185,7 @@ impl WorkflowApi {
             &recovery_stage,
             Some(IterationTrigger::Integration {
                 message: error.to_string(),
-                conflict_files: conflict_files.clone(),
+                conflict_files: conflict_files.to_vec(),
             }),
         )?;
 
@@ -252,7 +252,7 @@ mod tests {
         let (api, task) = api_with_done_task();
 
         let task = api
-            .integration_failed(&task.id, "Merge conflict", vec!["src/main.rs".to_string()])
+            .integration_failed(&task.id, "Merge conflict", &["src/main.rs".to_string()])
             .unwrap();
 
         // Should return to configured on_failure stage (default: "work")
@@ -266,7 +266,7 @@ mod tests {
         let (api, task) = api_with_done_task();
 
         let _ = api
-            .integration_failed(&task.id, "Merge conflict", vec!["src/main.rs".to_string()])
+            .integration_failed(&task.id, "Merge conflict", &["src/main.rs".to_string()])
             .unwrap();
 
         let iterations = api.get_iterations(&task.id).unwrap();
@@ -300,7 +300,7 @@ mod tests {
 
         let task = api.create_task("Test", "Description", None).unwrap();
 
-        let result = api.integration_failed(&task.id, "Error", vec![]);
+        let result = api.integration_failed(&task.id, "Error", &[]);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 }

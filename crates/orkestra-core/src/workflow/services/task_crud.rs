@@ -107,8 +107,8 @@ impl WorkflowApi {
         task.parent_id = Some(parent_id.to_string());
 
         // Subtasks inherit parent's worktree (no separate worktree needed)
-        task.worktree_path = parent.worktree_path.clone();
-        task.branch_name = parent.branch_name.clone();
+        task.worktree_path.clone_from(&parent.worktree_path);
+        task.branch_name.clone_from(&parent.branch_name);
 
         // Start in SettingUp for consistency with create_task()
         task.phase = Phase::SettingUp;

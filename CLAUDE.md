@@ -6,6 +6,155 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This project is in early development. Prioritize getting things working over backwards compatibility or data consistency. Feel free to make breaking changes to data formats, APIs, or schemas as needed.
 
+## Architectural Principles
+
+These principles guide code organization and design decisions. They are listed in priority order—when principles conflict, earlier principles take precedence.
+
+### 1. Clear Boundaries
+
+Modules, files, and functions should expose simple interfaces and hide implementation details. Callers interact through a well-defined API without needing to understand internal mechanics.
+
+**Apply this by:**
+- Defining public interfaces that abstract complexity
+- Keeping internal helpers private to their module
+- Avoiding "reaching into" other modules' internals
+- Favoring composition over deep inheritance chains
+
+**Testing implication:** Tests should not know the internals of other modules. Each module tests its own internals; tests for module A only interact with module B through B's public API. If testing A requires mocking B's internals, the boundary is wrong.
+
+**Quick test:** Can someone use this function correctly by reading only its signature and docstring?
+
+**Signs of violation:** Functions that require understanding another module's data structures; changes to internal logic that break distant callers; tests that mock internal details of other modules; imports that reach multiple levels into another module's directory structure.
+
+### 2. Single Source of Truth
+
+Business rules, configuration, and domain logic should live in one canonical location. Other code references that source rather than duplicating it.
+
+**Apply this by:**
+- Centralizing validation rules, constants, and type definitions
+- Having one authoritative module for each domain concept
+- Using references and imports rather than copy-paste
+
+**Performance exception:** Caching and denormalization are acceptable when the authoritative source is clearly marked and synchronization is explicit. The cache knows it's a cache.
+
+**Quick test:** If this rule changes, how many files do I need to modify?
+
+**Signs of violation:** The same validation logic in multiple places; magic numbers scattered across files; "update this here and also over there" comments; bugs fixed in one place that reappear elsewhere; schema definitions that drift between layers.
+
+### 3. Explicit Dependencies
+
+Components should receive their dependencies rather than reaching out to obtain them. This makes dependencies visible, testable, and swappable.
+
+**Apply this by:**
+- Passing dependencies as parameters rather than importing singletons
+- Using traits/interfaces for external services (database, network, filesystem)
+- Making the dependency graph visible at construction time
+
+**Quick test:** Can I test this component without modifying global state or environment variables?
+
+**Signs of violation:** Functions that internally construct database connections; modules that import global state; test setup that requires complex manipulation of module internals.
+
+### 4. Single Responsibility
+
+Each component should own one coherent responsibility. A function solves one problem. A module handles one domain concern. A file groups related functionality.
+
+**Apply this by:**
+- Asking "what is this component's one job?"
+- Splitting when a component manages unrelated concerns
+- Naming components after their single responsibility
+
+**Granularity heuristic:** A component has one responsibility if you can describe what changes would require modifying it without saying "or." If the answer is "changes to password hashing or session expiry or permission rules"—it's too broad.
+
+**Quick test:** Can I describe what this does in one sentence without using "and" or "or"?
+
+**Signs of violation:** Components with "and" in their description; functions that take boolean flags to do different things; functions with more than 3-4 optional parameters controlling behavior; classes that require reading the whole implementation to understand.
+
+### 5. Fail Fast
+
+Validate inputs at system boundaries and fail immediately with clear errors. Don't let invalid state propagate deep into the system.
+
+**Apply this by:**
+- Validating at API boundaries (user input, external services, configuration)
+- Using type systems to make invalid states unrepresentable
+- Returning errors rather than silently continuing with defaults
+- Making error messages actionable: what failed, why, how to fix
+
+**Error handling philosophy:** Only catch errors when you have a clear solution and the error is part of an expected API contract. Unexpected errors should propagate up—don't catch exceptions just to log and rethrow, or to convert to a generic error. If you can't handle it meaningfully, let it bubble.
+
+**Quick test:** If this input is invalid, will the error message point directly to the problem?
+
+**Signs of violation:** Errors that surface far from their cause; silent fallbacks that hide bugs; validation scattered throughout call stacks; catch blocks that log and rethrow without adding value; generic "something went wrong" errors.
+
+### 6. Isolate Side Effects
+
+Separate pure logic from code that touches the outside world. Push I/O and state mutation to the edges.
+
+**Apply this by:**
+- Writing core business logic as pure transformations (input → output)
+- Concentrating I/O (files, network, database) in dedicated adapter layers
+- Making state changes explicit and localized
+- Structuring code as: gather inputs → pure transformation → apply outputs
+
+**Quick test:** Could this function's core logic run in a unit test without mocking anything?
+
+**Signs of violation:** Business logic that directly writes files or calls APIs; pure calculations interspersed with database calls; functions where the return value is incidental to their side effects; difficulty testing without extensive mocking.
+
+### 7. Push Complexity Down
+
+High-level code should read like a clear narrative of intent. Implementation details—edge cases, parsing, protocol handling—belong in lower-level helpers that encapsulate that complexity.
+
+**Apply this by:**
+- Writing top-level functions as sequences of well-named calls
+- Extracting gnarly logic into dedicated helper functions
+- Keeping conditionals and loops shallow at high levels
+- Making each line in a high-level function represent one logical step
+
+**Caveat:** "Down" means into cohesive abstractions, not arbitrary depth. If a helper requires understanding its caller's context to make sense, the boundary is wrong. Prefer fewer layers with clear contracts over many thin layers.
+
+**Quick test:** Can I understand this function's purpose by reading just the first screen of code?
+
+**Signs of violation:** Top-level functions with deeply nested logic; business logic mixed with serialization/parsing; orchestration code that handles error formatting; more than 2 levels of nesting in high-level functions; high-level code containing byte manipulation or protocol details.
+
+### 8. Small Components Are Fine
+
+A module with one function, a struct with one field, a file with twenty lines—these are perfectly valid if they encapsulate a distinct concept. The goal is clarity of responsibility, not minimum line counts.
+
+**Apply this by:**
+- Creating small, focused abstractions without guilt
+- Valuing conceptual clarity over "efficiency" of file count
+- Trusting that good naming makes small components discoverable
+
+**Balance:** Many small files are fine if naming and organization make them discoverable. If developers frequently struggle to find where something lives, the structure may be too granular or poorly organized.
+
+**When to consolidate:** Two small components that always change together and are never used independently can be merged.
+
+**Quick test:** Does this component have a clear name that isn't just restating its one-line implementation?
+
+**Signs of violation:** Mega-files justified by "might as well put it here"; reluctance to extract because "it's only one function"; unrelated utilities dumped in a `misc` or `utils` module; files containing grab-bags of unrelated helpers.
+
+### 9. Precise Naming
+
+Names should accurately describe what something does. Misleading names are worse than verbose ones. Generic names are a smell.
+
+**Apply this by:**
+- Using verbs for functions (`validate_user`), nouns for data (`user_config`)
+- Avoiding vague names: `handle`, `process`, `do`, `manage`, `data`, `info`, `utils`
+- Renaming when behavior changes—don't let names drift from reality
+- Preferring longer descriptive names over short ambiguous ones
+
+**Quick test:** Could someone guess what this does from the name alone?
+
+**Signs of violation:** Functions named `process` that validate and transform and persist; variables named `data` or `result` or `tmp`; outdated names left after refactoring; `utils` modules that grow unboundedly.
+
+### Resolving Conflicts
+
+When principles conflict, use this hierarchy (earlier wins):
+
+1. **Clear Boundaries** over Single Responsibility—don't expose internals just to achieve a cleaner split
+2. **Single Source of Truth** over Clear Boundaries—wide dependencies on canonical definitions are acceptable
+3. **Fail Fast** over convenience—surface errors early even if it requires more validation code
+4. **Readability** over theoretical purity—if following a principle makes code harder to understand, reconsider
+
 ## Build & Development Commands
 
 ```bash

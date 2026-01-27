@@ -230,6 +230,7 @@ function TodoDisplay({ todos }: { todos: TodoItem[] }) {
   return (
     <div className="text-xs space-y-0.5">
       {todos.map((todo, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: todos are display-only without stable IDs
         <div key={i} className="flex items-center gap-1.5">
           <span
             className={`w-1.5 h-1.5 rounded-full ${
@@ -461,7 +462,7 @@ export function LogList({
     return (
       <div className="flex items-center justify-center h-full text-red-400 text-sm">
         <div className="flex items-center gap-2">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -493,6 +494,7 @@ export function LogList({
   return (
     <div className="space-y-0.5">
       {logs.map((entry, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: logs are append-only without stable IDs
         <LogEntryView key={i} entry={entry} />
       ))}
     </div>

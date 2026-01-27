@@ -125,6 +125,7 @@ function QuestionFormSection({
   // Reset current index when questions change
   // Track by length and first question ID to detect meaningful changes
   const questionsKey = `${questions.length}-${questions[0]?.id ?? "none"}`;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset when questionsKey changes
   useEffect(() => {
     setCurrentIndex(0);
   }, [questionsKey]);
@@ -502,6 +503,7 @@ export function WorkflowTaskDetailSidebar({
   }, [activeTab, activeLogStage, task.phase, task.status, fetchLogs, logsError]);
 
   // Auto-scroll logs to bottom when new entries arrive
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional scroll when logs change
   useEffect(() => {
     if (activeTab === "logs" && logsContainerRef.current) {
       const container = logsContainerRef.current;
@@ -510,6 +512,7 @@ export function WorkflowTaskDetailSidebar({
   }, [logs, activeTab]);
 
   // Reset tab when task changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset when task.id changes
   useEffect(() => {
     setActiveTab("details");
     setActiveLogStage(null);

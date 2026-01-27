@@ -53,6 +53,10 @@ pub struct SchemaConfig<'a> {
 /// - Questions (if `ask_questions` capability)
 /// - Subtasks (if `produce_subtasks` capability)
 /// - Restage (if `supports_restage` capability)
+///
+/// # Panics
+///
+/// Panics if the schema cannot be serialized to JSON (should never happen).
 pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     let artifact = load_component(ARTIFACT_COMPONENT);
     let terminal = load_component(TERMINAL_COMPONENT);

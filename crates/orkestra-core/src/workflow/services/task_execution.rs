@@ -130,6 +130,38 @@ impl TaskExecutionService {
         }
     }
 
+    /// Build the prompt for a stage execution.
+    ///
+    /// If resuming, returns a short resume prompt. Otherwise returns the full
+    /// prompt with agent definition and task context.
+    fn build_stage_prompt(
+        &self,
+        task: &Task,
+        is_resume: bool,
+        trigger: Option<&IterationTrigger>,
+    ) -> Result<String, ExecutionError> {
+        if is_resume {
+            let resume_type = trigger_to_resume_type(trigger);
+            build_resume_prompt(&resume_type, Some(self.prompt_service.project_root()))
+                .map_err(ExecutionError::from)
+        } else {
+            let config = self.prompt_service.resolve_config(
+                &self.workflow,
+                task,
+                None, // No feedback on first spawn
+                None, // No integration error on first spawn
+            )?;
+            Ok(config.prompt)
+        }
+    }
+
+    /// Get the working directory for a task.
+    fn get_working_dir(&self, task: &Task) -> PathBuf {
+        task.worktree_path
+            .as_ref()
+            .map_or_else(|| self.prompt_service.project_root().to_path_buf(), PathBuf::from)
+    }
+
     /// Execute a stage for a task (async with events).
     ///
     /// This starts the agent and returns immediately with a handle.
@@ -183,42 +215,18 @@ impl TaskExecutionService {
         );
 
         // 4. Build prompt based on whether this is a resume
-        // If resuming, Claude already has the full context - send a short resume prompt
-        // If first spawn, send the full prompt with agent definition + task context
-        let prompt = if spawn_ctx.is_resume {
-            // Convert IterationTrigger to ResumeType for prompt building
-            let resume_type = trigger_to_resume_type(trigger);
-            let prompt =
-                build_resume_prompt(&resume_type, Some(self.prompt_service.project_root()))?;
-            orkestra_debug!(
-                "exec",
-                "execute_stage {}/{}: using resume prompt (len={})",
-                task.id,
-                stage,
-                prompt.len()
-            );
-            prompt
-        } else {
-            let config = self.prompt_service.resolve_config(
-                &self.workflow,
-                task,
-                None, // No feedback on first spawn
-                None, // No integration error on first spawn
-            )?;
-            orkestra_debug!(
-                "exec",
-                "execute_stage {}/{}: using full prompt (len={})",
-                task.id,
-                stage,
-                config.prompt.len()
-            );
-            config.prompt
-        };
+        let prompt = self.build_stage_prompt(task, spawn_ctx.is_resume, trigger)?;
+        orkestra_debug!(
+            "exec",
+            "execute_stage {}/{}: prompt len={}, is_resume={}",
+            task.id,
+            stage,
+            prompt.len(),
+            spawn_ctx.is_resume
+        );
 
         // 5. Build run config with session info
-        let working_dir = task
-            .worktree_path
-            .as_ref().map_or_else(|| self.prompt_service.project_root().to_path_buf(), PathBuf::from);
+        let working_dir = self.get_working_dir(task);
 
         let run_config = RunConfig::new(working_dir, prompt, json_schema)
             .with_session(spawn_ctx.session_id, spawn_ctx.is_resume)
@@ -320,23 +328,10 @@ impl TaskExecutionService {
         );
 
         // Build prompt based on whether this is a resume
-        let prompt = if spawn_ctx.is_resume {
-            let resume_type = trigger_to_resume_type(trigger);
-            build_resume_prompt(&resume_type, Some(self.prompt_service.project_root()))?
-        } else {
-            let config = self.prompt_service.resolve_config(
-                &self.workflow,
-                task,
-                None, // No feedback on first spawn
-                None, // No integration error on first spawn
-            )?;
-            config.prompt
-        };
+        let prompt = self.build_stage_prompt(task, spawn_ctx.is_resume, trigger)?;
 
         // Build run config with session info
-        let working_dir = task
-            .worktree_path
-            .as_ref().map_or_else(|| self.prompt_service.project_root().to_path_buf(), PathBuf::from);
+        let working_dir = self.get_working_dir(task);
 
         let run_config = RunConfig::new(working_dir, prompt, json_schema)
             .with_session(spawn_ctx.session_id, spawn_ctx.is_resume)

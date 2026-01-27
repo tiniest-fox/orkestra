@@ -118,6 +118,10 @@ impl OrchestratorLoop {
     }
 
     /// Create with default components for a project.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the API mutex is poisoned.
     pub fn for_project(
         api: Arc<Mutex<WorkflowApi>>,
         workflow: WorkflowConfig,

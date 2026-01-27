@@ -361,120 +361,90 @@ fn parse_resume_marker(text: &str) -> Option<ResumeMarker> {
     })
 }
 
+/// Helper to extract a string field from JSON input.
+fn get_str_field(input: &serde_json::Value, field: &str) -> String {
+    input
+        .get(field)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
 /// Parses a tool input JSON into a structured `ToolInput`.
 fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
     match tool_name {
         "Bash" => {
-            let command = input
-                .get("command")
-                .and_then(|c| c.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            // Check if this is an ork command
+            let command = get_str_field(input, "command");
             if let Some(ork_action) = parse_ork_command(&command) {
                 return ToolInput::Ork { ork_action };
             }
-
             ToolInput::Bash { command }
         }
-        "Read" => {
-            let file_path = input
-                .get("file_path")
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Read { file_path }
-        }
-        "Write" => {
-            let file_path = input
-                .get("file_path")
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Write { file_path }
-        }
-        "Edit" => {
-            let file_path = input
-                .get("file_path")
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Edit { file_path }
-        }
-        "Glob" => {
-            let pattern = input
-                .get("pattern")
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Glob { pattern }
-        }
-        "Grep" => {
-            let pattern = input
-                .get("pattern")
-                .and_then(|p| p.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Grep { pattern }
-        }
-        "Task" => {
-            let description = input
-                .get("description")
-                .and_then(|d| d.as_str())
-                .unwrap_or("")
-                .to_string();
-            ToolInput::Task { description }
-        }
-        "TodoWrite" => {
-            let todos = input
-                .get("todos")
-                .and_then(|t| t.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|item| {
-                            let content = item.get("content")?.as_str()?.to_string();
-                            let status = item.get("status")?.as_str()?.to_string();
-                            let active_form = item
-                                .get("activeForm")
-                                .and_then(|a| a.as_str())
-                                .unwrap_or("")
-                                .to_string();
-                            Some(TodoItem {
-                                content,
-                                status,
-                                active_form,
-                            })
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-            ToolInput::TodoWrite { todos }
-        }
-        "StructuredOutput" => {
-            // Extract the "type" field from the input to know what kind of output
-            let output_type = input
+        "Read" => ToolInput::Read {
+            file_path: get_str_field(input, "file_path"),
+        },
+        "Write" => ToolInput::Write {
+            file_path: get_str_field(input, "file_path"),
+        },
+        "Edit" => ToolInput::Edit {
+            file_path: get_str_field(input, "file_path"),
+        },
+        "Glob" => ToolInput::Glob {
+            pattern: get_str_field(input, "pattern"),
+        },
+        "Grep" => ToolInput::Grep {
+            pattern: get_str_field(input, "pattern"),
+        },
+        "Task" => ToolInput::Task {
+            description: get_str_field(input, "description"),
+        },
+        "TodoWrite" => ToolInput::TodoWrite {
+            todos: parse_todo_items(input),
+        },
+        "StructuredOutput" => ToolInput::StructuredOutput {
+            output_type: input
                 .get("type")
                 .and_then(|t| t.as_str())
                 .unwrap_or("unknown")
-                .to_string();
-            ToolInput::StructuredOutput { output_type }
-        }
-        _ => {
-            // For other tools, create a compact summary
-            let summary = serde_json::to_string(input).map_or_else(
-                |_| "{}".to_string(),
-                |s| {
-                    if s.len() > 100 {
-                        format!("{}...", &s[..100])
-                    } else {
-                        s
-                    }
-                },
-            );
-            ToolInput::Other { summary }
-        }
+                .to_string(),
+        },
+        _ => ToolInput::Other {
+            summary: summarize_input(input),
+        },
     }
+}
+
+/// Parse todo items from `TodoWrite` input.
+fn parse_todo_items(input: &serde_json::Value) -> Vec<TodoItem> {
+    input
+        .get("todos")
+        .and_then(|t| t.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| {
+                    Some(TodoItem {
+                        content: item.get("content")?.as_str()?.to_string(),
+                        status: item.get("status")?.as_str()?.to_string(),
+                        active_form: get_str_field(item, "activeForm"),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Create a compact summary of tool input for unknown tools.
+fn summarize_input(input: &serde_json::Value) -> String {
+    serde_json::to_string(input).map_or_else(
+        |_| "{}".to_string(),
+        |s| {
+            if s.len() > 100 {
+                format!("{}...", &s[..100])
+            } else {
+                s
+            }
+        },
+    )
 }
 
 /// Helper to get first arg as String.

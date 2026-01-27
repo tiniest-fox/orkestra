@@ -131,6 +131,10 @@ impl SessionService {
     /// Creates or updates a session in `Spawning` state.
     /// Creates a new iteration only if there's no active one for this stage.
     /// Returns the iteration ID for tracking.
+    ///
+    /// # Panics
+    ///
+    /// Panics if session ID is missing after being set (should never happen).
     pub fn on_spawn_starting(&self, task_id: &str, stage: &str) -> WorkflowResult<String> {
         let now = chrono::Utc::now().to_rfc3339();
         let session_id = format!("{task_id}-{stage}");

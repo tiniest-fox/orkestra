@@ -14,7 +14,7 @@ mod prompt;
 mod runner;
 
 pub use breakdown::subtasks_to_markdown;
-pub use output::{StageOutput, StageOutputError};
+pub use output::{StageOutput, StageOutputError, SubtaskOutput};
 pub use parser::parse_agent_output;
 pub use prompt::{
     build_complete_prompt, build_resume_prompt, determine_resume_type, get_agent_schema,

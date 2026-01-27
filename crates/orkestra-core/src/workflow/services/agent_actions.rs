@@ -9,6 +9,84 @@ use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
 use super::WorkflowApi;
 
 impl WorkflowApi {
+    /// Get artifact name for a stage, with fallback default.
+    fn artifact_name_for_stage(&self, stage: &str, default: &str) -> String {
+        self.workflow
+            .stage(stage)
+            .map_or_else(|| default.to_string(), |s| s.artifact.clone())
+    }
+
+    /// Handle artifact output: store artifact, auto-approve if automated stage.
+    fn handle_artifact_output(
+        &self,
+        task: &mut Task,
+        content: &str,
+        stage: &str,
+        now: &str,
+    ) -> WorkflowResult<()> {
+        let artifact_name = self.artifact_name_for_stage(stage, "artifact");
+        task.artifacts
+            .set(Artifact::new(&artifact_name, content, stage, now));
+
+        if self.is_stage_automated(stage) {
+            self.end_current_iteration(task, Outcome::Approved)?;
+            let next_status = self.compute_next_status_on_approve(stage);
+            task.status = next_status.clone();
+            task.phase = Phase::Idle;
+
+            if let Some(new_stage) = next_status.stage() {
+                self.iteration_service
+                    .create_iteration(&task.id, new_stage, None)?;
+            }
+            if task.is_done() {
+                task.completed_at = Some(now.to_string());
+            }
+        } else {
+            task.phase = Phase::AwaitingReview;
+        }
+        task.updated_at = now.to_string();
+        Ok(())
+    }
+
+    /// Handle restage output: validate target, end iteration, move to target stage.
+    fn handle_restage_output(
+        &self,
+        task: &mut Task,
+        current_stage: &str,
+        target: &str,
+        feedback: &str,
+        now: &str,
+    ) -> WorkflowResult<()> {
+        let stage_config = self.workflow.stage(current_stage).ok_or_else(|| {
+            WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
+        })?;
+
+        if !stage_config.capabilities.can_restage_to(target) {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Stage {current_stage} cannot restage to {target}"
+            )));
+        }
+
+        self.end_current_iteration(
+            task,
+            Outcome::restage(current_stage, target, feedback),
+        )?;
+
+        task.status = Status::active(target);
+        task.phase = Phase::Idle;
+        task.updated_at = now.to_string();
+
+        self.iteration_service.create_iteration(
+            &task.id,
+            target,
+            Some(IterationTrigger::Restage {
+                from_stage: current_stage.to_string(),
+                feedback: feedback.to_string(),
+            }),
+        )?;
+        Ok(())
+    }
+
     /// Mark agent as started on a task. Transitions phase to `AgentWorking`.
     ///
     /// # Errors
@@ -91,100 +169,28 @@ impl WorkflowApi {
             }
 
             StageOutput::Artifact { content } => {
-                // Get artifact name from stage config
-                let artifact_name = self
-                    .workflow
-                    .stage(&current_stage).map_or_else(|| "artifact".to_string(), |s| s.artifact.clone());
-
-                // Agent produced artifact
-                task.artifacts.set(Artifact::new(
-                    &artifact_name,
-                    &content,
-                    &current_stage,
-                    &now,
-                ));
-
-                // Check if this is an automated stage
-                let is_automated = self.is_stage_automated(&current_stage);
-
-                if is_automated {
-                    // Automated stages auto-approve and move to next stage
-                    self.end_current_iteration(&task, Outcome::Approved)?;
-
-                    let next_status = self.compute_next_status_on_approve(&current_stage);
-                    task.status = next_status.clone();
-                    task.phase = Phase::Idle;
-
-                    // Create new iteration if moving to new stage via IterationService
-                    if let Some(new_stage) = next_status.stage() {
-                        self.iteration_service
-                            .create_iteration(&task.id, new_stage, None)?;
-                    }
-
-                    if task.is_done() {
-                        task.completed_at = Some(now.clone());
-                    }
-                } else {
-                    task.phase = Phase::AwaitingReview;
-                }
-                task.updated_at = now;
+                self.handle_artifact_output(&mut task, &content, &current_stage, &now)?;
             }
 
             StageOutput::Restage { target, feedback } => {
-                // Validate restage capability
-                let stage_config = self.workflow.stage(&current_stage).ok_or_else(|| {
-                    WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
-                })?;
-
-                if !stage_config.capabilities.can_restage_to(&target) {
-                    return Err(WorkflowError::InvalidTransition(format!(
-                        "Stage {current_stage} cannot restage to {target}"
-                    )));
-                }
-
-                // End current iteration with restage
-                self.end_current_iteration(
-                    &task,
-                    Outcome::restage(&current_stage, &target, &feedback),
-                )?;
-
-                // Move to target stage
-                task.status = Status::active(&target);
-                task.phase = Phase::Idle;
-                task.updated_at.clone_from(&now);
-
-                // Create new iteration in target stage with restage context via IterationService
-                self.iteration_service.create_iteration(
-                    &task.id,
-                    &target,
-                    Some(IterationTrigger::Restage {
-                        from_stage: current_stage.clone(),
-                        feedback: feedback.clone(),
-                    }),
-                )?;
+                self.handle_restage_output(&mut task, &current_stage, &target, &feedback, &now)?;
             }
 
             StageOutput::Subtasks {
                 subtasks,
                 skip_reason,
             } => {
-                use crate::workflow::execution::subtasks_to_markdown;
+                use super::SubtaskService;
 
-                // Convert subtasks to markdown artifact
-                let content = subtasks_to_markdown(&subtasks, skip_reason.as_deref());
-
-                // Get artifact name from stage config (should be "breakdown")
-                let artifact_name = self
-                    .workflow
-                    .stage(&current_stage).map_or_else(|| "breakdown".to_string(), |s| s.artifact.clone());
-
-                // Store the artifact
-                task.artifacts.set(Artifact::new(
+                let artifact_name = self.artifact_name_for_stage(&current_stage, "breakdown");
+                let artifact = SubtaskService::new().create_breakdown_artifact(
+                    &subtasks,
+                    skip_reason.as_deref(),
                     &artifact_name,
-                    &content,
                     &current_stage,
                     &now,
-                ));
+                );
+                task.artifacts.set(artifact);
 
                 if subtasks.is_empty() {
                     if let Some(reason) = &skip_reason {

@@ -75,6 +75,10 @@ fn find_main_repo_if_worktree(path: &std::path::Path) -> Option<PathBuf> {
 
 /// Gets the .orkestra directory path at the project root.
 /// Always returns the MAIN repo's .orkestra, even if called from a worktree.
+///
+/// # Panics
+///
+/// Panics if unable to determine the current directory.
 pub fn get_orkestra_dir() -> PathBuf {
     find_project_root()
         .unwrap_or_else(|_| std::env::current_dir().expect("Failed to get current directory"))

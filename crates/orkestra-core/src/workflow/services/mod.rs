@@ -38,6 +38,7 @@ mod prompt_service;
 mod queries;
 mod session_logs;
 mod session_service;
+mod subtask_service;
 mod task_crud;
 mod task_execution;
 
@@ -71,4 +72,5 @@ pub use session_logs::{
     get_claude_session_path, recover_session_logs, ResumeMarker, ResumeMarkerType,
 };
 pub use session_service::{SessionService, SessionSpawnContext};
+pub use subtask_service::SubtaskService;
 pub use task_execution::{ExecutionError, ExecutionHandle, TaskExecutionService};

@@ -37,6 +37,10 @@ pub fn subtask_example(title: &str, description: &str, depends_on: &[usize]) -> 
 }
 
 /// Generate a validated subtasks output example (the full output object).
+///
+/// # Panics
+///
+/// Panics if JSON serialization fails (should never happen with valid input).
 pub fn subtasks_output_example(subtasks: &[Value], skip_reason: Option<&str>) -> String {
     let mut example = json!({
         "type": "subtasks",
@@ -62,6 +66,10 @@ pub fn question_example(question: &str, options: &[&str]) -> Value {
 }
 
 /// Generate a validated questions output example (the full output object).
+///
+/// # Panics
+///
+/// Panics if JSON serialization fails (should never happen with valid input).
 pub fn questions_output_example(questions: &[Value]) -> String {
     let example = json!({
         "type": "questions",

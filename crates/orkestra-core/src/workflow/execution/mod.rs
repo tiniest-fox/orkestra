@@ -7,11 +7,13 @@
 //! - **PromptBuilder**: Generates prompts from workflow configuration
 //! - **parser**: Output parsing utilities
 
+mod breakdown;
 mod output;
 mod parser;
 mod prompt;
 mod runner;
 
+pub use breakdown::subtasks_to_markdown;
 pub use output::{StageOutput, StageOutputError};
 pub use parser::parse_agent_output;
 pub use prompt::{

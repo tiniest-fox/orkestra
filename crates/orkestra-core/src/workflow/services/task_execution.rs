@@ -174,9 +174,10 @@ impl TaskExecutionService {
 
         // 3. Get JSON schema (needed for BOTH first spawn and resume)
         // Claude Code requires --json-schema on every invocation to enforce structured output
-        let stage_config = self.workflow.stage(stage).ok_or_else(|| {
-            ExecutionError::ConfigError(format!("Unknown stage: {stage}"))
-        })?;
+        let stage_config = self
+            .workflow
+            .stage(stage)
+            .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
         let json_schema = crate::workflow::execution::get_agent_schema(
             stage_config,
             Some(self.prompt_service.project_root()),
@@ -312,9 +313,10 @@ impl TaskExecutionService {
             .map_err(|e| ExecutionError::SessionError(e.to_string()))?;
 
         // Get JSON schema (needed for BOTH first spawn and resume)
-        let stage_config = self.workflow.stage(stage).ok_or_else(|| {
-            ExecutionError::ConfigError(format!("Unknown stage: {stage}"))
-        })?;
+        let stage_config = self
+            .workflow
+            .stage(stage)
+            .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
         let json_schema = crate::workflow::execution::get_agent_schema(
             stage_config,
             Some(self.prompt_service.project_root()),

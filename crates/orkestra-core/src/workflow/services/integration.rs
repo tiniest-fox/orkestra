@@ -56,10 +56,7 @@ impl WorkflowApi {
 
         // Commit any pending changes in the worktree
         if let Some(worktree_path) = &task.worktree_path {
-            if let Err(e) = git.commit_pending_changes(
-                Path::new(worktree_path),
-                &format!("Final changes for {}", task_id),
-            ) {
+            if let Err(e) = git.commit_pending_changes(Path::new(worktree_path), &task.title) {
                 workflow_warn!("Failed to commit pending changes for {}: {}", task_id, e);
             }
         }

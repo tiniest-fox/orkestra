@@ -55,9 +55,20 @@ impl WorkflowApi {
         );
 
         // Commit any pending changes in the worktree
+        // If commit fails, we must abort integration to avoid losing changes
         if let Some(worktree_path) = &task.worktree_path {
-            if let Err(e) = git.commit_pending_changes(Path::new(worktree_path), &task.title) {
-                workflow_warn!("Failed to commit pending changes for {}: {}", task_id, e);
+            // Use task title as commit message, falling back to task ID if title is empty
+            let commit_message = if task.title.trim().is_empty() {
+                format!("Task {task_id}")
+            } else {
+                task.title.clone()
+            };
+            if let Err(e) = git.commit_pending_changes(Path::new(worktree_path), &commit_message) {
+                return self.integration_failed(
+                    task_id,
+                    &format!("Failed to commit pending changes: {e}"),
+                    &[],
+                );
             }
         }
 

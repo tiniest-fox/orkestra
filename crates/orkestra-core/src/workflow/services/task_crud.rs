@@ -47,18 +47,19 @@ impl WorkflowApi {
         self.iteration_service
             .create_initial_iteration(&id, &first_stage.name)?;
 
-        // ALWAYS spawn async setup (handles both git and no-git cases)
+        // Spawn async setup (handles worktree creation and title generation in parallel)
+        let needs_title = title.trim().is_empty() && !description.trim().is_empty();
         spawn_async_setup(
             self.store.clone(),
             self.git_service.clone(),
             id.clone(),
             base_branch.map(String::from),
+            if needs_title {
+                Some(description.to_string())
+            } else {
+                None
+            },
         );
-
-        // If title is empty, generate one in the background
-        if title.trim().is_empty() && !description.trim().is_empty() {
-            spawn_title_generation(self.store.clone(), id.clone(), description.to_string());
-        }
 
         orkestra_debug!(
             "task",
@@ -120,7 +121,8 @@ impl WorkflowApi {
             .create_initial_iteration(&id, &first_stage.name)?;
 
         // Spawn async setup - no git work needed, just transitions to Idle
-        spawn_async_setup(self.store.clone(), None, id.clone(), None);
+        // Subtasks don't need title generation (they have explicit titles)
+        spawn_async_setup(self.store.clone(), None, id.clone(), None, None);
 
         orkestra_debug!(
             "task",
@@ -212,59 +214,97 @@ impl WorkflowApi {
     }
 }
 
-/// Spawn a background thread to generate a title for a task.
-fn spawn_title_generation(store: Arc<dyn WorkflowStore>, task_id: String, description: String) {
-    thread::spawn(move || {
-        // Generate title with 30 second timeout
-        match generate_title_sync(&description, 30) {
-            Ok(title) => {
-                // Update the task with the generated title
-                if let Ok(Some(mut task)) = store.get_task(&task_id) {
-                    if task.title.trim().is_empty() {
-                        task.title = title;
-                        if let Err(e) = store.save_task(&task) {
-                            eprintln!("[orkestra] ERROR: Failed to save generated title for {task_id}: {e}");
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("[orkestra] WARNING: Failed to generate title for {task_id}: {e}");
-            }
+/// Generate a title for a task (blocking).
+/// Returns the AI-generated title, or a fallback if generation fails.
+fn generate_title(task_id: &str, description: &str) -> String {
+    match generate_title_sync(description, 30) {
+        Ok(title) => title,
+        Err(e) => {
+            eprintln!("[orkestra] WARNING: Title generation failed for {task_id}: {e}");
+            generate_fallback_title(description)
         }
-    });
+    }
 }
 
-/// Spawn a background thread to set up the task (worktree creation, setup script).
+/// Generate a fallback title from description when AI generation fails.
+/// Takes the first ~50 characters, truncated at a word boundary.
+fn generate_fallback_title(description: &str) -> String {
+    let trimmed = description.trim();
+    if trimmed.len() <= 50 {
+        return trimmed.to_string();
+    }
+
+    // Find a good truncation point (space, punctuation) before 50 chars
+    let truncated: String = trimmed.chars().take(50).collect();
+    if let Some(last_space) = truncated.rfind(|c: char| c.is_whitespace() || c == '.' || c == ',') {
+        let result = truncated[..last_space].trim();
+        if !result.is_empty() {
+            return format!("{result}...");
+        }
+    }
+
+    // No good break point, just truncate
+    format!("{}...", truncated.trim())
+}
+
+/// Spawn a background thread to set up the task (worktree creation, title generation).
 ///
-/// On success, transitions task to `Phase::Idle`.
+/// Runs worktree setup and title generation in parallel, then transitions to `Phase::Idle`.
 /// On failure, transitions task to `Status::Failed` with error message.
+///
+/// If `description` is Some, title will be generated from it (for tasks created without a title).
 fn spawn_async_setup(
     store: Arc<dyn WorkflowStore>,
     git: Option<Arc<dyn GitService>>,
     task_id: String,
     base_branch: Option<String>,
+    description: Option<String>,
 ) {
     crate::orkestra_debug!("task", "spawn_async_setup {}: starting", task_id);
     thread::spawn(move || {
-        // Attempt worktree creation if git is configured
-        let result = if let Some(ref git) = git {
-            match git.create_worktree(&task_id, base_branch.as_deref()) {
-                Ok(result) => Ok(Some(result)),
-                Err(e) => Err(format!("Worktree setup failed: {e}")),
-            }
-        } else {
-            // No git configured - just mark setup complete
-            Ok(None)
-        };
+        // Run worktree setup and title generation in parallel using scoped threads
+        let (worktree_result, generated_title) = thread::scope(|s| {
+            // Spawn worktree creation
+            let worktree_handle = s.spawn(|| {
+                if let Some(ref git) = git {
+                    match git.create_worktree(&task_id, base_branch.as_deref()) {
+                        Ok(result) => Ok(Some(result)),
+                        Err(e) => Err(format!("Worktree setup failed: {e}")),
+                    }
+                } else {
+                    Ok(None)
+                }
+            });
 
-        // Update task based on result
+            // Spawn title generation if needed
+            let title_handle = description.as_ref().map(|desc| {
+                let tid = &task_id;
+                s.spawn(move || generate_title(tid, desc))
+            });
+
+            // Wait for both to complete
+            let worktree_result = worktree_handle.join().unwrap_or_else(|_| {
+                Err("Worktree thread panicked".to_string())
+            });
+            let generated_title = title_handle.and_then(|h| h.join().ok());
+
+            (worktree_result, generated_title)
+        });
+
+        // Update task based on results
         match store.get_task(&task_id) {
             Ok(Some(mut task)) => {
-                match result {
-                    Ok(worktree_result) => {
+                // Apply generated title if we have one and title is still empty
+                if let Some(title) = generated_title {
+                    if task.title.trim().is_empty() {
+                        task.title = title;
+                    }
+                }
+
+                match worktree_result {
+                    Ok(worktree_info) => {
                         // Success - update worktree info and transition to Idle
-                        if let Some(ref wt) = worktree_result {
+                        if let Some(ref wt) = worktree_info {
                             task.branch_name = Some(wt.branch_name.clone());
                             task.worktree_path =
                                 Some(wt.worktree_path.to_string_lossy().to_string());
@@ -518,5 +558,29 @@ mod tests {
         assert_eq!(archived.len(), 1);
         assert_eq!(archived[0].id, task2.id);
         assert!(archived[0].is_archived());
+    }
+
+    #[test]
+    fn test_fallback_title_short_description() {
+        let title = super::generate_fallback_title("Fix the login bug");
+        assert_eq!(title, "Fix the login bug");
+    }
+
+    #[test]
+    fn test_fallback_title_long_description() {
+        let title = super::generate_fallback_title(
+            "Implement a comprehensive user authentication system with OAuth support and session management",
+        );
+        assert_eq!(title, "Implement a comprehensive user authentication...");
+    }
+
+    #[test]
+    fn test_fallback_title_truncates_at_word_boundary() {
+        let title = super::generate_fallback_title(
+            "The quick brown fox jumps over the lazy dog repeatedly",
+        );
+        // Should truncate at a word boundary before 50 chars
+        assert!(title.ends_with("..."));
+        assert!(title.len() <= 53); // 50 + "..."
     }
 }

@@ -115,7 +115,7 @@ pub fn workflow_get_stages_with_logs(
 ) -> Result<Vec<String>, TauriError> {
     state
         .api()?
-        .get_stages_with_logs(&task_id)
+        .get_stages_with_logs(&task_id, state.project_root())
         .map_err(Into::into)
 }
 

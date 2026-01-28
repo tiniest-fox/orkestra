@@ -115,13 +115,22 @@ impl WorkflowApi {
 
     /// Get stages that have logs for a task.
     ///
-    /// Returns the names of stages that have a Claude session ID recorded,
-    /// meaning they have session logs available.
-    pub fn get_stages_with_logs(&self, task_id: &str) -> WorkflowResult<Vec<String>> {
+    /// Returns the names of stages that have logs available:
+    /// - Agent stages with a Claude session ID
+    /// - Script stages with a log file in `.orkestra/script_logs/`
+    pub fn get_stages_with_logs(
+        &self,
+        task_id: &str,
+        project_root: &Path,
+    ) -> WorkflowResult<Vec<String>> {
         let sessions = self.store.get_stage_sessions(task_id)?;
+        let log_service = LogService::new(self.workflow.clone(), project_root.to_path_buf());
+
         Ok(sessions
             .into_iter()
-            .filter(|s| s.claude_session_id.is_some())
+            .filter(|s| {
+                log_service.stage_has_logs(task_id, &s.stage, s.claude_session_id.as_deref())
+            })
             .map(|s| s.stage)
             .collect())
     }

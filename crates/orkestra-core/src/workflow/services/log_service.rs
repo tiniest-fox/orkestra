@@ -102,6 +102,28 @@ impl LogService {
             .join("script_logs")
             .join(format!("{task_id}_{stage}.jsonl"))
     }
+
+    /// Check if a stage has logs available.
+    ///
+    /// Returns true if:
+    /// - Agent stage with a Claude session ID, OR
+    /// - Script stage with an existing log file
+    pub fn stage_has_logs(
+        &self,
+        task_id: &str,
+        stage: &str,
+        claude_session_id: Option<&str>,
+    ) -> bool {
+        // Agent stage: has Claude session ID
+        if claude_session_id.is_some() {
+            return true;
+        }
+        // Script stage: check if log file exists
+        if self.is_script_stage(stage) {
+            return self.script_log_path(task_id, stage).exists();
+        }
+        false
+    }
 }
 
 #[cfg(test)]

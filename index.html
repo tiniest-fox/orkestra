@@ -5,9 +5,90 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Orkestra</title>
+    <style>
+      /* Inline splash screen styles - shown before React loads */
+      .splash-screen {
+        height: 100vh;
+        background: linear-gradient(to bottom right, #f9fafb, #f3f4f6);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      .splash-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.5rem;
+      }
+      .splash-logo {
+        width: 4rem;
+        height: 4rem;
+        background-color: #2563eb;
+        border-radius: 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      }
+      .splash-logo svg {
+        width: 2.5rem;
+        height: 2.5rem;
+        color: white;
+      }
+      .splash-title {
+        font-size: 1.875rem;
+        font-weight: 600;
+        color: #1f2937;
+        margin: 0;
+      }
+      .splash-dots {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+      }
+      .splash-dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        background-color: #3b82f6;
+        border-radius: 50%;
+        animation: bounce 1s infinite;
+      }
+      .splash-dot:nth-child(1) { animation-delay: -0.3s; }
+      .splash-dot:nth-child(2) { animation-delay: -0.15s; }
+      .splash-text {
+        font-size: 0.875rem;
+        color: #9ca3af;
+        margin: 0;
+      }
+      @keyframes bounce {
+        0%, 80%, 100% { transform: translateY(0); }
+        40% { transform: translateY(-0.5rem); }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Inline splash screen - replaced by React when it loads -->
+      <div class="splash-screen">
+        <div class="splash-content">
+          <div class="splash-logo">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
+            </svg>
+          </div>
+          <h1 class="splash-title">Orkestra</h1>
+          <div class="splash-dots">
+            <div class="splash-dot"></div>
+            <div class="splash-dot"></div>
+            <div class="splash-dot"></div>
+          </div>
+          <p class="splash-text">Initializing workspace...</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

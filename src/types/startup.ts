@@ -42,6 +42,9 @@ export interface StartupWarning {
  */
 export type StartupStatus =
   | {
+      status: "initializing";
+    }
+  | {
       status: "ready";
       project_root: string;
       warnings: StartupWarning[];

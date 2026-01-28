@@ -28,5 +28,5 @@ pub use task_crud::*;
 /// before attempting any other workflow operations.
 #[tauri::command]
 pub fn get_startup_status(state: State<StartupState>) -> StartupStatus {
-    state.status().clone()
+    state.status()
 }

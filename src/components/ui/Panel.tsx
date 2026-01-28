@@ -6,10 +6,12 @@
 import type { ReactNode } from "react";
 
 type PanelVariant = "default" | "elevated";
+type PanelAccent = "none" | "info" | "warning";
 
 interface PanelProps {
   children: ReactNode;
   variant?: PanelVariant;
+  accent?: PanelAccent;
   className?: string;
 }
 
@@ -45,13 +47,24 @@ const variantStyles: Record<PanelVariant, string> = {
   elevated: "shadow-panel-elevated",
 };
 
+const accentStyles: Record<PanelAccent, string> = {
+  none: "",
+  info: "border-2 border-info bg-blue-50/30",
+  warning: "border-2 border-warning bg-amber-50/30",
+};
+
 /**
  * Panel root component - container with rounded corners and shadow.
  */
-export function Panel({ children, variant = "default", className = "" }: PanelProps) {
+export function Panel({
+  children,
+  variant = "default",
+  accent = "none",
+  className = "",
+}: PanelProps) {
   return (
     <div
-      className={`bg-white rounded-panel ${variantStyles[variant]} flex flex-col overflow-hidden ${className}`}
+      className={`bg-white rounded-panel ${variantStyles[variant]} ${accentStyles[accent]} flex flex-col overflow-hidden ${className}`}
     >
       {children}
     </div>
@@ -59,13 +72,11 @@ export function Panel({ children, variant = "default", className = "" }: PanelPr
 }
 
 /**
- * Panel.Header - Fixed header section with border divider.
+ * Panel.Header - Fixed header section.
  */
 function PanelHeader({ children, className = "" }: PanelHeaderProps) {
   return (
-    <div
-      className={`flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-stone-200 ${className}`}
-    >
+    <div className={`flex-shrink-0 flex items-center justify-between px-4 py-3 ${className}`}>
       {children}
     </div>
   );
@@ -118,14 +129,10 @@ function PanelBody({ children, className = "", scrollable = false }: PanelBodyPr
 }
 
 /**
- * Panel.Footer - Fixed footer section with top border.
+ * Panel.Footer - Fixed footer section.
  */
 function PanelFooter({ children, className = "" }: PanelFooterProps) {
-  return (
-    <div className={`flex-shrink-0 px-4 py-3 border-t border-stone-200 ${className}`}>
-      {children}
-    </div>
-  );
+  return <div className={`flex-shrink-0 px-4 py-3 ${className}`}>{children}</div>;
 }
 
 // Attach subcomponents to Panel

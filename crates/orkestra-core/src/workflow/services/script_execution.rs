@@ -414,8 +414,7 @@ mod tests {
     fn test_write_and_read_logs() {
         let temp_dir = TempDir::new().unwrap();
         let workflow = test_workflow_with_script();
-        let service =
-            ScriptExecutionService::new(workflow.clone(), temp_dir.path().to_path_buf());
+        let service = ScriptExecutionService::new(workflow.clone(), temp_dir.path().to_path_buf());
 
         let log_path = service.script_log_path("task-456", "checks");
         fs::create_dir_all(log_path.parent().unwrap()).unwrap();

@@ -283,9 +283,9 @@ fn spawn_async_setup(
             });
 
             // Wait for both to complete
-            let worktree_result = worktree_handle.join().unwrap_or_else(|_| {
-                Err("Worktree thread panicked".to_string())
-            });
+            let worktree_result = worktree_handle
+                .join()
+                .unwrap_or_else(|_| Err("Worktree thread panicked".to_string()));
             let generated_title = title_handle.and_then(|h| h.join().ok());
 
             (worktree_result, generated_title)

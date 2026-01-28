@@ -10,7 +10,7 @@ type Direction = "horizontal" | "vertical";
 interface PanelContainerProps {
   children: ReactNode;
   direction?: Direction;
-  /** Gap between panels in pixels (default: 16) */
+  /** Gap between panels in pixels (default: 8) */
   gap?: number;
   className?: string;
 }
@@ -25,7 +25,7 @@ interface PanelContainerProps {
 export function PanelContainer({
   children,
   direction = "horizontal",
-  gap = 16,
+  gap = 8,
   className = "",
 }: PanelContainerProps) {
   const directionClass = direction === "horizontal" ? "flex-row" : "flex-col";

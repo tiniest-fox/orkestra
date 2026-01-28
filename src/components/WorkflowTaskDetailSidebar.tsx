@@ -179,112 +179,114 @@ function QuestionFormSection({
   if (!currentQuestion) return null;
 
   return (
-    <div className="p-4 bg-blue-50 border-t border-stone-200 flex flex-col rounded-b-panel">
-      {/* Header with progress indicator */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-sm font-medium text-info">Questions</div>
-        <div className="text-xs text-info/70">
-          Question {currentIndex + 1} of {questions.length}
+    <Panel accent="info" className="m-2 mt-0">
+      <div className="p-4 flex flex-col">
+        {/* Header with progress indicator */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-medium text-info">Questions</div>
+          <div className="text-xs text-info/70">
+            Question {currentIndex + 1} of {questions.length}
+          </div>
         </div>
-      </div>
 
-      {/* Scrollable question content */}
-      <div className="overflow-auto max-h-[300px] mb-4">
-        <div className="text-sm font-medium text-stone-800 mb-1">{currentQuestion.question}</div>
-        {currentQuestion.context && (
-          <div className="text-xs text-stone-500 mb-2">{currentQuestion.context}</div>
-        )}
-        <div className="space-y-1">
-          {/* Render predefined options */}
-          {currentQuestion.options?.map((option) => (
-            <label key={option.id} className="flex items-start gap-2 cursor-pointer">
+        {/* Scrollable question content */}
+        <div className="overflow-auto max-h-[300px] mb-4">
+          <div className="text-sm font-medium text-stone-800 mb-1">{currentQuestion.question}</div>
+          {currentQuestion.context && (
+            <div className="text-xs text-stone-500 mb-2">{currentQuestion.context}</div>
+          )}
+          <div className="space-y-1">
+            {/* Render predefined options */}
+            {currentQuestion.options?.map((option) => (
+              <label key={option.id} className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name={currentQuestion.id}
+                  value={option.id}
+                  checked={
+                    answers[currentQuestion.id] === option.id && !otherSelected[currentQuestion.id]
+                  }
+                  onChange={() => {
+                    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: option.id }));
+                    setOtherSelected((prev) => ({ ...prev, [currentQuestion.id]: false }));
+                  }}
+                  className="text-info mt-0.5 accent-info"
+                />
+                <div>
+                  <span className="text-sm text-stone-700">{option.label}</span>
+                  {option.description && (
+                    <span className="text-xs text-stone-500 ml-1">- {option.description}</span>
+                  )}
+                </div>
+              </label>
+            ))}
+            {/* "Other" option - always present */}
+            <label className="flex items-start gap-2 cursor-pointer">
               <input
                 type="radio"
                 name={currentQuestion.id}
-                value={option.id}
-                checked={
-                  answers[currentQuestion.id] === option.id && !otherSelected[currentQuestion.id]
-                }
+                value="__other__"
+                checked={otherSelected[currentQuestion.id] === true}
                 onChange={() => {
-                  setAnswers((prev) => ({ ...prev, [currentQuestion.id]: option.id }));
-                  setOtherSelected((prev) => ({ ...prev, [currentQuestion.id]: false }));
+                  setOtherSelected((prev) => ({ ...prev, [currentQuestion.id]: true }));
+                  setAnswers((prev) => ({ ...prev, [currentQuestion.id]: "" }));
                 }}
                 className="text-info mt-0.5 accent-info"
               />
               <div>
-                <span className="text-sm text-stone-700">{option.label}</span>
-                {option.description && (
-                  <span className="text-xs text-stone-500 ml-1">- {option.description}</span>
-                )}
+                <span className="text-sm text-stone-700">Other (custom response)</span>
               </div>
             </label>
-          ))}
-          {/* "Other" option - always present */}
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name={currentQuestion.id}
-              value="__other__"
-              checked={otherSelected[currentQuestion.id] === true}
-              onChange={() => {
-                setOtherSelected((prev) => ({ ...prev, [currentQuestion.id]: true }));
-                setAnswers((prev) => ({ ...prev, [currentQuestion.id]: "" }));
-              }}
-              className="text-info mt-0.5 accent-info"
-            />
-            <div>
-              <span className="text-sm text-stone-700">Other (custom response)</span>
-            </div>
-          </label>
-          {/* Text input for "Other" - shown when "Other" is selected */}
-          {otherSelected[currentQuestion.id] && (
-            <textarea
-              value={otherText[currentQuestion.id] || ""}
-              onChange={(e) =>
-                setOtherText((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))
-              }
-              placeholder="Type your custom response..."
-              className="w-full mt-2 px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-info resize-none text-stone-800"
-              rows={2}
-            />
+            {/* Text input for "Other" - shown when "Other" is selected */}
+            {otherSelected[currentQuestion.id] && (
+              <textarea
+                value={otherText[currentQuestion.id] || ""}
+                onChange={(e) =>
+                  setOtherText((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))
+                }
+                placeholder="Type your custom response..."
+                className="w-full mt-2 px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-info resize-none text-stone-800"
+                rows={2}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Navigation controls */}
+        <div className="flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handlePrevious}
+            disabled={isFirstQuestion || isSubmitting}
+            className="text-info hover:bg-blue-100"
+          >
+            Previous
+          </Button>
+
+          {isLastQuestion ? (
+            <Button
+              size="sm"
+              onClick={handleSubmit}
+              disabled={isSubmitting || !allAnswered}
+              loading={isSubmitting}
+              className="bg-info hover:bg-blue-600"
+            >
+              Submit Answers
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={handleNext}
+              disabled={!currentAnswered || isSubmitting}
+              className="bg-info hover:bg-blue-600"
+            >
+              Next
+            </Button>
           )}
         </div>
       </div>
-
-      {/* Navigation controls */}
-      <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={handlePrevious}
-          disabled={isFirstQuestion || isSubmitting}
-          className="text-info hover:bg-blue-100"
-        >
-          Previous
-        </Button>
-
-        {isLastQuestion ? (
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={isSubmitting || !allAnswered}
-            loading={isSubmitting}
-            className="bg-info hover:bg-blue-600"
-          >
-            Submit Answers
-          </Button>
-        ) : (
-          <Button
-            size="sm"
-            onClick={handleNext}
-            disabled={!currentAnswered || isSubmitting}
-            className="bg-info hover:bg-blue-600"
-          >
-            Next
-          </Button>
-        )}
-      </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -312,39 +314,41 @@ function ReviewPanel({
   };
 
   return (
-    <div className="p-4 bg-amber-50 border-t border-stone-200 rounded-b-panel">
-      <div className="text-sm font-medium text-warning mb-3">
-        {capitalizeFirst(stageName)} Review
+    <Panel accent="warning" className="m-2 mt-0">
+      <div className="p-4">
+        <div className="text-sm font-medium text-warning mb-3">
+          {capitalizeFirst(stageName)} Review
+        </div>
+        <textarea
+          value={feedback}
+          onChange={(e) => setFeedback(e.target.value)}
+          placeholder="Leave feedback to request changes..."
+          className="w-full px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-warning resize-none mb-3 text-stone-800"
+          rows={2}
+        />
+        {feedback.trim() ? (
+          <Button
+            onClick={handleReject}
+            disabled={isSubmitting}
+            loading={isSubmitting}
+            fullWidth
+            className="bg-warning hover:bg-amber-600 text-white"
+          >
+            Request Changes
+          </Button>
+        ) : (
+          <Button
+            onClick={onApprove}
+            disabled={isSubmitting}
+            loading={isSubmitting}
+            fullWidth
+            className="bg-success hover:bg-emerald-600 text-white"
+          >
+            Approve
+          </Button>
+        )}
       </div>
-      <textarea
-        value={feedback}
-        onChange={(e) => setFeedback(e.target.value)}
-        placeholder="Leave feedback to request changes..."
-        className="w-full px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-warning resize-none mb-3 text-stone-800"
-        rows={2}
-      />
-      {feedback.trim() ? (
-        <Button
-          onClick={handleReject}
-          disabled={isSubmitting}
-          loading={isSubmitting}
-          fullWidth
-          className="bg-warning hover:bg-amber-600 text-white"
-        >
-          Request Changes
-        </Button>
-      ) : (
-        <Button
-          onClick={onApprove}
-          disabled={isSubmitting}
-          loading={isSubmitting}
-          fullWidth
-          className="bg-success hover:bg-emerald-600 text-white"
-        >
-          Approve
-        </Button>
-      )}
-    </div>
+    </Panel>
   );
 }
 
@@ -678,7 +682,7 @@ export function WorkflowTaskDetailSidebar({
   return (
     <Panel variant="elevated" className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex-shrink-0 p-4 border-b border-stone-200">
+      <div className="flex-shrink-0 p-4">
         {/* Top row: Title and close button */}
         <div className="flex items-start justify-between gap-2">
           <h2 className="font-heading font-semibold text-lg text-stone-800 line-clamp-2">
@@ -696,7 +700,7 @@ export function WorkflowTaskDetailSidebar({
       </div>
 
       {/* Tab Bar */}
-      <div className="flex-shrink-0 flex border-b border-stone-200 overflow-x-auto">
+      <div className="flex-shrink-0 flex overflow-x-auto bg-stone-100">
         {tabs.map((tab) => (
           <button
             type="button"

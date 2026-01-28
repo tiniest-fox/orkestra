@@ -21,17 +21,14 @@ use std::time::Duration;
 /// Wrapper for the orchestrator stop flag, stored in Tauri state.
 struct OrchestratorStopFlag(Arc<AtomicBool>);
 
-/// Guard to prevent multiple initialization calls (e.g., from React StrictMode double-mount).
+/// Guard to prevent multiple initialization calls (e.g., from React `StrictMode` double-mount).
 static INITIALIZATION_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// Command for frontend to trigger initialization after splash screen loads.
 ///
 /// This ensures no background work runs until the UI is ready.
 #[tauri::command]
-fn begin_initialization(
-    app_handle: AppHandle,
-    stop_flag: tauri::State<OrchestratorStopFlag>,
-) {
+fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<OrchestratorStopFlag>) {
     // Prevent multiple initialization calls (e.g., from React StrictMode double-mount)
     if INITIALIZATION_STARTED.swap(true, Ordering::SeqCst) {
         println!("[startup] Initialization already started, ignoring duplicate call");

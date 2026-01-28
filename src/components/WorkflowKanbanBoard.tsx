@@ -5,6 +5,7 @@
 
 import type { WorkflowConfig, WorkflowTask } from "../types/workflow";
 import { capitalizeFirst, hasPendingQuestions, needsReview } from "../types/workflow";
+import { Panel } from "./ui";
 import { WorkflowTaskCard } from "./WorkflowTaskCard";
 
 interface WorkflowKanbanBoardProps {
@@ -134,10 +135,7 @@ export function WorkflowKanbanBoard({
           {columns.map((column) => {
             const columnTasks = getTasksForColumn(visibleTasks, column.id);
             return (
-              <div
-                key={column.id}
-                className="flex-shrink-0 w-72 bg-stone-100 rounded-panel p-4 flex flex-col h-full"
-              >
+              <Panel key={column.id} className="flex-shrink-0 w-72 p-4 h-full bg-stone-50">
                 <h2 className="font-heading font-medium text-stone-700 mb-4 flex items-center gap-2 flex-shrink-0">
                   <span className={`w-3 h-3 rounded-full ${column.color}`} />
                   {column.label}
@@ -157,7 +155,7 @@ export function WorkflowKanbanBoard({
                     ))
                   )}
                 </div>
-              </div>
+              </Panel>
             );
           })}
 

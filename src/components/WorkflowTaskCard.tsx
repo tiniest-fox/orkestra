@@ -45,8 +45,8 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
       : taskNeedsReview || hasQuestions
         ? "border-amber-400 bg-amber-50"
         : isSelected
-          ? "border-blue-500 ring-2 ring-blue-200"
-          : "border-gray-200";
+          ? "border-sage-500 ring-2 ring-sage-200"
+          : "border-stone-200";
 
   // Get error/reason text for failed/blocked tasks
   const errorText =
@@ -58,43 +58,43 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
 
   return (
     <button
-      className={`bg-white rounded-lg shadow-sm border p-4 ${borderClass} cursor-pointer hover:shadow-md transition-shadow text-left w-full`}
+      className={`bg-white rounded-panel-sm shadow-panel border p-4 ${borderClass} cursor-pointer hover:shadow-panel-elevated transition-shadow text-left w-full`}
       onClick={onClick}
       type="button"
     >
       <div className="flex items-start justify-between gap-2">
-        <h3 className="font-medium text-gray-900 text-sm">{getDisplayTitle(task)}</h3>
+        <h3 className="font-medium text-stone-800 text-sm">{getDisplayTitle(task)}</h3>
         <div className="flex items-center gap-1.5">
           {taskNeedsReview && (
-            <span className="flex-shrink-0 text-amber-600 text-xs font-medium px-1.5 py-0.5 bg-amber-100 rounded">
+            <span className="flex-shrink-0 text-amber-700 text-xs font-medium px-1.5 py-0.5 bg-amber-100 rounded-full">
               Review
             </span>
           )}
           {hasQuestions && !taskNeedsReview && (
-            <span className="flex-shrink-0 text-blue-600 text-xs font-medium px-1.5 py-0.5 bg-blue-100 rounded">
+            <span className="flex-shrink-0 text-info text-xs font-medium px-1.5 py-0.5 bg-blue-100 rounded-full">
               Questions
             </span>
           )}
           {showSpinner && (
-            <span className="flex-shrink-0 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <span className="flex-shrink-0 w-4 h-4 border-2 border-sage-500 border-t-transparent rounded-full animate-spin" />
           )}
-          {isFailed && <span className="flex-shrink-0 text-red-500 font-bold">!</span>}
-          {isBlocked && <span className="flex-shrink-0 text-orange-500 font-bold">||</span>}
+          {isFailed && <span className="flex-shrink-0 text-error font-bold">!</span>}
+          {isBlocked && <span className="flex-shrink-0 text-blocked font-bold">||</span>}
         </div>
       </div>
 
       {task.description && task.title && (
-        <p className="text-gray-500 text-xs mt-1 line-clamp-2">{task.description}</p>
+        <p className="text-stone-500 text-xs mt-1 line-clamp-2">{task.description}</p>
       )}
 
       <div className="mt-3">
-        <span className="text-gray-400 text-xs font-mono">{task.id}</span>
+        <span className="text-stone-400 text-xs font-mono">{task.id}</span>
       </div>
 
       {errorText && (isFailed || isBlocked) && (
         <p
-          className={`text-xs mt-2 p-2 rounded ${
-            isFailed ? "text-red-600 bg-red-100" : "text-orange-600 bg-orange-100"
+          className={`text-xs mt-2 p-2 rounded-panel-sm ${
+            isFailed ? "text-error bg-red-100" : "text-blocked bg-orange-100"
           }`}
         >
           {isFailed ? errorText : `Blocked: ${errorText}`}
@@ -102,7 +102,7 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
       )}
 
       {isDone && Object.keys(task.artifacts ?? {}).length > 0 && (
-        <div className="text-gray-500 text-xs mt-2">
+        <div className="text-stone-500 text-xs mt-2">
           {Object.keys(task.artifacts ?? {}).length} artifact(s)
         </div>
       )}

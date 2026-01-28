@@ -15,7 +15,9 @@ use std::time::Duration;
 
 use crate::workflow::config::{ScriptStageConfig, StageConfig, WorkflowConfig};
 use crate::workflow::domain::{LogEntry, Task};
-use crate::workflow::execution::{ScriptEnv, ScriptHandle, ScriptResult};
+use crate::workflow::execution::{ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult};
+
+use super::log_service::LogService;
 
 // ============================================================================
 // Script Execution Handle
@@ -193,7 +195,8 @@ impl ScriptExecutionService {
 
     /// Poll all active scripts for completion.
     ///
-    /// Returns a list of completed scripts.
+    /// Returns a list of poll results. Incremental output is written to log files
+    /// as it arrives, allowing real-time log viewing.
     pub fn poll_active_scripts(&self) -> Vec<ScriptPollResult> {
         let mut results = Vec::new();
         let mut completed_task_ids = Vec::new();
@@ -202,8 +205,8 @@ impl ScriptExecutionService {
         if let Ok(mut scripts) = self.active_scripts.lock() {
             for (task_id, script) in scripts.iter_mut() {
                 match script.handle.try_wait() {
-                    Ok(Some(result)) => {
-                        // Write output and exit logs
+                    Ok(ScriptPollState::Completed(result)) => {
+                        // Write final output if any (may contain remaining buffered output)
                         if !result.output.is_empty() {
                             let _ = self.write_log_entry(
                                 &script.log_path,
@@ -230,8 +233,16 @@ impl ScriptExecutionService {
                             recovery_stage: script.recovery_stage.clone(),
                         }));
                     }
-                    Ok(None) => {
-                        // Still running
+                    Ok(ScriptPollState::Running { new_output }) => {
+                        // Write incremental output to log file for real-time viewing
+                        if let Some(output) = new_output {
+                            if !output.is_empty() {
+                                let _ = self.write_log_entry(
+                                    &script.log_path,
+                                    &LogEntry::ScriptOutput { content: output },
+                                );
+                            }
+                        }
                         results.push(ScriptPollResult::Running);
                     }
                     Err(e) => {
@@ -283,11 +294,12 @@ impl ScriptExecutionService {
     }
 
     /// Get the log file path for a script execution.
+    ///
+    /// Delegates to `LogService::script_log_path` to maintain a single source of truth
+    /// for log file paths.
     fn script_log_path(&self, task_id: &str, stage: &str) -> PathBuf {
-        self.project_root
-            .join(".orkestra")
-            .join("script_logs")
-            .join(format!("{task_id}_{stage}.jsonl"))
+        let log_service = LogService::new(self.workflow.clone(), self.project_root.clone());
+        log_service.script_log_path(task_id, stage)
     }
 
     /// Write a log entry to the script log file.
@@ -305,26 +317,6 @@ impl ScriptExecutionService {
         writeln!(file, "{json}").map_err(|e| ScriptError::LogError(e.to_string()))?;
 
         Ok(())
-    }
-
-    /// Read logs for a script execution.
-    #[allow(dead_code)] // Public API for debugging/UI, not yet integrated
-    pub fn get_script_logs(&self, task_id: &str, stage: &str) -> Vec<LogEntry> {
-        let log_path = self.script_log_path(task_id, stage);
-        self.read_log_file(&log_path)
-    }
-
-    /// Read a script log file.
-    #[allow(clippy::unused_self)] // Kept as method for API consistency
-    fn read_log_file(&self, path: &Path) -> Vec<LogEntry> {
-        let Ok(content) = fs::read_to_string(path) else {
-            return Vec::new();
-        };
-
-        content
-            .lines()
-            .filter_map(|line| serde_json::from_str(line).ok())
-            .collect()
     }
 }
 
@@ -362,6 +354,7 @@ impl std::error::Error for ScriptError {}
 mod tests {
     use super::*;
     use crate::workflow::config::{IntegrationConfig, StageConfig};
+    use crate::workflow::services::LogService;
     use tempfile::TempDir;
 
     fn test_workflow_with_script() -> WorkflowConfig {
@@ -420,8 +413,9 @@ mod tests {
     #[test]
     fn test_write_and_read_logs() {
         let temp_dir = TempDir::new().unwrap();
+        let workflow = test_workflow_with_script();
         let service =
-            ScriptExecutionService::new(test_workflow_with_script(), temp_dir.path().to_path_buf());
+            ScriptExecutionService::new(workflow.clone(), temp_dir.path().to_path_buf());
 
         let log_path = service.script_log_path("task-456", "checks");
         fs::create_dir_all(log_path.parent().unwrap()).unwrap();
@@ -457,8 +451,9 @@ mod tests {
             )
             .unwrap();
 
-        // Read them back
-        let logs = service.get_script_logs("task-456", "checks");
+        // Read them back using LogService
+        let log_service = LogService::new(workflow, temp_dir.path().to_path_buf());
+        let logs = log_service.read_script_logs("task-456", "checks");
         assert_eq!(logs.len(), 3);
 
         match &logs[0] {

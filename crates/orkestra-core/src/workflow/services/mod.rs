@@ -33,6 +33,7 @@ mod api;
 mod human_actions;
 mod integration;
 mod iteration_service;
+mod log_service;
 mod orchestrator;
 mod prompt_service;
 mod queries;
@@ -60,6 +61,7 @@ pub(crate) use workflow_warn;
 
 pub use api::WorkflowApi;
 pub use iteration_service::IterationService;
+pub use log_service::LogService;
 pub use orchestrator::{OrchestratorError, OrchestratorEvent, OrchestratorLoop};
 pub use prompt_service::PromptService;
 // Note: ScriptExecutionService is internal to StageExecutionService

@@ -4,9 +4,11 @@
 //! This module provides async execution with timeout support and output capture.
 
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::{Child, ChildStderr, ChildStdout, Command, Stdio};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::process::kill_process_tree;
@@ -72,14 +74,27 @@ impl ScriptResult {
     }
 }
 
+/// Result of polling a script handle.
+pub enum ScriptPollState {
+    /// Script is still running, with any new output since last poll.
+    Running {
+        /// New output received since the last poll (may be empty).
+        new_output: Option<String>,
+    },
+    /// Script has completed.
+    Completed(ScriptResult),
+}
+
 /// Handle for a running script process.
 ///
 /// Use `try_wait()` to check for completion without blocking.
 /// The script will be killed on drop if still running.
 pub struct ScriptHandle {
     child: Child,
-    stdout: Option<ChildStdout>,
-    stderr: Option<ChildStderr>,
+    /// Receiver for output lines from reader threads.
+    output_receiver: Receiver<String>,
+    /// Join handles for reader threads.
+    reader_handles: Vec<JoinHandle<()>>,
     timeout_at: Instant,
     output_buffer: String,
     killed: bool,
@@ -128,13 +143,26 @@ impl ScriptHandle {
 
         let mut child = cmd.spawn()?;
 
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
+        // Set up channel for output streaming
+        let (sender, receiver) = mpsc::channel();
+
+        // Spawn reader threads for stdout and stderr
+        let mut reader_handles = Vec::new();
+
+        if let Some(stdout) = child.stdout.take() {
+            let handle = spawn_output_reader(stdout, sender.clone());
+            reader_handles.push(handle);
+        }
+
+        if let Some(stderr) = child.stderr.take() {
+            let handle = spawn_output_reader(stderr, sender);
+            reader_handles.push(handle);
+        }
 
         Ok(Self {
             child,
-            stdout,
-            stderr,
+            output_receiver: receiver,
+            reader_handles,
             timeout_at: Instant::now() + timeout,
             output_buffer: String::new(),
             killed: false,
@@ -148,18 +176,30 @@ impl ScriptHandle {
 
     /// Check if the script has completed (non-blocking).
     ///
-    /// Returns `Some(ScriptResult)` if the script has finished,
-    /// `None` if still running.
+    /// Returns the current poll state with any new output since the last poll.
     ///
     /// If the script has timed out, this will kill it and return
     /// a timeout result.
-    pub fn try_wait(&mut self) -> std::io::Result<Option<ScriptResult>> {
-        // Check for timeout first
+    pub fn try_wait(&mut self) -> std::io::Result<ScriptPollState> {
+        // Collect any available output from reader threads
+        let new_output = self.collect_available_output();
+
+        // Always append new output to the buffer first
+        if let Some(ref output) = new_output {
+            self.output_buffer.push_str(output);
+        }
+
+        // Check for timeout
         if self.is_timed_out() && !self.killed {
             self.kill();
-            // Collect any output we got before timeout
-            self.collect_available_output();
-            return Ok(Some(ScriptResult {
+            // Wait for reader threads to finish
+            self.wait_for_readers();
+            // Collect any remaining output
+            if let Some(remaining) = self.collect_available_output() {
+                self.output_buffer.push_str(&remaining);
+            }
+
+            return Ok(ScriptPollState::Completed(ScriptResult {
                 exit_code: -1,
                 output: format!(
                     "Script timed out after {:?}\n\n{}",
@@ -170,22 +210,25 @@ impl ScriptHandle {
             }));
         }
 
-        // Try to collect available output (non-blocking)
-        self.collect_available_output();
-
         // Check if process has exited
         match self.child.try_wait()? {
             Some(status) => {
-                // Process exited - collect remaining output
-                self.collect_remaining_output();
+                // Process exited - wait for reader threads and collect remaining output
+                self.wait_for_readers();
+                if let Some(remaining) = self.collect_available_output() {
+                    self.output_buffer.push_str(&remaining);
+                }
 
-                Ok(Some(ScriptResult {
+                Ok(ScriptPollState::Completed(ScriptResult {
                     exit_code: status.code().unwrap_or(-1),
                     output: std::mem::take(&mut self.output_buffer),
                     timed_out: false,
                 }))
             }
-            None => Ok(None), // Still running
+            None => {
+                // Still running - return the new output for this poll
+                Ok(ScriptPollState::Running { new_output })
+            }
         }
     }
 
@@ -207,36 +250,52 @@ impl ScriptHandle {
         }
     }
 
-    /// Collect available output without blocking.
-    #[allow(clippy::unused_self)]
-    fn collect_available_output(&mut self) {
-        // Note: This is a simplified implementation.
-        // For true non-blocking reads, we'd need platform-specific code
-        // or async I/O. For now, we rely on the process having exited
-        // or the timeout being hit for output collection.
-    }
+    /// Collect available output from reader threads without blocking.
+    ///
+    /// Returns any new lines received since the last call, or None if no new output.
+    fn collect_available_output(&mut self) -> Option<String> {
+        let mut new_lines = Vec::new();
 
-    /// Collect all remaining output after process exits.
-    fn collect_remaining_output(&mut self) {
-        // Read stdout
-        if let Some(mut stdout) = self.stdout.take() {
-            let mut stdout_buf = String::new();
-            if stdout.read_to_string(&mut stdout_buf).is_ok() && !stdout_buf.is_empty() {
-                self.output_buffer.push_str(&stdout_buf);
-            }
+        // Drain all available messages from the channel
+        while let Ok(line) = self.output_receiver.try_recv() {
+            new_lines.push(line);
         }
 
-        // Read stderr
-        if let Some(mut stderr) = self.stderr.take() {
-            let mut stderr_buf = String::new();
-            if stderr.read_to_string(&mut stderr_buf).is_ok() && !stderr_buf.is_empty() {
-                if !self.output_buffer.is_empty() {
-                    self.output_buffer.push_str("\n\n--- stderr ---\n");
+        if new_lines.is_empty() {
+            None
+        } else {
+            Some(new_lines.join(""))
+        }
+    }
+
+    /// Wait for reader threads to complete.
+    fn wait_for_readers(&mut self) {
+        for handle in self.reader_handles.drain(..) {
+            let _ = handle.join();
+        }
+    }
+}
+
+/// Spawn a thread to read lines from a reader and send them through a channel.
+fn spawn_output_reader<R: std::io::Read + Send + 'static>(
+    reader: R,
+    sender: Sender<String>,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let buf_reader = BufReader::new(reader);
+        for line in buf_reader.lines() {
+            match line {
+                Ok(line) => {
+                    // Send line with newline to preserve formatting
+                    if sender.send(format!("{line}\n")).is_err() {
+                        // Receiver dropped, stop reading
+                        break;
+                    }
                 }
-                self.output_buffer.push_str(&stderr_buf);
+                Err(_) => break,
             }
         }
-    }
+    })
 }
 
 impl Drop for ScriptHandle {
@@ -288,13 +347,17 @@ mod tests {
 
         // Wait for completion
         loop {
-            if let Some(result) = handle.try_wait().unwrap() {
-                assert!(result.is_success());
-                assert!(result.output.contains("hello_from_orkestra"));
-                assert!(result.output.contains("42"));
-                break;
+            match handle.try_wait().unwrap() {
+                ScriptPollState::Completed(result) => {
+                    assert!(result.is_success());
+                    assert!(result.output.contains("hello_from_orkestra"));
+                    assert!(result.output.contains("42"));
+                    break;
+                }
+                ScriptPollState::Running { .. } => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
             }
-            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -310,14 +373,18 @@ mod tests {
 
         // Wait for completion
         loop {
-            if let Some(result) = handle.try_wait().unwrap() {
-                assert!(result.is_success());
-                assert_eq!(result.exit_code, 0);
-                assert!(result.output.contains("hello world"));
-                assert!(!result.timed_out);
-                break;
+            match handle.try_wait().unwrap() {
+                ScriptPollState::Completed(result) => {
+                    assert!(result.is_success());
+                    assert_eq!(result.exit_code, 0);
+                    assert!(result.output.contains("hello world"));
+                    assert!(!result.timed_out);
+                    break;
+                }
+                ScriptPollState::Running { .. } => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
             }
-            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -329,13 +396,17 @@ mod tests {
 
         // Wait for completion
         loop {
-            if let Some(result) = handle.try_wait().unwrap() {
-                assert!(!result.is_success());
-                assert_eq!(result.exit_code, 42);
-                assert!(!result.timed_out);
-                break;
+            match handle.try_wait().unwrap() {
+                ScriptPollState::Completed(result) => {
+                    assert!(!result.is_success());
+                    assert_eq!(result.exit_code, 42);
+                    assert!(!result.timed_out);
+                    break;
+                }
+                ScriptPollState::Running { .. } => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
             }
-            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -352,9 +423,15 @@ mod tests {
         // Wait for timeout
         std::thread::sleep(Duration::from_millis(200));
 
-        let result = handle.try_wait().unwrap().unwrap();
-        assert!(!result.is_success());
-        assert!(result.timed_out);
+        match handle.try_wait().unwrap() {
+            ScriptPollState::Completed(result) => {
+                assert!(!result.is_success());
+                assert!(result.timed_out);
+            }
+            ScriptPollState::Running { .. } => {
+                panic!("Expected script to be timed out");
+            }
+        }
     }
 
     #[test]
@@ -369,13 +446,17 @@ mod tests {
 
         // Wait for completion
         loop {
-            if let Some(result) = handle.try_wait().unwrap() {
-                assert!(result.is_success());
-                assert!(result.output.contains("stdout"));
-                assert!(result.output.contains("stderr"));
-                break;
+            match handle.try_wait().unwrap() {
+                ScriptPollState::Completed(result) => {
+                    assert!(result.is_success());
+                    assert!(result.output.contains("stdout"));
+                    assert!(result.output.contains("stderr"));
+                    break;
+                }
+                ScriptPollState::Running { .. } => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
             }
-            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -388,12 +469,57 @@ mod tests {
             ScriptHandle::spawn("pwd", temp_dir.path(), Duration::from_secs(10)).unwrap();
 
         loop {
-            if let Some(result) = handle.try_wait().unwrap() {
-                assert!(result.is_success());
-                assert!(result.output.trim().contains(expected_path));
-                break;
+            match handle.try_wait().unwrap() {
+                ScriptPollState::Completed(result) => {
+                    assert!(result.is_success());
+                    assert!(result.output.trim().contains(expected_path));
+                    break;
+                }
+                ScriptPollState::Running { .. } => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
             }
-            std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    #[test]
+    fn test_script_streaming_output() {
+        let temp_dir = TempDir::new().unwrap();
+        // Script that produces output over time
+        let mut handle = ScriptHandle::spawn(
+            "for i in 1 2 3; do echo \"line $i\"; sleep 0.05; done",
+            temp_dir.path(),
+            Duration::from_secs(10),
+        )
+        .unwrap();
+
+        let mut collected_incremental = Vec::new();
+
+        // Poll and collect incremental output
+        loop {
+            match handle.try_wait().unwrap() {
+                ScriptPollState::Completed(result) => {
+                    assert!(result.is_success());
+                    // Final output should contain all lines
+                    assert!(result.output.contains("line 1"));
+                    assert!(result.output.contains("line 2"));
+                    assert!(result.output.contains("line 3"));
+                    break;
+                }
+                ScriptPollState::Running { new_output } => {
+                    if let Some(output) = new_output {
+                        collected_incremental.push(output);
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+        }
+
+        // We should have received some incremental output while the script was running
+        // (may vary based on timing, so just check we got at least something)
+        assert!(
+            !collected_incremental.is_empty(),
+            "Should have received incremental output"
+        );
     }
 }

@@ -5,8 +5,8 @@ use std::path::Path;
 use crate::workflow::domain::{Iteration, LogEntry, Question};
 use crate::workflow::ports::WorkflowResult;
 use crate::workflow::runtime::{Artifact, Outcome};
-use crate::workflow::services::session_logs::recover_session_logs;
 
+use super::log_service::LogService;
 use super::WorkflowApi;
 
 impl WorkflowApi {
@@ -155,51 +155,16 @@ impl WorkflowApi {
             },
         };
 
-        // Check if this is a script stage
-        if self.is_script_stage(&stage_name) {
-            // Read script logs
-            return Ok(read_script_logs(task_id, &stage_name, project_root));
-        }
+        // Get the Claude session ID if this is an agent stage
+        let claude_session_id = self
+            .store
+            .get_stage_session(task_id, &stage_name)?
+            .and_then(|s| s.claude_session_id);
 
-        // Agent stage: get logs from Claude session
-        // Get the stage session to find the Claude session ID
-        let session = self.store.get_stage_session(task_id, &stage_name)?;
-        let Some(session) = session else {
-            return Ok(vec![]); // No session for this stage yet
-        };
-        let Some(claude_id) = session.claude_session_id else {
-            return Ok(vec![]); // No Claude session ID captured yet
-        };
-
-        // Determine the working directory - use worktree if available, otherwise project root
-        let cwd = task
-            .worktree_path
-            .as_ref()
-            .map_or_else(|| project_root.to_path_buf(), std::path::PathBuf::from);
-
-        // Recover logs from Claude's session file
-        // Return empty if file doesn't exist yet (agent may still be starting)
-        Ok(recover_session_logs(&claude_id, &cwd).unwrap_or_default())
+        // Use LogService for unified log reading
+        let log_service = LogService::new(self.workflow.clone(), project_root.to_path_buf());
+        Ok(log_service.get_logs(&task, &stage_name, claude_session_id.as_deref()))
     }
-}
-
-/// Read logs from a script execution log file.
-///
-/// Script logs are stored in `.orkestra/script_logs/{task_id}_{stage}.jsonl`.
-fn read_script_logs(task_id: &str, stage: &str, project_root: &Path) -> Vec<LogEntry> {
-    let log_path = project_root
-        .join(".orkestra")
-        .join("script_logs")
-        .join(format!("{task_id}_{stage}.jsonl"));
-
-    let Ok(content) = std::fs::read_to_string(&log_path) else {
-        return Vec::new();
-    };
-
-    content
-        .lines()
-        .filter_map(|line| serde_json::from_str(line).ok())
-        .collect()
 }
 
 #[cfg(test)]

@@ -25,7 +25,7 @@ pub use prompt::{
     ResumeQuestionAnswer, ResumeType, StagePromptContext,
 };
 pub use runner::{AgentRunner, AgentRunnerTrait, RunConfig, RunError, RunEvent, RunResult};
-pub use script_runner::{ScriptEnv, ScriptHandle, ScriptResult};
+pub use script_runner::{ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult};
 
 #[cfg(any(test, feature = "testutil"))]
 pub use runner::mock::MockAgentRunner;

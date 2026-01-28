@@ -130,6 +130,9 @@ pub struct StagePromptContext<'a> {
 
     /// Integration error (if resuming after merge conflict).
     pub integration_error: Option<IntegrationErrorContext<'a>>,
+
+    /// Worktree path (for git worktree isolation).
+    pub worktree_path: Option<&'a str>,
 }
 
 /// Context for an artifact available to the stage.
@@ -212,6 +215,7 @@ impl<'a> PromptBuilder<'a> {
             question_history,
             feedback,
             integration_error,
+            worktree_path: task.worktree_path.as_deref(),
         })
     }
 
@@ -535,6 +539,23 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
     // Output format section (rendered from template with validated examples)
     prompt.push_str("---\n\n");
     prompt.push_str(&render_output_format(ctx));
+
+    // Worktree note for subagent awareness (Claude Code subagents don't inherit cwd)
+    if let Some(worktree) = ctx.worktree_path {
+        prompt.push_str("\n---\n\n");
+        prompt.push_str("## Important: Worktree Context\n\n");
+        let _ = writeln!(
+            prompt,
+            "You are working in a git worktree at: `{}`",
+            worktree
+        );
+        prompt.push_str("\n");
+        prompt.push_str(
+            "If you spawn any subagents (via the Task tool), you MUST explicitly tell them \
+             this worktree path. Subagents do not automatically inherit your working directory \
+             and may otherwise operate on the wrong codebase.\n",
+        );
+    }
 
     prompt
 }
@@ -1098,6 +1119,46 @@ mod tests {
         // Review stage has restage capability
         assert!(prompt.contains("restage to"));
         assert!(prompt.contains("work"));
+    }
+
+    #[test]
+    fn test_build_complete_prompt_with_worktree() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "planning", "now")
+            .with_worktree("/path/to/worktree/task-1");
+
+        let ctx = builder
+            .build_context("planning", &task, None, None)
+            .unwrap();
+
+        let agent_def = "Planner agent";
+        let prompt = build_complete_prompt(agent_def, &ctx);
+
+        // Should contain worktree note
+        assert!(prompt.contains("Worktree Context"));
+        assert!(prompt.contains("/path/to/worktree/task-1"));
+        assert!(prompt.contains("subagents"));
+    }
+
+    #[test]
+    fn test_build_complete_prompt_without_worktree() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+        // No worktree set
+
+        let ctx = builder
+            .build_context("planning", &task, None, None)
+            .unwrap();
+
+        let agent_def = "Planner agent";
+        let prompt = build_complete_prompt(agent_def, &ctx);
+
+        // Should NOT contain worktree note
+        assert!(!prompt.contains("Worktree Context"));
     }
 
     #[test]

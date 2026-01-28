@@ -405,6 +405,8 @@ export function WorkflowTaskDetailSidebar({
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement>(null);
+  // Track whether auto-scroll is enabled (user is "following" the logs)
+  const isAutoScrollEnabledRef = useRef(true);
 
   const { approve, reject, answerQuestions, retry } = useWorkflowActions();
   const { getIterations, getLogs, getStagesWithLogs, getPendingQuestions } = useWorkflowQueries();
@@ -545,10 +547,28 @@ export function WorkflowTaskDetailSidebar({
     return undefined;
   }, [activeTab, activeLogStage, task.phase, task.status, fetchLogs, logsError]);
 
-  // Auto-scroll logs to bottom when new entries arrive
+  // Check if scroll container is at or near the bottom
+  const isAtBottom = useCallback((container: HTMLElement): boolean => {
+    // Threshold in pixels - allows for minor scroll jitter without disabling auto-scroll
+    const threshold = 30;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    return distanceFromBottom <= threshold;
+  }, []);
+
+  // Handle scroll events to detect when user scrolls away from bottom
+  const handleLogsScroll = useCallback(() => {
+    const container = logsContainerRef.current;
+    if (!container) return;
+
+    // Update auto-scroll state based on whether user is at bottom
+    isAutoScrollEnabledRef.current = isAtBottom(container);
+  }, [isAtBottom]);
+
+  // Auto-scroll logs to bottom when new entries arrive (only if user is following)
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional scroll when logs change
   useEffect(() => {
-    if (activeTab === "logs" && logsContainerRef.current) {
+    if (activeTab === "logs" && logsContainerRef.current && isAutoScrollEnabledRef.current) {
       const container = logsContainerRef.current;
       container.scrollTop = container.scrollHeight;
     }
@@ -562,6 +582,7 @@ export function WorkflowTaskDetailSidebar({
     setStagesWithLogs([]);
     setLogsError(null);
     setLogs([]);
+    isAutoScrollEnabledRef.current = true;
   }, [task.id]);
 
   // Validate active tab exists
@@ -780,6 +801,7 @@ export function WorkflowTaskDetailSidebar({
                           setLogsError(null);
                           setLogs([]);
                           setActiveLogStage(stage);
+                          isAutoScrollEnabledRef.current = true;
                         }
                       }}
                       className={`px-3 py-1 text-xs rounded-panel-sm capitalize flex items-center gap-1.5 transition-colors ${
@@ -801,6 +823,7 @@ export function WorkflowTaskDetailSidebar({
             {/* Log list */}
             <div
               ref={logsContainerRef}
+              onScroll={handleLogsScroll}
               className="flex-1 overflow-auto p-4 bg-stone-900 font-mono text-sm"
             >
               <LogList logs={logs} isLoading={logsLoading} error={logsError} />

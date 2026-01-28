@@ -9,6 +9,7 @@
 //! the frontend displays an error screen instead of the normal UI.
 
 use std::path::PathBuf;
+use std::sync::RwLock;
 
 use orkestra_core::{
     find_project_root,
@@ -109,6 +110,8 @@ impl StartupWarning {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum StartupStatus {
+    /// Startup is in progress
+    Initializing,
     /// Startup completed successfully
     Ready {
         /// Path to the project root
@@ -124,6 +127,11 @@ pub enum StartupStatus {
 }
 
 impl StartupStatus {
+    /// Create an initializing status.
+    pub fn initializing() -> Self {
+        Self::Initializing
+    }
+
     /// Create a ready status.
     pub fn ready(project_root: PathBuf, warnings: Vec<StartupWarning>) -> Self {
         Self::Ready {
@@ -146,19 +154,34 @@ impl StartupStatus {
 ///
 /// This is managed by Tauri separately from `AppState` so that the frontend
 /// can always query startup status, even if the main app state failed to initialize.
+///
+/// Uses `RwLock` to allow updating status from a background thread after the
+/// window opens.
 pub struct StartupState {
-    status: StartupStatus,
+    status: RwLock<StartupStatus>,
 }
 
 impl StartupState {
     /// Create startup state from a status.
     pub fn from_status(status: StartupStatus) -> Self {
-        Self { status }
+        Self {
+            status: RwLock::new(status),
+        }
+    }
+
+    /// Create startup state in the initializing state.
+    pub fn initializing() -> Self {
+        Self::from_status(StartupStatus::initializing())
     }
 
     /// Get the startup status.
-    pub fn status(&self) -> &StartupStatus {
-        &self.status
+    pub fn status(&self) -> StartupStatus {
+        self.status.read().unwrap().clone()
+    }
+
+    /// Update the startup status.
+    pub fn set_status(&self, status: StartupStatus) {
+        *self.status.write().unwrap() = status;
     }
 }
 

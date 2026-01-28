@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StartupError, StartupStatus, StartupWarning } from "../types/startup";
+
+/** Polling interval while startup is initializing (ms) */
+const POLL_INTERVAL = 100;
 
 /**
  * Hook for checking startup status.
@@ -8,17 +11,25 @@ import type { StartupError, StartupStatus, StartupWarning } from "../types/start
  * This hook should be used before any other workflow hooks to ensure
  * the backend has initialized successfully.
  *
+ * Polls the backend while status is "initializing" until startup completes
+ * (either "ready" or "failed").
+ *
  * @returns Startup state including loading, status, errors, warnings, and retry function
  */
 export function useStartup() {
   const [status, setStatus] = useState<StartupStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const pollRef = useRef<number | null>(null);
 
   const checkStatus = useCallback(() => {
     setLoading(true);
     invoke<StartupStatus>("get_startup_status")
       .then((result) => {
         setStatus(result);
+        // Only stop loading when we have a terminal state
+        if (result.status !== "initializing") {
+          setLoading(false);
+        }
       })
       .catch((err) => {
         // If we can't even communicate with the backend, create a synthetic error
@@ -34,8 +45,6 @@ export function useStartup() {
             },
           ],
         });
-      })
-      .finally(() => {
         setLoading(false);
       });
   }, []);
@@ -43,6 +52,25 @@ export function useStartup() {
   useEffect(() => {
     checkStatus();
   }, [checkStatus]);
+
+  // Poll while status is "initializing"
+  useEffect(() => {
+    if (status?.status === "initializing") {
+      pollRef.current = window.setInterval(() => {
+        checkStatus();
+      }, POLL_INTERVAL);
+    } else if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+
+    return () => {
+      if (pollRef.current !== null) {
+        window.clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [status?.status, checkStatus]);
 
   // Extract errors and warnings based on status
   const errors: StartupError[] = status?.status === "failed" ? status.errors : [];

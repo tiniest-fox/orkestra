@@ -284,8 +284,9 @@ fn setup_signal_handlers(_stop_flag: Arc<AtomicBool>) {
 
 /// Run the Tauri application.
 ///
-/// The app always starts (Tauri window opens), even if initialization fails.
-/// If startup fails, the frontend displays an error screen instead of the normal UI.
+/// The app always starts (Tauri window opens) immediately with a splash screen,
+/// while initialization runs in the background. If startup fails, the frontend
+/// displays an error screen instead of the normal UI.
 ///
 /// # Panics
 ///
@@ -298,32 +299,45 @@ pub fn run() {
     // Set up signal handlers to ensure cleanup on external termination
     setup_signal_handlers(stop_flag.clone());
 
-    // Run startup tasks and get result
-    let startup_result = run_startup();
+    // Create startup state in initializing state - window opens immediately
+    let startup_state = StartupState::initializing();
 
-    // Create startup state (always available for frontend to query)
-    let startup_state = StartupState::from_status(startup_result.status.clone());
-
-    // Build Tauri app with startup state always available
-    let mut builder = tauri::Builder::default()
+    tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(startup_state);
+        .manage(startup_state)
+        .setup(move |app| {
+            let app_handle = app.handle().clone();
+            let stop_flag_for_startup = stop_flag.clone();
 
-    // Only manage AppState and start orchestrator if startup succeeded
-    if let Some(app_state) = startup_result.app_state {
-        // Clean up orphaned agents from previous crash
-        cleanup_orphaned_agents(&app_state);
+            // Run startup tasks in a background thread after the window opens
+            thread::spawn(move || {
+                let startup_result = run_startup();
 
-        builder = builder.manage(app_state).setup(move |app| {
-            // Start the workflow orchestrator only on successful startup
-            if let Some(app_state) = app.try_state::<state::AppState>() {
-                start_workflow_orchestrator(app.handle().clone(), &app_state, stop_flag.clone());
-            }
+                // Update the startup state with the result (Tauri manages state via Arc internally)
+                let startup_state: tauri::State<StartupState> = app_handle.state();
+                startup_state.set_status(startup_result.status.clone());
+
+                // If startup succeeded, register AppState and start orchestrator
+                if let Some(app_state) = startup_result.app_state {
+                    // Clean up orphaned agents from previous crash
+                    cleanup_orphaned_agents(&app_state);
+
+                    // Register AppState so commands can use it
+                    app_handle.manage(app_state);
+
+                    // Start the workflow orchestrator
+                    if let Some(app_state) = app_handle.try_state::<state::AppState>() {
+                        start_workflow_orchestrator(
+                            app_handle.clone(),
+                            &app_state,
+                            stop_flag_for_startup,
+                        );
+                    }
+                }
+            });
+
             Ok(())
-        });
-    }
-
-    builder
+        })
         .invoke_handler(tauri::generate_handler![
             // Startup command (always available)
             commands::get_startup_status,

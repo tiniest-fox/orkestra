@@ -8,6 +8,15 @@ use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
 
 use super::WorkflowApi;
 
+/// Strip ANSI escape codes from a string.
+///
+/// Used to clean terminal color codes from script output before storing as artifacts.
+/// This ensures artifacts contain clean text for LLM consumption without wasted tokens.
+fn strip_ansi_codes(input: &str) -> String {
+    let bytes = strip_ansi_escapes::strip(input);
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 impl WorkflowApi {
     /// Get artifact name for a stage, with fallback default.
     fn artifact_name_for_stage(&self, stage: &str, default: &str) -> String {
@@ -282,10 +291,15 @@ impl WorkflowApi {
 
         let now = chrono::Utc::now().to_rfc3339();
 
-        // Create artifact from script output
+        // Create artifact from script output, stripping ANSI codes for clean LLM consumption
+        let clean_output = strip_ansi_codes(output);
         let artifact_name = self.artifact_name_for_stage(&current_stage, "script_output");
-        task.artifacts
-            .set(Artifact::new(&artifact_name, output, &current_stage, &now));
+        task.artifacts.set(Artifact::new(
+            &artifact_name,
+            &clean_output,
+            &current_stage,
+            &now,
+        ));
 
         // Script stages always auto-approve
         self.end_current_iteration(&task, Outcome::Approved)?;
@@ -352,10 +366,17 @@ impl WorkflowApi {
 
         let now = chrono::Utc::now().to_rfc3339();
 
+        // Strip ANSI codes from error message for clean LLM consumption
+        let clean_error = strip_ansi_codes(error);
+
         // End current iteration with script failure outcome
         self.end_current_iteration(
             &task,
-            Outcome::script_failed(&current_stage, error, recovery_stage.map(String::from)),
+            Outcome::script_failed(
+                &current_stage,
+                &clean_error,
+                recovery_stage.map(String::from),
+            ),
         )?;
 
         if let Some(target) = recovery_stage {
@@ -369,12 +390,12 @@ impl WorkflowApi {
                 target,
                 Some(IterationTrigger::ScriptFailure {
                     from_stage: current_stage,
-                    error: error.to_string(),
+                    error: clean_error,
                 }),
             )?;
         } else {
             // No recovery stage - mark task as failed
-            task.status = Status::failed(error);
+            task.status = Status::failed(&clean_error);
             task.phase = Phase::Idle;
         }
 
@@ -722,5 +743,107 @@ mod tests {
 
         let result = api.process_script_success(&task.id, "output");
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    // ========================================================================
+    // ANSI stripping tests
+    // ========================================================================
+
+    #[test]
+    fn test_strip_ansi_codes_removes_colors() {
+        use super::strip_ansi_codes;
+
+        let input = "\x1b[31mred text\x1b[0m normal text \x1b[32mgreen\x1b[0m";
+        let result = strip_ansi_codes(input);
+        assert_eq!(result, "red text normal text green");
+        assert!(!result.contains("\x1b["));
+    }
+
+    #[test]
+    fn test_strip_ansi_codes_preserves_plain_text() {
+        use super::strip_ansi_codes;
+
+        let input = "plain text without any escapes\nwith newlines";
+        let result = strip_ansi_codes(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_strip_ansi_codes_handles_empty_string() {
+        use super::strip_ansi_codes;
+
+        let result = strip_ansi_codes("");
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_strip_ansi_codes_handles_complex_sequences() {
+        use super::strip_ansi_codes;
+
+        // Bold, underline, cursor movement, etc.
+        let input =
+            "\x1b[1mbold\x1b[0m \x1b[4munderline\x1b[0m \x1b[38;5;196mextended color\x1b[0m";
+        let result = strip_ansi_codes(input);
+        assert_eq!(result, "bold underline extended color");
+    }
+
+    #[test]
+    fn test_process_script_success_strips_ansi_codes() {
+        let workflow = test_workflow_with_script();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.status = Status::active("checks");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        // Script output with ANSI color codes
+        let colored_output =
+            "\x1b[32m✓ All tests passed!\x1b[0m\n\x1b[31mWarning: 1 skipped\x1b[0m";
+        let task = api
+            .process_script_success(&task.id, colored_output)
+            .unwrap();
+
+        // Artifact should have ANSI codes stripped
+        let artifact = task.artifacts.get("check_results").unwrap();
+        assert!(!artifact.content.contains("\x1b["));
+        assert!(artifact.content.contains("✓ All tests passed!"));
+        assert!(artifact.content.contains("Warning: 1 skipped"));
+    }
+
+    #[test]
+    fn test_process_script_failure_strips_ansi_codes() {
+        let workflow = test_workflow_with_script();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.status = Status::active("checks");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        // Error message with ANSI color codes
+        let colored_error =
+            "\x1b[31mError: test failed\x1b[0m\n\x1b[33mStack trace:\x1b[0m foo.rs:42";
+        let task = api
+            .process_script_failure(&task.id, colored_error, Some("work"))
+            .unwrap();
+
+        // Verify task transitioned to recovery stage
+        assert_eq!(task.current_stage(), Some("work"));
+
+        // Get the iteration to verify the error was stripped
+        let iterations = api.store.get_iterations(&task.id).unwrap();
+        let recovery_iter = iterations.iter().find(|i| i.stage == "work").unwrap();
+
+        if let Some(IterationTrigger::ScriptFailure { error, .. }) = &recovery_iter.incoming_context
+        {
+            assert!(!error.contains("\x1b["));
+            assert!(error.contains("Error: test failed"));
+            assert!(error.contains("Stack trace:"));
+        } else {
+            panic!("Expected ScriptFailure trigger");
+        }
     }
 }

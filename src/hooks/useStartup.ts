@@ -11,14 +11,15 @@ const POLL_INTERVAL = 100;
  * This hook should be used before any other workflow hooks to ensure
  * the backend has initialized successfully.
  *
- * Polls the backend while status is "initializing" until startup completes
- * (either "ready" or "failed").
+ * Triggers backend initialization when mounted, then polls until startup
+ * completes (either "ready" or "failed").
  *
  * @returns Startup state including loading, status, errors, warnings, and retry function
  */
 export function useStartup() {
   const [status, setStatus] = useState<StartupStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initTriggered, setInitTriggered] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   const checkStatus = useCallback(() => {
@@ -49,9 +50,19 @@ export function useStartup() {
       });
   }, []);
 
+  // Trigger backend initialization once when mounted (after splash screen renders)
   useEffect(() => {
-    checkStatus();
-  }, [checkStatus]);
+    if (!initTriggered) {
+      setInitTriggered(true);
+      console.log("[startup] UI loaded, triggering backend initialization");
+      // Fire and forget - the backend will update status when ready
+      invoke("begin_initialization").catch((err) => {
+        console.error("[startup] Failed to trigger initialization:", err);
+      });
+      // Start polling for status
+      checkStatus();
+    }
+  }, [initTriggered, checkStatus]);
 
   // Poll while status is "initializing"
   useEffect(() => {

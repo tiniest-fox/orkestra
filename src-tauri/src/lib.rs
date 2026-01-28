@@ -18,6 +18,43 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+/// Wrapper for the orchestrator stop flag, stored in Tauri state.
+struct OrchestratorStopFlag(Arc<AtomicBool>);
+
+/// Command for frontend to trigger initialization after splash screen loads.
+///
+/// This ensures no background work runs until the UI is ready.
+#[tauri::command]
+fn begin_initialization(
+    app_handle: AppHandle,
+    stop_flag: tauri::State<OrchestratorStopFlag>,
+) {
+    println!("[startup] UI ready, beginning initialization...");
+    let stop_flag = stop_flag.0.clone();
+
+    thread::spawn(move || {
+        let startup_result = run_startup();
+
+        // Update the startup state with the result
+        let startup_state: tauri::State<StartupState> = app_handle.state();
+        startup_state.set_status(startup_result.status.clone());
+
+        // If startup succeeded, register AppState and start orchestrator
+        if let Some(app_state) = startup_result.app_state {
+            // Clean up orphaned agents from previous crash
+            cleanup_orphaned_agents(&app_state);
+
+            // Register AppState so commands can use it
+            app_handle.manage(app_state);
+
+            // Start the workflow orchestrator
+            if let Some(app_state) = app_handle.try_state::<state::AppState>() {
+                start_workflow_orchestrator(app_handle.clone(), &app_state, stop_flag);
+            }
+        }
+    });
+}
+
 // =============================================================================
 // Workflow Orchestrator
 // =============================================================================
@@ -306,40 +343,13 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(startup_state)
         .setup(move |app| {
-            let app_handle = app.handle().clone();
-            let stop_flag_for_startup = stop_flag.clone();
-
-            // Run startup tasks in a background thread after the window opens
-            thread::spawn(move || {
-                let startup_result = run_startup();
-
-                // Update the startup state with the result (Tauri manages state via Arc internally)
-                let startup_state: tauri::State<StartupState> = app_handle.state();
-                startup_state.set_status(startup_result.status.clone());
-
-                // If startup succeeded, register AppState and start orchestrator
-                if let Some(app_state) = startup_result.app_state {
-                    // Clean up orphaned agents from previous crash
-                    cleanup_orphaned_agents(&app_state);
-
-                    // Register AppState so commands can use it
-                    app_handle.manage(app_state);
-
-                    // Start the workflow orchestrator
-                    if let Some(app_state) = app_handle.try_state::<state::AppState>() {
-                        start_workflow_orchestrator(
-                            app_handle.clone(),
-                            &app_state,
-                            stop_flag_for_startup,
-                        );
-                    }
-                }
-            });
-
+            // Store the stop flag in Tauri state so the init command can access it
+            app.manage(OrchestratorStopFlag(stop_flag.clone()));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // Startup command (always available)
+            // Startup commands (always available)
+            begin_initialization,
             commands::get_startup_status,
             // Workflow commands (may fail gracefully if startup failed)
             commands::workflow_get_tasks,

@@ -151,7 +151,10 @@ elif [ "$CURRENT_BRANCH" = "$PRIMARY_BRANCH" ]; then
 else
     # On feature branch - compare to primary branch
     MERGE_BASE=$(git merge-base "$PRIMARY_BRANCH" HEAD)
-    CHANGED_FILES=$(git diff --name-only "$MERGE_BASE" HEAD)
+    # Include both committed changes (merge-base to HEAD) and uncommitted changes
+    COMMITTED_CHANGES=$(git diff --name-only "$MERGE_BASE" HEAD)
+    UNCOMMITTED_CHANGES=$(git diff --name-only HEAD)
+    CHANGED_FILES=$(echo -e "${COMMITTED_CHANGES}\n${UNCOMMITTED_CHANGES}" | sort -u | grep -v '^$')
 fi
 
 if [ -z "$CHANGED_FILES" ] && ! $FORCE_FRONTEND && ! $FORCE_RUST; then

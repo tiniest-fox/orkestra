@@ -138,12 +138,11 @@ mod tests {
             stages: vec![
                 StageConfig::new("planning", "plan"),
                 StageConfig::new("work", "summary"),
-                StageConfig::new("checks", "check_results")
-                    .with_script(ScriptStageConfig {
-                        command: "echo test".into(),
-                        timeout_seconds: 10,
-                        on_failure: None,
-                    }),
+                StageConfig::new("checks", "check_results").with_script(ScriptStageConfig {
+                    command: "echo test".into(),
+                    timeout_seconds: 10,
+                    on_failure: None,
+                }),
             ],
             integration: IntegrationConfig::default(),
         }

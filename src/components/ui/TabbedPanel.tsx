@@ -63,7 +63,7 @@ export function TabbedPanel({
       {header && <Panel.Header>{header}</Panel.Header>}
 
       {/* Tab bar */}
-      <div className="flex-shrink-0 flex border-b border-stone-200 overflow-x-auto">
+      <div className="flex-shrink-0 flex overflow-x-auto bg-stone-100">
         {tabs.map((tab) => (
           <button
             type="button"

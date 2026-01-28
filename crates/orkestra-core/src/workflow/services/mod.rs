@@ -29,6 +29,7 @@
 //! ```
 
 mod agent_actions;
+mod agent_execution;
 mod api;
 mod human_actions;
 mod integration;
@@ -43,7 +44,6 @@ mod session_service;
 mod stage_execution;
 mod subtask_service;
 mod task_crud;
-mod agent_execution;
 
 // ============================================================================
 // Logging Macros

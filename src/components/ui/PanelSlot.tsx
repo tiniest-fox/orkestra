@@ -31,11 +31,10 @@ interface PanelSlotPanelProps {
   children: ReactNode;
 }
 
-// Spring animation configuration
-const springConfig = {
-  type: "spring" as const,
-  stiffness: 300,
-  damping: 30,
+// Fast transition configuration
+const transitionConfig = {
+  duration: 0.15,
+  ease: "easeOut" as const,
 };
 
 /**
@@ -75,27 +74,24 @@ export function PanelSlot({
     exit: isHorizontal ? { width: 0, opacity: 0 } : { height: 0, opacity: 0 },
   };
 
-  // When slot is empty, render nothing
-  if (!activeKey || !activeChild) {
-    return null;
-  }
-
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={activeKey}
-        initial="initial"
-        animate="animate"
-        exit="exit"
-        variants={variants}
-        transition={springConfig}
-        className={`overflow-hidden flex-shrink-0 ${className}`}
-        style={isHorizontal ? { minWidth: 0 } : { minHeight: 0 }}
-      >
-        <div className="h-full" style={isHorizontal ? { width: `${width}px` } : undefined}>
-          {activeChild.props.children}
-        </div>
-      </motion.div>
+    <AnimatePresence mode="sync">
+      {activeKey && activeChild && (
+        <motion.div
+          key={activeKey}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={variants}
+          transition={transitionConfig}
+          className={`overflow-hidden flex-shrink-0 ${className}`}
+          style={isHorizontal ? { minWidth: 0 } : { minHeight: 0 }}
+        >
+          <div className="h-full" style={isHorizontal ? { width: `${width}px` } : undefined}>
+            {activeChild.props.children}
+          </div>
+        </motion.div>
+      )}
     </AnimatePresence>
   );
 }

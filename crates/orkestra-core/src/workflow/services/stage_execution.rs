@@ -88,7 +88,7 @@ impl ActiveAgent {
 /// 2. Record PID after spawn (`SessionService::on_agent_spawned`)
 /// 3. Handle completion/failure at stage transitions
 pub struct StageExecutionService {
-    /// Session service for managing stage sessions (shared with AgentExecutionService).
+    /// Session service for managing stage sessions (shared with `AgentExecutionService`).
     session_service: Arc<SessionService>,
     /// Agent execution service (for spawning agents).
     agent_service: Arc<AgentExecutionService>,
@@ -208,9 +208,9 @@ impl StageExecutionService {
         match &result {
             Ok(spawn_result) => {
                 // Record successful spawn with PID
-                if let Err(e) = self
-                    .session_service
-                    .on_agent_spawned(&task.id, stage, spawn_result.pid)
+                if let Err(e) =
+                    self.session_service
+                        .on_agent_spawned(&task.id, stage, spawn_result.pid)
                 {
                     // Non-fatal: spawn already happened, just log the error
                     eprintln!(

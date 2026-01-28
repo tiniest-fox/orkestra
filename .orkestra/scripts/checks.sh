@@ -12,6 +12,7 @@
 #   --last-commit  Check changes from last commit (useful for testing on main)
 #   --frontend     Force run frontend checks
 #   --rust         Force run all Rust checks
+#   --verbose      Show full output (default is minimal pass/fail only)
 #
 # Exit codes:
 #   0 - All checks passed (or nothing to check)
@@ -24,6 +25,7 @@ FORCE_ALL=false
 CHECK_LAST_COMMIT=false
 FORCE_FRONTEND=false
 FORCE_RUST=false
+VERBOSE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -43,6 +45,10 @@ while [[ $# -gt 0 ]]; do
             FORCE_RUST=true
             shift
             ;;
+        --verbose|-v)
+            VERBOSE=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
@@ -59,9 +65,10 @@ NC='\033[0m' # No Color
 
 # Track failures
 FAILED_CHECKS=()
+FAILED_OUTPUTS=()
 
 # Helper functions
-info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+info() { $VERBOSE && echo -e "${BLUE}[INFO]${NC} $1" || true; }
 success() { echo -e "${GREEN}[PASS]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 fail() { echo -e "${RED}[FAIL]${NC} $1"; }
@@ -71,16 +78,31 @@ run_check() {
     shift
     local cmd="$@"
 
-    echo ""
-    info "Running: $name"
-    echo "  Command: $cmd"
-    echo ""
-
-    if eval "$cmd"; then
-        success "$name"
+    if $VERBOSE; then
+        echo ""
+        echo -e "${BLUE}[INFO]${NC} Running: $name"
+        echo "  Command: $cmd"
+        echo ""
+        if eval "$cmd"; then
+            success "$name"
+        else
+            fail "$name"
+            FAILED_CHECKS+=("$name")
+        fi
     else
-        fail "$name"
-        FAILED_CHECKS+=("$name")
+        # Quiet mode: capture output, only show on failure
+        local output
+        local exit_code
+        output=$(eval "$cmd" 2>&1) && exit_code=0 || exit_code=$?
+
+        if [ $exit_code -eq 0 ]; then
+            success "$name"
+        else
+            fail "$name"
+            FAILED_CHECKS+=("$name")
+            # Store truncated output for summary (last 50 lines)
+            FAILED_OUTPUTS+=("$(echo "$output" | tail -50)")
+        fi
     fi
 }
 
@@ -119,13 +141,15 @@ get_current_branch() {
 PRIMARY_BRANCH=$(get_primary_branch)
 CURRENT_BRANCH=$(get_current_branch)
 
-info "Primary branch: $PRIMARY_BRANCH"
-info "Current branch: $CURRENT_BRANCH"
+if $VERBOSE; then
+    info "Primary branch: $PRIMARY_BRANCH"
+    info "Current branch: $CURRENT_BRANCH"
 
-# Show Orkestra context if running as script stage
-if [ -n "$ORKESTRA_TASK_ID" ]; then
-    info "Orkestra task: $ORKESTRA_TASK_ID"
-    [ -n "$ORKESTRA_TASK_TITLE" ] && info "Task title: $ORKESTRA_TASK_TITLE"
+    # Show Orkestra context if running as script stage
+    if [ -n "$ORKESTRA_TASK_ID" ]; then
+        info "Orkestra task: $ORKESTRA_TASK_ID"
+        [ -n "$ORKESTRA_TASK_TITLE" ] && info "Task title: $ORKESTRA_TASK_TITLE"
+    fi
 fi
 
 # =============================================================================
@@ -158,14 +182,16 @@ else
 fi
 
 if [ -z "$CHANGED_FILES" ] && ! $FORCE_FRONTEND && ! $FORCE_RUST; then
-    info "No changes detected - nothing to check"
+    echo "No changes detected - nothing to check"
     exit 0
 fi
 
-echo ""
-info "Changed files:"
-echo "$CHANGED_FILES" | sed 's/^/  /'
-echo ""
+if $VERBOSE; then
+    echo ""
+    info "Changed files:"
+    echo "$CHANGED_FILES" | sed 's/^/  /'
+    echo ""
+fi
 
 # =============================================================================
 # Categorize changes
@@ -231,13 +257,15 @@ if $HAS_TAURI || $HAS_CLI || $HAS_CORE; then
     HAS_RUST=true
 fi
 
-echo "Change categories:"
-echo "  Frontend (src/):        $HAS_FRONTEND"
-echo "  Tauri (src-tauri/):     $HAS_TAURI"
-echo "  CLI (cli/):             $HAS_CLI"
-echo "  Core (crates/):         $HAS_CORE"
-echo "  Rust config:            $HAS_RUST_CONFIG"
-echo ""
+if $VERBOSE; then
+    echo "Change categories:"
+    echo "  Frontend (src/):        $HAS_FRONTEND"
+    echo "  Tauri (src-tauri/):     $HAS_TAURI"
+    echo "  CLI (cli/):             $HAS_CLI"
+    echo "  Core (crates/):         $HAS_CORE"
+    echo "  Rust config:            $HAS_RUST_CONFIG"
+    echo ""
+fi
 
 # =============================================================================
 # Run checks based on what changed
@@ -245,7 +273,7 @@ echo ""
 
 # Frontend checks
 if $HAS_FRONTEND; then
-    info "=== Frontend Checks ==="
+    $VERBOSE && info "=== Frontend Checks ==="
 
     # Ensure dependencies are installed
     if [ ! -d "node_modules" ]; then
@@ -259,7 +287,17 @@ fi
 
 # Rust checks - run clippy and tests for affected crates
 if $HAS_RUST; then
-    info "=== Rust Checks ==="
+    $VERBOSE && info "=== Rust Checks ==="
+
+    # Ensure frontend is built (Tauri requires dist/ to exist)
+    if [ ! -d "dist" ]; then
+        $VERBOSE && info "Building frontend (required for Tauri build)..."
+        # Ensure dependencies are installed first
+        if [ ! -d "node_modules" ]; then
+            run_check "pnpm install" "pnpm install"
+        fi
+        run_check "Frontend build" "pnpm build"
+    fi
 
     # Auto-format Rust code
     run_check "Cargo fmt" "cargo fmt --all"
@@ -298,8 +336,12 @@ if [ ${#FAILED_CHECKS[@]} -eq 0 ]; then
     exit 0
 else
     fail "Some checks failed:"
-    for check in "${FAILED_CHECKS[@]}"; do
-        echo "  - $check"
+    for i in "${!FAILED_CHECKS[@]}"; do
+        echo ""
+        echo -e "${RED}--- ${FAILED_CHECKS[$i]} ---${NC}"
+        if [ -n "${FAILED_OUTPUTS[$i]:-}" ]; then
+            echo "${FAILED_OUTPUTS[$i]}"
+        fi
     done
     exit 1
 fi

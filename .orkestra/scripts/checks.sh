@@ -261,6 +261,16 @@ fi
 if $HAS_RUST; then
     info "=== Rust Checks ==="
 
+    # Ensure frontend is built (Tauri requires dist/ to exist)
+    if [ ! -d "dist" ]; then
+        info "Building frontend (required for Tauri build)..."
+        # Ensure dependencies are installed first
+        if [ ! -d "node_modules" ]; then
+            run_check "pnpm install" "pnpm install"
+        fi
+        run_check "Frontend build" "pnpm build"
+    fi
+
     # Auto-format Rust code
     run_check "Cargo fmt" "cargo fmt --all"
 

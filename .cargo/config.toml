@@ -1,2 +1,7 @@
 [build]
 rustc-wrapper = "sccache"
+
+# Disable incremental compilation to enable sccache caching across worktrees.
+# Incremental builds are per-target-directory and can't be cached by sccache.
+[env]
+CARGO_INCREMENTAL = "0"

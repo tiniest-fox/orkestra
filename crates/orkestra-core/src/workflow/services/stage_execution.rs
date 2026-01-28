@@ -5,7 +5,7 @@
 //! a unified interface for spawning, tracking, and polling executions.
 //!
 //! Internally, this service delegates to specialized services:
-//! - `TaskExecutionService` for agent executions
+//! - `AgentExecutionService` for agent executions
 //! - `ScriptExecutionService` for script executions
 
 use std::collections::HashMap;
@@ -17,8 +17,9 @@ use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{AgentRunner, AgentRunnerTrait, StageOutput};
 use crate::workflow::ports::WorkflowStore;
 
+use super::agent_execution::{AgentExecutionService, ExecutionHandle};
 use super::script_execution::{ScriptExecutionService, ScriptPollResult};
-use super::task_execution::{ExecutionHandle, TaskExecutionService};
+use super::session_service::{SessionService, SessionSpawnContext};
 use super::IterationService;
 
 // ============================================================================
@@ -79,11 +80,18 @@ impl ActiveAgent {
 ///
 /// This service orchestrates both agent and script executions through a common
 /// interface, delegating to specialized services internally:
-/// - `TaskExecutionService` for agent-based stages
+/// - `AgentExecutionService` for agent-based stages
 /// - `ScriptExecutionService` for script-based stages
+///
+/// Session lifecycle is managed here (unified for all stage types):
+/// 1. Create session before spawn (`SessionService::on_spawn_starting`)
+/// 2. Record PID after spawn (`SessionService::on_agent_spawned`)
+/// 3. Handle completion/failure at stage transitions
 pub struct StageExecutionService {
+    /// Session service for managing stage sessions (shared with AgentExecutionService).
+    session_service: Arc<SessionService>,
     /// Agent execution service (for spawning agents).
-    agent_service: Arc<TaskExecutionService>,
+    agent_service: Arc<AgentExecutionService>,
     /// Script execution service (for spawning scripts).
     script_service: Arc<ScriptExecutionService>,
     /// Active agent executions keyed by task ID.
@@ -103,10 +111,15 @@ impl StageExecutionService {
         iteration_service: Arc<IterationService>,
         runner: Arc<dyn AgentRunnerTrait>,
     ) -> Self {
-        let agent_service = Arc::new(TaskExecutionService::new(
-            runner,
+        // Create shared session service (used for unified session lifecycle)
+        let session_service = Arc::new(SessionService::new(
             Arc::clone(&store),
-            iteration_service,
+            Arc::clone(&iteration_service),
+        ));
+
+        // Agent service only handles execution - session lifecycle is managed here
+        let agent_service = Arc::new(AgentExecutionService::new(
+            runner,
             workflow.clone(),
             project_root.clone(),
         ));
@@ -114,6 +127,7 @@ impl StageExecutionService {
         let script_service = Arc::new(ScriptExecutionService::new(workflow, project_root));
 
         Self {
+            session_service,
             agent_service,
             script_service,
             active_agents: Mutex::new(HashMap::new()),
@@ -160,8 +174,11 @@ impl StageExecutionService {
 
     /// Spawn an execution for a task's current stage.
     ///
-    /// Automatically determines whether to spawn an agent or script based
-    /// on the stage configuration.
+    /// This is the unified entry point for all stage executions. It:
+    /// 1. Creates a session (unified for all stage types)
+    /// 2. Gets spawn context (session ID, resume flag)
+    /// 3. Delegates to agent or script execution
+    /// 4. Records PID after successful spawn
     pub fn spawn(
         &self,
         task: &Task,
@@ -169,11 +186,54 @@ impl StageExecutionService {
     ) -> Result<SpawnResult, SpawnError> {
         let stage = task.current_stage().ok_or(SpawnError::NoActiveStage)?;
 
-        if self.is_script_stage(stage) {
+        // 1. Create session BEFORE spawn (unified for all stage types)
+        self.session_service
+            .on_spawn_starting(&task.id, stage)
+            .map_err(|e| SpawnError::SessionError(e.to_string()))?;
+
+        // 2. Get spawn context (session ID + resume flag)
+        let spawn_context = self
+            .session_service
+            .get_spawn_context(&task.id, stage)
+            .map_err(|e| SpawnError::SessionError(e.to_string()))?;
+
+        // 3. Execute (dispatch by stage type)
+        let result = if self.is_script_stage(stage) {
             self.spawn_script(task, stage)
         } else {
-            self.spawn_agent(task, stage, trigger)
+            self.spawn_agent(task, stage, trigger, &spawn_context)
+        };
+
+        // 4. Record outcome
+        match &result {
+            Ok(spawn_result) => {
+                // Record successful spawn with PID
+                if let Err(e) = self
+                    .session_service
+                    .on_agent_spawned(&task.id, stage, spawn_result.pid)
+                {
+                    // Non-fatal: spawn already happened, just log the error
+                    eprintln!(
+                        "[stage_execution] Failed to record spawn for {}/{}: {}",
+                        task.id, stage, e
+                    );
+                }
+            }
+            Err(e) => {
+                // Record spawn failure
+                if let Err(session_err) =
+                    self.session_service
+                        .on_spawn_failed(&task.id, stage, &e.to_string())
+                {
+                    eprintln!(
+                        "[stage_execution] Failed to record spawn failure for {}/{}: {}",
+                        task.id, stage, session_err
+                    );
+                }
+            }
         }
+
+        result
     }
 
     /// Spawn an agent execution.
@@ -182,10 +242,11 @@ impl StageExecutionService {
         task: &Task,
         stage: &str,
         trigger: Option<&IterationTrigger>,
+        spawn_context: &SessionSpawnContext,
     ) -> Result<SpawnResult, SpawnError> {
         let handle = self
             .agent_service
-            .execute_stage(task, trigger)
+            .execute_stage(task, trigger, spawn_context)
             .map_err(|e| SpawnError::AgentError(e.to_string()))?;
 
         let pid = handle.pid;
@@ -347,6 +408,8 @@ pub enum SpawnError {
     StageNotFound(String),
     /// Stage is not a script stage.
     NotAScriptStage(String),
+    /// Error creating or managing session.
+    SessionError(String),
     /// Error spawning agent.
     AgentError(String),
     /// Error spawning script.
@@ -361,6 +424,7 @@ impl std::fmt::Display for SpawnError {
             Self::NoActiveStage => write!(f, "Task has no active stage"),
             Self::StageNotFound(s) => write!(f, "Stage not found: {s}"),
             Self::NotAScriptStage(s) => write!(f, "Stage is not a script stage: {s}"),
+            Self::SessionError(e) => write!(f, "Session error: {e}"),
             Self::AgentError(e) => write!(f, "Agent spawn error: {e}"),
             Self::ScriptError(e) => write!(f, "Script spawn error: {e}"),
             Self::LockError => write!(f, "Lock error"),

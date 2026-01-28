@@ -43,7 +43,7 @@ mod session_service;
 mod stage_execution;
 mod subtask_service;
 mod task_crud;
-mod task_execution;
+mod agent_execution;
 
 // ============================================================================
 // Logging Macros
@@ -73,4 +73,4 @@ pub use stage_execution::{
     ExecutionComplete, ExecutionResult, SpawnError, SpawnResult, StageExecutionService,
 };
 pub use subtask_service::SubtaskService;
-// Note: TaskExecutionService is internal to StageExecutionService
+// Note: AgentExecutionService is internal to StageExecutionService

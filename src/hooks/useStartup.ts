@@ -6,6 +6,12 @@ import type { StartupError, StartupStatus, StartupWarning } from "../types/start
 const POLL_INTERVAL = 100;
 
 /**
+ * Module-level flag to prevent duplicate initialization calls.
+ * Unlike useState, this survives React StrictMode's unmount/remount cycle.
+ */
+let initTriggered = false;
+
+/**
  * Hook for checking startup status.
  *
  * This hook should be used before any other workflow hooks to ensure
@@ -19,7 +25,6 @@ const POLL_INTERVAL = 100;
 export function useStartup() {
   const [status, setStatus] = useState<StartupStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [initTriggered, setInitTriggered] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   const checkStatus = useCallback(() => {
@@ -51,9 +56,10 @@ export function useStartup() {
   }, []);
 
   // Trigger backend initialization once when mounted (after splash screen renders)
+  // Uses module-level flag to survive React StrictMode's unmount/remount cycle
   useEffect(() => {
     if (!initTriggered) {
-      setInitTriggered(true);
+      initTriggered = true;
       console.log("[startup] UI loaded, triggering backend initialization");
       // Fire and forget - the backend will update status when ready
       invoke("begin_initialization").catch((err) => {
@@ -62,7 +68,7 @@ export function useStartup() {
       // Start polling for status
       checkStatus();
     }
-  }, [initTriggered, checkStatus]);
+  }, [checkStatus]);
 
   // Poll while status is "initializing"
   useEffect(() => {

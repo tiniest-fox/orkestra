@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createMockArtifact,
@@ -52,45 +52,49 @@ describe("WorkflowTaskDetailSidebar", () => {
     });
   });
 
-  it("renders task in planning stage", () => {
+  it("renders task in planning stage", async () => {
     const task = createMockWorkflowTask({
       status: { type: "active", stage: "planning" },
       phase: "idle",
     });
 
-    render(
-      <WorkflowTaskDetailSidebar
-        task={task}
-        config={config}
-        onClose={() => {}}
-        onTaskUpdated={() => {}}
-      />,
-    );
+    await act(async () => {
+      render(
+        <WorkflowTaskDetailSidebar
+          task={task}
+          config={config}
+          onClose={() => {}}
+          onTaskUpdated={() => {}}
+        />,
+      );
+    });
 
     expect(screen.getByText("Test Task")).toBeInTheDocument();
     expect(screen.getByText("Planning")).toBeInTheDocument();
   });
 
-  it("renders task awaiting review with approve button", () => {
+  it("renders task awaiting review with approve button", async () => {
     const task = createMockWorkflowTask({
       status: { type: "active", stage: "planning" },
       phase: "awaiting_review",
       artifacts: { plan: createMockArtifact("plan", "Plan content") },
     });
 
-    render(
-      <WorkflowTaskDetailSidebar
-        task={task}
-        config={config}
-        onClose={() => {}}
-        onTaskUpdated={() => {}}
-      />,
-    );
+    await act(async () => {
+      render(
+        <WorkflowTaskDetailSidebar
+          task={task}
+          config={config}
+          onClose={() => {}}
+          onTaskUpdated={() => {}}
+        />,
+      );
+    });
 
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
   });
 
-  it("renders done task with Done status", () => {
+  it("renders done task with Done status", async () => {
     const task = createMockWorkflowTask({
       status: { type: "done" },
       phase: "idle",
@@ -100,59 +104,65 @@ describe("WorkflowTaskDetailSidebar", () => {
       },
     });
 
-    render(
-      <WorkflowTaskDetailSidebar
-        task={task}
-        config={config}
-        onClose={() => {}}
-        onTaskUpdated={() => {}}
-      />,
-    );
+    await act(async () => {
+      render(
+        <WorkflowTaskDetailSidebar
+          task={task}
+          config={config}
+          onClose={() => {}}
+          onTaskUpdated={() => {}}
+        />,
+      );
+    });
 
     expect(screen.getByText("Test Task")).toBeInTheDocument();
     expect(screen.getByText("Done")).toBeInTheDocument();
   });
 
-  it("renders failed task with error message", () => {
+  it("renders failed task with error message", async () => {
     const task = createMockWorkflowTask({
       status: { type: "failed", error: "Something went wrong" },
       phase: "idle",
     });
 
-    render(
-      <WorkflowTaskDetailSidebar
-        task={task}
-        config={config}
-        onClose={() => {}}
-        onTaskUpdated={() => {}}
-      />,
-    );
+    await act(async () => {
+      render(
+        <WorkflowTaskDetailSidebar
+          task={task}
+          config={config}
+          onClose={() => {}}
+          onTaskUpdated={() => {}}
+        />,
+      );
+    });
 
     expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
     expect(screen.getByText("Failed")).toBeInTheDocument();
   });
 
-  it("renders blocked task with reason", () => {
+  it("renders blocked task with reason", async () => {
     const task = createMockWorkflowTask({
       status: { type: "blocked", reason: "Waiting for dependencies" },
       phase: "idle",
     });
 
-    render(
-      <WorkflowTaskDetailSidebar
-        task={task}
-        config={config}
-        onClose={() => {}}
-        onTaskUpdated={() => {}}
-      />,
-    );
+    await act(async () => {
+      render(
+        <WorkflowTaskDetailSidebar
+          task={task}
+          config={config}
+          onClose={() => {}}
+          onTaskUpdated={() => {}}
+        />,
+      );
+    });
 
     expect(screen.getByText(/waiting for dependencies/i)).toBeInTheDocument();
     // "Blocked" appears in both status badge and section heading
     expect(screen.getAllByText("Blocked").length).toBeGreaterThan(0);
   });
 
-  it("renders artifact tabs when task has artifacts", () => {
+  it("renders artifact tabs when task has artifacts", async () => {
     const task = createMockWorkflowTask({
       status: { type: "active", stage: "work" },
       phase: "idle",
@@ -161,14 +171,16 @@ describe("WorkflowTaskDetailSidebar", () => {
       },
     });
 
-    render(
-      <WorkflowTaskDetailSidebar
-        task={task}
-        config={config}
-        onClose={() => {}}
-        onTaskUpdated={() => {}}
-      />,
-    );
+    await act(async () => {
+      render(
+        <WorkflowTaskDetailSidebar
+          task={task}
+          config={config}
+          onClose={() => {}}
+          onTaskUpdated={() => {}}
+        />,
+      );
+    });
 
     // Should have Details, Plan, Activity, Logs tabs
     expect(screen.getByRole("button", { name: "Details" })).toBeInTheDocument();

@@ -46,8 +46,11 @@ export function StartupErrorScreen({ errors, onRetry, isRetrying = false }: Prop
 
         {/* Errors */}
         <div className="space-y-4 mb-6">
-          {errors.map((error, i) => (
-            <div key={i} className="border border-red-200 rounded-lg p-4 bg-red-50">
+          {errors.map((error) => (
+            <div
+              key={`${error.category}-${error.message}`}
+              className="border border-red-200 rounded-lg p-4 bg-red-50"
+            >
               {/* Category badge */}
               <div className="flex items-center gap-2 mb-2">
                 <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded">
@@ -61,8 +64,8 @@ export function StartupErrorScreen({ errors, onRetry, isRetrying = false }: Prop
               {/* Details list */}
               {error.details.length > 0 && (
                 <ul className="list-disc list-inside text-sm text-red-700 mb-3 space-y-1 pl-1">
-                  {error.details.map((detail, j) => (
-                    <li key={j} className="break-words">
+                  {error.details.map((detail) => (
+                    <li key={detail} className="break-words">
                       {detail}
                     </li>
                   ))}

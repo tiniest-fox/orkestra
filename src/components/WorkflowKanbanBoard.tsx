@@ -27,17 +27,17 @@ interface Column {
 }
 
 /**
- * Color palette for stage columns.
+ * Color palette for stage columns - using sage-based palette.
  */
 const STAGE_COLORS = [
-  "bg-slate-500", // First stage
-  "bg-blue-500",
-  "bg-sky-500",
-  "bg-cyan-500",
+  "bg-stone-500", // First stage
+  "bg-sage-500",
+  "bg-sage-400",
+  "bg-emerald-500",
   "bg-teal-500",
-  "bg-indigo-500",
-  "bg-violet-500",
-  "bg-purple-500",
+  "bg-sage-600",
+  "bg-sage-700",
+  "bg-stone-600",
 ];
 
 /**
@@ -56,11 +56,11 @@ function buildColumns(config: WorkflowConfig): Column[] {
     });
   });
 
-  // Add terminal state columns
+  // Add terminal state columns - using semantic colors
   columns.push(
-    { id: "done", label: "Done", color: "bg-emerald-500" },
-    { id: "failed", label: "Failed", color: "bg-red-500" },
-    { id: "blocked", label: "Blocked", color: "bg-orange-500" },
+    { id: "done", label: "Done", color: "bg-success" },
+    { id: "failed", label: "Failed", color: "bg-error" },
+    { id: "blocked", label: "Blocked", color: "bg-blocked" },
   );
 
   return columns;
@@ -136,16 +136,16 @@ export function WorkflowKanbanBoard({
             return (
               <div
                 key={column.id}
-                className="flex-shrink-0 w-72 bg-gray-50 rounded-lg p-4 flex flex-col h-full"
+                className="flex-shrink-0 w-72 bg-stone-100 rounded-panel p-4 flex flex-col h-full"
               >
-                <h2 className="font-medium text-gray-700 mb-4 flex items-center gap-2 flex-shrink-0">
+                <h2 className="font-heading font-medium text-stone-700 mb-4 flex items-center gap-2 flex-shrink-0">
                   <span className={`w-3 h-3 rounded-full ${column.color}`} />
                   {column.label}
-                  <span className="text-gray-400 text-sm">({columnTasks.length})</span>
+                  <span className="text-stone-400 text-sm">({columnTasks.length})</span>
                 </h2>
                 <div className="space-y-3 overflow-y-auto flex-1">
                   {columnTasks.length === 0 ? (
-                    <div className="text-gray-400 text-sm text-center py-8">No tasks</div>
+                    <div className="text-stone-400 text-sm text-center py-8">No tasks</div>
                   ) : (
                     columnTasks.map((task) => (
                       <WorkflowTaskCard

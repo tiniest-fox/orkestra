@@ -1,6 +1,7 @@
 /**
  * Task detail sidebar for the workflow system.
  * Shows task details with dynamic artifact tabs based on task.artifacts.
+ * Uses Panel-based design system with nested PanelSlots for review/questions.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +17,7 @@ import type {
 } from "../types/workflow";
 import { capitalizeFirst, getTaskStage, needsReview } from "../types/workflow";
 import { LogList } from "./LogEntryView";
+import { Badge, Button, Panel, PanelSlot } from "./ui";
 
 /**
  * Tab definition for the sidebar.
@@ -177,20 +179,20 @@ function QuestionFormSection({
   if (!currentQuestion) return null;
 
   return (
-    <div className="p-4 bg-blue-50 border-t border-gray-200 flex flex-col">
+    <div className="p-4 bg-blue-50 border-t border-stone-200 flex flex-col rounded-b-panel">
       {/* Header with progress indicator */}
       <div className="flex items-center justify-between mb-3">
-        <div className="text-sm font-medium text-blue-800">Questions</div>
-        <div className="text-xs text-blue-600">
+        <div className="text-sm font-medium text-info">Questions</div>
+        <div className="text-xs text-info/70">
           Question {currentIndex + 1} of {questions.length}
         </div>
       </div>
 
       {/* Scrollable question content */}
       <div className="overflow-auto max-h-[300px] mb-4">
-        <div className="text-sm font-medium text-gray-900 mb-1">{currentQuestion.question}</div>
+        <div className="text-sm font-medium text-stone-800 mb-1">{currentQuestion.question}</div>
         {currentQuestion.context && (
-          <div className="text-xs text-gray-500 mb-2">{currentQuestion.context}</div>
+          <div className="text-xs text-stone-500 mb-2">{currentQuestion.context}</div>
         )}
         <div className="space-y-1">
           {/* Render predefined options */}
@@ -207,12 +209,12 @@ function QuestionFormSection({
                   setAnswers((prev) => ({ ...prev, [currentQuestion.id]: option.id }));
                   setOtherSelected((prev) => ({ ...prev, [currentQuestion.id]: false }));
                 }}
-                className="text-blue-600 mt-0.5"
+                className="text-info mt-0.5 accent-info"
               />
               <div>
-                <span className="text-sm">{option.label}</span>
+                <span className="text-sm text-stone-700">{option.label}</span>
                 {option.description && (
-                  <span className="text-xs text-gray-500 ml-1">- {option.description}</span>
+                  <span className="text-xs text-stone-500 ml-1">- {option.description}</span>
                 )}
               </div>
             </label>
@@ -228,10 +230,10 @@ function QuestionFormSection({
                 setOtherSelected((prev) => ({ ...prev, [currentQuestion.id]: true }));
                 setAnswers((prev) => ({ ...prev, [currentQuestion.id]: "" }));
               }}
-              className="text-blue-600 mt-0.5"
+              className="text-info mt-0.5 accent-info"
             />
             <div>
-              <span className="text-sm">Other (custom response)</span>
+              <span className="text-sm text-stone-700">Other (custom response)</span>
             </div>
           </label>
           {/* Text input for "Other" - shown when "Other" is selected */}
@@ -242,7 +244,7 @@ function QuestionFormSection({
                 setOtherText((prev) => ({ ...prev, [currentQuestion.id]: e.target.value }))
               }
               placeholder="Type your custom response..."
-              className="w-full mt-2 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full mt-2 px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-info resize-none text-stone-800"
               rows={2}
             />
           )}
@@ -251,33 +253,35 @@ function QuestionFormSection({
 
       {/* Navigation controls */}
       <div className="flex items-center justify-between">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={handlePrevious}
           disabled={isFirstQuestion || isSubmitting}
-          className="px-4 py-2 text-sm text-blue-600 hover:bg-blue-100 rounded-lg disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+          className="text-info hover:bg-blue-100"
         >
           Previous
-        </button>
+        </Button>
 
         {isLastQuestion ? (
-          <button
-            type="button"
+          <Button
+            size="sm"
             onClick={handleSubmit}
             disabled={isSubmitting || !allAnswered}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            loading={isSubmitting}
+            className="bg-info hover:bg-blue-600"
           >
-            {isSubmitting ? "Submitting..." : "Submit Answers"}
-          </button>
+            Submit Answers
+          </Button>
         ) : (
-          <button
-            type="button"
+          <Button
+            size="sm"
             onClick={handleNext}
             disabled={!currentAnswered || isSubmitting}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="bg-info hover:bg-blue-600"
           >
             Next
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -308,35 +312,37 @@ function ReviewPanel({
   };
 
   return (
-    <div className="p-4 bg-amber-50 border-t border-gray-200">
-      <div className="text-sm font-medium text-amber-800 mb-3">
+    <div className="p-4 bg-amber-50 border-t border-stone-200 rounded-b-panel">
+      <div className="text-sm font-medium text-warning mb-3">
         {capitalizeFirst(stageName)} Review
       </div>
       <textarea
         value={feedback}
         onChange={(e) => setFeedback(e.target.value)}
         placeholder="Leave feedback to request changes..."
-        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none mb-3"
+        className="w-full px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-warning resize-none mb-3 text-stone-800"
         rows={2}
       />
       {feedback.trim() ? (
-        <button
-          type="button"
+        <Button
           onClick={handleReject}
           disabled={isSubmitting}
-          className="w-full px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+          loading={isSubmitting}
+          fullWidth
+          className="bg-warning hover:bg-amber-600 text-white"
         >
           Request Changes
-        </button>
+        </Button>
       ) : (
-        <button
-          type="button"
+        <Button
           onClick={onApprove}
           disabled={isSubmitting}
-          className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+          loading={isSubmitting}
+          fullWidth
+          className="bg-success hover:bg-emerald-600 text-white"
         >
           Approve
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -351,35 +357,35 @@ function IterationCard({ iteration }: { iteration: WorkflowIteration }) {
 
   return (
     <div
-      className={`border rounded-lg overflow-hidden ${
-        isActive ? "border-blue-300 bg-blue-50" : "border-gray-200 bg-white"
+      className={`border rounded-panel-sm overflow-hidden ${
+        isActive ? "border-sage-300 bg-sage-50" : "border-stone-200 bg-white"
       }`}
     >
-      <div className="px-3 py-2 flex items-center justify-between border-b border-gray-100">
+      <div className="px-3 py-2 flex items-center justify-between border-b border-stone-100">
         <div className="flex items-center gap-2">
-          <span className={`font-medium ${isActive ? "text-blue-700" : "text-gray-900"}`}>
+          <span className={`font-medium ${isActive ? "text-sage-700" : "text-stone-800"}`}>
             {capitalizeFirst(iteration.stage)} #{iteration.iteration_number}
           </span>
           {isActive && (
-            <span className="flex items-center gap-1 text-xs text-blue-600">
-              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+            <span className="flex items-center gap-1 text-xs text-sage-600">
+              <span className="w-1.5 h-1.5 bg-sage-500 rounded-full animate-pulse" />
               Active
             </span>
           )}
         </div>
-        <span className="text-xs text-gray-500">{formatTimestamp(iteration.started_at)}</span>
+        <span className="text-xs text-stone-500">{formatTimestamp(iteration.started_at)}</span>
       </div>
       <div className="px-3 py-2 space-y-2">
         {outcomeInfo && (
           <div className="flex items-center gap-2">
-            <span className="text-gray-500 text-sm">Outcome:</span>
+            <span className="text-stone-500 text-sm">Outcome:</span>
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${outcomeInfo.color}`}>
               {outcomeInfo.label}
             </span>
           </div>
         )}
         {iteration.ended_at && (
-          <div className="text-xs text-gray-400">Ended: {formatTimestamp(iteration.ended_at)}</div>
+          <div className="text-xs text-stone-400">Ended: {formatTimestamp(iteration.ended_at)}</div>
         )}
       </div>
     </div>
@@ -624,7 +630,16 @@ export function WorkflowTaskDetailSidebar({
     }
   };
 
-  // Status styling
+  // Status badge variant
+  const statusBadgeVariant =
+    task.status.type === "done"
+      ? "success"
+      : task.status.type === "failed"
+        ? "error"
+        : task.status.type === "blocked"
+          ? "blocked"
+          : "neutral";
+
   const statusLabel =
     task.status.type === "active"
       ? capitalizeFirst(task.status.stage)
@@ -632,76 +647,49 @@ export function WorkflowTaskDetailSidebar({
         ? "Waiting"
         : capitalizeFirst(task.status.type);
 
-  const statusColor =
-    task.status.type === "done"
-      ? "bg-green-100 text-green-700"
-      : task.status.type === "failed"
-        ? "bg-red-100 text-red-700"
-        : task.status.type === "blocked"
-          ? "bg-orange-100 text-orange-700"
-          : "bg-blue-100 text-blue-700";
+  // Determine which footer panel to show
+  const footerPanelKey = taskHasQuestions
+    ? "questions"
+    : taskNeedsReview && currentStage
+      ? "review"
+      : null;
 
   return (
-    <div className="w-1/2 flex-shrink-0 bg-white shadow-xl border-l border-gray-200 flex flex-col overflow-hidden">
+    <Panel variant="elevated" className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex-shrink-0 p-4 border-b border-gray-200">
+      <div className="flex-shrink-0 p-4 border-b border-stone-200">
         {/* Top row: Title and close button */}
         <div className="flex items-start justify-between gap-2">
-          <h2 className="font-semibold text-lg text-gray-900 line-clamp-2">{task.title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-shrink-0 p-1 hover:bg-gray-100 rounded transition-colors"
-          >
-            <svg
-              className="w-5 h-5 text-gray-500"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
+          <h2 className="font-heading font-semibold text-lg text-stone-800 line-clamp-2">
+            {task.title}
+          </h2>
+          <Panel.CloseButton onClick={onClose} />
         </div>
         {/* Bottom row: ID and badges */}
-        <div className="flex items-center gap-2 mt-2">
-          <span className="font-mono text-sm text-gray-500">{task.id}</span>
-          <span className={`px-2 py-0.5 text-xs rounded-full ${statusColor}`}>{statusLabel}</span>
-          {taskHasQuestions && (
-            <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700">
-              Questions
-            </span>
-          )}
-          {taskNeedsReview && (
-            <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">
-              Review
-            </span>
-          )}
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <span className="font-mono text-sm text-stone-500">{task.id}</span>
+          <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
+          {taskHasQuestions && <Badge variant="info">Questions</Badge>}
+          {taskNeedsReview && <Badge variant="warning">Review</Badge>}
         </div>
       </div>
 
       {/* Tab Bar */}
-      <div className="flex-shrink-0 flex border-b border-gray-200 overflow-x-auto">
+      <div className="flex-shrink-0 flex border-b border-stone-200 overflow-x-auto">
         {tabs.map((tab) => (
           <button
             type="button"
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 ${
               activeTab === tab.id
-                ? "bg-gray-100 text-gray-900 border-b-2 border-blue-500"
-                : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                ? "bg-stone-100 text-stone-900 border-b-2 border-sage-500"
+                : "text-stone-600 hover:text-stone-900 hover:bg-stone-50"
             }`}
           >
             {tab.label}
             {tab.id === "logs" && task.phase === "agent_working" && (
-              <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+              <span className="w-2 h-2 bg-sage-500 rounded-full animate-pulse" />
             )}
           </button>
         ))}
@@ -712,28 +700,29 @@ export function WorkflowTaskDetailSidebar({
         {/* Details Tab */}
         {activeTab === "details" && (
           <div className="flex-1 overflow-auto p-4">
-            {task.description && <p className="text-gray-600 text-sm">{task.description}</p>}
+            {task.description && <p className="text-stone-600 text-sm">{task.description}</p>}
             {task.status.type === "failed" && (
               <div className="mt-3 space-y-3">
                 {task.status.error && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded">
-                    <div className="text-xs font-medium text-red-700 mb-1">Error</div>
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-panel-sm">
+                    <div className="text-xs font-medium text-error mb-1">Error</div>
                     <p className="text-sm text-red-800">{task.status.error}</p>
                   </div>
                 )}
-                <button
-                  type="button"
+                <Button
+                  variant="destructive"
+                  fullWidth
                   onClick={handleRetry}
                   disabled={isRetrying}
-                  className="w-full px-3 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50 transition-colors"
+                  loading={isRetrying}
                 >
-                  {isRetrying ? "Retrying..." : "Retry Task"}
-                </button>
+                  Retry Task
+                </Button>
               </div>
             )}
             {task.status.type === "blocked" && task.status.reason && (
-              <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded">
-                <div className="text-xs font-medium text-orange-700 mb-1">Blocked</div>
+              <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-panel-sm">
+                <div className="text-xs font-medium text-blocked mb-1">Blocked</div>
                 <p className="text-sm text-orange-800">{task.status.reason}</p>
               </div>
             )}
@@ -743,11 +732,11 @@ export function WorkflowTaskDetailSidebar({
         {/* Artifact Tab */}
         {currentTab?.type === "artifact" && currentArtifact && (
           <div className="flex-1 overflow-auto p-4">
-            <div className="text-xs text-gray-500 mb-2">
+            <div className="text-xs text-stone-500 mb-2">
               Stage: {currentArtifact.stage} | Iteration: {currentArtifact.iteration} |{" "}
               {formatTimestamp(currentArtifact.created_at)}
             </div>
-            <div className="prose prose-sm max-w-none prose-headings:text-gray-800 prose-p:text-gray-700 prose-li:text-gray-700 prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-100 prose-pre:text-gray-800">
+            <div className="prose prose-sm max-w-none prose-headings:text-stone-800 prose-p:text-stone-700 prose-li:text-stone-700 prose-code:bg-stone-100 prose-code:px-1 prose-code:rounded prose-pre:bg-stone-100 prose-pre:text-stone-800">
               <ReactMarkdown>{currentArtifact.content}</ReactMarkdown>
             </div>
           </div>
@@ -756,9 +745,9 @@ export function WorkflowTaskDetailSidebar({
         {/* Iterations Tab */}
         {activeTab === "iterations" && (
           <div className="flex-1 overflow-auto p-4">
-            <div className="text-sm font-medium text-gray-700 mb-4">Activity</div>
+            <div className="text-sm font-medium text-stone-700 mb-4">Activity</div>
             {iterations.length === 0 ? (
-              <div className="text-gray-500 text-sm">No iterations recorded yet.</div>
+              <div className="text-stone-500 text-sm">No iterations recorded yet.</div>
             ) : (
               <div className="space-y-4">
                 {[...iterations]
@@ -776,7 +765,7 @@ export function WorkflowTaskDetailSidebar({
           <div className="flex-1 flex flex-col min-h-0">
             {/* Stage tab bar */}
             {stagesWithLogs.length > 0 && (
-              <div className="flex-shrink-0 flex gap-1 p-2 border-b border-gray-700 bg-gray-800">
+              <div className="flex-shrink-0 flex gap-1 p-2 border-b border-stone-700 bg-stone-800">
                 {stagesWithLogs.map((stage) => {
                   const currentStage = getTaskStage(task.status);
                   const isCurrentStage = stage === currentStage;
@@ -793,15 +782,15 @@ export function WorkflowTaskDetailSidebar({
                           setActiveLogStage(stage);
                         }
                       }}
-                      className={`px-3 py-1 text-xs rounded capitalize flex items-center gap-1.5 transition-colors ${
+                      className={`px-3 py-1 text-xs rounded-panel-sm capitalize flex items-center gap-1.5 transition-colors ${
                         isActiveTab
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                          ? "bg-sage-600 text-white"
+                          : "bg-stone-700 text-stone-300 hover:bg-stone-600"
                       }`}
                     >
                       {stage}
                       {isCurrentStage && task.phase === "agent_working" && (
-                        <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                        <span className="w-1.5 h-1.5 bg-sage-400 rounded-full animate-pulse" />
                       )}
                     </button>
                   );
@@ -812,7 +801,7 @@ export function WorkflowTaskDetailSidebar({
             {/* Log list */}
             <div
               ref={logsContainerRef}
-              className="flex-1 overflow-auto p-4 bg-gray-900 font-mono text-sm"
+              className="flex-1 overflow-auto p-4 bg-stone-900 font-mono text-sm"
             >
               <LogList logs={logs} isLoading={logsLoading} error={logsError} />
             </div>
@@ -820,24 +809,25 @@ export function WorkflowTaskDetailSidebar({
         )}
       </div>
 
-      {/* Question Form */}
-      {taskHasQuestions && (
-        <QuestionFormSection
-          questions={pendingQuestions}
-          onSubmit={handleAnswerQuestions}
-          isSubmitting={isSubmitting}
-        />
-      )}
+      {/* Footer slot for Questions or Review panel */}
+      <PanelSlot activeKey={footerPanelKey} direction="vertical">
+        <PanelSlot.Panel panelKey="questions">
+          <QuestionFormSection
+            questions={pendingQuestions}
+            onSubmit={handleAnswerQuestions}
+            isSubmitting={isSubmitting}
+          />
+        </PanelSlot.Panel>
 
-      {/* Review Panel */}
-      {taskNeedsReview && currentStage && !taskHasQuestions && (
-        <ReviewPanel
-          stageName={currentStageConfig?.display_name || currentStage}
-          onApprove={handleApprove}
-          onReject={handleReject}
-          isSubmitting={isSubmitting}
-        />
-      )}
-    </div>
+        <PanelSlot.Panel panelKey="review">
+          <ReviewPanel
+            stageName={currentStageConfig?.display_name || currentStage || ""}
+            onApprove={handleApprove}
+            onReject={handleReject}
+            isSubmitting={isSubmitting}
+          />
+        </PanelSlot.Panel>
+      </PanelSlot>
+    </Panel>
   );
 }

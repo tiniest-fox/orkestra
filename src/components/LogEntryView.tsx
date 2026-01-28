@@ -3,6 +3,16 @@
  * Renders tool uses, text output, and subagent activity.
  */
 
+import AnsiToHtml from "ansi-to-html";
+
+// Converter for ANSI escape codes to HTML (for script output with terminal colors)
+const ansiConverter = new AnsiToHtml({
+  fg: "#d1d5db", // gray-300 - default foreground
+  bg: "transparent",
+  newline: true,
+  escapeXML: true,
+});
+
 import {
   AlertCircle,
   Command,
@@ -459,14 +469,19 @@ export function LogEntryView({ entry }: { entry: LogEntry }) {
         </div>
       );
 
-    case "script_output":
+    case "script_output": {
+      // Convert ANSI escape codes (terminal colors) to HTML
+      const htmlContent = ansiConverter.toHtml(entry.content);
       return (
         <div className="py-1 px-3 bg-gray-800/50 border-l-2 border-gray-600 rounded-r">
-          <pre className="text-gray-300 text-sm whitespace-pre-wrap font-mono overflow-x-auto">
-            {entry.content}
-          </pre>
+          <pre
+            className="text-gray-300 text-sm whitespace-pre-wrap font-mono overflow-x-auto"
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: Content is from our own script logs with ANSI codes escaped
+            dangerouslySetInnerHTML={{ __html: htmlContent }}
+          />
         </div>
       );
+    }
 
     case "script_exit": {
       const exitColor = entry.success ? "text-green-400" : "text-red-400";

@@ -56,6 +56,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Suppress cargo progress bars in quiet mode (they bypass shell redirection)
+if ! $VERBOSE; then
+    export CARGO_TERM_PROGRESS_WHEN=never
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'

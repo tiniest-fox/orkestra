@@ -159,6 +159,7 @@ pub fn spawn_claude_process(
 
     cmd.args(["--dangerously-skip-permissions"])
         .env("PATH", path_env)
+        .env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1")
         .current_dir(project_root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

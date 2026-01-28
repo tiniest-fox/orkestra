@@ -179,7 +179,7 @@ function QuestionFormSection({
   if (!currentQuestion) return null;
 
   return (
-    <Panel accent="info" className="m-2 mt-0">
+    <Panel accent="info" autoFill={false} className="m-2 mt-0">
       <div className="p-4 flex flex-col">
         {/* Header with progress indicator */}
         <div className="flex items-center justify-between mb-3">
@@ -314,7 +314,7 @@ function ReviewPanel({
   };
 
   return (
-    <Panel accent="warning" className="m-2 mt-0">
+    <Panel accent="warning" autoFill={false} className="m-2 mt-0">
       <div className="p-4">
         <div className="text-sm font-medium text-warning mb-3">
           {capitalizeFirst(stageName)} Review
@@ -680,7 +680,7 @@ export function WorkflowTaskDetailSidebar({
       : null;
 
   return (
-    <Panel variant="elevated" className="h-full flex flex-col">
+    <Panel variant="elevated">
       {/* Header */}
       <div className="flex-shrink-0 p-4">
         {/* Top row: Title and close button */}

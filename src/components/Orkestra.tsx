@@ -55,59 +55,58 @@ export function Orkestra() {
   };
 
   return (
-    <div className="h-screen bg-stone-100 flex flex-col p-4">
-      {/* Main app shell as a Panel */}
-      <Panel className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <Panel.Header className="bg-white">
+    <div className="h-screen bg-stone-100 flex flex-col p-4 gap-4">
+      {/* Header as standalone Panel */}
+      <Panel autoFill={false}>
+        <Panel.Header>
           <Panel.Title>Orkestra</Panel.Title>
           <Button onClick={handleOpenCreatePanel}>+ New Task</Button>
         </Panel.Header>
-
-        {/* Main content area */}
-        <div className="flex-1 flex overflow-hidden">
-          <PanelContainer className="flex-1 p-4 overflow-hidden" gap={16}>
-            {/* Main content panel (Kanban board) */}
-            <div className="flex-1 overflow-hidden">
-              {error && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-panel text-error">
-                  Error loading tasks: {error.message}
-                </div>
-              )}
-              {loading || !config ? (
-                <div className="flex items-center justify-center h-64">
-                  <div className="text-stone-500">Loading...</div>
-                </div>
-              ) : (
-                <TasksPanel
-                  config={config}
-                  tasks={tasks}
-                  selectedTaskId={currentSelectedTask?.id}
-                  onSelectTask={handleSelectTask}
-                />
-              )}
-            </div>
-
-            {/* Sidebar slot for create/detail panels */}
-            <PanelSlot activeKey={sidebarActiveKey} width={480}>
-              <PanelSlot.Panel panelKey="create">
-                <NewTaskPanel onClose={handleCloseSidebar} onSubmit={handleTaskCreated} />
-              </PanelSlot.Panel>
-
-              {currentSelectedTask && config && (
-                <PanelSlot.Panel panelKey={`task-${currentSelectedTask.id}`}>
-                  <WorkflowTaskDetailSidebar
-                    task={currentSelectedTask}
-                    config={config}
-                    onClose={handleCloseSidebar}
-                    onTaskUpdated={refetch}
-                  />
-                </PanelSlot.Panel>
-              )}
-            </PanelSlot>
-          </PanelContainer>
-        </div>
       </Panel>
+
+      {/* Main content area - PanelContainer auto-fills with flex-1 */}
+      <PanelContainer>
+        {/* Main content panel (Kanban board) */}
+        <div className="flex-1 min-w-0">
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-panel text-error">
+              Error loading tasks: {error.message}
+            </div>
+          )}
+          {loading || !config ? (
+            <Panel>
+              <div className="flex items-center justify-center h-64">
+                <div className="text-stone-500">Loading...</div>
+              </div>
+            </Panel>
+          ) : (
+            <TasksPanel
+              config={config}
+              tasks={tasks}
+              selectedTaskId={currentSelectedTask?.id}
+              onSelectTask={handleSelectTask}
+            />
+          )}
+        </div>
+
+        {/* Sidebar slot for create/detail panels */}
+        <PanelSlot activeKey={sidebarActiveKey} width={480}>
+          <PanelSlot.Panel panelKey="create">
+            <NewTaskPanel onClose={handleCloseSidebar} onSubmit={handleTaskCreated} />
+          </PanelSlot.Panel>
+
+          {currentSelectedTask && config && (
+            <PanelSlot.Panel panelKey={`task-${currentSelectedTask.id}`}>
+              <WorkflowTaskDetailSidebar
+                task={currentSelectedTask}
+                config={config}
+                onClose={handleCloseSidebar}
+                onTaskUpdated={refetch}
+              />
+            </PanelSlot.Panel>
+          )}
+        </PanelSlot>
+      </PanelContainer>
     </div>
   );
 }

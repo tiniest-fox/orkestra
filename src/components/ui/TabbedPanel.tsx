@@ -58,7 +58,7 @@ export function TabbedPanel({
   className = "",
 }: TabbedPanelProps) {
   return (
-    <Panel variant={variant} className={`flex flex-col ${className}`}>
+    <Panel variant={variant} className={className}>
       {/* Optional header (title, close button, etc.) */}
       {header && <Panel.Header>{header}</Panel.Header>}
 

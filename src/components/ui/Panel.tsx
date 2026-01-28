@@ -1,6 +1,9 @@
 /**
  * Panel - Base container component with visual styling.
  * Features 12px border radius, drop shadow, and optional Header/Body/Footer subcomponents.
+ *
+ * By default, panels fill their container height (h-full) and use flex column layout.
+ * This makes them work correctly inside PanelContainer and PanelSlot without extra styling.
  */
 
 import type { ReactNode } from "react";
@@ -12,6 +15,9 @@ interface PanelProps {
   children: ReactNode;
   variant?: PanelVariant;
   accent?: PanelAccent;
+  /** Set to false to disable auto-fill behavior (h-full flex flex-col) */
+  autoFill?: boolean;
+  /** Additional CSS classes for custom styling */
   className?: string;
 }
 
@@ -60,11 +66,14 @@ export function Panel({
   children,
   variant = "default",
   accent = "none",
+  autoFill = true,
   className = "",
 }: PanelProps) {
+  const fillClass = autoFill ? "h-full flex flex-col" : "";
+
   return (
     <div
-      className={`bg-white rounded-panel ${variantStyles[variant]} ${accentStyles[accent]} flex flex-col overflow-hidden ${className}`}
+      className={`bg-white rounded-panel ${variantStyles[variant]} ${accentStyles[accent]} overflow-hidden ${fillClass} ${className}`}
     >
       {children}
     </div>

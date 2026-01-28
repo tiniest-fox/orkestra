@@ -16,7 +16,7 @@ interface TasksPanelProps {
 
 export function TasksPanel({ config, tasks, selectedTaskId, onSelectTask }: TasksPanelProps) {
   return (
-    <Panel className="h-full flex flex-col" variant="default">
+    <Panel>
       <div className="flex-1 overflow-hidden">
         <WorkflowKanbanBoard
           config={config}

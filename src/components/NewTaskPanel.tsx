@@ -33,7 +33,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
   };
 
   return (
-    <Panel variant="elevated" className="h-full flex flex-col">
+    <Panel variant="elevated">
       <Panel.Header>
         <Panel.Title>New Task</Panel.Title>
         <Panel.CloseButton onClick={onClose} />

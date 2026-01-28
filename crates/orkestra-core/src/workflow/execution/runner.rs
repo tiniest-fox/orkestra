@@ -18,7 +18,7 @@ use std::thread;
 use crate::orkestra_debug;
 
 use super::output::StageOutput;
-use super::parser::{check_for_api_error, parse_agent_output};
+use super::parser::parse_agent_output;
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessSpawner};
 
 // ============================================================================
@@ -230,12 +230,6 @@ impl AgentRunnerTrait for AgentRunner {
                     }
                     full_output.push_str(&line);
                     full_output.push('\n');
-
-                    // Check for API errors
-                    if let Some(error_msg) = check_for_api_error(&line) {
-                        // Don't disarm - let guard kill the looping process
-                        return Err(RunError::ParseFailed(format!("API error: {error_msg}")));
-                    }
                 }
                 Err(e) => {
                     return Err(RunError::OutputReadFailed(e.to_string()));
@@ -321,18 +315,6 @@ fn read_output_and_send_events(
                 }
                 full_output.push_str(&line);
                 full_output.push('\n');
-
-                // Check for API errors in the stream
-                if let Some(error_msg) = check_for_api_error(&line) {
-                    eprintln!("[agent runner] API error detected: {error_msg}");
-                    // Send error completion - do NOT disarm, let guard kill the process
-                    if tx.send(RunEvent::Completed(Err(error_msg))).is_err() {
-                        eprintln!(
-                            "[agent runner] Channel closed before error completion could be sent"
-                        );
-                    }
-                    return; // Exit early, guard will kill the looping process on drop
-                }
             }
             Err(e) => {
                 eprintln!("[agent runner] Error reading stdout: {e}");
@@ -354,6 +336,7 @@ fn read_output_and_send_events(
     handle.disarm();
 
     // Parse and send completion event with schema validation
+    // Note: parse_agent_output checks for API errors in the output
     let result = parse_agent_output(&full_output, schema);
     if tx.send(RunEvent::Completed(result)).is_err() {
         eprintln!("[agent runner] Channel closed before completion could be sent");

@@ -54,6 +54,19 @@ pub fn parse_agent_output(
 ) -> Result<StageOutput, String> {
     let trimmed = full_output.trim();
 
+    // Check for empty output first
+    if trimmed.is_empty() {
+        return Err("Agent produced no output (process may have exited unexpectedly)".to_string());
+    }
+
+    // Check for API error in the last line (fallback for streaming detection)
+    // API errors cause Claude to exit, so the error is always at the end
+    if let Some(last_line) = trimmed.lines().next_back() {
+        if let Some(error_msg) = check_for_api_error(last_line.trim()) {
+            return Err(format!("API error: {error_msg}"));
+        }
+    }
+
     // Try to parse the whole output as JSON first
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
         if let Some(result) = extract_structured_output(&v, schema) {
@@ -308,5 +321,47 @@ mod tests {
             StageOutput::Artifact { content } => assert_eq!(content, "done"),
             other => panic!("Expected Artifact output, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_parse_agent_output_empty() {
+        let result = parse_agent_output("", None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("no output"));
+    }
+
+    #[test]
+    fn test_parse_agent_output_whitespace_only() {
+        let result = parse_agent_output("   \n\t\n  ", None);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("no output"));
+    }
+
+    #[test]
+    fn test_parse_agent_output_api_error_in_output() {
+        // API error that might not be caught during streaming
+        let output = r#"{"type":"assistant","error":"invalid_request","message":{"content":[{"type":"text","text":"Prompt is too long"}]}}"#;
+        let result = parse_agent_output(output, None);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("API error"), "Expected API error, got: {err}");
+        assert!(
+            err.contains("Prompt is too long"),
+            "Expected 'Prompt is too long', got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_agent_output_api_error_after_init() {
+        // API error after init message (Claude exits on error, so error is last)
+        let output = r#"{"type":"system","subtype":"init","session_id":"abc"}
+{"type":"assistant","error":"invalid_request","message":{"content":[{"type":"text","text":"Rate limit exceeded"}]}}"#;
+        let result = parse_agent_output(output, None);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Rate limit exceeded"),
+            "Expected rate limit error, got: {err}"
+        );
     }
 }

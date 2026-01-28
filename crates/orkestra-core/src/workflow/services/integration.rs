@@ -64,11 +64,11 @@ impl WorkflowApi {
                 task.title.clone()
             };
             if let Err(e) = git.commit_pending_changes(Path::new(worktree_path), &commit_message) {
-                return self.integration_failed(
-                    task_id,
-                    &format!("Failed to commit pending changes: {e}"),
-                    &[],
-                );
+                let error_msg = format!("Failed to commit pending changes: {e}");
+                // Record failure and move task to recovery stage
+                self.integration_failed(task_id, &error_msg, &[])?;
+                // Return error so caller knows integration failed
+                return Err(WorkflowError::IntegrationFailed(error_msg));
             }
         }
 
@@ -95,7 +95,10 @@ impl WorkflowApi {
                 if let Err(e) = git.abort_merge() {
                     workflow_warn!("Failed to abort merge for {}: {}", task_id, e);
                 }
-                self.integration_failed(task_id, "Merge conflict", &conflict_files)
+                // Record failure and move task to recovery stage
+                self.integration_failed(task_id, "Merge conflict", &conflict_files)?;
+                // Return error so caller knows integration failed
+                Err(WorkflowError::IntegrationFailed("Merge conflict".into()))
             }
             Err(e) => {
                 orkestra_debug!("integration", "failed {}: {}", task_id, e);
@@ -103,7 +106,11 @@ impl WorkflowApi {
                 if let Err(abort_err) = git.abort_merge() {
                     workflow_warn!("Failed to abort merge for {}: {}", task_id, abort_err);
                 }
-                self.integration_failed(task_id, &format!("{e}"), &[])
+                let error_msg = format!("{e}");
+                // Record failure and move task to recovery stage
+                self.integration_failed(task_id, &error_msg, &[])?;
+                // Return error so caller knows integration failed
+                Err(WorkflowError::IntegrationFailed(error_msg))
             }
         }
     }

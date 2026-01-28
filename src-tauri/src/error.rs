@@ -84,6 +84,10 @@ impl From<WorkflowError> for TauriError {
                 code: "INVALID_STATE".into(),
                 message: msg,
             },
+            WorkflowError::IntegrationFailed(msg) => TauriError {
+                code: "INTEGRATION_FAILED".into(),
+                message: msg,
+            },
         }
     }
 }

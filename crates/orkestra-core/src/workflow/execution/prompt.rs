@@ -544,12 +544,8 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
     if let Some(worktree) = ctx.worktree_path {
         prompt.push_str("\n---\n\n");
         prompt.push_str("## Important: Worktree Context\n\n");
-        let _ = writeln!(
-            prompt,
-            "You are working in a git worktree at: `{}`",
-            worktree
-        );
-        prompt.push_str("\n");
+        let _ = writeln!(prompt, "You are working in a git worktree at: `{worktree}`");
+        prompt.push('\n');
         prompt.push_str(
             "If you spawn any subagents (via the Task tool), you MUST explicitly tell them \
              this worktree path. Subagents do not automatically inherit your working directory \

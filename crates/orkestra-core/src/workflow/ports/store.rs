@@ -35,6 +35,10 @@ pub enum WorkflowError {
     /// Lock error (for thread-safe stores).
     #[error("Lock error: failed to acquire lock")]
     Lock,
+
+    /// Integration (merge) failed.
+    #[error("Integration failed: {0}")]
+    IntegrationFailed(String),
 }
 
 /// Result type for workflow operations.

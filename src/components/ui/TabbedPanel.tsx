@@ -1,8 +1,10 @@
 /**
  * TabbedPanel - Panel variant with tab bar for switching between content sections.
  * Combines the Panel visual styling with built-in tab navigation.
+ * Features animated highlight that moves between tabs on selection.
  */
 
+import { motion } from "framer-motion";
 import type { ReactNode } from "react";
 import { Panel } from "./Panel";
 
@@ -71,12 +73,26 @@ export function TabbedPanel({
             type="button"
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
-            className={`px-3 mx-px py-1.5 text-sm rounded-panel font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 ${
-              activeTab === tab.id ? "bg-sage-500 text-white" : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
+            className={`relative px-3 mx-px py-1.5 text-sm rounded-panel font-medium whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab !== tab.id ? "hover:bg-stone-100" : ""
             }`}
           >
-            {tab.label}
-            {tab.indicator}
+            {/* Animated highlight - only rendered in active tab */}
+            {activeTab === tab.id && (
+              <motion.div
+                layoutId="tab-highlight"
+                className="absolute inset-0 bg-sage-500 rounded-panel"
+                transition={{ type: "spring", bounce: 0.15, duration: 0.25 }}
+              />
+            )}
+            <span
+              className={`relative z-10 transition-colors ${
+                activeTab === tab.id ? "text-white" : "text-stone-600 hover:text-stone-900"
+              }`}
+            >
+              {tab.label}
+            </span>
+            {tab.indicator && <span className="relative z-10">{tab.indicator}</span>}
           </button>
         ))}
       </Panel>

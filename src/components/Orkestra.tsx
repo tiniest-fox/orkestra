@@ -22,6 +22,7 @@ export function Orkestra() {
     loading: tasksLoading,
     error: tasksError,
     createTask,
+    deleteTask,
     refetch,
   } = useWorkflowTasks();
 
@@ -50,6 +51,11 @@ export function Orkestra() {
 
   const handleCloseSidebar = () => {
     setSidebarView({ type: "none" });
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    handleCloseSidebar();
+    await deleteTask(taskId);
   };
 
   const handleTaskCreated = async (description: string) => {
@@ -102,6 +108,7 @@ export function Orkestra() {
                 task={currentSelectedTask}
                 config={config}
                 onClose={handleCloseSidebar}
+                onDelete={() => handleDeleteTask(currentSelectedTask.id)}
                 onTaskUpdated={refetch}
               />
             </PanelSlot.Panel>

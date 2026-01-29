@@ -1,7 +1,7 @@
 //! Task CRUD commands.
 
 use crate::{error::TauriError, state::AppState};
-use orkestra_core::workflow::Task;
+use orkestra_core::{is_process_running, kill_process_tree, workflow::Task};
 use tauri::State;
 
 /// Get all tasks from the workflow.
@@ -47,10 +47,54 @@ pub fn workflow_get_task(state: State<AppState>, task_id: String) -> Result<Task
     state.api()?.get_task(&task_id).map_err(Into::into)
 }
 
-/// Delete a task.
+/// Delete a task, killing any running agents first.
+///
+/// Before deleting data, terminates any running agent processes for the task
+/// and all its subtasks. Agent kill failures are logged but do not prevent deletion.
 #[tauri::command]
 pub fn workflow_delete_task(state: State<AppState>, task_id: String) -> Result<(), TauriError> {
-    state.api()?.delete_task(&task_id).map_err(Into::into)
+    let api = state.api()?;
+
+    // Collect all task IDs to clean up (the task itself plus all subtasks)
+    let task_ids = collect_task_tree_ids(&api, &task_id);
+
+    // Kill running agents for all tasks in the tree
+    kill_agents_for_tasks(&api, &task_ids);
+
+    // Proceed with data cleanup (worktree, database records)
+    api.delete_task(&task_id).map_err(Into::into)
+}
+
+/// Collect the task ID and all descendant subtask IDs recursively.
+fn collect_task_tree_ids(api: &orkestra_core::workflow::WorkflowApi, task_id: &str) -> Vec<String> {
+    let mut ids = vec![task_id.to_string()];
+    if let Ok(subtasks) = api.list_subtasks(task_id) {
+        for subtask in subtasks {
+            ids.extend(collect_task_tree_ids(api, &subtask.id));
+        }
+    }
+    ids
+}
+
+/// Kill running agent processes for the given task IDs.
+///
+/// Queries stage sessions for each task and kills any processes that are still running.
+/// Failures are logged but do not propagate — deletion should always proceed.
+fn kill_agents_for_tasks(api: &orkestra_core::workflow::WorkflowApi, task_ids: &[String]) {
+    let Ok(all_sessions) = api.get_running_agent_pids() else {
+        return;
+    };
+
+    for (session_task_id, stage, pid) in all_sessions {
+        if task_ids.contains(&session_task_id) && is_process_running(pid) {
+            println!("[delete] Killing agent for task {session_task_id}/{stage} (pid: {pid})");
+            if let Err(e) = kill_process_tree(pid) {
+                eprintln!(
+                    "[delete] Failed to kill agent pid {pid} for {session_task_id}/{stage}: {e}"
+                );
+            }
+        }
+    }
 }
 
 /// List subtasks for a parent task.

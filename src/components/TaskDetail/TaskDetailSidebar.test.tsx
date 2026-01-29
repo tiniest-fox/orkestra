@@ -64,6 +64,7 @@ describe("TaskDetailSidebar", () => {
           task={task}
           config={config}
           onClose={() => {}}
+          onDelete={() => {}}
           onTaskUpdated={() => {}}
         />,
       );
@@ -86,6 +87,7 @@ describe("TaskDetailSidebar", () => {
           task={task}
           config={config}
           onClose={() => {}}
+          onDelete={() => {}}
           onTaskUpdated={() => {}}
         />,
       );
@@ -110,6 +112,7 @@ describe("TaskDetailSidebar", () => {
           task={task}
           config={config}
           onClose={() => {}}
+          onDelete={() => {}}
           onTaskUpdated={() => {}}
         />,
       );
@@ -131,6 +134,7 @@ describe("TaskDetailSidebar", () => {
           task={task}
           config={config}
           onClose={() => {}}
+          onDelete={() => {}}
           onTaskUpdated={() => {}}
         />,
       );
@@ -152,6 +156,7 @@ describe("TaskDetailSidebar", () => {
           task={task}
           config={config}
           onClose={() => {}}
+          onDelete={() => {}}
           onTaskUpdated={() => {}}
         />,
       );
@@ -177,6 +182,7 @@ describe("TaskDetailSidebar", () => {
           task={task}
           config={config}
           onClose={() => {}}
+          onDelete={() => {}}
           onTaskUpdated={() => {}}
         />,
       );

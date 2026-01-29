@@ -31,6 +31,7 @@ interface TaskDetailSidebarProps {
   task: WorkflowTask;
   config: WorkflowConfig;
   onClose: () => void;
+  onDelete: () => void;
   onTaskUpdated: () => void;
 }
 
@@ -95,6 +96,7 @@ export function TaskDetailSidebar({
   task,
   config,
   onClose,
+  onDelete,
   onTaskUpdated,
 }: TaskDetailSidebarProps) {
   const tabs = useMemo(() => buildTabs(task), [task]);
@@ -222,6 +224,7 @@ export function TaskDetailSidebar({
             hasQuestions={taskHasQuestions}
             needsReview={taskNeedsReview}
             onClose={onClose}
+            onDelete={onDelete}
           />
 
           <TabbedPanel

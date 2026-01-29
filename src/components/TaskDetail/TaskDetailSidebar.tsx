@@ -49,8 +49,56 @@ function buildTabs(task: WorkflowTask): Tab[] {
   return tabs;
 }
 
-export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: TaskDetailSidebarProps) {
-  const [activeTab, setActiveTab] = useState("details");
+/**
+ * Select the most relevant tab based on current task state.
+ * Falls back to "details" if the preferred tab isn't available.
+ */
+function smartDefaultTab(task: WorkflowTask, tabs: Tab[]): string {
+  const tabIds = new Set(tabs.map((t) => t.id));
+
+  let preferred: string;
+  switch (task.status.type) {
+    case "done":
+    case "archived":
+      preferred = "artifacts";
+      break;
+    case "failed":
+    case "blocked":
+      preferred = "details";
+      break;
+    case "waiting_on_children":
+      preferred = "details";
+      break;
+    case "active":
+      switch (task.phase) {
+        case "agent_working":
+        case "integrating":
+          preferred = "logs";
+          break;
+        case "awaiting_review":
+          preferred = "artifacts";
+          break;
+        default:
+          preferred = "details";
+          break;
+      }
+      break;
+    default:
+      preferred = "details";
+      break;
+  }
+
+  return tabIds.has(preferred) ? preferred : "details";
+}
+
+export function TaskDetailSidebar({
+  task,
+  config,
+  onClose,
+  onTaskUpdated,
+}: TaskDetailSidebarProps) {
+  const tabs = useMemo(() => buildTabs(task), [task]);
+  const [activeTab, setActiveTab] = useState(() => smartDefaultTab(task, buildTabs(task)));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [iterations, setIterations] = useState<WorkflowIteration[]>([]);
@@ -60,8 +108,6 @@ export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: Task
   const { getIterations, getPendingQuestions } = useWorkflowQueries();
 
   const logsState = useLogs(task, activeTab === "logs");
-
-  const tabs = useMemo(() => buildTabs(task), [task]);
 
   // Fetch iterations
   const fetchIterations = useCallback(async () => {
@@ -92,10 +138,10 @@ export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: Task
     }
   }, [task.id, task.phase, task.status.type, getPendingQuestions]);
 
-  // Reset state when task changes
+  // Reset state when task changes — pick the most relevant tab for the new task
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset when task.id changes
   useEffect(() => {
-    setActiveTab("details");
+    setActiveTab(smartDefaultTab(task, tabs));
     logsState.reset();
   }, [task.id]);
 
@@ -109,7 +155,9 @@ export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: Task
   const taskNeedsReview = needsReview(task);
   const taskHasQuestions = pendingQuestions.length > 0;
   const currentStage = getTaskStage(task.status);
-  const currentStageConfig = currentStage ? config.stages.find((s) => s.name === currentStage) : null;
+  const currentStageConfig = currentStage
+    ? config.stages.find((s) => s.name === currentStage)
+    : null;
 
   const handleApprove = async () => {
     setIsSubmitting(true);
@@ -159,7 +207,11 @@ export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: Task
     }
   };
 
-  const footerPanelKey = taskHasQuestions ? "questions" : taskNeedsReview && currentStage ? "review" : null;
+  const footerPanelKey = taskHasQuestions
+    ? "questions"
+    : taskNeedsReview && currentStage
+      ? "review"
+      : null;
 
   return (
     <Panel>
@@ -172,10 +224,18 @@ export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: Task
             onClose={onClose}
           />
 
-          <TabbedPanel tabs={tabs} activeTab={activeTab} onTabChange={(tabId) => setActiveTab(tabId)}>
-            {activeTab === "details" && <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />}
+          <TabbedPanel
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={(tabId) => setActiveTab(tabId)}
+          >
+            {activeTab === "details" && (
+              <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />
+            )}
 
-            {activeTab === "artifacts" && <ArtifactsTab artifacts={task.artifacts} config={config} />}
+            {activeTab === "artifacts" && (
+              <ArtifactsTab artifacts={task.artifacts} config={config} />
+            )}
 
             {activeTab === "iterations" && <IterationsTab iterations={iterations} />}
 
@@ -188,7 +248,6 @@ export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: Task
                 stagesWithLogs={logsState.stagesWithLogs}
                 activeLogStage={logsState.activeLogStage}
                 onStageChange={logsState.setActiveLogStage}
-                onResetAutoScroll={logsState.reset}
               />
             )}
           </TabbedPanel>

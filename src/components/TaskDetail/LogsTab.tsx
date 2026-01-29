@@ -6,9 +6,8 @@ import { useAutoScroll } from "../../hooks/useAutoScroll";
 import type { LogEntry, WorkflowTask } from "../../types/workflow";
 import { getTaskStage } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
-import { TabbedPanel } from "../ui";
 import { LogList } from "../Logs";
-import { Panel, PanelContainer } from "../ui";
+import { PanelContainer, TabbedPanel } from "../ui";
 
 interface LogsTabProps {
   task: WorkflowTask;
@@ -18,7 +17,6 @@ interface LogsTabProps {
   stagesWithLogs: string[];
   activeLogStage: string | null;
   onStageChange: (stage: string) => void;
-  onResetAutoScroll: () => void;
 }
 
 export function LogsTab({
@@ -29,7 +27,6 @@ export function LogsTab({
   stagesWithLogs,
   activeLogStage,
   onStageChange,
-  onResetAutoScroll,
 }: LogsTabProps) {
   const { containerRef, handleScroll } = useAutoScroll<HTMLDivElement>([logs], true);
 
@@ -53,7 +50,12 @@ export function LogsTab({
   return (
     <PanelContainer direction="vertical" padded={true}>
       {tabs.length > 0 && activeLogStage && (
-        <TabbedPanel tabs={tabs} activeTab={activeLogStage} onTabChange={handleTabChange} size="small">
+        <TabbedPanel
+          tabs={tabs}
+          activeTab={activeLogStage}
+          onTabChange={handleTabChange}
+          size="small"
+        >
           <div
             ref={containerRef}
             onScroll={handleScroll}

@@ -3,8 +3,7 @@
  */
 
 import type { WorkflowIteration } from "../../types/workflow";
-import { titleCase } from "../../utils/formatters";
-import { formatTimestamp } from "../../utils/formatters";
+import { formatTimestamp, titleCase } from "../../utils/formatters";
 
 interface IterationCardProps {
   iteration: WorkflowIteration;

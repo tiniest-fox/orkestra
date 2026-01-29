@@ -20,11 +20,11 @@ import {
   Children,
   createContext,
   isValidElement,
+  type ReactElement,
+  type ReactNode,
   useContext,
   useEffect,
   useRef,
-  type ReactElement,
-  type ReactNode,
 } from "react";
 
 /** Context for panels inside a PanelSlot to access slot configuration */

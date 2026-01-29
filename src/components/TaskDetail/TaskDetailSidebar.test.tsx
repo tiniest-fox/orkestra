@@ -182,10 +182,10 @@ describe("TaskDetailSidebar", () => {
       );
     });
 
-    // Should have Details, Plan, Activity, Logs tabs
+    // Should have Details, Activity, Logs, Artifacts tabs
     expect(screen.getByRole("button", { name: "Details" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Plan" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Activity" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Logs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Artifacts" })).toBeInTheDocument();
   });
 });

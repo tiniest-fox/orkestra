@@ -25,9 +25,7 @@ export function ReviewPanel({ stageName, onApprove, onReject, isSubmitting }: Re
 
   return (
     <Panel accent="warning" autoFill={false} padded={true}>
-      <div className="text-sm font-medium text-warning mb-3">
-        {titleCase(stageName)} Review
-      </div>
+      <div className="text-sm font-medium text-warning mb-3">{titleCase(stageName)} Review</div>
       <textarea
         value={feedback}
         onChange={(e) => setFeedback(e.target.value)}

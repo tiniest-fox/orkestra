@@ -6,7 +6,7 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useId, useState, type ReactNode } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { Panel } from "./Panel";
 
 const contentTransition = {
@@ -47,11 +47,8 @@ interface TabbedPanelProps {
   onTabChange: (tabId: string) => void;
   /** Content to render for the active tab */
   children: ReactNode;
-  /** Panel variant */
-  variant?: "default" | "elevated";
   /** Tab size - "small" for nested/secondary tab bars */
   size?: TabSize;
-  className?: string;
 }
 
 /**
@@ -92,9 +89,7 @@ export function TabbedPanel({
   activeTab,
   onTabChange,
   children,
-  variant = "default",
   size = "default",
-  className = "",
 }: TabbedPanelProps) {
   const sizeStyles = tabSizeStyles[size];
   const layoutId = useId();

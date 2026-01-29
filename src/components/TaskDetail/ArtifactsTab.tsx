@@ -15,12 +15,16 @@ interface ArtifactsTabProps {
 
 export function ArtifactsTab({ artifacts, config }: ArtifactsTabProps) {
   // Build tabs in stage order from config
-  const artifactNames = config.stages.map((stage) => stage.artifact).filter((name) => artifacts[name]);
+  const artifactNames = config.stages
+    .map((stage) => stage.artifact)
+    .filter((name) => artifacts[name]);
 
   const [activeArtifact, setActiveArtifact] = useState(artifactNames[0] ?? "");
 
   // Ensure active artifact is valid
-  const resolvedActive = artifactNames.includes(activeArtifact) ? activeArtifact : (artifactNames[0] ?? "");
+  const resolvedActive = artifactNames.includes(activeArtifact)
+    ? activeArtifact
+    : (artifactNames[0] ?? "");
 
   const tabs = artifactNames.map((name) => ({
     id: name,
@@ -33,7 +37,12 @@ export function ArtifactsTab({ artifacts, config }: ArtifactsTabProps) {
 
   return (
     <PanelContainer direction="vertical" padded={true}>
-      <TabbedPanel tabs={tabs} activeTab={resolvedActive} onTabChange={setActiveArtifact} size="small">
+      <TabbedPanel
+        tabs={tabs}
+        activeTab={resolvedActive}
+        onTabChange={setActiveArtifact}
+        size="small"
+      >
         <ArtifactView artifact={artifacts[resolvedActive]} />
       </TabbedPanel>
     </PanelContainer>

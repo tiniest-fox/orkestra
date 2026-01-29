@@ -44,13 +44,19 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
           : "";
 
   const errorText =
-    task.status.type === "failed" ? task.status.error : task.status.type === "blocked" ? task.status.reason : undefined;
+    task.status.type === "failed"
+      ? task.status.error
+      : task.status.type === "blocked"
+        ? task.status.reason
+        : undefined;
 
   return (
     <Panel autoFill={false} className={borderClass}>
       <button onClick={onClick} type="button" className="text-left p-4 w-full">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="font-medium text-stone-800 text-sm line-clamp-2">{getDisplayTitle(task)}</h3>
+          <h3 className="font-medium text-stone-800 text-sm line-clamp-2">
+            {getDisplayTitle(task)}
+          </h3>
           <div className="flex items-center gap-1.5">
             {taskNeedsReview && (
               <span className="flex-shrink-0 text-amber-700 text-xs font-medium px-1.5 py-0.5 bg-amber-100 rounded-full">
@@ -87,7 +93,9 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
         )}
 
         {isDone && Object.keys(task.artifacts ?? {}).length > 0 && (
-          <div className="text-stone-500 text-xs mt-2">{Object.keys(task.artifacts ?? {}).length} artifact(s)</div>
+          <div className="text-stone-500 text-xs mt-2">
+            {Object.keys(task.artifacts ?? {}).length} artifact(s)
+          </div>
         )}
       </button>
     </Panel>

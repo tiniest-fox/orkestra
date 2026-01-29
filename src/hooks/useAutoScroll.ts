@@ -44,7 +44,6 @@ export function useAutoScroll<T extends HTMLElement>(
   }, []);
 
   // Auto-scroll to bottom when dependencies change (only if user is following)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional scroll on dependency changes
   useEffect(() => {
     if (isActive && containerRef.current && isAutoScrollEnabledRef.current) {
       const container = containerRef.current;

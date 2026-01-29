@@ -40,8 +40,8 @@ const variantStyles: Record<PanelVariant, string> = {
 
 const accentStyles: Record<PanelAccent, string> = {
   none: "bg-white",
-  info: "border-2 border-info bg-blue-50/30",
-  warning: "bg-gradient-to-br from-amber-50 to-amber-100",
+  info: "border-2 border-info-500 bg-info-50/30",
+  warning: "bg-gradient-to-br from-warning-50 to-warning-100",
 };
 
 /**

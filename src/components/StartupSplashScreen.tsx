@@ -9,7 +9,7 @@ export function StartupSplashScreen() {
     <div className="h-screen bg-gradient-to-br from-stone-50 to-stone-100 flex flex-col items-center justify-center">
       <div className="flex flex-col items-center gap-6">
         {/* Logo/Icon */}
-        <div className="w-16 h-16 bg-sage-500 rounded-panel flex items-center justify-center shadow-panel-elevated">
+        <div className="w-16 h-16 bg-orange-500 rounded-panel flex items-center justify-center shadow-panel-elevated">
           <svg
             className="w-10 h-10 text-white"
             fill="none"
@@ -33,14 +33,14 @@ export function StartupSplashScreen() {
         {/* Loading indicator - bouncing dots */}
         <div className="flex items-center gap-1.5">
           <div
-            className="w-2 h-2 bg-sage-500 rounded-full animate-bounce"
+            className="w-2 h-2 bg-orange-500 rounded-full animate-bounce"
             style={{ animationDelay: "-0.3s" }}
           />
           <div
-            className="w-2 h-2 bg-sage-500 rounded-full animate-bounce"
+            className="w-2 h-2 bg-orange-500 rounded-full animate-bounce"
             style={{ animationDelay: "-0.15s" }}
           />
-          <div className="w-2 h-2 bg-sage-500 rounded-full animate-bounce" />
+          <div className="w-2 h-2 bg-orange-500 rounded-full animate-bounce" />
         </div>
 
         <p className="text-sm text-stone-400">Initializing workspace...</p>

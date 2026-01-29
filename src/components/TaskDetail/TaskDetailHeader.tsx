@@ -25,7 +25,7 @@ export function TaskDetailHeader({
       : task.status.type === "failed"
         ? "error"
         : task.status.type === "blocked"
-          ? "blocked"
+          ? "warning"
           : "neutral";
 
   const statusLabel =

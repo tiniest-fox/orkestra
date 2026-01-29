@@ -21,9 +21,9 @@ export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
       {task.status.type === "failed" && (
         <div className="mt-3 space-y-3">
           {task.status.error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-panel-sm">
-              <div className="text-xs font-medium text-error mb-1">Error</div>
-              <p className="text-sm text-red-800">{task.status.error}</p>
+            <div className="p-3 bg-error-50 border border-error-200 rounded-panel-sm">
+              <div className="text-xs font-medium text-error-700 mb-1">Error</div>
+              <p className="text-sm text-error-800">{task.status.error}</p>
             </div>
           )}
           <Button
@@ -39,9 +39,9 @@ export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
       )}
 
       {task.status.type === "blocked" && task.status.reason && (
-        <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-panel-sm">
-          <div className="text-xs font-medium text-blocked mb-1">Blocked</div>
-          <p className="text-sm text-orange-800">{task.status.reason}</p>
+        <div className="mt-3 p-3 bg-warning-50 border border-warning-200 rounded-panel-sm">
+          <div className="text-xs font-medium text-warning-700 mb-1">Blocked</div>
+          <p className="text-sm text-warning-800">{task.status.reason}</p>
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 /**
  * Link - Styled anchor component with hover states.
- * Fits the sage color scheme of the design system.
+ * Fits the purple accent of the design system.
  */
 
 import type { AnchorHTMLAttributes, ReactNode } from "react";
@@ -16,7 +16,7 @@ export function Link({ children, external, className = "", ...props }: LinkProps
 
   return (
     <a
-      className={`text-sage-600 hover:text-sage-700 underline underline-offset-2 decoration-sage-300 hover:decoration-sage-500 transition-colors ${className}`}
+      className={`text-purple-600 hover:text-purple-700 underline underline-offset-2 decoration-purple-300 hover:decoration-purple-500 transition-colors ${className}`}
       {...externalProps}
       {...props}
     >

@@ -41,8 +41,8 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
     <Panel accent="info" autoFill={false} className="m-2 mt-0">
       <div className="p-4 flex flex-col">
         <div className="flex items-center justify-between mb-3">
-          <div className="text-sm font-medium text-info">Questions</div>
-          <div className="text-xs text-info/70">
+          <div className="text-sm font-medium text-info-600">Questions</div>
+          <div className="text-xs text-info-500">
             Question {currentIndex + 1} of {questions.length}
           </div>
         </div>
@@ -63,7 +63,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
                     answers[currentQuestion.id] === option.id && !otherSelected[currentQuestion.id]
                   }
                   onChange={() => selectOption(currentQuestion.id, option.id)}
-                  className="text-info mt-0.5 accent-info"
+                  className="text-info-500 mt-0.5 accent-info-500"
                 />
                 <div>
                   <span className="text-sm text-stone-700">{option.label}</span>
@@ -80,7 +80,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
                 value="__other__"
                 checked={otherSelected[currentQuestion.id] === true}
                 onChange={() => selectOther(currentQuestion.id)}
-                className="text-info mt-0.5 accent-info"
+                className="text-info-500 mt-0.5 accent-info-500"
               />
               <div>
                 <span className="text-sm text-stone-700">Other (custom response)</span>
@@ -91,7 +91,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
                 value={otherText[currentQuestion.id] || ""}
                 onChange={(e) => updateOtherText(currentQuestion.id, e.target.value)}
                 placeholder="Type your custom response..."
-                className="w-full mt-2 px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-info resize-none text-stone-800"
+                className="w-full mt-2 px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-info-500 resize-none text-stone-800"
                 rows={2}
               />
             )}
@@ -104,7 +104,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
             size="sm"
             onClick={goToPrevious}
             disabled={isFirstQuestion || isSubmitting}
-            className="text-info hover:bg-blue-100"
+            className="text-info-600 hover:bg-info-100"
           >
             Previous
           </Button>
@@ -115,7 +115,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
               onClick={handleSubmit}
               disabled={isSubmitting || !allAnswered}
               loading={isSubmitting}
-              className="bg-info hover:bg-blue-600"
+              className="bg-info-500 hover:bg-info-600"
             >
               Submit Answers
             </Button>
@@ -124,7 +124,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
               size="sm"
               onClick={goToNext}
               disabled={!currentAnswered || isSubmitting}
-              className="bg-info hover:bg-blue-600"
+              className="bg-info-500 hover:bg-info-600"
             >
               Next
             </Button>

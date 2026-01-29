@@ -49,7 +49,7 @@ const TOOL_STYLES: Record<string, ToolStyle> = {
   },
   edit: {
     icon: (size) => <Pencil size={size} {...ICON_PROPS} />,
-    color: "bg-purple-600",
+    color: "bg-indigo-600",
   },
   glob: {
     icon: (size) => <FolderSearch size={size} {...ICON_PROPS} />,
@@ -69,11 +69,11 @@ const TOOL_STYLES: Record<string, ToolStyle> = {
   },
   ork: {
     icon: (size) => <Command size={size} {...ICON_PROPS} />,
-    color: "bg-orange-600",
+    color: "bg-amber-600",
   },
   structuredoutput: {
     icon: (size) => <Send size={size} {...ICON_PROPS} />,
-    color: "bg-violet-600",
+    color: "bg-indigo-600",
   },
 };
 
@@ -115,26 +115,26 @@ const STRUCTURED_OUTPUT_ICON_SIZE = 14;
  */
 export function getStructuredOutputStyle(outputType: string): StructuredOutputStyle {
   switch (outputType.toLowerCase()) {
-    // Artifacts - purple/violet theme
+    // Artifacts - indigo theme
     case "plan":
       return {
         icon: <FileOutput size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
-        color: "bg-violet-600",
-        textColor: "text-violet-300",
+        color: "bg-indigo-600",
+        textColor: "text-indigo-300",
         label: "Generating plan",
       };
     case "summary":
       return {
         icon: <FileOutput size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
-        color: "bg-violet-600",
-        textColor: "text-violet-300",
+        color: "bg-indigo-600",
+        textColor: "text-indigo-300",
         label: "Generating summary",
       };
     case "verdict":
       return {
         icon: <FileOutput size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
-        color: "bg-violet-600",
-        textColor: "text-violet-300",
+        color: "bg-indigo-600",
+        textColor: "text-indigo-300",
         label: "Generating verdict",
       };
 
@@ -168,8 +168,8 @@ export function getStructuredOutputStyle(outputType: string): StructuredOutputSt
     case "blocked":
       return {
         icon: <AlertCircle size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
-        color: "bg-orange-600",
-        textColor: "text-orange-300",
+        color: "bg-amber-600",
+        textColor: "text-amber-300",
         label: "Task blocked",
       };
 

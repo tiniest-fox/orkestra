@@ -34,13 +34,13 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 
   const borderClass = isFailed
-    ? "border-red-300 bg-red-50"
+    ? "border-error-300 bg-error-50"
     : isBlocked
-      ? "border-orange-300 bg-orange-50"
+      ? "border-warning-300 bg-warning-50"
       : taskNeedsReview || hasQuestions
-        ? "border-amber-400 bg-amber-50"
+        ? "border-warning-400 bg-warning-50"
         : isSelected
-          ? "border-sage-500 ring-2 ring-sage-200"
+          ? "border-orange-500 ring-2 ring-orange-200"
           : "";
 
   const errorText =
@@ -59,20 +59,20 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
           </h3>
           <div className="flex items-center gap-1.5">
             {taskNeedsReview && (
-              <span className="flex-shrink-0 text-amber-700 text-xs font-medium px-1.5 py-0.5 bg-amber-100 rounded-full">
+              <span className="flex-shrink-0 text-warning-700 text-xs font-medium px-1.5 py-0.5 bg-warning-100 rounded-full">
                 Review
               </span>
             )}
             {hasQuestions && !taskNeedsReview && (
-              <span className="flex-shrink-0 text-info text-xs font-medium px-1.5 py-0.5 bg-blue-100 rounded-full">
+              <span className="flex-shrink-0 text-info-600 text-xs font-medium px-1.5 py-0.5 bg-info-100 rounded-full">
                 Questions
               </span>
             )}
             {showSpinner && (
-              <span className="flex-shrink-0 w-4 h-4 border-2 border-sage-500 border-t-transparent rounded-full animate-spin" />
+              <span className="flex-shrink-0 w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
             )}
-            {isFailed && <span className="flex-shrink-0 text-error font-bold">!</span>}
-            {isBlocked && <span className="flex-shrink-0 text-blocked font-bold">||</span>}
+            {isFailed && <span className="flex-shrink-0 text-error-600 font-bold">!</span>}
+            {isBlocked && <span className="flex-shrink-0 text-warning-600 font-bold">||</span>}
           </div>
         </div>
 
@@ -85,7 +85,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
         {errorText && (isFailed || isBlocked) && (
           <p
             className={`text-xs mt-2 p-2 rounded-panel-sm ${
-              isFailed ? "text-error bg-red-100" : "text-blocked bg-orange-100"
+              isFailed ? "text-error-700 bg-error-100" : "text-warning-700 bg-warning-100"
             }`}
           >
             {isFailed ? errorText : `Blocked: ${errorText}`}

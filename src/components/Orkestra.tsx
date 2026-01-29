@@ -70,7 +70,7 @@ export function Orkestra() {
 
       <PanelContainer>
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-panel text-error">
+          <div className="mb-4 p-4 bg-error-50 border border-error-200 rounded-panel text-error-700">
             Error loading tasks: {error.message}
           </div>
         )}

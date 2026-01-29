@@ -19,17 +19,17 @@ export interface KanbanColumn {
 }
 
 /**
- * Color palette for stage columns - using sage-based palette.
+ * Color palette for stage columns - orange to purple gradient.
  */
 const STAGE_COLORS = [
-  "bg-stone-500", // First stage
-  "bg-sage-500",
-  "bg-sage-400",
-  "bg-emerald-500",
-  "bg-teal-500",
-  "bg-sage-600",
-  "bg-sage-700",
-  "bg-stone-600",
+  "bg-orange-500",
+  "bg-orange-400",
+  "bg-purple-400",
+  "bg-purple-500",
+  "bg-purple-600",
+  "bg-purple-700",
+  "bg-purple-800",
+  "bg-stone-500",
 ];
 
 /**
@@ -50,9 +50,9 @@ export function buildColumns(config: WorkflowConfig): KanbanColumn[] {
 
   // Add terminal state columns - using semantic colors
   columns.push(
-    { id: "done", label: "Done", color: "bg-success" },
-    { id: "failed", label: "Failed", color: "bg-error" },
-    { id: "blocked", label: "Blocked", color: "bg-blocked" },
+    { id: "done", label: "Done", color: "bg-success-500" },
+    { id: "failed", label: "Failed", color: "bg-error-500" },
+    { id: "blocked", label: "Blocked", color: "bg-warning-500" },
   );
 
   return columns;

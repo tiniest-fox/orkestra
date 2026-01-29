@@ -25,12 +25,12 @@ export function ReviewPanel({ stageName, onApprove, onReject, isSubmitting }: Re
 
   return (
     <Panel accent="warning" autoFill={false} padded={true}>
-      <div className="text-sm font-medium text-warning mb-3">{titleCase(stageName)} Review</div>
+      <div className="text-sm font-medium text-warning-600 mb-3">{titleCase(stageName)} Review</div>
       <textarea
         value={feedback}
         onChange={(e) => setFeedback(e.target.value)}
         placeholder="Leave feedback to request changes..."
-        className="w-full px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-warning resize-none mb-3 text-stone-800"
+        className="w-full px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-warning-500 resize-none mb-3 text-stone-800"
         rows={2}
       />
       {feedback.trim() ? (
@@ -39,7 +39,7 @@ export function ReviewPanel({ stageName, onApprove, onReject, isSubmitting }: Re
           disabled={isSubmitting}
           loading={isSubmitting}
           fullWidth
-          className="bg-warning hover:bg-amber-600 text-white"
+          className="bg-warning-500 hover:bg-warning-600 text-white"
         >
           Request Changes
         </Button>
@@ -49,7 +49,7 @@ export function ReviewPanel({ stageName, onApprove, onReject, isSubmitting }: Re
           disabled={isSubmitting}
           loading={isSubmitting}
           fullWidth
-          className="bg-success hover:bg-emerald-600 text-white"
+          className="bg-success-500 hover:bg-success-600 text-white"
         >
           Approve
         </Button>

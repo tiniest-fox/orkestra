@@ -42,7 +42,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
       <form onSubmit={handleSubmit} className="flex-1 flex flex-col">
         <Panel.Body className="flex-1" scrollable>
           {error && (
-            <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded-panel-sm text-error text-sm">
+            <div className="p-3 mb-4 bg-error-50 border border-error-200 rounded-panel-sm text-error-700 text-sm">
               {error}
             </div>
           )}
@@ -56,7 +56,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={6}
-              className="w-full px-3 py-2 border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-sage-500 focus:border-transparent resize-none text-stone-800"
+              className="w-full px-3 py-2 border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none text-stone-800"
               placeholder="Describe the task..."
               // biome-ignore lint/a11y/noAutofocus: intentional focus for panel UX
               autoFocus

@@ -14,11 +14,11 @@ interface BadgeProps {
 }
 
 const variantStyles: Record<BadgeVariant, string> = {
-  success: "bg-emerald-100 text-success",
-  warning: "bg-amber-100 text-amber-700",
-  error: "bg-red-100 text-error",
-  info: "bg-blue-100 text-info",
-  blocked: "bg-orange-100 text-blocked",
+  success: "bg-success-100 text-success-700",
+  warning: "bg-warning-100 text-warning-700",
+  error: "bg-error-100 text-error-700",
+  info: "bg-info-100 text-info-700",
+  blocked: "bg-warning-100 text-warning-700",
   neutral: "bg-stone-100 text-stone-600",
 };
 

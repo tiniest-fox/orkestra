@@ -19,12 +19,14 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<ButtonVariant, string> = {
-  primary: "bg-sage-500 text-white hover:bg-sage-600 active:bg-sage-700 disabled:bg-sage-300",
+  primary:
+    "bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700 disabled:bg-orange-300",
   secondary:
     "bg-stone-100 text-stone-700 hover:bg-stone-200 active:bg-stone-300 disabled:bg-stone-100 disabled:text-stone-400",
   ghost:
     "bg-transparent text-stone-700 hover:bg-stone-100 active:bg-stone-200 disabled:text-stone-400",
-  destructive: "bg-error text-white hover:bg-red-600 active:bg-red-700 disabled:bg-red-300",
+  destructive:
+    "bg-error-500 text-white hover:bg-error-600 active:bg-error-700 disabled:bg-error-300",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -44,7 +46,7 @@ export function Button({
   ...props
 }: ButtonProps) {
   const baseStyles =
-    "inline-flex items-center justify-center font-medium rounded-panel-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sage-500 focus:ring-offset-2 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center font-medium rounded-panel-sm transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:cursor-not-allowed";
 
   return (
     <button

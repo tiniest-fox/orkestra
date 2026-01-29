@@ -73,12 +73,12 @@ interface TabbedPanelProps {
 const tabSizeStyles: Record<TabSize, { button: string; highlight: string; text: string }> = {
   default: {
     button: "px-3 mx-px py-1.5 text-sm",
-    highlight: "bg-sage-500",
+    highlight: "bg-orange-500",
     text: "text-white",
   },
   small: {
     button: "px-2.5 mx-px py-1 text-xs",
-    highlight: "bg-sage-200",
+    highlight: "bg-orange-200",
     text: "text-stone-800",
   },
 };

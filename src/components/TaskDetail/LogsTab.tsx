@@ -37,7 +37,7 @@ export function LogsTab({
     label: titleCase(stage),
     indicator:
       stage === currentStage && task.phase === "agent_working" ? (
-        <span className="w-1.5 h-1.5 bg-sage-400 rounded-full animate-pulse" />
+        <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
       ) : undefined,
   }));
 

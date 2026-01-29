@@ -22,8 +22,20 @@ export default {
           800: '#292524',
           900: '#1c1917',
         },
-        // Accent colors (Tailwind defaults)
-        orange: colors.orange,
+        // Accent colors — orange shifted toward red, anchored at #F04A00
+        orange: {
+          50: '#fff5ef',
+          100: '#ffe8d9',
+          200: '#ffcdb3',
+          300: '#ffa87a',
+          400: '#ff7a3d',
+          500: '#F04A00',
+          600: '#cc3d00',
+          700: '#a33000',
+          800: '#7a2400',
+          900: '#521800',
+          950: '#2e0d00',
+        },
         purple: colors.purple,
         // Semantic color aliases
         success: colors.emerald,

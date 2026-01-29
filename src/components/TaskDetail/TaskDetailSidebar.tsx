@@ -13,9 +13,8 @@ import type {
   WorkflowTask,
 } from "../../types/workflow";
 import { getTaskStage, needsReview } from "../../types/workflow";
-import { titleCase } from "../../utils/formatters";
 import { Panel, PanelContainer, PanelSlot, TabbedPanel } from "../ui";
-import { ArtifactView } from "./ArtifactView";
+import { ArtifactsTab } from "./ArtifactsTab";
 import { DetailsTab } from "./DetailsTab";
 import { IterationsTab } from "./IterationsTab";
 import { LogsTab } from "./LogsTab";
@@ -26,8 +25,6 @@ import { TaskDetailHeader } from "./TaskDetailHeader";
 interface Tab {
   id: string;
   label: string;
-  type: "details" | "artifact" | "iterations" | "logs";
-  artifactName?: string;
 }
 
 interface TaskDetailSidebarProps {
@@ -37,23 +34,16 @@ interface TaskDetailSidebarProps {
   onTaskUpdated: () => void;
 }
 
-function buildTabs(task: WorkflowTask, config: WorkflowConfig): Tab[] {
+function buildTabs(task: WorkflowTask): Tab[] {
   const tabs: Tab[] = [
-    { id: "details", label: "Details", type: "details" },
-    { id: "iterations", label: "Activity", type: "iterations" },
-    { id: "logs", label: "Logs", type: "logs" },
+    { id: "details", label: "Details" },
+    { id: "iterations", label: "Activity" },
+    { id: "logs", label: "Logs" },
   ];
 
-  for (const stage of config.stages) {
-    const artifactName = stage.artifact;
-    if (task.artifacts[artifactName]) {
-      tabs.push({
-        id: `artifact-${artifactName}`,
-        label: titleCase(artifactName),
-        type: "artifact",
-        artifactName,
-      });
-    }
+  const hasArtifacts = Object.keys(task.artifacts).length > 0;
+  if (hasArtifacts) {
+    tabs.push({ id: "artifacts", label: "Artifacts" });
   }
 
   return tabs;
@@ -71,11 +61,7 @@ export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: Task
 
   const logsState = useLogs(task, activeTab === "logs");
 
-  const tabs = useMemo(() => buildTabs(task, config), [task, config]);
-
-  const currentTab = tabs.find((t) => t.id === activeTab);
-  const currentArtifact =
-    currentTab?.type === "artifact" && currentTab.artifactName ? task.artifacts[currentTab.artifactName] : null;
+  const tabs = useMemo(() => buildTabs(task), [task]);
 
   // Fetch iterations
   const fetchIterations = useCallback(async () => {
@@ -189,7 +175,7 @@ export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: Task
           <TabbedPanel tabs={tabs} activeTab={activeTab} onTabChange={(tabId) => setActiveTab(tabId)}>
             {activeTab === "details" && <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />}
 
-            {currentTab?.type === "artifact" && currentArtifact && <ArtifactView artifact={currentArtifact} />}
+            {activeTab === "artifacts" && <ArtifactsTab artifacts={task.artifacts} config={config} />}
 
             {activeTab === "iterations" && <IterationsTab iterations={iterations} />}
 

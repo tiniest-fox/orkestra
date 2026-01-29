@@ -34,6 +34,8 @@ interface Tab {
   indicator?: ReactNode;
 }
 
+type TabSize = "default" | "small";
+
 interface TabbedPanelProps {
   /** Panel header content (rendered before tabs, e.g., title, close button) */
   header?: ReactNode;
@@ -47,6 +49,8 @@ interface TabbedPanelProps {
   children: ReactNode;
   /** Panel variant */
   variant?: "default" | "elevated";
+  /** Tab size - "small" for nested/secondary tab bars */
+  size?: TabSize;
   className?: string;
 }
 
@@ -69,6 +73,19 @@ interface TabbedPanelProps {
  * </TabbedPanel>
  * ```
  */
+const tabSizeStyles: Record<TabSize, { button: string; highlight: string; text: string }> = {
+  default: {
+    button: "px-3 mx-px py-1.5 text-sm",
+    highlight: "bg-sage-500",
+    text: "text-white",
+  },
+  small: {
+    button: "px-2.5 mx-px py-1 text-xs",
+    highlight: "bg-sage-200",
+    text: "text-stone-800",
+  },
+};
+
 export function TabbedPanel({
   header,
   tabs,
@@ -76,10 +93,10 @@ export function TabbedPanel({
   onTabChange,
   children,
   variant = "default",
+  size = "default",
   className = "",
 }: TabbedPanelProps) {
-  // Direction is set in click handler BEFORE activeTab changes,
-  // so AnimatePresence sees the correct direction when processing the key change.
+  const sizeStyles = tabSizeStyles[size];
   const layoutId = useId();
   const [direction, setDirection] = useState(1);
 
@@ -102,21 +119,20 @@ export function TabbedPanel({
             type="button"
             key={tab.id}
             onClick={() => handleTabChange(tab.id)}
-            className={`relative px-3 mx-px py-1.5 text-sm rounded-panel font-medium whitespace-nowrap flex items-center gap-1.5 ${
+            className={`relative ${sizeStyles.button} rounded-panel font-medium whitespace-nowrap flex items-center gap-1.5 ${
               activeTab !== tab.id ? "hover:bg-stone-100" : ""
             }`}
           >
-            {/* Animated highlight - only rendered in active tab */}
             {activeTab === tab.id && (
               <motion.div
                 layoutId={`${layoutId}-tab-highlight`}
-                className="absolute inset-0 bg-sage-500 rounded-panel"
+                className={`absolute inset-0 ${sizeStyles.highlight} rounded-panel`}
                 transition={{ type: "spring", bounce: 0.15, duration: 0.25 }}
               />
             )}
             <span
               className={`relative z-10 transition-colors ${
-                activeTab === tab.id ? "text-white" : "text-stone-600 hover:text-stone-900"
+                activeTab === tab.id ? sizeStyles.text : "text-stone-600 hover:text-stone-900"
               }`}
             >
               {tab.label}

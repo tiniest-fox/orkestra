@@ -53,7 +53,7 @@ export function LogsTab({
   return (
     <PanelContainer direction="vertical" padded={true}>
       {tabs.length > 0 && activeLogStage && (
-        <TabbedPanel tabs={tabs} activeTab={activeLogStage} onTabChange={handleTabChange}>
+        <TabbedPanel tabs={tabs} activeTab={activeLogStage} onTabChange={handleTabChange} size="small">
           <div
             ref={containerRef}
             onScroll={handleScroll}

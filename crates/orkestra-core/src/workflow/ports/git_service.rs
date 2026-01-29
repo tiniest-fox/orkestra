@@ -139,6 +139,13 @@ pub trait GitService: Send + Sync {
     /// Abort a merge in progress.
     fn abort_merge(&self) -> Result<(), GitError>;
 
+    /// Rebase the current branch in a worktree onto the primary branch.
+    ///
+    /// Runs in the worktree directory so the main repo checkout is never touched.
+    /// If conflicts occur, the rebase is aborted and `GitError::MergeConflict`
+    /// is returned.
+    fn rebase_on_primary(&self, worktree_path: &Path) -> Result<(), GitError>;
+
     /// Delete a branch (force delete with -D).
     fn delete_branch(&self, branch_name: &str) -> Result<(), GitError>;
 }
@@ -162,6 +169,7 @@ pub mod mock {
         current_branch: Mutex<String>,
         primary_branch: String,
         next_merge_result: Mutex<Option<Result<MergeResult, GitError>>>,
+        next_rebase_result: Mutex<Option<Result<(), GitError>>>,
         create_worktree_calls: Mutex<Vec<(String, Option<String>)>>,
         remove_worktree_calls: Mutex<Vec<(String, bool)>>,
     }
@@ -175,6 +183,7 @@ pub mod mock {
                 current_branch: Mutex::new("main".to_string()),
                 primary_branch: "main".to_string(),
                 next_merge_result: Mutex::new(None),
+                next_rebase_result: Mutex::new(None),
                 create_worktree_calls: Mutex::new(Vec::new()),
                 remove_worktree_calls: Mutex::new(Vec::new()),
             }
@@ -183,6 +192,11 @@ pub mod mock {
         /// Set the result for the next merge operation.
         pub fn set_next_merge_result(&self, result: Result<MergeResult, GitError>) {
             *self.next_merge_result.lock().unwrap() = Some(result);
+        }
+
+        /// Set the result for the next rebase operation.
+        pub fn set_next_rebase_result(&self, result: Result<(), GitError>) {
+            *self.next_rebase_result.lock().unwrap() = Some(result);
         }
 
         /// Add a branch to the list of available branches.
@@ -283,6 +297,13 @@ pub mod mock {
                 target_branch: self.primary_branch.clone(),
                 merged_at: chrono::Utc::now().to_rfc3339(),
             })
+        }
+
+        fn rebase_on_primary(&self, _worktree_path: &Path) -> Result<(), GitError> {
+            if let Some(result) = self.next_rebase_result.lock().unwrap().take() {
+                return result;
+            }
+            Ok(())
         }
 
         fn get_conflict_files(&self) -> Result<Vec<String>, GitError> {

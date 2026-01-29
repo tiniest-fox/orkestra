@@ -14,9 +14,10 @@ impl WorkflowApi {
     ///
     /// This method orchestrates the full integration process:
     /// 1. Commits any pending changes in the worktree
-    /// 2. Merges the task branch to the primary branch (main/master)
-    /// 3. On success: cleans up worktree, records success
-    /// 4. On conflict: aborts merge, moves task back to recovery stage
+    /// 2. Rebases the task branch onto primary (conflicts stay on the task branch)
+    /// 3. Merges the rebased branch to primary (guaranteed clean fast-forward)
+    /// 4. On success: cleans up worktree, records success
+    /// 5. On conflict: task branch is restored, moves task back to recovery stage
     ///
     /// If no git service is configured, silently succeeds.
     ///
@@ -72,7 +73,39 @@ impl WorkflowApi {
             }
         }
 
-        // Attempt the merge
+        // Rebase the task branch onto primary so conflicts are resolved
+        // on the task branch, not on main. After a successful rebase the
+        // merge into primary is a guaranteed clean fast-forward.
+        if let Some(worktree_path) = &task.worktree_path {
+            match git.rebase_on_primary(Path::new(worktree_path)) {
+                Ok(()) => {
+                    orkestra_debug!(
+                        "integration",
+                        "rebased {}: branch {} onto primary",
+                        task_id,
+                        branch_name
+                    );
+                }
+                Err(GitError::MergeConflict { conflict_files, .. }) => {
+                    orkestra_debug!(
+                        "integration",
+                        "failed {}: rebase conflict, {} files",
+                        task_id,
+                        conflict_files.len()
+                    );
+                    self.integration_failed(task_id, "Merge conflict", &conflict_files)?;
+                    return Err(WorkflowError::IntegrationFailed("Merge conflict".into()));
+                }
+                Err(e) => {
+                    orkestra_debug!("integration", "failed {}: rebase error: {}", task_id, e);
+                    let error_msg = format!("Failed to rebase branch on primary: {e}");
+                    self.integration_failed(task_id, &error_msg, &[])?;
+                    return Err(WorkflowError::IntegrationFailed(error_msg));
+                }
+            }
+        }
+
+        // Attempt the merge (should be a clean fast-forward after rebase)
         match git.merge_to_primary(branch_name) {
             Ok(_merge_result) => {
                 orkestra_debug!("integration", "completed {}: merge succeeded", task_id);

@@ -435,6 +435,61 @@ impl GitService for Git2GitService {
         Ok(())
     }
 
+    fn rebase_on_primary(&self, worktree_path: &Path) -> Result<(), GitError> {
+        let primary = self.detect_primary_branch()?;
+
+        // Resolve the task branch name for error reporting
+        let branch_output = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(worktree_path)
+            .output()
+            .map_err(|e| GitError::IoError(format!("Failed to get branch name: {e}")))?;
+        let branch_name = String::from_utf8_lossy(&branch_output.stdout)
+            .trim()
+            .to_string();
+
+        let rebase_output = Command::new("git")
+            .args(["rebase", &primary])
+            .current_dir(worktree_path)
+            .output()
+            .map_err(|e| GitError::MergeError(format!("Failed to run git rebase: {e}")))?;
+
+        if !rebase_output.status.success() {
+            // Check for conflict files in the worktree
+            let conflict_output = Command::new("git")
+                .args(["diff", "--name-only", "--diff-filter=U"])
+                .current_dir(worktree_path)
+                .output()
+                .map_err(|e| GitError::IoError(format!("Failed to check conflicts: {e}")))?;
+
+            let conflict_files: Vec<String> = String::from_utf8_lossy(&conflict_output.stdout)
+                .lines()
+                .filter(|s| !s.is_empty())
+                .map(String::from)
+                .collect();
+
+            // Abort the rebase to restore the branch to its original state
+            let _ = Command::new("git")
+                .args(["rebase", "--abort"])
+                .current_dir(worktree_path)
+                .output();
+
+            if !conflict_files.is_empty() {
+                return Err(GitError::MergeConflict {
+                    branch: branch_name,
+                    conflict_files,
+                });
+            }
+
+            let stderr = String::from_utf8_lossy(&rebase_output.stderr);
+            return Err(GitError::MergeError(format!(
+                "Failed to rebase onto {primary}: {stderr}"
+            )));
+        }
+
+        Ok(())
+    }
+
     fn merge_to_primary(&self, branch_name: &str) -> Result<MergeResult, GitError> {
         let primary = self.detect_primary_branch()?;
 

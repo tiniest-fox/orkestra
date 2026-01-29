@@ -77,6 +77,18 @@ impl WorkflowStore for InMemoryWorkflowStore {
         Ok(format!("task-{id:03}"))
     }
 
+    fn list_all_iterations(&self) -> WorkflowResult<Vec<Iteration>> {
+        let iterations = self.iterations.lock().map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = iterations.clone();
+        result.sort_by(|a, b| {
+            a.task_id
+                .cmp(&b.task_id)
+                .then(a.stage.cmp(&b.stage))
+                .then(a.iteration_number.cmp(&b.iteration_number))
+        });
+        Ok(result)
+    }
+
     fn get_iterations(&self, task_id: &str) -> WorkflowResult<Vec<Iteration>> {
         let iterations = self.iterations.lock().map_err(|_| WorkflowError::Lock)?;
         let mut result: Vec<_> = iterations
@@ -158,6 +170,16 @@ impl WorkflowStore for InMemoryWorkflowStore {
             .iter()
             .find(|s| s.task_id == task_id && s.stage == stage)
             .cloned())
+    }
+
+    fn list_all_stage_sessions(&self) -> WorkflowResult<Vec<StageSession>> {
+        let sessions = self
+            .stage_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = sessions.clone();
+        result.sort_by(|a, b| a.task_id.cmp(&b.task_id).then(a.created_at.cmp(&b.created_at)));
+        Ok(result)
     }
 
     fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {

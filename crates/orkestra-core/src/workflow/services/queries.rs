@@ -1,13 +1,41 @@
 //! Read-only query operations.
 
+use std::collections::HashMap;
 use std::path::Path;
 
-use crate::workflow::domain::{Iteration, LogEntry, Question};
+use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession};
+use crate::workflow::domain::task_view::{DerivedTaskState, TaskView};
 use crate::workflow::ports::WorkflowResult;
 use crate::workflow::runtime::{Artifact, Outcome};
 
 use super::log_service::LogService;
 use super::WorkflowApi;
+
+/// Trait for types that belong to a task (have a task_id field).
+trait HasTaskId {
+    fn task_id(&self) -> &str;
+}
+
+impl HasTaskId for Iteration {
+    fn task_id(&self) -> &str {
+        &self.task_id
+    }
+}
+
+impl HasTaskId for StageSession {
+    fn task_id(&self) -> &str {
+        &self.task_id
+    }
+}
+
+/// Group a flat list of items by their task ID.
+fn group_by_task_id<T: HasTaskId>(items: Vec<T>) -> HashMap<String, Vec<T>> {
+    let mut map: HashMap<String, Vec<T>> = HashMap::new();
+    for item in items {
+        map.entry(item.task_id().to_string()).or_default().push(item);
+    }
+    map
+}
 
 impl WorkflowApi {
     /// Get pending questions for a task.
@@ -86,6 +114,35 @@ impl WorkflowApi {
     pub fn get_current_stage(&self, task_id: &str) -> WorkflowResult<Option<String>> {
         let task = self.get_task(task_id)?;
         Ok(task.current_stage().map(std::string::ToString::to_string))
+    }
+
+    /// List all active top-level tasks with pre-joined data and derived state.
+    ///
+    /// Enriches each task with its iterations, stage sessions, and a `DerivedTaskState`
+    /// computed from the task's domain predicates. This lets the frontend render
+    /// everything without additional queries.
+    pub fn list_task_views(&self) -> WorkflowResult<Vec<TaskView>> {
+        let tasks = self.list_tasks()?;
+
+        // Batch-load all iterations and sessions in 2 queries (not 2N)
+        let mut iterations_by_task = group_by_task_id(self.store.list_all_iterations()?);
+        let mut sessions_by_task = group_by_task_id(self.store.list_all_stage_sessions()?);
+
+        let mut views = Vec::with_capacity(tasks.len());
+        for task in tasks {
+            let iterations = iterations_by_task.remove(&task.id).unwrap_or_default();
+            let stage_sessions = sessions_by_task.remove(&task.id).unwrap_or_default();
+            let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions);
+
+            views.push(TaskView {
+                task,
+                iterations,
+                stage_sessions,
+                derived,
+            });
+        }
+
+        Ok(views)
     }
 
     /// Get all running agent processes.

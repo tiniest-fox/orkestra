@@ -2,17 +2,16 @@
  * Task card for the kanban board.
  */
 
-import type { WorkflowTask } from "../../types/workflow";
-import { hasPendingQuestions, needsReview } from "../../types/workflow";
+import type { WorkflowTaskView } from "../../types/workflow";
 import { Panel } from "../ui";
 
 interface TaskCardProps {
-  task: WorkflowTask;
+  task: WorkflowTaskView;
   onClick?: () => void;
   isSelected?: boolean;
 }
 
-function getDisplayTitle(task: WorkflowTask): string {
+function getDisplayTitle(task: WorkflowTaskView): string {
   if (task.title) {
     return task.title;
   }
@@ -24,12 +23,13 @@ function getDisplayTitle(task: WorkflowTask): string {
 }
 
 export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
-  const isFailed = task.status.type === "failed";
-  const isBlocked = task.status.type === "blocked";
-  const isDone = task.status.type === "done";
-  const hasActiveProcess = task.phase === "agent_working";
-  const taskNeedsReview = needsReview(task);
-  const hasQuestions = hasPendingQuestions(task);
+  const { derived } = task;
+  const isFailed = derived.is_failed;
+  const isBlocked = derived.is_blocked;
+  const isDone = derived.is_done;
+  const hasActiveProcess = derived.is_working;
+  const taskNeedsReview = derived.needs_review;
+  const hasQuestions = derived.has_questions;
 
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 

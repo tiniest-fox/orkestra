@@ -2,8 +2,7 @@
  * Kanban board utilities.
  */
 
-import type { WorkflowConfig, WorkflowTask } from "../types/workflow";
-import { hasPendingQuestions, needsReview } from "../types/workflow";
+import type { WorkflowConfig, WorkflowTaskView } from "../types/workflow";
 import { titleCase } from "./formatters";
 
 /**
@@ -61,43 +60,38 @@ export function buildColumns(config: WorkflowConfig): KanbanColumn[] {
 /**
  * Get tasks for a specific column.
  */
-export function getTasksForColumn(tasks: WorkflowTask[], columnId: string): WorkflowTask[] {
+export function getTasksForColumn(tasks: WorkflowTaskView[], columnId: string): WorkflowTaskView[] {
   const columnTasks = tasks.filter((task) => {
     // Terminal states
     if (columnId === "done") {
-      return task.status.type === "done";
+      return task.derived.is_done;
     }
     if (columnId === "failed") {
-      return task.status.type === "failed";
+      return task.derived.is_failed;
     }
     if (columnId === "blocked") {
-      return task.status.type === "blocked";
+      return task.derived.is_blocked;
     }
 
     // Active tasks - match by stage name
-    if (task.status.type === "active") {
-      return task.status.stage === columnId;
+    if (task.derived.current_stage) {
+      return task.derived.current_stage === columnId;
     }
 
-    // Waiting on children - parent task is hidden while children work
-    // The subtasks are visible in their respective stage columns instead
-    if (task.status.type === "waiting_on_children") {
-      return false;
-    }
-
+    // Waiting on children, archived, etc. — not shown in stage columns
     return false;
   });
 
   // Sort: needs review/questions first, then active (agent_working phase), then by creation date
   return columnTasks.sort((a, b) => {
     // Needs review/questions items at top
-    const aReview = needsReview(a) || hasPendingQuestions(a) ? 0 : 1;
-    const bReview = needsReview(b) || hasPendingQuestions(b) ? 0 : 1;
+    const aReview = a.derived.needs_review || a.derived.has_questions ? 0 : 1;
+    const bReview = b.derived.needs_review || b.derived.has_questions ? 0 : 1;
     if (aReview !== bReview) return aReview - bReview;
 
     // Active items (with agent running) above idle items
-    const aActive = a.phase === "agent_working" ? 0 : 1;
-    const bActive = b.phase === "agent_working" ? 0 : 1;
+    const aActive = a.derived.is_working ? 0 : 1;
+    const bActive = b.derived.is_working ? 0 : 1;
     if (aActive !== bActive) return aActive - bActive;
 
     // Sort by created_at (oldest first)

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { vi } from "vitest";
-import type { WorkflowConfig, WorkflowTask } from "../../types/workflow";
+import type { WorkflowConfig, WorkflowTask, WorkflowTaskView } from "../../types/workflow";
 
 export const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 
@@ -10,17 +10,15 @@ type InvokeCommand =
   | "workflow_approve"
   | "workflow_reject"
   | "workflow_answer_questions"
-  | "workflow_get_config"
-  | "workflow_get_iterations";
+  | "workflow_get_config";
 
 interface MockResponseMap {
-  workflow_get_tasks: WorkflowTask[];
+  workflow_get_tasks: WorkflowTaskView[];
   workflow_create_task: WorkflowTask;
   workflow_approve: WorkflowTask;
   workflow_reject: WorkflowTask;
   workflow_answer_questions: WorkflowTask;
   workflow_get_config: WorkflowConfig;
-  workflow_get_iterations: unknown[];
 }
 
 export function mockInvokeResponses(

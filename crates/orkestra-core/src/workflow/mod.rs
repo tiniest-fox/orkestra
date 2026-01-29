@@ -44,8 +44,8 @@ pub use config::{
     StageConfig, WorkflowConfig,
 };
 pub use domain::{
-    Iteration, LogEntry, OrkAction, Question, QuestionAnswer, QuestionOption, Task, TodoItem,
-    ToolInput,
+    DerivedTaskState, Iteration, LogEntry, OrkAction, Question, QuestionAnswer, QuestionOption,
+    Task, TaskView, TodoItem, ToolInput,
 };
 pub use execution::{PromptBuilder, StageOutput, StageOutputError, StagePromptContext};
 pub use ports::{

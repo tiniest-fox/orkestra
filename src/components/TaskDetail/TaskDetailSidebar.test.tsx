@@ -3,57 +3,52 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createMockArtifact,
   createMockWorkflowConfig,
-  createMockWorkflowTask,
+  createMockWorkflowTaskView,
 } from "../../test/mocks/fixtures";
-import { mockInvoke, resetMocks } from "../../test/mocks/tauri";
+import { resetMocks } from "../../test/mocks/tauri";
 import { TaskDetailSidebar } from "./TaskDetailSidebar";
 
-// Create stable mock functions outside the factory
+// Create stable mock action functions
 const mockApprove = vi.fn(() => Promise.resolve());
 const mockReject = vi.fn(() => Promise.resolve());
 const mockAnswerQuestions = vi.fn(() => Promise.resolve());
 const mockRetry = vi.fn(() => Promise.resolve());
-const mockGetIterations = vi.fn(() => Promise.resolve([]));
-const mockGetArtifact = vi.fn(() => Promise.resolve(null));
-const mockGetPendingQuestions = vi.fn(() => Promise.resolve([]));
-const mockGetCurrentStage = vi.fn(() => Promise.resolve(null));
-const mockGetRejectionFeedback = vi.fn(() => Promise.resolve(null));
-const mockGetLogs = vi.fn(() => Promise.resolve([]));
-const mockGetStagesWithLogs = vi.fn(() => Promise.resolve([]));
+const mockRefetch = vi.fn(() => Promise.resolve());
+const mockConfig = createMockWorkflowConfig();
 
-// Mock the workflow hooks with stable references
-vi.mock("../../hooks/useWorkflow", () => ({
-  useWorkflowActions: () => ({
+// Mock the providers
+vi.mock("../../providers", () => ({
+  useWorkflowConfig: () => mockConfig,
+  useTasks: () => ({
+    tasks: [],
+    loading: false,
+    error: null,
+    createTask: vi.fn(),
+    createSubtask: vi.fn(),
+    deleteTask: vi.fn(),
+    refetch: mockRefetch,
+  }),
+}));
+
+// Mock the useTaskDetail hook
+vi.mock("../../hooks/useTaskDetail", () => ({
+  useTaskDetail: () => ({
+    currentStageDisplayName: "Planning",
+    isSubmitting: false,
     approve: mockApprove,
     reject: mockReject,
     answerQuestions: mockAnswerQuestions,
     retry: mockRetry,
   }),
-  useWorkflowQueries: () => ({
-    getIterations: mockGetIterations,
-    getArtifact: mockGetArtifact,
-    getPendingQuestions: mockGetPendingQuestions,
-    getCurrentStage: mockGetCurrentStage,
-    getRejectionFeedback: mockGetRejectionFeedback,
-    getLogs: mockGetLogs,
-    getStagesWithLogs: mockGetStagesWithLogs,
-  }),
 }));
 
 describe("TaskDetailSidebar", () => {
-  const config = createMockWorkflowConfig();
-
   beforeEach(() => {
     resetMocks();
-    // Default mock for iterations query
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "workflow_get_iterations") return Promise.resolve([]);
-      return Promise.reject(new Error(`Unmocked: ${cmd}`));
-    });
   });
 
   it("renders task in planning stage", async () => {
-    const task = createMockWorkflowTask({
+    const task = createMockWorkflowTaskView({
       status: { type: "active", stage: "planning" },
       phase: "idle",
     });
@@ -62,10 +57,8 @@ describe("TaskDetailSidebar", () => {
       render(
         <TaskDetailSidebar
           task={task}
-          config={config}
           onClose={() => {}}
           onDelete={() => {}}
-          onTaskUpdated={() => {}}
         />,
       );
     });
@@ -75,20 +68,19 @@ describe("TaskDetailSidebar", () => {
   });
 
   it("renders task awaiting review with approve button", async () => {
-    const task = createMockWorkflowTask({
+    const task = createMockWorkflowTaskView({
       status: { type: "active", stage: "planning" },
       phase: "awaiting_review",
       artifacts: { plan: createMockArtifact("plan", "Plan content") },
+      derived: { needs_review: true, current_stage: "planning" },
     });
 
     await act(async () => {
       render(
         <TaskDetailSidebar
           task={task}
-          config={config}
           onClose={() => {}}
           onDelete={() => {}}
-          onTaskUpdated={() => {}}
         />,
       );
     });
@@ -97,7 +89,7 @@ describe("TaskDetailSidebar", () => {
   });
 
   it("renders done task with Done status", async () => {
-    const task = createMockWorkflowTask({
+    const task = createMockWorkflowTaskView({
       status: { type: "done" },
       phase: "idle",
       artifacts: {
@@ -110,10 +102,8 @@ describe("TaskDetailSidebar", () => {
       render(
         <TaskDetailSidebar
           task={task}
-          config={config}
           onClose={() => {}}
           onDelete={() => {}}
-          onTaskUpdated={() => {}}
         />,
       );
     });
@@ -123,7 +113,7 @@ describe("TaskDetailSidebar", () => {
   });
 
   it("renders failed task with error message", async () => {
-    const task = createMockWorkflowTask({
+    const task = createMockWorkflowTaskView({
       status: { type: "failed", error: "Something went wrong" },
       phase: "idle",
     });
@@ -132,10 +122,8 @@ describe("TaskDetailSidebar", () => {
       render(
         <TaskDetailSidebar
           task={task}
-          config={config}
           onClose={() => {}}
           onDelete={() => {}}
-          onTaskUpdated={() => {}}
         />,
       );
     });
@@ -145,7 +133,7 @@ describe("TaskDetailSidebar", () => {
   });
 
   it("renders blocked task with reason", async () => {
-    const task = createMockWorkflowTask({
+    const task = createMockWorkflowTaskView({
       status: { type: "blocked", reason: "Waiting for dependencies" },
       phase: "idle",
     });
@@ -154,10 +142,8 @@ describe("TaskDetailSidebar", () => {
       render(
         <TaskDetailSidebar
           task={task}
-          config={config}
           onClose={() => {}}
           onDelete={() => {}}
-          onTaskUpdated={() => {}}
         />,
       );
     });
@@ -168,7 +154,7 @@ describe("TaskDetailSidebar", () => {
   });
 
   it("renders artifact tabs when task has artifacts", async () => {
-    const task = createMockWorkflowTask({
+    const task = createMockWorkflowTaskView({
       status: { type: "active", stage: "work" },
       phase: "idle",
       artifacts: {
@@ -180,10 +166,8 @@ describe("TaskDetailSidebar", () => {
       render(
         <TaskDetailSidebar
           task={task}
-          config={config}
           onClose={() => {}}
           onDelete={() => {}}
-          onTaskUpdated={() => {}}
         />,
       );
     });

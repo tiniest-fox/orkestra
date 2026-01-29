@@ -1,0 +1,136 @@
+/**
+ * Provider for workflow tasks (rich views with iterations and derived state).
+ *
+ * Replaces the useWorkflowTasks() hook with a context-based approach.
+ * Polls workflow_get_tasks every 2s and listens for "task-updated" events.
+ */
+
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
+
+interface TasksContextValue {
+  tasks: WorkflowTaskView[];
+  loading: boolean;
+  error: string | null;
+  createTask: (title: string, description: string) => Promise<WorkflowTask>;
+  createSubtask: (parentId: string, title: string, description: string) => Promise<WorkflowTask>;
+  deleteTask: (taskId: string) => Promise<void>;
+  refetch: () => Promise<void>;
+}
+
+const TasksContext = createContext<TasksContextValue | null>(null);
+
+/**
+ * Access tasks and CRUD operations. Must be used within TasksProvider.
+ */
+export function useTasks(): TasksContextValue {
+  const ctx = useContext(TasksContext);
+  if (!ctx) {
+    throw new Error("useTasks must be used within TasksProvider");
+  }
+  return ctx;
+}
+
+interface TasksProviderProps {
+  children: ReactNode;
+}
+
+export function TasksProvider({ children }: TasksProviderProps) {
+  const [tasks, setTasks] = useState<WorkflowTaskView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Track task IDs with pending deletes so polling doesn't re-add them
+  const deletingIdsRef = useRef<Set<string>>(new Set());
+
+  const fetchTasks = useCallback(async () => {
+    try {
+      const result = await invoke<WorkflowTaskView[]>("workflow_get_tasks");
+      const deleting = deletingIdsRef.current;
+      if (deleting.size > 0) {
+        const fetched = result.filter((t) => !deleting.has(t.id));
+        for (const id of deleting) {
+          if (!result.some((t) => t.id === id)) {
+            deleting.delete(id);
+          }
+        }
+        setTasks(fetched);
+      } else {
+        setTasks(result);
+      }
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTasks();
+
+    const interval = setInterval(fetchTasks, 2000);
+
+    // Fix event name: backend emits "task-updated"
+    const unlistenPromise = listen<string>("task-updated", () => {
+      fetchTasks();
+    });
+
+    return () => {
+      clearInterval(interval);
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [fetchTasks]);
+
+  const createTask = useCallback(
+    async (title: string, description: string) => {
+      const newTask = await invoke<WorkflowTask>("workflow_create_task", { title, description });
+      // Refetch to get the full TaskView
+      fetchTasks();
+      return newTask;
+    },
+    [fetchTasks],
+  );
+
+  const createSubtask = useCallback(
+    async (parentId: string, title: string, description: string) => {
+      const newTask = await invoke<WorkflowTask>("workflow_create_subtask", {
+        parentId,
+        title,
+        description,
+      });
+      fetchTasks();
+      return newTask;
+    },
+    [fetchTasks],
+  );
+
+  const deleteTask = useCallback(
+    async (taskId: string) => {
+      deletingIdsRef.current.add(taskId);
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      try {
+        await invoke<void>("workflow_delete_task", { taskId });
+      } catch (err) {
+        console.error(`[deleteTask] Failed to delete ${taskId}:`, err);
+        deletingIdsRef.current.delete(taskId);
+        throw err;
+      }
+    },
+    [],
+  );
+
+  const value: TasksContextValue = {
+    tasks,
+    loading,
+    error,
+    createTask,
+    createSubtask,
+    deleteTask,
+    refetch: fetchTasks,
+  };
+
+  return <TasksContext.Provider value={value}>{children}</TasksContext.Provider>;
+}

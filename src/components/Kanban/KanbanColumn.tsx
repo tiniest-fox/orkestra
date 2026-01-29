@@ -2,16 +2,16 @@
  * Kanban column - single column in the kanban board.
  */
 
-import type { WorkflowTask } from "../../types/workflow";
+import type { WorkflowTaskView } from "../../types/workflow";
 import type { KanbanColumn as KanbanColumnType } from "../../utils/kanban";
 import { Panel, PanelContainer } from "../ui";
 import { TaskCard } from "./TaskCard";
 
 interface KanbanColumnProps {
   column: KanbanColumnType;
-  tasks: WorkflowTask[];
+  tasks: WorkflowTaskView[];
   selectedTaskId?: string;
-  onSelectTask: (task: WorkflowTask) => void;
+  onSelectTask: (task: WorkflowTaskView) => void;
 }
 
 export function KanbanColumn({ column, tasks, selectedTaskId, onSelectTask }: KanbanColumnProps) {

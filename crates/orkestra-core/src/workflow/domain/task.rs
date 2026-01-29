@@ -177,6 +177,11 @@ impl Task {
     pub fn is_awaiting_review(&self) -> bool {
         self.phase == Phase::AwaitingReview
     }
+
+    /// Check if the task needs human review (awaiting review + active status).
+    pub fn needs_review(&self) -> bool {
+        self.is_awaiting_review() && self.status.is_active()
+    }
 }
 
 #[cfg(test)]

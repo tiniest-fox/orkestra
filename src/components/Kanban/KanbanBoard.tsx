@@ -2,16 +2,16 @@
  * Kanban board - displays tasks organized by workflow stage.
  */
 
-import type { WorkflowConfig, WorkflowTask } from "../../types/workflow";
+import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { buildColumns, getTasksForColumn } from "../../utils/kanban";
 import { PanelContainer } from "../ui";
 import { KanbanColumn } from "./KanbanColumn";
 
 interface KanbanBoardProps {
   config: WorkflowConfig;
-  tasks: WorkflowTask[];
+  tasks: WorkflowTaskView[];
   selectedTaskId?: string;
-  onSelectTask: (task: WorkflowTask) => void;
+  onSelectTask: (task: WorkflowTaskView) => void;
 }
 
 export function KanbanBoard({ config, tasks, selectedTaskId, onSelectTask }: KanbanBoardProps) {

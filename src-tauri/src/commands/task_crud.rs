@@ -1,13 +1,13 @@
 //! Task CRUD commands.
 
 use crate::{error::TauriError, state::AppState};
-use orkestra_core::{is_process_running, kill_process_tree, workflow::Task};
+use orkestra_core::{is_process_running, kill_process_tree, workflow::{Task, TaskView}};
 use tauri::State;
 
-/// Get all tasks from the workflow.
+/// Get all tasks from the workflow (rich view with iterations, sessions, derived state).
 #[tauri::command]
-pub fn workflow_get_tasks(state: State<AppState>) -> Result<Vec<Task>, TauriError> {
-    state.api()?.list_tasks().map_err(Into::into)
+pub fn workflow_get_tasks(state: State<AppState>) -> Result<Vec<TaskView>, TauriError> {
+    state.api()?.list_task_views().map_err(Into::into)
 }
 
 /// Create a new task.

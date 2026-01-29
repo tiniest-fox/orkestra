@@ -1,18 +1,15 @@
 /**
  * Task detail sidebar - orchestrates task detail tabs and actions.
+ *
+ * Data comes from TasksProvider (task view with iterations, sessions, derived state).
+ * Actions are managed by the useTaskDetail hook.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLogs } from "../../hooks/useLogs";
-import { useWorkflowActions, useWorkflowQueries } from "../../hooks/useWorkflow";
-import type {
-  WorkflowConfig,
-  WorkflowIteration,
-  WorkflowQuestion,
-  WorkflowQuestionAnswer,
-  WorkflowTask,
-} from "../../types/workflow";
-import { getTaskStage, needsReview } from "../../types/workflow";
+import { useTaskDetail } from "../../hooks/useTaskDetail";
+import { useWorkflowConfig } from "../../providers";
+import type { WorkflowTaskView } from "../../types/workflow";
 import { Panel, PanelContainer, PanelSlot, TabbedPanel } from "../ui";
 import { ArtifactsTab } from "./ArtifactsTab";
 import { DetailsTab } from "./DetailsTab";
@@ -28,14 +25,12 @@ interface Tab {
 }
 
 interface TaskDetailSidebarProps {
-  task: WorkflowTask;
-  config: WorkflowConfig;
+  task: WorkflowTaskView;
   onClose: () => void;
   onDelete: () => void;
-  onTaskUpdated: () => void;
 }
 
-function buildTabs(task: WorkflowTask): Tab[] {
+function buildTabs(task: WorkflowTaskView): Tab[] {
   const tabs: Tab[] = [
     { id: "details", label: "Details" },
     { id: "iterations", label: "Activity" },
@@ -54,39 +49,23 @@ function buildTabs(task: WorkflowTask): Tab[] {
  * Select the most relevant tab based on current task state.
  * Falls back to "details" if the preferred tab isn't available.
  */
-function smartDefaultTab(task: WorkflowTask, tabs: Tab[]): string {
+function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
   const tabIds = new Set(tabs.map((t) => t.id));
+  const { derived } = task;
 
   let preferred: string;
-  switch (task.status.type) {
-    case "done":
-    case "archived":
-      preferred = "artifacts";
-      break;
-    case "failed":
-    case "blocked":
-      preferred = "details";
-      break;
-    case "waiting_on_children":
-      preferred = "details";
-      break;
-    case "active":
-      switch (task.phase) {
-        case "agent_working":
-        case "integrating":
-          preferred = "logs";
-          break;
-        case "awaiting_review":
-          preferred = "artifacts";
-          break;
-        default:
-          preferred = "details";
-          break;
-      }
-      break;
-    default:
-      preferred = "details";
-      break;
+  if (derived.is_done || task.status.type === "archived") {
+    preferred = "artifacts";
+  } else if (derived.is_failed || derived.is_blocked) {
+    preferred = "details";
+  } else if (task.status.type === "waiting_on_children") {
+    preferred = "details";
+  } else if (derived.is_working || task.phase === "integrating") {
+    preferred = "logs";
+  } else if (derived.needs_review) {
+    preferred = "artifacts";
+  } else {
+    preferred = "details";
   }
 
   return tabIds.has(preferred) ? preferred : "details";
@@ -94,51 +73,24 @@ function smartDefaultTab(task: WorkflowTask, tabs: Tab[]): string {
 
 export function TaskDetailSidebar({
   task,
-  config,
   onClose,
   onDelete,
-  onTaskUpdated,
 }: TaskDetailSidebarProps) {
+  const config = useWorkflowConfig();
+  const {
+    currentStageDisplayName,
+    isSubmitting,
+    approve,
+    reject,
+    answerQuestions,
+    retry,
+  } = useTaskDetail(task);
+
   const tabs = useMemo(() => buildTabs(task), [task]);
   const [activeTab, setActiveTab] = useState(() => smartDefaultTab(task, buildTabs(task)));
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
-  const [iterations, setIterations] = useState<WorkflowIteration[]>([]);
-  const [pendingQuestions, setPendingQuestions] = useState<WorkflowQuestion[]>([]);
-
-  const { approve, reject, answerQuestions, retry } = useWorkflowActions();
-  const { getIterations, getPendingQuestions } = useWorkflowQueries();
 
   const logsState = useLogs(task, activeTab === "logs");
-
-  // Fetch iterations
-  const fetchIterations = useCallback(async () => {
-    try {
-      const result = await getIterations(task.id);
-      setIterations(result);
-    } catch (err) {
-      console.error("Failed to fetch iterations:", err);
-      setIterations([]);
-    }
-  }, [task.id, getIterations]);
-
-  useEffect(() => {
-    fetchIterations();
-  }, [fetchIterations]);
-
-  // Fetch pending questions
-  useEffect(() => {
-    if (task.phase === "awaiting_review" && task.status.type === "active") {
-      getPendingQuestions(task.id)
-        .then(setPendingQuestions)
-        .catch((err) => {
-          console.error("Failed to fetch pending questions:", err);
-          setPendingQuestions([]);
-        });
-    } else {
-      setPendingQuestions([]);
-    }
-  }, [task.id, task.phase, task.status.type, getPendingQuestions]);
 
   // Reset state when task changes — pick the most relevant tab for the new task
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset when task.id changes
@@ -154,64 +106,18 @@ export function TaskDetailSidebar({
     }
   }, [tabs, activeTab]);
 
-  const taskNeedsReview = needsReview(task);
-  const taskHasQuestions = pendingQuestions.length > 0;
-  const currentStage = getTaskStage(task.status);
-  const currentStageConfig = currentStage
-    ? config.stages.find((s) => s.name === currentStage)
-    : null;
-
-  const handleApprove = async () => {
-    setIsSubmitting(true);
-    try {
-      await approve(task.id);
-      onTaskUpdated();
-    } catch (err) {
-      console.error("Failed to approve:", err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleReject = async (feedback: string) => {
-    setIsSubmitting(true);
-    try {
-      await reject(task.id, feedback);
-      onTaskUpdated();
-    } catch (err) {
-      console.error("Failed to reject:", err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAnswerQuestions = async (answers: WorkflowQuestionAnswer[]) => {
-    setIsSubmitting(true);
-    try {
-      await answerQuestions(task.id, answers);
-      onTaskUpdated();
-    } catch (err) {
-      console.error("Failed to submit answers:", err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleRetry = async () => {
     setIsRetrying(true);
     try {
-      await retry(task.id);
-      onTaskUpdated();
-    } catch (err) {
-      console.error("Failed to retry task:", err);
+      await retry();
     } finally {
       setIsRetrying(false);
     }
   };
 
-  const footerPanelKey = taskHasQuestions
+  const footerPanelKey = task.derived.has_questions
     ? "questions"
-    : taskNeedsReview && currentStage
+    : task.derived.needs_review && task.derived.current_stage
       ? "review"
       : null;
 
@@ -221,8 +127,8 @@ export function TaskDetailSidebar({
         <PanelContainer direction="vertical">
           <TaskDetailHeader
             task={task}
-            hasQuestions={taskHasQuestions}
-            needsReview={taskNeedsReview}
+            hasQuestions={task.derived.has_questions}
+            needsReview={task.derived.needs_review}
             onClose={onClose}
             onDelete={onDelete}
           />
@@ -240,7 +146,7 @@ export function TaskDetailSidebar({
               <ArtifactsTab artifacts={task.artifacts} config={config} />
             )}
 
-            {activeTab === "iterations" && <IterationsTab iterations={iterations} />}
+            {activeTab === "iterations" && <IterationsTab iterations={task.iterations} />}
 
             {activeTab === "logs" && (
               <LogsTab
@@ -259,17 +165,17 @@ export function TaskDetailSidebar({
         <PanelSlot activeKey={footerPanelKey} direction="vertical">
           <PanelSlot.Panel panelKey="questions">
             <QuestionFormPanel
-              questions={pendingQuestions}
-              onSubmit={handleAnswerQuestions}
+              questions={task.derived.pending_questions}
+              onSubmit={answerQuestions}
               isSubmitting={isSubmitting}
             />
           </PanelSlot.Panel>
 
           <PanelSlot.Panel panelKey="review">
             <ReviewPanel
-              stageName={currentStageConfig?.display_name || currentStage || ""}
-              onApprove={handleApprove}
-              onReject={handleReject}
+              stageName={currentStageDisplayName}
+              onApprove={approve}
+              onReject={reject}
               isSubmitting={isSubmitting}
             />
           </PanelSlot.Panel>

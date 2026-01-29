@@ -181,6 +181,28 @@ impl WorkflowStore for SqliteWorkflowStore {
         ))
     }
 
+    fn list_all_iterations(&self) -> WorkflowResult<Vec<Iteration>> {
+        let conn = self.lock_conn()?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
+                 FROM workflow_iterations ORDER BY task_id, stage, iteration_number",
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], row_to_iteration)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut iterations = Vec::new();
+        for row in rows {
+            iterations.push(row.map_err(|e| WorkflowError::Storage(e.to_string()))?);
+        }
+
+        Ok(iterations)
+    }
+
     fn get_iterations(&self, task_id: &str) -> WorkflowResult<Vec<Iteration>> {
         let conn = self.lock_conn()?;
 
@@ -339,6 +361,29 @@ impl WorkflowStore for SqliteWorkflowStore {
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
         Ok(result)
+    }
+
+    fn list_all_stage_sessions(&self) -> WorkflowResult<Vec<StageSession>> {
+        let conn = self.lock_conn()?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
+                        session_state, created_at, updated_at
+                 FROM workflow_stage_sessions ORDER BY task_id, created_at",
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], row_to_stage_session)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(row.map_err(|e| WorkflowError::Storage(e.to_string()))?);
+        }
+
+        Ok(sessions)
     }
 
     fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {

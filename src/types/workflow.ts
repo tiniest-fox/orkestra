@@ -206,8 +206,8 @@ export interface WorkflowIteration {
 /**
  * A workflow task.
  *
- * Note: Questions are now stored in iteration outcomes (Outcome::AwaitingAnswers),
- * not on the task itself. Use the workflow_get_pending_questions API to fetch them.
+ * Note: Questions are stored in iteration outcomes (Outcome::AwaitingAnswers),
+ * not on the task itself. Use `task.derived.pending_questions` from WorkflowTaskView.
  */
 export interface WorkflowTask {
   /** Unique task ID (e.g., "gentle-fuzzy-otter"). */
@@ -236,6 +236,68 @@ export interface WorkflowTask {
   updated_at: string;
   /** When the task completed (if done). */
   completed_at?: string;
+}
+
+// =============================================================================
+// Stage Sessions
+// =============================================================================
+
+/**
+ * State of a stage session.
+ */
+export type SessionState = "spawning" | "active" | "completed" | "abandoned";
+
+/**
+ * A stage session tracking Claude session continuity across iterations.
+ */
+export interface WorkflowStageSession {
+  id: string;
+  task_id: string;
+  stage: string;
+  claude_session_id?: string;
+  agent_pid?: number;
+  spawn_count: number;
+  session_state: SessionState;
+  created_at: string;
+  updated_at: string;
+}
+
+// =============================================================================
+// Derived Task State
+// =============================================================================
+
+/**
+ * Pre-computed state derived from task + iterations + sessions.
+ * Computed once in the Rust backend — the single source of truth.
+ */
+export interface DerivedTaskState {
+  current_stage: string | null;
+  is_working: boolean;
+  is_failed: boolean;
+  is_blocked: boolean;
+  is_done: boolean;
+  is_terminal: boolean;
+  needs_review: boolean;
+  has_questions: boolean;
+  pending_questions: WorkflowQuestion[];
+  rejection_feedback: string | null;
+  stages_with_logs: string[];
+}
+
+// =============================================================================
+// Task View (rich API response)
+// =============================================================================
+
+/**
+ * A task with pre-joined data and derived state from the backend.
+ *
+ * Returned by `workflow_get_tasks`. Task fields are flattened to the top level
+ * via `#[serde(flatten)]` in Rust, so this extends WorkflowTask with extra fields.
+ */
+export interface WorkflowTaskView extends WorkflowTask {
+  iterations: WorkflowIteration[];
+  stage_sessions: WorkflowStageSession[];
+  derived: DerivedTaskState;
 }
 
 // =============================================================================
@@ -331,56 +393,3 @@ export type LogEntry =
   | { type: "script_output"; content: string }
   | { type: "script_exit"; code: number; success: boolean; timed_out: boolean };
 
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/**
- * Get the current stage name from a task status.
- * Returns undefined for terminal states (done, failed, blocked, waiting_on_children).
- */
-export function getTaskStage(status: WorkflowTaskStatus): string | undefined {
-  return status.type === "active" ? status.stage : undefined;
-}
-
-/**
- * Check if a task is in a terminal state.
- */
-export function isTaskTerminal(status: WorkflowTaskStatus): boolean {
-  return status.type !== "active" && status.type !== "waiting_on_children";
-}
-
-/**
- * Check if a task is archived (completed and integrated).
- */
-export function isTaskArchived(status: WorkflowTaskStatus): boolean {
-  return status.type === "archived";
-}
-
-/**
- * Check if a task needs human review.
- */
-export function needsReview(task: WorkflowTask): boolean {
-  return task.phase === "awaiting_review" && task.status.type === "active";
-}
-
-/**
- * Check if a task might have pending questions based on phase.
- *
- * Note: This is a heuristic check. To get actual pending questions,
- * use the workflow_get_pending_questions Tauri command.
- *
- * @deprecated Use workflow_get_pending_questions API instead
- */
-export function hasPendingQuestions(task: WorkflowTask): boolean {
-  // A task in awaiting_review phase with active status might have questions
-  // The actual questions must be fetched via API
-  return task.phase === "awaiting_review" && task.status.type === "active";
-}
-
-/**
- * Get the artifact content for a specific artifact name.
- */
-export function getArtifactContent(task: WorkflowTask, name: string): string | undefined {
-  return task.artifacts?.[name]?.content;
-}

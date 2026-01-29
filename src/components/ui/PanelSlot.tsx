@@ -15,7 +15,7 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Children, createContext, isValidElement, type ReactElement, type ReactNode, useContext, useRef } from "react";
+import { Children, createContext, isValidElement, type ReactElement, type ReactNode, useContext, useEffect, useRef } from "react";
 
 /** Context for panels inside a PanelSlot to access slot configuration */
 interface PanelSlotContextValue {
@@ -71,7 +71,12 @@ const transitionConfig = {
  */
 export function PanelSlot({ activeKey, children, direction = "horizontal", className = "" }: PanelSlotProps) {
   const isNestedInSlot = useIsNestedInPanelSlot();
-  const mountTime = useRef(performance.now());
+  const isFirstRender = useRef(true);
+
+  // Track first render to skip initial animation for nested slots
+  useEffect(() => {
+    isFirstRender.current = false;
+  }, []);
 
   // Find the active panel child
   const childArray = Children.toArray(children);
@@ -88,12 +93,8 @@ export function PanelSlot({ activeKey, children, direction = "horizontal", class
     exit: isHorizontal ? { width: 0, opacity: 0 } : { height: 0, opacity: 0 },
   };
 
-  // Skip animation if nested and parent is likely still animating.
-  // Uses a time window (matching parent transition duration) instead of a single-frame check,
-  // so panels that activate shortly after mount (e.g. async data) also skip.
-  // TODO: Fix this, we should have all the data necessary on first load to avoid flashing, etc.
-  const parentAnimationMs = transitionConfig.duration * 1000;
-  const skipInitialAnimation = isNestedInSlot && performance.now() - mountTime.current < parentAnimationMs;
+  // Skip animation if nested and this is the first render (parent is still animating)
+  const skipInitialAnimation = isNestedInSlot && isFirstRender.current;
 
   const contextValue: PanelSlotContextValue = {
     suppressShadow: true, // Shadow is on PanelSlot, suppress on inner panels

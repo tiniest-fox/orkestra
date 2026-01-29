@@ -3,14 +3,13 @@
  */
 
 import { useAutoScroll } from "../../hooks/useAutoScroll";
-import type { LogEntry, WorkflowTask } from "../../types/workflow";
-import { getTaskStage } from "../../types/workflow";
+import type { LogEntry, WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { LogList } from "../Logs";
 import { PanelContainer, TabbedPanel } from "../ui";
 
 interface LogsTabProps {
-  task: WorkflowTask;
+  task: WorkflowTaskView;
   logs: LogEntry[];
   isLoading: boolean;
   error: string | null;
@@ -30,13 +29,11 @@ export function LogsTab({
 }: LogsTabProps) {
   const { containerRef, handleScroll } = useAutoScroll<HTMLDivElement>([logs], true);
 
-  const currentStage = getTaskStage(task.status);
-
   const tabs = stagesWithLogs.map((stage) => ({
     id: stage,
     label: titleCase(stage),
     indicator:
-      stage === currentStage && task.phase === "agent_working" ? (
+      stage === task.derived.current_stage && task.derived.is_working ? (
         <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
       ) : undefined,
   }));

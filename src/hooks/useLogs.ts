@@ -1,12 +1,13 @@
 /**
  * Hook for fetching and managing session logs.
- * Handles race condition protection, polling, and error states.
+ *
+ * Stage presence comes from the task view's derived.stages_with_logs (synchronous).
+ * Log content is fetched asynchronously on-demand.
  */
 
+import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
-import type { LogEntry, WorkflowTask } from "../types/workflow";
-import { getTaskStage } from "../types/workflow";
-import { useWorkflowQueries } from "./useWorkflow";
+import type { LogEntry, WorkflowTaskView } from "../types/workflow";
 
 interface UseLogsResult {
   /** Current log entries. */
@@ -27,14 +28,14 @@ interface UseLogsResult {
   reset: () => void;
 }
 
-export function useLogs(task: WorkflowTask, isActive: boolean): UseLogsResult {
+export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResult {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [stagesWithLogs, setStagesWithLogs] = useState<string[]>([]);
   const [activeLogStage, setActiveLogStageInternal] = useState<string | null>(null);
 
-  const { getLogs, getStagesWithLogs } = useWorkflowQueries();
+  // Stages with logs come from the task view — no async fetch needed
+  const stagesWithLogs = task.derived.stages_with_logs;
 
   const setActiveLogStage = useCallback((stage: string | null) => {
     setError(null);
@@ -48,42 +49,25 @@ export function useLogs(task: WorkflowTask, isActive: boolean): UseLogsResult {
 
   const reset = useCallback(() => {
     setActiveLogStageInternal(null);
-    setStagesWithLogs([]);
     setError(null);
     setLogs([]);
   }, []);
 
-  // Fetch stages with logs when active
+  // Auto-select stage when becoming active or when stages change
   useEffect(() => {
     if (!isActive) return;
 
-    setError(null);
+    setActiveLogStageInternal((current) => {
+      if (current && stagesWithLogs.includes(current)) return current;
+      if (stagesWithLogs.length === 0) return null;
 
-    const fetchStages = async () => {
-      try {
-        const stages = await getStagesWithLogs(task.id);
-        setStagesWithLogs(stages);
-
-        // Auto-select current stage if available, otherwise last stage
-        setActiveLogStageInternal((current) => {
-          if (current) return current;
-          if (stages.length === 0) return null;
-
-          const currentStage = getTaskStage(task.status);
-          if (currentStage && stages.includes(currentStage)) {
-            return currentStage;
-          }
-          return stages[stages.length - 1];
-        });
-      } catch (err) {
-        console.error("Failed to fetch stages with logs:", err);
-        setStagesWithLogs([]);
-        setError("Failed to load session stages");
+      const currentStage = task.derived.current_stage;
+      if (currentStage && stagesWithLogs.includes(currentStage)) {
+        return currentStage;
       }
-    };
-
-    fetchStages();
-  }, [isActive, task.id, task.status, getStagesWithLogs]);
+      return stagesWithLogs[stagesWithLogs.length - 1];
+    });
+  }, [isActive, stagesWithLogs, task.derived.current_stage]);
 
   // Fetch logs for active stage with race condition protection
   const fetchLogs = useCallback(async () => {
@@ -94,7 +78,10 @@ export function useLogs(task: WorkflowTask, isActive: boolean): UseLogsResult {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await getLogs(task.id, stageToFetch);
+      const result = await invoke<LogEntry[]>("workflow_get_logs", {
+        taskId: task.id,
+        stage: stageToFetch,
+      });
       // Only update state if the stage hasn't changed during the fetch
       setActiveLogStageInternal((currentStage) => {
         if (currentStage === stageToFetch) {
@@ -114,7 +101,7 @@ export function useLogs(task: WorkflowTask, isActive: boolean): UseLogsResult {
     } finally {
       setIsLoading(false);
     }
-  }, [task.id, activeLogStage, getLogs]);
+  }, [task.id, activeLogStage]);
 
   // Fetch logs when active and stage is selected, with polling
   useEffect(() => {
@@ -123,8 +110,8 @@ export function useLogs(task: WorkflowTask, isActive: boolean): UseLogsResult {
     fetchLogs();
 
     // Poll while agent is running on current stage
-    const currentStage = getTaskStage(task.status);
-    const shouldPoll = task.phase === "agent_working" && activeLogStage === currentStage && !error;
+    const shouldPoll =
+      task.derived.is_working && activeLogStage === task.derived.current_stage && !error;
 
     if (shouldPoll) {
       const interval = setInterval(fetchLogs, 2000);
@@ -132,7 +119,7 @@ export function useLogs(task: WorkflowTask, isActive: boolean): UseLogsResult {
     }
 
     return undefined;
-  }, [isActive, activeLogStage, task.phase, task.status, fetchLogs, error]);
+  }, [isActive, activeLogStage, task.derived.is_working, task.derived.current_stage, fetchLogs, error]);
 
   return {
     logs,

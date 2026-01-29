@@ -2,6 +2,7 @@ import { Orkestra } from "./components/Orkestra";
 import { StartupErrorScreen } from "./components/StartupErrorScreen";
 import { StartupSplashScreen } from "./components/StartupSplashScreen";
 import { useStartup } from "./hooks/useStartup";
+import { TasksProvider, WorkflowConfigProvider } from "./providers";
 
 /**
  * Root component that coordinates startup before rendering the main app.
@@ -17,7 +18,13 @@ function App() {
     return <StartupErrorScreen errors={startupErrors} onRetry={retry} />;
   }
 
-  return <Orkestra />;
+  return (
+    <WorkflowConfigProvider>
+      <TasksProvider>
+        <Orkestra />
+      </TasksProvider>
+    </WorkflowConfigProvider>
+  );
 }
 
 export default App;

@@ -139,7 +139,37 @@ pub trait WorkflowStore: Send + Sync {
     fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()>;
 
     // =========================================================================
-    // Bulk Operations
+    // Bulk Read Operations
+    // =========================================================================
+
+    /// List all iterations across all tasks.
+    ///
+    /// Default implementation loads tasks then queries per-task.
+    /// Implementations should override with a single query for efficiency.
+    fn list_all_iterations(&self) -> WorkflowResult<Vec<Iteration>> {
+        let tasks = self.list_tasks()?;
+        let mut all = Vec::new();
+        for task in &tasks {
+            all.extend(self.get_iterations(&task.id)?);
+        }
+        Ok(all)
+    }
+
+    /// List all stage sessions across all tasks.
+    ///
+    /// Default implementation loads tasks then queries per-task.
+    /// Implementations should override with a single query for efficiency.
+    fn list_all_stage_sessions(&self) -> WorkflowResult<Vec<StageSession>> {
+        let tasks = self.list_tasks()?;
+        let mut all = Vec::new();
+        for task in &tasks {
+            all.extend(self.get_stage_sessions(&task.id)?);
+        }
+        Ok(all)
+    }
+
+    // =========================================================================
+    // Bulk Write Operations
     // =========================================================================
 
     /// Delete an entire task tree (tasks, iterations, stage sessions) atomically.

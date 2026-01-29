@@ -4,32 +4,33 @@
  */
 
 import { useState } from "react";
-import { useWorkflowConfig, useWorkflowTasks } from "../hooks/useWorkflow";
-import type { WorkflowTask } from "../types/workflow";
+import { useTasks, useWorkflowConfig } from "../providers";
+import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
 import { Button, Panel, PanelContainer, PanelSlot } from "./ui";
 
-type SidebarView = { type: "none" } | { type: "create" } | { type: "task"; task: WorkflowTask };
+type SidebarView = { type: "none" } | { type: "create" } | { type: "task"; taskId: string };
 
 export function Orkestra() {
   const [sidebarView, setSidebarView] = useState<SidebarView>({ type: "none" });
 
-  const { config, loading: configLoading, error: configError } = useWorkflowConfig();
-  const { tasks, loading: tasksLoading, error: tasksError, createTask, deleteTask, refetch } = useWorkflowTasks();
+  const config = useWorkflowConfig();
+  const { tasks, loading, error, createTask, deleteTask } = useTasks();
 
-  const loading = configLoading || tasksLoading;
-  const error = configError || tasksError;
-
-  const currentSelectedTask =
-    sidebarView.type === "task" ? tasks.find((t) => t.id === sidebarView.task.id) || sidebarView.task : null;
+  const currentSelectedTask: WorkflowTaskView | null =
+    sidebarView.type === "task" ? tasks.find((t) => t.id === sidebarView.taskId) ?? null : null;
 
   const sidebarActiveKey =
-    sidebarView.type === "create" ? "create" : sidebarView.type === "task" ? `task-${currentSelectedTask?.id}` : null;
+    sidebarView.type === "create"
+      ? "create"
+      : currentSelectedTask
+        ? `task-${currentSelectedTask.id}`
+        : null;
 
   const handleSelectTask = (task: WorkflowTask) => {
-    setSidebarView({ type: "task", task });
+    setSidebarView({ type: "task", taskId: task.id });
   };
 
   const handleOpenCreatePanel = () => {
@@ -51,8 +52,8 @@ export function Orkestra() {
 
   const handleTaskCreated = async (description: string) => {
     const newTask = await createTask("", description);
-    if (newTask && typeof newTask === "object" && "id" in newTask) {
-      setSidebarView({ type: "task", task: newTask as WorkflowTask });
+    if (newTask?.id) {
+      setSidebarView({ type: "task", taskId: newTask.id });
     } else {
       handleCloseSidebar();
     }
@@ -68,10 +69,10 @@ export function Orkestra() {
       <PanelContainer>
         {error && (
           <div className="mb-4 p-4 bg-error-50 border border-error-200 rounded-panel text-error-700">
-            Error loading tasks: {error.message}
+            Error loading tasks: {error}
           </div>
         )}
-        {loading || !config ? (
+        {loading ? (
           <Panel>
             <div className="flex items-center justify-center h-64">
               <div className="text-stone-500">Loading...</div>
@@ -93,14 +94,12 @@ export function Orkestra() {
             <NewTaskPanel onClose={handleCloseSidebar} onSubmit={handleTaskCreated} />
           </PanelSlot.Panel>
 
-          {currentSelectedTask && config && (
+          {currentSelectedTask && (
             <PanelSlot.Panel panelKey={`task-${currentSelectedTask.id}`}>
               <TaskDetailSidebar
                 task={currentSelectedTask}
-                config={config}
                 onClose={handleCloseSidebar}
                 onDelete={() => handleDeleteTask(currentSelectedTask.id)}
-                onTaskUpdated={refetch}
               />
             </PanelSlot.Panel>
           )}

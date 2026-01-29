@@ -183,7 +183,7 @@ else
     # Include both committed changes (merge-base to HEAD) and uncommitted changes
     COMMITTED_CHANGES=$(git diff --name-only "$MERGE_BASE" HEAD)
     UNCOMMITTED_CHANGES=$(git diff --name-only HEAD)
-    CHANGED_FILES=$(echo -e "${COMMITTED_CHANGES}\n${UNCOMMITTED_CHANGES}" | sort -u | grep -v '^$')
+    CHANGED_FILES=$(echo -e "${COMMITTED_CHANGES}\n${UNCOMMITTED_CHANGES}" | sort -u | grep -v '^$' || true)
 fi
 
 if [ -z "$CHANGED_FILES" ] && ! $FORCE_FRONTEND && ! $FORCE_RUST; then

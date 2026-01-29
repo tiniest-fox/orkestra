@@ -433,6 +433,32 @@ impl WorkflowStore for SqliteWorkflowStore {
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
         Ok(())
     }
+
+    fn delete_task_tree(&self, task_ids: &[String]) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        // unchecked_transaction takes &self (not &mut self), which is safe here
+        // because the Mutex already guarantees exclusive access.
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        for id in task_ids {
+            tx.execute(
+                "DELETE FROM workflow_stage_sessions WHERE task_id = ?",
+                params![id],
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+            tx.execute(
+                "DELETE FROM workflow_iterations WHERE task_id = ?",
+                params![id],
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+            tx.execute("DELETE FROM workflow_tasks WHERE id = ?", params![id])
+                .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        }
+        tx.commit()
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        Ok(())
+    }
 }
 
 // =============================================================================

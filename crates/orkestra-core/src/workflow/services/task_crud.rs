@@ -9,7 +9,7 @@ use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
 
-use super::{workflow_warn, WorkflowApi};
+use super::WorkflowApi;
 
 impl WorkflowApi {
     /// Create a new task. Starts in the first workflow stage.
@@ -167,50 +167,28 @@ impl WorkflowApi {
 
     /// Delete a task, its subtasks, and all associated data.
     ///
-    /// If git service is configured and the task has a worktree, it will be cleaned up
-    /// along with its branch. Subtasks are deleted recursively (they inherit the parent's
-    /// worktree so no additional worktree cleanup is needed for them).
+    /// Deletes all DB records (task, subtasks, iterations, stage sessions) in a
+    /// single transaction. Git worktree cleanup is handled separately by the
+    /// orchestrator's orphaned worktree cleanup on startup.
     pub fn delete_task(&self, id: &str) -> WorkflowResult<()> {
-        // Verify task exists and get worktree info
-        let task = self.get_task(id)?;
+        // Verify task exists
+        self.get_task(id)?;
 
-        // Recursively delete subtasks first (they inherit parent's worktree)
-        let subtasks = self.store.list_subtasks(id)?;
-        for subtask in subtasks {
-            self.delete_subtask_data(&subtask.id)?;
-        }
+        // Collect all task IDs to delete (parent + subtasks recursively)
+        let mut task_ids = vec![id.to_string()];
+        self.collect_subtask_ids(id, &mut task_ids)?;
 
-        // Clean up git worktree and branch if present (only parent tasks have worktrees)
-        if let Some(git) = &self.git_service {
-            if task.worktree_path.is_some() {
-                if let Err(e) = git.remove_worktree(id, true) {
-                    workflow_warn!("Failed to remove worktree for {}: {}", id, e);
-                }
-            }
-        }
-
-        // Delete associated data
-        self.store.delete_stage_sessions(id)?;
-        self.store.delete_iterations(id)?;
-
-        // Delete task
-        self.store.delete_task(id)
+        // Delete everything in one transaction
+        self.store.delete_task_tree(&task_ids)
     }
 
-    /// Delete subtask data without worktree cleanup (subtasks share parent's worktree).
-    fn delete_subtask_data(&self, id: &str) -> WorkflowResult<()> {
-        // Recursively delete nested subtasks (if any)
-        let subtasks = self.store.list_subtasks(id)?;
-        for subtask in subtasks {
-            self.delete_subtask_data(&subtask.id)?;
+    /// Recursively collect all descendant subtask IDs.
+    fn collect_subtask_ids(&self, parent_id: &str, ids: &mut Vec<String>) -> WorkflowResult<()> {
+        for subtask in self.store.list_subtasks(parent_id)? {
+            ids.push(subtask.id.clone());
+            self.collect_subtask_ids(&subtask.id, ids)?;
         }
-
-        // Delete associated data
-        self.store.delete_stage_sessions(id)?;
-        self.store.delete_iterations(id)?;
-
-        // Delete subtask
-        self.store.delete_task(id)
+        Ok(())
     }
 }
 

@@ -83,7 +83,10 @@ impl Git2GitService {
 
     /// Get the commit OID for a branch or HEAD.
     fn get_commit_oid(&self, base_branch: Option<&str>) -> Result<Oid, GitError> {
-        let repo = self.repo.lock().expect("Repository mutex poisoned");
+        let repo = self
+            .repo
+            .lock()
+            .map_err(|_| GitError::IoError("Repository mutex poisoned".into()))?;
 
         if let Some(branch) = base_branch {
             let branch_ref = repo
@@ -108,7 +111,10 @@ impl Git2GitService {
 
     /// Create a branch from a commit OID.
     fn create_branch_from_oid(&self, branch_name: &str, commit_oid: Oid) -> Result<(), GitError> {
-        let repo = self.repo.lock().expect("Repository mutex poisoned");
+        let repo = self
+            .repo
+            .lock()
+            .map_err(|_| GitError::IoError("Repository mutex poisoned".into()))?;
         let commit = repo
             .find_commit(commit_oid)
             .map_err(|e| GitError::BranchError(format!("Failed to find commit: {e}")))?;
@@ -124,7 +130,10 @@ impl Git2GitService {
         branch_name: &str,
         worktree_path: &Path,
     ) -> Result<(), GitError> {
-        let repo = self.repo.lock().expect("Repository mutex poisoned");
+        let repo = self
+            .repo
+            .lock()
+            .map_err(|_| GitError::IoError("Repository mutex poisoned".into()))?;
 
         let branch = repo
             .find_branch(branch_name, git2::BranchType::Local)
@@ -295,7 +304,9 @@ impl GitService for Git2GitService {
     }
 
     fn worktree_exists(&self, task_id: &str) -> bool {
-        let repo = self.repo.lock().expect("Repository mutex poisoned");
+        let Ok(repo) = self.repo.lock() else {
+            return false;
+        };
         repo.find_worktree(task_id).is_ok()
     }
 
@@ -305,7 +316,10 @@ impl GitService for Git2GitService {
 
         // Prune the worktree from git
         {
-            let repo = self.repo.lock().expect("Repository mutex poisoned");
+            let repo = self
+                .repo
+                .lock()
+                .map_err(|_| GitError::IoError("Repository mutex poisoned".into()))?;
             if let Ok(worktree) = repo.find_worktree(task_id) {
                 let mut prune_opts = git2::WorktreePruneOptions::new();
                 prune_opts.valid(true);
@@ -332,7 +346,10 @@ impl GitService for Git2GitService {
     }
 
     fn detect_primary_branch(&self) -> Result<String, GitError> {
-        let repo = self.repo.lock().expect("Repository mutex poisoned");
+        let repo = self
+            .repo
+            .lock()
+            .map_err(|_| GitError::IoError("Repository mutex poisoned".into()))?;
 
         // Check if 'main' branch exists
         if repo.find_branch("main", git2::BranchType::Local).is_ok() {
@@ -557,6 +574,27 @@ impl GitService for Git2GitService {
             )));
         }
         Ok(())
+    }
+
+    fn list_worktree_names(&self) -> Result<Vec<String>, GitError> {
+        if !self.worktrees_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let entries = std::fs::read_dir(&self.worktrees_dir)
+            .map_err(|e| GitError::IoError(format!("Failed to read worktrees dir: {e}")))?;
+
+        let mut names = Vec::new();
+        for entry in entries {
+            if let Ok(entry) = entry {
+                if entry.path().is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        names.push(name.to_string());
+                    }
+                }
+            }
+        }
+        Ok(names)
     }
 }
 

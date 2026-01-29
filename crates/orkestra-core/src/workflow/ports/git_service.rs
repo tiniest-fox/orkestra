@@ -148,6 +148,12 @@ pub trait GitService: Send + Sync {
 
     /// Delete a branch (force delete with -D).
     fn delete_branch(&self, branch_name: &str) -> Result<(), GitError>;
+
+    /// List worktree directory names (task IDs) under the worktrees directory.
+    ///
+    /// Returns just the directory names (not full paths), which correspond to task IDs.
+    /// Returns an empty vec if the worktrees directory doesn't exist.
+    fn list_worktree_names(&self) -> Result<Vec<String>, GitError>;
 }
 
 // =============================================================================
@@ -316,6 +322,16 @@ pub mod mock {
 
         fn delete_branch(&self, _branch_name: &str) -> Result<(), GitError> {
             Ok(())
+        }
+
+        fn list_worktree_names(&self) -> Result<Vec<String>, GitError> {
+            Ok(self
+                .worktrees
+                .lock()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect())
         }
     }
 

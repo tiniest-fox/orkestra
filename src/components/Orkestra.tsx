@@ -55,7 +55,11 @@ export function Orkestra() {
 
   const handleDeleteTask = async (taskId: string) => {
     handleCloseSidebar();
-    await deleteTask(taskId);
+    try {
+      await deleteTask(taskId);
+    } catch (err) {
+      console.error("[handleDeleteTask] Delete failed, task will reappear:", err);
+    }
   };
 
   const handleTaskCreated = async (description: string) => {

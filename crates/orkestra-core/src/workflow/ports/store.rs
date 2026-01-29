@@ -137,6 +137,23 @@ pub trait WorkflowStore: Send + Sync {
 
     /// Delete all stage sessions for a task.
     fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()>;
+
+    // =========================================================================
+    // Bulk Operations
+    // =========================================================================
+
+    /// Delete an entire task tree (tasks, iterations, stage sessions) atomically.
+    ///
+    /// `task_ids` should include the parent task and all descendant subtask IDs.
+    /// Implementations may override to use database transactions for atomicity.
+    fn delete_task_tree(&self, task_ids: &[String]) -> WorkflowResult<()> {
+        for id in task_ids {
+            self.delete_stage_sessions(id)?;
+            self.delete_iterations(id)?;
+            self.delete_task(id)?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

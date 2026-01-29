@@ -5,7 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   LogEntry,
   WorkflowArtifact,
@@ -76,10 +76,26 @@ export function useWorkflowTasks() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<WorkflowError | null>(null);
 
+  // Track task IDs with pending deletes so polling doesn't re-add them
+  const deletingIdsRef = useRef<Set<string>>(new Set());
+
   const fetchTasks = useCallback(async () => {
     try {
       const result = await invoke<WorkflowTask[]>("workflow_get_tasks");
-      setTasks(result);
+      const deleting = deletingIdsRef.current;
+      if (deleting.size > 0) {
+        // Filter out tasks with pending deletes, and clean up IDs
+        // the backend has already removed
+        const fetched = result.filter((t) => !deleting.has(t.id));
+        for (const id of deleting) {
+          if (!result.some((t) => t.id === id)) {
+            deleting.delete(id);
+          }
+        }
+        setTasks(fetched);
+      } else {
+        setTasks(result);
+      }
       setError(null);
     } catch (err) {
       setError(parseError(err));
@@ -128,8 +144,16 @@ export function useWorkflowTasks() {
   );
 
   const deleteTask = useCallback(async (taskId: string) => {
-    await invoke<void>("workflow_delete_task", { taskId });
+    deletingIdsRef.current.add(taskId);
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    try {
+      await invoke<void>("workflow_delete_task", { taskId });
+    } catch (err) {
+      console.error(`[deleteTask] Failed to delete ${taskId}:`, err);
+      // Delete failed — stop suppressing this ID so it reappears on next poll
+      deletingIdsRef.current.delete(taskId);
+      throw err;
+    }
   }, []);
 
   const getTask = useCallback(async (taskId: string) => {

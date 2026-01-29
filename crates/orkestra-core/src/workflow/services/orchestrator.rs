@@ -188,6 +188,9 @@ impl OrchestratorLoop {
         // Recover stale agent working tasks on startup (tasks stuck in AgentWorking phase)
         self.recover_stale_agent_working_tasks();
 
+        // Clean up orphaned worktrees (from deleted tasks where git cleanup was deferred)
+        self.cleanup_orphaned_worktrees();
+
         // Recover stale integrations on startup (tasks stuck in Integrating phase)
         for event in self.recover_stale_integrations() {
             on_event(event);
@@ -645,6 +648,50 @@ impl OrchestratorLoop {
                         "[recovery] Failed to reset stale task {} to Idle: {}",
                         task.id, e
                     );
+                }
+            }
+        }
+    }
+
+    /// Clean up orphaned worktrees from deleted tasks.
+    ///
+    /// When tasks are deleted, only DB records are removed (fast path). Git worktrees
+    /// are left on disk and cleaned up here on next startup. A worktree is orphaned
+    /// if its directory name (task ID) has no matching task in the database.
+    fn cleanup_orphaned_worktrees(&self) {
+        let Ok(api) = self.api.lock() else {
+            eprintln!("[recovery] Failed to acquire API lock for orphaned worktree cleanup");
+            return;
+        };
+
+        let Some(ref git) = api.git_service else {
+            return; // No git service configured
+        };
+
+        let worktree_names = match git.list_worktree_names() {
+            Ok(names) => names,
+            Err(e) => {
+                eprintln!("[recovery] Failed to list worktree dirs: {e}");
+                return;
+            }
+        };
+
+        if worktree_names.is_empty() {
+            return;
+        }
+
+        let Ok(all_tasks) = api.store.list_tasks() else {
+            eprintln!("[recovery] Failed to list tasks for orphaned worktree cleanup");
+            return;
+        };
+
+        let task_ids: HashSet<&str> = all_tasks.iter().map(|t| t.id.as_str()).collect();
+
+        for name in &worktree_names {
+            if !task_ids.contains(name.as_str()) {
+                eprintln!("[recovery] Cleaning up orphaned worktree: {name}");
+                if let Err(e) = git.remove_worktree(name, true) {
+                    eprintln!("[recovery] Failed to clean up orphaned worktree {name}: {e}");
                 }
             }
         }

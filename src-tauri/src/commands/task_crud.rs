@@ -49,19 +49,18 @@ pub fn workflow_get_task(state: State<AppState>, task_id: String) -> Result<Task
 
 /// Delete a task, killing any running agents first.
 ///
-/// Before deleting data, terminates any running agent processes for the task
-/// and all its subtasks. Agent kill failures are logged but do not prevent deletion.
+/// Terminates running agent processes (instant signal sends), then deletes all
+/// DB records in a single transaction. Git worktree cleanup is handled in the
+/// background by the orchestrator's orphaned worktree cleanup on startup.
 #[tauri::command]
 pub fn workflow_delete_task(state: State<AppState>, task_id: String) -> Result<(), TauriError> {
     let api = state.api()?;
 
-    // Collect all task IDs to clean up (the task itself plus all subtasks)
+    // Kill running agents for the task and all subtasks (best-effort, instant)
     let task_ids = collect_task_tree_ids(&api, &task_id);
-
-    // Kill running agents for all tasks in the tree
     kill_agents_for_tasks(&api, &task_ids);
 
-    // Proceed with data cleanup (worktree, database records)
+    // Delete all DB records in a transaction — no git/filesystem work
     api.delete_task(&task_id).map_err(Into::into)
 }
 

@@ -31,6 +31,7 @@ const PROSE_CLASSES = [
   "prose-headings:mt-3 prose-headings:mb-1",
   "prose-p:my-1",
   "prose-ul:my-1 prose-ol:my-1",
+  "prose-ul:pl-[1.1em] prose-ol:pl-[1.1em]",
   "prose-li:my-0",
   "prose-pre:my-1.5",
   "prose-blockquote:my-1.5",

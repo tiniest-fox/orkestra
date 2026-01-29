@@ -230,21 +230,58 @@ Other top-level modules:
 
 ### Configurable Workflow System
 
-Tasks progress through configurable stages defined in YAML (or using the built-in default). Key concepts:
+Tasks progress through an ordered list of stages defined in `StageConfig` structs (`workflow/config/stage.rs`). The workflow is loaded from `.orkestra/workflow.yaml` by `load_workflow_for_project()` in `workflow/config/loader.rs`, falling back to `WorkflowConfig::default()` if absent.
 
-- **Stage**: A named step in the workflow (e.g., "planning", "work", "review")
-- **Artifact**: Named output from a stage (e.g., "plan", "summary")
-- **Capabilities**: What a stage can do (`ask_questions`, `produce_subtasks`, `auto_approve`)
-- **Phase**: Current execution state (`Idle`, `AgentWorking`, `AwaitingReview`, `Integrating`)
-- **Iteration**: Each agent run within a stage (rejection creates a new iteration)
+**Key domain types** (`workflow/config/`):
 
-Default workflow: `planning → work` (with optional review stages configurable via YAML)
+- **`WorkflowConfig`** (`workflow.rs`) — Ordered list of `StageConfig` plus `IntegrationConfig`. Validated on load (no forward artifact references, unique names).
+- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `inputs` (artifacts from earlier stages), `capabilities`, and either an `AgentStageConfig` or `ScriptStageConfig`.
+- **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `produce_subtasks`, `supports_restage: Vec<String>`.
+- **`AgentStageConfig`** (`stage.rs`) — Agent type name (maps to `.orkestra/agents/{agent_type}.md`), optional overrides for definition file and JSON schema file.
+- **`ScriptStageConfig`** (`stage.rs`) — Shell command, timeout, optional `on_failure` stage for recovery.
 
-Stages can be customized by placing a `workflow.yaml` file in `.orkestra/`. Each stage defines:
-- Input artifacts it needs
-- Output artifact it produces
-- Agent capabilities (can it ask questions? produce subtasks?)
-- Whether human approval is required
+**Runtime types** (`workflow/runtime/`, `workflow/domain/`):
+
+- **`Phase`** — Current execution state: `Idle`, `SettingUp`, `AgentWorking`, `AwaitingReview`, `Integrating`.
+- **`Iteration`** — Each agent/script run within a stage. Rejections create new iterations with feedback.
+- **`Artifact`** — Named output content stored on the task, keyed by artifact name.
+
+#### How Stages Execute
+
+The `OrchestratorLoop` (`workflow/services/orchestrator.rs`) runs a 100ms tick loop:
+
+1. **Poll completed executions** — `StageExecutionService` reports finished agents/scripts
+2. **Process output** — `WorkflowApi::process_agent_output()` stores the artifact and transitions the task (to `AwaitingReview` or auto-advances if `is_automated`)
+3. **Start new executions** — finds tasks in `Idle` phase with an active stage, spawns via `StageExecutionService`
+4. **Start integrations** — merges Done tasks' branches into primary (one-tick delay to avoid same-tick race)
+
+For **agent stages**, `StageExecutionService` (`workflow/services/stage_execution.rs`) delegates to `AgentExecutionService` (`workflow/services/agent_execution.rs`), which:
+- Builds a prompt via `PromptBuilder` (`workflow/execution/prompt.rs`) — loads the agent's `.md` template, injects task context and input artifacts
+- Generates a JSON schema via `generate_stage_schema()` (`prompts/mod.rs`) — composes schema components based on `StageCapabilities`
+- Spawns Claude Code with `--output-format json --json-schema <schema>`
+
+For **script stages**, `StageExecutionService` runs the command via `sh -c` in the task's worktree directory.
+
+#### JSON Schema Generation
+
+`generate_stage_schema()` in `prompts/mod.rs` builds a discriminated union schema from reusable components in `prompts/schemas/components/`:
+
+- **Always included**: `artifact.json` (produces content), `terminal.json` (failed/blocked states)
+- **If `ask_questions`**: adds `questions.json` (array of questions with options)
+- **If `produce_subtasks`**: adds `subtasks.json` (array of subtasks with dependencies)
+- **If `supports_restage` is non-empty**: adds `restage.json` (target stage + feedback)
+
+The `type` field enum is built dynamically: always `[artifact_name, "failed", "blocked"]`, plus capability-specific types. Custom schemas can override this via `schema_file` in `AgentStageConfig`.
+
+#### Adding a New Stage
+
+To add a stage to this project's workflow:
+
+1. Create a prompt template at `.orkestra/agents/{agent_type}.md`
+2. Add the stage entry to `.orkestra/workflow.yaml`
+3. No Rust changes needed — the config loader, schema generator, and orchestrator handle it generically
+
+The built-in default workflow (`WorkflowConfig::default()` in `workflow.rs`) defines: `planning → breakdown → work → review`. This project's `.orkestra/workflow.yaml` extends it to: `planning → breakdown → work → checks (script) → review → compound`.
 
 ### Agent System
 
@@ -258,6 +295,7 @@ Agent prompt templates (in `.orkestra/agents/`):
 - **breakdown.md**: Decomposes complex tasks into subtasks with dependencies
 - **worker.md**: Implements approved plan, outputs completion/failure/blocked status
 - **reviewer.md**: Reviews completed work, approves or requests changes
+- **compound.md**: Captures learnings and fixes stale documentation
 
 The prompt builder injects task context (description, artifacts, questions, feedback) into these templates.
 

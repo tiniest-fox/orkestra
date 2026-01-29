@@ -55,5 +55,15 @@ stages:
       supports_restage: [work]
     is_automated: true
 
+  # Compound: Captures learnings and updates documentation
+  # Reviews worker notes and reviewer observations, documents anything useful
+  - name: compound
+    display_name: Compounding
+    artifact: learnings
+    inputs: [summary, verdict]
+    agent:
+      agent_type: compound
+    is_automated: true
+
 integration:
   on_failure: work

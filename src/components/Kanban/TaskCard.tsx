@@ -1,21 +1,17 @@
 /**
- * Task card for the workflow system.
- * Uses WorkflowTask type with stage-agnostic display.
+ * Task card for the kanban board.
  */
 
-import type { WorkflowTask } from "../types/workflow";
-import { hasPendingQuestions, needsReview } from "../types/workflow";
-import { Panel } from "./ui";
+import type { WorkflowTask } from "../../types/workflow";
+import { hasPendingQuestions, needsReview } from "../../types/workflow";
+import { Panel } from "../ui";
 
-interface WorkflowTaskCardProps {
+interface TaskCardProps {
   task: WorkflowTask;
   onClick?: () => void;
   isSelected?: boolean;
 }
 
-/**
- * Get display title - uses title or truncated description.
- */
 function getDisplayTitle(task: WorkflowTask): string {
   if (task.title) {
     return task.title;
@@ -27,7 +23,7 @@ function getDisplayTitle(task: WorkflowTask): string {
   return `${task.description.slice(0, maxLength)}...`;
 }
 
-export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCardProps) {
+export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
   const isFailed = task.status.type === "failed";
   const isBlocked = task.status.type === "blocked";
   const isDone = task.status.type === "done";
@@ -35,11 +31,9 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
   const taskNeedsReview = needsReview(task);
   const hasQuestions = hasPendingQuestions(task);
 
-  // Show spinner if agent is running and not waiting for review/questions
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 
-  // Determine border styling based on state
-  const _borderClass = isFailed
+  const borderClass = isFailed
     ? "border-red-300 bg-red-50"
     : isBlocked
       ? "border-orange-300 bg-orange-50"
@@ -47,9 +41,8 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
         ? "border-amber-400 bg-amber-50"
         : isSelected
           ? "border-sage-500 ring-2 ring-sage-200"
-          : "border-stone-200";
+          : "";
 
-  // Get error/reason text for failed/blocked tasks
   const errorText =
     task.status.type === "failed"
       ? task.status.error
@@ -58,8 +51,8 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
         : undefined;
 
   return (
-    <Panel autoFill={false}>
-      <button onClick={onClick} type="button" className="text-left p-2">
+    <Panel autoFill={false} className={borderClass}>
+      <button onClick={onClick} type="button" className="text-left p-2 w-full">
         <div className="flex items-start justify-between gap-2">
           <h3 className="font-medium text-stone-800 text-sm">{getDisplayTitle(task)}</h3>
           <div className="flex items-center gap-1.5">

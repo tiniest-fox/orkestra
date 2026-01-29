@@ -9,7 +9,7 @@ export { Button } from "./Button";
 export { IconButton } from "./IconButton";
 export { Link } from "./Link";
 // Layout components
-export { Panel } from "./Panel";
+export { Panel } from "./Panel/Panel";
 export { PanelContainer } from "./PanelContainer";
 export { PanelSlot } from "./PanelSlot";
 export { TabbedPanel } from "./TabbedPanel";

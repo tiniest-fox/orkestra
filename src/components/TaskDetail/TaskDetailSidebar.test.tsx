@@ -4,9 +4,9 @@ import {
   createMockArtifact,
   createMockWorkflowConfig,
   createMockWorkflowTask,
-} from "../test/mocks/fixtures";
-import { mockInvoke, resetMocks } from "../test/mocks/tauri";
-import { WorkflowTaskDetailSidebar } from "./WorkflowTaskDetailSidebar";
+} from "../../test/mocks/fixtures";
+import { mockInvoke, resetMocks } from "../../test/mocks/tauri";
+import { TaskDetailSidebar } from "./TaskDetailSidebar";
 
 // Create stable mock functions outside the factory
 const mockApprove = vi.fn(() => Promise.resolve());
@@ -22,7 +22,7 @@ const mockGetLogs = vi.fn(() => Promise.resolve([]));
 const mockGetStagesWithLogs = vi.fn(() => Promise.resolve([]));
 
 // Mock the workflow hooks with stable references
-vi.mock("../hooks/useWorkflow", () => ({
+vi.mock("../../hooks/useWorkflow", () => ({
   useWorkflowActions: () => ({
     approve: mockApprove,
     reject: mockReject,
@@ -40,7 +40,7 @@ vi.mock("../hooks/useWorkflow", () => ({
   }),
 }));
 
-describe("WorkflowTaskDetailSidebar", () => {
+describe("TaskDetailSidebar", () => {
   const config = createMockWorkflowConfig();
 
   beforeEach(() => {
@@ -60,7 +60,7 @@ describe("WorkflowTaskDetailSidebar", () => {
 
     await act(async () => {
       render(
-        <WorkflowTaskDetailSidebar
+        <TaskDetailSidebar
           task={task}
           config={config}
           onClose={() => {}}
@@ -82,7 +82,7 @@ describe("WorkflowTaskDetailSidebar", () => {
 
     await act(async () => {
       render(
-        <WorkflowTaskDetailSidebar
+        <TaskDetailSidebar
           task={task}
           config={config}
           onClose={() => {}}
@@ -106,7 +106,7 @@ describe("WorkflowTaskDetailSidebar", () => {
 
     await act(async () => {
       render(
-        <WorkflowTaskDetailSidebar
+        <TaskDetailSidebar
           task={task}
           config={config}
           onClose={() => {}}
@@ -127,7 +127,7 @@ describe("WorkflowTaskDetailSidebar", () => {
 
     await act(async () => {
       render(
-        <WorkflowTaskDetailSidebar
+        <TaskDetailSidebar
           task={task}
           config={config}
           onClose={() => {}}
@@ -148,7 +148,7 @@ describe("WorkflowTaskDetailSidebar", () => {
 
     await act(async () => {
       render(
-        <WorkflowTaskDetailSidebar
+        <TaskDetailSidebar
           task={task}
           config={config}
           onClose={() => {}}
@@ -173,7 +173,7 @@ describe("WorkflowTaskDetailSidebar", () => {
 
     await act(async () => {
       render(
-        <WorkflowTaskDetailSidebar
+        <TaskDetailSidebar
           task={task}
           config={config}
           onClose={() => {}}

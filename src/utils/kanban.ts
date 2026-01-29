@@ -1,24 +1,14 @@
 /**
- * Kanban board for the workflow system.
- * Columns are generated dynamically from the workflow configuration.
+ * Kanban board utilities.
  */
 
 import type { WorkflowConfig, WorkflowTask } from "../types/workflow";
 import { capitalizeFirst, hasPendingQuestions, needsReview } from "../types/workflow";
-import { Panel, PanelContainer } from "./ui";
-import { WorkflowTaskCard } from "./WorkflowTaskCard";
-
-interface WorkflowKanbanBoardProps {
-  config: WorkflowConfig;
-  tasks: WorkflowTask[];
-  selectedTaskId?: string;
-  onSelectTask: (task: WorkflowTask) => void;
-}
 
 /**
  * Column definition for the kanban board.
  */
-interface Column {
+export interface KanbanColumn {
   /** Column identifier (stage name or "done"/"failed"/"blocked"). */
   id: string;
   /** Display label for the column header. */
@@ -45,8 +35,8 @@ const STAGE_COLORS = [
  * Build columns from workflow config.
  * Returns stage columns plus terminal state columns.
  */
-function buildColumns(config: WorkflowConfig): Column[] {
-  const columns: Column[] = [];
+export function buildColumns(config: WorkflowConfig): KanbanColumn[] {
+  const columns: KanbanColumn[] = [];
 
   // Add stage columns from config
   config.stages.forEach((stage, index) => {
@@ -70,7 +60,7 @@ function buildColumns(config: WorkflowConfig): Column[] {
 /**
  * Get tasks for a specific column.
  */
-function getTasksForColumn(tasks: WorkflowTask[], columnId: string): WorkflowTask[] {
+export function getTasksForColumn(tasks: WorkflowTask[], columnId: string): WorkflowTask[] {
   const columnTasks = tasks.filter((task) => {
     // Terminal states
     if (columnId === "done") {
@@ -112,56 +102,4 @@ function getTasksForColumn(tasks: WorkflowTask[], columnId: string): WorkflowTas
     // Sort by created_at (oldest first)
     return a.created_at.localeCompare(b.created_at);
   });
-}
-
-export function WorkflowKanbanBoard({
-  config,
-  tasks,
-  selectedTaskId,
-  onSelectTask,
-}: WorkflowKanbanBoardProps) {
-  const columns = buildColumns(config);
-
-  // Filter out subtasks (parent_id set) for main board view
-  const visibleTasks = tasks.filter((task) => !task.parent_id);
-
-  return (
-    <PanelContainer scrolls={true}>
-      {/* Left Gutter */}
-      <div></div>
-
-      {columns.map((column) => {
-        const columnTasks = getTasksForColumn(visibleTasks, column.id);
-        return (
-          <Panel key={column.id} autoFill={false} className="my-2 w-72 shrink-0">
-            <h2 className="font-heading font-medium px-4 pt-4 text-stone-700 flex items-center gap-2 flex-shrink-0">
-              <span className={`w-3 h-3 rounded-full ${column.color}`} />
-              {column.label}
-              <span className="text-stone-400 text-sm">({columnTasks.length})</span>
-            </h2>
-            <PanelContainer direction="vertical" scrolls={true} padded={true}>
-              {/* Shadow Buffer */}
-              <div></div>
-
-              {columnTasks.length === 0 ? (
-                <div className="text-stone-400 text-sm text-center py-8">No tasks</div>
-              ) : (
-                columnTasks.map((task) => (
-                  <WorkflowTaskCard
-                    key={task.id}
-                    task={task}
-                    onClick={() => onSelectTask(task)}
-                    isSelected={task.id === selectedTaskId}
-                  />
-                ))
-              )}
-            </PanelContainer>
-          </Panel>
-        );
-      })}
-
-      {/* Right Gutter */}
-      <div className="w-px"></div>
-    </PanelContainer>
-  );
 }

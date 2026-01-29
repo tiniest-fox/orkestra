@@ -185,7 +185,7 @@ export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: Task
             onClose={onClose}
           />
 
-          <TabbedPanel tabs={tabs} activeTab={activeTab} onTabChange={(tabId) => setActiveTab(tabId)} padded={true}>
+          <TabbedPanel tabs={tabs} activeTab={activeTab} onTabChange={(tabId) => setActiveTab(tabId)}>
             {activeTab === "details" && <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />}
 
             {currentTab?.type === "artifact" && currentArtifact && <ArtifactView artifact={currentArtifact} />}

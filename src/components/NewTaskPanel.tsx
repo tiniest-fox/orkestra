@@ -33,7 +33,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
   };
 
   return (
-    <Panel className="w-32">
+    <Panel>
       <Panel.Header>
         <Panel.Title>New Task</Panel.Title>
         <Panel.CloseButton onClick={onClose} />
@@ -42,9 +42,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
       <form onSubmit={handleSubmit} className="flex-1 flex flex-col">
         <Panel.Body className="flex-1" scrollable>
           {error && (
-            <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded-panel-sm text-error text-sm">
-              {error}
-            </div>
+            <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded-panel-sm text-error text-sm">{error}</div>
           )}
 
           <div>

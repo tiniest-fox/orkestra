@@ -60,21 +60,19 @@ export function TabbedPanel({
   className = "",
 }: TabbedPanelProps) {
   return (
-    <Panel variant={variant} className={className} padded={padded}>
+    <>
       {/* Optional header (title, close button, etc.) */}
       {header && <Panel.Header>{header}</Panel.Header>}
 
       {/* Tab bar */}
-      <Panel autoFill={false} className="flex items-center px-px py-0.5 overflow-x-scroll">
+      <Panel autoFill={false} className="flex items-center px-px py-0.5 overflow-x-auto">
         {tabs.map((tab) => (
           <button
             type="button"
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
             className={`px-3 mx-px py-1.5 text-sm rounded-panel font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 ${
-              activeTab === tab.id
-                ? "bg-sage-500 text-white"
-                : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
+              activeTab === tab.id ? "bg-sage-500 text-white" : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
             }`}
           >
             {tab.label}
@@ -84,7 +82,9 @@ export function TabbedPanel({
       </Panel>
 
       {/* Tab content area - scrollable */}
-      {children}
-    </Panel>
+      <Panel padded={true} scrollable={true}>
+        {children}
+      </Panel>
+    </>
   );
 }

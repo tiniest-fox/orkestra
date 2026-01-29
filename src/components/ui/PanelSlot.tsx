@@ -1,16 +1,46 @@
 /**
  * PanelSlot - Container that holds zero or one Panel, with animated transitions.
- * Uses Framer Motion for smooth enter/exit animations.
  *
- * Key behaviors:
- * - activeKey: string | null - which panel to show (null = empty/hidden)
- * - When activeKey changes from panel A → panel B: cross-fade transition
- * - When activeKey changes from panel → null: slide out
- * - When activeKey changes from null → panel: slide in
+ * Animation behavior:
+ * - Open/close and panel switches both use collapse/grow animation
+ * - mode="wait" ensures exit completes before enter (quick, snappy feel)
+ * - Nested PanelSlots skip initial animation when mounting with parent (prevents double-animation)
+ *
+ * Shadow handling:
+ * - Shadow is on the PanelSlot container (not clipped by its own overflow:hidden)
+ * - Inner panels have shadows suppressed via PanelSlotContext
+ *
+ * Provides PanelSlotContext to children with:
+ * - width: the configured panel width
+ * - suppressShadow: true
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import {
+  Children,
+  createContext,
+  isValidElement,
+  useContext,
+  useEffect,
+  useRef,
+  type ReactElement,
+  type ReactNode,
+} from "react";
+
+/** Context for panels inside a PanelSlot to access slot configuration */
+interface PanelSlotContextValue {
+  width: number;
+  suppressShadow: boolean;
+}
+
+export const PanelSlotContext = createContext<PanelSlotContextValue | null>(null);
+
+/** Hook for Panel components to access PanelSlot configuration */
+export const usePanelSlot = () => useContext(PanelSlotContext);
+
+/** Separate context for nesting detection (not reset by Panel) */
+const PanelSlotNestingContext = createContext<boolean>(false);
+const useIsNestedInPanelSlot = () => useContext(PanelSlotNestingContext);
 
 type SlotDirection = "horizontal" | "vertical";
 
@@ -31,7 +61,7 @@ interface PanelSlotPanelProps {
   children: ReactNode;
 }
 
-// Fast transition configuration
+// Quick, snappy transition
 const transitionConfig = {
   duration: 0.15,
   ease: "easeOut" as const,
@@ -59,39 +89,56 @@ export function PanelSlot({
   width = 480,
   className = "",
 }: PanelSlotProps) {
+  const isNestedInSlot = useIsNestedInPanelSlot();
+  const hasMounted = useRef(false);
+
+  // Track when this slot has mounted (for nested animation skipping)
+  useEffect(() => {
+    hasMounted.current = true;
+  }, []);
+
   // Find the active panel child
   const childArray = Children.toArray(children);
   const activeChild = childArray.find((child): child is ReactElement<PanelSlotPanelProps> => {
     return isValidElement(child) && child.props.panelKey === activeKey;
   });
 
-  // Animation variants based on direction
   const isHorizontal = direction === "horizontal";
 
+  // Container collapses/grows for both open/close and panel switches
   const variants = {
     initial: isHorizontal ? { width: 0, opacity: 0 } : { height: 0, opacity: 0 },
     animate: isHorizontal ? { width, opacity: 1 } : { height: "auto", opacity: 1 },
     exit: isHorizontal ? { width: 0, opacity: 0 } : { height: 0, opacity: 0 },
   };
 
+  // Skip initial animation if nested inside another PanelSlot and mounting together
+  // This prevents double-animation when parent sidebar opens with inner panel already active
+  const skipInitialAnimation = isNestedInSlot && !hasMounted.current;
+
+  const contextValue: PanelSlotContextValue = {
+    width,
+    suppressShadow: true, // Shadow is on PanelSlot, suppress on inner panels
+  };
+
   return (
-    <AnimatePresence mode="sync">
+    <AnimatePresence mode="wait">
       {activeKey && activeChild && (
         <motion.div
           key={activeKey}
-          initial="initial"
+          initial={skipInitialAnimation ? "animate" : "initial"}
           animate="animate"
           exit="exit"
           variants={variants}
           transition={transitionConfig}
-          className={`panel-slot-motion ${className}`}
-          style={isHorizontal ? { minWidth: 0 } : { minHeight: 0 }}
+          className={`panel-slot-motion-div flex flex-col items-stretch shadow-panel rounded-panel overflow-hidden ${className}`}
+          style={{ minWidth: 0 }}
         >
-          <div
-            className={`panel-slot h-full flex items-stretch justify-stretch ${!isHorizontal ? "flex-col" : ""}`}
-          >
-            {activeChild.props.children}
-          </div>
+          <PanelSlotNestingContext.Provider value={true}>
+            <PanelSlotContext.Provider value={contextValue}>
+              {activeChild.props.children}
+            </PanelSlotContext.Provider>
+          </PanelSlotNestingContext.Provider>
         </motion.div>
       )}
     </AnimatePresence>

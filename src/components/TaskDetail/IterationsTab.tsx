@@ -11,7 +11,7 @@ interface IterationsTabProps {
 
 export function IterationsTab({ iterations }: IterationsTabProps) {
   return (
-    <div className="flex-1 overflow-auto p-4">
+    <>
       <div className="text-sm font-medium text-stone-700 mb-4">Activity</div>
       {iterations.length === 0 ? (
         <div className="text-stone-500 text-sm">No iterations recorded yet.</div>
@@ -24,6 +24,6 @@ export function IterationsTab({ iterations }: IterationsTabProps) {
             ))}
         </div>
       )}
-    </div>
+    </>
   );
 }

@@ -13,8 +13,8 @@ interface DetailsTabProps {
 
 export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
   return (
-    <div className="flex-1 overflow-auto p-4">
-      {task.description && <p className="text-stone-600 text-sm">{task.description}</p>}
+    <>
+      {task.description && <p className="text-stone-600 text-sm whitespace-pre-wrap">{task.description}</p>}
 
       {task.status.type === "failed" && (
         <div className="mt-3 space-y-3">
@@ -24,13 +24,7 @@ export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
               <p className="text-sm text-red-800">{task.status.error}</p>
             </div>
           )}
-          <Button
-            variant="destructive"
-            fullWidth
-            onClick={onRetry}
-            disabled={isRetrying}
-            loading={isRetrying}
-          >
+          <Button variant="destructive" fullWidth onClick={onRetry} disabled={isRetrying} loading={isRetrying}>
             Retry Task
           </Button>
         </div>
@@ -42,6 +36,6 @@ export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
           <p className="text-sm text-orange-800">{task.status.reason}</p>
         </div>
       )}
-    </div>
+    </>
   );
 }

@@ -58,12 +58,7 @@ function buildTabs(task: WorkflowTask, config: WorkflowConfig): Tab[] {
   return tabs;
 }
 
-export function TaskDetailSidebar({
-  task,
-  config,
-  onClose,
-  onTaskUpdated,
-}: TaskDetailSidebarProps) {
+export function TaskDetailSidebar({ task, config, onClose, onTaskUpdated }: TaskDetailSidebarProps) {
   const [activeTab, setActiveTab] = useState("details");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -79,9 +74,7 @@ export function TaskDetailSidebar({
 
   const currentTab = tabs.find((t) => t.id === activeTab);
   const currentArtifact =
-    currentTab?.type === "artifact" && currentTab.artifactName
-      ? task.artifacts[currentTab.artifactName]
-      : null;
+    currentTab?.type === "artifact" && currentTab.artifactName ? task.artifacts[currentTab.artifactName] : null;
 
   // Fetch iterations
   const fetchIterations = useCallback(async () => {
@@ -129,9 +122,7 @@ export function TaskDetailSidebar({
   const taskNeedsReview = needsReview(task);
   const taskHasQuestions = pendingQuestions.length > 0;
   const currentStage = getTaskStage(task.status);
-  const currentStageConfig = currentStage
-    ? config.stages.find((s) => s.name === currentStage)
-    : null;
+  const currentStageConfig = currentStage ? config.stages.find((s) => s.name === currentStage) : null;
 
   const handleApprove = async () => {
     setIsSubmitting(true);
@@ -181,16 +172,12 @@ export function TaskDetailSidebar({
     }
   };
 
-  const footerPanelKey = taskHasQuestions
-    ? "questions"
-    : taskNeedsReview && currentStage
-      ? "review"
-      : null;
+  const footerPanelKey = taskHasQuestions ? "questions" : taskNeedsReview && currentStage ? "review" : null;
 
   return (
-    <PanelContainer direction="vertical">
-      <Panel>
-        <PanelContainer direction="vertical" padded={true}>
+    <Panel>
+      <PanelContainer direction="vertical" padded={true}>
+        <PanelContainer direction="vertical">
           <TaskDetailHeader
             task={task}
             hasQuestions={taskHasQuestions}
@@ -198,19 +185,10 @@ export function TaskDetailSidebar({
             onClose={onClose}
           />
 
-          <TabbedPanel
-            tabs={tabs}
-            activeTab={activeTab}
-            onTabChange={(tabId) => setActiveTab(tabId)}
-            padded={true}
-          >
-            {activeTab === "details" && (
-              <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />
-            )}
+          <TabbedPanel tabs={tabs} activeTab={activeTab} onTabChange={(tabId) => setActiveTab(tabId)} padded={true}>
+            {activeTab === "details" && <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />}
 
-            {currentTab?.type === "artifact" && currentArtifact && (
-              <ArtifactView artifact={currentArtifact} />
-            )}
+            {currentTab?.type === "artifact" && currentArtifact && <ArtifactView artifact={currentArtifact} />}
 
             {activeTab === "iterations" && <IterationsTab iterations={iterations} />}
 
@@ -228,26 +206,26 @@ export function TaskDetailSidebar({
             )}
           </TabbedPanel>
         </PanelContainer>
-      </Panel>
 
-      <PanelSlot activeKey={footerPanelKey} direction="vertical">
-        <PanelSlot.Panel panelKey="questions">
-          <QuestionFormPanel
-            questions={pendingQuestions}
-            onSubmit={handleAnswerQuestions}
-            isSubmitting={isSubmitting}
-          />
-        </PanelSlot.Panel>
+        <PanelSlot activeKey={footerPanelKey} direction="vertical">
+          <PanelSlot.Panel panelKey="questions">
+            <QuestionFormPanel
+              questions={pendingQuestions}
+              onSubmit={handleAnswerQuestions}
+              isSubmitting={isSubmitting}
+            />
+          </PanelSlot.Panel>
 
-        <PanelSlot.Panel panelKey="review">
-          <ReviewPanel
-            stageName={currentStageConfig?.display_name || currentStage || ""}
-            onApprove={handleApprove}
-            onReject={handleReject}
-            isSubmitting={isSubmitting}
-          />
-        </PanelSlot.Panel>
-      </PanelSlot>
-    </PanelContainer>
+          <PanelSlot.Panel panelKey="review">
+            <ReviewPanel
+              stageName={currentStageConfig?.display_name || currentStage || ""}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              isSubmitting={isSubmitting}
+            />
+          </PanelSlot.Panel>
+        </PanelSlot>
+      </PanelContainer>
+    </Panel>
   );
 }

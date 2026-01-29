@@ -46,7 +46,7 @@ export function PanelContainer({
 
   return (
     <div
-      className={`panel-container flex ${extraClasses.join(" ")} h-full ${className}`}
+      className={`panel-container flex flex-1 ${extraClasses.join(" ")} h-full ${className ? className : ""}`}
       style={{ gap: `${gap}px` }}
     >
       {children}

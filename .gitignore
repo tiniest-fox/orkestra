@@ -48,7 +48,8 @@ coverage/
 .orkestra/tasks.db*
 .orkestra/workflow.db*
 .orkestra/tasks.jsonl
-.orkestra/worktrees/
+.orkestra/worktrees
+.orkestra/worktrees/**/*
 .orkestra/script_logs/
 .orkestra/*.md
 

@@ -4,16 +4,20 @@
  *
  * By default, panels fill their container height (h-full) and use flex column layout.
  * This makes them work correctly inside PanelContainer and PanelSlot without extra styling.
+ *
+ * When used inside a PanelSlot, shadows are automatically suppressed (PanelSlot handles them).
+ * Panel resets the PanelSlot context so nested Panels have normal shadows and sizing.
  */
 
 import type { ReactNode } from "react";
+import { PanelSlotContext, usePanelSlot } from "../PanelSlot";
 import { PanelBody } from "./PanelBody";
 import { PanelCloseButton } from "./PanelCloseButton";
 import { PanelFooter } from "./PanelFooter";
 import { PanelHeader } from "./PanelHeader";
 import { PanelTitle } from "./PanelTitle";
 
-type PanelVariant = "default" | "elevated";
+type PanelVariant = "default" | "elevated" | "flat";
 type PanelAccent = "none" | "info" | "warning";
 
 interface PanelProps {
@@ -25,11 +29,13 @@ interface PanelProps {
   autoFill?: boolean;
   /** Additional CSS classes for custom styling */
   className?: string;
+  scrollable?: boolean;
 }
 
 const variantStyles: Record<PanelVariant, string> = {
   default: "shadow-panel",
   elevated: "shadow-panel-elevated",
+  flat: "",
 };
 
 const accentStyles: Record<PanelAccent, string> = {
@@ -48,16 +54,26 @@ function PanelRoot({
   autoFill = true,
   className = "",
   padded = false,
+  scrollable = false,
 }: PanelProps) {
+  const slotContext = usePanelSlot();
+
+  // When inside a PanelSlot: suppress shadows (slot handles them) and use slot's width
+  const effectiveVariant = slotContext?.suppressShadow ? "flat" : variant;
+
   let extraClasses = autoFill ? "grow shrink basis-0 flex flex-col" : "";
-  if (padded) extraClasses += " p-2";
+  if (padded) extraClasses += " p-4";
+  extraClasses += scrollable ? " overflow-y-auto overflow-x-hidden" : " overflow-hidden";
 
   return (
-    <div
-      className={`panel rounded-panel ${variantStyles[variant]} ${accentStyles[accent]} overflow-hidden ${extraClasses} ${className}`}
-    >
-      {children}
-    </div>
+    <PanelSlotContext.Provider value={null}>
+      <div
+        className={`panel rounded-panel ${variantStyles[effectiveVariant]} ${accentStyles[accent]} ${extraClasses} ${className}`}
+        style={slotContext?.width ? { width: slotContext.width } : undefined}
+      >
+        {children}
+      </div>
+    </PanelSlotContext.Provider>
   );
 }
 

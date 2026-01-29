@@ -38,7 +38,7 @@ export function LogsTab({
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="border-panel -m-4">
       {stagesWithLogs.length > 0 && (
         <div className="flex-shrink-0 flex gap-1 p-2 border-b border-stone-700 bg-stone-800">
           {stagesWithLogs.map((stage) => {
@@ -52,9 +52,7 @@ export function LogsTab({
                 type="button"
                 onClick={() => handleStageClick(stage)}
                 className={`px-3 py-1 text-xs rounded-panel-sm capitalize flex items-center gap-1.5 transition-colors ${
-                  isActiveTab
-                    ? "bg-sage-600 text-white"
-                    : "bg-stone-700 text-stone-300 hover:bg-stone-600"
+                  isActiveTab ? "bg-sage-600 text-white" : "bg-stone-700 text-stone-300 hover:bg-stone-600"
                 }`}
               >
                 {stage}

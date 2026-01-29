@@ -325,7 +325,7 @@ fn init_workflow_api() -> Result<WorkflowApi, String> {
         find_project_root().map_err(|e| format!("Failed to find project root: {e}"))?;
 
     let orkestra_dir = project_root.join(".orkestra");
-    let db_path = orkestra_dir.join("workflow.db");
+    let db_path = orkestra_dir.join("orkestra.db");
 
     // Create .orkestra directory if it doesn't exist
     if !orkestra_dir.exists() {

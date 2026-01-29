@@ -258,7 +258,7 @@ pub fn run_startup() -> StartupResult {
     }
 
     // Step 5: Open database and create AppState (runs migrations)
-    let db_path = orkestra_dir.join("workflow.db");
+    let db_path = orkestra_dir.join("orkestra.db");
     let app_state = match AppState::new(workflow_config, &db_path, project_root.clone()) {
         Ok(state) => state,
         Err(e) => {

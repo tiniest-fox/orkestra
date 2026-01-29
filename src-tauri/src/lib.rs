@@ -265,7 +265,7 @@ fn cleanup_agents_standalone() {
         return;
     };
 
-    let db_path = project_root.join(".orkestra/workflow.db");
+    let db_path = project_root.join(".orkestra/orkestra.db");
     if !db_path.exists() {
         return;
     }

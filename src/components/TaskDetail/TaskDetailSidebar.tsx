@@ -91,7 +91,6 @@ function smartDefaultTab(task: WorkflowTask, tabs: Tab[]): string {
   return tabIds.has(preferred) ? preferred : "details";
 }
 
-
 export function TaskDetailSidebar({
   task,
   config,

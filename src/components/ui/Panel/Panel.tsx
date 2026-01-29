@@ -6,7 +6,7 @@
  * This makes them work correctly inside PanelContainer and PanelSlot without extra styling.
  *
  * When used inside a PanelSlot, shadows are automatically suppressed (PanelSlot handles them).
- * Panel resets the PanelSlot context so nested Panels have normal shadows and sizing.
+ * Panel resets the PanelSlot context so nested Panels have normal shadows.
  */
 
 import type { ReactNode } from "react";
@@ -40,7 +40,7 @@ const variantStyles: Record<PanelVariant, string> = {
 
 const accentStyles: Record<PanelAccent, string> = {
   none: "bg-white",
-  info: "border-2 border-info-500 bg-info-50/30",
+  info: "bg-gradient-to-br from-info-50 to-info-100",
   warning: "bg-gradient-to-br from-warning-50 to-warning-100",
 };
 
@@ -58,7 +58,7 @@ function PanelRoot({
 }: PanelProps) {
   const slotContext = usePanelSlot();
 
-  // When inside a PanelSlot: suppress shadows (slot handles them) and use slot's width
+  // When inside a PanelSlot: suppress shadows (slot handles them)
   const effectiveVariant = slotContext?.suppressShadow ? "flat" : variant;
 
   let extraClasses = autoFill ? "grow shrink basis-0 flex flex-col" : "";
@@ -69,7 +69,6 @@ function PanelRoot({
     <PanelSlotContext.Provider value={null}>
       <div
         className={`panel rounded-panel ${variantStyles[effectiveVariant]} ${accentStyles[accent]} ${extraClasses} ${className}`}
-        style={slotContext?.width ? { width: slotContext.width } : undefined}
       >
         {children}
       </div>

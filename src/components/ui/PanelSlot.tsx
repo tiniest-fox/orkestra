@@ -11,25 +11,14 @@
  * - Inner panels have shadows suppressed via PanelSlotContext
  *
  * Provides PanelSlotContext to children with:
- * - width: the configured panel width
  * - suppressShadow: true
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  Children,
-  createContext,
-  isValidElement,
-  type ReactElement,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useRef,
-} from "react";
+import { Children, createContext, isValidElement, type ReactElement, type ReactNode, useContext, useRef } from "react";
 
 /** Context for panels inside a PanelSlot to access slot configuration */
 interface PanelSlotContextValue {
-  width: number;
   suppressShadow: boolean;
 }
 
@@ -50,8 +39,6 @@ interface PanelSlotProps {
   children: ReactNode;
   /** Animation direction: horizontal (slide left/right) or vertical (slide up/down) */
   direction?: SlotDirection;
-  /** Width when expanded (for horizontal slots), default 480px */
-  width?: number;
   className?: string;
 }
 
@@ -82,20 +69,9 @@ const transitionConfig = {
  * </PanelSlot>
  * ```
  */
-export function PanelSlot({
-  activeKey,
-  children,
-  direction = "horizontal",
-  width = 480,
-  className = "",
-}: PanelSlotProps) {
+export function PanelSlot({ activeKey, children, direction = "horizontal", className = "" }: PanelSlotProps) {
   const isNestedInSlot = useIsNestedInPanelSlot();
-  const hasMounted = useRef(false);
-
-  // Track when this slot has mounted (for nested animation skipping)
-  useEffect(() => {
-    hasMounted.current = true;
-  }, []);
+  const mountTime = useRef(performance.now());
 
   // Find the active panel child
   const childArray = Children.toArray(children);
@@ -108,16 +84,18 @@ export function PanelSlot({
   // Container collapses/grows for both open/close and panel switches
   const variants = {
     initial: isHorizontal ? { width: 0, opacity: 0 } : { height: 0, opacity: 0 },
-    animate: isHorizontal ? { width, opacity: 1 } : { height: "auto", opacity: 1 },
+    animate: isHorizontal ? { width: "auto", opacity: 1 } : { height: "auto", opacity: 1 },
     exit: isHorizontal ? { width: 0, opacity: 0 } : { height: 0, opacity: 0 },
   };
 
-  // Skip initial animation if nested inside another PanelSlot and mounting together
-  // This prevents double-animation when parent sidebar opens with inner panel already active
-  const skipInitialAnimation = isNestedInSlot && !hasMounted.current;
+  // Skip animation if nested and parent is likely still animating.
+  // Uses a time window (matching parent transition duration) instead of a single-frame check,
+  // so panels that activate shortly after mount (e.g. async data) also skip.
+  // TODO: Fix this, we should have all the data necessary on first load to avoid flashing, etc.
+  const parentAnimationMs = transitionConfig.duration * 1000;
+  const skipInitialAnimation = isNestedInSlot && performance.now() - mountTime.current < parentAnimationMs;
 
   const contextValue: PanelSlotContextValue = {
-    width,
     suppressShadow: true, // Shadow is on PanelSlot, suppress on inner panels
   };
 
@@ -135,9 +113,7 @@ export function PanelSlot({
           style={{ minWidth: 0 }}
         >
           <PanelSlotNestingContext.Provider value={true}>
-            <PanelSlotContext.Provider value={contextValue}>
-              {activeChild.props.children}
-            </PanelSlotContext.Provider>
+            <PanelSlotContext.Provider value={contextValue}>{activeChild.props.children}</PanelSlotContext.Provider>
           </PanelSlotNestingContext.Provider>
         </motion.div>
       )}

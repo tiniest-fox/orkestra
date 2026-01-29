@@ -17,29 +17,16 @@ export function Orkestra() {
   const [sidebarView, setSidebarView] = useState<SidebarView>({ type: "none" });
 
   const { config, loading: configLoading, error: configError } = useWorkflowConfig();
-  const {
-    tasks,
-    loading: tasksLoading,
-    error: tasksError,
-    createTask,
-    deleteTask,
-    refetch,
-  } = useWorkflowTasks();
+  const { tasks, loading: tasksLoading, error: tasksError, createTask, deleteTask, refetch } = useWorkflowTasks();
 
   const loading = configLoading || tasksLoading;
   const error = configError || tasksError;
 
   const currentSelectedTask =
-    sidebarView.type === "task"
-      ? tasks.find((t) => t.id === sidebarView.task.id) || sidebarView.task
-      : null;
+    sidebarView.type === "task" ? tasks.find((t) => t.id === sidebarView.task.id) || sidebarView.task : null;
 
   const sidebarActiveKey =
-    sidebarView.type === "create"
-      ? "create"
-      : sidebarView.type === "task"
-        ? `task-${currentSelectedTask?.id}`
-        : null;
+    sidebarView.type === "create" ? "create" : sidebarView.type === "task" ? `task-${currentSelectedTask?.id}` : null;
 
   const handleSelectTask = (task: WorkflowTask) => {
     setSidebarView({ type: "task", task });
@@ -72,8 +59,8 @@ export function Orkestra() {
   };
 
   return (
-    <div className="w-screen h-screen bg-stone-100 flex flex-col items-stretch p-4 gap-4">
-      <div className="flex items-center justify-between px-2 flex-shrink-0">
+    <div className="w-screen h-screen bg-stone-100 flex flex-col items-stretch p-4 gap-4 overflow-hidden">
+      <div className="flex items-center justify-between px-2 flex-shrink-0 overflow-hidden">
         <Panel.Title>Orkestra</Panel.Title>
         <Button onClick={handleOpenCreatePanel}>+ New Task</Button>
       </div>

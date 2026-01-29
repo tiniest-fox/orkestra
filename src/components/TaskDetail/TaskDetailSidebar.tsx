@@ -216,7 +216,7 @@ export function TaskDetailSidebar({
       : null;
 
   return (
-    <Panel>
+    <Panel className="w-[480px]">
       <PanelContainer direction="vertical" padded={true}>
         <PanelContainer direction="vertical">
           <TaskDetailHeader

@@ -3,7 +3,8 @@
  */
 
 import type { WorkflowConfig, WorkflowTask } from "../types/workflow";
-import { capitalizeFirst, hasPendingQuestions, needsReview } from "../types/workflow";
+import { hasPendingQuestions, needsReview } from "../types/workflow";
+import { titleCase } from "./formatters";
 
 /**
  * Column definition for the kanban board.
@@ -42,7 +43,7 @@ export function buildColumns(config: WorkflowConfig): KanbanColumn[] {
   config.stages.forEach((stage, index) => {
     columns.push({
       id: stage.name,
-      label: stage.display_name || capitalizeFirst(stage.name),
+      label: stage.display_name || titleCase(stage.name),
       color: STAGE_COLORS[index % STAGE_COLORS.length],
     });
   });

@@ -3,6 +3,18 @@
  */
 
 /**
+ * Convert a snake_case string to Title Case.
+ * e.g. "breaking_down" -> "Breaking Down", "planning" -> "Planning"
+ */
+export function titleCase(str: string): string {
+  if (!str) return str;
+  return str
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/**
  * Format file path for display (truncate long paths).
  */
 export function formatPath(path: string): string {

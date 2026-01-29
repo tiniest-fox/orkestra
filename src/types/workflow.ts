@@ -384,11 +384,3 @@ export function hasPendingQuestions(task: WorkflowTask): boolean {
 export function getArtifactContent(task: WorkflowTask, name: string): string | undefined {
   return task.artifacts?.[name]?.content;
 }
-
-/**
- * Capitalize the first letter of a string.
- */
-export function capitalizeFirst(str: string): string {
-  if (!str) return str;
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}

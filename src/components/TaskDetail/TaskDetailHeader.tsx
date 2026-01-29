@@ -3,7 +3,7 @@
  */
 
 import type { WorkflowTask } from "../../types/workflow";
-import { capitalizeFirst } from "../../types/workflow";
+import { titleCase } from "../../utils/formatters";
 import { Badge, Panel } from "../ui";
 
 interface TaskDetailHeaderProps {
@@ -30,10 +30,10 @@ export function TaskDetailHeader({
 
   const statusLabel =
     task.status.type === "active"
-      ? capitalizeFirst(task.status.stage)
+      ? titleCase(task.status.stage)
       : task.status.type === "waiting_on_children"
         ? "Waiting"
-        : capitalizeFirst(task.status.type);
+        : titleCase(task.status.type);
 
   return (
     <div className="flex flex-col items-stretch pt-1 pb-2 px-2">

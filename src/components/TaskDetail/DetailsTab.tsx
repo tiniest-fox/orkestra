@@ -13,7 +13,7 @@ interface DetailsTabProps {
 
 export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
   return (
-    <>
+    <div className="p-4">
       {task.description && <p className="text-stone-600 text-sm whitespace-pre-wrap">{task.description}</p>}
 
       {task.status.type === "failed" && (
@@ -36,6 +36,6 @@ export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
           <p className="text-sm text-orange-800">{task.status.reason}</p>
         </div>
       )}
-    </>
+    </div>
   );
 }

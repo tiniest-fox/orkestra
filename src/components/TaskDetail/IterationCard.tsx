@@ -3,7 +3,7 @@
  */
 
 import type { WorkflowIteration } from "../../types/workflow";
-import { capitalizeFirst } from "../../types/workflow";
+import { titleCase } from "../../utils/formatters";
 import { formatTimestamp } from "../../utils/formatters";
 
 interface IterationCardProps {
@@ -51,7 +51,7 @@ export function IterationCard({ iteration }: IterationCardProps) {
       <div className="px-3 py-2 flex items-center justify-between border-b border-stone-100">
         <div className="flex items-center gap-2">
           <span className={`font-medium ${isActive ? "text-sage-700" : "text-stone-800"}`}>
-            {capitalizeFirst(iteration.stage)} #{iteration.iteration_number}
+            {titleCase(iteration.stage)} #{iteration.iteration_number}
           </span>
           {isActive && (
             <span className="flex items-center gap-1 text-xs text-sage-600">

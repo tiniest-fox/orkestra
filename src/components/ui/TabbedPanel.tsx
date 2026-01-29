@@ -6,7 +6,7 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Panel } from "./Panel";
 
 const contentTransition = {
@@ -80,6 +80,7 @@ export function TabbedPanel({
 }: TabbedPanelProps) {
   // Direction is set in click handler BEFORE activeTab changes,
   // so AnimatePresence sees the correct direction when processing the key change.
+  const layoutId = useId();
   const [direction, setDirection] = useState(1);
 
   function handleTabChange(tabId: string) {
@@ -95,7 +96,7 @@ export function TabbedPanel({
       {header && <Panel.Header>{header}</Panel.Header>}
 
       {/* Tab bar */}
-      <Panel autoFill={false} className="flex items-center px-px py-0.5 overflow-x-auto">
+      <Panel autoFill={false} className="tabs flex items-center px-px py-0.5 overflow-x-auto">
         {tabs.map((tab) => (
           <button
             type="button"
@@ -108,7 +109,7 @@ export function TabbedPanel({
             {/* Animated highlight - only rendered in active tab */}
             {activeTab === tab.id && (
               <motion.div
-                layoutId="tab-highlight"
+                layoutId={`${layoutId}-tab-highlight`}
                 className="absolute inset-0 bg-sage-500 rounded-panel"
                 transition={{ type: "spring", bounce: 0.15, duration: 0.25 }}
               />
@@ -126,7 +127,7 @@ export function TabbedPanel({
       </Panel>
 
       {/* Tab content area - scrollable with directional slide animation */}
-      <Panel padded={false} scrollable={false} className="overflow-hidden">
+      <Panel padded={false} scrollable={false} className="tab-content overflow-hidden">
         <div className="grid h-full" style={{ gridTemplate: "1fr / 1fr" }}>
           <AnimatePresence initial={false} mode="sync" custom={direction}>
             <motion.div
@@ -137,7 +138,7 @@ export function TabbedPanel({
               animate="center"
               exit="exit"
               transition={contentTransition}
-              className="p-4 overflow-y-auto overflow-x-hidden"
+              className="overflow-y-auto overflow-x-hidden flex flex-col items-stretch"
               style={{ gridArea: "1 / 1" }}
             >
               {children}

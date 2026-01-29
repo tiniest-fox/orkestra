@@ -12,7 +12,8 @@ import type {
   WorkflowQuestionAnswer,
   WorkflowTask,
 } from "../../types/workflow";
-import { capitalizeFirst, getTaskStage, needsReview } from "../../types/workflow";
+import { getTaskStage, needsReview } from "../../types/workflow";
+import { titleCase } from "../../utils/formatters";
 import { Panel, PanelContainer, PanelSlot, TabbedPanel } from "../ui";
 import { ArtifactView } from "./ArtifactView";
 import { DetailsTab } from "./DetailsTab";
@@ -48,7 +49,7 @@ function buildTabs(task: WorkflowTask, config: WorkflowConfig): Tab[] {
     if (task.artifacts[artifactName]) {
       tabs.push({
         id: `artifact-${artifactName}`,
-        label: capitalizeFirst(artifactName),
+        label: titleCase(artifactName),
         type: "artifact",
         artifactName,
       });

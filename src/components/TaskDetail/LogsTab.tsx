@@ -1,11 +1,14 @@
 /**
- * Logs tab - displays session logs with stage switching.
+ * Logs tab - displays session logs with stage switching via TabbedPanel.
  */
 
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import type { LogEntry, WorkflowTask } from "../../types/workflow";
 import { getTaskStage } from "../../types/workflow";
+import { titleCase } from "../../utils/formatters";
+import { TabbedPanel } from "../ui";
 import { LogList } from "../Logs";
+import { Panel, PanelContainer } from "../ui";
 
 interface LogsTabProps {
   task: WorkflowTask;
@@ -30,48 +33,42 @@ export function LogsTab({
 }: LogsTabProps) {
   const { containerRef, handleScroll } = useAutoScroll<HTMLDivElement>([logs], true);
 
-  const handleStageClick = (stage: string) => {
-    if (stage !== activeLogStage) {
-      onResetAutoScroll();
-      onStageChange(stage);
+  const currentStage = getTaskStage(task.status);
+
+  const tabs = stagesWithLogs.map((stage) => ({
+    id: stage,
+    label: titleCase(stage),
+    indicator:
+      stage === currentStage && task.phase === "agent_working" ? (
+        <span className="w-1.5 h-1.5 bg-sage-400 rounded-full animate-pulse" />
+      ) : undefined,
+  }));
+
+  const handleTabChange = (tabId: string) => {
+    if (tabId !== activeLogStage) {
+      onStageChange(tabId);
     }
   };
 
   return (
-    <div className="border-panel -m-4">
-      {stagesWithLogs.length > 0 && (
-        <div className="flex-shrink-0 flex gap-1 p-2 border-b border-stone-700 bg-stone-800">
-          {stagesWithLogs.map((stage) => {
-            const currentStage = getTaskStage(task.status);
-            const isCurrentStage = stage === currentStage;
-            const isActiveTab = activeLogStage === stage;
-
-            return (
-              <button
-                key={stage}
-                type="button"
-                onClick={() => handleStageClick(stage)}
-                className={`px-3 py-1 text-xs rounded-panel-sm capitalize flex items-center gap-1.5 transition-colors ${
-                  isActiveTab ? "bg-sage-600 text-white" : "bg-stone-700 text-stone-300 hover:bg-stone-600"
-                }`}
-              >
-                {stage}
-                {isCurrentStage && task.phase === "agent_working" && (
-                  <span className="w-1.5 h-1.5 bg-sage-400 rounded-full animate-pulse" />
-                )}
-              </button>
-            );
-          })}
-        </div>
+    <PanelContainer direction="vertical" padded={true}>
+      {tabs.length > 0 && activeLogStage && (
+        <TabbedPanel tabs={tabs} activeTab={activeLogStage} onTabChange={handleTabChange}>
+          <div
+            ref={containerRef}
+            onScroll={handleScroll}
+            className="h-full p-4 overflow-auto bg-stone-900 font-mono text-sm"
+          >
+            <LogList logs={logs} isLoading={isLoading} error={error} />
+          </div>
+        </TabbedPanel>
       )}
 
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-auto p-4 bg-stone-900 font-mono text-sm"
-      >
-        <LogList logs={logs} isLoading={isLoading} error={error} />
-      </div>
-    </div>
+      {(tabs.length === 0 || !activeLogStage) && (
+        <div className="p-4 bg-stone-900 font-mono text-sm flex-1">
+          <LogList logs={logs} isLoading={isLoading} error={error} />
+        </div>
+      )}
+    </PanelContainer>
   );
 }

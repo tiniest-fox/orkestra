@@ -51,10 +51,7 @@ export default {
       },
       boxShadow: {
         // Soft, diffuse shadows with multiple layers for a "growing out of background" effect
-        'panel': '0 1px 2px rgb(0 0 0 / 0.04), 0 2px 4px rgb(0 0 0 / 0.04), 0 4px 8px rgb(0 0 0 / 0.04), 0 8px 16px rgb(0 0 0 / 0.04), 0 16px 32px rgb(0 0 0 / 0.04)',
-        'panel-elevated': '0 1px 2px rgb(0 0 0 / 0.05), 0 2px 4px rgb(0 0 0 / 0.05), 0 4px 8px rgb(0 0 0 / 0.05), 0 8px 16px rgb(0 0 0 / 0.05), 0 16px 32px rgb(0 0 0 / 0.05), 0 32px 64px rgb(0 0 0 / 0.05)',
-        // Vignette effect for panel containers - subtle inset shadow
-        'panel-container-vignette': 'inset 0 0 80px -30px rgb(0 0 0 / 0.08)',
+        'panel': '0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);',
       },
     },
   },

@@ -14,6 +14,7 @@ type PanelAccent = "none" | "info" | "warning";
 interface PanelProps {
   children: ReactNode;
   variant?: PanelVariant;
+  padded?: boolean;
   accent?: PanelAccent;
   /** Set to false to disable auto-fill behavior (h-full flex flex-col) */
   autoFill?: boolean;
@@ -54,9 +55,9 @@ const variantStyles: Record<PanelVariant, string> = {
 };
 
 const accentStyles: Record<PanelAccent, string> = {
-  none: "",
+  none: "bg-white",
   info: "border-2 border-info bg-blue-50/30",
-  warning: "border-2 border-warning bg-amber-50/30",
+  warning: "bg-gradient-to-br from-amber-50 to-amber-100",
 };
 
 /**
@@ -68,12 +69,14 @@ export function Panel({
   accent = "none",
   autoFill = true,
   className = "",
+  padded = false,
 }: PanelProps) {
-  const fillClass = autoFill ? "h-full flex flex-col" : "";
+  let extraClasses = autoFill ? "grow shrink basis-0 flex flex-col" : "";
+  if (padded) extraClasses += " p-2";
 
   return (
     <div
-      className={`bg-white rounded-panel ${variantStyles[variant]} ${accentStyles[accent]} overflow-hidden ${fillClass} ${className}`}
+      className={`panel rounded-panel ${variantStyles[variant]} ${accentStyles[accent]} overflow-hidden ${extraClasses} ${className}`}
     >
       {children}
     </div>

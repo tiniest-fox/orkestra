@@ -5,6 +5,7 @@
 
 import type { WorkflowTask } from "../types/workflow";
 import { hasPendingQuestions, needsReview } from "../types/workflow";
+import { Panel } from "./ui";
 
 interface WorkflowTaskCardProps {
   task: WorkflowTask;
@@ -38,7 +39,7 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 
   // Determine border styling based on state
-  const borderClass = isFailed
+  const _borderClass = isFailed
     ? "border-red-300 bg-red-50"
     : isBlocked
       ? "border-orange-300 bg-orange-50"
@@ -57,55 +58,53 @@ export function WorkflowTaskCard({ task, onClick, isSelected }: WorkflowTaskCard
         : undefined;
 
   return (
-    <button
-      className={`bg-white rounded-panel-sm shadow-panel border p-4 ${borderClass} cursor-pointer hover:shadow-panel-elevated transition-shadow text-left w-full`}
-      onClick={onClick}
-      type="button"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="font-medium text-stone-800 text-sm">{getDisplayTitle(task)}</h3>
-        <div className="flex items-center gap-1.5">
-          {taskNeedsReview && (
-            <span className="flex-shrink-0 text-amber-700 text-xs font-medium px-1.5 py-0.5 bg-amber-100 rounded-full">
-              Review
-            </span>
-          )}
-          {hasQuestions && !taskNeedsReview && (
-            <span className="flex-shrink-0 text-info text-xs font-medium px-1.5 py-0.5 bg-blue-100 rounded-full">
-              Questions
-            </span>
-          )}
-          {showSpinner && (
-            <span className="flex-shrink-0 w-4 h-4 border-2 border-sage-500 border-t-transparent rounded-full animate-spin" />
-          )}
-          {isFailed && <span className="flex-shrink-0 text-error font-bold">!</span>}
-          {isBlocked && <span className="flex-shrink-0 text-blocked font-bold">||</span>}
+    <Panel autoFill={false}>
+      <button onClick={onClick} type="button" className="text-left p-2">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="font-medium text-stone-800 text-sm">{getDisplayTitle(task)}</h3>
+          <div className="flex items-center gap-1.5">
+            {taskNeedsReview && (
+              <span className="flex-shrink-0 text-amber-700 text-xs font-medium px-1.5 py-0.5 bg-amber-100 rounded-full">
+                Review
+              </span>
+            )}
+            {hasQuestions && !taskNeedsReview && (
+              <span className="flex-shrink-0 text-info text-xs font-medium px-1.5 py-0.5 bg-blue-100 rounded-full">
+                Questions
+              </span>
+            )}
+            {showSpinner && (
+              <span className="flex-shrink-0 w-4 h-4 border-2 border-sage-500 border-t-transparent rounded-full animate-spin" />
+            )}
+            {isFailed && <span className="flex-shrink-0 text-error font-bold">!</span>}
+            {isBlocked && <span className="flex-shrink-0 text-blocked font-bold">||</span>}
+          </div>
         </div>
-      </div>
 
-      {task.description && task.title && (
-        <p className="text-stone-500 text-xs mt-1 line-clamp-2">{task.description}</p>
-      )}
+        {task.description && task.title && (
+          <p className="text-stone-500 text-xs mt-1 line-clamp-2">{task.description}</p>
+        )}
 
-      <div className="mt-3">
-        <span className="text-stone-400 text-xs font-mono">{task.id}</span>
-      </div>
-
-      {errorText && (isFailed || isBlocked) && (
-        <p
-          className={`text-xs mt-2 p-2 rounded-panel-sm ${
-            isFailed ? "text-error bg-red-100" : "text-blocked bg-orange-100"
-          }`}
-        >
-          {isFailed ? errorText : `Blocked: ${errorText}`}
-        </p>
-      )}
-
-      {isDone && Object.keys(task.artifacts ?? {}).length > 0 && (
-        <div className="text-stone-500 text-xs mt-2">
-          {Object.keys(task.artifacts ?? {}).length} artifact(s)
+        <div className="mt-3">
+          <span className="text-stone-400 text-xs font-mono">{task.id}</span>
         </div>
-      )}
-    </button>
+
+        {errorText && (isFailed || isBlocked) && (
+          <p
+            className={`text-xs mt-2 p-2 rounded-panel-sm ${
+              isFailed ? "text-error bg-red-100" : "text-blocked bg-orange-100"
+            }`}
+          >
+            {isFailed ? errorText : `Blocked: ${errorText}`}
+          </p>
+        )}
+
+        {isDone && Object.keys(task.artifacts ?? {}).length > 0 && (
+          <div className="text-stone-500 text-xs mt-2">
+            {Object.keys(task.artifacts ?? {}).length} artifact(s)
+          </div>
+        )}
+      </button>
+    </Panel>
   );
 }

@@ -17,7 +17,7 @@ import type {
 } from "../types/workflow";
 import { capitalizeFirst, getTaskStage, needsReview } from "../types/workflow";
 import { LogList } from "./LogEntryView";
-import { Badge, Button, Panel, PanelSlot } from "./ui";
+import { Badge, Button, Panel, PanelContainer, PanelSlot, TabbedPanel } from "./ui";
 
 /**
  * Tab definition for the sidebar.
@@ -314,40 +314,38 @@ function ReviewPanel({
   };
 
   return (
-    <Panel accent="warning" autoFill={false} className="m-2 mt-0">
-      <div className="p-4">
-        <div className="text-sm font-medium text-warning mb-3">
-          {capitalizeFirst(stageName)} Review
-        </div>
-        <textarea
-          value={feedback}
-          onChange={(e) => setFeedback(e.target.value)}
-          placeholder="Leave feedback to request changes..."
-          className="w-full px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-warning resize-none mb-3 text-stone-800"
-          rows={2}
-        />
-        {feedback.trim() ? (
-          <Button
-            onClick={handleReject}
-            disabled={isSubmitting}
-            loading={isSubmitting}
-            fullWidth
-            className="bg-warning hover:bg-amber-600 text-white"
-          >
-            Request Changes
-          </Button>
-        ) : (
-          <Button
-            onClick={onApprove}
-            disabled={isSubmitting}
-            loading={isSubmitting}
-            fullWidth
-            className="bg-success hover:bg-emerald-600 text-white"
-          >
-            Approve
-          </Button>
-        )}
+    <Panel accent="warning" autoFill={false} padded={true}>
+      <div className="text-sm font-medium text-warning mb-3">
+        {capitalizeFirst(stageName)} Review
       </div>
+      <textarea
+        value={feedback}
+        onChange={(e) => setFeedback(e.target.value)}
+        placeholder="Leave feedback to request changes..."
+        className="w-full px-3 py-2 text-sm border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-warning resize-none mb-3 text-stone-800"
+        rows={2}
+      />
+      {feedback.trim() ? (
+        <Button
+          onClick={handleReject}
+          disabled={isSubmitting}
+          loading={isSubmitting}
+          fullWidth
+          className="bg-warning hover:bg-amber-600 text-white"
+        >
+          Request Changes
+        </Button>
+      ) : (
+        <Button
+          onClick={onApprove}
+          disabled={isSubmitting}
+          loading={isSubmitting}
+          fullWidth
+          className="bg-success hover:bg-emerald-600 text-white"
+        >
+          Approve
+        </Button>
+      )}
     </Panel>
   );
 }
@@ -680,161 +678,149 @@ export function WorkflowTaskDetailSidebar({
       : null;
 
   return (
-    <Panel variant="elevated">
-      {/* Header */}
-      <div className="flex-shrink-0 p-4">
-        {/* Top row: Title and close button */}
-        <div className="flex items-start justify-between gap-2">
-          <h2 className="font-heading font-semibold text-lg text-stone-800 line-clamp-2">
-            {task.title}
-          </h2>
-          <Panel.CloseButton onClick={onClose} />
-        </div>
-        {/* Bottom row: ID and badges */}
-        <div className="flex items-center gap-2 mt-2 flex-wrap">
-          <span className="font-mono text-sm text-stone-500">{task.id}</span>
-          <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
-          {taskHasQuestions && <Badge variant="info">Questions</Badge>}
-          {taskNeedsReview && <Badge variant="warning">Review</Badge>}
-        </div>
-      </div>
+    <PanelContainer direction="vertical">
+      <Panel>
+        <PanelContainer direction="vertical" padded={true}>
+          {/* Header */}
+          {/* Top row: Title and close button */}
+          <div className="flex flex-col items-stretch pt-1 pb-2 px-2">
+            <div className="flex items-start justify-between gap-2">
+              <h2 className="font-heading font-semibold text-lg text-stone-800 line-clamp-1">
+                {task.title}
+              </h2>
+              <Panel.CloseButton onClick={onClose} />
+            </div>
+            {/* Bottom row: ID and badges */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono text-sm text-stone-500">{task.id}</span>
+              <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
+              {taskHasQuestions && <Badge variant="info">Questions</Badge>}
+              {taskNeedsReview && <Badge variant="warning">Review</Badge>}
+            </div>
+          </div>
 
-      {/* Tab Bar */}
-      <div className="flex-shrink-0 flex overflow-x-auto bg-stone-100">
-        {tabs.map((tab) => (
-          <button
-            type="button"
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 ${
-              activeTab === tab.id
-                ? "bg-stone-100 text-stone-900 border-b-2 border-sage-500"
-                : "text-stone-600 hover:text-stone-900 hover:bg-stone-50"
-            }`}
+          {/* Tab Bar */}
+          <TabbedPanel
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={(tabId) => setActiveTab(tabId)}
+            padded={true}
           >
-            {tab.label}
-            {tab.id === "logs" && task.phase === "agent_working" && (
-              <span className="w-2 h-2 bg-sage-500 rounded-full animate-pulse" />
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Content */}
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Details Tab */}
-        {activeTab === "details" && (
-          <div className="flex-1 overflow-auto p-4">
-            {task.description && <p className="text-stone-600 text-sm">{task.description}</p>}
-            {task.status.type === "failed" && (
-              <div className="mt-3 space-y-3">
-                {task.status.error && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-panel-sm">
-                    <div className="text-xs font-medium text-error mb-1">Error</div>
-                    <p className="text-sm text-red-800">{task.status.error}</p>
+            {/* Details Tab */}
+            {activeTab === "details" && (
+              <div className="flex-1 overflow-auto p-4">
+                {task.description && <p className="text-stone-600 text-sm">{task.description}</p>}
+                {task.status.type === "failed" && (
+                  <div className="mt-3 space-y-3">
+                    {task.status.error && (
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-panel-sm">
+                        <div className="text-xs font-medium text-error mb-1">Error</div>
+                        <p className="text-sm text-red-800">{task.status.error}</p>
+                      </div>
+                    )}
+                    <Button
+                      variant="destructive"
+                      fullWidth
+                      onClick={handleRetry}
+                      disabled={isRetrying}
+                      loading={isRetrying}
+                    >
+                      Retry Task
+                    </Button>
                   </div>
                 )}
-                <Button
-                  variant="destructive"
-                  fullWidth
-                  onClick={handleRetry}
-                  disabled={isRetrying}
-                  loading={isRetrying}
+                {task.status.type === "blocked" && task.status.reason && (
+                  <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-panel-sm">
+                    <div className="text-xs font-medium text-blocked mb-1">Blocked</div>
+                    <p className="text-sm text-orange-800">{task.status.reason}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Artifact Tab */}
+            {currentTab?.type === "artifact" && currentArtifact && (
+              <div className="flex-1 overflow-auto p-4">
+                <div className="text-xs text-stone-500 mb-2">
+                  Stage: {currentArtifact.stage} | Iteration: {currentArtifact.iteration} |{" "}
+                  {formatTimestamp(currentArtifact.created_at)}
+                </div>
+                <div className="prose prose-sm max-w-none prose-headings:text-stone-800 prose-p:text-stone-700 prose-li:text-stone-700 prose-code:bg-stone-100 prose-code:px-1 prose-code:rounded prose-pre:bg-stone-100 prose-pre:text-stone-800">
+                  <ReactMarkdown>{currentArtifact.content}</ReactMarkdown>
+                </div>
+              </div>
+            )}
+
+            {/* Iterations Tab */}
+            {activeTab === "iterations" && (
+              <div className="flex-1 overflow-auto p-4">
+                <div className="text-sm font-medium text-stone-700 mb-4">Activity</div>
+                {iterations.length === 0 ? (
+                  <div className="text-stone-500 text-sm">No iterations recorded yet.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {[...iterations]
+                      .sort((a, b) => a.started_at.localeCompare(b.started_at))
+                      .map((iteration) => (
+                        <IterationCard key={iteration.id} iteration={iteration} />
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Logs Tab */}
+            {activeTab === "logs" && (
+              <div className="flex-1 flex flex-col min-h-0">
+                {/* Stage tab bar */}
+                {stagesWithLogs.length > 0 && (
+                  <div className="flex-shrink-0 flex gap-1 p-2 border-b border-stone-700 bg-stone-800">
+                    {stagesWithLogs.map((stage) => {
+                      const currentStage = getTaskStage(task.status);
+                      const isCurrentStage = stage === currentStage;
+                      const isActiveTab = activeLogStage === stage;
+
+                      return (
+                        <button
+                          key={stage}
+                          type="button"
+                          onClick={() => {
+                            if (stage !== activeLogStage) {
+                              setLogsError(null);
+                              setLogs([]);
+                              setActiveLogStage(stage);
+                              isAutoScrollEnabledRef.current = true;
+                            }
+                          }}
+                          className={`px-3 py-1 text-xs rounded-panel-sm capitalize flex items-center gap-1.5 transition-colors ${
+                            isActiveTab
+                              ? "bg-sage-600 text-white"
+                              : "bg-stone-700 text-stone-300 hover:bg-stone-600"
+                          }`}
+                        >
+                          {stage}
+                          {isCurrentStage && task.phase === "agent_working" && (
+                            <span className="w-1.5 h-1.5 bg-sage-400 rounded-full animate-pulse" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Log list */}
+                <div
+                  ref={logsContainerRef}
+                  onScroll={handleLogsScroll}
+                  className="flex-1 overflow-auto p-4 bg-stone-900 font-mono text-sm"
                 >
-                  Retry Task
-                </Button>
+                  <LogList logs={logs} isLoading={logsLoading} error={logsError} />
+                </div>
               </div>
             )}
-            {task.status.type === "blocked" && task.status.reason && (
-              <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-panel-sm">
-                <div className="text-xs font-medium text-blocked mb-1">Blocked</div>
-                <p className="text-sm text-orange-800">{task.status.reason}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Artifact Tab */}
-        {currentTab?.type === "artifact" && currentArtifact && (
-          <div className="flex-1 overflow-auto p-4">
-            <div className="text-xs text-stone-500 mb-2">
-              Stage: {currentArtifact.stage} | Iteration: {currentArtifact.iteration} |{" "}
-              {formatTimestamp(currentArtifact.created_at)}
-            </div>
-            <div className="prose prose-sm max-w-none prose-headings:text-stone-800 prose-p:text-stone-700 prose-li:text-stone-700 prose-code:bg-stone-100 prose-code:px-1 prose-code:rounded prose-pre:bg-stone-100 prose-pre:text-stone-800">
-              <ReactMarkdown>{currentArtifact.content}</ReactMarkdown>
-            </div>
-          </div>
-        )}
-
-        {/* Iterations Tab */}
-        {activeTab === "iterations" && (
-          <div className="flex-1 overflow-auto p-4">
-            <div className="text-sm font-medium text-stone-700 mb-4">Activity</div>
-            {iterations.length === 0 ? (
-              <div className="text-stone-500 text-sm">No iterations recorded yet.</div>
-            ) : (
-              <div className="space-y-4">
-                {[...iterations]
-                  .sort((a, b) => a.started_at.localeCompare(b.started_at))
-                  .map((iteration) => (
-                    <IterationCard key={iteration.id} iteration={iteration} />
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Logs Tab */}
-        {activeTab === "logs" && (
-          <div className="flex-1 flex flex-col min-h-0">
-            {/* Stage tab bar */}
-            {stagesWithLogs.length > 0 && (
-              <div className="flex-shrink-0 flex gap-1 p-2 border-b border-stone-700 bg-stone-800">
-                {stagesWithLogs.map((stage) => {
-                  const currentStage = getTaskStage(task.status);
-                  const isCurrentStage = stage === currentStage;
-                  const isActiveTab = activeLogStage === stage;
-
-                  return (
-                    <button
-                      key={stage}
-                      type="button"
-                      onClick={() => {
-                        if (stage !== activeLogStage) {
-                          setLogsError(null);
-                          setLogs([]);
-                          setActiveLogStage(stage);
-                          isAutoScrollEnabledRef.current = true;
-                        }
-                      }}
-                      className={`px-3 py-1 text-xs rounded-panel-sm capitalize flex items-center gap-1.5 transition-colors ${
-                        isActiveTab
-                          ? "bg-sage-600 text-white"
-                          : "bg-stone-700 text-stone-300 hover:bg-stone-600"
-                      }`}
-                    >
-                      {stage}
-                      {isCurrentStage && task.phase === "agent_working" && (
-                        <span className="w-1.5 h-1.5 bg-sage-400 rounded-full animate-pulse" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Log list */}
-            <div
-              ref={logsContainerRef}
-              onScroll={handleLogsScroll}
-              className="flex-1 overflow-auto p-4 bg-stone-900 font-mono text-sm"
-            >
-              <LogList logs={logs} isLoading={logsLoading} error={logsError} />
-            </div>
-          </div>
-        )}
-      </div>
+          </TabbedPanel>
+        </PanelContainer>
+      </Panel>
 
       {/* Footer slot for Questions or Review panel */}
       <PanelSlot activeKey={footerPanelKey} direction="vertical">
@@ -855,6 +841,6 @@ export function WorkflowTaskDetailSidebar({
           />
         </PanelSlot.Panel>
       </PanelSlot>
-    </Panel>
+    </PanelContainer>
   );
 }

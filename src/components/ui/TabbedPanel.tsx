@@ -26,6 +26,7 @@ interface TabbedPanelProps {
   children: ReactNode;
   /** Panel variant */
   variant?: "default" | "elevated";
+  padded?: boolean;
   className?: string;
 }
 
@@ -55,34 +56,35 @@ export function TabbedPanel({
   onTabChange,
   children,
   variant = "default",
+  padded = false,
   className = "",
 }: TabbedPanelProps) {
   return (
-    <Panel variant={variant} className={className}>
+    <Panel variant={variant} className={className} padded={padded}>
       {/* Optional header (title, close button, etc.) */}
       {header && <Panel.Header>{header}</Panel.Header>}
 
       {/* Tab bar */}
-      <div className="flex-shrink-0 flex overflow-x-auto bg-stone-100">
+      <Panel autoFill={false} className="flex items-center px-px py-0.5 overflow-x-scroll">
         {tabs.map((tab) => (
           <button
             type="button"
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-3 mx-px py-1.5 text-sm rounded-panel font-medium transition-colors whitespace-nowrap flex items-center gap-1.5 ${
               activeTab === tab.id
-                ? "bg-stone-100 text-stone-900 border-b-2 border-sage-500"
-                : "text-stone-600 hover:text-stone-900 hover:bg-stone-50"
+                ? "bg-sage-500 text-white"
+                : "text-stone-600 hover:text-stone-900 hover:bg-stone-100"
             }`}
           >
             {tab.label}
             {tab.indicator}
           </button>
         ))}
-      </div>
+      </Panel>
 
       {/* Tab content area - scrollable */}
-      <div className="flex-1 overflow-auto">{children}</div>
+      {children}
     </Panel>
   );
 }

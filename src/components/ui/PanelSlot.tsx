@@ -84,10 +84,12 @@ export function PanelSlot({
           exit="exit"
           variants={variants}
           transition={transitionConfig}
-          className={`overflow-hidden flex-shrink-0 ${className}`}
+          className={`panel-slot-motion ${className}`}
           style={isHorizontal ? { minWidth: 0 } : { minHeight: 0 }}
         >
-          <div className="h-full" style={isHorizontal ? { width: `${width}px` } : undefined}>
+          <div
+            className={`panel-slot h-full flex items-stretch justify-stretch ${!isHorizontal ? "flex-col" : ""}`}
+          >
             {activeChild.props.children}
           </div>
         </motion.div>

@@ -55,42 +55,38 @@ export function Orkestra() {
   };
 
   return (
-    <div className="h-screen bg-stone-100 flex flex-col p-4 gap-4">
+    <div className="w-screen h-screen bg-stone-100 flex flex-col items-stretch p-4 gap-4">
       {/* Header as standalone Panel */}
-      <Panel autoFill={false}>
-        <Panel.Header>
-          <Panel.Title>Orkestra</Panel.Title>
-          <Button onClick={handleOpenCreatePanel}>+ New Task</Button>
-        </Panel.Header>
-      </Panel>
+      <div className="flex items-center justify-between px-2 flex-shrink-0">
+        <Panel.Title>Orkestra</Panel.Title>
+        <Button onClick={handleOpenCreatePanel}>+ New Task</Button>
+      </div>
 
       {/* Main content area - PanelContainer auto-fills with flex-1 */}
       <PanelContainer>
         {/* Main content panel (Kanban board) */}
-        <div className="flex-1 min-w-0">
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-panel text-error">
-              Error loading tasks: {error.message}
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-panel text-error">
+            Error loading tasks: {error.message}
+          </div>
+        )}
+        {loading || !config ? (
+          <Panel>
+            <div className="flex items-center justify-center h-64">
+              <div className="text-stone-500">Loading...</div>
             </div>
-          )}
-          {loading || !config ? (
-            <Panel>
-              <div className="flex items-center justify-center h-64">
-                <div className="text-stone-500">Loading...</div>
-              </div>
-            </Panel>
-          ) : (
-            <TasksPanel
-              config={config}
-              tasks={tasks}
-              selectedTaskId={currentSelectedTask?.id}
-              onSelectTask={handleSelectTask}
-            />
-          )}
-        </div>
+          </Panel>
+        ) : (
+          <TasksPanel
+            config={config}
+            tasks={tasks}
+            selectedTaskId={currentSelectedTask?.id}
+            onSelectTask={handleSelectTask}
+          />
+        )}
 
         {/* Sidebar slot for create/detail panels */}
-        <PanelSlot activeKey={sidebarActiveKey} width={480}>
+        <PanelSlot activeKey={sidebarActiveKey}>
           <PanelSlot.Panel panelKey="create">
             <NewTaskPanel onClose={handleCloseSidebar} onSubmit={handleTaskCreated} />
           </PanelSlot.Panel>

@@ -5,7 +5,7 @@
 
 import type { WorkflowConfig, WorkflowTask } from "../types/workflow";
 import { capitalizeFirst, hasPendingQuestions, needsReview } from "../types/workflow";
-import { Panel } from "./ui";
+import { Panel, PanelContainer } from "./ui";
 import { WorkflowTaskCard } from "./WorkflowTaskCard";
 
 interface WorkflowKanbanBoardProps {
@@ -126,47 +126,42 @@ export function WorkflowKanbanBoard({
   const visibleTasks = tasks.filter((task) => !task.parent_id);
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-1 overflow-x-auto overflow-y-hidden">
-        <div className="flex gap-4 pt-6 pb-6 h-full">
-          {/* Left padding spacer */}
-          <div className="flex-shrink-0 w-2" aria-hidden="true" />
+    <PanelContainer scrolls={true}>
+      {/* Left Gutter */}
+      <div></div>
 
-          {columns.map((column) => {
-            const columnTasks = getTasksForColumn(visibleTasks, column.id);
-            return (
-              <Panel
-                key={column.id}
-                autoFill={false}
-                className="flex-shrink-0 w-72 p-4 h-full bg-stone-50"
-              >
-                <h2 className="font-heading font-medium text-stone-700 mb-4 flex items-center gap-2 flex-shrink-0">
-                  <span className={`w-3 h-3 rounded-full ${column.color}`} />
-                  {column.label}
-                  <span className="text-stone-400 text-sm">({columnTasks.length})</span>
-                </h2>
-                <div className="space-y-3 overflow-y-auto flex-1">
-                  {columnTasks.length === 0 ? (
-                    <div className="text-stone-400 text-sm text-center py-8">No tasks</div>
-                  ) : (
-                    columnTasks.map((task) => (
-                      <WorkflowTaskCard
-                        key={task.id}
-                        task={task}
-                        onClick={() => onSelectTask(task)}
-                        isSelected={task.id === selectedTaskId}
-                      />
-                    ))
-                  )}
-                </div>
-              </Panel>
-            );
-          })}
+      {columns.map((column) => {
+        const columnTasks = getTasksForColumn(visibleTasks, column.id);
+        return (
+          <Panel key={column.id} autoFill={false} className="my-2 w-72 shrink-0">
+            <h2 className="font-heading font-medium px-4 pt-4 text-stone-700 flex items-center gap-2 flex-shrink-0">
+              <span className={`w-3 h-3 rounded-full ${column.color}`} />
+              {column.label}
+              <span className="text-stone-400 text-sm">({columnTasks.length})</span>
+            </h2>
+            <PanelContainer direction="vertical" scrolls={true} padded={true}>
+              {/* Shadow Buffer */}
+              <div></div>
 
-          {/* Right padding spacer */}
-          <div className="flex-shrink-0 w-2" aria-hidden="true" />
-        </div>
-      </div>
-    </div>
+              {columnTasks.length === 0 ? (
+                <div className="text-stone-400 text-sm text-center py-8">No tasks</div>
+              ) : (
+                columnTasks.map((task) => (
+                  <WorkflowTaskCard
+                    key={task.id}
+                    task={task}
+                    onClick={() => onSelectTask(task)}
+                    isSelected={task.id === selectedTaskId}
+                  />
+                ))
+              )}
+            </PanelContainer>
+          </Panel>
+        );
+      })}
+
+      {/* Right Gutter */}
+      <div className="w-px"></div>
+    </PanelContainer>
   );
 }

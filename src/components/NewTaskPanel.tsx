@@ -33,7 +33,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
   };
 
   return (
-    <Panel variant="elevated">
+    <Panel className="w-32">
       <Panel.Header>
         <Panel.Title>New Task</Panel.Title>
         <Panel.CloseButton onClick={onClose} />

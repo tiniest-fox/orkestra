@@ -17,14 +17,12 @@ interface TasksPanelProps {
 export function TasksPanel({ config, tasks, selectedTaskId, onSelectTask }: TasksPanelProps) {
   return (
     <Panel>
-      <div className="flex-1 overflow-hidden">
-        <WorkflowKanbanBoard
-          config={config}
-          tasks={tasks}
-          selectedTaskId={selectedTaskId}
-          onSelectTask={onSelectTask}
-        />
-      </div>
+      <WorkflowKanbanBoard
+        config={config}
+        tasks={tasks}
+        selectedTaskId={selectedTaskId}
+        onSelectTask={onSelectTask}
+      />
     </Panel>
   );
 }

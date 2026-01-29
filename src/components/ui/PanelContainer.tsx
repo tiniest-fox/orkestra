@@ -15,8 +15,11 @@ type Direction = "horizontal" | "vertical";
 interface PanelContainerProps {
   children: ReactNode;
   direction?: Direction;
+  scrolls?: boolean;
+  className?: string;
   /** Gap between panels in pixels (default: 16) */
   gap?: number;
+  padded?: boolean;
 }
 
 /**
@@ -30,17 +33,23 @@ interface PanelContainerProps {
 export function PanelContainer({
   children,
   direction = "horizontal",
-  gap = 16,
+  gap = 8,
+  scrolls = false,
+  className = undefined,
+  padded = false,
 }: PanelContainerProps) {
-  const directionClass = direction === "horizontal" ? "flex-row" : "flex-col";
+  let extraClasses = direction === "horizontal" ? ["flex-row"] : ["flex-col"];
+  extraClasses = extraClasses.concat(
+    scrolls ? (direction === "horizontal" ? ["overflow-x-scroll"] : ["overflow-y-scroll"]) : [],
+  );
+  extraClasses = extraClasses.concat(padded ? ["p-2"] : []);
 
   return (
-    // Outer wrapper: applies vignette and handles overflow for child shadows
-    // Uses negative margin to extend into parent padding, with matching padding to maintain spacing
-    <div className="flex-1 -m-2 p-2 rounded-panel shadow-panel-container-vignette overflow-visible">
-      <div className={`flex ${directionClass} h-full`} style={{ gap: `${gap}px` }}>
-        {children}
-      </div>
+    <div
+      className={`panel-container flex ${extraClasses.join(" ")} h-full ${className}`}
+      style={{ gap: `${gap}px` }}
+    >
+      {children}
     </div>
   );
 }

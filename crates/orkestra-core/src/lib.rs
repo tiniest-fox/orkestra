@@ -21,9 +21,9 @@ pub mod testutil;
 pub use error::{OrkestraError, Result};
 
 // Title generation
-pub use title::{generate_title_sync, ClaudeTitleGenerator, TitleGenerator};
 #[cfg(any(test, feature = "testutil"))]
 pub use title::mock::MockTitleGenerator;
+pub use title::{generate_title_sync, ClaudeTitleGenerator, TitleGenerator};
 
 // Process infrastructure re-exports
 pub use process::{

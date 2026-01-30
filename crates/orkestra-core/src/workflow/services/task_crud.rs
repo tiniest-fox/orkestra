@@ -193,7 +193,11 @@ impl WorkflowApi {
     }
 
     /// Recursively collect all descendant subtask IDs.
-    pub(crate) fn collect_subtask_ids(&self, parent_id: &str, ids: &mut Vec<String>) -> WorkflowResult<()> {
+    pub(crate) fn collect_subtask_ids(
+        &self,
+        parent_id: &str,
+        ids: &mut Vec<String>,
+    ) -> WorkflowResult<()> {
         for subtask in self.store.list_subtasks(parent_id)? {
             ids.push(subtask.id.clone());
             self.collect_subtask_ids(&subtask.id, ids)?;

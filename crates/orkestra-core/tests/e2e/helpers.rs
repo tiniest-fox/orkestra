@@ -9,7 +9,6 @@ use std::time::Duration;
 use tempfile::TempDir;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
-use orkestra_core::MockTitleGenerator;
 use orkestra_core::workflow::{
     config::WorkflowConfig,
     domain::{Question, Task},
@@ -17,6 +16,7 @@ use orkestra_core::workflow::{
     runtime::Phase,
     MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService, WorkflowApi,
 };
+use orkestra_core::MockTitleGenerator;
 
 // =============================================================================
 // TestEnv — Unified Test Environment
@@ -481,11 +481,13 @@ pub mod workflows {
     pub fn sleep_script() -> WorkflowConfig {
         WorkflowConfig {
             version: 1,
-            stages: vec![StageConfig::new("work", "output").with_script(ScriptStageConfig {
-                command: "sleep 60".into(),
-                timeout_seconds: 120,
-                on_failure: None,
-            })],
+            stages: vec![
+                StageConfig::new("work", "output").with_script(ScriptStageConfig {
+                    command: "sleep 60".into(),
+                    timeout_seconds: 120,
+                    on_failure: None,
+                }),
+            ],
             integration: IntegrationConfig::default(),
         }
     }
@@ -497,11 +499,13 @@ pub mod workflows {
     pub fn instant_script() -> WorkflowConfig {
         WorkflowConfig {
             version: 1,
-            stages: vec![StageConfig::new("work", "output").with_script(ScriptStageConfig {
-                command: "echo hello".into(),
-                timeout_seconds: 10,
-                on_failure: None,
-            })],
+            stages: vec![
+                StageConfig::new("work", "output").with_script(ScriptStageConfig {
+                    command: "echo hello".into(),
+                    timeout_seconds: 10,
+                    on_failure: None,
+                }),
+            ],
             integration: IntegrationConfig::default(),
         }
     }

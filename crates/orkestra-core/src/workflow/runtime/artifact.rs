@@ -60,7 +60,6 @@ impl Artifact {
         self.iteration = iteration;
         self
     }
-
 }
 
 /// Collection of artifacts for a task.

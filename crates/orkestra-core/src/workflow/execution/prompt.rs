@@ -415,7 +415,10 @@ pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>)
             return Some(custom_schema);
         }
         // Fall through to dynamic generation if custom file not found
-        crate::orkestra_debug!("prompt", "Custom schema file '{schema_file}' not found, using generated schema");
+        crate::orkestra_debug!(
+            "prompt",
+            "Custom schema file '{schema_file}' not found, using generated schema"
+        );
     }
 
     // Generate schema dynamically based on stage config

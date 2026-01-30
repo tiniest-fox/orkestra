@@ -8,10 +8,11 @@ mod state;
 
 use orkestra_core::{
     find_project_root, orkestra_debug,
-    workflow::{load_workflow_for_project, OrchestratorLoop},
+    workflow::{load_workflow_for_project, OrchestratorLoop, Phase},
 };
 use startup::{run_startup, StartupState};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_notification::NotificationExt;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -31,7 +32,10 @@ static INITIALIZATION_STARTED: AtomicBool = AtomicBool::new(false);
 fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<OrchestratorStopFlag>) {
     // Prevent multiple initialization calls (e.g., from React StrictMode double-mount)
     if INITIALIZATION_STARTED.swap(true, Ordering::SeqCst) {
-        orkestra_debug!("startup", "Initialization already started, ignoring duplicate call");
+        orkestra_debug!(
+            "startup",
+            "Initialization already started, ignoring duplicate call"
+        );
         return;
     }
 
@@ -106,7 +110,10 @@ fn start_workflow_orchestrator(
                 stage,
                 pid,
             } => {
-                orkestra_debug!("orchestrator", "Spawned {stage} agent for {task_id} (pid: {pid})");
+                orkestra_debug!(
+                    "orchestrator",
+                    "Spawned {stage} agent for {task_id} (pid: {pid})"
+                );
                 let _ = app_handle.emit("task-updated", task_id);
             }
             orkestra_core::workflow::OrchestratorEvent::OutputProcessed {
@@ -119,6 +126,7 @@ fn start_workflow_orchestrator(
                     "Processed {output_type} output from {stage} for {task_id}"
                 );
                 let _ = app_handle.emit("task-updated", task_id);
+                notify_if_review_needed(&app_handle, task_id, stage, output_type);
             }
             orkestra_core::workflow::OrchestratorEvent::Error { task_id, error } => {
                 orkestra_debug!("orchestrator", "Error: {error}");
@@ -127,7 +135,10 @@ fn start_workflow_orchestrator(
                 }
             }
             orkestra_core::workflow::OrchestratorEvent::IntegrationStarted { task_id, branch } => {
-                orkestra_debug!("orchestrator", "Starting integration for {task_id} (branch: {branch})");
+                orkestra_debug!(
+                    "orchestrator",
+                    "Starting integration for {task_id} (branch: {branch})"
+                );
                 let _ = app_handle.emit("task-updated", task_id);
             }
             orkestra_core::workflow::OrchestratorEvent::IntegrationCompleted { task_id } => {
@@ -175,6 +186,58 @@ fn start_workflow_orchestrator(
 
         orkestra_debug!("orchestrator", "Stopped");
     });
+}
+
+// =============================================================================
+// Desktop Notifications
+// =============================================================================
+
+/// Send a desktop notification when a task needs human attention.
+///
+/// Fires for `OutputProcessed` events where the task has entered `AwaitingReview`.
+/// This naturally excludes auto-mode tasks (they skip `AwaitingReview`) and
+/// terminal outputs (failed/blocked don't enter `AwaitingReview`).
+fn notify_if_review_needed(app_handle: &AppHandle, task_id: &str, stage: &str, output_type: &str) {
+    // Only notify for output types that require human action
+    let needs_notification = matches!(output_type, "questions" | "artifact" | "subtasks");
+    if !needs_notification {
+        return;
+    }
+
+    // Look up the task to check phase and get the title.
+    // Best-effort: skip notification if state is unavailable or lock is poisoned.
+    let Some(app_state) = app_handle.try_state::<state::AppState>() else {
+        return;
+    };
+    let Ok(api) = app_state.api() else {
+        return;
+    };
+    let Ok(task) = api.get_task(task_id) else {
+        return;
+    };
+    // Release the lock before sending the notification
+    drop(api);
+
+    if task.phase != Phase::AwaitingReview {
+        return;
+    }
+
+    let body = if output_type == "questions" {
+        "Has questions that need to be answered".to_string()
+    } else {
+        format!("Has a {stage} ready for review")
+    };
+
+    let result = app_handle
+        .notification()
+        .builder()
+        .title(&task.title)
+        .body(&body)
+        .show();
+
+    if let Err(e) = result {
+        orkestra_debug!("notification", "Failed to send notification: {e}");
+    }
 }
 
 // =============================================================================
@@ -316,6 +379,7 @@ pub fn run() {
     let startup_state = StartupState::initializing();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .manage(startup_state)
         .setup(move |app| {

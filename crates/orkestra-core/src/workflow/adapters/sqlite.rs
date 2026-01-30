@@ -904,14 +904,23 @@ mod tests {
             &store,
             "t1",
             "work",
-            &[("plan", "The plan", "planning"), ("summary", "Done", "work")],
+            &[
+                ("plan", "The plan", "planning"),
+                ("summary", "Done", "work"),
+            ],
         )
         .unwrap();
         sessions::save_completed_session(&store, "s1", "t1", "planning").unwrap();
         sessions::save_session(&store, "s2", "t1", "work").unwrap();
         iterations::save_approved_iteration(&store, "i1", "t1", "planning", 1, "s1").unwrap();
         iterations::save_rejected_iteration(
-            &store, "i2", "t1", "planning", 2, "s1", "needs more detail",
+            &store,
+            "i2",
+            "t1",
+            "planning",
+            2,
+            "s1",
+            "needs more detail",
         )
         .unwrap();
         iterations::save_iteration(&store, "i3", "t1", "work", 1, "s2").unwrap();
@@ -986,9 +995,7 @@ mod tests {
         iterations::save_iteration(&store, "id", "delete-me", "planning", 1, "sd").unwrap();
 
         // Delete only one
-        store
-            .delete_task_tree(&["delete-me".to_string()])
-            .unwrap();
+        store.delete_task_tree(&["delete-me".to_string()]).unwrap();
 
         // Deleted task is gone
         assert!(store.get_task("delete-me").unwrap().is_none());

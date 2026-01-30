@@ -40,8 +40,14 @@ impl AppState {
         let (conn, recovered) =
             DatabaseConnection::open_validated(db_path).map_err(|e| e.to_string())?;
         if recovered {
-            orkestra_debug!("startup", "Database was corrupted — started with a fresh database");
-            orkestra_debug!("startup", "Previous database preserved as .corrupt file for inspection");
+            orkestra_debug!(
+                "startup",
+                "Database was corrupted — started with a fresh database"
+            );
+            orkestra_debug!(
+                "startup",
+                "Previous database preserved as .corrupt file for inspection"
+            );
         }
 
         // Create workflow store with shared connection

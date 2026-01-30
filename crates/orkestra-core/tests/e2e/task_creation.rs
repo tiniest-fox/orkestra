@@ -21,7 +21,10 @@ fn test_task_creation_creates_worktree() {
     let task = ctx.create_task("Test worktree", "Verify worktree creation", None);
 
     // Branch should be created
-    let branch = task.branch_name.as_ref().expect("Task should have a branch");
+    let branch = task
+        .branch_name
+        .as_ref()
+        .expect("Task should have a branch");
     assert!(
         branch.starts_with("task/"),
         "Branch should follow task/{{id}} pattern, got: {branch}"
@@ -42,7 +45,11 @@ fn test_task_creation_creates_worktree() {
 fn test_task_creation_sets_base_branch() {
     let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
 
-    let task = ctx.create_task("Base branch test", "Verify base branch defaults to main", None);
+    let task = ctx.create_task(
+        "Base branch test",
+        "Verify base branch defaults to main",
+        None,
+    );
 
     assert_eq!(
         task.base_branch.as_deref(),
@@ -63,7 +70,11 @@ fn test_task_creation_from_specific_branch() {
         .expect("Should create feature branch");
 
     // Create task from the feature branch
-    let task = ctx.create_task("From feature", "Task based on feature branch", Some("feature"));
+    let task = ctx.create_task(
+        "From feature",
+        "Task based on feature branch",
+        Some("feature"),
+    );
 
     assert_eq!(
         task.base_branch.as_deref(),
@@ -125,11 +136,7 @@ fn test_setup_script_failure_fails_task() {
 
     // Write a setup script that exits with error
     let script_path = ctx.repo_path().join(".orkestra/worktree_setup.sh");
-    std::fs::write(
-        &script_path,
-        "#!/bin/bash\nexit 1\n",
-    )
-    .expect("Should write failing script");
+    std::fs::write(&script_path, "#!/bin/bash\nexit 1\n").expect("Should write failing script");
 
     #[cfg(unix)]
     {

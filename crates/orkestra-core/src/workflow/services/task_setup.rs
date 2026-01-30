@@ -59,7 +59,13 @@ impl TaskSetupService {
                 description.as_deref(),
             );
 
-            apply_setup_result(&store, git.as_ref(), &task_id, base_branch.as_ref(), worktree_result);
+            apply_setup_result(
+                &store,
+                git.as_ref(),
+                &task_id,
+                base_branch.as_ref(),
+                worktree_result,
+            );
         });
     }
 
@@ -72,29 +78,24 @@ impl TaskSetupService {
         let store = Arc::clone(&self.store);
 
         crate::orkestra_debug!("task", "spawn_subtask_setup {}: starting", task_id);
-        thread::spawn(move || {
-            match store.get_task(&task_id) {
-                Ok(Some(mut task)) => {
-                    task.phase = Phase::Idle;
-                    if let Err(e) = store.save_task(&task) {
-                        crate::orkestra_debug!(
-                            "setup",
-                            "CRITICAL: Failed to save subtask {task_id}: {e}"
-                        );
-                    }
-                }
-                Ok(None) => {
+        thread::spawn(move || match store.get_task(&task_id) {
+            Ok(Some(mut task)) => {
+                task.phase = Phase::Idle;
+                if let Err(e) = store.save_task(&task) {
                     crate::orkestra_debug!(
                         "setup",
-                        "CRITICAL: Subtask {task_id} disappeared during setup"
+                        "CRITICAL: Failed to save subtask {task_id}: {e}"
                     );
                 }
-                Err(e) => {
-                    crate::orkestra_debug!(
-                        "setup",
-                        "CRITICAL: Failed to load subtask {task_id}: {e}"
-                    );
-                }
+            }
+            Ok(None) => {
+                crate::orkestra_debug!(
+                    "setup",
+                    "CRITICAL: Subtask {task_id} disappeared during setup"
+                );
+            }
+            Err(e) => {
+                crate::orkestra_debug!("setup", "CRITICAL: Failed to load subtask {task_id}: {e}");
             }
         });
     }
@@ -160,8 +161,7 @@ fn apply_setup_result(
                 Ok(worktree_info) => {
                     if let Some(ref wt) = worktree_info {
                         task.branch_name = Some(wt.branch_name.clone());
-                        task.worktree_path =
-                            Some(wt.worktree_path.to_string_lossy().to_string());
+                        task.worktree_path = Some(wt.worktree_path.to_string_lossy().to_string());
                     }
 
                     // Persist the base branch on the task.
@@ -202,10 +202,7 @@ fn apply_setup_result(
         }
         Ok(None) => {
             // Task was deleted during setup - clean up any orphaned worktree
-            crate::orkestra_debug!(
-                "setup",
-                "CRITICAL: Task {task_id} disappeared during setup"
-            );
+            crate::orkestra_debug!("setup", "CRITICAL: Task {task_id} disappeared during setup");
             if let Some(git) = git {
                 if let Err(e) = git.remove_worktree(task_id, true) {
                     crate::orkestra_debug!(
@@ -216,10 +213,7 @@ fn apply_setup_result(
             }
         }
         Err(e) => {
-            crate::orkestra_debug!(
-                "setup",
-                "CRITICAL: Failed to load task {task_id}: {e}"
-            );
+            crate::orkestra_debug!("setup", "CRITICAL: Failed to load task {task_id}: {e}");
         }
     }
 }
@@ -249,10 +243,7 @@ fn generate_and_save_title(
         if task.title.trim().is_empty() {
             task.title = title;
             if let Err(e) = store.save_task(&task) {
-                crate::orkestra_debug!(
-                    "task",
-                    "WARNING: Failed to save title for {task_id}: {e}"
-                );
+                crate::orkestra_debug!("task", "WARNING: Failed to save title for {task_id}: {e}");
             }
         }
     }

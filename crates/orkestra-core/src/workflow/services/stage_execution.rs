@@ -216,7 +216,9 @@ impl StageExecutionService {
                     crate::orkestra_debug!(
                         "stage_execution",
                         "Failed to record spawn for {}/{}: {}",
-                        task.id, stage, e
+                        task.id,
+                        stage,
+                        e
                     );
                 }
             }
@@ -229,7 +231,9 @@ impl StageExecutionService {
                     crate::orkestra_debug!(
                         "stage_execution",
                         "Failed to record spawn failure for {}/{}: {}",
-                        task.id, stage, session_err
+                        task.id,
+                        stage,
+                        session_err
                     );
                 }
             }

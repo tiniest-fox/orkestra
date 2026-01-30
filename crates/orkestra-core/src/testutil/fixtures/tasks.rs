@@ -30,23 +30,28 @@ pub fn save_task_with_worktree(
     id: &str,
     stage: &str,
 ) -> WorkflowResult<Task> {
-    let task = Task::new(id, "Test task", "Test description", stage, FIXTURE_TIMESTAMP)
-        .with_git_worktree(
-            format!("ork/{id}"),
-            format!("/tmp/worktrees/{id}"),
-        );
+    let task = Task::new(
+        id,
+        "Test task",
+        "Test description",
+        stage,
+        FIXTURE_TIMESTAMP,
+    )
+    .with_git_worktree(format!("ork/{id}"), format!("/tmp/worktrees/{id}"));
     store.save_task(&task)?;
     Ok(task)
 }
 
 /// Save a subtask linked to a parent.
-pub fn save_subtask(
-    store: &dyn WorkflowStore,
-    id: &str,
-    parent_id: &str,
-) -> WorkflowResult<Task> {
-    let task = Task::new(id, "Subtask", "Subtask description", "planning", FIXTURE_TIMESTAMP)
-        .with_parent(parent_id);
+pub fn save_subtask(store: &dyn WorkflowStore, id: &str, parent_id: &str) -> WorkflowResult<Task> {
+    let task = Task::new(
+        id,
+        "Subtask",
+        "Subtask description",
+        "planning",
+        FIXTURE_TIMESTAMP,
+    )
+    .with_parent(parent_id);
     store.save_task(&task)?;
     Ok(task)
 }
@@ -60,10 +65,20 @@ pub fn save_task_with_artifacts(
     stage: &str,
     artifacts: &[(&str, &str, &str)],
 ) -> WorkflowResult<Task> {
-    let mut task = Task::new(id, "Test task", "Test description", stage, FIXTURE_TIMESTAMP);
+    let mut task = Task::new(
+        id,
+        "Test task",
+        "Test description",
+        stage,
+        FIXTURE_TIMESTAMP,
+    );
     for (name, content, artifact_stage) in artifacts {
-        task.artifacts
-            .set(Artifact::new(*name, *content, *artifact_stage, FIXTURE_TIMESTAMP));
+        task.artifacts.set(Artifact::new(
+            *name,
+            *content,
+            *artifact_stage,
+            FIXTURE_TIMESTAMP,
+        ));
     }
     store.save_task(&task)?;
     Ok(task)

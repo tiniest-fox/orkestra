@@ -114,8 +114,7 @@ pub fn generate_fallback_title(description: &str) -> String {
 
     // Find a good truncation point (space, punctuation) before 50 chars
     let truncated: String = trimmed.chars().take(50).collect();
-    if let Some(last_space) = truncated.rfind(|c: char| c.is_whitespace() || c == '.' || c == ',')
-    {
+    if let Some(last_space) = truncated.rfind(|c: char| c.is_whitespace() || c == '.' || c == ',') {
         let result = truncated[..last_space].trim();
         if !result.is_empty() {
             return format!("{result}...");
@@ -146,9 +145,8 @@ mod tests {
 
     #[test]
     fn test_fallback_title_truncates_at_word_boundary() {
-        let title = generate_fallback_title(
-            "The quick brown fox jumps over the lazy dog repeatedly",
-        );
+        let title =
+            generate_fallback_title("The quick brown fox jumps over the lazy dog repeatedly");
         assert!(title.ends_with("..."));
         assert!(title.len() <= 53); // 50 + "..."
     }

@@ -54,6 +54,10 @@ pub struct Task {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_path: Option<String>,
 
+    /// The branch this task was created from (merge/rebase target).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
+
     // === Configuration ===
     /// Whether the task runs autonomously through all stages without pausing for review.
     #[serde(default)]
@@ -92,6 +96,7 @@ impl Task {
             depends_on: Vec::new(),
             branch_name: None,
             worktree_path: None,
+            base_branch: None,
             auto_mode: false,
             created_at: created.clone(),
             updated_at: created,
@@ -131,6 +136,13 @@ impl Task {
     #[must_use]
     pub fn with_worktree(mut self, worktree_path: impl Into<String>) -> Self {
         self.worktree_path = Some(worktree_path.into());
+        self
+    }
+
+    /// Builder: set base branch (the branch this task was created from).
+    #[must_use]
+    pub fn with_base_branch(mut self, base_branch: impl Into<String>) -> Self {
+        self.base_branch = Some(base_branch.into());
         self
     }
 

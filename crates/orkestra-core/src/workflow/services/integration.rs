@@ -73,17 +73,46 @@ impl WorkflowApi {
             }
         }
 
-        // Rebase the task branch onto primary so conflicts are resolved
-        // on the task branch, not on main. After a successful rebase the
-        // merge into primary is a guaranteed clean fast-forward.
+        // Determine the target branch: use task's base_branch if set, otherwise primary.
+        let target_branch = match &task.base_branch {
+            Some(base) => base.clone(),
+            None => git
+                .detect_primary_branch()
+                .unwrap_or_else(|_| "main".to_string()),
+        };
+
+        orkestra_debug!(
+            "integration",
+            "target branch for {}: {}",
+            task_id,
+            target_branch
+        );
+
+        self.rebase_and_merge(&task, git.as_ref(), branch_name, &target_branch)
+    }
+
+    /// Rebase the task branch onto the target, then merge.
+    ///
+    /// After a successful rebase the merge is a guaranteed clean fast-forward.
+    /// On conflict the task is moved to the recovery stage.
+    fn rebase_and_merge(
+        &self,
+        task: &Task,
+        git: &dyn crate::workflow::ports::GitService,
+        branch_name: &str,
+        target_branch: &str,
+    ) -> WorkflowResult<Task> {
+        let task_id = &task.id;
+
         if let Some(worktree_path) = &task.worktree_path {
-            match git.rebase_on_primary(Path::new(worktree_path)) {
+            match git.rebase_on_branch(Path::new(worktree_path), target_branch) {
                 Ok(()) => {
                     orkestra_debug!(
                         "integration",
-                        "rebased {}: branch {} onto primary",
+                        "rebased {}: branch {} onto {}",
                         task_id,
-                        branch_name
+                        branch_name,
+                        target_branch
                     );
                 }
                 Err(GitError::MergeConflict { conflict_files, .. }) => {
@@ -98,18 +127,16 @@ impl WorkflowApi {
                 }
                 Err(e) => {
                     orkestra_debug!("integration", "failed {}: rebase error: {}", task_id, e);
-                    let error_msg = format!("Failed to rebase branch on primary: {e}");
+                    let error_msg = format!("Failed to rebase branch on {target_branch}: {e}");
                     self.integration_failed(task_id, &error_msg, &[])?;
                     return Err(WorkflowError::IntegrationFailed(error_msg));
                 }
             }
         }
 
-        // Attempt the merge (should be a clean fast-forward after rebase)
-        match git.merge_to_primary(branch_name) {
+        match git.merge_to_branch(branch_name, target_branch) {
             Ok(_merge_result) => {
                 orkestra_debug!("integration", "completed {}: merge succeeded", task_id);
-                // Cleanup worktree but keep branch for history
                 if task.worktree_path.is_some() {
                     if let Err(e) = git.remove_worktree(task_id, false) {
                         workflow_warn!("Failed to remove worktree for {}: {}", task_id, e);
@@ -124,25 +151,19 @@ impl WorkflowApi {
                     task_id,
                     conflict_files.len()
                 );
-                // Abort the failed merge
                 if let Err(e) = git.abort_merge() {
                     workflow_warn!("Failed to abort merge for {}: {}", task_id, e);
                 }
-                // Record failure and move task to recovery stage
                 self.integration_failed(task_id, "Merge conflict", &conflict_files)?;
-                // Return error so caller knows integration failed
                 Err(WorkflowError::IntegrationFailed("Merge conflict".into()))
             }
             Err(e) => {
                 orkestra_debug!("integration", "failed {}: {}", task_id, e);
-                // Non-conflict merge error
                 if let Err(abort_err) = git.abort_merge() {
                     workflow_warn!("Failed to abort merge for {}: {}", task_id, abort_err);
                 }
                 let error_msg = format!("{e}");
-                // Record failure and move task to recovery stage
                 self.integration_failed(task_id, &error_msg, &[])?;
-                // Return error so caller knows integration failed
                 Err(WorkflowError::IntegrationFailed(error_msg))
             }
         }

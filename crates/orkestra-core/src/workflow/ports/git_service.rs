@@ -133,6 +133,15 @@ pub trait GitService: Send + Sync {
     /// Returns merge result on success, or `GitError::MergeConflict` if conflicts occur.
     fn merge_to_primary(&self, branch_name: &str) -> Result<MergeResult, GitError>;
 
+    /// Merge a task branch into a specific target branch.
+    ///
+    /// Like `merge_to_primary`, but targets an explicit branch instead of auto-detecting.
+    fn merge_to_branch(
+        &self,
+        branch_name: &str,
+        target_branch: &str,
+    ) -> Result<MergeResult, GitError>;
+
     /// Get list of files currently in merge conflict.
     fn get_conflict_files(&self) -> Result<Vec<String>, GitError>;
 
@@ -145,6 +154,11 @@ pub trait GitService: Send + Sync {
     /// If conflicts occur, the rebase is aborted and `GitError::MergeConflict`
     /// is returned.
     fn rebase_on_primary(&self, worktree_path: &Path) -> Result<(), GitError>;
+
+    /// Rebase the current branch in a worktree onto a specific target branch.
+    ///
+    /// Like `rebase_on_primary`, but targets an explicit branch instead of auto-detecting.
+    fn rebase_on_branch(&self, worktree_path: &Path, target_branch: &str) -> Result<(), GitError>;
 
     /// Delete a branch (force delete with -D).
     fn delete_branch(&self, branch_name: &str) -> Result<(), GitError>;
@@ -305,7 +319,34 @@ pub mod mock {
             })
         }
 
+        fn merge_to_branch(
+            &self,
+            branch_name: &str,
+            target_branch: &str,
+        ) -> Result<MergeResult, GitError> {
+            if let Some(result) = self.next_merge_result.lock().unwrap().take() {
+                return result;
+            }
+
+            Ok(MergeResult {
+                commit_sha: format!("mock-sha-{}", branch_name.replace('/', "-")),
+                target_branch: target_branch.to_string(),
+                merged_at: chrono::Utc::now().to_rfc3339(),
+            })
+        }
+
         fn rebase_on_primary(&self, _worktree_path: &Path) -> Result<(), GitError> {
+            if let Some(result) = self.next_rebase_result.lock().unwrap().take() {
+                return result;
+            }
+            Ok(())
+        }
+
+        fn rebase_on_branch(
+            &self,
+            _worktree_path: &Path,
+            _target_branch: &str,
+        ) -> Result<(), GitError> {
             if let Some(result) = self.next_rebase_result.lock().unwrap().take() {
                 return result;
             }

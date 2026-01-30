@@ -253,7 +253,7 @@ The `OrchestratorLoop` (`workflow/services/orchestrator.rs`) runs a 100ms tick l
 1. **Poll completed executions** — `StageExecutionService` reports finished agents/scripts
 2. **Process output** — `WorkflowApi::process_agent_output()` stores the artifact and transitions the task (to `AwaitingReview` or auto-advances if `is_automated`)
 3. **Start new executions** — finds tasks in `Idle` phase with an active stage, spawns via `StageExecutionService`
-4. **Start integrations** — merges Done tasks' branches into primary (one-tick delay to avoid same-tick race)
+4. **Start integrations** — merges Done tasks' branches into their base branch, falling back to primary (one-tick delay to avoid same-tick race)
 
 For **agent stages**, `StageExecutionService` (`workflow/services/stage_execution.rs`) delegates to `AgentExecutionService` (`workflow/services/agent_execution.rs`), which:
 - Builds a prompt via `PromptBuilder` (`workflow/execution/prompt.rs`) — loads the agent's `.md` template, injects task context and input artifacts
@@ -312,7 +312,7 @@ Commands are organized in `src-tauri/src/commands/` by concern:
 - `workflow_approve` - Approve current stage, advance to next
 - `workflow_reject` - Reject with feedback, create new iteration
 - `workflow_answer_questions` - Answer pending agent questions
-- `workflow_integrate_task` - Merge task branch to primary
+- `workflow_integrate_task` - Merge task branch to its base branch (defaults to primary)
 
 **Queries** (`queries.rs`):
 - `workflow_get_config`, `workflow_get_iterations`, `workflow_get_artifact`

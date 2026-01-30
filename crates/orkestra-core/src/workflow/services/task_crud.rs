@@ -304,6 +304,15 @@ fn spawn_async_setup(
                             task.worktree_path =
                                 Some(wt.worktree_path.to_string_lossy().to_string());
                         }
+
+                        // Persist the base branch on the task.
+                        // If explicitly provided, use that; otherwise resolve from current branch.
+                        if let Some(ref git) = git {
+                            task.base_branch = Some(base_branch.clone().unwrap_or_else(|| {
+                                git.current_branch().unwrap_or_else(|_| "main".to_string())
+                            }));
+                        }
+
                         task.phase = Phase::Idle;
                         crate::orkestra_debug!(
                             "task",

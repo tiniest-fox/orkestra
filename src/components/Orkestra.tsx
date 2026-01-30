@@ -50,8 +50,12 @@ export function Orkestra() {
     }
   };
 
-  const handleTaskCreated = async (description: string, autoMode: boolean) => {
-    await createTask("", description, autoMode);
+  const handleTaskCreated = async (
+    description: string,
+    autoMode: boolean,
+    baseBranch: string | null,
+  ) => {
+    await createTask("", description, autoMode, baseBranch);
     handleCloseSidebar();
   };
 

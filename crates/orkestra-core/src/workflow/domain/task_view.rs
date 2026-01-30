@@ -32,6 +32,7 @@ pub struct TaskView {
 /// predicates on Task/Status/Phase — no duplicated logic.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct DerivedTaskState {
     pub current_stage: Option<String>,
     pub is_working: bool,

@@ -454,7 +454,10 @@ impl GitService for Git2GitService {
 
     fn rebase_on_primary(&self, worktree_path: &Path) -> Result<(), GitError> {
         let primary = self.detect_primary_branch()?;
+        self.rebase_on_branch(worktree_path, &primary)
+    }
 
+    fn rebase_on_branch(&self, worktree_path: &Path, target_branch: &str) -> Result<(), GitError> {
         // Resolve the task branch name for error reporting
         let branch_output = Command::new("git")
             .args(["rev-parse", "--abbrev-ref", "HEAD"])
@@ -466,7 +469,7 @@ impl GitService for Git2GitService {
             .to_string();
 
         let rebase_output = Command::new("git")
-            .args(["rebase", &primary])
+            .args(["rebase", target_branch])
             .current_dir(worktree_path)
             .output()
             .map_err(|e| GitError::MergeError(format!("Failed to run git rebase: {e}")))?;
@@ -500,7 +503,7 @@ impl GitService for Git2GitService {
 
             let stderr = String::from_utf8_lossy(&rebase_output.stderr);
             return Err(GitError::MergeError(format!(
-                "Failed to rebase onto {primary}: {stderr}"
+                "Failed to rebase onto {target_branch}: {stderr}"
             )));
         }
 
@@ -509,12 +512,19 @@ impl GitService for Git2GitService {
 
     fn merge_to_primary(&self, branch_name: &str) -> Result<MergeResult, GitError> {
         let primary = self.detect_primary_branch()?;
+        self.merge_to_branch(branch_name, &primary)
+    }
 
+    fn merge_to_branch(
+        &self,
+        branch_name: &str,
+        target_branch: &str,
+    ) -> Result<MergeResult, GitError> {
         // Stash any uncommitted changes in the main repo before merge
         let was_stashed = self.stash_changes()?;
 
         // Use a closure to ensure stash is always popped, even on error
-        let merge_result = self.do_merge(&primary, branch_name);
+        let merge_result = self.do_merge(target_branch, branch_name);
 
         // Always restore stashed changes
         if let Err(e) = self.stash_pop(was_stashed) {

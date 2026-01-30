@@ -230,6 +230,8 @@ export interface WorkflowTask {
   branch_name?: string;
   /** Git worktree path. */
   worktree_path?: string;
+  /** The branch this task was created from (merge/rebase target). */
+  base_branch?: string;
   /** Whether the task runs autonomously through all stages. */
   auto_mode: boolean;
   /** When the task was created. */
@@ -394,3 +396,19 @@ export type LogEntry =
   | { type: "script_start"; command: string; stage: string }
   | { type: "script_output"; content: string }
   | { type: "script_exit"; code: number; success: boolean; timed_out: boolean };
+
+// =============================================================================
+// Branch List
+// =============================================================================
+
+/**
+ * Available branches returned by workflow_list_branches.
+ */
+export interface BranchList {
+  /** Available branches (excluding task/* branches). */
+  branches: string[];
+  /** Currently checked-out branch. */
+  current: string | null;
+  /** Primary branch (main or master). */
+  primary: string | null;
+}

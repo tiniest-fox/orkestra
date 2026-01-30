@@ -4,16 +4,18 @@
  */
 
 import { useState } from "react";
+import { BranchSelector } from "./BranchSelector";
 import { Button, Panel } from "./ui";
 
 interface NewTaskPanelProps {
   onClose: () => void;
-  onSubmit: (description: string, autoMode: boolean) => Promise<void>;
+  onSubmit: (description: string, autoMode: boolean, baseBranch: string | null) => Promise<void>;
 }
 
 export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
   const [description, setDescription] = useState("");
   const [autoMode, setAutoMode] = useState(false);
+  const [baseBranch, setBaseBranch] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,7 +27,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
     setError(null);
 
     try {
-      await onSubmit(description.trim(), autoMode);
+      await onSubmit(description.trim(), autoMode, baseBranch);
       // Don't reset form - parent will close the panel
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");
@@ -65,6 +67,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
               // biome-ignore lint/a11y/noAutofocus: intentional focus for panel UX
               autoFocus
             />
+            <BranchSelector value={baseBranch} onChange={setBaseBranch} />
           </div>
 
           <label className="flex items-center gap-2 mt-4 cursor-pointer select-none">

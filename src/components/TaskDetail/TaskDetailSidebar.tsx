@@ -149,7 +149,12 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
             )}
 
             {activeTab === "artifacts" && (
-              <ArtifactsTab artifacts={task.artifacts} config={config} />
+              <ArtifactsTab
+                taskId={task.id}
+                currentStage={task.derived.current_stage}
+                artifacts={task.artifacts}
+                config={config}
+              />
             )}
 
             {activeTab === "iterations" && <IterationsTab iterations={task.iterations} />}

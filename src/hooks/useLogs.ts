@@ -6,8 +6,9 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LogEntry, WorkflowTaskView } from "../types/workflow";
+import { useSmartDefault } from "./useSmartDefault";
 
 interface UseLogsResult {
   /** Current log entries. */
@@ -32,42 +33,39 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeLogStage, setActiveLogStageInternal] = useState<string | null>(null);
 
   // Stages with logs come from the task view — no async fetch needed
   const stagesWithLogs = task.derived.stages_with_logs;
 
-  const setActiveLogStage = useCallback((stage: string | null) => {
-    setError(null);
-    setLogs([]);
-    setActiveLogStageInternal(stage);
-  }, []);
+  const { selectedItem: activeLogStage, setSelectedItem: setActiveLogStageInternal } =
+    useSmartDefault({
+      taskId: task.id,
+      currentStage: task.derived.current_stage,
+      availableItems: stagesWithLogs,
+      isActive,
+    });
+
+  const setActiveLogStage = useCallback(
+    (stage: string | null) => {
+      setError(null);
+      setLogs([]);
+      setActiveLogStageInternal(stage);
+    },
+    [setActiveLogStageInternal],
+  );
 
   const clearError = useCallback(() => {
     setError(null);
   }, []);
 
   const reset = useCallback(() => {
-    setActiveLogStageInternal(null);
     setError(null);
     setLogs([]);
   }, []);
 
-  // Auto-select stage when becoming active or when stages change
-  useEffect(() => {
-    if (!isActive) return;
-
-    setActiveLogStageInternal((current) => {
-      if (current && stagesWithLogs.includes(current)) return current;
-      if (stagesWithLogs.length === 0) return null;
-
-      const currentStage = task.derived.current_stage;
-      if (currentStage && stagesWithLogs.includes(currentStage)) {
-        return currentStage;
-      }
-      return stagesWithLogs[stagesWithLogs.length - 1];
-    });
-  }, [isActive, stagesWithLogs, task.derived.current_stage]);
+  // Track activeLogStage in a ref for race condition protection during async fetches
+  const activeLogStageRef = useRef(activeLogStage);
+  activeLogStageRef.current = activeLogStage;
 
   // Fetch logs for active stage with race condition protection
   const fetchLogs = useCallback(async () => {
@@ -83,21 +81,15 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
         stage: stageToFetch,
       });
       // Only update state if the stage hasn't changed during the fetch
-      setActiveLogStageInternal((currentStage) => {
-        if (currentStage === stageToFetch) {
-          setLogs(result);
-        }
-        return currentStage;
-      });
+      if (activeLogStageRef.current === stageToFetch) {
+        setLogs(result);
+      }
     } catch (err) {
       console.error("Failed to fetch logs:", err);
-      setActiveLogStageInternal((currentStage) => {
-        if (currentStage === stageToFetch) {
-          setLogs([]);
-          setError("Failed to load session logs");
-        }
-        return currentStage;
-      });
+      if (activeLogStageRef.current === stageToFetch) {
+        setLogs([]);
+        setError("Failed to load session logs");
+      }
     } finally {
       setIsLoading(false);
     }

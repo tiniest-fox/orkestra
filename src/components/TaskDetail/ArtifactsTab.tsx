@@ -2,29 +2,36 @@
  * Artifacts tab - displays artifacts with stage switching via TabbedPanel.
  */
 
-import { useState } from "react";
+import { useSmartDefault } from "../../hooks/useSmartDefault";
 import type { WorkflowArtifact, WorkflowConfig } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { PanelContainer, TabbedPanel } from "../ui";
 import { ArtifactView } from "./ArtifactView";
 
 interface ArtifactsTabProps {
+  taskId: string;
+  currentStage: string | null;
   artifacts: Record<string, WorkflowArtifact>;
   config: WorkflowConfig;
 }
 
-export function ArtifactsTab({ artifacts, config }: ArtifactsTabProps) {
+export function ArtifactsTab({ taskId, currentStage, artifacts, config }: ArtifactsTabProps) {
   // Build tabs in stage order from config
   const artifactNames = config.stages
     .map((stage) => stage.artifact)
     .filter((name) => artifacts[name]);
 
-  const [activeArtifact, setActiveArtifact] = useState(artifactNames[0] ?? "");
+  // Map currentStage (stage name) to the corresponding artifact name
+  const currentStageArtifact = config.stages.find((s) => s.name === currentStage)?.artifact ?? null;
 
-  // Ensure active artifact is valid
-  const resolvedActive = artifactNames.includes(activeArtifact)
-    ? activeArtifact
-    : (artifactNames[0] ?? "");
+  const { selectedItem, setSelectedItem } = useSmartDefault({
+    taskId,
+    currentStage: currentStageArtifact,
+    availableItems: artifactNames,
+    isActive: true, // Only mounted when the Artifacts tab is selected
+  });
+
+  const activeArtifact = selectedItem ?? "";
 
   const tabs = artifactNames.map((name) => ({
     id: name,
@@ -39,11 +46,11 @@ export function ArtifactsTab({ artifacts, config }: ArtifactsTabProps) {
     <PanelContainer direction="vertical" padded={true}>
       <TabbedPanel
         tabs={tabs}
-        activeTab={resolvedActive}
-        onTabChange={setActiveArtifact}
+        activeTab={activeArtifact}
+        onTabChange={setSelectedItem}
         size="small"
       >
-        <ArtifactView artifact={artifacts[resolvedActive]} />
+        <ArtifactView artifact={artifacts[activeArtifact]} />
       </TabbedPanel>
     </PanelContainer>
   );

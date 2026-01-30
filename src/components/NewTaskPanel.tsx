@@ -8,11 +8,12 @@ import { Button, Panel } from "./ui";
 
 interface NewTaskPanelProps {
   onClose: () => void;
-  onSubmit: (description: string) => Promise<void>;
+  onSubmit: (description: string, autoMode: boolean) => Promise<void>;
 }
 
 export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
   const [description, setDescription] = useState("");
+  const [autoMode, setAutoMode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +25,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
     setError(null);
 
     try {
-      await onSubmit(description.trim());
+      await onSubmit(description.trim(), autoMode);
       // Don't reset form - App.tsx will transition to task detail view
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");
@@ -62,6 +63,25 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
               autoFocus
             />
           </div>
+
+          <label className="flex items-center gap-2 mt-4 cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoMode}
+              onClick={() => setAutoMode(!autoMode)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                autoMode ? "bg-orange-500" : "bg-stone-300"
+              }`}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                  autoMode ? "translate-x-[18px]" : "translate-x-[3px]"
+                }`}
+              />
+            </button>
+            <span className="text-sm text-stone-700">Auto mode</span>
+          </label>
         </Panel.Body>
 
         <Panel.Footer className="flex justify-end gap-3">

@@ -9,6 +9,7 @@ export function createMockWorkflowTask(overrides?: Partial<WorkflowTask>): Workf
     phase: "idle",
     artifacts: {},
     depends_on: [],
+    auto_mode: false,
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",
     ...overrides,

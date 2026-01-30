@@ -42,7 +42,7 @@ impl WorkflowStore for SqliteWorkflowStore {
             .query_row(
                 "SELECT id, title, description, status, phase, artifacts,
                         parent_id, depends_on, branch_name, worktree_path,
-                        created_at, updated_at, completed_at
+                        auto_mode, created_at, updated_at, completed_at
                  FROM workflow_tasks WHERE id = ?",
                 params![id],
                 row_to_task,
@@ -76,8 +76,8 @@ impl WorkflowStore for SqliteWorkflowStore {
             "INSERT OR REPLACE INTO workflow_tasks (
                 id, title, description, status, phase, artifacts,
                 parent_id, depends_on, branch_name, worktree_path,
-                created_at, updated_at, completed_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                auto_mode, created_at, updated_at, completed_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 task.id,
                 task.title,
@@ -89,6 +89,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 depends_json,
                 task.branch_name,
                 task.worktree_path,
+                task.auto_mode,
                 task.created_at,
                 task.updated_at,
                 task.completed_at,
@@ -106,7 +107,7 @@ impl WorkflowStore for SqliteWorkflowStore {
             .prepare(
                 "SELECT id, title, description, status, phase, artifacts,
                         parent_id, depends_on, branch_name, worktree_path,
-                        created_at, updated_at, completed_at
+                        auto_mode, created_at, updated_at, completed_at
                  FROM workflow_tasks ORDER BY created_at",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -130,7 +131,7 @@ impl WorkflowStore for SqliteWorkflowStore {
             .prepare(
                 "SELECT id, title, description, status, phase, artifacts,
                         parent_id, depends_on, branch_name, worktree_path,
-                        created_at, updated_at, completed_at
+                        auto_mode, created_at, updated_at, completed_at
                  FROM workflow_tasks WHERE parent_id = ? ORDER BY created_at",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -470,6 +471,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let phase_str: String = row.get(4)?;
     let artifacts_json: String = row.get(5)?;
     let depends_json: String = row.get(7)?;
+    let auto_mode: bool = row.get::<_, i32>(10).unwrap_or(0) != 0;
 
     Ok(Task {
         id: row.get(0)?,
@@ -482,9 +484,10 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         depends_on: serde_json::from_str(&depends_json).unwrap_or_default(),
         branch_name: row.get(8)?,
         worktree_path: row.get(9)?,
-        created_at: row.get(10)?,
-        updated_at: row.get(11)?,
-        completed_at: row.get(12)?,
+        auto_mode,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
+        completed_at: row.get(13)?,
     })
 }
 

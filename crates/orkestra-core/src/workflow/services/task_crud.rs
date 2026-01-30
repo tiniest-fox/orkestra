@@ -28,6 +28,19 @@ impl WorkflowApi {
         description: &str,
         base_branch: Option<&str>,
     ) -> WorkflowResult<Task> {
+        self.create_task_with_options(title, description, base_branch, false)
+    }
+
+    /// Create a new task with options. Starts in the first workflow stage.
+    ///
+    /// Like `create_task`, but allows setting `auto_mode` at creation time.
+    pub fn create_task_with_options(
+        &self,
+        title: &str,
+        description: &str,
+        base_branch: Option<&str>,
+        auto_mode: bool,
+    ) -> WorkflowResult<Task> {
         let id = self.store.next_task_id()?;
         let first_stage = self
             .workflow
@@ -36,6 +49,7 @@ impl WorkflowApi {
 
         let now = chrono::Utc::now().to_rfc3339();
         let mut task = Task::new(&id, title, description, &first_stage.name, &now);
+        task.auto_mode = auto_mode;
 
         // ALWAYS start in SettingUp - async setup will transition to Idle
         task.phase = Phase::SettingUp;
@@ -110,6 +124,9 @@ impl WorkflowApi {
         // Subtasks inherit parent's worktree (no separate worktree needed)
         task.worktree_path.clone_from(&parent.worktree_path);
         task.branch_name.clone_from(&parent.branch_name);
+
+        // Subtasks inherit parent's auto_mode
+        task.auto_mode = parent.auto_mode;
 
         // Start in SettingUp for consistency with create_task()
         task.phase = Phase::SettingUp;

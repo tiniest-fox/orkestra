@@ -121,10 +121,11 @@ export function useWorkflowTasks() {
     };
   }, [fetchTasks]);
 
-  const createTask = useCallback(async (title: string, description: string) => {
+  const createTask = useCallback(async (title: string, description: string, autoMode?: boolean) => {
     const newTask = await invoke<WorkflowTask>("workflow_create_task", {
       title,
       description,
+      autoMode: autoMode ?? false,
     });
     setTasks((prev) => [...prev, newTask]);
     return newTask;
@@ -197,7 +198,11 @@ export function useWorkflowActions() {
     return invoke<WorkflowTask>("workflow_retry", { taskId });
   }, []);
 
-  return { approve, reject, answerQuestions, retry };
+  const setAutoMode = useCallback(async (taskId: string, autoMode: boolean) => {
+    return invoke<WorkflowTask>("workflow_set_auto_mode", { taskId, autoMode });
+  }, []);
+
+  return { approve, reject, answerQuestions, retry, setAutoMode };
 }
 
 /**

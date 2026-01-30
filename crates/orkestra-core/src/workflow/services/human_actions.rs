@@ -1,9 +1,11 @@
-//! Human/UI actions: approve, reject, answer questions.
+//! Human/UI actions: approve, reject, answer questions, toggle auto mode.
 
 use crate::orkestra_debug;
 use crate::workflow::domain::{IterationTrigger, QuestionAnswer, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase};
+
+use super::agent_actions::AUTO_ANSWER_TEXT;
 
 use super::WorkflowApi;
 
@@ -231,6 +233,102 @@ impl WorkflowApi {
             last_stage
         );
 
+        Ok(task)
+    }
+
+    /// Set the `auto_mode` flag on a task, with immediate side effects.
+    ///
+    /// When toggling to `true`:
+    /// - If the task is `AwaitingReview` with an artifact pending: auto-approves
+    /// - If the task is `AwaitingReview` with questions pending: auto-answers them
+    /// - Otherwise: saves the flag for the next stage completion
+    ///
+    /// When toggling to `false`: saves the flag, no immediate state change.
+    ///
+    /// If the immediate side effect fails, the toggle is rolled back.
+    pub fn set_auto_mode(&self, task_id: &str, auto_mode: bool) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        orkestra_debug!(
+            "action",
+            "set_auto_mode {}: {} -> {}",
+            task_id,
+            task.auto_mode,
+            auto_mode
+        );
+
+        task.auto_mode = auto_mode;
+
+        // When enabling auto mode, handle immediate side effects
+        if auto_mode && task.phase == Phase::AwaitingReview {
+            if let Some(current_stage) = task.current_stage().map(String::from) {
+                // Check if there are pending questions
+                let has_pending_questions = self
+                    .store
+                    .get_latest_iteration(&task.id, &current_stage)?
+                    .and_then(|iter| match &iter.outcome {
+                        Some(Outcome::AwaitingAnswers { questions, .. })
+                            if !questions.is_empty() =>
+                        {
+                            Some(questions.clone())
+                        }
+                        _ => None,
+                    });
+
+                if let Some(questions) = has_pending_questions {
+                    // Auto-answer questions
+                    orkestra_debug!(
+                        "action",
+                        "set_auto_mode {}: auto-answering {} questions",
+                        task_id,
+                        questions.len()
+                    );
+                    let now = chrono::Utc::now().to_rfc3339();
+                    let answers: Vec<QuestionAnswer> = questions
+                        .iter()
+                        .map(|q| QuestionAnswer::new(&q.id, &q.question, AUTO_ANSWER_TEXT, &now))
+                        .collect();
+
+                    self.iteration_service.create_iteration(
+                        &task.id,
+                        &current_stage,
+                        Some(IterationTrigger::Answers { answers }),
+                    )?;
+                    task.phase = Phase::Idle;
+                    task.updated_at = now;
+                } else {
+                    // Auto-approve the current artifact
+                    orkestra_debug!(
+                        "action",
+                        "set_auto_mode {}: auto-approving stage {}",
+                        task_id,
+                        current_stage
+                    );
+                    self.end_current_iteration(&task, Outcome::Approved)?;
+
+                    let next_status = self.compute_next_status_on_approve(&current_stage);
+                    let now = chrono::Utc::now().to_rfc3339();
+
+                    task.status = next_status.clone();
+                    task.phase = Phase::Idle;
+                    task.updated_at.clone_from(&now);
+
+                    if let Some(new_stage) = next_status.stage() {
+                        if new_stage != current_stage {
+                            self.iteration_service
+                                .create_iteration(&task.id, new_stage, None)?;
+                        }
+                    }
+                    if task.is_done() {
+                        task.completed_at = Some(now);
+                    }
+                }
+            }
+        } else {
+            task.updated_at = chrono::Utc::now().to_rfc3339();
+        }
+
+        self.store.save_task(&task)?;
         Ok(task)
     }
 

@@ -106,7 +106,7 @@ export function TaskDetailSidebar({
   const [iterations, setIterations] = useState<WorkflowIteration[]>([]);
   const [pendingQuestions, setPendingQuestions] = useState<WorkflowQuestion[]>([]);
 
-  const { approve, reject, answerQuestions, retry } = useWorkflowActions();
+  const { approve, reject, answerQuestions, retry, setAutoMode } = useWorkflowActions();
   const { getIterations, getPendingQuestions } = useWorkflowQueries();
 
   const logsState = useLogs(task, activeTab === "logs");
@@ -209,6 +209,15 @@ export function TaskDetailSidebar({
     }
   };
 
+  const handleToggleAutoMode = async (autoMode: boolean) => {
+    try {
+      await setAutoMode(task.id, autoMode);
+      onTaskUpdated();
+    } catch (err) {
+      console.error("Failed to toggle auto mode:", err);
+    }
+  };
+
   const footerPanelKey = taskHasQuestions
     ? "questions"
     : taskNeedsReview && currentStage
@@ -225,6 +234,7 @@ export function TaskDetailSidebar({
             needsReview={taskNeedsReview}
             onClose={onClose}
             onDelete={onDelete}
+            onToggleAutoMode={handleToggleAutoMode}
           />
 
           <TabbedPanel

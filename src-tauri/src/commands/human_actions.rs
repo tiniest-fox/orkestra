@@ -58,3 +58,19 @@ pub fn workflow_integrate_task(
 pub fn workflow_retry(state: State<AppState>, task_id: String) -> Result<Task, TauriError> {
     state.api()?.retry(&task_id).map_err(Into::into)
 }
+
+/// Set the auto_mode flag on a task.
+///
+/// When enabling auto mode on a task that is awaiting review,
+/// immediately auto-approves or auto-answers pending questions.
+#[tauri::command]
+pub fn workflow_set_auto_mode(
+    state: State<AppState>,
+    task_id: String,
+    auto_mode: bool,
+) -> Result<Task, TauriError> {
+    state
+        .api()?
+        .set_auto_mode(&task_id, auto_mode)
+        .map_err(Into::into)
+}

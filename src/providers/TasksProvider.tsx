@@ -22,7 +22,7 @@ interface TasksContextValue {
   tasks: WorkflowTaskView[];
   loading: boolean;
   error: string | null;
-  createTask: (title: string, description: string) => Promise<WorkflowTask>;
+  createTask: (title: string, description: string, autoMode?: boolean) => Promise<WorkflowTask>;
   createSubtask: (parentId: string, title: string, description: string) => Promise<WorkflowTask>;
   deleteTask: (taskId: string) => Promise<void>;
   refetch: () => Promise<void>;
@@ -93,8 +93,12 @@ export function TasksProvider({ children }: TasksProviderProps) {
   }, [fetchTasks]);
 
   const createTask = useCallback(
-    async (title: string, description: string) => {
-      const newTask = await invoke<WorkflowTask>("workflow_create_task", { title, description });
+    async (title: string, description: string, autoMode?: boolean) => {
+      const newTask = await invoke<WorkflowTask>("workflow_create_task", {
+        title,
+        description,
+        autoMode: autoMode ?? false,
+      });
       // Refetch to get the full TaskView
       fetchTasks();
       return newTask;

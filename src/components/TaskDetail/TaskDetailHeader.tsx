@@ -14,6 +14,7 @@ interface TaskDetailHeaderProps {
   needsReview: boolean;
   onClose: () => void;
   onDelete: () => void;
+  onToggleAutoMode: (autoMode: boolean) => void;
 }
 
 interface DetectedApp {
@@ -106,6 +107,7 @@ export function TaskDetailHeader({
   needsReview,
   onClose,
   onDelete,
+  onToggleAutoMode,
 }: TaskDetailHeaderProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [toolsInfo, setToolsInfo] = useState<ExternalToolsInfo | null>(cachedToolsInfo);
@@ -217,6 +219,25 @@ export function TaskDetailHeader({
           <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
           {hasQuestions && <Badge variant="info">Questions</Badge>}
           {needsReview && <Badge variant="warning">Review</Badge>}
+
+          <label className="flex items-center gap-1.5 ml-auto cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={task.auto_mode}
+              onClick={() => onToggleAutoMode(!task.auto_mode)}
+              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+                task.auto_mode ? "bg-orange-500" : "bg-stone-300"
+              }`}
+            >
+              <span
+                className={`inline-block h-2.5 w-2.5 rounded-full bg-white transition-transform ${
+                  task.auto_mode ? "translate-x-[14px]" : "translate-x-[3px]"
+                }`}
+              />
+            </button>
+            <span className="text-xs text-stone-500">Auto</span>
+          </label>
         </div>
       )}
     </div>

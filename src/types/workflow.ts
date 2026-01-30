@@ -230,6 +230,8 @@ export interface WorkflowTask {
   branch_name?: string;
   /** Git worktree path. */
   worktree_path?: string;
+  /** Whether the task runs autonomously through all stages. */
+  auto_mode: boolean;
   /** When the task was created. */
   created_at: string;
   /** When the task was last updated. */

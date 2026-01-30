@@ -50,8 +50,8 @@ export function Orkestra() {
     }
   };
 
-  const handleTaskCreated = async (description: string) => {
-    const newTask = await createTask("", description);
+  const handleTaskCreated = async (description: string, autoMode: boolean) => {
+    const newTask = await createTask("", description, autoMode);
     if (newTask?.id) {
       setSidebarView({ type: "task", taskId: newTask.id });
     } else {

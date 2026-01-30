@@ -73,7 +73,7 @@ function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
 
 export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebarProps) {
   const config = useWorkflowConfig();
-  const { currentStageDisplayName, isSubmitting, approve, reject, answerQuestions, retry } =
+  const { currentStageDisplayName, isSubmitting, approve, reject, answerQuestions, retry, setAutoMode } =
     useTaskDetail(task);
 
   const tabs = useMemo(() => buildTabs(task), [task]);
@@ -105,6 +105,14 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
     }
   };
 
+  const handleToggleAutoMode = async (autoMode: boolean) => {
+    try {
+      await setAutoMode(task.id, autoMode);
+    } catch (err) {
+      console.error("Failed to toggle auto mode:", err);
+    }
+  };
+
   const footerPanelKey = task.derived.has_questions
     ? "questions"
     : task.derived.needs_review && task.derived.current_stage
@@ -121,6 +129,7 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
             needsReview={task.derived.needs_review}
             onClose={onClose}
             onDelete={onDelete}
+            onToggleAutoMode={handleToggleAutoMode}
           />
 
           <TabbedPanel

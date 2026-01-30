@@ -1,10 +1,14 @@
 //! Agent/orchestrator actions: agent started, process output, get pending tasks.
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{IterationTrigger, Task};
+use crate::workflow::domain::{IterationTrigger, QuestionAnswer, Task};
 use crate::workflow::execution::StageOutput;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
+
+/// Standard auto-answer text used when auto-mode tasks receive questions from agents.
+pub(crate) const AUTO_ANSWER_TEXT: &str =
+    "Make a decision based on your best understanding and highest recommendation.";
 
 use super::WorkflowApi;
 
@@ -25,7 +29,7 @@ impl WorkflowApi {
             .map_or_else(|| default.to_string(), |s| s.artifact.clone())
     }
 
-    /// Handle artifact output: store artifact, auto-approve if automated stage.
+    /// Handle artifact output: store artifact, auto-approve if automated stage or `auto_mode` task.
     fn handle_artifact_output(
         &self,
         task: &mut Task,
@@ -36,8 +40,17 @@ impl WorkflowApi {
         let artifact_name = self.artifact_name_for_stage(stage, "artifact");
         task.artifacts
             .set(Artifact::new(&artifact_name, content, stage, now));
+        self.auto_advance_or_review(task, stage, now)
+    }
 
-        if self.is_stage_automated(stage) {
+    /// Auto-approve and advance if the stage/task allows it, otherwise pause for review.
+    fn auto_advance_or_review(
+        &self,
+        task: &mut Task,
+        stage: &str,
+        now: &str,
+    ) -> WorkflowResult<()> {
+        if self.should_auto_advance(task, stage) {
             self.end_current_iteration(task, Outcome::Approved)?;
             let next_status = self.compute_next_status_on_approve(stage);
             task.status = next_status.clone();
@@ -55,6 +68,77 @@ impl WorkflowApi {
         }
         task.updated_at = now.to_string();
         Ok(())
+    }
+
+    /// Check if a stage should auto-advance for a given task.
+    ///
+    /// Returns true if the stage is automated OR if the task has `auto_mode` enabled.
+    fn should_auto_advance(&self, task: &Task, stage: &str) -> bool {
+        task.auto_mode || self.is_stage_automated(stage)
+    }
+
+    /// Handle questions output: end iteration with questions, auto-answer if `auto_mode`.
+    fn handle_questions_output(
+        &self,
+        task: &mut Task,
+        questions: &[crate::workflow::domain::Question],
+        stage: &str,
+        now: &str,
+    ) -> WorkflowResult<()> {
+        self.end_current_iteration(
+            task,
+            Outcome::awaiting_answers(stage, questions.to_owned()),
+        )?;
+
+        if task.auto_mode {
+            orkestra_debug!(
+                "action",
+                "auto-answering {} questions for auto_mode task {}",
+                questions.len(),
+                task.id
+            );
+            let answers = auto_answer_questions(questions);
+            self.iteration_service.create_iteration(
+                &task.id,
+                stage,
+                Some(IterationTrigger::Answers { answers }),
+            )?;
+            task.phase = Phase::Idle;
+        } else {
+            task.phase = Phase::AwaitingReview;
+        }
+        task.updated_at = now.to_string();
+        Ok(())
+    }
+
+    /// Handle subtasks output: store breakdown artifact, auto-approve or await review.
+    fn handle_subtasks_output(
+        &self,
+        task: &mut Task,
+        subtasks: &[crate::workflow::execution::SubtaskOutput],
+        skip_reason: Option<&str>,
+        stage: &str,
+        now: &str,
+    ) -> WorkflowResult<()> {
+        use super::SubtaskService;
+
+        let artifact_name = self.artifact_name_for_stage(stage, "breakdown");
+        let artifact = SubtaskService::new().create_breakdown_artifact(
+            subtasks,
+            skip_reason,
+            &artifact_name,
+            stage,
+            now,
+        );
+        task.artifacts.set(artifact);
+
+        if subtasks.is_empty() {
+            if let Some(reason) = skip_reason {
+                orkestra_debug!("agent_actions", "Skipping subtask breakdown: {}", reason);
+            }
+        }
+
+        self.auto_advance_or_review(task, stage, now)
     }
 
     /// Handle restage output: validate target, end iteration, move to target stage.
@@ -164,52 +248,27 @@ impl WorkflowApi {
 
         match output {
             StageOutput::Questions { questions } => {
-                // Agent asked questions - end iteration with questions in outcome
-                self.end_current_iteration(
-                    &task,
-                    Outcome::awaiting_answers(&current_stage, questions),
-                )?;
-
-                task.phase = Phase::AwaitingReview; // UI needs to show questions
-                task.updated_at = now;
+                self.handle_questions_output(&mut task, &questions, &current_stage, &now)?;
             }
-
             StageOutput::Artifact { content } => {
                 self.handle_artifact_output(&mut task, &content, &current_stage, &now)?;
             }
-
             StageOutput::Restage { target, feedback } => {
                 self.handle_restage_output(&mut task, &current_stage, &target, &feedback, &now)?;
             }
-
             StageOutput::Subtasks {
                 subtasks,
                 skip_reason,
             } => {
-                use super::SubtaskService;
-
-                let artifact_name = self.artifact_name_for_stage(&current_stage, "breakdown");
-                let artifact = SubtaskService::new().create_breakdown_artifact(
+                self.handle_subtasks_output(
+                    &mut task,
                     &subtasks,
                     skip_reason.as_deref(),
-                    &artifact_name,
                     &current_stage,
                     &now,
-                );
-                task.artifacts.set(artifact);
-
-                if subtasks.is_empty() {
-                    if let Some(reason) = &skip_reason {
-                        orkestra_debug!("agent_actions", "Skipping subtask breakdown: {}", reason);
-                    }
-                }
-
-                task.phase = Phase::AwaitingReview;
-                task.updated_at = now;
+                )?;
             }
-
             StageOutput::Failed { error } => {
-                // End iteration before changing status (task must still be in active stage)
                 self.end_current_iteration(
                     &task,
                     Outcome::AgentError {
@@ -220,9 +279,7 @@ impl WorkflowApi {
                 task.phase = Phase::Idle;
                 task.updated_at = now;
             }
-
             StageOutput::Blocked { reason } => {
-                // End iteration before changing status (task must still be in active stage)
                 self.end_current_iteration(
                     &task,
                     Outcome::Blocked {
@@ -412,6 +469,15 @@ impl WorkflowApi {
         self.store.save_task(&task)?;
         Ok(task)
     }
+}
+
+/// Generate auto-answers for all questions using a standard response.
+fn auto_answer_questions(questions: &[crate::workflow::domain::Question]) -> Vec<QuestionAnswer> {
+    let now = chrono::Utc::now().to_rfc3339();
+    questions
+        .iter()
+        .map(|q| QuestionAnswer::new(&q.id, &q.question, AUTO_ANSWER_TEXT, &now))
+        .collect()
 }
 
 #[cfg(test)]

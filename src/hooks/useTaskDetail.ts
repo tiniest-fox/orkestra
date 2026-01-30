@@ -26,6 +26,8 @@ interface UseTaskDetailResult {
   answerQuestions: (answers: WorkflowQuestionAnswer[]) => Promise<void>;
   /** Retry a failed task. */
   retry: () => Promise<void>;
+  /** Toggle auto-advance mode. */
+  setAutoMode: (taskId: string, autoMode: boolean) => Promise<void>;
 }
 
 export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
@@ -94,6 +96,14 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     }
   }, [task.id, refetch]);
 
+  const setAutoMode = useCallback(
+    async (taskId: string, autoMode: boolean) => {
+      await invoke<WorkflowTask>("workflow_set_auto_mode", { taskId, autoMode });
+      refetch();
+    },
+    [refetch],
+  );
+
   return {
     task,
     currentStageDisplayName,
@@ -102,5 +112,6 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     reject,
     answerQuestions,
     retry,
+    setAutoMode,
   };
 }

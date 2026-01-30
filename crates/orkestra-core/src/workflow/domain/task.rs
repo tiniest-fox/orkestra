@@ -54,6 +54,11 @@ pub struct Task {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree_path: Option<String>,
 
+    // === Configuration ===
+    /// Whether the task runs autonomously through all stages without pausing for review.
+    #[serde(default)]
+    pub auto_mode: bool,
+
     // === Tracking ===
     /// When the task was created (RFC3339).
     pub created_at: String,
@@ -87,6 +92,7 @@ impl Task {
             depends_on: Vec::new(),
             branch_name: None,
             worktree_path: None,
+            auto_mode: false,
             created_at: created.clone(),
             updated_at: created,
             completed_at: None,
@@ -104,6 +110,13 @@ impl Task {
     #[must_use]
     pub fn with_dependencies(mut self, depends_on: Vec<String>) -> Self {
         self.depends_on = depends_on;
+        self
+    }
+
+    /// Builder: enable auto mode.
+    #[must_use]
+    pub fn with_auto_mode(mut self, auto_mode: bool) -> Self {
+        self.auto_mode = auto_mode;
         self
     }
 

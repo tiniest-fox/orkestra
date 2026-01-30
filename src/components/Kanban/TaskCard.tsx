@@ -61,7 +61,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
           <div className="flex items-center gap-1.5">
             {task.auto_mode && (
               <span className="flex-shrink-0 p-1.5 rounded-md bg-purple-100">
-                <Zap className="w-4 h-4 text-purple-600" />
+                <Zap className={`w-4 h-4 text-purple-600 ${showSpinner ? "animate-spin" : ""}`} />
               </span>
             )}
             {taskNeedsReview && (
@@ -74,13 +74,9 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
                 <MessageCircle className="w-4 h-4 text-info-600" />
               </span>
             )}
-            {showSpinner && (
-              <span
-                className={`flex-shrink-0 p-1.5 ${task.auto_mode ? "rounded-md bg-purple-100" : ""}`}
-              >
-                <span
-                  className={`block w-4 h-4 border-2 ${task.auto_mode ? "border-purple-500" : "border-orange-500"} border-t-transparent rounded-full animate-spin`}
-                />
+            {showSpinner && !task.auto_mode && (
+              <span className="flex-shrink-0 p-1.5">
+                <span className="block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
               </span>
             )}
             {isFailed && (

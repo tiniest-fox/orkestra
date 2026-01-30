@@ -392,6 +392,10 @@ pub fn run() {
                 stop_flag_for_exit.store(true, Ordering::Relaxed);
                 // Kill all tracked agents to prevent orphaned processes
                 cleanup_agents(app_handle);
+                // Flush WAL to leave database in a clean state
+                if let Some(app_state) = app_handle.try_state::<state::AppState>() {
+                    app_state.checkpoint_database();
+                }
             }
         });
 }

@@ -30,8 +30,15 @@ impl DatabaseConnection {
 
         let mut conn = Connection::open(path)?;
 
-        // Enable WAL mode for better concurrent access
+        // Enable WAL mode for better concurrent access and crash safety.
+        // WAL ensures readers never block writers and incomplete transactions
+        // are automatically rolled back on recovery.
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+
+        // Wait up to 5s for locks instead of failing immediately.
+        // Prevents spurious errors when the orchestrator and UI commands
+        // contend for the same connection.
+        conn.execute_batch("PRAGMA busy_timeout=5000;")?;
 
         // Run migrations
         super::migrations::run(&mut conn)?;
@@ -82,12 +89,79 @@ impl DatabaseConnection {
 
     /// Force a WAL checkpoint to sync the database.
     ///
-    /// This ensures all data is written to the main database file,
-    /// which is useful for cache coherence across processes.
+    /// Flushes all WAL data into the main database file and truncates the WAL.
+    /// Call this on graceful shutdown to leave the database in a clean state.
     pub fn checkpoint(&self) -> Result<()> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
         conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         Ok(())
+    }
+
+    /// Run a quick integrity check on the database.
+    ///
+    /// Returns `Ok(true)` if the database is healthy, `Ok(false)` if corrupted.
+    /// This is fast (checks page structure, not full content) and should be
+    /// called on startup to detect corruption early.
+    pub fn quick_check(&self) -> Result<bool> {
+        let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
+        let result: String =
+            conn.query_row("PRAGMA quick_check;", [], |row| row.get(0))?;
+        Ok(result == "ok")
+    }
+
+    /// Open a database with integrity validation.
+    ///
+    /// If the database is corrupted, renames it to `{name}.corrupt.{timestamp}`
+    /// and creates a fresh database. Returns the connection and whether recovery
+    /// occurred.
+    pub fn open_validated(path: &Path) -> Result<(Self, bool)> {
+        // Try to open and validate
+        match Self::open(path) {
+            Ok(db) => match db.quick_check() {
+                Ok(true) => Ok((db, false)),
+                Ok(false) => {
+                    eprintln!("[db] Database corruption detected, recovering...");
+                    drop(db);
+                    Self::recover_corrupted(path)
+                }
+                Err(e) => {
+                    eprintln!("[db] Integrity check failed ({e}), recovering...");
+                    drop(e);
+                    Self::recover_corrupted(path)
+                }
+            },
+            Err(e) => {
+                eprintln!("[db] Failed to open database ({e}), recovering...");
+                Self::recover_corrupted(path)
+            }
+        }
+    }
+
+    /// Move a corrupted database aside and create a fresh one.
+    fn recover_corrupted(path: &Path) -> Result<(Self, bool)> {
+        let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
+        let file_name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let backup_name = format!("{file_name}.corrupt.{timestamp}");
+        let backup_path = path.with_file_name(&backup_name);
+
+        // Move the corrupted database file (preserves it for forensics)
+        if path.exists() {
+            let _ = std::fs::rename(path, &backup_path);
+        }
+
+        // Remove ephemeral WAL/SHM files — they're tied to the old database
+        let wal_path = path.with_file_name(format!("{file_name}-wal"));
+        let shm_path = path.with_file_name(format!("{file_name}-shm"));
+        let _ = std::fs::remove_file(&wal_path);
+        let _ = std::fs::remove_file(&shm_path);
+
+        eprintln!("[db] Corrupted database moved to {backup_name}");
+
+        let db = Self::open(path)?;
+        Ok((db, true))
     }
 }
 

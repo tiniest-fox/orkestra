@@ -33,8 +33,14 @@ impl AppState {
         db_path: &Path,
         project_root: PathBuf,
     ) -> Result<Self, String> {
-        // Open database connection (creates file and runs migrations)
-        let conn = DatabaseConnection::open(db_path).map_err(|e| e.to_string())?;
+        // Open database with integrity validation.
+        // If corrupted, moves the bad file aside and starts fresh.
+        let (conn, recovered) =
+            DatabaseConnection::open_validated(db_path).map_err(|e| e.to_string())?;
+        if recovered {
+            eprintln!("[startup] Database was corrupted — started with a fresh database");
+            eprintln!("[startup] Previous database preserved as .corrupt file for inspection");
+        }
 
         // Create workflow store with shared connection
         let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(conn.shared()));
@@ -105,5 +111,15 @@ impl AppState {
     /// Check if git service is available.
     pub fn has_git_service(&self) -> bool {
         self.has_git
+    }
+
+    /// Flush the WAL to the main database file.
+    ///
+    /// Call on graceful shutdown to leave the database in a clean state,
+    /// reducing the risk of corruption if the next startup is interrupted.
+    pub fn checkpoint_database(&self) {
+        if let Err(e) = self.db_conn.checkpoint() {
+            eprintln!("[shutdown] WAL checkpoint failed: {e}");
+        }
     }
 }

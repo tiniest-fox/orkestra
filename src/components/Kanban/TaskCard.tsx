@@ -98,7 +98,9 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
         </div>
 
         {task.description && (
-          <p className="text-stone-500 dark:text-stone-400 text-xs mt-1 line-clamp-2">{task.description}</p>
+          <p className="text-stone-500 dark:text-stone-400 text-xs mt-1 line-clamp-2">
+            {task.description}
+          </p>
         )}
 
         <span className="text-stone-400 dark:text-stone-500 text-xs font-mono mt-2.5">

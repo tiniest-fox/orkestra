@@ -3,15 +3,15 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession};
 use crate::workflow::domain::task_view::{DerivedTaskState, TaskView};
+use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession};
 use crate::workflow::ports::WorkflowResult;
 use crate::workflow::runtime::{Artifact, Outcome};
 
 use super::log_service::LogService;
 use super::WorkflowApi;
 
-/// Trait for types that belong to a task (have a task_id field).
+/// Trait for types that belong to a task (have a `task_id` field).
 trait HasTaskId {
     fn task_id(&self) -> &str;
 }
@@ -32,7 +32,9 @@ impl HasTaskId for StageSession {
 fn group_by_task_id<T: HasTaskId>(items: Vec<T>) -> HashMap<String, Vec<T>> {
     let mut map: HashMap<String, Vec<T>> = HashMap::new();
     for item in items {
-        map.entry(item.task_id().to_string()).or_default().push(item);
+        map.entry(item.task_id().to_string())
+            .or_default()
+            .push(item);
     }
     map
 }

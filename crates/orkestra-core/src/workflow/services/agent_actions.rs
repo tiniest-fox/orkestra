@@ -85,10 +85,7 @@ impl WorkflowApi {
         stage: &str,
         now: &str,
     ) -> WorkflowResult<()> {
-        self.end_current_iteration(
-            task,
-            Outcome::awaiting_answers(stage, questions.to_owned()),
-        )?;
+        self.end_current_iteration(task, Outcome::awaiting_answers(stage, questions.to_owned()))?;
 
         if task.auto_mode {
             orkestra_debug!(

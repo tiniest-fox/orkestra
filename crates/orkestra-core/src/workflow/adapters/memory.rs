@@ -178,7 +178,11 @@ impl WorkflowStore for InMemoryWorkflowStore {
             .lock()
             .map_err(|_| WorkflowError::Lock)?;
         let mut result: Vec<_> = sessions.clone();
-        result.sort_by(|a, b| a.task_id.cmp(&b.task_id).then(a.created_at.cmp(&b.created_at)));
+        result.sort_by(|a, b| {
+            a.task_id
+                .cmp(&b.task_id)
+                .then(a.created_at.cmp(&b.created_at))
+        });
         Ok(result)
     }
 

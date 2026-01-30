@@ -30,10 +30,6 @@ interface UseLogsResult {
 }
 
 export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResult {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   // Stages with logs come from the task view — no async fetch needed
   const stagesWithLogs = task.derived.stages_with_logs;
 
@@ -45,10 +41,18 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
       isActive,
     });
 
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  // Start loading if we have an initial stage selected (fetch will fire on mount)
+  const [isLoading, setIsLoading] = useState(() => activeLogStage !== null);
+  const [error, setError] = useState<string | null>(null);
+
   const setActiveLogStage = useCallback(
     (stage: string | null) => {
       setError(null);
       setLogs([]);
+      if (stage !== null) {
+        setIsLoading(true);
+      }
       setActiveLogStageInternal(stage);
     },
     [setActiveLogStageInternal],
@@ -61,6 +65,7 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
   const reset = useCallback(() => {
     setError(null);
     setLogs([]);
+    setIsLoading(false);
   }, []);
 
   // Track activeLogStage in a ref for race condition protection during async fetches

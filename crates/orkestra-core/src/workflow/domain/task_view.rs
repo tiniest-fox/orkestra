@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::question::Question;
-use super::stage_session::{SessionState, StageSession};
+use super::stage_session::StageSession;
 use super::task::Task;
 use crate::workflow::domain::Iteration;
 use crate::workflow::runtime::Outcome;
@@ -30,6 +30,7 @@ pub struct TaskView {
 /// Centralizes business logic in the backend so the frontend
 /// is a thin render layer. Each field delegates to canonical
 /// predicates on Task/Status/Phase — no duplicated logic.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DerivedTaskState {
     pub current_stage: Option<String>,
@@ -52,11 +53,7 @@ impl DerivedTaskState {
     pub fn build(task: &Task, iterations: &[Iteration], sessions: &[StageSession]) -> Self {
         let pending_questions = extract_pending_questions(task, iterations);
         let rejection_feedback = extract_rejection_feedback(task, iterations);
-        let stages_with_logs = sessions
-            .iter()
-            .filter(|s| !matches!(s.session_state, SessionState::Spawning))
-            .map(|s| s.stage.clone())
-            .collect();
+        let stages_with_logs = sessions.iter().map(|s| s.stage.clone()).collect();
 
         Self {
             current_stage: task.current_stage().map(str::to_string),
@@ -122,11 +119,18 @@ fn extract_rejection_feedback(task: &Task, iterations: &[Iteration]) -> Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workflow::domain::stage_session::SessionState;
     use crate::workflow::domain::Question;
     use crate::workflow::runtime::{Phase, Status};
 
     fn make_task(stage: &str) -> Task {
-        Task::new("task-1", "Test", "Description", stage, "2025-01-24T10:00:00Z")
+        Task::new(
+            "task-1",
+            "Test",
+            "Description",
+            stage,
+            "2025-01-24T10:00:00Z",
+        )
     }
 
     #[test]
@@ -243,8 +247,8 @@ mod tests {
 
         let derived = DerivedTaskState::build(&task, &[], &[session1, session2]);
 
-        // Only non-Spawning sessions count
-        assert_eq!(derived.stages_with_logs, vec!["planning"]);
+        // All sessions produce tabs, including Spawning
+        assert_eq!(derived.stages_with_logs, vec!["planning", "work"]);
     }
 
     #[test]

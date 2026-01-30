@@ -104,8 +104,7 @@ impl DatabaseConnection {
     /// called on startup to detect corruption early.
     pub fn quick_check(&self) -> Result<bool> {
         let conn = self.conn.lock().map_err(|_| OrkestraError::LockError)?;
-        let result: String =
-            conn.query_row("PRAGMA quick_check;", [], |row| row.get(0))?;
+        let result: String = conn.query_row("PRAGMA quick_check;", [], |row| row.get(0))?;
         Ok(result == "ok")
     }
 
@@ -140,10 +139,7 @@ impl DatabaseConnection {
     /// Move a corrupted database aside and create a fresh one.
     fn recover_corrupted(path: &Path) -> Result<(Self, bool)> {
         let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
-        let file_name = path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
+        let file_name = path.file_name().unwrap_or_default().to_string_lossy();
         let backup_name = format!("{file_name}.corrupt.{timestamp}");
         let backup_path = path.with_file_name(&backup_name);
 

@@ -1,7 +1,10 @@
 //! Task CRUD commands.
 
 use crate::{error::TauriError, state::AppState};
-use orkestra_core::{is_process_running, kill_process_tree, workflow::{Task, TaskView}};
+use orkestra_core::{
+    is_process_running, kill_process_tree,
+    workflow::{Task, TaskView},
+};
 use tauri::State;
 
 /// Get all tasks from the workflow (rich view with iterations, sessions, derived state).

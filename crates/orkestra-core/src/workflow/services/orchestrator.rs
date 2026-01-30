@@ -175,13 +175,11 @@ impl OrchestratorLoop {
         self.stop_flag.store(true, Ordering::Relaxed);
     }
 
-    /// Run the orchestration loop.
+    /// Run all startup recovery steps (stale tasks, orphaned worktrees, stuck integrations).
     ///
-    /// This blocks the current thread and runs until `stop()` is called.
-    pub fn run<F>(&self, mut on_event: F)
-    where
-        F: FnMut(OrchestratorEvent) + Send,
-    {
+    /// Called automatically at the start of `run()`, but also available for testing
+    /// recovery behavior without starting the full orchestration loop.
+    pub fn run_startup_recovery(&self) -> Vec<OrchestratorEvent> {
         // Recover stale setup tasks on startup (tasks stuck in SettingUp phase)
         self.recover_stale_setup_tasks();
 
@@ -192,7 +190,17 @@ impl OrchestratorLoop {
         self.cleanup_orphaned_worktrees();
 
         // Recover stale integrations on startup (tasks stuck in Integrating phase)
-        for event in self.recover_stale_integrations() {
+        self.recover_stale_integrations()
+    }
+
+    /// Run the orchestration loop.
+    ///
+    /// This blocks the current thread and runs until `stop()` is called.
+    pub fn run<F>(&self, mut on_event: F)
+    where
+        F: FnMut(OrchestratorEvent) + Send,
+    {
+        for event in self.run_startup_recovery() {
             on_event(event);
         }
 
@@ -496,11 +504,13 @@ impl OrchestratorLoop {
     /// Recover tasks stuck in Integrating phase (from app crash during merge).
     ///
     /// Tasks that were being integrated when the app crashed will be stuck in Integrating.
-    /// We re-attempt the integration since merge operations are idempotent (git handles
-    /// already-merged branches gracefully).
     ///
-    /// On failure, the task is moved back to recovery stage by `integration_failed()`.
-    /// As a fallback, if that fails, we reset the phase to Idle so the task can be retried.
+    /// First checks if the branch was already merged into the target. This handles
+    /// the common case where the merge succeeded but the app was killed before
+    /// the DB was updated to Archived (e.g., merge triggers a rebuild that restarts
+    /// the app). In this case, the task is archived directly without re-merging.
+    ///
+    /// If the branch is NOT merged, falls back to re-attempting the full integration.
     fn recover_stale_integrations(&self) -> Vec<OrchestratorEvent> {
         let mut events = Vec::new();
 
@@ -524,48 +534,144 @@ impl OrchestratorLoop {
             if task.phase == Phase::Integrating && task.is_done() {
                 orkestra_debug!("recovery", "Found stale Integrating task: {}", task.id);
 
-                // Re-attempt integration
-                match api.integrate_task(&task.id) {
-                    Ok(_) => {
-                        orkestra_debug!(
-                            "recovery",
-                            "Successfully recovered integration for {}",
-                            task.id
-                        );
-                        events.push(OrchestratorEvent::IntegrationCompleted {
-                            task_id: task.id.clone(),
-                        });
-                    }
-                    Err(e) => {
-                        orkestra_debug!("recovery", "Integration failed for {}: {}", task.id, e);
+                if Self::is_branch_already_merged(&api, &task) {
+                    // Branch is already merged — archive directly
+                    orkestra_debug!(
+                        "recovery",
+                        "Branch already merged for {}, archiving directly",
+                        task.id
+                    );
 
-                        // integration_failed() should have moved task to recovery stage.
-                        // Verify the task is no longer stuck in Integrating phase.
-                        if let Ok(updated_task) = api.get_task(&task.id) {
-                            if updated_task.phase == Phase::Integrating {
-                                // Fallback: reset phase to Idle so orchestrator can retry later
+                    // Clean up worktree if it still exists on disk
+                    if task.worktree_path.is_some() {
+                        if let Some(ref git) = api.git_service {
+                            if let Err(e) = git.remove_worktree(&task.id, true) {
                                 orkestra_debug!(
                                     "recovery",
-                                    "Task {} still in Integrating phase, resetting to Idle",
-                                    task.id
+                                    "Failed to remove worktree for {} (non-critical): {}",
+                                    task.id,
+                                    e
                                 );
-                                let mut reset_task = updated_task;
-                                reset_task.phase = Phase::Idle;
-                                let _ = api.store.save_task(&reset_task);
                             }
                         }
+                    }
 
-                        events.push(OrchestratorEvent::IntegrationFailed {
-                            task_id: task.id.clone(),
-                            error: e.to_string(),
-                            conflict_files: vec![],
-                        });
+                    match api.integration_succeeded(&task.id) {
+                        Ok(_) => {
+                            orkestra_debug!(
+                                "recovery",
+                                "Archived already-merged task {}",
+                                task.id
+                            );
+                            events.push(OrchestratorEvent::IntegrationCompleted {
+                                task_id: task.id.clone(),
+                            });
+                        }
+                        Err(e) => {
+                            orkestra_debug!(
+                                "recovery",
+                                "Failed to archive already-merged task {}: {}",
+                                task.id,
+                                e
+                            );
+                            events.push(OrchestratorEvent::IntegrationFailed {
+                                task_id: task.id.clone(),
+                                error: e.to_string(),
+                                conflict_files: vec![],
+                            });
+                        }
+                    }
+                } else {
+                    // Branch is NOT merged — re-attempt full integration
+                    match api.integrate_task(&task.id) {
+                        Ok(_) => {
+                            orkestra_debug!(
+                                "recovery",
+                                "Successfully recovered integration for {}",
+                                task.id
+                            );
+                            events.push(OrchestratorEvent::IntegrationCompleted {
+                                task_id: task.id.clone(),
+                            });
+                        }
+                        Err(e) => {
+                            orkestra_debug!(
+                                "recovery",
+                                "Integration failed for {}: {}",
+                                task.id,
+                                e
+                            );
+
+                            // integration_failed() should have moved task to recovery stage.
+                            // Verify the task is no longer stuck in Integrating phase.
+                            if let Ok(updated_task) = api.get_task(&task.id) {
+                                if updated_task.phase == Phase::Integrating {
+                                    // Fallback: reset phase to Idle so orchestrator can retry later
+                                    orkestra_debug!(
+                                        "recovery",
+                                        "Task {} still in Integrating phase, resetting to Idle",
+                                        task.id
+                                    );
+                                    let mut reset_task = updated_task;
+                                    reset_task.phase = Phase::Idle;
+                                    let _ = api.store.save_task(&reset_task);
+                                }
+                            }
+
+                            events.push(OrchestratorEvent::IntegrationFailed {
+                                task_id: task.id.clone(),
+                                error: e.to_string(),
+                                conflict_files: vec![],
+                            });
+                        }
                     }
                 }
             }
         }
 
         events
+    }
+
+    /// Check if a task's branch is already merged into its target branch.
+    ///
+    /// Returns `true` if:
+    /// - No git service configured (nothing to merge)
+    /// - No branch name on the task (nothing to merge)
+    /// - The branch no longer exists (already cleaned up after merge)
+    /// - The branch's commits are all reachable from the target
+    ///
+    /// Returns `false` if the branch has unmerged commits or if the check fails.
+    fn is_branch_already_merged(
+        api: &WorkflowApi,
+        task: &crate::workflow::domain::Task,
+    ) -> bool {
+        let Some(ref git) = api.git_service else {
+            return true; // No git = nothing to merge
+        };
+
+        let Some(ref branch_name) = task.branch_name else {
+            return true; // No branch = nothing to merge
+        };
+
+        let target_branch = match &task.base_branch {
+            Some(base) => base.clone(),
+            None => git
+                .detect_primary_branch()
+                .unwrap_or_else(|_| "main".to_string()),
+        };
+
+        match git.is_branch_merged(branch_name, &target_branch) {
+            Ok(merged) => merged,
+            Err(e) => {
+                orkestra_debug!(
+                    "recovery",
+                    "Failed to check merge status for {}: {}, assuming not merged",
+                    task.id,
+                    e
+                );
+                false // Err on side of caution: attempt re-integration
+            }
+        }
     }
 
     /// Recover tasks stuck in `SettingUp` phase (from app crash during setup).

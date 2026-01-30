@@ -1115,3 +1115,244 @@ fi
         );
     }
 }
+
+// =============================================================================
+// Post-Merge Recovery Tests
+// =============================================================================
+
+/// Helper: advance a task through a simple work → review(automated) workflow to Done.
+///
+/// Returns the task in Done status. Uses individual ticks to avoid triggering
+/// integration (which would archive the task before we can test recovery).
+fn advance_to_done(ctx: &TestEnv, task_id: &str) {
+    use std::time::Duration;
+
+    // Work stage: set output, tick to spawn, tick to process
+    ctx.set_output(
+        task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation complete".to_string(),
+        },
+    );
+    ctx.tick(); // spawn work agent
+    std::thread::sleep(Duration::from_millis(50));
+    ctx.tick(); // process work output → AwaitingReview
+
+    // Approve work → advances to review (automated)
+    ctx.api().approve(task_id).unwrap();
+
+    // Review stage (automated): set output, tick to spawn, tick to process
+    ctx.set_output(
+        task_id,
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
+            content: "Approved".to_string(),
+        },
+    );
+    ctx.tick(); // spawn review agent
+    std::thread::sleep(Duration::from_millis(50));
+    ctx.tick(); // process review output → auto-approve → Done
+
+    let task = ctx.api().get_task(task_id).unwrap();
+    assert!(
+        task.is_done(),
+        "Task should be Done after review auto-approves, but status is {:?}",
+        task.status
+    );
+}
+
+/// Test that startup recovery archives a task whose branch was already merged.
+///
+/// Simulates the crash scenario:
+/// 1. Task reaches Done
+/// 2. Integration starts: merge succeeds, worktree removed
+/// 3. App crashes before DB is updated to Archived
+/// 4. On restart, recovery detects the branch is merged and archives directly
+#[test]
+fn test_recovery_archives_already_merged_task() {
+    use orkestra_core::workflow::{
+        config::StageConfig, OrchestratorEvent,
+    };
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary"),
+        StageConfig::new("review", "verdict").automated(),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    // Create task (worktree is created automatically)
+    let task = ctx.create_task("Recovery test", "Test recovery of merged task", None);
+    let task_id = task.id.clone();
+    let worktree_path = task.worktree_path.clone().unwrap();
+    let branch_name = task.branch_name.clone().unwrap();
+
+    // Make a commit in the worktree so there's something to merge
+    std::fs::write(
+        std::path::Path::new(&worktree_path).join("feature.txt"),
+        "new feature content",
+    )
+    .unwrap();
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(&worktree_path)
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["commit", "-m", "Add feature"])
+        .current_dir(&worktree_path)
+        .output()
+        .unwrap();
+
+    // Drive the task through the workflow to Done
+    advance_to_done(&ctx, &task_id);
+
+    // === Simulate crash during integration ===
+
+    // 1. Mark as integrating (what the orchestrator does before merge)
+    ctx.api().mark_integrating(&task_id).unwrap();
+
+    // 2. Merge the branch to main (simulating successful merge before crash)
+    let merge_output = std::process::Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(ctx.repo_path())
+        .output()
+        .unwrap();
+    assert!(
+        merge_output.status.success(),
+        "git checkout main failed: {}",
+        String::from_utf8_lossy(&merge_output.stderr)
+    );
+    let merge_output = std::process::Command::new("git")
+        .args(["merge", "--no-edit", &branch_name])
+        .current_dir(ctx.repo_path())
+        .output()
+        .unwrap();
+    assert!(
+        merge_output.status.success(),
+        "git merge failed: {}",
+        String::from_utf8_lossy(&merge_output.stderr)
+    );
+
+    // 3. Remove the worktree directory (simulating cleanup that ran before crash)
+    let worktree_dir = std::path::Path::new(&worktree_path);
+    if worktree_dir.exists() {
+        std::fs::remove_dir_all(worktree_dir).unwrap();
+    }
+
+    // Verify the task is stuck in the crash state
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.is_done(), "Task should still be Done (not Archived)");
+    assert_eq!(
+        task.phase,
+        Phase::Integrating,
+        "Task should be stuck in Integrating phase"
+    );
+
+    // === Simulate app restart: run startup recovery ===
+    let events = ctx.run_startup_recovery();
+
+    // Verify task is now Archived
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_archived(),
+        "Task should be Archived after recovery, but status is {:?}",
+        task.status
+    );
+
+    // Verify IntegrationCompleted event was emitted
+    let completed = events.iter().any(|e| {
+        matches!(e, OrchestratorEvent::IntegrationCompleted { task_id: id } if id == &task_id)
+    });
+    assert!(
+        completed,
+        "Should have emitted IntegrationCompleted event. Events: {events:?}"
+    );
+
+    // Verify the merged file is on main
+    assert!(
+        ctx.repo_path().join("feature.txt").exists(),
+        "Merged file should exist on main"
+    );
+
+    println!("=== Recovery of Already-Merged Task Test Complete ===");
+}
+
+/// Test that startup recovery re-integrates a task whose branch was NOT merged.
+///
+/// When the crash happened before the merge (e.g., during commit/rebase), the
+/// branch has unmerged commits. Recovery should re-attempt the full integration.
+#[test]
+fn test_recovery_retries_unmerged_task() {
+    use orkestra_core::workflow::{
+        config::StageConfig, OrchestratorEvent,
+    };
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary"),
+        StageConfig::new("review", "verdict").automated(),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    // Create task (worktree is created automatically)
+    let task = ctx.create_task("Unmerged test", "Test recovery of unmerged task", None);
+    let task_id = task.id.clone();
+    let worktree_path = task.worktree_path.clone().unwrap();
+
+    // Make a commit in the worktree so there's something to merge
+    std::fs::write(
+        std::path::Path::new(&worktree_path).join("unmerged_feature.txt"),
+        "unmerged content",
+    )
+    .unwrap();
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(&worktree_path)
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["commit", "-m", "Add unmerged feature"])
+        .current_dir(&worktree_path)
+        .output()
+        .unwrap();
+
+    // Drive the task through the workflow to Done
+    advance_to_done(&ctx, &task_id);
+
+    // === Simulate crash: mark as Integrating but DON'T merge ===
+    ctx.api().mark_integrating(&task_id).unwrap();
+
+    // Verify the task is in the crash state (branch NOT merged)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.is_done());
+    assert_eq!(task.phase, Phase::Integrating);
+
+    // === Simulate app restart: run startup recovery ===
+    let events = ctx.run_startup_recovery();
+
+    // Recovery should re-attempt integration, which should succeed
+    // (worktree exists, branch has commits, no conflicts)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_archived(),
+        "Task should be Archived after recovery re-integration, but status is {:?}",
+        task.status
+    );
+
+    // Verify IntegrationCompleted event was emitted
+    let completed = events.iter().any(|e| {
+        matches!(e, OrchestratorEvent::IntegrationCompleted { task_id: id } if id == &task_id)
+    });
+    assert!(
+        completed,
+        "Should have emitted IntegrationCompleted event. Events: {events:?}"
+    );
+
+    // Verify the file was merged to main
+    assert!(
+        ctx.repo_path().join("unmerged_feature.txt").exists(),
+        "File should be merged to main after recovery"
+    );
+
+    println!("=== Recovery of Unmerged Task Test Complete ===");
+}

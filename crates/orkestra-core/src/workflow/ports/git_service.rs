@@ -168,6 +168,15 @@ pub trait GitService: Send + Sync {
     /// Returns just the directory names (not full paths), which correspond to task IDs.
     /// Returns an empty vec if the worktrees directory doesn't exist.
     fn list_worktree_names(&self) -> Result<Vec<String>, GitError>;
+
+    /// Check if a branch is fully merged into a target branch.
+    ///
+    /// Returns `true` if all commits on `branch_name` are reachable from
+    /// `target_branch` (i.e., merging would be a no-op).
+    ///
+    /// Also returns `true` if the branch does not exist — a missing branch
+    /// means it was already cleaned up after a successful merge.
+    fn is_branch_merged(&self, branch_name: &str, target_branch: &str) -> Result<bool, GitError>;
 }
 
 // =============================================================================
@@ -192,6 +201,7 @@ pub mod mock {
         next_rebase_result: Mutex<Option<Result<(), GitError>>>,
         create_worktree_calls: Mutex<Vec<(String, Option<String>)>>,
         remove_worktree_calls: Mutex<Vec<(String, bool)>>,
+        merged_branches: Mutex<HashMap<String, bool>>,
     }
 
     impl MockGitService {
@@ -206,6 +216,7 @@ pub mod mock {
                 next_rebase_result: Mutex::new(None),
                 create_worktree_calls: Mutex::new(Vec::new()),
                 remove_worktree_calls: Mutex::new(Vec::new()),
+                merged_branches: Mutex::new(HashMap::new()),
             }
         }
 
@@ -237,6 +248,14 @@ pub mod mock {
         /// Get the list of `remove_worktree` calls for verification.
         pub fn get_remove_worktree_calls(&self) -> Vec<(String, bool)> {
             self.remove_worktree_calls.lock().unwrap().clone()
+        }
+
+        /// Mark a branch as merged (or not) for `is_branch_merged` checks.
+        pub fn set_branch_merged(&self, branch_name: &str, merged: bool) {
+            self.merged_branches
+                .lock()
+                .unwrap()
+                .insert(branch_name.to_string(), merged);
         }
     }
 
@@ -367,6 +386,14 @@ pub mod mock {
 
         fn list_worktree_names(&self) -> Result<Vec<String>, GitError> {
             Ok(self.worktrees.lock().unwrap().keys().cloned().collect())
+        }
+
+        fn is_branch_merged(&self, branch_name: &str, _target_branch: &str) -> Result<bool, GitError> {
+            if let Some(&merged) = self.merged_branches.lock().unwrap().get(branch_name) {
+                return Ok(merged);
+            }
+            // Default: not merged (conservative)
+            Ok(false)
         }
     }
 

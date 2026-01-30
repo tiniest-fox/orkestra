@@ -608,6 +608,30 @@ impl GitService for Git2GitService {
         }
         Ok(names)
     }
+
+    fn is_branch_merged(&self, branch_name: &str, target_branch: &str) -> Result<bool, GitError> {
+        // Check if the branch still exists
+        let verify_output = Command::new("git")
+            .args(["rev-parse", "--verify", &format!("refs/heads/{branch_name}")])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GitError::IoError(format!("Failed to check branch existence: {e}")))?;
+
+        if !verify_output.status.success() {
+            // Branch doesn't exist — it was already cleaned up after merge
+            return Ok(true);
+        }
+
+        // Check if branch_name is an ancestor of target_branch
+        // Exit code 0 = is ancestor (merged), 1 = not ancestor (not merged)
+        let output = Command::new("git")
+            .args(["merge-base", "--is-ancestor", branch_name, target_branch])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GitError::IoError(format!("Failed to check merge-base: {e}")))?;
+
+        Ok(output.status.success())
+    }
 }
 
 #[cfg(test)]
@@ -790,5 +814,65 @@ mod tests {
         // No changes - should be a no-op
         git.commit_pending_changes(&repo_path, "Test commit")
             .expect("Should succeed with no changes");
+    }
+
+    #[test]
+    fn test_is_branch_merged_after_merge() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create worktree, commit, and merge
+        let worktree = git
+            .create_worktree("TASK-MERGED", None)
+            .expect("Failed to create worktree");
+        std::fs::write(worktree.worktree_path.join("merged.txt"), "content")
+            .expect("Failed to write");
+        git.commit_pending_changes(&worktree.worktree_path, "Add file")
+            .expect("Failed to commit");
+        git.merge_to_primary("task/TASK-MERGED")
+            .expect("Failed to merge");
+
+        // Branch should be detected as merged
+        assert!(
+            git.is_branch_merged("task/TASK-MERGED", "main")
+                .expect("Should check merge status"),
+            "Branch should be merged after merge_to_primary"
+        );
+    }
+
+    #[test]
+    fn test_is_branch_not_merged() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create worktree and commit, but do NOT merge
+        let worktree = git
+            .create_worktree("TASK-UNMERGED", None)
+            .expect("Failed to create worktree");
+        std::fs::write(worktree.worktree_path.join("unmerged.txt"), "content")
+            .expect("Failed to write");
+        git.commit_pending_changes(&worktree.worktree_path, "Add file")
+            .expect("Failed to commit");
+
+        // Branch should NOT be detected as merged
+        assert!(
+            !git.is_branch_merged("task/TASK-UNMERGED", "main")
+                .expect("Should check merge status"),
+            "Branch should not be merged before merge_to_primary"
+        );
+    }
+
+    #[test]
+    fn test_is_branch_merged_deleted_branch() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // A branch that doesn't exist should be treated as "already merged"
+        // (it was cleaned up after a successful merge)
+        assert!(
+            git.is_branch_merged("task/NONEXISTENT", "main")
+                .expect("Should check merge status"),
+            "Missing branch should be treated as already merged"
+        );
     }
 }

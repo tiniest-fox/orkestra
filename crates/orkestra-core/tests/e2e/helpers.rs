@@ -282,6 +282,13 @@ impl TestEnv {
     // Orchestrator
     // =========================================================================
 
+    /// Run all startup recovery steps (stale tasks, orphaned worktrees, stuck integrations).
+    ///
+    /// Simulates what happens when the app restarts and the orchestrator recovers.
+    pub fn run_startup_recovery(&self) -> Vec<orkestra_core::workflow::OrchestratorEvent> {
+        self.orchestrator.run_startup_recovery()
+    }
+
     /// Single orchestrator tick (spawn pending, poll completions).
     ///
     /// Use this for script stages where you want to check state mid-execution.

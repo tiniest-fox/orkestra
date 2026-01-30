@@ -15,6 +15,7 @@ pub fn workflow_get_tasks(state: State<AppState>) -> Result<Vec<TaskView>, Tauri
 /// If git service is configured, creates a worktree and branch.
 /// `base_branch` specifies which branch to create from (defaults to current).
 /// `auto_mode` enables autonomous execution through all stages.
+/// `flow` selects an alternate workflow flow (e.g., "quick_fix"). Omit for default full pipeline.
 #[tauri::command]
 pub fn workflow_create_task(
     state: State<AppState>,
@@ -22,6 +23,7 @@ pub fn workflow_create_task(
     description: String,
     base_branch: Option<String>,
     auto_mode: Option<bool>,
+    flow: Option<String>,
 ) -> Result<Task, TauriError> {
     state
         .api()?
@@ -30,6 +32,7 @@ pub fn workflow_create_task(
             &description,
             base_branch.as_deref(),
             auto_mode.unwrap_or(false),
+            flow.as_deref(),
         )
         .map_err(Into::into)
 }

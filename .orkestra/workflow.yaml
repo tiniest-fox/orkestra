@@ -10,8 +10,7 @@ stages:
   - name: planning
     display_name: Planning
     artifact: plan
-    agent:
-      agent_type: planner
+    prompt: planner.md
     capabilities:
       ask_questions: true
 
@@ -20,8 +19,7 @@ stages:
     display_name: Breaking Down
     artifact: breakdown
     inputs: [plan]
-    agent:
-      agent_type: breakdown
+    prompt: breakdown.md
     capabilities:
       produce_subtasks: true
 
@@ -30,8 +28,7 @@ stages:
     display_name: Working
     artifact: summary
     inputs: [plan, breakdown]
-    agent:
-      agent_type: worker
+    prompt: worker.md
 
   # Checks: Automated quality gates (lint, test, type check)
   # Runs in the task's worktree, detects what changed, runs relevant checks
@@ -49,8 +46,7 @@ stages:
     display_name: Reviewing
     artifact: verdict
     inputs: [plan, summary, check_results]
-    agent:
-      agent_type: reviewer
+    prompt: reviewer.md
     capabilities:
       supports_restage: [work]
     is_automated: true
@@ -61,9 +57,32 @@ stages:
     display_name: Compounding
     artifact: learnings
     inputs: [summary, verdict]
-    agent:
-      agent_type: compound
+    prompt: compound.md
     is_automated: true
+
+flows:
+  # Quick flow: Skip breakdown and compound stages for smaller tasks
+  quick:
+    description: Skip planning breakdown for simple, well-defined tasks
+    icon: zap
+    stages:
+      - planning
+      - work
+      - checks
+      - review:
+          capabilities:
+            supports_restage: [work]
+
+  # Hotfix flow: Straight to work, minimal overhead
+  hotfix:
+    description: Emergency fix — skip straight to implementation
+    icon: rocket
+    stages:
+      - work
+      - checks
+      - review:
+          capabilities:
+            supports_restage: [work]
 
 integration:
   on_failure: work

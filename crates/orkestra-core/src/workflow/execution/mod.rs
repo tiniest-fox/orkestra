@@ -20,9 +20,10 @@ pub use output::{StageOutput, StageOutputError, SubtaskOutput};
 pub use parser::parse_agent_output;
 pub use prompt::{
     build_complete_prompt, build_resume_prompt, determine_resume_type, get_agent_schema,
-    load_agent_definition, resolve_stage_agent_config, AgentConfigError, ArtifactContext,
-    IntegrationErrorContext, PromptBuilder, QuestionAnswerContext, ResolvedAgentConfig,
-    ResumeQuestionAnswer, ResumeType, StagePromptContext,
+    load_agent_definition, resolve_stage_agent_config, resolve_stage_agent_config_for,
+    AgentConfigError, ArtifactContext, FlowOverrides, IntegrationErrorContext, PromptBuilder,
+    QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
+    StagePromptContext,
 };
 pub use runner::{AgentRunner, AgentRunnerTrait, RunConfig, RunError, RunEvent, RunResult};
 pub use script_runner::{ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult};

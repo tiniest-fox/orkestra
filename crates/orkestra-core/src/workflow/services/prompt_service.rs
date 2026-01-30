@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::{
-    resolve_stage_agent_config, AgentConfigError, IntegrationErrorContext, ResolvedAgentConfig,
+    resolve_stage_agent_config_for, AgentConfigError, FlowOverrides, IntegrationErrorContext,
+    ResolvedAgentConfig,
 };
 
 // ============================================================================
@@ -62,12 +63,33 @@ impl PromptService {
         feedback: Option<&str>,
         integration_error: Option<IntegrationErrorContext<'_>>,
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
-        resolve_stage_agent_config(
+        let stage_name = task
+            .current_stage()
+            .ok_or(AgentConfigError::NotInActiveStage)?;
+
+        // Resolve flow overrides
+        let prompt_override = workflow.effective_prompt_path(stage_name, task.flow.as_deref());
+        let capabilities_override =
+            workflow.effective_capabilities(stage_name, task.flow.as_deref());
+
+        // Only pass overrides if the task has a flow (otherwise use stage defaults)
+        let flow_overrides = if task.flow.is_some() {
+            FlowOverrides {
+                prompt: prompt_override.as_deref(),
+                capabilities: capabilities_override.as_ref(),
+            }
+        } else {
+            FlowOverrides::default()
+        };
+
+        resolve_stage_agent_config_for(
             workflow,
             task,
+            stage_name,
             Some(&self.project_root),
             feedback,
             integration_error,
+            flow_overrides,
         )
     }
 

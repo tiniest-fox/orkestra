@@ -145,6 +145,7 @@ mod tests {
                 }),
             ],
             integration: IntegrationConfig::default(),
+            flows: std::collections::HashMap::new(),
         }
     }
 

@@ -162,6 +162,18 @@ pub struct IntegrationErrorContext<'a> {
     pub conflict_files: Vec<&'a str>,
 }
 
+/// Flow-specific overrides for agent configuration.
+///
+/// When a task uses a named flow, the flow may override the prompt path
+/// and/or capabilities for specific stages.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct FlowOverrides<'a> {
+    /// Override the prompt template path.
+    pub prompt: Option<&'a str>,
+    /// Override the stage capabilities.
+    pub capabilities: Option<&'a crate::workflow::config::StageCapabilities>,
+}
+
 /// Builder for stage prompts.
 ///
 /// Takes workflow configuration and task state to generate
@@ -204,6 +216,45 @@ impl<'a> PromptBuilder<'a> {
 
         // Question history is now passed via resume prompts (IterationTrigger::Answers)
         // Initial prompts don't include question history since no questions have been asked yet
+        let question_history = Vec::new();
+
+        Some(StagePromptContext {
+            stage,
+            task_id: &task.id,
+            title: &task.title,
+            description: &task.description,
+            artifacts,
+            question_history,
+            feedback,
+            integration_error,
+            worktree_path: task.worktree_path.as_deref(),
+        })
+    }
+
+    /// Build context for a stage using an explicit stage config (for flow overrides).
+    ///
+    /// This is like `build_context` but accepts the stage directly instead of
+    /// looking it up by name. Used when capabilities have been overridden by a flow.
+    pub fn build_context_with_stage(
+        &self,
+        stage: &'a StageConfig,
+        task: &'a Task,
+        feedback: Option<&'a str>,
+        integration_error: Option<IntegrationErrorContext<'a>>,
+    ) -> Option<StagePromptContext<'a>> {
+        let artifacts: Vec<ArtifactContext<'a>> = stage
+            .inputs
+            .iter()
+            .filter_map(|input_name| {
+                task.artifacts
+                    .get(input_name)
+                    .map(|artifact| ArtifactContext {
+                        name: &artifact.name,
+                        content: &artifact.content,
+                    })
+            })
+            .collect();
+
         let question_history = Vec::new();
 
         Some(StagePromptContext {
@@ -407,10 +458,12 @@ pub fn load_custom_schema(project_root: Option<&Path>, path: &str) -> std::io::R
 /// Returns None for script stages (they don't use JSON schemas).
 pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>) -> Option<String> {
     // Script stages don't have schemas
-    let agent_config = stage_config.agent_config()?;
+    if stage_config.is_script_stage() {
+        return None;
+    }
 
     // Check for custom schema file first
-    if let Some(schema_file) = &agent_config.schema_file {
+    if let Some(schema_file) = &stage_config.schema_file {
         if let Ok(custom_schema) = load_custom_schema(project_root, schema_file) {
             return Some(custom_schema);
         }
@@ -445,33 +498,73 @@ pub fn resolve_stage_agent_config(
         .current_stage()
         .ok_or(AgentConfigError::NotInActiveStage)?;
 
+    resolve_stage_agent_config_for(
+        workflow,
+        task,
+        stage_name,
+        project_root,
+        feedback,
+        integration_error,
+        FlowOverrides::default(),
+    )
+}
+
+/// Resolve agent configuration for a specific stage with optional overrides.
+///
+/// Allows flow-specific prompt and capability overrides. When overrides
+/// are `None`, the stage's own configuration is used.
+pub fn resolve_stage_agent_config_for(
+    workflow: &WorkflowConfig,
+    task: &Task,
+    stage_name: &str,
+    project_root: Option<&Path>,
+    feedback: Option<&str>,
+    integration_error: Option<IntegrationErrorContext<'_>>,
+    flow_overrides: FlowOverrides<'_>,
+) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
         .stage(stage_name)
         .ok_or_else(|| AgentConfigError::UnknownStage(stage_name.to_string()))?;
 
     // Script stages don't use agent config
-    let agent_config = stage
-        .agent_config()
-        .ok_or(AgentConfigError::NotInActiveStage)?; // Script stages shouldn't call this
+    if stage.is_script_stage() {
+        return Err(AgentConfigError::NotInActiveStage);
+    }
 
-    // Load agent definition
-    let definition_path = agent_config.definition_path();
+    // Resolve prompt path: override > stage.prompt_path()
+    let definition_path = flow_overrides
+        .prompt
+        .map(String::from)
+        .or_else(|| stage.prompt_path())
+        .unwrap_or_else(|| format!("{stage_name}.md"));
+
     let agent_def = load_agent_definition(project_root, &definition_path)
         .map_err(|e| AgentConfigError::DefinitionNotFound(e.to_string()))?;
+
+    // Build effective stage config (with capability overrides for flows)
+    let overridden_stage;
+    let effective_stage = if let Some(caps) = flow_overrides.capabilities {
+        overridden_stage = {
+            let mut s = stage.clone();
+            s.capabilities = caps.clone();
+            s
+        };
+        &overridden_stage
+    } else {
+        stage
+    };
 
     // Build prompt context
     let builder = PromptBuilder::new(workflow);
     let ctx = builder
-        .build_context(stage_name, task, feedback, integration_error)
+        .build_context_with_stage(effective_stage, task, feedback, integration_error)
         .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;
 
-    // Build complete prompt with agent definition
     let prompt = build_complete_prompt(&agent_def, &ctx);
 
-    // Get JSON schema dynamically based on stage config
-    // Safe to unwrap since we already verified this is an agent stage above
+    // Get JSON schema
     let json_schema =
-        get_agent_schema(stage, project_root).expect("Agent stage should have schema");
+        get_agent_schema(effective_stage, project_root).expect("Agent stage should have schema");
 
     Ok(ResolvedAgentConfig {
         prompt,

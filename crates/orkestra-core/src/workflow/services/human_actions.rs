@@ -40,8 +40,8 @@ impl WorkflowApi {
         // End current iteration
         self.end_current_iteration(&task, Outcome::Approved)?;
 
-        // Compute next status (skipping optional stages)
-        let next_status = self.compute_next_status_on_approve(&current_stage);
+        // Compute next status (flow-aware progression)
+        let next_status = self.compute_next_status_on_approve(&current_stage, task.flow.as_deref());
         let now = chrono::Utc::now().to_rfc3339();
 
         task.status = next_status.clone();
@@ -203,7 +203,7 @@ impl WorkflowApi {
         let last_stage = iterations.last().map_or_else(
             || {
                 self.workflow
-                    .first_stage()
+                    .first_stage_in_flow(task.flow.as_deref())
                     .map_or_else(|| "planning".to_string(), |s| s.name.clone())
             },
             |i| i.stage.clone(),
@@ -306,7 +306,8 @@ impl WorkflowApi {
                     );
                     self.end_current_iteration(&task, Outcome::Approved)?;
 
-                    let next_status = self.compute_next_status_on_approve(&current_stage);
+                    let next_status =
+                        self.compute_next_status_on_approve(&current_stage, task.flow.as_deref());
                     let now = chrono::Utc::now().to_rfc3339();
 
                     task.status = next_status.clone();

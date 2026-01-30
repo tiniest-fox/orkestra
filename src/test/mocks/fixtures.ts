@@ -113,6 +113,7 @@ export function createMockWorkflowConfig(): WorkflowConfig {
       },
     ],
     integration: { on_failure: "work" },
+    flows: {},
   };
 }
 

@@ -677,7 +677,7 @@ fn test_custom_integration_on_failure() {
     let orkestra_dir = temp_dir.path().join(".orkestra");
     std::fs::create_dir_all(&orkestra_dir).unwrap();
 
-    // Create agent definition files
+    // Create agent definition files (matching stage names for prompt resolution)
     let agents_dir = orkestra_dir.join("agents");
     std::fs::create_dir_all(&agents_dir).unwrap();
     std::fs::write(agents_dir.join("planner.md"), "You are a planner agent.").unwrap();
@@ -685,16 +685,20 @@ fn test_custom_integration_on_failure() {
     std::fs::write(agents_dir.join("reviewer.md"), "You are a reviewer agent.").unwrap();
 
     // Create workflow config with custom on_failure (no breakdown stage)
+    // Uses explicit `prompt` to map stage names to agent definition files
     let workflow_path = orkestra_dir.join("workflow.yaml");
     let yaml = r"
 version: 1
 stages:
   - name: planning
     artifact: plan
+    prompt: planner.md
   - name: work
     artifact: summary
+    prompt: worker.md
   - name: review
     artifact: verdict
+    prompt: reviewer.md
     is_automated: true
 integration:
   on_failure: planning
@@ -870,7 +874,7 @@ fi
     let workflow = WorkflowConfig {
         version: 1,
         stages: vec![
-            StageConfig::new("work", "summary"),
+            StageConfig::new("work", "summary").with_prompt("worker.md"),
             StageConfig::new("checks", "check_results")
                 .with_display_name("Automated Checks")
                 .with_inputs(vec!["summary".into()])
@@ -885,10 +889,12 @@ fi
                     on_failure: Some("work".into()),
                 }),
             StageConfig::new("review", "verdict")
+                .with_prompt("reviewer.md")
                 .with_inputs(vec!["summary".into(), "check_results".into()])
                 .automated(),
         ],
         integration: IntegrationConfig::default(),
+        flows: std::collections::HashMap::new(),
     };
 
     // Save workflow config

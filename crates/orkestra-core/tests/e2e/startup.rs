@@ -177,11 +177,11 @@ fn test_startup_with_invalid_integration_on_failure() {
 }
 
 #[test]
-fn test_startup_with_stage_having_both_agent_and_script() {
-    use orkestra_core::workflow::config::{AgentStageConfig, ScriptStageConfig, StageConfig};
+fn test_startup_with_stage_having_both_prompt_and_script() {
+    use orkestra_core::workflow::config::{ScriptStageConfig, StageConfig};
 
     let mut stage = StageConfig::new("checks", "check_results");
-    stage.agent = Some(AgentStageConfig::worker());
+    stage.prompt = Some("worker.md".to_string());
     stage.script = Some(ScriptStageConfig::new("./run.sh"));
 
     let workflow = WorkflowConfig::new(vec![stage]);
@@ -190,7 +190,7 @@ fn test_startup_with_stage_having_both_agent_and_script() {
     assert!(!errors.is_empty(), "Should have validation errors");
     assert!(
         errors.iter().any(|e| e.contains("both")),
-        "Should mention having both agent and script: {errors:?}"
+        "Should mention having both prompt and script: {errors:?}"
     );
 }
 

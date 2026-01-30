@@ -24,28 +24,41 @@ impl WorkflowApi {
         description: &str,
         base_branch: Option<&str>,
     ) -> WorkflowResult<Task> {
-        self.create_task_with_options(title, description, base_branch, false)
+        self.create_task_with_options(title, description, base_branch, false, None)
     }
 
     /// Create a new task with options. Starts in the first workflow stage.
     ///
-    /// Like `create_task`, but allows setting `auto_mode` at creation time.
+    /// Like `create_task`, but allows setting `auto_mode` and `flow` at creation time.
+    /// When `flow` is specified, the task starts at the first stage of that flow.
     pub fn create_task_with_options(
         &self,
         title: &str,
         description: &str,
         base_branch: Option<&str>,
         auto_mode: bool,
+        flow: Option<&str>,
     ) -> WorkflowResult<Task> {
+        // Validate flow exists if specified
+        if let Some(flow_name) = flow {
+            if !self.workflow.flows.contains_key(flow_name) {
+                return Err(WorkflowError::InvalidTransition(format!(
+                    "Unknown flow \"{flow_name}\". Available flows: {:?}",
+                    self.workflow.flows.keys().collect::<Vec<_>>()
+                )));
+            }
+        }
+
         let id = self.store.next_task_id()?;
         let first_stage = self
             .workflow
-            .first_stage()
+            .first_stage_in_flow(flow)
             .ok_or_else(|| WorkflowError::InvalidTransition("No stages in workflow".into()))?;
 
         let now = chrono::Utc::now().to_rfc3339();
         let mut task = Task::new(&id, title, description, &first_stage.name, &now);
         task.auto_mode = auto_mode;
+        task.flow = flow.map(String::from);
 
         // ALWAYS start in SettingUp - async setup will transition to Idle
         task.phase = Phase::SettingUp;

@@ -195,8 +195,25 @@ impl AgentExecutionService {
             )));
         }
 
+        // Use effective capabilities from flow override if applicable
+        let effective_config = if task.flow.is_some() {
+            if let Some(caps) = self
+                .workflow
+                .effective_capabilities(stage, task.flow.as_deref())
+            {
+                let mut overridden = stage_config.clone();
+                overridden.capabilities = caps;
+                Some(overridden)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let schema_stage = effective_config.as_ref().unwrap_or(stage_config);
+
         let json_schema = crate::workflow::execution::get_agent_schema(
-            stage_config,
+            schema_stage,
             Some(self.prompt_service.project_root()),
         )
         .expect("Agent stage should have schema");

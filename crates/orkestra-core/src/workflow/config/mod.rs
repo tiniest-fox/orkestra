@@ -8,5 +8,7 @@ mod stage;
 mod workflow;
 
 pub use loader::{load_workflow, load_workflow_for_project, LoadError};
-pub use stage::{AgentStageConfig, ScriptStageConfig, StageCapabilities, StageConfig};
-pub use workflow::{IntegrationConfig, WorkflowConfig};
+pub use stage::{ScriptStageConfig, StageCapabilities, StageConfig};
+pub use workflow::{
+    FlowConfig, FlowStageEntry, FlowStageOverride, IntegrationConfig, WorkflowConfig,
+};

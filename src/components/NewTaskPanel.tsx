@@ -1,23 +1,40 @@
 /**
  * NewTaskPanel - Side panel for creating new tasks.
- * Replaces the modal-based CreateTaskModal with a panel in the sidebar slot.
+ * Includes a flow picker when alternate flows are defined in the workflow config.
  */
 
+import { FileText, Layers, type LucideIcon, Rocket, Zap } from "lucide-react";
 import { useState } from "react";
+import { useWorkflowConfig } from "../providers";
+import type { FlowConfig } from "../types/workflow";
+import { titleCase } from "../utils/formatters";
 import { BranchSelector } from "./BranchSelector";
 import { Button, Panel } from "./ui";
 
+/** Map of known lucide icon names to components. */
+const ICON_MAP: Record<string, LucideIcon> = {
+  zap: Zap,
+  "file-text": FileText,
+  rocket: Rocket,
+  layers: Layers,
+};
+
 interface NewTaskPanelProps {
   onClose: () => void;
-  onSubmit: (description: string, autoMode: boolean, baseBranch: string | null) => Promise<void>;
+  onSubmit: (description: string, autoMode: boolean, baseBranch: string | null, flow?: string) => Promise<void>;
 }
 
 export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
+  const config = useWorkflowConfig();
   const [description, setDescription] = useState("");
   const [autoMode, setAutoMode] = useState(false);
   const [baseBranch, setBaseBranch] = useState<string | null>(null);
+  const [selectedFlow, setSelectedFlow] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const flowEntries = Object.entries(config.flows ?? {});
+  const hasFlows = flowEntries.length > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +44,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
     setError(null);
 
     try {
-      await onSubmit(description.trim(), autoMode, baseBranch);
+      await onSubmit(description.trim(), autoMode, baseBranch, selectedFlow);
       // Don't reset form - parent will close the panel
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");
@@ -70,6 +87,10 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
             <BranchSelector value={baseBranch} onChange={setBaseBranch} />
           </div>
 
+          {hasFlows && (
+            <FlowPicker flows={flowEntries} selected={selectedFlow} onSelect={setSelectedFlow} />
+          )}
+
           <label className="flex items-center gap-2 mt-4 cursor-pointer select-none">
             <button
               type="button"
@@ -100,5 +121,79 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
         </Panel.Footer>
       </form>
     </Panel>
+  );
+}
+
+// =============================================================================
+// Flow Picker
+// =============================================================================
+
+interface FlowPickerProps {
+  flows: [string, FlowConfig][];
+  selected: string | undefined;
+  onSelect: (flow: string | undefined) => void;
+}
+
+function FlowPicker({ flows, selected, onSelect }: FlowPickerProps) {
+  return (
+    <fieldset className="mt-4">
+      <legend className="block text-sm font-medium text-stone-700 mb-2">Workflow</legend>
+      <div className="flex flex-col gap-2">
+        <FlowOption
+          name="Standard"
+          description="Full pipeline with all stages"
+          isSelected={selected === undefined}
+          onClick={() => onSelect(undefined)}
+        />
+        {flows.map(([name, flow]) => {
+          const Icon = flow.icon ? ICON_MAP[flow.icon] : undefined;
+          return (
+            <FlowOption
+              key={name}
+              name={titleCase(name)}
+              description={flow.description}
+              icon={Icon}
+              isSelected={selected === name}
+              onClick={() => onSelect(name)}
+            />
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+interface FlowOptionProps {
+  name: string;
+  description: string;
+  icon?: LucideIcon;
+  isSelected: boolean;
+  onClick: () => void;
+}
+
+function FlowOption({ name, description, icon: Icon, isSelected, onClick }: FlowOptionProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-start gap-3 px-3 py-2.5 rounded-panel-sm border text-left transition-colors ${
+        isSelected
+          ? "border-orange-400 bg-orange-50"
+          : "border-stone-200 bg-white hover:border-stone-300"
+      }`}
+    >
+      {Icon && (
+        <Icon
+          size={16}
+          className={`mt-0.5 flex-shrink-0 ${isSelected ? "text-orange-600" : "text-stone-400"}`}
+        />
+      )}
+      <div className="min-w-0">
+        <div className={`text-sm font-medium ${isSelected ? "text-orange-700" : "text-stone-700"}`}>
+          {name}
+        </div>
+        {description && <div className="text-xs text-stone-500 mt-0.5">{description}</div>}
+      </div>
+    </button>
   );
 }

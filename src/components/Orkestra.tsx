@@ -54,8 +54,9 @@ export function Orkestra() {
     description: string,
     autoMode: boolean,
     baseBranch: string | null,
+    flow?: string,
   ) => {
-    await createTask("", description, autoMode, baseBranch);
+    await createTask("", description, autoMode, baseBranch, flow);
     handleCloseSidebar();
   };
 

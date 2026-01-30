@@ -48,6 +48,40 @@ export interface IntegrationConfig {
 }
 
 /**
+ * Override for a stage within a flow.
+ * Only prompt and capabilities can be overridden.
+ */
+export interface FlowStageOverride {
+  /** Override prompt template path. */
+  prompt?: string;
+  /** Override capabilities (full replace, not merge). */
+  capabilities?: StageCapabilities;
+}
+
+/**
+ * A stage entry in a flow definition.
+ * Can be a plain stage name (no overrides) or a stage name with overrides.
+ */
+export interface FlowStageEntry {
+  /** The stage name (must reference a top-level stage). */
+  stage_name: string;
+  /** Optional overrides for this stage in this flow. */
+  overrides?: FlowStageOverride;
+}
+
+/**
+ * Configuration for an alternate flow (shortened pipeline).
+ */
+export interface FlowConfig {
+  /** Human-readable description of when to use this flow. */
+  description: string;
+  /** Optional lucide-react icon name (e.g., "zap", "rocket"). */
+  icon?: string;
+  /** Ordered list of stages in this flow. */
+  stages: FlowStageEntry[];
+}
+
+/**
  * Complete workflow configuration loaded from workflow.yaml.
  */
 export interface WorkflowConfig {
@@ -57,6 +91,8 @@ export interface WorkflowConfig {
   stages: StageConfig[];
   /** Integration settings. */
   integration: IntegrationConfig;
+  /** Named alternate flows (shortened pipelines). Omitted when empty. */
+  flows?: Record<string, FlowConfig>;
 }
 
 // =============================================================================
@@ -236,6 +272,8 @@ export interface WorkflowTask {
   base_branch?: string;
   /** Whether the task runs autonomously through all stages. */
   auto_mode: boolean;
+  /** Named flow for this task (e.g., "quick_fix"). Null/undefined = default flow. */
+  flow?: string;
   /** When the task was created. */
   created_at: string;
   /** When the task was last updated. */

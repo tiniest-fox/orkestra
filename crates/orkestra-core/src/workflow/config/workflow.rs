@@ -3,9 +3,11 @@
 //! A workflow is an ordered collection of stages that define the task lifecycle.
 //! Stages are processed in order, with optional stages being skippable.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
-use super::stage::StageConfig;
+use super::stage::{StageCapabilities, StageConfig};
 
 /// Complete workflow configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -20,6 +22,103 @@ pub struct WorkflowConfig {
     /// Integration (merge) configuration.
     #[serde(default)]
     pub integration: IntegrationConfig,
+
+    /// Named alternate flows (shortened pipelines).
+    /// Each flow defines a subset of stages with optional overrides.
+    /// The full pipeline is the implicit default flow.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub flows: HashMap<String, FlowConfig>,
+}
+
+/// Configuration for an alternate flow (shortened pipeline).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FlowConfig {
+    /// Human-readable description of when to use this flow.
+    #[serde(default)]
+    pub description: String,
+
+    /// Optional lucide-react icon name (e.g., "zap", "rocket").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+
+    /// Ordered list of stages in this flow.
+    /// Each entry is either a stage name (string) or a map with one key
+    /// (stage name) whose value contains overrides.
+    pub stages: Vec<FlowStageEntry>,
+}
+
+/// A stage entry in a flow definition.
+///
+/// Can be a plain stage name (no overrides) or a stage name with overrides.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FlowStageEntry {
+    /// The stage name (must reference a top-level stage).
+    pub stage_name: String,
+    /// Optional overrides for this stage in this flow.
+    pub overrides: Option<FlowStageOverride>,
+}
+
+/// Overridable fields for a stage within a flow.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FlowStageOverride {
+    /// Override prompt template path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    /// Override capabilities (full replace, not merge).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<StageCapabilities>,
+}
+
+// Custom serde for FlowStageEntry to handle the YAML format:
+// - Simple string: "work" → FlowStageEntry { stage_name: "work", overrides: None }
+// - Map with overrides: { work: { prompt: "worker_quick.md" } } → FlowStageEntry { stage_name: "work", overrides: Some(...) }
+impl Serialize for FlowStageEntry {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        match &self.overrides {
+            None => serializer.serialize_str(&self.stage_name),
+            Some(overrides) => {
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry(&self.stage_name, overrides)?;
+                map.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for FlowStageEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de;
+
+        struct FlowStageEntryVisitor;
+
+        impl<'de> de::Visitor<'de> for FlowStageEntryVisitor {
+            type Value = FlowStageEntry;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a stage name string or a map with one stage name key")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(FlowStageEntry {
+                    stage_name: v.to_string(),
+                    overrides: None,
+                })
+            }
+
+            fn visit_map<M: de::MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+                let (stage_name, overrides): (String, FlowStageOverride) = map
+                    .next_entry()?
+                    .ok_or_else(|| de::Error::custom("expected a stage name key"))?;
+                Ok(FlowStageEntry {
+                    stage_name,
+                    overrides: Some(overrides),
+                })
+            }
+        }
+
+        deserializer.deserialize_any(FlowStageEntryVisitor)
+    }
 }
 
 /// Configuration for task integration (merging branches).
@@ -55,6 +154,7 @@ impl WorkflowConfig {
             version: 1,
             stages,
             integration: IntegrationConfig::default(),
+            flows: HashMap::new(),
         }
     }
 
@@ -62,6 +162,13 @@ impl WorkflowConfig {
     #[must_use]
     pub fn with_integration(mut self, integration: IntegrationConfig) -> Self {
         self.integration = integration;
+        self
+    }
+
+    /// Builder: set flows.
+    #[must_use]
+    pub fn with_flows(mut self, flows: HashMap<String, FlowConfig>) -> Self {
+        self.flows = flows;
         self
     }
 
@@ -75,14 +182,14 @@ impl WorkflowConfig {
         self.stages.iter().position(|s| s.name == name)
     }
 
-    /// Get the next stage after the given stage name.
+    /// Get the next stage after the given stage name (default flow).
     /// Returns None if this is the last stage or stage not found.
     pub fn next_stage(&self, current: &str) -> Option<&StageConfig> {
         let idx = self.stage_index(current)?;
         self.stages.get(idx + 1)
     }
 
-    /// Get the first stage in the workflow.
+    /// Get the first stage in the workflow (default flow).
     pub fn first_stage(&self) -> Option<&StageConfig> {
         self.stages.first()
     }
@@ -90,6 +197,112 @@ impl WorkflowConfig {
     /// Get all stage names in order.
     pub fn stage_names(&self) -> Vec<&str> {
         self.stages.iter().map(|s| s.name.as_str()).collect()
+    }
+
+    // ========================================================================
+    // Flow-aware stage navigation
+    // ========================================================================
+
+    /// Get the first stage in a flow, or the first global stage for default flow.
+    pub fn first_stage_in_flow(&self, flow: Option<&str>) -> Option<&StageConfig> {
+        match flow {
+            None => self.first_stage(),
+            Some(flow_name) => {
+                let flow_config = self.flows.get(flow_name)?;
+                let first_entry = flow_config.stages.first()?;
+                self.stage(&first_entry.stage_name)
+            }
+        }
+    }
+
+    /// Get the next stage in a flow after the given stage name.
+    ///
+    /// For default flow (None), uses linear ordering.
+    /// For named flows, uses the flow's stage list ordering.
+    pub fn next_stage_in_flow(&self, current: &str, flow: Option<&str>) -> Option<&StageConfig> {
+        match flow {
+            None => self.next_stage(current),
+            Some(flow_name) => {
+                let flow_config = self.flows.get(flow_name)?;
+                let idx = flow_config
+                    .stages
+                    .iter()
+                    .position(|e| e.stage_name == current)?;
+                let next_entry = flow_config.stages.get(idx + 1)?;
+                self.stage(&next_entry.stage_name)
+            }
+        }
+    }
+
+    /// Get the effective prompt path for a stage in a flow.
+    ///
+    /// Returns the flow override if one exists, otherwise the global stage's prompt path.
+    pub fn effective_prompt_path(&self, stage_name: &str, flow: Option<&str>) -> Option<String> {
+        // Check flow override first
+        if let Some(flow_name) = flow {
+            if let Some(flow_config) = self.flows.get(flow_name) {
+                if let Some(entry) = flow_config
+                    .stages
+                    .iter()
+                    .find(|e| e.stage_name == stage_name)
+                {
+                    if let Some(ref overrides) = entry.overrides {
+                        if let Some(ref prompt) = overrides.prompt {
+                            return Some(prompt.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fall back to global stage config
+        self.stage(stage_name)
+            .and_then(super::stage::StageConfig::prompt_path)
+    }
+
+    /// Get the effective capabilities for a stage in a flow.
+    ///
+    /// Flow overrides fully replace (not merge) the global capabilities.
+    pub fn effective_capabilities(
+        &self,
+        stage_name: &str,
+        flow: Option<&str>,
+    ) -> Option<StageCapabilities> {
+        // Check flow override first
+        if let Some(flow_name) = flow {
+            if let Some(flow_config) = self.flows.get(flow_name) {
+                if let Some(entry) = flow_config
+                    .stages
+                    .iter()
+                    .find(|e| e.stage_name == stage_name)
+                {
+                    if let Some(ref overrides) = entry.overrides {
+                        if let Some(ref caps) = overrides.capabilities {
+                            return Some(caps.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fall back to global stage config
+        self.stage(stage_name).map(|s| s.capabilities.clone())
+    }
+
+    /// Check whether a given stage is in the specified flow.
+    pub fn stage_in_flow(&self, stage_name: &str, flow: Option<&str>) -> bool {
+        match flow {
+            None => self.stage(stage_name).is_some(),
+            Some(flow_name) => self
+                .flows
+                .get(flow_name)
+                .is_some_and(|f| f.stages.iter().any(|e| e.stage_name == stage_name)),
+        }
+    }
+
+    /// Get flow config by name.
+    pub fn flow(&self, name: &str) -> Option<&FlowConfig> {
+        self.flows.get(name)
     }
 
     /// Validate the workflow configuration.
@@ -117,6 +330,7 @@ impl WorkflowConfig {
         self.validate_restage_targets(&stage_names, &stage_names_set, &mut errors);
         self.validate_integration_on_failure(&stage_names, &stage_names_set, &mut errors);
         self.validate_script_stages(&stage_names, &stage_names_set, &mut errors);
+        self.validate_flows(&stage_names_set, &mut errors);
 
         errors
     }
@@ -248,10 +462,10 @@ impl WorkflowConfig {
         errors: &mut Vec<String>,
     ) {
         for stage in &self.stages {
-            // Check that stage doesn't have both agent and script
-            if stage.agent.is_some() && stage.script.is_some() {
+            // Check that stage doesn't have both prompt and script
+            if stage.prompt.is_some() && stage.script.is_some() {
                 errors.push(format!(
-                    "Stage \"{}\" has both 'agent' and 'script' configuration. \
+                    "Stage \"{}\" has both prompt and script configuration. \
                      Choose one: either run an agent OR a script, not both.",
                     stage.name
                 ));
@@ -287,6 +501,98 @@ impl WorkflowConfig {
         }
     }
 
+    /// Validate flow configurations.
+    fn validate_flows(
+        &self,
+        stage_names_set: &std::collections::HashSet<&str>,
+        errors: &mut Vec<String>,
+    ) {
+        for (flow_name, flow) in &self.flows {
+            // Reserved name
+            if flow_name == "default" {
+                errors.push("Flow name \"default\" is reserved for the full pipeline".to_string());
+            }
+
+            // Must have at least one stage
+            if flow.stages.is_empty() {
+                errors.push(format!("Flow \"{flow_name}\" has no stages"));
+                continue;
+            }
+
+            let flow_stage_names: std::collections::HashSet<&str> =
+                flow.stages.iter().map(|e| e.stage_name.as_str()).collect();
+
+            for entry in &flow.stages {
+                // Stage must exist globally
+                if !stage_names_set.contains(entry.stage_name.as_str()) {
+                    errors.push(format!(
+                        "Flow \"{flow_name}\" references stage \"{}\" which doesn't exist",
+                        entry.stage_name
+                    ));
+                    continue;
+                }
+
+                // Script stages cannot have overrides
+                if let Some(ref overrides) = entry.overrides {
+                    let is_script = self
+                        .stage(&entry.stage_name)
+                        .is_some_and(super::stage::StageConfig::is_script_stage);
+                    if is_script {
+                        errors.push(format!(
+                            "Flow \"{flow_name}\" cannot override stage \"{}\" — script stages don't support overrides",
+                            entry.stage_name
+                        ));
+                    }
+
+                    // Validate that capability overrides with restage targets reference stages in the flow
+                    if let Some(ref caps) = overrides.capabilities {
+                        for target in &caps.supports_restage {
+                            if !flow_stage_names.contains(target.as_str()) {
+                                errors.push(format!(
+                                    "Flow \"{flow_name}\" stage \"{}\" can restage to \"{target}\", but \"{target}\" is not in flow \"{flow_name}\"",
+                                    entry.stage_name
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                // Validate restage targets from global capabilities are in the flow
+                if entry
+                    .overrides
+                    .as_ref()
+                    .and_then(|o| o.capabilities.as_ref())
+                    .is_none()
+                {
+                    if let Some(global_stage) = self.stage(&entry.stage_name) {
+                        for target in &global_stage.capabilities.supports_restage {
+                            if !flow_stage_names.contains(target.as_str()) {
+                                errors.push(format!(
+                                    "Flow \"{flow_name}\" includes stage \"{}\" which can restage to \"{target}\", but \"{target}\" is not in flow \"{flow_name}\"",
+                                    entry.stage_name
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                // Validate script on_failure targets are in the flow
+                if let Some(global_stage) = self.stage(&entry.stage_name) {
+                    if let Some(ref script) = global_stage.script {
+                        if let Some(ref on_failure) = script.on_failure {
+                            if !flow_stage_names.contains(on_failure.as_str()) {
+                                errors.push(format!(
+                                    "Flow \"{flow_name}\" includes script stage \"{}\" with on_failure=\"{on_failure}\", but \"{on_failure}\" is not in flow \"{flow_name}\"",
+                                    entry.stage_name
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Check if the workflow is valid.
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
@@ -296,25 +602,25 @@ impl WorkflowConfig {
 impl Default for WorkflowConfig {
     /// Create the default workflow matching the current Orkestra behavior.
     fn default() -> Self {
-        use super::stage::{AgentStageConfig, StageCapabilities, StageConfig};
+        use super::stage::{StageCapabilities, StageConfig};
 
         Self::new(vec![
             StageConfig::new("planning", "plan")
                 .with_display_name("Planning")
-                .with_agent(AgentStageConfig::planner())
+                .with_prompt("planner.md")
                 .with_capabilities(StageCapabilities::with_questions()),
             StageConfig::new("breakdown", "breakdown")
                 .with_display_name("Breaking Down")
-                .with_agent(AgentStageConfig::breakdown())
+                .with_prompt("breakdown.md")
                 .with_inputs(vec!["plan".into()])
                 .with_capabilities(StageCapabilities::with_subtasks()),
             StageConfig::new("work", "summary")
                 .with_display_name("Working")
-                .with_agent(AgentStageConfig::worker())
+                .with_prompt("worker.md")
                 .with_inputs(vec!["plan".into()]),
             StageConfig::new("review", "verdict")
                 .with_display_name("Reviewing")
-                .with_agent(AgentStageConfig::reviewer())
+                .with_prompt("reviewer.md")
                 .with_inputs(vec!["plan".into(), "summary".into()])
                 .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]))
                 .automated(),
@@ -462,21 +768,21 @@ mod tests {
     }
 
     #[test]
-    fn test_default_workflow_has_agent_types() {
+    fn test_default_workflow_has_prompt_paths() {
         let workflow = WorkflowConfig::default();
 
-        // Each stage should have the correct agent type
+        // Each stage should have the correct prompt path
         let planning = workflow.stage("planning").unwrap();
-        assert_eq!(planning.agent_config().unwrap().agent_type, "planner");
+        assert_eq!(planning.prompt_path(), Some("planner.md".to_string()));
 
         let breakdown = workflow.stage("breakdown").unwrap();
-        assert_eq!(breakdown.agent_config().unwrap().agent_type, "breakdown");
+        assert_eq!(breakdown.prompt_path(), Some("breakdown.md".to_string()));
 
         let work = workflow.stage("work").unwrap();
-        assert_eq!(work.agent_config().unwrap().agent_type, "worker");
+        assert_eq!(work.prompt_path(), Some("worker.md".to_string()));
 
         let review = workflow.stage("review").unwrap();
-        assert_eq!(review.agent_config().unwrap().agent_type, "reviewer");
+        assert_eq!(review.prompt_path(), Some("reviewer.md".to_string()));
     }
 
     #[test]
@@ -651,11 +957,11 @@ integration:
     }
 
     #[test]
-    fn test_stage_cannot_have_both_agent_and_script() {
-        use crate::workflow::config::stage::{AgentStageConfig, ScriptStageConfig};
+    fn test_stage_cannot_have_both_prompt_and_script() {
+        use crate::workflow::config::stage::ScriptStageConfig;
 
         let mut stage = StageConfig::new("checks", "check_results");
-        stage.agent = Some(AgentStageConfig::worker());
+        stage.prompt = Some("worker.md".to_string());
         stage.script = Some(ScriptStageConfig::new("./run.sh"));
 
         let workflow = WorkflowConfig::new(vec![stage]);
@@ -663,7 +969,7 @@ integration:
         let errors = workflow.validate();
         assert!(errors
             .iter()
-            .any(|e| e.contains("has both 'agent' and 'script'")));
+            .any(|e| e.contains("has both prompt and script")));
     }
 
     #[test]
@@ -673,8 +979,7 @@ version: 1
 stages:
   - name: work
     artifact: summary
-    agent:
-      agent_type: worker
+    prompt: worker.md
   - name: checks
     artifact: check_results
     inputs: [summary]
@@ -685,8 +990,7 @@ stages:
   - name: review
     artifact: verdict
     inputs: [check_results]
-    agent:
-      agent_type: reviewer
+    prompt: reviewer.md
 integration:
   on_failure: work
 "#;

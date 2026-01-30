@@ -52,7 +52,7 @@ impl WorkflowApi {
     ) -> WorkflowResult<()> {
         if self.should_auto_advance(task, stage) {
             self.end_current_iteration(task, Outcome::Approved)?;
-            let next_status = self.compute_next_status_on_approve(stage);
+            let next_status = self.compute_next_status_on_approve(stage, task.flow.as_deref());
             task.status = next_status.clone();
             task.phase = Phase::Idle;
 
@@ -147,11 +147,15 @@ impl WorkflowApi {
         feedback: &str,
         now: &str,
     ) -> WorkflowResult<()> {
-        let stage_config = self.workflow.stage(current_stage).ok_or_else(|| {
-            WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
-        })?;
+        // Use effective capabilities (may be overridden by flow)
+        let effective_caps = self
+            .workflow
+            .effective_capabilities(current_stage, task.flow.as_deref())
+            .ok_or_else(|| {
+                WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
+            })?;
 
-        if !stage_config.capabilities.can_restage_to(target) {
+        if !effective_caps.can_restage_to(target) {
             return Err(WorkflowError::InvalidTransition(format!(
                 "Stage {current_stage} cannot restage to {target}"
             )));
@@ -357,7 +361,7 @@ impl WorkflowApi {
 
         // Script stages always auto-approve
         self.end_current_iteration(&task, Outcome::Approved)?;
-        let next_status = self.compute_next_status_on_approve(&current_stage);
+        let next_status = self.compute_next_status_on_approve(&current_stage, task.flow.as_deref());
         task.status = next_status.clone();
         task.phase = Phase::Idle;
 

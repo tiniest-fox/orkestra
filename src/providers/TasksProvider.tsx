@@ -27,6 +27,7 @@ interface TasksContextValue {
     description: string,
     autoMode?: boolean,
     baseBranch?: string | null,
+    flow?: string,
   ) => Promise<WorkflowTask>;
   createSubtask: (parentId: string, title: string, description: string) => Promise<WorkflowTask>;
   deleteTask: (taskId: string) => Promise<void>;
@@ -98,12 +99,13 @@ export function TasksProvider({ children }: TasksProviderProps) {
   }, [fetchTasks]);
 
   const createTask = useCallback(
-    async (title: string, description: string, autoMode?: boolean, baseBranch?: string | null) => {
+    async (title: string, description: string, autoMode?: boolean, baseBranch?: string | null, flow?: string) => {
       const newTask = await invoke<WorkflowTask>("workflow_create_task", {
         title,
         description,
         baseBranch: baseBranch ?? undefined,
         autoMode: autoMode ?? false,
+        flow: flow ?? null,
       });
       // Refetch to get the full TaskView
       fetchTasks();

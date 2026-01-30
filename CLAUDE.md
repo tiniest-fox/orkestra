@@ -235,10 +235,11 @@ Tasks progress through an ordered list of stages defined in `StageConfig` struct
 **Key domain types** (`workflow/config/`):
 
 - **`WorkflowConfig`** (`workflow.rs`) — Ordered list of `StageConfig` plus `IntegrationConfig`. Validated on load (no forward artifact references, unique names).
-- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `inputs` (artifacts from earlier stages), `capabilities`, and either an `AgentStageConfig` or `ScriptStageConfig`.
+- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `inputs` (artifacts from earlier stages), `capabilities`, and either a `prompt` (agent stage) or `script` (script stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set.
 - **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `produce_subtasks`, `supports_restage: Vec<String>`.
-- **`AgentStageConfig`** (`stage.rs`) — Agent type name (maps to `.orkestra/agents/{agent_type}.md`), optional overrides for definition file and JSON schema file.
 - **`ScriptStageConfig`** (`stage.rs`) — Shell command, timeout, optional `on_failure` stage for recovery.
+- **`FlowConfig`** (`workflow.rs`) — Named alternate flow (shortened pipeline). Has a `description`, optional `icon`, and an ordered list of `FlowStageEntry`s referencing a subset of global stages with optional overrides.
+- **`FlowStageEntry`** (`workflow.rs`) — A stage reference in a flow, with optional `FlowStageOverride` for `prompt` and `capabilities` (full replacement, not merge).
 
 **Runtime types** (`workflow/runtime/`, `workflow/domain/`):
 
@@ -271,7 +272,7 @@ For **script stages**, `StageExecutionService` runs the command via `sh -c` in t
 - **If `produce_subtasks`**: adds `subtasks.json` (array of subtasks with dependencies)
 - **If `supports_restage` is non-empty**: adds `restage.json` (target stage + feedback)
 
-The `type` field enum is built dynamically: always `[artifact_name, "failed", "blocked"]`, plus capability-specific types. Custom schemas can override this via `schema_file` in `AgentStageConfig`.
+The `type` field enum is built dynamically: always `[artifact_name, "failed", "blocked"]`, plus capability-specific types. Custom schemas can override this via `schema_file` on `StageConfig`.
 
 #### Adding a New Stage
 
@@ -282,6 +283,20 @@ To add a stage to this project's workflow:
 3. No Rust changes needed — the config loader, schema generator, and orchestrator handle it generically
 
 The built-in default workflow (`WorkflowConfig::default()` in `workflow.rs`) defines: `planning → breakdown → work → review`. This project's `.orkestra/workflow.yaml` extends it to: `planning → breakdown → work → checks (script) → review → compound`.
+
+#### Flows (Alternate Pipelines)
+
+Flows let tasks skip stages by defining a subset of the global stage list. Each flow is a named alternate pipeline declared under `flows:` in `workflow.yaml`. Tasks use the full pipeline by default; setting `flow: Some("flow_name")` on a task restricts it to that flow's stages.
+
+Key behaviors:
+- Flow stages must be a subset of global stages (validated on config load)
+- Flows can override `prompt` and `capabilities` per stage (full replacement, not merge)
+- Stage navigation (`first_stage_in_flow`, `next_stage_in_flow`) respects flow ordering
+- Script stages in flows cannot have overrides
+- The name "default" is reserved and cannot be used as a flow name
+- `restage` targets and script `on_failure` targets must be within the flow's stage list
+
+This project defines two flows: `quick` (skips breakdown and compound) and `hotfix` (skips planning, breakdown, and compound).
 
 ### Agent System
 

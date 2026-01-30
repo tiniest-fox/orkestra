@@ -63,6 +63,10 @@ pub struct Task {
     #[serde(default)]
     pub auto_mode: bool,
 
+    /// Named flow for this task (e.g., "`quick_fix`"). None = default (full pipeline).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flow: Option<String>,
+
     // === Tracking ===
     /// When the task was created (RFC3339).
     pub created_at: String,
@@ -98,6 +102,7 @@ impl Task {
             worktree_path: None,
             base_branch: None,
             auto_mode: false,
+            flow: None,
             created_at: created.clone(),
             updated_at: created,
             completed_at: None,

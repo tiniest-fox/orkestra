@@ -124,6 +124,13 @@ impl WorkflowApi {
         self.workflow.next_stage(stage).map(|s| s.name.as_str())
     }
 
+    /// Get the next stage in a flow after the given stage.
+    pub fn next_stage_after_in_flow(&self, stage: &str, flow: Option<&str>) -> Option<&str> {
+        self.workflow
+            .next_stage_in_flow(stage, flow)
+            .map(|s| s.name.as_str())
+    }
+
     /// Get the stage to return to on integration failure.
     ///
     /// Uses the workflow's integration config.
@@ -134,14 +141,15 @@ impl WorkflowApi {
 
     /// Compute the next status after approving the current stage.
     ///
-    /// Returns Done if no more stages.
+    /// Returns Done if no more stages. Uses the task's flow for progression.
     pub(crate) fn compute_next_status_on_approve(
         &self,
         current_stage: &str,
+        flow: Option<&str>,
     ) -> crate::workflow::runtime::Status {
         use crate::workflow::runtime::Status;
 
-        match self.workflow.next_stage(current_stage) {
+        match self.workflow.next_stage_in_flow(current_stage, flow) {
             Some(stage) => Status::active(&stage.name),
             None => Status::Done,
         }
@@ -258,20 +266,20 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        // Planning goes to breakdown
-        let status = api.compute_next_status_on_approve("planning");
+        // Planning goes to breakdown (default flow)
+        let status = api.compute_next_status_on_approve("planning", None);
         assert_eq!(status.stage(), Some("breakdown"));
 
         // Breakdown goes to work
-        let status = api.compute_next_status_on_approve("breakdown");
+        let status = api.compute_next_status_on_approve("breakdown", None);
         assert_eq!(status.stage(), Some("work"));
 
         // Work goes to review
-        let status = api.compute_next_status_on_approve("work");
+        let status = api.compute_next_status_on_approve("work", None);
         assert_eq!(status.stage(), Some("review"));
 
         // Review goes to Done
-        let status = api.compute_next_status_on_approve("review");
+        let status = api.compute_next_status_on_approve("review", None);
         assert_eq!(status, crate::workflow::runtime::Status::Done);
     }
 

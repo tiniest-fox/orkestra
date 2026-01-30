@@ -217,6 +217,40 @@ impl WorkflowApi {
     }
 }
 
+/// Generate a title and save it directly to the store.
+///
+/// Called from the title thread inside `spawn_async_setup`. Saves immediately so
+/// the UI can display the title before worktree setup finishes.
+fn generate_and_save_title(
+    store: &dyn WorkflowStore,
+    title_gen: &dyn TitleGenerator,
+    task_id: &str,
+    description: &str,
+) {
+    let title = match title_gen.generate_title(task_id, description) {
+        Ok(title) => title,
+        Err(e) => {
+            crate::orkestra_debug!(
+                "task",
+                "WARNING: Title generation failed for {task_id}: {e}"
+            );
+            generate_fallback_title(description)
+        }
+    };
+
+    if let Ok(Some(mut task)) = store.get_task(task_id) {
+        if task.title.trim().is_empty() {
+            task.title = title;
+            if let Err(e) = store.save_task(&task) {
+                crate::orkestra_debug!(
+                    "task",
+                    "WARNING: Failed to save title for {task_id}: {e}"
+                );
+            }
+        }
+    }
+}
+
 /// Spawn a background thread to set up the task (worktree creation, title generation).
 ///
 /// Runs worktree setup and title generation in parallel, then transitions to `Phase::Idle`.
@@ -234,7 +268,7 @@ fn spawn_async_setup(
     crate::orkestra_debug!("task", "spawn_async_setup {}: starting", task_id);
     thread::spawn(move || {
         // Run worktree setup and title generation in parallel using scoped threads
-        let (worktree_result, generated_title) = thread::scope(|s| {
+        let worktree_result = thread::scope(|s| {
             // Spawn worktree creation
             let worktree_handle = s.spawn(|| {
                 if let Some(ref git) = git {
@@ -247,19 +281,13 @@ fn spawn_async_setup(
                 }
             });
 
-            // Spawn title generation if needed
+            // Spawn title generation if needed — saves directly to DB when ready
+            let title_store = Arc::clone(&store);
             let title_handle = description.as_ref().map(|desc| {
                 let tg = Arc::clone(&title_gen);
                 let tid = task_id.clone();
-                s.spawn(move || match tg.generate_title(&tid, desc) {
-                    Ok(title) => title,
-                    Err(e) => {
-                        crate::orkestra_debug!(
-                            "task",
-                            "WARNING: Title generation failed for {tid}: {e}"
-                        );
-                        generate_fallback_title(desc)
-                    }
+                s.spawn(move || {
+                    generate_and_save_title(&*title_store, &*tg, &tid, desc);
                 })
             });
 
@@ -267,21 +295,16 @@ fn spawn_async_setup(
             let worktree_result = worktree_handle
                 .join()
                 .unwrap_or_else(|_| Err("Worktree thread panicked".to_string()));
-            let generated_title = title_handle.and_then(|h| h.join().ok());
+            if let Some(h) = title_handle {
+                let _ = h.join();
+            }
 
-            (worktree_result, generated_title)
+            worktree_result
         });
 
-        // Update task based on results
+        // Update task based on worktree result
         match store.get_task(&task_id) {
             Ok(Some(mut task)) => {
-                // Apply generated title if we have one and title is still empty
-                if let Some(title) = generated_title {
-                    if task.title.trim().is_empty() {
-                        task.title = title;
-                    }
-                }
-
                 match worktree_result {
                     Ok(worktree_info) => {
                         // Success - update worktree info and transition to Idle

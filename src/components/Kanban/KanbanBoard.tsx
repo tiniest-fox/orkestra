@@ -2,6 +2,7 @@
  * Kanban board - displays tasks organized by workflow stage.
  */
 
+import { LayoutGroup } from "framer-motion";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { buildColumns, getTasksForColumn } from "../../utils/kanban";
 import { PanelContainer } from "../ui";
@@ -21,18 +22,20 @@ export function KanbanBoard({ config, tasks, selectedTaskId, onSelectTask }: Kan
   return (
     <PanelContainer scrolls={true}>
       <div />
-      {columns.map((column) => {
-        const columnTasks = getTasksForColumn(visibleTasks, column.id);
-        return (
-          <KanbanColumn
-            key={column.id}
-            column={column}
-            tasks={columnTasks}
-            selectedTaskId={selectedTaskId}
-            onSelectTask={onSelectTask}
-          />
-        );
-      })}
+      <LayoutGroup>
+        {columns.map((column) => {
+          const columnTasks = getTasksForColumn(visibleTasks, column.id);
+          return (
+            <KanbanColumn
+              key={column.id}
+              column={column}
+              tasks={columnTasks}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={onSelectTask}
+            />
+          );
+        })}
+      </LayoutGroup>
       <div className="w-px" />
     </PanelContainer>
   );

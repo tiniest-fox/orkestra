@@ -12,6 +12,7 @@ import { useWorkflowConfig } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { Panel, PanelContainer, PanelSlot, TabbedPanel } from "../ui";
 import { ArtifactsTab } from "./ArtifactsTab";
+import { DeleteConfirmPanel } from "./DeleteConfirmPanel";
 import { DetailsTab } from "./DetailsTab";
 import { IterationsTab } from "./IterationsTab";
 import { LogsTab } from "./LogsTab";
@@ -86,6 +87,7 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
   const tabs = useMemo(() => buildTabs(task), [task]);
   const [activeTab, setActiveTab] = useState(() => smartDefaultTab(task, buildTabs(task)));
   const [isRetrying, setIsRetrying] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const logsState = useLogs(task, activeTab === "logs");
 
@@ -93,6 +95,7 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset when task.id changes
   useEffect(() => {
     setActiveTab(smartDefaultTab(task, tabs));
+    setConfirmingDelete(false);
     logsState.reset();
   }, [task.id]);
 
@@ -120,11 +123,13 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
     }
   };
 
-  const footerPanelKey = task.derived.has_questions
-    ? "questions"
-    : task.derived.needs_review && task.derived.current_stage
-      ? "review"
-      : null;
+  const footerPanelKey = confirmingDelete
+    ? "delete"
+    : task.derived.has_questions
+      ? "questions"
+      : task.derived.needs_review && task.derived.current_stage
+        ? "review"
+        : null;
 
   return (
     <Panel className="w-[480px]">
@@ -135,7 +140,7 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
             hasQuestions={task.derived.has_questions}
             needsReview={task.derived.needs_review}
             onClose={onClose}
-            onDelete={onDelete}
+            onRequestDelete={() => setConfirmingDelete(true)}
             onToggleAutoMode={handleToggleAutoMode}
           />
 
@@ -174,6 +179,16 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
         </PanelContainer>
 
         <PanelSlot activeKey={footerPanelKey} direction="vertical">
+          <PanelSlot.Panel panelKey="delete">
+            <DeleteConfirmPanel
+              onConfirm={() => {
+                setConfirmingDelete(false);
+                onDelete();
+              }}
+              onCancel={() => setConfirmingDelete(false)}
+            />
+          </PanelSlot.Panel>
+
           <PanelSlot.Panel panelKey="questions">
             <QuestionFormPanel
               questions={task.derived.pending_questions}

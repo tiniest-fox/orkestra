@@ -6,14 +6,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import type { WorkflowTask } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
-import { Badge, Button, IconButton, Panel } from "../ui";
+import { Badge, IconButton, Panel } from "../ui";
 
 interface TaskDetailHeaderProps {
   task: WorkflowTask;
   hasQuestions: boolean;
   needsReview: boolean;
   onClose: () => void;
-  onDelete: () => void;
+  onRequestDelete: () => void;
   onToggleAutoMode: (autoMode: boolean) => void;
 }
 
@@ -106,10 +106,9 @@ export function TaskDetailHeader({
   hasQuestions,
   needsReview,
   onClose,
-  onDelete,
+  onRequestDelete,
   onToggleAutoMode,
 }: TaskDetailHeaderProps) {
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [toolsInfo, setToolsInfo] = useState<ExternalToolsInfo | null>(cachedToolsInfo);
 
   useEffect(() => {
@@ -152,19 +151,6 @@ export function TaskDetailHeader({
         ? "Waiting"
         : titleCase(task.status.type);
 
-  const handleDeleteClick = () => {
-    setConfirmingDelete(true);
-  };
-
-  const handleConfirmDelete = () => {
-    setConfirmingDelete(false);
-    onDelete();
-  };
-
-  const handleCancelDelete = () => {
-    setConfirmingDelete(false);
-  };
-
   return (
     <div className="flex flex-col items-stretch pt-1 pb-2 px-2">
       <div className="flex items-start justify-between gap-2">
@@ -199,49 +185,37 @@ export function TaskDetailHeader({
             aria-label="Delete task"
             variant="ghost"
             size="sm"
-            onClick={handleDeleteClick}
+            onClick={onRequestDelete}
           />
           <Panel.CloseButton onClick={onClose} />
         </div>
       </div>
 
-      {confirmingDelete ? (
-        <div className="flex items-center gap-2 mt-1">
-          <span className="text-sm text-stone-600">Delete task? This cannot be undone.</span>
-          <Button variant="destructive" size="sm" onClick={handleConfirmDelete}>
-            Delete
-          </Button>
-          <Button variant="secondary" size="sm" onClick={handleCancelDelete}>
-            Cancel
-          </Button>
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-mono text-sm text-stone-500">{task.id}</span>
-          <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
-          {hasQuestions && <Badge variant="info">Questions</Badge>}
-          {needsReview && <Badge variant="warning">Review</Badge>}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="font-mono text-sm text-stone-500">{task.id}</span>
+        <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
+        {hasQuestions && <Badge variant="info">Questions</Badge>}
+        {needsReview && <Badge variant="warning">Review</Badge>}
 
-          <label className="flex items-center gap-1.5 ml-auto cursor-pointer select-none">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={task.auto_mode}
-              onClick={() => onToggleAutoMode(!task.auto_mode)}
-              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
-                task.auto_mode ? "bg-purple-500" : "bg-stone-300"
+        <label className="flex items-center gap-1.5 ml-auto cursor-pointer select-none">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={task.auto_mode}
+            onClick={() => onToggleAutoMode(!task.auto_mode)}
+            className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
+              task.auto_mode ? "bg-purple-500" : "bg-stone-300"
+            }`}
+          >
+            <span
+              className={`inline-block h-2.5 w-2.5 rounded-full bg-white transition-transform ${
+                task.auto_mode ? "translate-x-[14px]" : "translate-x-[3px]"
               }`}
-            >
-              <span
-                className={`inline-block h-2.5 w-2.5 rounded-full bg-white transition-transform ${
-                  task.auto_mode ? "translate-x-[14px]" : "translate-x-[3px]"
-                }`}
-              />
-            </button>
-            <span className="text-xs text-stone-500">Auto</span>
-          </label>
-        </div>
-      )}
+            />
+          </button>
+          <span className="text-xs text-stone-500">Auto</span>
+        </label>
+      </div>
     </div>
   );
 }

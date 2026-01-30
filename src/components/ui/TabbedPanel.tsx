@@ -6,7 +6,12 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useId, useMemo, useState } from "react";
+import {
+  type AnimationPhase,
+  ContentAnimationContext,
+  useContentAnimation,
+} from "./ContentAnimation";
 import { Panel } from "./Panel";
 
 const contentTransition = {
@@ -95,6 +100,20 @@ export function TabbedPanel({
   const layoutId = useId();
   const [direction, setDirection] = useState(1);
 
+  // --- Tab content animation tracking (event-driven) ---
+  // Initial tab has no animation (initial={false}), so starts settled.
+  // Tab switches: entering (onAnimationStart) → settled (onAnimationComplete).
+  // Only tracks enter events ("center") — exit events fire on the OLD
+  // motion.div whose stale closure could regress the phase.
+  const parentAnimation = useContentAnimation();
+  const [tabPhase, setTabPhase] = useState<AnimationPhase>("settled");
+
+  const mergedState = useMemo(() => {
+    const phases = { ...parentAnimation.phases };
+    phases[activeTab] = tabPhase;
+    return { phases };
+  }, [parentAnimation, activeTab, tabPhase]);
+
   function handleTabChange(tabId: string) {
     const currentIndex = tabs.findIndex((t) => t.id === activeTab);
     const nextIndex = tabs.findIndex((t) => t.id === tabId);
@@ -153,8 +172,16 @@ export function TabbedPanel({
               transition={contentTransition}
               className="overflow-y-auto overflow-x-hidden flex flex-col items-stretch"
               style={{ gridArea: "1 / 1" }}
+              onAnimationStart={(definition) => {
+                if (definition === "center") setTabPhase("entering");
+              }}
+              onAnimationComplete={(definition) => {
+                if (definition === "center") setTabPhase("settled");
+              }}
             >
-              {children}
+              <ContentAnimationContext.Provider value={mergedState}>
+                {children}
+              </ContentAnimationContext.Provider>
             </motion.div>
           </AnimatePresence>
         </div>

@@ -9,7 +9,7 @@ import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
-import { Button, Panel, PanelContainer, PanelSlot } from "./ui";
+import { Button, Panel, PanelContainer, PanelSlot, SidebarSlot } from "./ui";
 
 type SidebarView = { type: "none" } | { type: "create" } | { type: "task"; taskId: string };
 
@@ -24,9 +24,9 @@ export function Orkestra() {
 
   const sidebarActiveKey =
     sidebarView.type === "create"
-      ? "create"
+      ? SidebarSlot.NewTask
       : currentSelectedTask
-        ? `task-${currentSelectedTask.id}`
+        ? SidebarSlot.task(currentSelectedTask.id)
         : null;
 
   const handleSelectTask = (task: WorkflowTask) => {
@@ -90,12 +90,12 @@ export function Orkestra() {
         )}
 
         <PanelSlot activeKey={sidebarActiveKey}>
-          <PanelSlot.Panel panelKey="create">
+          <PanelSlot.Panel panelKey={SidebarSlot.NewTask}>
             <NewTaskPanel onClose={handleCloseSidebar} onSubmit={handleTaskCreated} />
           </PanelSlot.Panel>
 
           {currentSelectedTask && (
-            <PanelSlot.Panel panelKey={`task-${currentSelectedTask.id}`}>
+            <PanelSlot.Panel panelKey={SidebarSlot.task(currentSelectedTask.id)}>
               <TaskDetailSidebar
                 task={currentSelectedTask}
                 onClose={handleCloseSidebar}

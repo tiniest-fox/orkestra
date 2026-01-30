@@ -3,9 +3,18 @@
  * Panel-based design system with Stone & Sage color palette.
  */
 
+// Animation key definitions
+export {
+  ArtifactTabs,
+  LogTabs,
+  SidebarSlot,
+  TaskDetailFooterSlot,
+  TaskDetailTabs,
+} from "./animationKeys";
 export { Badge } from "./Badge";
 // Interactive components
 export { Button } from "./Button";
+export { useContentAnimation, useContentSettled } from "./ContentAnimation";
 export { IconButton } from "./IconButton";
 export { Link } from "./Link";
 // Layout components

@@ -101,6 +101,10 @@ function detectTools(): Promise<ExternalToolsInfo> {
   return toolsDetectionPromise;
 }
 
+// Pre-warm: start detection at module load so the cache is ready
+// before any TaskDetailHeader mounts.
+detectTools().catch(() => {});
+
 export function TaskDetailHeader({
   task,
   hasQuestions,
@@ -163,21 +167,21 @@ export function TaskDetailHeader({
           {showTerminalButton && (
             <IconButton
               icon={<TerminalIcon />}
-              aria-label={`Open in ${toolsInfo.terminal!.name}`}
+              aria-label={`Open in ${toolsInfo.terminal?.name}`}
               variant="ghost"
               size="sm"
               onClick={handleOpenTerminal}
-              title={`Open in ${toolsInfo.terminal!.name}`}
+              title={`Open in ${toolsInfo.terminal?.name}`}
             />
           )}
           {showEditorButton && (
             <IconButton
               icon={<CodeIcon />}
-              aria-label={`Open in ${toolsInfo.editor!.name}`}
+              aria-label={`Open in ${toolsInfo.editor?.name}`}
               variant="ghost"
               size="sm"
               onClick={handleOpenEditor}
-              title={`Open in ${toolsInfo.editor!.name}`}
+              title={`Open in ${toolsInfo.editor?.name}`}
             />
           )}
           <IconButton

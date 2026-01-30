@@ -4,7 +4,7 @@
  * Animation behavior:
  * - Open/close and panel switches both use collapse/grow animation
  * - mode="wait" ensures exit completes before enter (quick, snappy feel)
- * - Nested PanelSlots skip initial animation when mounting with parent (prevents double-animation)
+ * - Skips initial animation when a parent animation is still running (via ContentAnimation phases)
  *
  * Shadow handling:
  * - Shadow is on the PanelSlot container (not clipped by its own overflow:hidden)
@@ -22,9 +22,14 @@ import {
   type ReactElement,
   type ReactNode,
   useContext,
-  useEffect,
-  useRef,
+  useMemo,
+  useState,
 } from "react";
+import {
+  type AnimationPhase,
+  ContentAnimationContext,
+  useContentAnimation,
+} from "./ContentAnimation";
 
 /** Context for panels inside a PanelSlot to access slot configuration */
 interface PanelSlotContextValue {
@@ -35,10 +40,6 @@ export const PanelSlotContext = createContext<PanelSlotContextValue | null>(null
 
 /** Hook for Panel components to access PanelSlot configuration */
 export const usePanelSlot = () => useContext(PanelSlotContext);
-
-/** Separate context for nesting detection (not reset by Panel) */
-const PanelSlotNestingContext = createContext<boolean>(false);
-const useIsNestedInPanelSlot = () => useContext(PanelSlotNestingContext);
 
 type SlotDirection = "horizontal" | "vertical";
 
@@ -84,13 +85,28 @@ export function PanelSlot({
   direction = "horizontal",
   className = "",
 }: PanelSlotProps) {
-  const isNestedInSlot = useIsNestedInPanelSlot();
-  const isFirstRender = useRef(true);
+  // --- Animation phase tracking (event-driven state machine) ---
+  // hidden → entering (onAnimationStart) → settled (onAnimationComplete)
+  //       → exiting  (onAnimationStart) → hidden  (onAnimationComplete)
+  //
+  // If a parent animation is still running when this slot mounts, we skip
+  // our own enter animation (to avoid double-animation) and start settled.
+  const parentAnimation = useContentAnimation();
+  const parentAnimating = Object.values(parentAnimation.phases).some((p) => p !== "settled");
+  const [phase, setPhase] = useState<AnimationPhase>(() =>
+    parentAnimating ? "settled" : "hidden",
+  );
 
-  // Track first render to skip initial animation for nested slots
-  useEffect(() => {
-    isFirstRender.current = false;
-  }, []);
+  const ownPhase: AnimationPhase | null = activeKey ? phase : null;
+
+  // Merge with parent animation state so descendants see the full picture.
+  const mergedState = useMemo(() => {
+    const phases = { ...parentAnimation.phases };
+    if (activeKey && ownPhase) {
+      phases[activeKey] = ownPhase;
+    }
+    return { phases };
+  }, [parentAnimation, activeKey, ownPhase]);
 
   // Find the active panel child
   const childArray = Children.toArray(children);
@@ -107,8 +123,8 @@ export function PanelSlot({
     exit: isHorizontal ? { width: 0, opacity: 0 } : { height: 0, opacity: 0 },
   };
 
-  // Skip animation if nested and this is the first render (parent is still animating)
-  const skipInitialAnimation = isNestedInSlot && isFirstRender.current;
+  // Skip animation if a parent is currently animating (prevents double-animation)
+  const skipInitialAnimation = parentAnimating;
 
   const contextValue: PanelSlotContextValue = {
     suppressShadow: true, // Shadow is on PanelSlot, suppress on inner panels
@@ -126,12 +142,20 @@ export function PanelSlot({
           transition={transitionConfig}
           className={`panel-slot-motion-div flex flex-col items-stretch shadow-panel rounded-panel overflow-hidden ${className}`}
           style={{ minWidth: 0 }}
+          onAnimationStart={(definition) => {
+            if (definition === "animate") setPhase("entering");
+            else if (definition === "exit") setPhase("exiting");
+          }}
+          onAnimationComplete={(definition) => {
+            if (definition === "animate") setPhase("settled");
+            else if (definition === "exit") setPhase("hidden");
+          }}
         >
-          <PanelSlotNestingContext.Provider value={true}>
+          <ContentAnimationContext.Provider value={mergedState}>
             <PanelSlotContext.Provider value={contextValue}>
               {activeChild.props.children}
             </PanelSlotContext.Provider>
-          </PanelSlotNestingContext.Provider>
+          </ContentAnimationContext.Provider>
         </motion.div>
       )}
     </AnimatePresence>

@@ -105,6 +105,8 @@ export interface WorkflowArtifact {
   name: string;
   /** Content of the artifact (usually markdown). */
   content: string;
+  /** Pre-rendered HTML from the markdown content. */
+  html?: string;
   /** Stage that produced this artifact. */
   stage: string;
   /** When the artifact was created. */

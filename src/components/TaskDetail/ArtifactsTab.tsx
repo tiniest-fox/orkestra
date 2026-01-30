@@ -5,7 +5,7 @@
 import { useSmartDefault } from "../../hooks/useSmartDefault";
 import type { WorkflowArtifact, WorkflowConfig } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
-import { PanelContainer, TabbedPanel } from "../ui";
+import { ArtifactTabs, PanelContainer, TabbedPanel } from "../ui";
 import { ArtifactView } from "./ArtifactView";
 
 interface ArtifactsTabProps {
@@ -34,7 +34,7 @@ export function ArtifactsTab({ taskId, currentStage, artifacts, config }: Artifa
   const activeArtifact = selectedItem ?? "";
 
   const tabs = artifactNames.map((name) => ({
-    id: name,
+    id: ArtifactTabs.artifact(name),
     label: titleCase(name),
   }));
 
@@ -46,8 +46,12 @@ export function ArtifactsTab({ taskId, currentStage, artifacts, config }: Artifa
     <PanelContainer direction="vertical" padded={true}>
       <TabbedPanel
         tabs={tabs}
-        activeTab={activeArtifact}
-        onTabChange={setSelectedItem}
+        activeTab={activeArtifact ? ArtifactTabs.artifact(activeArtifact) : ""}
+        onTabChange={(key) => {
+          // Extract raw artifact name from animation key
+          const raw = artifactNames.find((n) => ArtifactTabs.artifact(n) === key);
+          if (raw) setSelectedItem(raw);
+        }}
         size="small"
       >
         <ArtifactView artifact={artifacts[activeArtifact]} />

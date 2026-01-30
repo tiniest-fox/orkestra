@@ -10,7 +10,14 @@ import { useLogs } from "../../hooks/useLogs";
 import { useTaskDetail } from "../../hooks/useTaskDetail";
 import { useWorkflowConfig } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
-import { Panel, PanelContainer, PanelSlot, TabbedPanel } from "../ui";
+import {
+  Panel,
+  PanelContainer,
+  PanelSlot,
+  TabbedPanel,
+  TaskDetailFooterSlot,
+  TaskDetailTabs,
+} from "../ui";
 import { ArtifactsTab } from "./ArtifactsTab";
 import { DeleteConfirmPanel } from "./DeleteConfirmPanel";
 import { DetailsTab } from "./DetailsTab";
@@ -33,14 +40,14 @@ interface TaskDetailSidebarProps {
 
 function buildTabs(task: WorkflowTaskView): Tab[] {
   const tabs: Tab[] = [
-    { id: "details", label: "Details" },
-    { id: "iterations", label: "Activity" },
-    { id: "logs", label: "Logs" },
+    { id: TaskDetailTabs.details(task.id), label: "Details" },
+    { id: TaskDetailTabs.iterations(task.id), label: "Activity" },
+    { id: TaskDetailTabs.logs(task.id), label: "Logs" },
   ];
 
   const hasArtifacts = Object.keys(task.artifacts).length > 0;
   if (hasArtifacts) {
-    tabs.push({ id: "artifacts", label: "Artifacts" });
+    tabs.push({ id: TaskDetailTabs.artifacts(task.id), label: "Artifacts" });
   }
 
   return tabs;
@@ -56,20 +63,20 @@ function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
 
   let preferred: string;
   if (derived.is_done || task.status.type === "archived") {
-    preferred = "artifacts";
+    preferred = TaskDetailTabs.artifacts(task.id);
   } else if (derived.is_failed || derived.is_blocked) {
-    preferred = "details";
+    preferred = TaskDetailTabs.details(task.id);
   } else if (task.status.type === "waiting_on_children") {
-    preferred = "details";
+    preferred = TaskDetailTabs.details(task.id);
   } else if (derived.is_working || task.phase === "integrating") {
-    preferred = "logs";
+    preferred = TaskDetailTabs.logs(task.id);
   } else if (derived.needs_review) {
-    preferred = "artifacts";
+    preferred = TaskDetailTabs.artifacts(task.id);
   } else {
-    preferred = "details";
+    preferred = TaskDetailTabs.details(task.id);
   }
 
-  return tabIds.has(preferred) ? preferred : "details";
+  return tabIds.has(preferred) ? preferred : TaskDetailTabs.details(task.id);
 }
 
 export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebarProps) {
@@ -86,10 +93,11 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
 
   const tabs = useMemo(() => buildTabs(task), [task]);
   const [activeTab, setActiveTab] = useState(() => smartDefaultTab(task, buildTabs(task)));
+
   const [isRetrying, setIsRetrying] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const logsState = useLogs(task, activeTab === "logs");
+  const logsState = useLogs(task, activeTab === TaskDetailTabs.logs(task.id));
 
   // Reset state when task changes — pick the most relevant tab for the new task
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset when task.id changes
@@ -102,9 +110,9 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
   // Validate active tab exists
   useEffect(() => {
     if (!tabs.find((t) => t.id === activeTab)) {
-      setActiveTab("details");
+      setActiveTab(TaskDetailTabs.details(task.id));
     }
-  }, [tabs, activeTab]);
+  }, [tabs, activeTab, task.id]);
 
   const handleRetry = async () => {
     setIsRetrying(true);
@@ -124,11 +132,11 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
   };
 
   const footerPanelKey = confirmingDelete
-    ? "delete"
+    ? TaskDetailFooterSlot.Delete
     : task.derived.has_questions
-      ? "questions"
+      ? TaskDetailFooterSlot.Questions
       : task.derived.needs_review && task.derived.current_stage
-        ? "review"
+        ? TaskDetailFooterSlot.Review
         : null;
 
   return (
@@ -149,11 +157,11 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
             activeTab={activeTab}
             onTabChange={(tabId) => setActiveTab(tabId)}
           >
-            {activeTab === "details" && (
+            {activeTab === TaskDetailTabs.details(task.id) && (
               <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />
             )}
 
-            {activeTab === "artifacts" && (
+            {activeTab === TaskDetailTabs.artifacts(task.id) && (
               <ArtifactsTab
                 taskId={task.id}
                 currentStage={task.derived.current_stage}
@@ -162,9 +170,11 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
               />
             )}
 
-            {activeTab === "iterations" && <IterationsTab iterations={task.iterations} />}
+            {activeTab === TaskDetailTabs.iterations(task.id) && (
+              <IterationsTab iterations={task.iterations} />
+            )}
 
-            {activeTab === "logs" && (
+            {activeTab === TaskDetailTabs.logs(task.id) && (
               <LogsTab
                 task={task}
                 logs={logsState.logs}
@@ -179,7 +189,7 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
         </PanelContainer>
 
         <PanelSlot activeKey={footerPanelKey} direction="vertical">
-          <PanelSlot.Panel panelKey="delete">
+          <PanelSlot.Panel panelKey={TaskDetailFooterSlot.Delete}>
             <DeleteConfirmPanel
               onConfirm={() => {
                 setConfirmingDelete(false);
@@ -189,7 +199,7 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
             />
           </PanelSlot.Panel>
 
-          <PanelSlot.Panel panelKey="questions">
+          <PanelSlot.Panel panelKey={TaskDetailFooterSlot.Questions}>
             <QuestionFormPanel
               questions={task.derived.pending_questions}
               onSubmit={answerQuestions}
@@ -197,7 +207,7 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
             />
           </PanelSlot.Panel>
 
-          <PanelSlot.Panel panelKey="review">
+          <PanelSlot.Panel panelKey={TaskDetailFooterSlot.Review}>
             <ReviewPanel
               stageName={currentStageDisplayName}
               onApprove={approve}

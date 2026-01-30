@@ -7,14 +7,21 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::markdown::markdown_to_html;
+
 /// A named artifact produced by a stage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Artifact {
     /// Name of the artifact (e.g., "plan", "summary").
     pub name: String,
 
-    /// The artifact content.
+    /// The artifact content (markdown).
     pub content: String,
+
+    /// Pre-rendered HTML from the markdown content.
+    /// Populated at write time; computed on-the-fly for older artifacts missing it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
 
     /// Which stage produced this artifact.
     pub stage: String,
@@ -28,16 +35,19 @@ pub struct Artifact {
 }
 
 impl Artifact {
-    /// Create a new artifact.
+    /// Create a new artifact with pre-rendered HTML.
     pub fn new(
         name: impl Into<String>,
         content: impl Into<String>,
         stage: impl Into<String>,
         created_at: impl Into<String>,
     ) -> Self {
+        let content = content.into();
+        let html = Some(markdown_to_html(&content));
         Self {
             name: name.into(),
-            content: content.into(),
+            content,
+            html,
             stage: stage.into(),
             created_at: created_at.into(),
             iteration: 1,
@@ -50,6 +60,7 @@ impl Artifact {
         self.iteration = iteration;
         self
     }
+
 }
 
 /// Collection of artifacts for a task.

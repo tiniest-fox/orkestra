@@ -52,7 +52,7 @@ mod task_crud;
 /// Log workflow warnings (non-critical failures that should be visible for debugging).
 macro_rules! workflow_warn {
     ($($arg:tt)*) => {
-        eprintln!("[orkestra] WARNING: {}", format!($($arg)*));
+        $crate::orkestra_debug!("workflow", "WARNING: {}", format!($($arg)*));
     };
 }
 

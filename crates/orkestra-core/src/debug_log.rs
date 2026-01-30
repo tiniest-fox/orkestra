@@ -1,23 +1,26 @@
 //! Debug logging for Orkestra.
 //!
-//! Provides file-based debug logging controlled by the `ORKESTRA_DEBUG` environment variable.
-//! When enabled, logs are written to `.orkestra/debug.log` with automatic rotation.
+//! Provides debug logging with two output channels:
+//! - **File**: Written to `.orkestra/debug.log` when `ORKESTRA_DEBUG=1` is set.
+//! - **Hook**: An optional callback registered at runtime (e.g., to emit Tauri events).
+//!
+//! Both channels are independent — either, both, or neither can be active.
+//! The `orkestra_debug!` macro only evaluates its arguments when at least one channel is active.
 //!
 //! # Usage
 //!
 //! ```bash
-//! # Enable debug logging
+//! # Enable file logging
 //! ORKESTRA_DEBUG=1 pnpm tauri dev
 //!
 //! # View logs
 //! tail -f .orkestra/debug.log
 //! ```
 //!
-//! # In code
-//!
 //! ```ignore
 //! use orkestra_core::orkestra_debug;
 //!
+//! // Log from anywhere — dispatches to file and/or hook automatically.
 //! orkestra_debug!("component", "Something happened: {}", value);
 //! ```
 
@@ -27,6 +30,7 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 static DEBUG_STATE: OnceLock<DebugState> = OnceLock::new();
+static DEBUG_HOOK: OnceLock<Mutex<Box<dyn Fn(&str, &str) + Send>>> = OnceLock::new();
 
 const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024; // 5MB
 const TRUNCATE_TO: usize = 2 * 1024 * 1024; // Keep last 2MB
@@ -36,10 +40,10 @@ struct DebugState {
     file: Option<Mutex<File>>,
 }
 
-/// Initialize the debug logger.
+/// Initialize the file logger.
 ///
 /// Must be called once at startup with the path to the `.orkestra` directory.
-/// If `ORKESTRA_DEBUG=1` or `ORKESTRA_DEBUG=true`, logging is enabled.
+/// If `ORKESTRA_DEBUG=1` or `ORKESTRA_DEBUG=true`, file logging is enabled.
 pub fn init(orkestra_dir: &Path) {
     let enabled = std::env::var("ORKESTRA_DEBUG")
         .map(|v| v == "1" || v.to_lowercase() == "true")
@@ -68,38 +72,57 @@ pub fn init(orkestra_dir: &Path) {
     let _ = DEBUG_STATE.set(DebugState { enabled, file });
 }
 
-/// Check if debug logging is enabled.
+/// Register a hook that receives all debug log messages.
+///
+/// The hook is called with `(component, message)` for every `orkestra_debug!` call.
+/// Can be called independently of `init()` — the hook and file logger are separate channels.
+///
+/// Only one hook can be registered (subsequent calls are ignored).
+pub fn set_hook(hook: impl Fn(&str, &str) + Send + 'static) {
+    let _ = DEBUG_HOOK.set(Mutex::new(Box::new(hook)));
+}
+
+/// Check if any debug output channel is active (file logging or hook).
+#[inline]
+pub fn is_active() -> bool {
+    is_enabled() || DEBUG_HOOK.get().is_some()
+}
+
+/// Check if file logging is enabled.
 #[inline]
 pub fn is_enabled() -> bool {
     DEBUG_STATE.get().is_some_and(|s| s.enabled)
 }
 
-/// Log a debug message.
+/// Log a debug message to all active channels.
 ///
 /// Prefer using the `orkestra_debug!` macro instead of calling this directly.
 pub fn log(component: &str, message: &str) {
-    let Some(state) = DEBUG_STATE.get() else {
-        return;
-    };
-    if !state.enabled {
-        return;
-    }
-    let Some(file_mutex) = &state.file else {
-        return;
-    };
+    // Write to file if enabled
+    if let Some(state) = DEBUG_STATE.get() {
+        if state.enabled {
+            if let Some(file_mutex) = &state.file {
+                let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
+                let line = format!("{timestamp} [{component}] {message}\n");
 
-    let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
-    let line = format!("{timestamp} [{component}] {message}\n");
-
-    if let Ok(mut file) = file_mutex.lock() {
-        // Check size and rotate if needed
-        if let Ok(metadata) = file.metadata() {
-            if metadata.len() > MAX_LOG_SIZE {
-                rotate_log(&mut file);
+                if let Ok(mut file) = file_mutex.lock() {
+                    if let Ok(metadata) = file.metadata() {
+                        if metadata.len() > MAX_LOG_SIZE {
+                            rotate_log(&mut file);
+                        }
+                    }
+                    let _ = file.write_all(line.as_bytes());
+                    let _ = file.flush();
+                }
             }
         }
-        let _ = file.write_all(line.as_bytes());
-        let _ = file.flush();
+    }
+
+    // Dispatch to hook if registered
+    if let Some(hook_mutex) = DEBUG_HOOK.get() {
+        if let Ok(hook) = hook_mutex.lock() {
+            hook(component, message);
+        }
     }
 }
 
@@ -133,7 +156,8 @@ fn rotate_log(file: &mut File) {
 
 /// Debug logging macro.
 ///
-/// Only evaluates arguments and writes to log if debug logging is enabled.
+/// Only evaluates arguments when at least one output channel is active
+/// (file logging or hook). Dispatches to all active channels.
 ///
 /// # Example
 ///
@@ -144,7 +168,7 @@ fn rotate_log(file: &mut File) {
 #[macro_export]
 macro_rules! orkestra_debug {
     ($component:expr, $($arg:tt)*) => {
-        if $crate::debug_log::is_enabled() {
+        if $crate::debug_log::is_active() {
             $crate::debug_log::log($component, &format!($($arg)*));
         }
     };

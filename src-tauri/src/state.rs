@@ -8,6 +8,8 @@ use orkestra_core::workflow::{
     Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi, WorkflowConfig, WorkflowStore,
 };
 
+use orkestra_core::orkestra_debug;
+
 use crate::error::TauriError;
 
 /// Application state holding the workflow API.
@@ -38,8 +40,8 @@ impl AppState {
         let (conn, recovered) =
             DatabaseConnection::open_validated(db_path).map_err(|e| e.to_string())?;
         if recovered {
-            eprintln!("[startup] Database was corrupted — started with a fresh database");
-            eprintln!("[startup] Previous database preserved as .corrupt file for inspection");
+            orkestra_debug!("startup", "Database was corrupted — started with a fresh database");
+            orkestra_debug!("startup", "Previous database preserved as .corrupt file for inspection");
         }
 
         // Create workflow store with shared connection
@@ -49,15 +51,16 @@ impl AppState {
         let (git_service, has_git): (Option<Arc<dyn GitService>>, bool) =
             match Git2GitService::new(&project_root) {
                 Ok(git) => {
-                    eprintln!(
-                        "[git] Git service initialized for {}",
+                    orkestra_debug!(
+                        "git",
+                        "Git service initialized for {}",
                         project_root.display()
                     );
                     (Some(Arc::new(git)), true)
                 }
                 Err(e) => {
-                    eprintln!("[git] Git service unavailable: {e}");
-                    eprintln!("[git] Tasks will run without git worktree isolation");
+                    orkestra_debug!("git", "Git service unavailable: {}", e);
+                    orkestra_debug!("git", "Tasks will run without git worktree isolation");
                     (None, false)
                 }
             };
@@ -119,7 +122,7 @@ impl AppState {
     /// reducing the risk of corruption if the next startup is interrupted.
     pub fn checkpoint_database(&self) {
         if let Err(e) = self.db_conn.checkpoint() {
-            eprintln!("[shutdown] WAL checkpoint failed: {e}");
+            orkestra_debug!("shutdown", "WAL checkpoint failed: {}", e);
         }
     }
 }

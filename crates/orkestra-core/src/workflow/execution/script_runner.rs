@@ -243,7 +243,7 @@ impl ScriptHandle {
             self.killed = true;
             let pid = self.child.id();
             if let Err(e) = kill_process_tree(pid) {
-                eprintln!("[script] Warning: failed to kill process tree {pid}: {e}");
+                crate::orkestra_debug!("script", "Warning: failed to kill process tree {pid}: {e}");
             }
             // Also try regular kill in case process tree kill failed
             let _ = self.child.kill();

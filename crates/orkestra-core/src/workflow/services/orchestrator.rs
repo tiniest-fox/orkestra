@@ -353,12 +353,14 @@ impl OrchestratorLoop {
             api.get_tasks_needing_agents()?
         };
 
-        orkestra_debug!(
-            "orchestrator",
-            "start_new_executions: {} tasks needing execution, {} active",
-            tasks.len(),
-            self.stage_executor.active_count()
-        );
+        if !tasks.is_empty() || self.stage_executor.active_count() > 0 {
+            orkestra_debug!(
+                "orchestrator",
+                "start_new_executions: {} tasks needing execution, {} active",
+                tasks.len(),
+                self.stage_executor.active_count()
+            );
+        }
 
         for task in tasks {
             // Skip if we already have an active execution for this task
@@ -503,24 +505,25 @@ impl OrchestratorLoop {
         let mut events = Vec::new();
 
         let Ok(api) = self.api.lock() else {
-            eprintln!("[recovery] Failed to acquire API lock for stale integration recovery");
+            orkestra_debug!("recovery", "Failed to acquire API lock for stale integration recovery");
             return events;
         };
 
         let Ok(tasks) = api.store.list_tasks() else {
-            eprintln!("[recovery] Failed to list tasks for stale integration recovery");
+            orkestra_debug!("recovery", "Failed to list tasks for stale integration recovery");
             return events;
         };
 
         for task in tasks {
             if task.phase == Phase::Integrating && task.is_done() {
-                eprintln!("[recovery] Found stale Integrating task: {}", task.id);
+                orkestra_debug!("recovery", "Found stale Integrating task: {}", task.id);
 
                 // Re-attempt integration
                 match api.integrate_task(&task.id) {
                     Ok(_) => {
-                        eprintln!(
-                            "[recovery] Successfully recovered integration for {}",
+                        orkestra_debug!(
+                            "recovery",
+                            "Successfully recovered integration for {}",
                             task.id
                         );
                         events.push(OrchestratorEvent::IntegrationCompleted {
@@ -528,14 +531,14 @@ impl OrchestratorLoop {
                         });
                     }
                     Err(e) => {
-                        eprintln!("[recovery] Integration failed for {}: {}", task.id, e);
+                        orkestra_debug!("recovery", "Integration failed for {}: {}", task.id, e);
 
                         // integration_failed() should have moved task to recovery stage.
                         // Verify the task is no longer stuck in Integrating phase.
                         if let Ok(updated_task) = api.get_task(&task.id) {
                             if updated_task.phase == Phase::Integrating {
                                 // Fallback: reset phase to Idle so orchestrator can retry later
-                                eprintln!("[recovery] Task {} still in Integrating phase, resetting to Idle", task.id);
+                                orkestra_debug!("recovery", "Task {} still in Integrating phase, resetting to Idle", task.id);
                                 let mut reset_task = updated_task;
                                 reset_task.phase = Phase::Idle;
                                 let _ = api.store.save_task(&reset_task);
@@ -562,20 +565,20 @@ impl OrchestratorLoop {
     /// Any partially-created worktrees are cleaned up.
     fn recover_stale_setup_tasks(&self) {
         let Ok(api) = self.api.lock() else {
-            eprintln!("[recovery] Failed to acquire API lock for stale setup recovery");
+            orkestra_debug!("recovery", "Failed to acquire API lock for stale setup recovery");
             return;
         };
 
         // Use store.list_tasks() directly to get ALL tasks including subtasks
         // (api.list_tasks() filters out subtasks)
         let Ok(tasks) = api.store.list_tasks() else {
-            eprintln!("[recovery] Failed to list tasks for stale setup recovery");
+            orkestra_debug!("recovery", "Failed to list tasks for stale setup recovery");
             return;
         };
 
         for task in tasks {
             if task.phase == Phase::SettingUp {
-                eprintln!("[recovery] Found stale SettingUp task: {}", task.id);
+                orkestra_debug!("recovery", "Found stale SettingUp task: {}", task.id);
 
                 // Only clean up worktrees for parent tasks (subtasks don't own worktrees)
                 if task.parent_id.is_none() {
@@ -586,8 +589,9 @@ impl OrchestratorLoop {
                             if !e.to_string().contains("not found")
                                 && !e.to_string().contains("does not exist")
                             {
-                                eprintln!(
-                                    "[recovery] WARNING: Failed to clean up worktree for {}: {}",
+                                orkestra_debug!(
+                                    "recovery",
+                                    "WARNING: Failed to clean up worktree for {}: {}",
                                     task.id, e
                                 );
                             }
@@ -611,8 +615,9 @@ impl OrchestratorLoop {
                 }
 
                 if let Err(e) = api.store.save_task(&task) {
-                    eprintln!(
-                        "[recovery] Failed to mark stale task {} as failed: {}",
+                    orkestra_debug!(
+                        "recovery",
+                        "Failed to mark stale task {} as failed: {}",
                         task.id, e
                     );
                 }
@@ -626,26 +631,27 @@ impl OrchestratorLoop {
     /// We reset them to Idle so the orchestrator can respawn the agent.
     fn recover_stale_agent_working_tasks(&self) {
         let Ok(api) = self.api.lock() else {
-            eprintln!("[recovery] Failed to acquire API lock for stale agent recovery");
+            orkestra_debug!("recovery", "Failed to acquire API lock for stale agent recovery");
             return;
         };
 
         let Ok(tasks) = api.store.list_tasks() else {
-            eprintln!("[recovery] Failed to list tasks for stale agent recovery");
+            orkestra_debug!("recovery", "Failed to list tasks for stale agent recovery");
             return;
         };
 
         for task in tasks {
             if task.phase == Phase::AgentWorking {
-                eprintln!("[recovery] Found stale AgentWorking task: {}", task.id);
+                orkestra_debug!("recovery", "Found stale AgentWorking task: {}", task.id);
 
                 let mut task = task;
                 task.phase = Phase::Idle;
                 // Keep same status - orchestrator will respawn agent
 
                 if let Err(e) = api.store.save_task(&task) {
-                    eprintln!(
-                        "[recovery] Failed to reset stale task {} to Idle: {}",
+                    orkestra_debug!(
+                        "recovery",
+                        "Failed to reset stale task {} to Idle: {}",
                         task.id, e
                     );
                 }
@@ -660,7 +666,7 @@ impl OrchestratorLoop {
     /// if its directory name (task ID) has no matching task in the database.
     fn cleanup_orphaned_worktrees(&self) {
         let Ok(api) = self.api.lock() else {
-            eprintln!("[recovery] Failed to acquire API lock for orphaned worktree cleanup");
+            orkestra_debug!("recovery", "Failed to acquire API lock for orphaned worktree cleanup");
             return;
         };
 
@@ -671,7 +677,7 @@ impl OrchestratorLoop {
         let worktree_names = match git.list_worktree_names() {
             Ok(names) => names,
             Err(e) => {
-                eprintln!("[recovery] Failed to list worktree dirs: {e}");
+                orkestra_debug!("recovery", "Failed to list worktree dirs: {}", e);
                 return;
             }
         };
@@ -681,7 +687,7 @@ impl OrchestratorLoop {
         }
 
         let Ok(all_tasks) = api.store.list_tasks() else {
-            eprintln!("[recovery] Failed to list tasks for orphaned worktree cleanup");
+            orkestra_debug!("recovery", "Failed to list tasks for orphaned worktree cleanup");
             return;
         };
 
@@ -689,9 +695,9 @@ impl OrchestratorLoop {
 
         for name in &worktree_names {
             if !task_ids.contains(name.as_str()) {
-                eprintln!("[recovery] Cleaning up orphaned worktree: {name}");
+                orkestra_debug!("recovery", "Cleaning up orphaned worktree: {name}");
                 if let Err(e) = git.remove_worktree(name, true) {
-                    eprintln!("[recovery] Failed to clean up orphaned worktree {name}: {e}");
+                    orkestra_debug!("recovery", "Failed to clean up orphaned worktree {name}: {}", e);
                 }
             }
         }

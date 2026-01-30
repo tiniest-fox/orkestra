@@ -415,7 +415,7 @@ pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>)
             return Some(custom_schema);
         }
         // Fall through to dynamic generation if custom file not found
-        eprintln!("[warn] Custom schema file '{schema_file}' not found, using generated schema");
+        crate::orkestra_debug!("prompt", "Custom schema file '{schema_file}' not found, using generated schema");
     }
 
     // Generate schema dynamically based on stage config
@@ -675,7 +675,7 @@ fn load_resume_template(
             })?;
             // Warn if custom template missing marker
             if !content.starts_with("<!orkestra-resume:") {
-                eprintln!("[warn] Resume template {name} missing marker prefix");
+                crate::orkestra_debug!("prompt", "Resume template {name} missing marker prefix");
             }
             return Ok(content);
         }

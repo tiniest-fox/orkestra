@@ -66,7 +66,7 @@ pub fn try_integrate(
             std::path::Path::new(worktree_path),
             &format!("Final changes for task {}", task.id),
         ) {
-            eprintln!("Warning: Failed to commit pending changes: {e}");
+            crate::orkestra_debug!("task", "WARNING: Failed to commit pending changes: {e}");
         }
     }
 
@@ -110,7 +110,7 @@ pub fn try_integrate(
         Err(e) => {
             // Other error: don't mark as Done - return to Working so user can retry
             // This prevents tasks from being marked complete when the merge actually failed
-            eprintln!("Warning: Failed to integrate task {}: {e}", task.id);
+            crate::orkestra_debug!("task", "WARNING: Failed to integrate task {}: {e}", task.id);
             let _ = git.abort_merge(); // Clean up any partial merge state
 
             let error_msg = format!(
@@ -214,7 +214,7 @@ pub fn create_task_with_options(
         match git.create_worktree(&id, base_branch) {
             Ok((branch, path)) => (Some(branch), Some(path.to_string_lossy().to_string())),
             Err(e) => {
-                eprintln!("Warning: Failed to create worktree for task {id}: {e}");
+                crate::orkestra_debug!("task", "WARNING: Failed to create worktree for task {id}: {e}");
                 (None, None)
             }
         }

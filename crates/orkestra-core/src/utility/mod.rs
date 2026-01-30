@@ -190,7 +190,7 @@ impl UtilityRunner {
         if let Some(handle) = stderr_handle {
             if let Ok(lines) = handle.join() {
                 if !lines.is_empty() {
-                    eprintln!("[utility] stderr: {}", lines.join("\n"));
+                    crate::orkestra_debug!("utility", "stderr: {}", lines.join("\n"));
                 }
             }
         }

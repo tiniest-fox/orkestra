@@ -317,7 +317,7 @@ fn read_output_and_send_events(
                 full_output.push('\n');
             }
             Err(e) => {
-                eprintln!("[agent runner] Error reading stdout: {e}");
+                orkestra_debug!("runner", "Error reading stdout: {}", e);
                 // Send error completion so orchestrator knows something went wrong
                 if tx
                     .send(RunEvent::Completed(Err(format!(
@@ -325,7 +325,7 @@ fn read_output_and_send_events(
                     ))))
                     .is_err()
                 {
-                    eprintln!("[agent runner] Channel closed before read error could be sent");
+                    orkestra_debug!("runner", "Channel closed before read error could be sent");
                 }
                 return; // Exit - don't try to parse partial output
             }
@@ -339,7 +339,7 @@ fn read_output_and_send_events(
     // Note: parse_agent_output checks for API errors in the output
     let result = parse_agent_output(&full_output, schema);
     if tx.send(RunEvent::Completed(result)).is_err() {
-        eprintln!("[agent runner] Channel closed before completion could be sent");
+        orkestra_debug!("runner", "Channel closed before completion could be sent");
     }
 }
 

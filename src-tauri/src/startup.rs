@@ -206,6 +206,15 @@ pub struct StartupResult {
 /// This function always returns (never panics) so that Tauri can start
 /// and display an error to the user if needed.
 pub fn run_startup() -> StartupResult {
+    // Load .env files. More specific files are loaded first so their values
+    // take precedence. Neither call uses _override, so process environment
+    // always wins over file values.
+    // Precedence: process env > .env.development > .env
+    if cfg!(debug_assertions) {
+        dotenvy::from_filename(".env.development").ok();
+    }
+    dotenvy::dotenv().ok();
+
     let mut warnings = Vec::new();
 
     // Step 1: Find project root

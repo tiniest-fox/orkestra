@@ -215,7 +215,7 @@ fn generate_title(task_id: &str, description: &str) -> String {
     match generate_title_sync(description, 30) {
         Ok(title) => title,
         Err(e) => {
-            eprintln!("[orkestra] WARNING: Title generation failed for {task_id}: {e}");
+            crate::orkestra_debug!("task", "WARNING: Title generation failed for {task_id}: {e}");
             generate_fallback_title(description)
         }
     }
@@ -322,18 +322,18 @@ fn spawn_async_setup(
                             task.branch_name
                         );
                         if let Err(e) = store.save_task(&task) {
-                            eprintln!("[setup] CRITICAL: Failed to save task {task_id}: {e}");
+                            crate::orkestra_debug!("setup", "CRITICAL: Failed to save task {task_id}: {e}");
                         }
                     }
                     Err(error) => {
                         // FAIL the task visibly - no silent failures
-                        eprintln!("[setup] Setup failed for {task_id}: {error}");
-                        crate::orkestra_debug!("task", "{} setup failed: {}", task_id, error);
+                        crate::orkestra_debug!("setup", "Setup failed for {task_id}: {error}");
                         task.status = Status::Failed { error: Some(error) };
                         task.phase = Phase::Idle;
                         if let Err(e) = store.save_task(&task) {
-                            eprintln!(
-                                "[setup] CRITICAL: Failed to save failed task {task_id}: {e}"
+                            crate::orkestra_debug!(
+                                "setup",
+                                "CRITICAL: Failed to save failed task {task_id}: {e}"
                             );
                         }
                     }
@@ -341,15 +341,15 @@ fn spawn_async_setup(
             }
             Ok(None) => {
                 // Task was deleted during setup - clean up any orphaned worktree
-                eprintln!("[setup] CRITICAL: Task {task_id} disappeared during setup");
+                crate::orkestra_debug!("setup", "CRITICAL: Task {task_id} disappeared during setup");
                 if let Some(ref git) = git {
                     if let Err(e) = git.remove_worktree(&task_id, true) {
-                        eprintln!("[setup] WARNING: Failed to clean up orphaned worktree for {task_id}: {e}");
+                        crate::orkestra_debug!("setup", "WARNING: Failed to clean up orphaned worktree for {task_id}: {e}");
                     }
                 }
             }
             Err(e) => {
-                eprintln!("[setup] CRITICAL: Failed to load task {task_id}: {e}");
+                crate::orkestra_debug!("setup", "CRITICAL: Failed to load task {task_id}: {e}");
             }
         }
     });

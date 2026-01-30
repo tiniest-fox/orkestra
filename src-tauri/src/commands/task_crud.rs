@@ -2,7 +2,7 @@
 
 use crate::{error::TauriError, state::AppState};
 use orkestra_core::{
-    is_process_running, kill_process_tree,
+    is_process_running, kill_process_tree, orkestra_debug,
     workflow::{Task, TaskView},
 };
 use tauri::State;
@@ -71,7 +71,11 @@ pub fn workflow_delete_task(state: State<AppState>, task_id: String) -> Result<(
     kill_agents_for_tasks(&api, &task_ids);
 
     // Delete all DB records in a transaction — no git/filesystem work
-    api.delete_task(&task_id).map_err(Into::into)
+    if let Err(e) = api.delete_task(&task_id) {
+        orkestra_debug!("delete", "Failed to delete task {task_id}: {e}");
+        return Err(e.into());
+    }
+    Ok(())
 }
 
 /// Collect the task ID and all descendant subtask IDs recursively.
@@ -96,10 +100,11 @@ fn kill_agents_for_tasks(api: &orkestra_core::workflow::WorkflowApi, task_ids: &
 
     for (session_task_id, stage, pid) in all_sessions {
         if task_ids.contains(&session_task_id) && is_process_running(pid) {
-            println!("[delete] Killing agent for task {session_task_id}/{stage} (pid: {pid})");
+            orkestra_debug!("delete", "Killing agent for task {session_task_id}/{stage} (pid: {pid})");
             if let Err(e) = kill_process_tree(pid) {
-                eprintln!(
-                    "[delete] Failed to kill agent pid {pid} for {session_task_id}/{stage}: {e}"
+                orkestra_debug!(
+                    "delete",
+                    "Failed to kill agent pid {pid} for {session_task_id}/{stage}: {e}"
                 );
             }
         }

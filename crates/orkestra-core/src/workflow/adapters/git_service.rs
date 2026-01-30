@@ -53,8 +53,9 @@ impl Git2GitService {
             return Ok(()); // No script = success
         }
 
-        eprintln!(
-            "[worktree] Running setup script for {}",
+        crate::orkestra_debug!(
+            "worktree",
+            "Running setup script for {}",
             worktree_path.display()
         );
 
@@ -75,7 +76,7 @@ impl Git2GitService {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         if !stdout.trim().is_empty() {
-            eprintln!("[worktree] Setup output: {stdout}");
+            crate::orkestra_debug!("worktree", "Setup output: {stdout}");
         }
 
         Ok(())
@@ -338,7 +339,7 @@ impl GitService for Git2GitService {
         if delete_branch {
             if let Err(e) = self.delete_branch(&branch_name) {
                 // Branch may not exist or may be checked out elsewhere - log but don't fail
-                eprintln!("[orkestra] WARNING: Failed to delete branch {branch_name}: {e}");
+                crate::orkestra_debug!("git", "WARNING: Failed to delete branch {branch_name}: {e}");
             }
         }
 
@@ -528,7 +529,7 @@ impl GitService for Git2GitService {
 
         // Always restore stashed changes
         if let Err(e) = self.stash_pop(was_stashed) {
-            eprintln!("Warning: Failed to restore stashed changes: {e}");
+            crate::orkestra_debug!("git", "WARNING: Failed to restore stashed changes: {}", e);
         }
 
         merge_result

@@ -7,7 +7,7 @@ mod startup;
 mod state;
 
 use orkestra_core::{
-    find_project_root, is_process_running, kill_process_tree,
+    find_project_root, is_process_running, kill_process_tree, orkestra_debug,
     workflow::{load_workflow_for_project, OrchestratorLoop},
 };
 use startup::{run_startup, StartupState};
@@ -31,11 +31,11 @@ static INITIALIZATION_STARTED: AtomicBool = AtomicBool::new(false);
 fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<OrchestratorStopFlag>) {
     // Prevent multiple initialization calls (e.g., from React StrictMode double-mount)
     if INITIALIZATION_STARTED.swap(true, Ordering::SeqCst) {
-        println!("[startup] Initialization already started, ignoring duplicate call");
+        orkestra_debug!("startup", "Initialization already started, ignoring duplicate call");
         return;
     }
 
-    println!("[startup] UI ready, beginning initialization...");
+    orkestra_debug!("startup", "UI ready, beginning initialization...");
     let stop_flag = stop_flag.0.clone();
 
     thread::spawn(move || {
@@ -44,6 +44,12 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
         // Update the startup state with the result
         let startup_state: tauri::State<StartupState> = app_handle.state();
         startup_state.set_status(startup_result.status.clone());
+
+        // Register debug log hook to emit events to the frontend
+        let debug_handle = app_handle.clone();
+        orkestra_core::debug_log::set_hook(move |component, message| {
+            let _ = debug_handle.emit("debug-log", format!("[{component}] {message}"));
+        });
 
         // If startup succeeded, register AppState and start orchestrator
         if let Some(app_state) = startup_result.app_state {
@@ -100,7 +106,7 @@ fn start_workflow_orchestrator(
                 stage,
                 pid,
             } => {
-                println!("[orchestrator] Spawned {stage} agent for {task_id} (pid: {pid})");
+                orkestra_debug!("orchestrator", "Spawned {stage} agent for {task_id} (pid: {pid})");
                 let _ = app_handle.emit("task-updated", task_id);
             }
             orkestra_core::workflow::OrchestratorEvent::OutputProcessed {
@@ -108,23 +114,24 @@ fn start_workflow_orchestrator(
                 stage,
                 output_type,
             } => {
-                println!(
-                    "[orchestrator] Processed {output_type} output from {stage} for {task_id}"
+                orkestra_debug!(
+                    "orchestrator",
+                    "Processed {output_type} output from {stage} for {task_id}"
                 );
                 let _ = app_handle.emit("task-updated", task_id);
             }
             orkestra_core::workflow::OrchestratorEvent::Error { task_id, error } => {
-                eprintln!("[orchestrator] Error: {error}");
+                orkestra_debug!("orchestrator", "Error: {error}");
                 if let Some(id) = task_id {
                     let _ = app_handle.emit("task-updated", id);
                 }
             }
             orkestra_core::workflow::OrchestratorEvent::IntegrationStarted { task_id, branch } => {
-                println!("[orchestrator] Starting integration for {task_id} (branch: {branch})");
+                orkestra_debug!("orchestrator", "Starting integration for {task_id} (branch: {branch})");
                 let _ = app_handle.emit("task-updated", task_id);
             }
             orkestra_core::workflow::OrchestratorEvent::IntegrationCompleted { task_id } => {
-                println!("[orchestrator] Integration completed for {task_id}");
+                orkestra_debug!("orchestrator", "Integration completed for {task_id}");
                 let _ = app_handle.emit("task-updated", task_id);
             }
             orkestra_core::workflow::OrchestratorEvent::IntegrationFailed {
@@ -132,7 +139,7 @@ fn start_workflow_orchestrator(
                 error,
                 ..
             } => {
-                eprintln!("[orchestrator] Integration failed for {task_id}: {error}");
+                orkestra_debug!("orchestrator", "Integration failed for {task_id}: {error}");
                 let _ = app_handle.emit("task-updated", task_id);
             }
             orkestra_core::workflow::OrchestratorEvent::ScriptSpawned {
@@ -141,13 +148,14 @@ fn start_workflow_orchestrator(
                 command,
                 pid,
             } => {
-                println!(
-                    "[orchestrator] Spawned script for {task_id}/{stage}: {command} (pid: {pid})"
+                orkestra_debug!(
+                    "orchestrator",
+                    "Spawned script for {task_id}/{stage}: {command} (pid: {pid})"
                 );
                 let _ = app_handle.emit("task-updated", task_id);
             }
             orkestra_core::workflow::OrchestratorEvent::ScriptCompleted { task_id, stage } => {
-                println!("[orchestrator] Script completed for {task_id}/{stage}");
+                orkestra_debug!("orchestrator", "Script completed for {task_id}/{stage}");
                 let _ = app_handle.emit("task-updated", task_id);
             }
             orkestra_core::workflow::OrchestratorEvent::ScriptFailed {
@@ -157,14 +165,15 @@ fn start_workflow_orchestrator(
                 recovery_stage,
             } => {
                 let recovery = recovery_stage.as_deref().unwrap_or("none");
-                eprintln!(
-                    "[orchestrator] Script failed for {task_id}/{stage}: {error} (recovery: {recovery})"
+                orkestra_debug!(
+                    "orchestrator",
+                    "Script failed for {task_id}/{stage}: {error} (recovery: {recovery})"
                 );
                 let _ = app_handle.emit("task-updated", task_id);
             }
         });
 
-        println!("[orchestrator] Stopped");
+        orkestra_debug!("orchestrator", "Stopped");
     });
 }
 
@@ -174,10 +183,10 @@ fn start_workflow_orchestrator(
 
 /// Cleanup function to kill all tracked agents on shutdown.
 fn cleanup_agents(app_handle: &AppHandle) {
-    println!("[cleanup] Killing all tracked agents...");
+    orkestra_debug!("cleanup", "Killing all tracked agents...");
 
     let Some(app_state) = app_handle.try_state::<state::AppState>() else {
-        eprintln!("[cleanup] No app state available");
+        orkestra_debug!("cleanup", "No app state available");
         return;
     };
 
@@ -185,12 +194,12 @@ fn cleanup_agents(app_handle: &AppHandle) {
         Ok(api) => match api.get_running_agent_pids() {
             Ok(agents) => agents,
             Err(e) => {
-                eprintln!("[cleanup] Failed to get running agents: {e}");
+                orkestra_debug!("cleanup", "Failed to get running agents: {}", e);
                 return;
             }
         },
         Err(e) => {
-            eprintln!("[cleanup] Failed to get API: {e}");
+            orkestra_debug!("cleanup", "Failed to get API: {}", e);
             return;
         }
     };
@@ -198,16 +207,16 @@ fn cleanup_agents(app_handle: &AppHandle) {
     let mut killed = 0;
     for (task_id, stage, pid) in running_agents {
         if is_process_running(pid) {
-            println!("[cleanup] Killing agent for task {task_id}/{stage} (pid: {pid})");
+            orkestra_debug!("cleanup", "Killing agent for task {task_id}/{stage} (pid: {pid})");
             let _ = kill_process_tree(pid);
             killed += 1;
         }
     }
 
     if killed > 0 {
-        println!("[cleanup] Killed {killed} agent(s)");
+        orkestra_debug!("cleanup", "Killed {} agent(s)", killed);
     } else {
-        println!("[cleanup] No active agents to kill");
+        orkestra_debug!("cleanup", "No active agents to kill");
     }
 }
 
@@ -216,18 +225,18 @@ fn cleanup_agents(app_handle: &AppHandle) {
 /// Called on startup to ensure stale PIDs don't prevent new agents from spawning.
 /// Uses the workflow API to check for sessions with stale agent PIDs.
 fn cleanup_orphaned_agents(app_state: &state::AppState) {
-    println!("[startup] Checking for orphaned agents...");
+    orkestra_debug!("startup", "Checking for orphaned agents...");
 
     let running_agents = match app_state.api() {
         Ok(api) => match api.get_running_agent_pids() {
             Ok(agents) => agents,
             Err(e) => {
-                eprintln!("[startup] Failed to get running agents: {e}");
+                orkestra_debug!("startup", "Failed to get running agents: {}", e);
                 return;
             }
         },
         Err(e) => {
-            eprintln!("[startup] Failed to get API: {e}");
+            orkestra_debug!("startup", "Failed to get API: {}", e);
             return;
         }
     };
@@ -235,8 +244,9 @@ fn cleanup_orphaned_agents(app_state: &state::AppState) {
     let mut orphans_found = 0;
     for (task_id, stage, pid) in running_agents {
         if is_process_running(pid) {
-            eprintln!(
-                "[startup] Found orphaned agent for task {task_id}/{stage} (pid: {pid}), killing..."
+            orkestra_debug!(
+                "startup",
+                "Found orphaned agent for task {task_id}/{stage} (pid: {pid}), killing..."
             );
             let _ = kill_process_tree(pid);
             orphans_found += 1;
@@ -248,9 +258,9 @@ fn cleanup_orphaned_agents(app_state: &state::AppState) {
     }
 
     if orphans_found > 0 {
-        println!("[startup] Cleaned up {orphans_found} orphaned agent(s)");
+        orkestra_debug!("startup", "Cleaned up {} orphaned agent(s)", orphans_found);
     } else {
-        println!("[startup] No orphaned agents found");
+        orkestra_debug!("startup", "No orphaned agents found");
     }
 }
 

@@ -213,8 +213,9 @@ impl StageExecutionService {
                         .on_agent_spawned(&task.id, stage, spawn_result.pid)
                 {
                     // Non-fatal: spawn already happened, just log the error
-                    eprintln!(
-                        "[stage_execution] Failed to record spawn for {}/{}: {}",
+                    crate::orkestra_debug!(
+                        "stage_execution",
+                        "Failed to record spawn for {}/{}: {}",
                         task.id, stage, e
                     );
                 }
@@ -225,8 +226,9 @@ impl StageExecutionService {
                     self.session_service
                         .on_spawn_failed(&task.id, stage, &e.to_string())
                 {
-                    eprintln!(
-                        "[stage_execution] Failed to record spawn failure for {}/{}: {}",
+                    crate::orkestra_debug!(
+                        "stage_execution",
+                        "Failed to record spawn failure for {}/{}: {}",
                         task.id, stage, session_err
                     );
                 }
@@ -372,7 +374,7 @@ impl StageExecutionService {
                 ScriptPollResult::Error(error) => {
                     // Script poll errors don't have task context
                     // Log and skip for now
-                    eprintln!("[stage_execution] Script poll error: {error}");
+                    crate::orkestra_debug!("stage_execution", "Script poll error: {error}");
                     None
                 }
             })

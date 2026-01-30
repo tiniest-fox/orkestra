@@ -46,6 +46,7 @@ mod session_service;
 mod stage_execution;
 mod subtask_service;
 mod task_crud;
+mod task_setup;
 
 // ============================================================================
 // Logging Macros

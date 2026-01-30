@@ -1,13 +1,9 @@
 //! Task CRUD operations.
 
-use std::sync::Arc;
-use std::thread;
-
 use crate::orkestra_debug;
-use crate::title::{generate_fallback_title, TitleGenerator};
 use crate::workflow::domain::Task;
-use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Phase, Status};
+use crate::workflow::ports::{WorkflowError, WorkflowResult};
+use crate::workflow::runtime::Phase;
 
 use super::WorkflowApi;
 
@@ -63,10 +59,7 @@ impl WorkflowApi {
 
         // Spawn async setup (handles worktree creation and title generation in parallel)
         let needs_title = title.trim().is_empty() && !description.trim().is_empty();
-        spawn_async_setup(
-            self.store.clone(),
-            self.git_service.clone(),
-            self.title_generator.clone(),
+        self.setup_service.spawn_setup(
             id.clone(),
             base_branch.map(String::from),
             if needs_title {
@@ -139,15 +132,7 @@ impl WorkflowApi {
             .create_initial_iteration(&id, &first_stage.name)?;
 
         // Spawn async setup - no git work needed, just transitions to Idle
-        // Subtasks don't need title generation (they have explicit titles)
-        spawn_async_setup(
-            self.store.clone(),
-            None,
-            self.title_generator.clone(),
-            id.clone(),
-            None,
-            None,
-        );
+        self.setup_service.spawn_subtask_setup(id.clone());
 
         orkestra_debug!(
             "task",
@@ -217,157 +202,11 @@ impl WorkflowApi {
     }
 }
 
-/// Generate a title and save it directly to the store.
-///
-/// Called from the title thread inside `spawn_async_setup`. Saves immediately so
-/// the UI can display the title before worktree setup finishes.
-fn generate_and_save_title(
-    store: &dyn WorkflowStore,
-    title_gen: &dyn TitleGenerator,
-    task_id: &str,
-    description: &str,
-) {
-    let title = match title_gen.generate_title(task_id, description) {
-        Ok(title) => title,
-        Err(e) => {
-            crate::orkestra_debug!(
-                "task",
-                "WARNING: Title generation failed for {task_id}: {e}"
-            );
-            generate_fallback_title(description)
-        }
-    };
-
-    if let Ok(Some(mut task)) = store.get_task(task_id) {
-        if task.title.trim().is_empty() {
-            task.title = title;
-            if let Err(e) = store.save_task(&task) {
-                crate::orkestra_debug!(
-                    "task",
-                    "WARNING: Failed to save title for {task_id}: {e}"
-                );
-            }
-        }
-    }
-}
-
-/// Spawn a background thread to set up the task (worktree creation, title generation).
-///
-/// Runs worktree setup and title generation in parallel, then transitions to `Phase::Idle`.
-/// On failure, transitions task to `Status::Failed` with error message.
-///
-/// If `description` is Some, title will be generated from it (for tasks created without a title).
-fn spawn_async_setup(
-    store: Arc<dyn WorkflowStore>,
-    git: Option<Arc<dyn GitService>>,
-    title_gen: Arc<dyn TitleGenerator>,
-    task_id: String,
-    base_branch: Option<String>,
-    description: Option<String>,
-) {
-    crate::orkestra_debug!("task", "spawn_async_setup {}: starting", task_id);
-    thread::spawn(move || {
-        // Run worktree setup and title generation in parallel using scoped threads
-        let worktree_result = thread::scope(|s| {
-            // Spawn worktree creation
-            let worktree_handle = s.spawn(|| {
-                if let Some(ref git) = git {
-                    match git.create_worktree(&task_id, base_branch.as_deref()) {
-                        Ok(result) => Ok(Some(result)),
-                        Err(e) => Err(format!("Worktree setup failed: {e}")),
-                    }
-                } else {
-                    Ok(None)
-                }
-            });
-
-            // Spawn title generation if needed — saves directly to DB when ready
-            let title_store = Arc::clone(&store);
-            let title_handle = description.as_ref().map(|desc| {
-                let tg = Arc::clone(&title_gen);
-                let tid = task_id.clone();
-                s.spawn(move || {
-                    generate_and_save_title(&*title_store, &*tg, &tid, desc);
-                })
-            });
-
-            // Wait for both to complete
-            let worktree_result = worktree_handle
-                .join()
-                .unwrap_or_else(|_| Err("Worktree thread panicked".to_string()));
-            if let Some(h) = title_handle {
-                let _ = h.join();
-            }
-
-            worktree_result
-        });
-
-        // Update task based on worktree result
-        match store.get_task(&task_id) {
-            Ok(Some(mut task)) => {
-                match worktree_result {
-                    Ok(worktree_info) => {
-                        // Success - update worktree info and transition to Idle
-                        if let Some(ref wt) = worktree_info {
-                            task.branch_name = Some(wt.branch_name.clone());
-                            task.worktree_path =
-                                Some(wt.worktree_path.to_string_lossy().to_string());
-                        }
-
-                        // Persist the base branch on the task.
-                        // If explicitly provided, use that; otherwise resolve from current branch.
-                        if let Some(ref git) = git {
-                            task.base_branch = Some(base_branch.clone().unwrap_or_else(|| {
-                                git.current_branch().unwrap_or_else(|_| "main".to_string())
-                            }));
-                        }
-
-                        task.phase = Phase::Idle;
-                        crate::orkestra_debug!(
-                            "task",
-                            "{} setup complete: phase=Idle, worktree={:?}, branch={:?}",
-                            task_id,
-                            task.worktree_path,
-                            task.branch_name
-                        );
-                        if let Err(e) = store.save_task(&task) {
-                            crate::orkestra_debug!("setup", "CRITICAL: Failed to save task {task_id}: {e}");
-                        }
-                    }
-                    Err(error) => {
-                        // FAIL the task visibly - no silent failures
-                        crate::orkestra_debug!("setup", "Setup failed for {task_id}: {error}");
-                        task.status = Status::Failed { error: Some(error) };
-                        task.phase = Phase::Idle;
-                        if let Err(e) = store.save_task(&task) {
-                            crate::orkestra_debug!(
-                                "setup",
-                                "CRITICAL: Failed to save failed task {task_id}: {e}"
-                            );
-                        }
-                    }
-                }
-            }
-            Ok(None) => {
-                // Task was deleted during setup - clean up any orphaned worktree
-                crate::orkestra_debug!("setup", "CRITICAL: Task {task_id} disappeared during setup");
-                if let Some(ref git) = git {
-                    if let Err(e) = git.remove_worktree(&task_id, true) {
-                        crate::orkestra_debug!("setup", "WARNING: Failed to clean up orphaned worktree for {task_id}: {e}");
-                    }
-                }
-            }
-            Err(e) => {
-                crate::orkestra_debug!("setup", "CRITICAL: Failed to load task {task_id}: {e}");
-            }
-        }
-    });
-}
-
 #[cfg(test)]
 #[allow(clippy::similar_names)] // task1/task2/tasks are clear in test context
 mod tests {
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use crate::workflow::runtime::Status;
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
 

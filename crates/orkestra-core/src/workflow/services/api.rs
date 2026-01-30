@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use super::task_setup::TaskSetupService;
 use super::IterationService;
 use crate::title::{ClaudeTitleGenerator, TitleGenerator};
 use crate::workflow::config::{StageConfig, WorkflowConfig};
@@ -26,6 +27,7 @@ pub struct WorkflowApi {
     pub(crate) git_service: Option<Arc<dyn GitService>>,
     pub(crate) iteration_service: Arc<IterationService>,
     pub(crate) title_generator: Arc<dyn TitleGenerator>,
+    pub(crate) setup_service: Arc<TaskSetupService>,
 }
 
 impl WorkflowApi {
@@ -34,12 +36,19 @@ impl WorkflowApi {
     /// Git service is not configured by default. Use `with_git()` to add it.
     pub fn new(workflow: WorkflowConfig, store: Arc<dyn WorkflowStore>) -> Self {
         let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
+        let title_generator: Arc<dyn TitleGenerator> = Arc::new(ClaudeTitleGenerator);
+        let setup_service = Arc::new(TaskSetupService::new(
+            Arc::clone(&store),
+            None,
+            Arc::clone(&title_generator),
+        ));
         Self {
             workflow,
             store,
             git_service: None,
             iteration_service,
-            title_generator: Arc::new(ClaudeTitleGenerator),
+            title_generator,
+            setup_service,
         }
     }
 
@@ -53,18 +62,30 @@ impl WorkflowApi {
         git_service: Arc<dyn GitService>,
     ) -> Self {
         let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
+        let title_generator: Arc<dyn TitleGenerator> = Arc::new(ClaudeTitleGenerator);
+        let setup_service = Arc::new(TaskSetupService::new(
+            Arc::clone(&store),
+            Some(Arc::clone(&git_service)),
+            Arc::clone(&title_generator),
+        ));
         Self {
             workflow,
             store,
             git_service: Some(git_service),
             iteration_service,
-            title_generator: Arc::new(ClaudeTitleGenerator),
+            title_generator,
+            setup_service,
         }
     }
 
     /// Replace the title generator (for testing).
     #[must_use]
     pub fn with_title_generator(mut self, gen: Arc<dyn TitleGenerator>) -> Self {
+        self.setup_service = Arc::new(TaskSetupService::new(
+            Arc::clone(&self.store),
+            self.git_service.clone(),
+            Arc::clone(&gen),
+        ));
         self.title_generator = gen;
         self
     }

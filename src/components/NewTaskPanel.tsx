@@ -26,7 +26,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
 
     try {
       await onSubmit(description.trim(), autoMode);
-      // Don't reset form - App.tsx will transition to task detail view
+      // Don't reset form - parent will close the panel
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create task");
       setSubmitting(false);

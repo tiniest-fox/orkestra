@@ -70,7 +70,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
               </span>
             )}
             {showSpinner && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-orange-100">
+              <span className="flex-shrink-0 p-1.5">
                 <span className="block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
               </span>
             )}

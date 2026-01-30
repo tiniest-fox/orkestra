@@ -20,7 +20,7 @@ export function Orkestra() {
   const { tasks, loading, error, createTask, deleteTask } = useTasks();
 
   const currentSelectedTask: WorkflowTaskView | null =
-    sidebarView.type === "task" ? tasks.find((t) => t.id === sidebarView.taskId) ?? null : null;
+    sidebarView.type === "task" ? (tasks.find((t) => t.id === sidebarView.taskId) ?? null) : null;
 
   const sidebarActiveKey =
     sidebarView.type === "create"

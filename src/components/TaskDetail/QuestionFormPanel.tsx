@@ -2,8 +2,8 @@
  * Question form panel - multi-step question answering interface.
  */
 
-import { useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useRef } from "react";
 import { useQuestionForm } from "../../hooks/useQuestionForm";
 import type { WorkflowQuestion, WorkflowQuestionAnswer } from "../../types/workflow";
 import { Button, Panel } from "../ui";
@@ -63,10 +63,13 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
 
         <div ref={scrollContainerRef} className="overflow-y-auto max-h-[320px] p-4">
           <div className="text-sm font-medium text-stone-800 mb-1">{currentQuestion.question}</div>
-          {currentQuestion.context && <div className="text-xs text-stone-500 mb-2">{currentQuestion.context}</div>}
+          {currentQuestion.context && (
+            <div className="text-xs text-stone-500 mb-2">{currentQuestion.context}</div>
+          )}
           <div className="space-y-1">
             {currentQuestion.options?.map((option) => {
-              const isChecked = answers[currentQuestion.id] === option.id && !otherSelected[currentQuestion.id];
+              const isChecked =
+                answers[currentQuestion.id] === option.id && !otherSelected[currentQuestion.id];
               const inputId = `${currentQuestion.id}-${option.id}`;
               return (
                 <div key={option.id} className="flex items-start">

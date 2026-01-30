@@ -9,8 +9,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useState } from "react";
-import type { WorkflowQuestionAnswer, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { useTasks, useWorkflowConfig } from "../providers";
+import type { WorkflowQuestionAnswer, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 
 interface UseTaskDetailResult {
   task: WorkflowTaskView;

@@ -2,6 +2,7 @@
  * Task card for the kanban board.
  */
 
+import { AlertCircle, Eye, MessageCircle, XCircle } from "lucide-react";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { Panel } from "../ui";
 
@@ -58,21 +59,15 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
             {getDisplayTitle(task)}
           </h3>
           <div className="flex items-center gap-1.5">
-            {taskNeedsReview && (
-              <span className="flex-shrink-0 text-warning-700 text-xs font-medium px-1.5 py-0.5 bg-warning-100 rounded-full">
-                Review
-              </span>
-            )}
+            {taskNeedsReview && <Eye className="flex-shrink-0 w-4 h-4 text-warning-700" />}
             {hasQuestions && !taskNeedsReview && (
-              <span className="flex-shrink-0 text-info-600 text-xs font-medium px-1.5 py-0.5 bg-info-100 rounded-full">
-                Questions
-              </span>
+              <MessageCircle className="flex-shrink-0 w-4 h-4 text-info-600" />
             )}
             {showSpinner && (
               <span className="flex-shrink-0 w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
             )}
-            {isFailed && <span className="flex-shrink-0 text-error-600 font-bold">!</span>}
-            {isBlocked && <span className="flex-shrink-0 text-warning-600 font-bold">||</span>}
+            {isFailed && <XCircle className="flex-shrink-0 w-4 h-4 text-error-600" />}
+            {isBlocked && <AlertCircle className="flex-shrink-0 w-4 h-4 text-warning-600" />}
           </div>
         </div>
 

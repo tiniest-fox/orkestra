@@ -392,4 +392,3 @@ export type LogEntry =
   | { type: "script_start"; command: string; stage: string }
   | { type: "script_output"; content: string }
   | { type: "script_exit"; code: number; success: boolean; timed_out: boolean };
-

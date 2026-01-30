@@ -1,2 +1,2 @@
 export { TasksProvider, useTasks } from "./TasksProvider";
-export { WorkflowConfigProvider, useWorkflowConfig } from "./WorkflowConfigProvider";
+export { useWorkflowConfig, WorkflowConfigProvider } from "./WorkflowConfigProvider";

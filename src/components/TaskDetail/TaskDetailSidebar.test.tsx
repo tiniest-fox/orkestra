@@ -54,13 +54,7 @@ describe("TaskDetailSidebar", () => {
     });
 
     await act(async () => {
-      render(
-        <TaskDetailSidebar
-          task={task}
-          onClose={() => {}}
-          onDelete={() => {}}
-        />,
-      );
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
     });
 
     expect(screen.getByText("Test Task")).toBeInTheDocument();
@@ -76,13 +70,7 @@ describe("TaskDetailSidebar", () => {
     });
 
     await act(async () => {
-      render(
-        <TaskDetailSidebar
-          task={task}
-          onClose={() => {}}
-          onDelete={() => {}}
-        />,
-      );
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
     });
 
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
@@ -99,13 +87,7 @@ describe("TaskDetailSidebar", () => {
     });
 
     await act(async () => {
-      render(
-        <TaskDetailSidebar
-          task={task}
-          onClose={() => {}}
-          onDelete={() => {}}
-        />,
-      );
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
     });
 
     expect(screen.getByText("Test Task")).toBeInTheDocument();
@@ -119,13 +101,7 @@ describe("TaskDetailSidebar", () => {
     });
 
     await act(async () => {
-      render(
-        <TaskDetailSidebar
-          task={task}
-          onClose={() => {}}
-          onDelete={() => {}}
-        />,
-      );
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
     });
 
     expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
@@ -139,13 +115,7 @@ describe("TaskDetailSidebar", () => {
     });
 
     await act(async () => {
-      render(
-        <TaskDetailSidebar
-          task={task}
-          onClose={() => {}}
-          onDelete={() => {}}
-        />,
-      );
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
     });
 
     expect(screen.getByText(/waiting for dependencies/i)).toBeInTheDocument();
@@ -163,13 +133,7 @@ describe("TaskDetailSidebar", () => {
     });
 
     await act(async () => {
-      render(
-        <TaskDetailSidebar
-          task={task}
-          onClose={() => {}}
-          onDelete={() => {}}
-        />,
-      );
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
     });
 
     // Should have Details, Activity, Logs, Artifacts tabs

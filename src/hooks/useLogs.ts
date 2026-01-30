@@ -119,7 +119,14 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
     }
 
     return undefined;
-  }, [isActive, activeLogStage, task.derived.is_working, task.derived.current_stage, fetchLogs, error]);
+  }, [
+    isActive,
+    activeLogStage,
+    task.derived.is_working,
+    task.derived.current_stage,
+    fetchLogs,
+    error,
+  ]);
 
   return {
     logs,

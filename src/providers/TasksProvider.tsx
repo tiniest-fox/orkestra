@@ -7,7 +7,15 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 
 interface TasksContextValue {
@@ -107,20 +115,17 @@ export function TasksProvider({ children }: TasksProviderProps) {
     [fetchTasks],
   );
 
-  const deleteTask = useCallback(
-    async (taskId: string) => {
-      deletingIdsRef.current.add(taskId);
-      setTasks((prev) => prev.filter((t) => t.id !== taskId));
-      try {
-        await invoke<void>("workflow_delete_task", { taskId });
-      } catch (err) {
-        console.error(`[deleteTask] Failed to delete ${taskId}:`, err);
-        deletingIdsRef.current.delete(taskId);
-        throw err;
-      }
-    },
-    [],
-  );
+  const deleteTask = useCallback(async (taskId: string) => {
+    deletingIdsRef.current.add(taskId);
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    try {
+      await invoke<void>("workflow_delete_task", { taskId });
+    } catch (err) {
+      console.error(`[deleteTask] Failed to delete ${taskId}:`, err);
+      deletingIdsRef.current.delete(taskId);
+      throw err;
+    }
+  }, []);
 
   const value: TasksContextValue = {
     tasks,

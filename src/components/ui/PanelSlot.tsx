@@ -15,7 +15,16 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Children, createContext, isValidElement, type ReactElement, type ReactNode, useContext, useEffect, useRef } from "react";
+import {
+  Children,
+  createContext,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+} from "react";
 
 /** Context for panels inside a PanelSlot to access slot configuration */
 interface PanelSlotContextValue {
@@ -69,7 +78,12 @@ const transitionConfig = {
  * </PanelSlot>
  * ```
  */
-export function PanelSlot({ activeKey, children, direction = "horizontal", className = "" }: PanelSlotProps) {
+export function PanelSlot({
+  activeKey,
+  children,
+  direction = "horizontal",
+  className = "",
+}: PanelSlotProps) {
   const isNestedInSlot = useIsNestedInPanelSlot();
   const isFirstRender = useRef(true);
 
@@ -114,7 +128,9 @@ export function PanelSlot({ activeKey, children, direction = "horizontal", class
           style={{ minWidth: 0 }}
         >
           <PanelSlotNestingContext.Provider value={true}>
-            <PanelSlotContext.Provider value={contextValue}>{activeChild.props.children}</PanelSlotContext.Provider>
+            <PanelSlotContext.Provider value={contextValue}>
+              {activeChild.props.children}
+            </PanelSlotContext.Provider>
           </PanelSlotNestingContext.Provider>
         </motion.div>
       )}

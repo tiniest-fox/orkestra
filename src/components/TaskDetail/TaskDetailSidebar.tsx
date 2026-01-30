@@ -71,20 +71,10 @@ function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
   return tabIds.has(preferred) ? preferred : "details";
 }
 
-export function TaskDetailSidebar({
-  task,
-  onClose,
-  onDelete,
-}: TaskDetailSidebarProps) {
+export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebarProps) {
   const config = useWorkflowConfig();
-  const {
-    currentStageDisplayName,
-    isSubmitting,
-    approve,
-    reject,
-    answerQuestions,
-    retry,
-  } = useTaskDetail(task);
+  const { currentStageDisplayName, isSubmitting, approve, reject, answerQuestions, retry } =
+    useTaskDetail(task);
 
   const tabs = useMemo(() => buildTabs(task), [task]);
   const [activeTab, setActiveTab] = useState(() => smartDefaultTab(task, buildTabs(task)));

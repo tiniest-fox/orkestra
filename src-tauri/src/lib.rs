@@ -7,7 +7,7 @@ mod startup;
 mod state;
 
 use orkestra_core::{
-    find_project_root, is_process_running, kill_process_tree, orkestra_debug,
+    find_project_root, orkestra_debug,
     workflow::{load_workflow_for_project, OrchestratorLoop},
 };
 use startup::{run_startup, StartupState};
@@ -190,77 +190,47 @@ fn cleanup_agents(app_handle: &AppHandle) {
         return;
     };
 
-    let running_agents = match app_state.api() {
-        Ok(api) => match api.get_running_agent_pids() {
-            Ok(agents) => agents,
-            Err(e) => {
-                orkestra_debug!("cleanup", "Failed to get running agents: {}", e);
-                return;
-            }
-        },
-        Err(e) => {
-            orkestra_debug!("cleanup", "Failed to get API: {}", e);
-            return;
-        }
+    let Ok(api) = app_state.api() else {
+        orkestra_debug!("cleanup", "Failed to get API lock");
+        return;
     };
 
-    let mut killed = 0;
-    for (task_id, stage, pid) in running_agents {
-        if is_process_running(pid) {
-            orkestra_debug!("cleanup", "Killing agent for task {task_id}/{stage} (pid: {pid})");
-            let _ = kill_process_tree(pid);
-            killed += 1;
+    match api.kill_running_agents() {
+        Ok(killed) if killed > 0 => {
+            orkestra_debug!("cleanup", "Killed {} agent(s)", killed);
         }
-    }
-
-    if killed > 0 {
-        orkestra_debug!("cleanup", "Killed {} agent(s)", killed);
-    } else {
-        orkestra_debug!("cleanup", "No active agents to kill");
+        Ok(_) => {
+            orkestra_debug!("cleanup", "No active agents to kill");
+        }
+        Err(e) => {
+            orkestra_debug!("cleanup", "Failed to kill agents: {}", e);
+        }
     }
 }
 
 /// Clean up any orphaned agent processes from a previous crash.
 ///
 /// Called on startup to ensure stale PIDs don't prevent new agents from spawning.
-/// Uses the workflow API to check for sessions with stale agent PIDs.
+/// Delegates to core's `cleanup_orphaned_agents()` which kills processes and
+/// clears stale PIDs from sessions.
 fn cleanup_orphaned_agents(app_state: &state::AppState) {
     orkestra_debug!("startup", "Checking for orphaned agents...");
 
-    let running_agents = match app_state.api() {
-        Ok(api) => match api.get_running_agent_pids() {
-            Ok(agents) => agents,
-            Err(e) => {
-                orkestra_debug!("startup", "Failed to get running agents: {}", e);
-                return;
-            }
-        },
-        Err(e) => {
-            orkestra_debug!("startup", "Failed to get API: {}", e);
-            return;
-        }
+    let Ok(api) = app_state.api() else {
+        orkestra_debug!("startup", "Failed to get API lock");
+        return;
     };
 
-    let mut orphans_found = 0;
-    for (task_id, stage, pid) in running_agents {
-        if is_process_running(pid) {
-            orkestra_debug!(
-                "startup",
-                "Found orphaned agent for task {task_id}/{stage} (pid: {pid}), killing..."
-            );
-            let _ = kill_process_tree(pid);
-            orphans_found += 1;
+    match api.cleanup_orphaned_agents() {
+        Ok(orphans) if orphans > 0 => {
+            orkestra_debug!("startup", "Cleaned up {} orphaned agent(s)", orphans);
         }
-        // Clear the stale PID from the session
-        if let Ok(api) = app_state.api() {
-            let _ = api.clear_session_agent_pid(&task_id, &stage);
+        Ok(_) => {
+            orkestra_debug!("startup", "No orphaned agents found");
         }
-    }
-
-    if orphans_found > 0 {
-        orkestra_debug!("startup", "Cleaned up {} orphaned agent(s)", orphans_found);
-    } else {
-        orkestra_debug!("startup", "No orphaned agents found");
+        Err(e) => {
+            orkestra_debug!("startup", "Failed to clean up orphaned agents: {}", e);
+        }
     }
 }
 
@@ -280,7 +250,6 @@ fn cleanup_agents_standalone() {
         return;
     }
 
-    // Open database and query for sessions with PIDs
     let Ok(conn) = orkestra_core::adapters::sqlite::DatabaseConnection::open(&db_path) else {
         eprintln!("[cleanup] Could not open database");
         return;
@@ -290,16 +259,7 @@ fn cleanup_agents_standalone() {
     let store = orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared());
     let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::new(store));
 
-    let Ok(running_agents) = api.get_running_agent_pids() else {
-        return;
-    };
-
-    for (task_id, stage, pid) in running_agents {
-        if is_process_running(pid) {
-            println!("[cleanup] Killing agent for {task_id}/{stage} (pid: {pid})");
-            let _ = kill_process_tree(pid);
-        }
-    }
+    let _ = api.kill_running_agents();
 }
 
 /// Set up signal handlers to clean up agents on termination signals (Unix only).

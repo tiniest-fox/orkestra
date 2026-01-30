@@ -30,7 +30,8 @@ use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 static DEBUG_STATE: OnceLock<DebugState> = OnceLock::new();
-static DEBUG_HOOK: OnceLock<Mutex<Box<dyn Fn(&str, &str) + Send>>> = OnceLock::new();
+type DebugHookFn = Mutex<Box<dyn Fn(&str, &str) + Send>>;
+static DEBUG_HOOK: OnceLock<DebugHookFn> = OnceLock::new();
 
 const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024; // 5MB
 const TRUNCATE_TO: usize = 2 * 1024 * 1024; // Keep last 2MB

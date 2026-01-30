@@ -12,6 +12,7 @@
 //! - `human_actions.rs`: UI actions (approve, reject, answer questions)
 //! - `agent_actions.rs`: Orchestrator calls (agent started, process output)
 //! - `integration.rs`: Git integration operations
+//! - `cleanup.rs`: Process cleanup and task deletion with agent termination
 //! - `queries.rs`: Read-only query operations
 //!
 //! # Example
@@ -31,6 +32,7 @@
 mod agent_actions;
 mod agent_execution;
 mod api;
+mod cleanup;
 mod human_actions;
 mod integration;
 mod iteration_service;

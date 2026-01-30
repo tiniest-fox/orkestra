@@ -1,4 +1,4 @@
-//! Exhaustive end-to-end test for the new standalone workflow system.
+//! Exhaustive end-to-end test for the standalone workflow system.
 //!
 //! This test exercises the complete task lifecycle through all possible transitions:
 //!
@@ -27,282 +27,13 @@ use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::testutil::create_temp_git_repo;
 use orkestra_core::workflow::{
     config::{load_workflow, WorkflowConfig},
-    domain::{Question, QuestionAnswer, QuestionOption, Task},
-    execution::StageOutput,
+    domain::{Question, QuestionAnswer, QuestionOption},
     runtime::{Outcome, Phase},
     Git2GitService, GitService, MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore,
     StageExecutionService, WorkflowApi,
 };
 
-// =============================================================================
-// Mock Agent Output - Ergonomic test helper that converts to StageOutput
-// =============================================================================
-
-/// Simulated output from Claude Code agent.
-///
-/// This is a test convenience type that converts to the actual `StageOutput`.
-#[derive(Debug, Clone)]
-pub enum MockAgentOutput {
-    /// Agent is asking clarifying questions
-    Questions(Vec<Question>),
-    /// Agent produced an artifact (plan, summary, verdict)
-    Artifact { name: String, content: String },
-    /// Agent (reviewer) is restaging to another stage
-    Restage { target: String, feedback: String },
-    /// Agent failed
-    Failed { error: String },
-    /// Agent is blocked
-    Blocked { reason: String },
-}
-
-impl From<MockAgentOutput> for StageOutput {
-    fn from(mock: MockAgentOutput) -> Self {
-        match mock {
-            MockAgentOutput::Questions(questions) => StageOutput::Questions { questions },
-            MockAgentOutput::Artifact { content, .. } => StageOutput::Artifact { content },
-            MockAgentOutput::Restage { target, feedback } => {
-                StageOutput::Restage { target, feedback }
-            }
-            MockAgentOutput::Failed { error } => StageOutput::Failed { error },
-            MockAgentOutput::Blocked { reason } => StageOutput::Blocked { reason },
-        }
-    }
-}
-
-// =============================================================================
-// Test Setup
-// =============================================================================
-
-struct TestContext {
-    api: Arc<Mutex<WorkflowApi>>,
-    orchestrator: OrchestratorLoop,
-    runner: Arc<MockAgentRunner>,
-    temp_dir: TempDir,
-}
-
-impl TestContext {
-    /// Create a task and wait for async setup to complete.
-    /// Returns the task in Idle phase (or Failed if setup failed).
-    fn create_task(&self, title: &str, desc: &str) -> Task {
-        let task = self
-            .api()
-            .create_task(title, desc, None)
-            .expect("Should create task");
-        let task_id = task.id.clone();
-
-        // Wait for async setup to complete (worktree creation)
-        for _ in 0..100 {
-            std::thread::sleep(Duration::from_millis(20));
-            let task = self.api().get_task(&task_id).expect("Should get task");
-            if task.phase != Phase::SettingUp {
-                return task;
-            }
-        }
-
-        panic!("Task setup did not complete in time for task {task_id}");
-    }
-
-    /// Run orchestrator until all queued agent work completes.
-    /// This handles cases like restage where multiple agents run in sequence.
-    fn tick(&self) {
-        // Keep ticking until no more agents are running
-        for _ in 0..10 {
-            self.orchestrator.tick().expect("Tick should succeed");
-            // Wait for mock runner's async callback to complete
-            std::thread::sleep(Duration::from_millis(30));
-
-            // Check if any agents are still active
-            if self.orchestrator.active_count() == 0 {
-                // One more tick to ensure all events are processed
-                self.orchestrator.tick().expect("Final tick should succeed");
-                break;
-            }
-        }
-    }
-
-    /// Set the output for the next agent spawn for a task.
-    fn set_output(&self, task_id: &str, output: impl Into<StageOutput>) {
-        self.runner.set_output(task_id, output.into());
-    }
-
-    /// Get the API lock for human actions.
-    fn api(&self) -> std::sync::MutexGuard<'_, WorkflowApi> {
-        self.api.lock().unwrap()
-    }
-
-    /// Get the number of calls made to the runner.
-    fn call_count(&self) -> usize {
-        self.runner.calls().len()
-    }
-
-    /// Get the repository path for creating conflicts on main branch.
-    fn repo_path(&self) -> &std::path::Path {
-        self.temp_dir.path()
-    }
-
-    // =========================================================================
-    // Prompt Verification Helpers
-    // =========================================================================
-
-    /// Get the last prompt sent to the agent.
-    fn last_prompt(&self) -> String {
-        let calls = self.runner.calls();
-        calls
-            .last()
-            .expect("No agent calls recorded")
-            .prompt
-            .clone()
-    }
-
-    /// Assert that the last prompt has a specific resume marker type and contains expected strings.
-    fn assert_resume_prompt_contains(&self, expected_type: &str, expected_content: &[&str]) {
-        let prompt = self.last_prompt();
-        let expected_marker = format!("<!orkestra-resume:{expected_type}>");
-        assert!(
-            prompt.starts_with(&expected_marker),
-            "Expected resume marker '{}', got prompt starting with: {}...",
-            expected_marker,
-            &prompt[..prompt.len().min(100)]
-        );
-
-        for content in expected_content {
-            assert!(
-                prompt.contains(content),
-                "Resume prompt should contain '{content}'. Full prompt:\n{prompt}"
-            );
-        }
-    }
-
-    /// Assert that the last prompt is a full prompt with expected stage characteristics.
-    ///
-    /// # Arguments
-    /// * `artifact` - The artifact name this stage produces (e.g., "plan", "summary", "verdict")
-    /// * `can_ask_questions` - Whether the stage has `ask_questions` capability
-    /// * `restage_targets` - Stages this stage can restage to (empty if no restage capability)
-    fn assert_full_prompt(
-        &self,
-        artifact: &str,
-        can_ask_questions: bool,
-        restage_targets: &[&str],
-    ) {
-        let prompt = self.last_prompt();
-
-        // Should NOT be a resume prompt
-        assert!(
-            !prompt.starts_with("<!orkestra-resume:"),
-            "Expected full prompt (not resume), but got resume prompt starting with: {}...",
-            &prompt[..prompt.len().min(100)]
-        );
-
-        // Full prompts should contain the task section
-        assert!(
-            prompt.contains("## Your Current Task"),
-            "Full prompt should contain '## Your Current Task' section"
-        );
-
-        // Should contain the expected artifact name in output format
-        let artifact_pattern = format!("\"{artifact}\"");
-        assert!(
-            prompt.contains(&artifact_pattern),
-            "Full prompt should reference artifact '{}'. Got prompt: {}...",
-            artifact,
-            &prompt[..prompt.len().min(500)]
-        );
-
-        // Check questions capability
-        if can_ask_questions {
-            assert!(
-                prompt.contains("\"questions\""),
-                "Prompt for stage with ask_questions should mention questions output type"
-            );
-        }
-
-        // Check restage capability
-        for target in restage_targets {
-            assert!(
-                prompt.contains("restage") || prompt.contains("rejected"),
-                "Prompt for stage with restage capability should mention restage/rejected"
-            );
-            assert!(
-                prompt.contains(target),
-                "Prompt should mention restage target '{}' but doesn't. Prompt: {}...",
-                target,
-                &prompt[..prompt.len().min(500)]
-            );
-        }
-    }
-}
-
-fn setup_test() -> TestContext {
-    // Create git repo instead of plain temp dir
-    let temp_dir = create_temp_git_repo().expect("Failed to create git repo");
-
-    // Create workflow config file
-    let orkestra_dir = temp_dir.path().join(".orkestra");
-    std::fs::create_dir_all(&orkestra_dir).unwrap();
-
-    // Create agent definition files (required by resolve_stage_agent_config)
-    let agents_dir = orkestra_dir.join("agents");
-    std::fs::create_dir_all(&agents_dir).unwrap();
-    std::fs::write(agents_dir.join("planner.md"), "You are a planner agent.").unwrap();
-    std::fs::write(
-        agents_dir.join("breakdown.md"),
-        "You are a breakdown agent.",
-    )
-    .unwrap();
-    std::fs::write(agents_dir.join("worker.md"), "You are a worker agent.").unwrap();
-    std::fs::write(agents_dir.join("reviewer.md"), "You are a reviewer agent.").unwrap();
-
-    // Create workflow config file
-    let workflow_path = orkestra_dir.join("workflow.yaml");
-    let workflow = WorkflowConfig::default();
-    let yaml = serde_yaml::to_string(&workflow).unwrap();
-    std::fs::write(&workflow_path, yaml).unwrap();
-
-    // Load it back (tests the loader)
-    let loaded_workflow = load_workflow(&workflow_path).expect("Should load workflow");
-
-    // Create real SQLite database in the temp directory
-    let db_path = orkestra_dir.join("orkestra.db");
-    let db_conn = DatabaseConnection::open(&db_path).expect("Should open database");
-    let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
-        Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
-
-    // Initialize git service for worktree support
-    let git_service: Arc<dyn GitService> =
-        Arc::new(Git2GitService::new(temp_dir.path()).expect("Git service should init"));
-
-    // Use WorkflowApi::with_git for real git integration
-    let api = Arc::new(Mutex::new(WorkflowApi::with_git(
-        loaded_workflow.clone(),
-        Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
-        git_service,
-    )));
-    let project_root = PathBuf::from(temp_dir.path());
-
-    // Get iteration service from api
-    let iteration_service = api.lock().unwrap().iteration_service().clone();
-
-    // Create mock runner for testing
-    let runner = Arc::new(MockAgentRunner::new());
-
-    let stage_executor = Arc::new(StageExecutionService::with_runner(
-        loaded_workflow,
-        project_root,
-        store,
-        iteration_service,
-        runner.clone(),
-    ));
-
-    let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
-
-    TestContext {
-        api,
-        orchestrator,
-        runner,
-        temp_dir,
-    }
-}
+use crate::helpers::{MockAgentOutput, TestEnv};
 
 // =============================================================================
 // The Exhaustive E2E Test
@@ -329,7 +60,10 @@ fn setup_test() -> TestContext {
 #[test]
 #[allow(clippy::too_many_lines)] // Exhaustive e2e test is intentionally comprehensive
 fn test_exhaustive_workflow_flow() {
-    let ctx = setup_test();
+    let ctx = TestEnv::with_git(
+        &WorkflowConfig::default(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
 
     // =========================================================================
     // Step 1: Task created → Planning
@@ -337,6 +71,7 @@ fn test_exhaustive_workflow_flow() {
     let task = ctx.create_task(
         "Implement feature X",
         "Add the new feature X with full test coverage",
+        None,
     );
 
     let task_id = task.id.clone();
@@ -377,7 +112,7 @@ fn test_exhaustive_workflow_flow() {
         Question::new("q2", "Should we add caching?"),
     ];
     ctx.set_output(&task_id, MockAgentOutput::Questions(questions));
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // VERIFY: First spawn of planning stage → full prompt with questions capability
     ctx.assert_full_prompt("plan", true, &[]);
@@ -430,7 +165,7 @@ fn test_exhaustive_workflow_flow() {
             content: "Initial plan v1 - not detailed enough".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // VERIFY: After answering questions → resume with answers prompt containing the Q&A
     ctx.assert_resume_prompt_contains(
@@ -493,7 +228,7 @@ fn test_exhaustive_workflow_flow() {
                 .to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // VERIFY: Planner retry after rejection → resume with feedback prompt containing the feedback
     ctx.assert_resume_prompt_contains(
@@ -533,7 +268,7 @@ fn test_exhaustive_workflow_flow() {
             content: "Subtasks:\n1. Create module\n2. Add tests".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // VERIFY: First spawn of breakdown stage → full prompt
     ctx.assert_full_prompt("breakdown", false, &[]);
@@ -577,7 +312,7 @@ fn test_exhaustive_workflow_flow() {
             content: "Initial implementation - tests failing".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // VERIFY: First spawn of work stage → full prompt
     ctx.assert_full_prompt("summary", false, &[]);
@@ -603,7 +338,7 @@ fn test_exhaustive_workflow_flow() {
             content: "Implementation complete with passing tests".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // VERIFY: Work retry after rejection → resume with feedback prompt containing the feedback
     ctx.assert_resume_prompt_contains("feedback", &["Tests are failing, please fix them"]);
@@ -637,7 +372,7 @@ fn test_exhaustive_workflow_flow() {
             content: "Implementation with fixed formatting".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // VERIFY: Work agent after restage → resume with feedback prompt containing reviewer's feedback
     // (The reviewer ran first with full prompt, then work agent ran with resume prompt)
@@ -722,7 +457,7 @@ fn test_exhaustive_workflow_flow() {
             content: "LGTM! All checks pass.".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // =========================================================================
     // Step 11: Integration fails (auto-triggered) → Back to Working
@@ -770,7 +505,7 @@ fn test_exhaustive_workflow_flow() {
             content: "Resolved merge conflict".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // VERIFY: Work agent after integration failure → resume with integration marker
     // containing error details (same session as previous work iterations)
@@ -794,7 +529,7 @@ fn test_exhaustive_workflow_flow() {
             content: "Conflict resolved correctly".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // Auto-integration should have completed successfully and task becomes Archived
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -803,7 +538,26 @@ fn test_exhaustive_workflow_flow() {
         "Task should be Archived after integration"
     );
     assert!(task.completed_at.is_some(), "Should have completed_at set");
-    // Note: worktree_path is preserved for log access even after integration
+
+    // Verify worktree directory is gone from disk
+    let worktree_dir = std::path::Path::new(task.worktree_path.as_ref().unwrap());
+    assert!(
+        !worktree_dir.exists(),
+        "Worktree directory should be removed after integration"
+    );
+
+    // Verify branch is deleted
+    let branch_name = task.branch_name.as_ref().unwrap();
+    let branch_output = std::process::Command::new("git")
+        .args(["branch", "--list", branch_name])
+        .current_dir(ctx.repo_path())
+        .output()
+        .expect("Should run git branch");
+    let branch_list = String::from_utf8_lossy(&branch_output.stdout);
+    assert!(
+        branch_list.trim().is_empty(),
+        "Branch '{branch_name}' should be deleted after integration"
+    );
 
     // =========================================================================
     // Final Verification
@@ -829,9 +583,6 @@ fn test_exhaustive_workflow_flow() {
     assert!(task.artifact("summary").is_some(), "Should have summary");
     assert!(task.artifact("verdict").is_some(), "Should have verdict");
 
-    // Question history is now stored in iteration contexts (IterationTrigger::Answers),
-    // not on the task. The answers were already verified in the resume prompt assertions above.
-
     // Verify runner was called the expected number of times
     // planning (questions) + planning (plan v1) + planning (plan v2) + breakdown +
     // work (v1) + work (v2) + review (restage) + work (fix) + review (approve) +
@@ -843,10 +594,13 @@ fn test_exhaustive_workflow_flow() {
 /// Test that invalid restage is rejected
 #[test]
 fn test_restage_validation() {
-    let ctx = setup_test();
+    let ctx = TestEnv::with_git(
+        &WorkflowConfig::default(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
 
     // Create task and get to work stage (waits for async setup)
-    let task = ctx.create_task("Test", "Test task");
+    let task = ctx.create_task("Test", "Test task", None);
     let task_id = task.id.clone();
 
     // Planning stage
@@ -857,7 +611,7 @@ fn test_restage_validation() {
             content: "Plan".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
     ctx.api().approve(&task_id).unwrap();
 
     // Breakdown stage
@@ -868,7 +622,7 @@ fn test_restage_validation() {
             content: "Breakdown".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
     ctx.api().approve(&task_id).unwrap();
 
     // Now we're in work stage - try to restage from work (which doesn't have restage capability)
@@ -879,7 +633,7 @@ fn test_restage_validation() {
             feedback: "Should fail".to_string(),
         },
     );
-    ctx.tick();
+    ctx.tick_until_settled();
 
     // The task should still be in work stage (restage should have failed)
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -893,7 +647,10 @@ fn test_restage_validation() {
 /// Test the workflow configuration
 #[test]
 fn test_workflow_config_from_file() {
-    let ctx = setup_test();
+    let ctx = TestEnv::with_git(
+        &WorkflowConfig::default(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
     let api = ctx.api();
 
     assert_eq!(api.workflow().stages.len(), 4);

@@ -28,6 +28,7 @@
 //! use orkestra_core::workflow::execution::MockSpawner;
 //! ```
 
+pub mod fixtures;
 mod git_helpers;
 
 pub use git_helpers::{

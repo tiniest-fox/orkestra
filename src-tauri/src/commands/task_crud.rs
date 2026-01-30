@@ -1,10 +1,7 @@
 //! Task CRUD commands.
 
 use crate::{error::TauriError, state::AppState};
-use orkestra_core::{
-    is_process_running, kill_process_tree, orkestra_debug,
-    workflow::{Task, TaskView},
-};
+use orkestra_core::workflow::{Task, TaskView};
 use tauri::State;
 
 /// Get all tasks from the workflow (rich view with iterations, sessions, derived state).
@@ -64,51 +61,10 @@ pub fn workflow_get_task(state: State<AppState>, task_id: String) -> Result<Task
 /// background by the orchestrator's orphaned worktree cleanup on startup.
 #[tauri::command]
 pub fn workflow_delete_task(state: State<AppState>, task_id: String) -> Result<(), TauriError> {
-    let api = state.api()?;
-
-    // Kill running agents for the task and all subtasks (best-effort, instant)
-    let task_ids = collect_task_tree_ids(&api, &task_id);
-    kill_agents_for_tasks(&api, &task_ids);
-
-    // Delete all DB records in a transaction — no git/filesystem work
-    if let Err(e) = api.delete_task(&task_id) {
-        orkestra_debug!("delete", "Failed to delete task {task_id}: {e}");
-        return Err(e.into());
-    }
-    Ok(())
-}
-
-/// Collect the task ID and all descendant subtask IDs recursively.
-fn collect_task_tree_ids(api: &orkestra_core::workflow::WorkflowApi, task_id: &str) -> Vec<String> {
-    let mut ids = vec![task_id.to_string()];
-    if let Ok(subtasks) = api.list_subtasks(task_id) {
-        for subtask in subtasks {
-            ids.extend(collect_task_tree_ids(api, &subtask.id));
-        }
-    }
-    ids
-}
-
-/// Kill running agent processes for the given task IDs.
-///
-/// Queries stage sessions for each task and kills any processes that are still running.
-/// Failures are logged but do not propagate — deletion should always proceed.
-fn kill_agents_for_tasks(api: &orkestra_core::workflow::WorkflowApi, task_ids: &[String]) {
-    let Ok(all_sessions) = api.get_running_agent_pids() else {
-        return;
-    };
-
-    for (session_task_id, stage, pid) in all_sessions {
-        if task_ids.contains(&session_task_id) && is_process_running(pid) {
-            orkestra_debug!("delete", "Killing agent for task {session_task_id}/{stage} (pid: {pid})");
-            if let Err(e) = kill_process_tree(pid) {
-                orkestra_debug!(
-                    "delete",
-                    "Failed to kill agent pid {pid} for {session_task_id}/{stage}: {e}"
-                );
-            }
-        }
-    }
+    state
+        .api()?
+        .delete_task_with_cleanup(&task_id)
+        .map_err(Into::into)
 }
 
 /// List subtasks for a parent task.

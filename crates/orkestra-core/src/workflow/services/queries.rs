@@ -147,6 +147,20 @@ impl WorkflowApi {
         Ok(views)
     }
 
+    /// Get a specific stage session for a task.
+    pub fn get_stage_session(
+        &self,
+        task_id: &str,
+        stage: &str,
+    ) -> WorkflowResult<Option<StageSession>> {
+        self.store.get_stage_session(task_id, stage)
+    }
+
+    /// Get all stage sessions for a task.
+    pub fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {
+        self.store.get_stage_sessions(task_id)
+    }
+
     /// Get all running agent processes.
     ///
     /// Returns tuples of (`task_id`, stage, pid) for all agents that have PIDs

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use super::IterationService;
+use crate::title::{ClaudeTitleGenerator, TitleGenerator};
 use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
@@ -24,6 +25,7 @@ pub struct WorkflowApi {
     pub(crate) store: Arc<dyn WorkflowStore>,
     pub(crate) git_service: Option<Arc<dyn GitService>>,
     pub(crate) iteration_service: Arc<IterationService>,
+    pub(crate) title_generator: Arc<dyn TitleGenerator>,
 }
 
 impl WorkflowApi {
@@ -37,6 +39,7 @@ impl WorkflowApi {
             store,
             git_service: None,
             iteration_service,
+            title_generator: Arc::new(ClaudeTitleGenerator),
         }
     }
 
@@ -55,7 +58,15 @@ impl WorkflowApi {
             store,
             git_service: Some(git_service),
             iteration_service,
+            title_generator: Arc::new(ClaudeTitleGenerator),
         }
+    }
+
+    /// Replace the title generator (for testing).
+    #[must_use]
+    pub fn with_title_generator(mut self, gen: Arc<dyn TitleGenerator>) -> Self {
+        self.title_generator = gen;
+        self
     }
 
     /// Get the git service, if configured.

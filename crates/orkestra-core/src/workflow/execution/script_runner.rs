@@ -136,6 +136,13 @@ impl ScriptHandle {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
+        // Spawn in own process group so kill_process_tree can target it
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+
         // Add custom environment variables
         for (key, value) in env.vars() {
             cmd.env(key, value);

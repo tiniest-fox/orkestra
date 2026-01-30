@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::thread;
 
 use crate::orkestra_debug;
-use crate::title::generate_title_sync;
+use crate::title::{generate_fallback_title, TitleGenerator};
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
@@ -66,6 +66,7 @@ impl WorkflowApi {
         spawn_async_setup(
             self.store.clone(),
             self.git_service.clone(),
+            self.title_generator.clone(),
             id.clone(),
             base_branch.map(String::from),
             if needs_title {
@@ -139,7 +140,14 @@ impl WorkflowApi {
 
         // Spawn async setup - no git work needed, just transitions to Idle
         // Subtasks don't need title generation (they have explicit titles)
-        spawn_async_setup(self.store.clone(), None, id.clone(), None, None);
+        spawn_async_setup(
+            self.store.clone(),
+            None,
+            self.title_generator.clone(),
+            id.clone(),
+            None,
+            None,
+        );
 
         orkestra_debug!(
             "task",
@@ -200,46 +208,13 @@ impl WorkflowApi {
     }
 
     /// Recursively collect all descendant subtask IDs.
-    fn collect_subtask_ids(&self, parent_id: &str, ids: &mut Vec<String>) -> WorkflowResult<()> {
+    pub(crate) fn collect_subtask_ids(&self, parent_id: &str, ids: &mut Vec<String>) -> WorkflowResult<()> {
         for subtask in self.store.list_subtasks(parent_id)? {
             ids.push(subtask.id.clone());
             self.collect_subtask_ids(&subtask.id, ids)?;
         }
         Ok(())
     }
-}
-
-/// Generate a title for a task (blocking).
-/// Returns the AI-generated title, or a fallback if generation fails.
-fn generate_title(task_id: &str, description: &str) -> String {
-    match generate_title_sync(description, 30) {
-        Ok(title) => title,
-        Err(e) => {
-            crate::orkestra_debug!("task", "WARNING: Title generation failed for {task_id}: {e}");
-            generate_fallback_title(description)
-        }
-    }
-}
-
-/// Generate a fallback title from description when AI generation fails.
-/// Takes the first ~50 characters, truncated at a word boundary.
-fn generate_fallback_title(description: &str) -> String {
-    let trimmed = description.trim();
-    if trimmed.len() <= 50 {
-        return trimmed.to_string();
-    }
-
-    // Find a good truncation point (space, punctuation) before 50 chars
-    let truncated: String = trimmed.chars().take(50).collect();
-    if let Some(last_space) = truncated.rfind(|c: char| c.is_whitespace() || c == '.' || c == ',') {
-        let result = truncated[..last_space].trim();
-        if !result.is_empty() {
-            return format!("{result}...");
-        }
-    }
-
-    // No good break point, just truncate
-    format!("{}...", truncated.trim())
 }
 
 /// Spawn a background thread to set up the task (worktree creation, title generation).
@@ -251,6 +226,7 @@ fn generate_fallback_title(description: &str) -> String {
 fn spawn_async_setup(
     store: Arc<dyn WorkflowStore>,
     git: Option<Arc<dyn GitService>>,
+    title_gen: Arc<dyn TitleGenerator>,
     task_id: String,
     base_branch: Option<String>,
     description: Option<String>,
@@ -273,8 +249,18 @@ fn spawn_async_setup(
 
             // Spawn title generation if needed
             let title_handle = description.as_ref().map(|desc| {
-                let tid = &task_id;
-                s.spawn(move || generate_title(tid, desc))
+                let tg = Arc::clone(&title_gen);
+                let tid = task_id.clone();
+                s.spawn(move || match tg.generate_title(&tid, desc) {
+                    Ok(title) => title,
+                    Err(e) => {
+                        crate::orkestra_debug!(
+                            "task",
+                            "WARNING: Title generation failed for {tid}: {e}"
+                        );
+                        generate_fallback_title(desc)
+                    }
+                })
             });
 
             // Wait for both to complete
@@ -564,27 +550,72 @@ mod tests {
         assert!(archived[0].is_archived());
     }
 
+    // Note: Fallback title tests have moved to title.rs (where generate_fallback_title now lives).
+
+    // =========================================================================
+    // Delete task tests (API-level)
+    // =========================================================================
+
     #[test]
-    fn test_fallback_title_short_description() {
-        let title = super::generate_fallback_title("Fix the login bug");
-        assert_eq!(title, "Fix the login bug");
+    fn test_delete_task_cascades_to_subtasks() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let parent = api.create_task("Parent", "Parent task", None).unwrap();
+
+        // Wait for setup to complete before creating subtasks
+        let parent = wait_for_setup(&api, &parent.id);
+
+        let child1 = api
+            .create_subtask(&parent.id, "Child 1", "First child")
+            .unwrap();
+        let child2 = api
+            .create_subtask(&parent.id, "Child 2", "Second child")
+            .unwrap();
+
+        // Delete parent — should cascade to subtasks
+        api.delete_task(&parent.id).unwrap();
+
+        // All tasks should be gone
+        assert!(matches!(
+            api.get_task(&parent.id),
+            Err(WorkflowError::TaskNotFound(_))
+        ));
+        assert!(matches!(
+            api.get_task(&child1.id),
+            Err(WorkflowError::TaskNotFound(_))
+        ));
+        assert!(matches!(
+            api.get_task(&child2.id),
+            Err(WorkflowError::TaskNotFound(_))
+        ));
     }
 
     #[test]
-    fn test_fallback_title_long_description() {
-        let title = super::generate_fallback_title(
-            "Implement a comprehensive user authentication system with OAuth support and session management",
-        );
-        assert_eq!(title, "Implement a comprehensive user authentication...");
+    fn test_delete_task_not_found() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let result = api.delete_task("nonexistent");
+        assert!(matches!(result, Err(WorkflowError::TaskNotFound(_))));
     }
 
     #[test]
-    fn test_fallback_title_truncates_at_word_boundary() {
-        let title = super::generate_fallback_title(
-            "The quick brown fox jumps over the lazy dog repeatedly",
-        );
-        // Should truncate at a word boundary before 50 chars
-        assert!(title.ends_with("..."));
-        assert!(title.len() <= 53); // 50 + "..."
+    fn test_delete_task_removes_iterations() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description", None).unwrap();
+
+        // Verify iteration was created at task creation
+        let iterations = api.get_iterations(&task.id).unwrap();
+        assert!(!iterations.is_empty());
+
+        // Delete and verify iterations are gone
+        api.delete_task(&task.id).unwrap();
+        assert!(api.store.get_iterations(&task.id).unwrap().is_empty());
     }
 }

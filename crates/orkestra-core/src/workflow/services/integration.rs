@@ -16,7 +16,7 @@ impl WorkflowApi {
     /// 1. Commits any pending changes in the worktree
     /// 2. Rebases the task branch onto primary (conflicts stay on the task branch)
     /// 3. Merges the rebased branch to primary (guaranteed clean fast-forward)
-    /// 4. On success: cleans up worktree, records success
+    /// 4. On success: cleans up worktree and branch, records success
     /// 5. On conflict: task branch is restored, moves task back to recovery stage
     ///
     /// If no git service is configured, silently succeeds.
@@ -138,7 +138,7 @@ impl WorkflowApi {
             Ok(_merge_result) => {
                 orkestra_debug!("integration", "completed {}: merge succeeded", task_id);
                 if task.worktree_path.is_some() {
-                    if let Err(e) = git.remove_worktree(task_id, false) {
+                    if let Err(e) = git.remove_worktree(task_id, true) {
                         workflow_warn!("Failed to remove worktree for {}: {}", task_id, e);
                     }
                 }

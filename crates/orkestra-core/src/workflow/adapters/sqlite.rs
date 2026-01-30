@@ -888,4 +888,133 @@ mod tests {
         let loaded = store.get_task("task-1").unwrap().unwrap();
         assert!(matches!(loaded.status, Status::Blocked { .. }));
     }
+
+    // =========================================================================
+    // Delete task tree tests
+    // =========================================================================
+
+    #[test]
+    fn test_delete_task_tree_with_full_history() {
+        use crate::testutil::fixtures::{iterations, sessions, tasks};
+
+        let store = test_store();
+
+        // Create a task with sessions, iterations, and artifacts
+        tasks::save_task_with_artifacts(
+            &store,
+            "t1",
+            "work",
+            &[("plan", "The plan", "planning"), ("summary", "Done", "work")],
+        )
+        .unwrap();
+        sessions::save_completed_session(&store, "s1", "t1", "planning").unwrap();
+        sessions::save_session(&store, "s2", "t1", "work").unwrap();
+        iterations::save_approved_iteration(&store, "i1", "t1", "planning", 1, "s1").unwrap();
+        iterations::save_rejected_iteration(
+            &store, "i2", "t1", "planning", 2, "s1", "needs more detail",
+        )
+        .unwrap();
+        iterations::save_iteration(&store, "i3", "t1", "work", 1, "s2").unwrap();
+
+        // Verify everything exists
+        assert!(store.get_task("t1").unwrap().is_some());
+        assert_eq!(store.get_iterations("t1").unwrap().len(), 3);
+        assert_eq!(store.get_stage_sessions("t1").unwrap().len(), 2);
+
+        // Delete the task tree
+        store.delete_task_tree(&["t1".to_string()]).unwrap();
+
+        // Verify everything is gone
+        assert!(store.get_task("t1").unwrap().is_none());
+        assert!(store.get_iterations("t1").unwrap().is_empty());
+        assert!(store.get_stage_sessions("t1").unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_delete_task_tree_parent_with_subtasks() {
+        use crate::testutil::fixtures::{iterations, sessions, tasks};
+
+        let store = test_store();
+
+        // Parent with two subtasks, each with sessions and iterations
+        tasks::save_planning_task(&store, "parent").unwrap();
+        tasks::save_subtask(&store, "child1", "parent").unwrap();
+        tasks::save_subtask(&store, "child2", "parent").unwrap();
+
+        sessions::save_session(&store, "sp", "parent", "planning").unwrap();
+        sessions::save_session(&store, "sc1", "child1", "planning").unwrap();
+        sessions::save_session(&store, "sc2", "child2", "planning").unwrap();
+
+        iterations::save_iteration(&store, "ip", "parent", "planning", 1, "sp").unwrap();
+        iterations::save_iteration(&store, "ic1", "child1", "planning", 1, "sc1").unwrap();
+        iterations::save_iteration(&store, "ic2", "child2", "planning", 1, "sc2").unwrap();
+
+        // Delete tree — must include all IDs (parent + children)
+        store
+            .delete_task_tree(&[
+                "parent".to_string(),
+                "child1".to_string(),
+                "child2".to_string(),
+            ])
+            .unwrap();
+
+        // All records should be gone
+        assert!(store.get_task("parent").unwrap().is_none());
+        assert!(store.get_task("child1").unwrap().is_none());
+        assert!(store.get_task("child2").unwrap().is_none());
+        assert!(store.get_iterations("parent").unwrap().is_empty());
+        assert!(store.get_iterations("child1").unwrap().is_empty());
+        assert!(store.get_iterations("child2").unwrap().is_empty());
+        assert!(store.get_stage_sessions("parent").unwrap().is_empty());
+        assert!(store.get_stage_sessions("child1").unwrap().is_empty());
+        assert!(store.get_stage_sessions("child2").unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_delete_task_tree_preserves_unrelated_tasks() {
+        use crate::testutil::fixtures::{iterations, sessions, tasks};
+
+        let store = test_store();
+
+        // Create two independent tasks with data
+        tasks::save_planning_task(&store, "keep").unwrap();
+        sessions::save_session(&store, "sk", "keep", "planning").unwrap();
+        iterations::save_iteration(&store, "ik", "keep", "planning", 1, "sk").unwrap();
+
+        tasks::save_planning_task(&store, "delete-me").unwrap();
+        sessions::save_session(&store, "sd", "delete-me", "planning").unwrap();
+        iterations::save_iteration(&store, "id", "delete-me", "planning", 1, "sd").unwrap();
+
+        // Delete only one
+        store
+            .delete_task_tree(&["delete-me".to_string()])
+            .unwrap();
+
+        // Deleted task is gone
+        assert!(store.get_task("delete-me").unwrap().is_none());
+        assert!(store.get_iterations("delete-me").unwrap().is_empty());
+
+        // Kept task is untouched
+        assert!(store.get_task("keep").unwrap().is_some());
+        assert_eq!(store.get_iterations("keep").unwrap().len(), 1);
+        assert_eq!(store.get_stage_sessions("keep").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_delete_empty_task_tree() {
+        let store = test_store();
+
+        // Empty ID list should be a no-op
+        store.delete_task_tree(&[]).unwrap();
+    }
+
+    #[test]
+    fn test_delete_task_tree_nonexistent_ids() {
+        let store = test_store();
+
+        // Nonexistent IDs should not error
+        store
+            .delete_task_tree(&["ghost-1".to_string(), "ghost-2".to_string()])
+            .unwrap();
+    }
 }

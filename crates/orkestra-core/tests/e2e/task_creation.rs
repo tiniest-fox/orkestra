@@ -1,0 +1,222 @@
+//! E2E tests for task creation.
+//!
+//! Tests that creating tasks correctly sets up worktrees, branches,
+//! base branch tracking, setup scripts, subtask inheritance, and
+//! title generation fallback.
+
+use std::path::Path;
+
+use orkestra_core::workflow::{config::WorkflowConfig, runtime::Phase};
+
+use crate::helpers::TestEnv;
+
+// =============================================================================
+// Worktree Creation
+// =============================================================================
+
+#[test]
+fn test_task_creation_creates_worktree() {
+    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+
+    let task = ctx.create_task("Test worktree", "Verify worktree creation", None);
+
+    // Branch should be created
+    let branch = task.branch_name.as_ref().expect("Task should have a branch");
+    assert!(
+        branch.starts_with("task/"),
+        "Branch should follow task/{{id}} pattern, got: {branch}"
+    );
+
+    // Worktree path should be set and exist on disk
+    let wt_path = task
+        .worktree_path
+        .as_ref()
+        .expect("Task should have a worktree path");
+    assert!(
+        Path::new(wt_path).exists(),
+        "Worktree directory should exist at {wt_path}"
+    );
+}
+
+#[test]
+fn test_task_creation_sets_base_branch() {
+    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+
+    let task = ctx.create_task("Base branch test", "Verify base branch defaults to main", None);
+
+    assert_eq!(
+        task.base_branch.as_deref(),
+        Some("main"),
+        "Default base branch should be 'main'"
+    );
+}
+
+#[test]
+fn test_task_creation_from_specific_branch() {
+    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+
+    // Create a "feature" branch in the test repo
+    std::process::Command::new("git")
+        .args(["branch", "feature"])
+        .current_dir(ctx.repo_path())
+        .output()
+        .expect("Should create feature branch");
+
+    // Create task from the feature branch
+    let task = ctx.create_task("From feature", "Task based on feature branch", Some("feature"));
+
+    assert_eq!(
+        task.base_branch.as_deref(),
+        Some("feature"),
+        "Base branch should be 'feature' when explicitly provided"
+    );
+}
+
+// =============================================================================
+// Phase Lifecycle
+// =============================================================================
+
+#[test]
+fn test_task_starts_in_setting_up() {
+    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+
+    // Call the API directly (don't use create_task helper which waits for setup)
+    let task = ctx
+        .api()
+        .create_task("Phase test", "Verify initial phase", None)
+        .expect("Should create task");
+
+    assert_eq!(
+        task.phase,
+        Phase::SettingUp,
+        "Task should start in SettingUp phase"
+    );
+}
+
+// =============================================================================
+// Setup Script
+// =============================================================================
+
+#[test]
+fn test_setup_script_runs_on_creation() {
+    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+
+    // Write a setup script that creates a marker file
+    orkestra_core::testutil::create_worktree_setup_script(ctx.repo_path())
+        .expect("Should create setup script");
+
+    let task = ctx.create_task("Setup script test", "Verify setup script runs", None);
+
+    let wt_path = task
+        .worktree_path
+        .as_ref()
+        .expect("Task should have worktree path");
+    let marker = Path::new(wt_path).join(".setup_complete");
+    assert!(
+        marker.exists(),
+        "Setup script should have created marker file at {}",
+        marker.display()
+    );
+}
+
+#[test]
+fn test_setup_script_failure_fails_task() {
+    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+
+    // Write a setup script that exits with error
+    let script_path = ctx.repo_path().join(".orkestra/worktree_setup.sh");
+    std::fs::write(
+        &script_path,
+        "#!/bin/bash\nexit 1\n",
+    )
+    .expect("Should write failing script");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&script_path)
+            .expect("Should read perms")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script_path, perms).expect("Should set perms");
+    }
+
+    // create_task waits for setup, which should transition to Failed
+    let task = ctx.create_task("Failing setup", "Script should fail", None);
+
+    assert!(
+        task.is_failed(),
+        "Task should be failed when setup script exits with error, got status: {:?}",
+        task.status
+    );
+}
+
+// =============================================================================
+// Subtask Inheritance
+// =============================================================================
+
+#[test]
+fn test_subtask_inherits_parent_worktree() {
+    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+
+    let parent = ctx.create_task("Parent", "Parent task for subtask test", None);
+    let parent_id = parent.id.clone();
+
+    let child = ctx.create_subtask(&parent_id, "Child", "Subtask should inherit worktree");
+
+    assert_eq!(
+        child.worktree_path, parent.worktree_path,
+        "Subtask should inherit parent's worktree path"
+    );
+    assert_eq!(
+        child.branch_name, parent.branch_name,
+        "Subtask should inherit parent's branch name"
+    );
+}
+
+// =============================================================================
+// Multiple Tasks
+// =============================================================================
+
+#[test]
+fn test_multiple_tasks_get_separate_worktrees() {
+    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+
+    let task1 = ctx.create_task("Task 1", "First task", None);
+    let task2 = ctx.create_task("Task 2", "Second task", None);
+
+    // Different branches
+    assert_ne!(
+        task1.branch_name, task2.branch_name,
+        "Tasks should have distinct branch names"
+    );
+
+    // Different worktree directories
+    assert_ne!(
+        task1.worktree_path, task2.worktree_path,
+        "Tasks should have distinct worktree paths"
+    );
+
+    // Both should exist on disk
+    let wt1 = task1.worktree_path.as_ref().unwrap();
+    let wt2 = task2.worktree_path.as_ref().unwrap();
+    assert!(Path::new(wt1).exists(), "Task 1 worktree should exist");
+    assert!(Path::new(wt2).exists(), "Task 2 worktree should exist");
+}
+
+// =============================================================================
+// Title Generation Fallback
+// =============================================================================
+
+#[test]
+fn test_empty_title_fallback() {
+    let ctx = TestEnv::with_git_title_fail(&WorkflowConfig::default(), &["planner", "worker"]);
+
+    // Empty title + description — mock title gen fails, should fall back to description
+    let task = ctx.create_task("", "Fix the login bug on the dashboard", None);
+
+    assert_eq!(
+        task.title, "Fix the login bug on the dashboard",
+        "Title should fall back to description when title generation fails"
+    );
+}

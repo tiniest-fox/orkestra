@@ -64,7 +64,9 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
           <div className="flex items-center gap-1.5">
             {task.auto_mode && (
               <span className="flex-shrink-0 p-1.5 rounded-md bg-purple-100">
-                <Zap className={`w-4 h-4 text-purple-600 ${showSpinner ? "animate-spin" : ""}`} />
+                <Zap
+                  className={`w-4 h-4 text-purple-600 ${showSpinner ? "animate-spin-bounce" : ""}`}
+                />
               </span>
             )}
             {taskNeedsReview && (

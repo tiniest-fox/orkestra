@@ -2,7 +2,8 @@
  * Task detail header - title, status badges, close button, and delete action.
  */
 
-import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useState } from "react";
 import type { WorkflowTask } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { Badge, Button, IconButton, Panel } from "../ui";
@@ -13,6 +14,16 @@ interface TaskDetailHeaderProps {
   needsReview: boolean;
   onClose: () => void;
   onDelete: () => void;
+}
+
+interface DetectedApp {
+  name: string;
+  id: string;
+}
+
+interface ExternalToolsInfo {
+  terminal: DetectedApp | null;
+  editor: DetectedApp | null;
 }
 
 function TrashIcon() {
@@ -34,6 +45,61 @@ function TrashIcon() {
   );
 }
 
+function TerminalIcon() {
+  return (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+      />
+    </svg>
+  );
+}
+
+function CodeIcon() {
+  return (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+      />
+    </svg>
+  );
+}
+
+/** Cache external tools detection result across renders. */
+let cachedToolsInfo: ExternalToolsInfo | null = null;
+let toolsDetectionPromise: Promise<ExternalToolsInfo> | null = null;
+
+function detectTools(): Promise<ExternalToolsInfo> {
+  if (cachedToolsInfo) {
+    return Promise.resolve(cachedToolsInfo);
+  }
+  if (!toolsDetectionPromise) {
+    toolsDetectionPromise = invoke<ExternalToolsInfo>("detect_external_tools").then((info) => {
+      cachedToolsInfo = info;
+      return info;
+    });
+  }
+  return toolsDetectionPromise;
+}
+
 export function TaskDetailHeader({
   task,
   hasQuestions,
@@ -42,6 +108,31 @@ export function TaskDetailHeader({
   onDelete,
 }: TaskDetailHeaderProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [toolsInfo, setToolsInfo] = useState<ExternalToolsInfo | null>(cachedToolsInfo);
+
+  useEffect(() => {
+    detectTools()
+      .then(setToolsInfo)
+      .catch((err) => console.error("Failed to detect external tools:", err));
+  }, []);
+
+  const hasWorktree = !!task.worktree_path;
+  const showTerminalButton = hasWorktree && toolsInfo?.terminal != null;
+  const showEditorButton = hasWorktree && toolsInfo?.editor != null;
+
+  const handleOpenTerminal = () => {
+    if (!task.worktree_path) return;
+    invoke("open_in_terminal", { path: task.worktree_path }).catch((err) =>
+      console.error("Failed to open terminal:", err),
+    );
+  };
+
+  const handleOpenEditor = () => {
+    if (!task.worktree_path) return;
+    invoke("open_in_editor", { path: task.worktree_path }).catch((err) =>
+      console.error("Failed to open editor:", err),
+    );
+  };
 
   const statusBadgeVariant =
     task.status.type === "done"
@@ -79,6 +170,26 @@ export function TaskDetailHeader({
           {task.title}
         </h2>
         <div className="flex items-center gap-1 flex-shrink-0">
+          {showTerminalButton && (
+            <IconButton
+              icon={<TerminalIcon />}
+              aria-label={`Open in ${toolsInfo.terminal!.name}`}
+              variant="ghost"
+              size="sm"
+              onClick={handleOpenTerminal}
+              title={`Open in ${toolsInfo.terminal!.name}`}
+            />
+          )}
+          {showEditorButton && (
+            <IconButton
+              icon={<CodeIcon />}
+              aria-label={`Open in ${toolsInfo.editor!.name}`}
+              variant="ghost"
+              size="sm"
+              onClick={handleOpenEditor}
+              title={`Open in ${toolsInfo.editor!.name}`}
+            />
+          )}
           <IconButton
             icon={<TrashIcon />}
             aria-label="Delete task"

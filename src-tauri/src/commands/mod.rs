@@ -4,8 +4,10 @@
 //! - `task_crud`: Create, read, update, delete tasks
 //! - `human_actions`: Approve, reject, answer questions
 //! - `queries`: Read-only queries for iterations, artifacts, config
+//! - `external_tools`: Open worktrees in terminal emulators and code editors
 //! - Startup: Get startup status (always available)
 
+mod external_tools;
 mod human_actions;
 mod queries;
 mod task_crud;
@@ -14,6 +16,7 @@ use crate::startup::{StartupState, StartupStatus};
 use tauri::State;
 
 // Re-export all commands for use in invoke_handler!
+pub use external_tools::*;
 pub use human_actions::*;
 pub use queries::*;
 pub use task_crud::*;

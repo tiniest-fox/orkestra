@@ -325,13 +325,7 @@ pub mod mock {
         }
 
         fn list_worktree_names(&self) -> Result<Vec<String>, GitError> {
-            Ok(self
-                .worktrees
-                .lock()
-                .unwrap()
-                .keys()
-                .cloned()
-                .collect())
+            Ok(self.worktrees.lock().unwrap().keys().cloned().collect())
         }
     }
 

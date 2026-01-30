@@ -585,12 +585,10 @@ impl GitService for Git2GitService {
             .map_err(|e| GitError::IoError(format!("Failed to read worktrees dir: {e}")))?;
 
         let mut names = Vec::new();
-        for entry in entries {
-            if let Ok(entry) = entry {
-                if entry.path().is_dir() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        names.push(name.to_string());
-                    }
+        for entry in entries.flatten() {
+            if entry.path().is_dir() {
+                if let Some(name) = entry.file_name().to_str() {
+                    names.push(name.to_string());
                 }
             }
         }

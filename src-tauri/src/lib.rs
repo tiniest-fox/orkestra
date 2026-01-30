@@ -379,6 +379,9 @@ pub fn run() {
             commands::workflow_list_branches,
             commands::workflow_get_stages_with_logs,
             commands::workflow_get_logs,
+            commands::open_in_terminal,
+            commands::open_in_editor,
+            commands::detect_external_tools,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

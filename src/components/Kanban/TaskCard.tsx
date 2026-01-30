@@ -2,7 +2,7 @@
  * Task card for the kanban board.
  */
 
-import { AlertCircle, Eye, MessageCircle, XCircle, Zap } from "lucide-react";
+import { AlertCircle, Eye, GitBranch, MessageCircle, XCircle, Zap } from "lucide-react";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { Panel } from "../ui";
 
@@ -33,6 +33,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
   const hasQuestions = derived.has_questions;
   const hasTitle = !!task.title;
 
+  const isSettingUp = task.phase === "setting_up";
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 
   const borderClass = isFailed
@@ -62,6 +63,11 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
             {getDisplayTitle(task)}
           </h3>
           <div className="flex items-center gap-1.5">
+            {isSettingUp && (
+              <span className="flex-shrink-0 p-1.5">
+                <GitBranch className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
+              </span>
+            )}
             {task.auto_mode && (
               <span className="flex-shrink-0 p-1.5 rounded-md bg-purple-100 dark:bg-purple-900">
                 <Zap
@@ -97,7 +103,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
           </div>
         </div>
 
-        {task.description && (
+        {task.description && hasTitle && (
           <p className="text-stone-500 dark:text-stone-400 text-xs mt-1 line-clamp-2">
             {task.description}
           </p>

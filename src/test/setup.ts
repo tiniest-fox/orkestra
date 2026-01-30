@@ -1,9 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { vi } from "vitest";
 
-// Mock @tauri-apps/api/core
+// Mock @tauri-apps/api/core — default returns a rejected Promise so
+// module-level code that chains .then() on invoke() doesn't crash.
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
+  invoke: vi.fn(() => Promise.reject(new Error("Unmocked command"))),
 }));
 
 // Mock @tauri-apps/api/event

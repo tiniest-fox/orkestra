@@ -60,25 +60,27 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
           </h3>
           <div className="flex items-center gap-1.5">
             {taskNeedsReview && (
-              <span className="flex-shrink-0 p-1 rounded-full bg-warning-100">
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100">
                 <Eye className="w-4 h-4 text-warning-700" />
               </span>
             )}
             {hasQuestions && !taskNeedsReview && (
-              <span className="flex-shrink-0 p-1 rounded-full bg-info-100">
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100">
                 <MessageCircle className="w-4 h-4 text-info-600" />
               </span>
             )}
             {showSpinner && (
-              <span className="flex-shrink-0 w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-orange-100">
+                <span className="block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+              </span>
             )}
             {isFailed && (
-              <span className="flex-shrink-0 p-1 rounded-full bg-error-100">
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-error-100">
                 <XCircle className="w-4 h-4 text-error-600" />
               </span>
             )}
             {isBlocked && (
-              <span className="flex-shrink-0 p-1 rounded-full bg-warning-100">
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100">
                 <AlertCircle className="w-4 h-4 text-warning-600" />
               </span>
             )}

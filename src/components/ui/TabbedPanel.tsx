@@ -73,13 +73,13 @@ interface TabbedPanelProps {
 const tabSizeStyles: Record<TabSize, { button: string; highlight: string; text: string }> = {
   default: {
     button: "px-3 mx-px py-1.5 text-sm",
-    highlight: "bg-orange-500",
+    highlight: "bg-orange-500 dark:bg-orange-600",
     text: "text-white",
   },
   small: {
     button: "px-2.5 mx-px py-1 text-xs",
-    highlight: "bg-orange-200",
-    text: "text-stone-800",
+    highlight: "bg-orange-200 dark:bg-orange-700",
+    text: "text-stone-800 dark:text-stone-100",
   },
 };
 
@@ -115,7 +115,7 @@ export function TabbedPanel({
             key={tab.id}
             onClick={() => handleTabChange(tab.id)}
             className={`relative ${sizeStyles.button} rounded-panel font-medium whitespace-nowrap flex items-center gap-1.5 ${
-              activeTab !== tab.id ? "hover:bg-stone-100" : ""
+              activeTab !== tab.id ? "hover:bg-stone-100 dark:hover:bg-stone-800" : ""
             }`}
           >
             {activeTab === tab.id && (
@@ -127,7 +127,9 @@ export function TabbedPanel({
             )}
             <span
               className={`relative z-10 transition-colors ${
-                activeTab === tab.id ? sizeStyles.text : "text-stone-600 hover:text-stone-900"
+                activeTab === tab.id
+                  ? sizeStyles.text
+                  : "text-stone-600 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100"
               }`}
             >
               {tab.label}

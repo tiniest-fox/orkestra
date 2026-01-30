@@ -18,11 +18,11 @@ interface Props {
  */
 export function StartupErrorScreen({ errors, onRetry, isRetrying = false }: Props) {
   return (
-    <div className="h-screen bg-stone-100 flex items-center justify-center p-4">
-      <div className="max-w-2xl w-full bg-white rounded-panel shadow-panel-elevated p-8">
+    <div className="h-screen bg-stone-100 dark:bg-stone-950 flex items-center justify-center p-4">
+      <div className="max-w-2xl w-full bg-white dark:bg-stone-900 rounded-panel shadow-panel-elevated p-8">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-12 h-12 bg-error-100 rounded-full flex items-center justify-center flex-shrink-0">
+          <div className="w-12 h-12 bg-error-100 dark:bg-error-900 rounded-full flex items-center justify-center flex-shrink-0">
             <svg
               className="w-6 h-6 text-error-600"
               fill="none"
@@ -39,8 +39,12 @@ export function StartupErrorScreen({ errors, onRetry, isRetrying = false }: Prop
             </svg>
           </div>
           <div>
-            <h1 className="text-xl font-heading font-semibold text-stone-900">Startup Failed</h1>
-            <p className="text-sm text-stone-500">Please fix the issues below and try again</p>
+            <h1 className="text-xl font-heading font-semibold text-stone-900 dark:text-stone-100">
+              Startup Failed
+            </h1>
+            <p className="text-sm text-stone-500 dark:text-stone-400">
+              Please fix the issues below and try again
+            </p>
           </div>
         </div>
 
@@ -49,21 +53,21 @@ export function StartupErrorScreen({ errors, onRetry, isRetrying = false }: Prop
           {errors.map((error) => (
             <div
               key={`${error.category}-${error.message}`}
-              className="border border-error-200 rounded-panel-sm p-4 bg-error-50"
+              className="border border-error-200 dark:border-error-800 rounded-panel-sm p-4 bg-error-50 dark:bg-error-950"
             >
               {/* Category badge */}
               <div className="flex items-center gap-2 mb-2">
-                <span className="px-2 py-0.5 text-xs font-medium bg-error-100 text-error-700 rounded-full">
+                <span className="px-2 py-0.5 text-xs font-medium bg-error-100 text-error-700 dark:bg-error-900 dark:text-error-300 rounded-full">
                   {getCategoryLabel(error.category)}
                 </span>
               </div>
 
               {/* Error message */}
-              <p className="text-error-800 font-medium mb-2">{error.message}</p>
+              <p className="text-error-800 dark:text-error-200 font-medium mb-2">{error.message}</p>
 
               {/* Details list */}
               {error.details.length > 0 && (
-                <ul className="list-disc list-inside text-sm text-error-700 mb-3 space-y-1 pl-1">
+                <ul className="list-disc list-inside text-sm text-error-700 dark:text-error-300 mb-3 space-y-1 pl-1">
                   {error.details.map((detail) => (
                     <li key={detail} className="break-words">
                       {detail}
@@ -74,7 +78,7 @@ export function StartupErrorScreen({ errors, onRetry, isRetrying = false }: Prop
 
               {/* Remediation suggestion */}
               {error.remediation && (
-                <div className="flex items-start gap-2 text-sm text-stone-600 bg-white/60 rounded-panel-sm p-2 mt-2">
+                <div className="flex items-start gap-2 text-sm text-stone-600 dark:text-stone-300 bg-white/60 dark:bg-stone-800/60 rounded-panel-sm p-2 mt-2">
                   <span className="text-orange-600 flex-shrink-0">Tip:</span>
                   <span>{error.remediation}</span>
                 </div>

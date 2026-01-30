@@ -56,7 +56,7 @@ export function Orkestra() {
   };
 
   return (
-    <div className="w-screen h-screen bg-stone-100 flex flex-col items-stretch p-4 gap-4 overflow-hidden">
+    <div className="w-screen h-screen bg-stone-100 dark:bg-stone-950 flex flex-col items-stretch p-4 gap-4 overflow-hidden">
       <div className="flex items-center justify-between px-2 flex-shrink-0 overflow-hidden">
         <Panel.Title>Orkestra</Panel.Title>
         <Button onClick={handleOpenCreatePanel}>+ New Task</Button>
@@ -64,14 +64,14 @@ export function Orkestra() {
 
       <PanelContainer>
         {error && (
-          <div className="mb-4 p-4 bg-error-50 border border-error-200 rounded-panel text-error-700">
+          <div className="mb-4 p-4 bg-error-50 dark:bg-error-950 border border-error-200 dark:border-error-800 rounded-panel text-error-700 dark:text-error-300">
             Error loading tasks: {error}
           </div>
         )}
         {loading ? (
           <Panel>
             <div className="flex items-center justify-center h-64">
-              <div className="text-stone-500">Loading...</div>
+              <div className="text-stone-500 dark:text-stone-400">Loading...</div>
             </div>
           </Panel>
         ) : (

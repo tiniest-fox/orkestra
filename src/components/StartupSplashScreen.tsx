@@ -6,7 +6,7 @@
  */
 export function StartupSplashScreen() {
   return (
-    <div className="h-screen bg-gradient-to-br from-stone-50 to-stone-100 flex flex-col items-center justify-center">
+    <div className="h-screen bg-gradient-to-br from-stone-50 to-stone-100 dark:from-stone-950 dark:to-stone-900 flex flex-col items-center justify-center">
       <div className="flex flex-col items-center gap-6">
         {/* Logo/Icon */}
         <div className="w-16 h-16 bg-orange-500 rounded-panel flex items-center justify-center shadow-panel-elevated">
@@ -28,7 +28,9 @@ export function StartupSplashScreen() {
         </div>
 
         {/* App name */}
-        <h1 className="text-3xl font-heading font-semibold text-stone-800">Orkestra</h1>
+        <h1 className="text-3xl font-heading font-semibold text-stone-800 dark:text-stone-100">
+          Orkestra
+        </h1>
 
         {/* Loading indicator - bouncing dots */}
         <div className="flex items-center gap-1.5">
@@ -43,7 +45,7 @@ export function StartupSplashScreen() {
           <div className="w-2 h-2 bg-orange-500 rounded-full animate-bounce" />
         </div>
 
-        <p className="text-sm text-stone-400">Initializing workspace...</p>
+        <p className="text-sm text-stone-400 dark:text-stone-500">Initializing workspace...</p>
       </div>
     </div>
   );

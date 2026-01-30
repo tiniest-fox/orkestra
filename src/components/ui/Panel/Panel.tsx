@@ -39,10 +39,12 @@ const variantStyles: Record<PanelVariant, string> = {
 };
 
 const accentStyles: Record<PanelAccent, string> = {
-  none: "bg-white",
-  info: "bg-gradient-to-br from-info-50 to-info-100",
-  warning: "bg-gradient-to-br from-warning-50 to-warning-100",
-  error: "bg-gradient-to-br from-error-50 to-error-100",
+  none: "bg-white dark:bg-stone-900",
+  info: "bg-gradient-to-br from-info-50 to-info-100 dark:from-info-950 dark:to-info-900",
+  warning:
+    "bg-gradient-to-br from-warning-50 to-warning-100 dark:from-warning-950 dark:to-warning-900",
+  error:
+    "bg-gradient-to-br from-error-50 to-error-100 dark:from-error-950 dark:to-error-900",
 };
 
 /**

@@ -20,13 +20,13 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary:
-    "bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700 disabled:bg-orange-300",
+    "bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700 disabled:bg-orange-300 dark:disabled:bg-orange-800",
   secondary:
-    "bg-stone-100 text-stone-700 hover:bg-stone-200 active:bg-stone-300 disabled:bg-stone-100 disabled:text-stone-400",
+    "bg-stone-100 text-stone-700 hover:bg-stone-200 active:bg-stone-300 disabled:bg-stone-100 disabled:text-stone-400 dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700 dark:active:bg-stone-600 dark:disabled:bg-stone-800 dark:disabled:text-stone-500",
   ghost:
-    "bg-transparent text-stone-700 hover:bg-stone-100 active:bg-stone-200 disabled:text-stone-400",
+    "bg-transparent text-stone-700 hover:bg-stone-100 active:bg-stone-200 disabled:text-stone-400 dark:text-stone-200 dark:hover:bg-stone-800 dark:active:bg-stone-700 dark:disabled:text-stone-500",
   destructive:
-    "bg-error-500 text-white hover:bg-error-600 active:bg-error-700 disabled:bg-error-300",
+    "bg-error-500 text-white hover:bg-error-600 active:bg-error-700 disabled:bg-error-300 dark:disabled:bg-error-800",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -46,7 +46,7 @@ export function Button({
   ...props
 }: ButtonProps) {
   const baseStyles =
-    "inline-flex items-center justify-center font-medium rounded-panel-sm transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center font-medium rounded-panel-sm transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 dark:focus:ring-offset-stone-900 disabled:cursor-not-allowed";
 
   return (
     <button

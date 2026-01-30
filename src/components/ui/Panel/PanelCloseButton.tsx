@@ -12,11 +12,11 @@ export function PanelCloseButton({ onClick, className = "" }: PanelCloseButtonPr
     <button
       type="button"
       onClick={onClick}
-      className={`flex-shrink-0 p-1.5 hover:bg-stone-100 rounded-panel-sm transition-colors ${className}`}
+      className={`flex-shrink-0 p-1.5 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-panel-sm transition-colors ${className}`}
       aria-label="Close"
     >
       <svg
-        className="w-5 h-5 text-stone-500"
+        className="w-5 h-5 text-stone-500 dark:text-stone-400"
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"

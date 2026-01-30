@@ -39,7 +39,9 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
   if (error) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="text-error-700 text-sm">Failed to load workflow config: {error}</div>
+        <div className="text-error-700 dark:text-error-300 text-sm">
+          Failed to load workflow config: {error}
+        </div>
       </div>
     );
   }
@@ -47,7 +49,9 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
   if (!config) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="text-stone-500 text-sm">Loading workflow configuration...</div>
+        <div className="text-stone-500 dark:text-stone-400 text-sm">
+          Loading workflow configuration...
+        </div>
       </div>
     );
   }

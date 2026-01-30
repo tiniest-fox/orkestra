@@ -39,7 +39,7 @@ export function ArtifactsTab({ taskId, currentStage, artifacts, config }: Artifa
   }));
 
   if (tabs.length === 0) {
-    return <div className="p-4 text-stone-500 text-sm">No artifacts yet.</div>;
+    return <div className="p-4 text-stone-500 dark:text-stone-400 text-sm">No artifacts yet.</div>;
   }
 
   return (

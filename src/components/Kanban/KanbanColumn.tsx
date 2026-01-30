@@ -52,14 +52,16 @@ export function KanbanColumn({ column, tasks, selectedTaskId, onSelectTask }: Ka
                 {!isEmpty && (
                   <motion.h2
                     key="horizontal"
-                    className="font-heading font-medium text-stone-700 flex items-center gap-2 whitespace-nowrap overflow-hidden"
+                    className="font-heading font-medium text-stone-700 dark:text-stone-200 flex items-center gap-2 whitespace-nowrap overflow-hidden"
                     initial={{ opacity: 0, width: 0 }}
                     animate={{ opacity: 1, width: "auto" }}
                     exit={{ opacity: 0, width: 0 }}
                     transition={labelTransition}
                   >
                     {column.label}
-                    <span className="text-stone-400 text-sm">({tasks.length})</span>
+                    <span className="text-stone-400 dark:text-stone-500 text-sm">
+                      ({tasks.length})
+                    </span>
                   </motion.h2>
                 )}
               </AnimatePresence>
@@ -78,7 +80,7 @@ export function KanbanColumn({ column, tasks, selectedTaskId, onSelectTask }: Ka
                 transition={labelTransition}
               >
                 <span
-                  className="font-heading font-medium text-stone-400 text-sm"
+                  className="font-heading font-medium text-stone-400 dark:text-stone-500 text-sm"
                   style={{
                     writingMode: "vertical-rl",
                     textOrientation: "mixed",

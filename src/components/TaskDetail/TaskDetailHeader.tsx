@@ -155,7 +155,7 @@ export function TaskDetailHeader({
     <div className="flex flex-col items-stretch pt-1 pb-2 px-2">
       <div className="flex items-start justify-between gap-2">
         <h2
-          className={`font-heading font-semibold text-lg line-clamp-1 ${task.title ? "text-stone-800" : "text-stone-400"}`}
+          className={`font-heading font-semibold text-lg line-clamp-1 ${task.title ? "text-stone-800 dark:text-stone-100" : "text-stone-400 dark:text-stone-500"}`}
         >
           {task.title || task.description}
         </h2>
@@ -192,7 +192,7 @@ export function TaskDetailHeader({
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="font-mono text-sm text-stone-500">{task.id}</span>
+        <span className="font-mono text-sm text-stone-500 dark:text-stone-400">{task.id}</span>
         <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
         {hasQuestions && <Badge variant="info">Questions</Badge>}
         {needsReview && <Badge variant="warning">Review</Badge>}
@@ -204,7 +204,7 @@ export function TaskDetailHeader({
             aria-checked={task.auto_mode}
             onClick={() => onToggleAutoMode(!task.auto_mode)}
             className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
-              task.auto_mode ? "bg-purple-500" : "bg-stone-300"
+              task.auto_mode ? "bg-purple-500" : "bg-stone-300 dark:bg-stone-600"
             }`}
           >
             <span
@@ -213,7 +213,7 @@ export function TaskDetailHeader({
               }`}
             />
           </button>
-          <span className="text-xs text-stone-500">Auto</span>
+          <span className="text-xs text-stone-500 dark:text-stone-400">Auto</span>
         </label>
       </div>
     </div>

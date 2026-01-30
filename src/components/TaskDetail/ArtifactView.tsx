@@ -16,10 +16,15 @@ const PROSE_CLASSES = [
   "prose prose-sm max-w-none",
   // Colors
   "prose-headings:text-stone-800",
+  "dark:prose-headings:text-stone-200",
   "prose-p:text-stone-700",
+  "dark:prose-p:text-stone-200",
   "prose-li:text-stone-700",
+  "dark:prose-li:text-stone-200",
   "prose-code:bg-stone-100 prose-code:px-1 prose-code:rounded",
+  "dark:prose-code:bg-stone-800",
   "prose-pre:bg-stone-100 prose-pre:text-stone-800",
+  "dark:prose-pre:bg-stone-800 dark:prose-pre:text-stone-200",
   // Compact heading sizes: h1 ~16px (1.143em of 14px base), h2 ~15px, h3 ~14.5px, h4-h6 at base
   "prose-h1:text-[1.143em] prose-h1:font-semibold",
   "prose-h2:text-[1.071em] prose-h2:font-semibold",
@@ -43,7 +48,7 @@ const PROSE_CLASSES = [
 export function ArtifactView({ artifact }: ArtifactViewProps) {
   return (
     <div className="p-4">
-      <div className="text-xs text-stone-500 mb-2">
+      <div className="text-xs text-stone-500 dark:text-stone-400 mb-2">
         Stage: {artifact.stage} | Iteration: {artifact.iteration} |{" "}
         {formatTimestamp(artifact.created_at)}
       </div>

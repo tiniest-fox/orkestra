@@ -36,13 +36,13 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 
   const borderClass = isFailed
-    ? "border-error-300 bg-error-50"
+    ? "border-error-300 bg-error-50 dark:border-error-700 dark:bg-error-950"
     : isBlocked
-      ? "border-warning-300 bg-warning-50"
+      ? "border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-950"
       : taskNeedsReview || hasQuestions
-        ? "border-warning-400 bg-warning-50"
+        ? "border-warning-400 bg-warning-50 dark:border-warning-600 dark:bg-warning-950"
         : isSelected
-          ? "border-orange-500 ring-2 ring-orange-200"
+          ? "border-orange-500 ring-2 ring-orange-200 dark:ring-orange-800"
           : "";
 
   const errorText =
@@ -57,26 +57,26 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
       <button onClick={onClick} type="button" className="text-left p-4 w-full">
         <div className="flex items-start justify-between gap-2">
           <h3
-            className={`font-medium text-sm line-clamp-2 ${hasTitle ? "text-stone-800" : "text-stone-400"}`}
+            className={`font-medium text-sm line-clamp-2 ${hasTitle ? "text-stone-800 dark:text-stone-100" : "text-stone-400 dark:text-stone-500"}`}
           >
             {getDisplayTitle(task)}
           </h3>
           <div className="flex items-center gap-1.5">
             {task.auto_mode && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-purple-100">
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-purple-100 dark:bg-purple-900">
                 <Zap
-                  className={`w-4 h-4 text-purple-600 ${showSpinner ? "animate-spin-bounce" : ""}`}
+                  className={`w-4 h-4 text-purple-600 dark:text-purple-300 ${showSpinner ? "animate-spin-bounce" : ""}`}
                 />
               </span>
             )}
             {taskNeedsReview && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100">
-                <Eye className="w-4 h-4 text-warning-700" />
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
+                <Eye className="w-4 h-4 text-warning-700 dark:text-warning-300" />
               </span>
             )}
             {hasQuestions && !taskNeedsReview && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100">
-                <MessageCircle className="w-4 h-4 text-info-600" />
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
+                <MessageCircle className="w-4 h-4 text-info-600 dark:text-info-300" />
               </span>
             )}
             {showSpinner && !task.auto_mode && (
@@ -85,28 +85,32 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
               </span>
             )}
             {isFailed && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-error-100">
-                <XCircle className="w-4 h-4 text-error-600" />
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-error-100 dark:bg-error-900">
+                <XCircle className="w-4 h-4 text-error-600 dark:text-error-300" />
               </span>
             )}
             {isBlocked && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100">
-                <AlertCircle className="w-4 h-4 text-warning-600" />
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
+                <AlertCircle className="w-4 h-4 text-warning-600 dark:text-warning-300" />
               </span>
             )}
           </div>
         </div>
 
         {task.description && (
-          <p className="text-stone-500 text-xs mt-1 line-clamp-2">{task.description}</p>
+          <p className="text-stone-500 dark:text-stone-400 text-xs mt-1 line-clamp-2">{task.description}</p>
         )}
 
-        <span className="text-stone-400 text-xs font-mono mt-2.5">{task.id}</span>
+        <span className="text-stone-400 dark:text-stone-500 text-xs font-mono mt-2.5">
+          {task.id}
+        </span>
 
         {errorText && (isFailed || isBlocked) && (
           <p
             className={`text-xs mt-2 p-2 rounded-panel-sm ${
-              isFailed ? "text-error-700 bg-error-100" : "text-warning-700 bg-warning-100"
+              isFailed
+                ? "text-error-700 bg-error-100 dark:text-error-300 dark:bg-error-900"
+                : "text-warning-700 bg-warning-100 dark:text-warning-300 dark:bg-warning-900"
             }`}
           >
             {isFailed ? errorText : `Blocked: ${errorText}`}
@@ -114,7 +118,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
         )}
 
         {isDone && Object.keys(task.artifacts ?? {}).length > 0 && (
-          <div className="text-stone-500 text-xs mt-2">
+          <div className="text-stone-500 dark:text-stone-400 text-xs mt-2">
             {Object.keys(task.artifacts ?? {}).length} artifact(s)
           </div>
         )}

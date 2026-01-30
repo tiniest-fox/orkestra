@@ -43,13 +43,16 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
       <form onSubmit={handleSubmit} className="flex-1 flex flex-col">
         <Panel.Body className="flex-1" scrollable>
           {error && (
-            <div className="p-3 mb-4 bg-error-50 border border-error-200 rounded-panel-sm text-error-700 text-sm">
+            <div className="p-3 mb-4 bg-error-50 dark:bg-error-950 border border-error-200 dark:border-error-800 rounded-panel-sm text-error-700 dark:text-error-300 text-sm">
               {error}
             </div>
           )}
 
           <div>
-            <label htmlFor="description" className="block text-sm font-medium text-stone-700 mb-2">
+            <label
+              htmlFor="description"
+              className="block text-sm font-medium text-stone-700 dark:text-stone-200 mb-2"
+            >
               What do you want to do?
             </label>
             <textarea
@@ -57,7 +60,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={6}
-              className="w-full px-3 py-2 border border-stone-300 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none text-stone-800"
+              className="w-full px-3 py-2 border border-stone-300 dark:bg-stone-800 dark:border-stone-600 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none text-stone-800 dark:text-stone-100"
               placeholder="Describe the task..."
               // biome-ignore lint/a11y/noAutofocus: intentional focus for panel UX
               autoFocus
@@ -71,7 +74,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
               aria-checked={autoMode}
               onClick={() => setAutoMode(!autoMode)}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                autoMode ? "bg-orange-500" : "bg-stone-300"
+                autoMode ? "bg-orange-500" : "bg-stone-300 dark:bg-stone-600"
               }`}
             >
               <span
@@ -80,7 +83,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
                 }`}
               />
             </button>
-            <span className="text-sm text-stone-700">Auto mode</span>
+            <span className="text-sm text-stone-700 dark:text-stone-200">Auto mode</span>
           </label>
         </Panel.Body>
 

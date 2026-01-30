@@ -35,4 +35,10 @@ export function mockInvokeResponses(
 
 export function resetMocks(): void {
   mockInvoke.mockReset();
+  // Default implementation so invoke() always returns a Promise.
+  // Without this, callers that chain .then() on invoke() would throw
+  // "Cannot read properties of undefined (reading 'then')".
+  mockInvoke.mockImplementation((cmd: string) =>
+    Promise.reject(new Error(`Unmocked command: ${cmd}`)),
+  );
 }

@@ -54,83 +54,79 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
         : undefined;
 
   return (
-    <Panel autoFill={false} className={borderClass}>
-      <button onClick={onClick} type="button" className="text-left p-4 w-full">
-        <div className="flex items-start justify-between gap-2">
-          <h3
-            className={`font-medium text-sm line-clamp-2 ${hasTitle ? "text-stone-800 dark:text-stone-100" : "text-stone-400 dark:text-stone-500"}`}
-          >
-            {getDisplayTitle(task)}
-          </h3>
-          <div className="flex items-center gap-1.5">
-            {isSettingUp && (
-              <span className="flex-shrink-0 p-1.5">
-                <GitBranch className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
-              </span>
-            )}
-            {task.auto_mode && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-purple-100 dark:bg-purple-900">
-                <Zap
-                  className={`w-4 h-4 text-purple-600 dark:text-purple-300 ${showSpinner ? "animate-spin-bounce" : ""}`}
-                />
-              </span>
-            )}
-            {taskNeedsReview && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
-                <Eye className="w-4 h-4 text-warning-700 dark:text-warning-300" />
-              </span>
-            )}
-            {hasQuestions && !taskNeedsReview && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
-                <MessageCircle className="w-4 h-4 text-info-600 dark:text-info-300" />
-              </span>
-            )}
-            {showSpinner && !task.auto_mode && (
-              <span className="flex-shrink-0 p-1.5">
-                <span className="block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-              </span>
-            )}
-            {isFailed && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-error-100 dark:bg-error-900">
-                <XCircle className="w-4 h-4 text-error-600 dark:text-error-300" />
-              </span>
-            )}
-            {isBlocked && (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
-                <AlertCircle className="w-4 h-4 text-warning-600 dark:text-warning-300" />
-              </span>
-            )}
-          </div>
+    <Panel as="button" autoFill={false} padded onClick={onClick} className={borderClass}>
+      <div className="flex items-start justify-between gap-2">
+        <h3
+          className={`font-medium text-sm line-clamp-2 ${hasTitle ? "text-stone-800 dark:text-stone-100" : "text-stone-400 dark:text-stone-500"}`}
+        >
+          {getDisplayTitle(task)}
+        </h3>
+        <div className="flex items-center gap-1.5">
+          {isSettingUp && (
+            <span className="flex-shrink-0 p-1.5">
+              <GitBranch className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
+            </span>
+          )}
+          {task.auto_mode && (
+            <span className="flex-shrink-0 p-1.5 rounded-md bg-purple-100 dark:bg-purple-900">
+              <Zap
+                className={`w-4 h-4 text-purple-600 dark:text-purple-300 ${showSpinner ? "animate-spin-bounce" : ""}`}
+              />
+            </span>
+          )}
+          {taskNeedsReview && (
+            <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
+              <Eye className="w-4 h-4 text-warning-700 dark:text-warning-300" />
+            </span>
+          )}
+          {hasQuestions && !taskNeedsReview && (
+            <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
+              <MessageCircle className="w-4 h-4 text-info-600 dark:text-info-300" />
+            </span>
+          )}
+          {showSpinner && !task.auto_mode && (
+            <span className="flex-shrink-0 p-1.5">
+              <span className="block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+            </span>
+          )}
+          {isFailed && (
+            <span className="flex-shrink-0 p-1.5 rounded-md bg-error-100 dark:bg-error-900">
+              <XCircle className="w-4 h-4 text-error-600 dark:text-error-300" />
+            </span>
+          )}
+          {isBlocked && (
+            <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
+              <AlertCircle className="w-4 h-4 text-warning-600 dark:text-warning-300" />
+            </span>
+          )}
         </div>
+      </div>
 
-        {task.description && hasTitle && (
-          <p className="text-stone-500 dark:text-stone-400 text-xs mt-1 line-clamp-2">
-            {task.description}
-          </p>
-        )}
+      {task.description && hasTitle && (
+        <p className="text-stone-500 dark:text-stone-400 text-xs mt-1 line-clamp-2">
+          {task.description}
+        </p>
+      )}
 
-        <span className="text-stone-400 dark:text-stone-500 text-xs font-mono mt-2.5">
-          {task.id}
-        </span>
+      <span className="text-stone-400 dark:text-stone-500 text-xs font-mono mt-2.5">{task.id}</span>
 
-        {errorText && (isFailed || isBlocked) && (
-          <p
-            className={`text-xs mt-2 p-2 rounded-panel-sm ${
-              isFailed
-                ? "text-error-700 bg-error-100 dark:text-error-300 dark:bg-error-900"
-                : "text-warning-700 bg-warning-100 dark:text-warning-300 dark:bg-warning-900"
-            }`}
-          >
-            {isFailed ? errorText : `Blocked: ${errorText}`}
-          </p>
-        )}
+      {errorText && (isFailed || isBlocked) && (
+        <p
+          className={`text-xs mt-2 p-2 rounded-panel-sm ${
+            isFailed
+              ? "text-error-700 bg-error-100 dark:text-error-300 dark:bg-error-900"
+              : "text-warning-700 bg-warning-100 dark:text-warning-300 dark:bg-warning-900"
+          }`}
+        >
+          {isFailed ? errorText : `Blocked: ${errorText}`}
+        </p>
+      )}
 
-        {isDone && Object.keys(task.artifacts ?? {}).length > 0 && (
-          <div className="text-stone-500 dark:text-stone-400 text-xs mt-2">
-            {Object.keys(task.artifacts ?? {}).length} artifact(s)
-          </div>
-        )}
-      </button>
+      {isDone && Object.keys(task.artifacts ?? {}).length > 0 && (
+        <div className="text-stone-500 dark:text-stone-400 text-xs mt-2">
+          {Object.keys(task.artifacts ?? {}).length} artifact(s)
+        </div>
+      )}
     </Panel>
   );
 }

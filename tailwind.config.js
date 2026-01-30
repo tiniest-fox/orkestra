@@ -55,7 +55,11 @@ export default {
       },
       boxShadow: {
         // Soft, diffuse shadows with multiple layers for a "growing out of background" effect
-        'panel': '0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);',
+        'panel': '0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02)',
+        // Elevated: more prominent lift for hover states
+        'panel-hover': '0px 2px 24px 6px rgb(0 0 0 / 0.14), 0px 0px 4px 1px rgb(0 0 0 / 0.04)',
+        // Pressed: flattened, minimal shadow
+        'panel-press': '0px 0px 4px 1px rgb(0 0 0 / 0.06), 0px 0px 1px 0px rgb(0 0 0 / 0.02)',
       },
     },
   },

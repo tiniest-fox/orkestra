@@ -2,7 +2,7 @@
  * Task card for the kanban board.
  */
 
-import { AlertCircle, Eye, MessageCircle, XCircle } from "lucide-react";
+import { AlertCircle, Eye, MessageCircle, XCircle, Zap } from "lucide-react";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { Panel } from "../ui";
 
@@ -59,6 +59,11 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
             {getDisplayTitle(task)}
           </h3>
           <div className="flex items-center gap-1.5">
+            {task.auto_mode && (
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-purple-100">
+                <Zap className="w-4 h-4 text-purple-600" />
+              </span>
+            )}
             {taskNeedsReview && (
               <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100">
                 <Eye className="w-4 h-4 text-warning-700" />
@@ -70,8 +75,12 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
               </span>
             )}
             {showSpinner && (
-              <span className="flex-shrink-0 p-1.5">
-                <span className="block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+              <span
+                className={`flex-shrink-0 p-1.5 ${task.auto_mode ? "rounded-md bg-purple-100" : ""}`}
+              >
+                <span
+                  className={`block w-4 h-4 border-2 ${task.auto_mode ? "border-purple-500" : "border-orange-500"} border-t-transparent rounded-full animate-spin`}
+                />
               </span>
             )}
             {isFailed && (

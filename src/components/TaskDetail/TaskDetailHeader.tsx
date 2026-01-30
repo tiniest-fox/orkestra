@@ -227,7 +227,7 @@ export function TaskDetailHeader({
               aria-checked={task.auto_mode}
               onClick={() => onToggleAutoMode(!task.auto_mode)}
               className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${
-                task.auto_mode ? "bg-orange-500" : "bg-stone-300"
+                task.auto_mode ? "bg-purple-500" : "bg-stone-300"
               }`}
             >
               <span

@@ -168,8 +168,10 @@ export function TaskDetailHeader({
   return (
     <div className="flex flex-col items-stretch pt-1 pb-2 px-2">
       <div className="flex items-start justify-between gap-2">
-        <h2 className="font-heading font-semibold text-lg text-stone-800 line-clamp-1">
-          {task.title}
+        <h2
+          className={`font-heading font-semibold text-lg line-clamp-1 ${task.title ? "text-stone-800" : "text-stone-400"}`}
+        >
+          {task.title || task.description}
         </h2>
         <div className="flex items-center gap-1 flex-shrink-0">
           {showTerminalButton && (

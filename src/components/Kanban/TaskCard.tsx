@@ -31,6 +31,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
   const hasActiveProcess = derived.is_working;
   const taskNeedsReview = derived.needs_review;
   const hasQuestions = derived.has_questions;
+  const hasTitle = !!task.title;
 
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 
@@ -55,7 +56,9 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
     <Panel autoFill={false} className={borderClass}>
       <button onClick={onClick} type="button" className="text-left p-4 w-full">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="font-medium text-stone-800 text-sm line-clamp-2">
+          <h3
+            className={`font-medium text-sm line-clamp-2 ${hasTitle ? "text-stone-800" : "text-stone-400"}`}
+          >
             {getDisplayTitle(task)}
           </h3>
           <div className="flex items-center gap-1.5">
@@ -92,7 +95,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
           </div>
         </div>
 
-        {task.description && task.title && (
+        {task.description && (
           <p className="text-stone-500 text-xs mt-1 line-clamp-2">{task.description}</p>
         )}
 

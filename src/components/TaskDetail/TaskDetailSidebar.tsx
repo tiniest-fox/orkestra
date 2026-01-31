@@ -47,7 +47,6 @@ function buildTabs(task: WorkflowTaskView): Tab[] {
   const tabs: Tab[] = [{ id: TaskDetailTabs.details(task.id), label: "Details" }];
 
   if (task.derived.subtask_progress) {
-    const { done, total } = task.derived.subtask_progress;
     tabs.push({
       id: TaskDetailTabs.subtasks(task.id),
       label: "Subtasks",

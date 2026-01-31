@@ -133,7 +133,7 @@ impl WorkflowApi {
         let has_capability = self
             .workflow
             .effective_capabilities(stage, task.flow.as_deref())
-            .is_some_and(|caps| caps.produce_subtasks);
+            .is_some_and(|caps| caps.produces_subtasks());
         if !has_capability {
             return false;
         }
@@ -452,12 +452,21 @@ impl WorkflowApi {
                 let subtask_count = subtasks.len();
                 let mut parent = parent.clone();
 
-                // Find the breakdown stage (the one with produce_subtasks capability)
+                // Find the breakdown stage (the one with subtask capabilities)
                 let breakdown_stage = self.find_breakdown_stage(&parent);
 
                 if let Some(stage) = breakdown_stage {
+                    let effective_caps = self
+                        .workflow
+                        .effective_capabilities(&stage, parent.flow.as_deref())
+                        .unwrap_or_default();
+
                     let next_status =
-                        self.compute_next_status_on_approve(&stage, parent.flow.as_deref());
+                        if let Some(target) = effective_caps.completion_stage() {
+                            Status::active(target)
+                        } else {
+                            self.compute_next_status_on_approve(&stage, parent.flow.as_deref())
+                        };
                     let now = chrono::Utc::now().to_rfc3339();
 
                     parent.status = next_status.clone();
@@ -488,14 +497,14 @@ impl WorkflowApi {
         Ok(advanced)
     }
 
-    /// Find the name of the breakdown stage (the stage with `produce_subtasks` capability).
+    /// Find the name of the breakdown stage (the stage with subtask capabilities).
     fn find_breakdown_stage(&self, task: &Task) -> Option<String> {
         for stage in &self.workflow.stages {
             let effective_caps = self
                 .workflow
                 .effective_capabilities(&stage.name, task.flow.as_deref())
                 .unwrap_or_default();
-            if effective_caps.produce_subtasks {
+            if effective_caps.produces_subtasks() {
                 return Some(stage.name.clone());
             }
         }

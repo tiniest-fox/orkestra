@@ -491,9 +491,9 @@ impl WorkflowConfig {
                         stage.name
                     ));
                 }
-                if stage.capabilities.produce_subtasks {
+                if stage.capabilities.produces_subtasks() {
                     errors.push(format!(
-                        "Script stage \"{}\" cannot have produce_subtasks capability. \
+                        "Script stage \"{}\" cannot have subtask capabilities. \
                          Only agent stages can produce subtasks.",
                         stage.name
                     ));
@@ -594,46 +594,47 @@ impl WorkflowConfig {
         }
     }
 
-    /// Validate `subtask_flow` references on stages.
+    /// Validate subtask capability references on stages and flow overrides.
     fn validate_subtask_flows(&self, errors: &mut Vec<String>) {
+        let stage_names_set: std::collections::HashSet<&str> =
+            self.stages.iter().map(|s| s.name.as_str()).collect();
+
         for stage in &self.stages {
-            if let Some(ref flow_name) = stage.capabilities.subtask_flow {
-                if !stage.capabilities.produce_subtasks {
-                    errors.push(format!(
-                        "Stage \"{}\" has subtask_flow=\"{flow_name}\" but produce_subtasks is false. \
-                         Set produce_subtasks: true or remove subtask_flow.",
-                        stage.name
-                    ));
+            if let Some(ref subtask_caps) = stage.capabilities.subtasks {
+                if let Some(ref flow_name) = subtask_caps.flow {
+                    if !self.flows.contains_key(flow_name) {
+                        errors.push(format!(
+                            "Stage \"{}\" has subtasks.flow=\"{flow_name}\" but flow \"{flow_name}\" doesn't exist. \
+                             Define the flow under 'flows:' or remove subtasks.flow.",
+                            stage.name
+                        ));
+                    }
                 }
-                if !self.flows.contains_key(flow_name) {
-                    errors.push(format!(
-                        "Stage \"{}\" has subtask_flow=\"{flow_name}\" but flow \"{flow_name}\" doesn't exist. \
-                         Define the flow under 'flows:' or remove subtask_flow.",
-                        stage.name
-                    ));
+                if let Some(ref target) = subtask_caps.completion_stage {
+                    if !stage_names_set.contains(target.as_str()) {
+                        errors.push(format!(
+                            "Stage \"{}\" has subtasks.completion_stage=\"{target}\" but stage \"{target}\" doesn't exist.",
+                            stage.name
+                        ));
+                    }
                 }
             }
         }
 
-        // Also validate flow overrides that set subtask_flow
+        // Also validate flow overrides that set subtask capabilities
         for (flow_name, flow) in &self.flows {
             for entry in &flow.stages {
                 if let Some(ref overrides) = entry.overrides {
                     if let Some(ref caps) = overrides.capabilities {
-                        if let Some(ref subtask_flow) = caps.subtask_flow {
-                            if !caps.produce_subtasks {
-                                errors.push(format!(
-                                    "Flow \"{flow_name}\" stage \"{}\" has subtask_flow=\"{subtask_flow}\" \
-                                     but produce_subtasks is false.",
-                                    entry.stage_name
-                                ));
-                            }
-                            if !self.flows.contains_key(subtask_flow) {
-                                errors.push(format!(
-                                    "Flow \"{flow_name}\" stage \"{}\" has subtask_flow=\"{subtask_flow}\" \
-                                     but flow \"{subtask_flow}\" doesn't exist.",
-                                    entry.stage_name
-                                ));
+                        if let Some(ref subtask_caps) = caps.subtasks {
+                            if let Some(ref subtask_flow) = subtask_caps.flow {
+                                if !self.flows.contains_key(subtask_flow) {
+                                    errors.push(format!(
+                                        "Flow \"{flow_name}\" stage \"{}\" has subtasks.flow=\"{subtask_flow}\" \
+                                         but flow \"{subtask_flow}\" doesn't exist.",
+                                        entry.stage_name
+                                    ));
+                                }
                             }
                         }
                     }
@@ -651,7 +652,7 @@ impl WorkflowConfig {
 impl Default for WorkflowConfig {
     /// Create the default workflow matching the current Orkestra behavior.
     fn default() -> Self {
-        use super::stage::{StageCapabilities, StageConfig};
+        use super::stage::{StageCapabilities, StageConfig, SubtaskCapabilities};
 
         let mut flows = HashMap::new();
         flows.insert(
@@ -686,7 +687,10 @@ impl Default for WorkflowConfig {
                 .with_display_name("Breaking Down")
                 .with_prompt("breakdown.md")
                 .with_inputs(vec!["plan".into()])
-                .with_capabilities(StageCapabilities::with_subtasks().with_subtask_flow("subtask")),
+                .with_capabilities(StageCapabilities {
+                    subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
+                    ..Default::default()
+                }),
             StageConfig::new("work", "summary")
                 .with_display_name("Working")
                 .with_prompt("worker.md")
@@ -829,11 +833,11 @@ mod tests {
         // Planning can ask questions
         let planning = workflow.stage("planning").unwrap();
         assert!(planning.capabilities.ask_questions);
-        assert!(!planning.capabilities.produce_subtasks);
+        assert!(!planning.capabilities.produces_subtasks());
 
         // Breakdown can produce subtasks
         let breakdown = workflow.stage("breakdown").unwrap();
-        assert!(breakdown.capabilities.produce_subtasks);
+        assert!(breakdown.capabilities.produces_subtasks());
 
         // Review is automated and can restage to work
         let review = workflow.stage("review").unwrap();
@@ -1016,7 +1020,7 @@ integration:
     }
 
     #[test]
-    fn test_script_stage_cannot_have_produce_subtasks() {
+    fn test_script_stage_cannot_have_subtask_capabilities() {
         use crate::workflow::config::stage::StageCapabilities;
 
         let stage = StageConfig::new_script("checks", "check_results", "./run.sh")
@@ -1027,7 +1031,7 @@ integration:
         let errors = workflow.validate();
         assert!(errors
             .iter()
-            .any(|e| e.contains("Script stage") && e.contains("produce_subtasks")));
+            .any(|e| e.contains("Script stage") && e.contains("subtask")));
     }
 
     #[test]
@@ -1092,12 +1096,9 @@ integration:
     fn test_default_workflow_has_subtask_flow() {
         let workflow = WorkflowConfig::default();
 
-        // Breakdown stage should have subtask_flow pointing to "subtask"
+        // Breakdown stage should have subtasks.flow pointing to "subtask"
         let breakdown = workflow.stage("breakdown").unwrap();
-        assert_eq!(
-            breakdown.capabilities.subtask_flow,
-            Some("subtask".to_string())
-        );
+        assert_eq!(breakdown.capabilities.subtask_flow(), Some("subtask"));
 
         // The "subtask" flow should exist
         let subtask_flow = workflow.flow("subtask");
@@ -1110,54 +1111,41 @@ integration:
 
     #[test]
     fn test_subtask_flow_references_existing_flow() {
-        use crate::workflow::config::stage::StageCapabilities;
+        use crate::workflow::config::stage::{StageCapabilities, SubtaskCapabilities};
 
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
-            StageConfig::new("breakdown", "breakdown").with_capabilities(
-                StageCapabilities::with_subtasks().with_subtask_flow("nonexistent"),
-            ),
+            StageConfig::new("breakdown", "breakdown").with_capabilities(StageCapabilities {
+                subtasks: Some(SubtaskCapabilities::default().with_flow("nonexistent")),
+                ..Default::default()
+            }),
             StageConfig::new("work", "summary"),
         ]);
 
         let errors = workflow.validate();
         assert!(errors
             .iter()
-            .any(|e| e.contains("subtask_flow") && e.contains("doesn't exist")));
+            .any(|e| e.contains("subtasks.flow") && e.contains("doesn't exist")));
     }
 
     #[test]
-    fn test_subtask_flow_requires_produce_subtasks() {
-        use crate::workflow::config::stage::StageCapabilities;
-
-        let caps = StageCapabilities {
-            subtask_flow: Some("subtask".to_string()),
-            ..Default::default()
-        };
-
-        let mut flows = HashMap::new();
-        flows.insert(
-            "subtask".to_string(),
-            FlowConfig {
-                description: "test".to_string(),
-                icon: None,
-                stages: vec![FlowStageEntry {
-                    stage_name: "work".to_string(),
-                    overrides: None,
-                }],
-            },
-        );
+    fn test_completion_stage_references_existing_stage() {
+        use crate::workflow::config::stage::{StageCapabilities, SubtaskCapabilities};
 
         let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan").with_capabilities(caps),
+            StageConfig::new("breakdown", "breakdown").with_capabilities(StageCapabilities {
+                subtasks: Some(
+                    SubtaskCapabilities::default().with_completion_stage("nonexistent"),
+                ),
+                ..Default::default()
+            }),
             StageConfig::new("work", "summary"),
-        ])
-        .with_flows(flows);
+        ]);
 
         let errors = workflow.validate();
         assert!(errors
             .iter()
-            .any(|e| e.contains("subtask_flow") && e.contains("produce_subtasks is false")));
+            .any(|e| e.contains("completion_stage") && e.contains("doesn't exist")));
     }
 
     #[test]
@@ -1171,8 +1159,8 @@ stages:
     artifact: breakdown
     inputs: [plan]
     capabilities:
-      produce_subtasks: true
-      subtask_flow: subtask
+      subtasks:
+        flow: subtask
   - name: work
     artifact: summary
   - name: review
@@ -1194,10 +1182,7 @@ integration:
         assert!(workflow.is_valid(), "errors: {:?}", workflow.validate());
 
         let breakdown = workflow.stage("breakdown").unwrap();
-        assert_eq!(
-            breakdown.capabilities.subtask_flow,
-            Some("subtask".to_string())
-        );
+        assert_eq!(breakdown.capabilities.subtask_flow(), Some("subtask"));
         assert!(workflow.flow("subtask").is_some());
     }
 }

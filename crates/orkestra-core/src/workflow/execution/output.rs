@@ -60,7 +60,7 @@ pub enum StageOutput {
     },
 
     /// Agent produced subtasks for breakdown.
-    /// Only valid if the stage has `produce_subtasks` capability.
+    /// Only valid if the stage has subtask capabilities.
     Subtasks {
         /// List of subtasks to create.
         subtasks: Vec<SubtaskOutput>,

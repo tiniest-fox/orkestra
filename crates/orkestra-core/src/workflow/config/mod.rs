@@ -8,7 +8,7 @@ mod stage;
 mod workflow;
 
 pub use loader::{load_workflow, load_workflow_for_project, LoadError};
-pub use stage::{ScriptStageConfig, StageCapabilities, StageConfig};
+pub use stage::{ScriptStageConfig, StageCapabilities, StageConfig, SubtaskCapabilities};
 pub use workflow::{
     FlowConfig, FlowStageEntry, FlowStageOverride, IntegrationConfig, WorkflowConfig,
 };

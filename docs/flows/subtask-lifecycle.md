@@ -14,18 +14,18 @@ How a parent task gets broken into subtasks, how subtasks execute with dependenc
 | `workflow/services/api.rs` | `get_tasks_needing_agents()`: skips tasks whose `depends_on` entries aren't all done/archived |
 | `workflow/execution/output.rs` | `StageOutput::Subtasks`: parsed breakdown output with title, description, depends_on per subtask |
 | `workflow/execution/breakdown.rs` | `subtasks_to_markdown()`: converts subtask list to readable markdown for the artifact |
-| `workflow/config/stage.rs` | `StageCapabilities`: `produce_subtasks` flag + `subtask_flow` option |
+| `workflow/config/stage.rs` | `StageCapabilities`: `subtasks: Option<SubtaskCapabilities>` with `flow` and `completion_stage` |
 
 All paths relative to `crates/orkestra-core/src/`.
 
 ## Step Summary
 
-1. **Agent produces subtasks** — A stage with `produce_subtasks: true` (typically "breakdown") outputs `StageOutput::Subtasks`. `agent_actions.rs::handle_subtasks_output()` stores two things: a markdown artifact (human-readable) and a `{artifact_name}_structured` artifact (JSON for later Task creation). No Task records are created yet.
+1. **Agent produces subtasks** — A stage with `subtasks` capabilities (typically "breakdown") outputs `StageOutput::Subtasks`. `agent_actions.rs::handle_subtasks_output()` stores two things: a markdown artifact (human-readable) and a `{artifact_name}_structured` artifact (JSON for later Task creation). No Task records are created yet.
 
-2. **Human approves breakdown** — `human_actions.rs::approve()` detects the stage has `produce_subtasks` capability and structured data exists, calls `approve_with_subtask_creation()`.
+2. **Human approves breakdown** — `human_actions.rs::approve()` detects the stage has subtask capabilities and structured data exists, calls `approve_with_subtask_creation()`.
 
 3. **SubtaskService creates Task records** — `subtask_service.rs::create_subtasks_from_breakdown()` parses the structured JSON and creates tasks in two passes:
-   - **Pass 1**: Create all tasks with IDs, assign flow from `subtask_flow` capability, inherit parent's worktree/branch/auto_mode, copy parent's plan artifact
+   - **Pass 1**: Create all tasks with IDs, assign flow from `subtasks.flow` capability, inherit parent's worktree/branch/auto_mode, copy parent's plan artifact
    - **Pass 2**: Resolve `depends_on` indices to actual task IDs
    - **Save**: Persist each task, create initial iterations, spawn subtask setup (SettingUp -> Idle, no worktree)
 

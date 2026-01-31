@@ -113,7 +113,7 @@ Tasks progress through an ordered list of stages defined in `StageConfig` struct
 
 - **`WorkflowConfig`** (`workflow.rs`) — Ordered list of `StageConfig` plus `IntegrationConfig`. Validated on load (no forward artifact references, unique names).
 - **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `inputs` (artifacts from earlier stages), `capabilities`, and either a `prompt` (agent stage) or `script` (script stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set.
-- **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `produce_subtasks`, `subtask_flow: Option<String>`, `supports_restage: Vec<String>`.
+- **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `subtasks: Option<SubtaskCapabilities>` (with `flow` and `completion_stage`), `supports_restage: Vec<String>`.
 - **`ScriptStageConfig`** (`stage.rs`) — Shell command, timeout, optional `on_failure` stage for recovery.
 - **`FlowConfig`** (`workflow.rs`) — Named alternate flow (shortened pipeline). Has a `description`, optional `icon`, and an ordered list of `FlowStageEntry`s referencing a subset of global stages with optional overrides.
 - **`FlowStageEntry`** (`workflow.rs`) — A stage reference in a flow, with optional `FlowStageOverride` for `prompt` and `capabilities` (full replacement, not merge).
@@ -154,7 +154,7 @@ This project defines two flows: `quick` (skips breakdown and compound) and `hotf
 
 #### Subtask System
 
-See [`docs/flows/subtask-lifecycle.md`](docs/flows/subtask-lifecycle.md) for the full lifecycle. In brief: stages with `produce_subtasks: true` output subtask JSON. On approval, `SubtaskService` creates child tasks with dependencies, flow assignment (via `subtask_flow`), and inherited artifacts. Parent enters `WaitingOnChildren` until all subtasks complete. Subtasks share the parent's worktree.
+See [`docs/flows/subtask-lifecycle.md`](docs/flows/subtask-lifecycle.md) for the full lifecycle. In brief: stages with `subtasks` capabilities output subtask JSON. On approval, `SubtaskService` creates child tasks with dependencies, flow assignment (via `subtasks.flow`), and inherited artifacts. Parent enters `WaitingOnChildren` until all subtasks complete, then advances to `subtasks.completion_stage` if configured. Subtasks share the parent's worktree.
 
 ### Agent System
 

@@ -57,7 +57,7 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
         None
     };
 
-    let (subtasks_example, skip_example) = if ctx.stage.capabilities.produce_subtasks {
+    let (subtasks_example, skip_example) = if ctx.stage.capabilities.produces_subtasks() {
         let examples = vec![
             subtask_example("First task", "What needs to be done first", &[]),
             subtask_example("Second task", "Depends on first task", &[0]),
@@ -91,7 +91,7 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
         artifact_name: ctx.stage.artifact.clone(),
         can_ask_questions: ctx.stage.capabilities.ask_questions,
         questions_example,
-        can_produce_subtasks: ctx.stage.capabilities.produce_subtasks,
+        can_produce_subtasks: ctx.stage.capabilities.produces_subtasks(),
         subtasks_example,
         skip_example,
         can_restage: !ctx.stage.capabilities.supports_restage.is_empty(),
@@ -330,7 +330,7 @@ impl<'a> PromptBuilder<'a> {
         if ctx.stage.capabilities.ask_questions {
             prompt.push_str("\nYou may ask clarifying questions if needed.\n");
         }
-        if ctx.stage.capabilities.produce_subtasks {
+        if ctx.stage.capabilities.produces_subtasks() {
             prompt.push_str("\nYou may break this down into subtasks if appropriate.\n");
         }
         if !ctx.stage.capabilities.supports_restage.is_empty() {

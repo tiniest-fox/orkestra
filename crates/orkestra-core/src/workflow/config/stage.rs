@@ -186,20 +186,28 @@ pub struct StageCapabilities {
     #[serde(default)]
     pub ask_questions: bool,
 
-    /// Stage can propose subtasks to create.
-    #[serde(default)]
-    pub produce_subtasks: bool,
-
-    /// Named flow that subtasks created from this stage should use.
-    /// Only meaningful when `produce_subtasks` is true.
-    /// If None, subtasks use the default (full) pipeline.
+    /// Subtask capabilities. Presence indicates the stage can produce subtasks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subtask_flow: Option<String>,
+    pub subtasks: Option<SubtaskCapabilities>,
 
     /// Stages this agent can redirect to (e.g., reviewer can send back to work).
     /// Empty means no restaging capability.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub supports_restage: Vec<String>,
+}
+
+/// Configuration for a stage that produces subtasks.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SubtaskCapabilities {
+    /// Named flow that subtasks created from this stage should use.
+    /// If None, subtasks use the default (full) pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flow: Option<String>,
+
+    /// Stage the parent resumes at after subtasks complete.
+    /// If None, parent advances to the default next stage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion_stage: Option<String>,
 }
 
 impl StageCapabilities {
@@ -214,7 +222,7 @@ impl StageCapabilities {
     /// Create capabilities with subtask production enabled.
     pub fn with_subtasks() -> Self {
         Self {
-            produce_subtasks: true,
+            subtasks: Some(SubtaskCapabilities::default()),
             ..Default::default()
         }
     }
@@ -223,8 +231,7 @@ impl StageCapabilities {
     pub fn all() -> Self {
         Self {
             ask_questions: true,
-            produce_subtasks: true,
-            subtask_flow: None,
+            subtasks: Some(SubtaskCapabilities::default()),
             supports_restage: Vec::new(),
         }
     }
@@ -237,16 +244,40 @@ impl StageCapabilities {
         }
     }
 
-    /// Builder: set the subtask flow.
-    #[must_use]
-    pub fn with_subtask_flow(mut self, flow: impl Into<String>) -> Self {
-        self.subtask_flow = Some(flow.into());
-        self
+    /// Whether this stage can produce subtasks.
+    pub fn produces_subtasks(&self) -> bool {
+        self.subtasks.is_some()
+    }
+
+    /// The flow name for subtasks, if configured.
+    pub fn subtask_flow(&self) -> Option<&str> {
+        self.subtasks.as_ref()?.flow.as_deref()
+    }
+
+    /// The stage the parent resumes at after subtasks complete, if configured.
+    pub fn completion_stage(&self) -> Option<&str> {
+        self.subtasks.as_ref()?.completion_stage.as_deref()
     }
 
     /// Check if this stage can restage to the given target.
     pub fn can_restage_to(&self, target: &str) -> bool {
         self.supports_restage.iter().any(|s| s == target)
+    }
+}
+
+impl SubtaskCapabilities {
+    /// Builder: set the subtask flow.
+    #[must_use]
+    pub fn with_flow(mut self, flow: impl Into<String>) -> Self {
+        self.flow = Some(flow.into());
+        self
+    }
+
+    /// Builder: set the completion stage.
+    #[must_use]
+    pub fn with_completion_stage(mut self, stage: impl Into<String>) -> Self {
+        self.completion_stage = Some(stage.into());
+        self
     }
 }
 
@@ -346,22 +377,22 @@ mod tests {
     fn test_capabilities_default() {
         let caps = StageCapabilities::default();
         assert!(!caps.ask_questions);
-        assert!(!caps.produce_subtasks);
+        assert!(!caps.produces_subtasks());
     }
 
     #[test]
     fn test_capabilities_builders() {
         let with_questions = StageCapabilities::with_questions();
         assert!(with_questions.ask_questions);
-        assert!(!with_questions.produce_subtasks);
+        assert!(!with_questions.produces_subtasks());
 
         let with_subtasks = StageCapabilities::with_subtasks();
         assert!(!with_subtasks.ask_questions);
-        assert!(with_subtasks.produce_subtasks);
+        assert!(with_subtasks.produces_subtasks());
 
         let all = StageCapabilities::all();
         assert!(all.ask_questions);
-        assert!(all.produce_subtasks);
+        assert!(all.produces_subtasks());
     }
 
     #[test]
@@ -385,7 +416,7 @@ mod tests {
         assert!(caps.can_restage_to("planning"));
         assert!(!caps.can_restage_to("review"));
         assert!(!caps.ask_questions);
-        assert!(!caps.produce_subtasks);
+        assert!(!caps.produces_subtasks());
     }
 
     #[test]
@@ -412,6 +443,54 @@ mod tests {
         let yaml = serde_yaml::to_string(&caps).unwrap();
         // Empty supports_restage should not appear in serialized output
         assert!(!yaml.contains("supports_restage"));
+    }
+
+    #[test]
+    fn test_subtask_capabilities() {
+        let caps = StageCapabilities {
+            subtasks: Some(
+                SubtaskCapabilities::default()
+                    .with_flow("quick")
+                    .with_completion_stage("review"),
+            ),
+            ..Default::default()
+        };
+
+        assert!(caps.produces_subtasks());
+        assert_eq!(caps.subtask_flow(), Some("quick"));
+        assert_eq!(caps.completion_stage(), Some("review"));
+    }
+
+    #[test]
+    fn test_subtask_capabilities_none() {
+        let caps = StageCapabilities::default();
+        assert!(!caps.produces_subtasks());
+        assert_eq!(caps.subtask_flow(), None);
+        assert_eq!(caps.completion_stage(), None);
+    }
+
+    #[test]
+    fn test_subtask_capabilities_serialization() {
+        let caps = StageCapabilities {
+            subtasks: Some(
+                SubtaskCapabilities::default().with_flow("subtask"),
+            ),
+            ..Default::default()
+        };
+        let yaml = serde_yaml::to_string(&caps).unwrap();
+        assert!(yaml.contains("subtasks"));
+        assert!(yaml.contains("flow: subtask"));
+
+        let parsed: StageCapabilities = serde_yaml::from_str(&yaml).unwrap();
+        assert!(parsed.produces_subtasks());
+        assert_eq!(parsed.subtask_flow(), Some("subtask"));
+    }
+
+    #[test]
+    fn test_subtask_capabilities_skipped_when_none() {
+        let caps = StageCapabilities::default();
+        let yaml = serde_yaml::to_string(&caps).unwrap();
+        assert!(!yaml.contains("subtasks"));
     }
 
     #[test]

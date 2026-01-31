@@ -22,7 +22,7 @@ const ARTIFACT_COMPONENT: &str = include_str!("schemas/components/artifact.json"
 /// Questions schema component - for stages with `ask_questions` capability.
 const QUESTIONS_COMPONENT: &str = include_str!("schemas/components/questions.json");
 
-/// Subtasks schema component - for stages with `produce_subtasks` capability.
+/// Subtasks schema component - for stages with subtask capabilities.
 const SUBTASKS_COMPONENT: &str = include_str!("schemas/components/subtasks.json");
 
 /// Restage schema component - for stages with `supports_restage` capability.
@@ -51,7 +51,7 @@ pub struct SchemaConfig<'a> {
 /// - The stage's artifact (type = `artifact_name`)
 /// - Terminal states: failed, blocked
 /// - Questions (if `ask_questions` capability)
-/// - Subtasks (if `produce_subtasks` capability)
+/// - Subtasks (if subtask capabilities present)
 /// - Restage (if `supports_restage` capability)
 ///
 /// # Panics
@@ -74,7 +74,7 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     if config.capabilities.ask_questions {
         type_enum.push("questions".to_string());
     }
-    if config.capabilities.produce_subtasks {
+    if config.capabilities.produces_subtasks() {
         type_enum.push("subtasks".to_string());
     }
     if !config.capabilities.supports_restage.is_empty() {
@@ -119,7 +119,7 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     }
 
     // Add subtasks properties if capability enabled
-    if config.capabilities.produce_subtasks {
+    if config.capabilities.produces_subtasks() {
         if let Some(s_props) = subtasks_component.get("properties") {
             if let Some(s) = s_props.get("subtasks") {
                 properties["subtasks"] = s.clone();
@@ -229,10 +229,7 @@ mod tests {
 
     #[test]
     fn test_generate_schema_with_subtasks() {
-        let caps = StageCapabilities {
-            produce_subtasks: true,
-            ..Default::default()
-        };
+        let caps = StageCapabilities::with_subtasks();
         let config = SchemaConfig {
             artifact_name: "breakdown",
             capabilities: &caps,

@@ -556,10 +556,13 @@ pub mod workflows {
                 StageConfig::new("breakdown", "breakdown")
                     .with_prompt("breakdown.md")
                     .with_inputs(vec!["plan".into()])
-                    .with_capabilities(
-                        orkestra_core::workflow::config::StageCapabilities::with_subtasks()
-                            .with_subtask_flow("subtask"),
-                    ),
+                    .with_capabilities(orkestra_core::workflow::config::StageCapabilities {
+                        subtasks: Some(
+                            orkestra_core::workflow::config::SubtaskCapabilities::default()
+                                .with_flow("subtask"),
+                        ),
+                        ..Default::default()
+                    }),
                 StageConfig::new("work", "summary")
                     .with_prompt("worker.md")
                     .with_inputs(vec!["plan".into()]),

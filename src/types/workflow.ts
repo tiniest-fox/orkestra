@@ -13,12 +13,20 @@
 export interface StageCapabilities {
   /** Whether the stage can ask clarifying questions. */
   ask_questions: boolean;
-  /** Whether the stage can produce subtasks. */
-  produce_subtasks: boolean;
-  /** Named flow that subtasks created from this stage should use. */
-  subtask_flow?: string;
+  /** Subtask capabilities. Presence indicates the stage can produce subtasks. */
+  subtasks?: SubtaskCapabilities;
   /** Which stages this stage can restage to (e.g., review can restage to work). */
   supports_restage: string[];
+}
+
+/**
+ * Configuration for a stage that produces subtasks.
+ */
+export interface SubtaskCapabilities {
+  /** Named flow that subtasks should use. */
+  flow?: string;
+  /** Stage the parent resumes at after subtasks complete. */
+  completion_stage?: string;
 }
 
 /**

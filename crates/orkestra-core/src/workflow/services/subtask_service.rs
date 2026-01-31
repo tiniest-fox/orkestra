@@ -144,16 +144,16 @@ impl SubtaskService {
 /// Find the subtask flow for a parent task based on its current stage's capabilities.
 ///
 /// Looks at the stage that produced the breakdown (the stage the parent is in or
-/// just approved from) and returns the `subtask_flow` from its effective capabilities.
+/// just approved from) and returns the subtask flow from its effective capabilities.
 fn find_subtask_flow(parent: &Task, workflow: &WorkflowConfig) -> Option<String> {
     // The breakdown stage is typically the stage that was just approved.
-    // We look through all stages for one with produce_subtasks + subtask_flow.
+    // We look through all stages for one with subtask capabilities.
     for stage in &workflow.stages {
         let effective_caps = workflow
             .effective_capabilities(&stage.name, parent.flow.as_deref())
             .unwrap_or_default();
-        if effective_caps.produce_subtasks {
-            return effective_caps.subtask_flow.clone();
+        if effective_caps.produces_subtasks() {
+            return effective_caps.subtask_flow().map(String::from);
         }
     }
     None

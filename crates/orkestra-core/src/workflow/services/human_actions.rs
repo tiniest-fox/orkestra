@@ -139,13 +139,13 @@ impl WorkflowApi {
 
     /// Check if a stage produced subtasks that need to be materialized.
     ///
-    /// Returns true if the stage has `produce_subtasks` capability and
+    /// Returns true if the stage has subtask capabilities and
     /// the task has structured subtask data stored.
     fn stage_has_subtasks(&self, stage: &str, task: &Task) -> bool {
         let has_capability = self
             .workflow
             .effective_capabilities(stage, task.flow.as_deref())
-            .is_some_and(|caps| caps.produce_subtasks);
+            .is_some_and(|caps| caps.produces_subtasks());
 
         if !has_capability {
             return false;
@@ -399,7 +399,7 @@ impl WorkflowApi {
 
     /// Auto-approve the current stage artifact and advance the task.
     ///
-    /// Handles subtask creation if the stage has `produce_subtasks` capability.
+    /// Handles subtask creation if the stage has subtask capabilities.
     fn auto_approve_stage(&self, task: &mut Task, current_stage: &str) -> WorkflowResult<()> {
         orkestra_debug!(
             "action",

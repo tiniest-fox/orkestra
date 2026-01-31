@@ -21,8 +21,9 @@ stages:
     inputs: [plan]
     prompt: breakdown.md
     capabilities:
-      produce_subtasks: true
-      subtask_flow: subtask
+      subtasks:
+        flow: subtask
+        completion_stage: review
 
   # Work: Implements the approved plan
   - name: work

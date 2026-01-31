@@ -97,7 +97,6 @@ export function createMockWorkflowConfig(): WorkflowConfig {
         is_optional: false,
         capabilities: {
           ask_questions: true,
-          produce_subtasks: false,
           supports_restage: [],
         },
       },
@@ -109,7 +108,7 @@ export function createMockWorkflowConfig(): WorkflowConfig {
         is_optional: false,
         capabilities: {
           ask_questions: true,
-          produce_subtasks: true,
+          subtasks: {},
           supports_restage: [],
         },
       },

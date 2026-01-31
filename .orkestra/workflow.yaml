@@ -22,7 +22,7 @@ stages:
     prompt: breakdown.md
     capabilities:
       subtasks:
-        flow: subtask
+        flow: hotfix
         completion_stage: review
 
   # Work: Implements the approved plan
@@ -63,15 +63,6 @@ stages:
     is_automated: true
 
 flows:
-  # Subtask flow: Simplified pipeline for subtasks created from breakdown
-  subtask:
-    description: Streamlined pipeline for subtasks (work → checks → review)
-    icon: git-branch
-    stages:
-      - work
-      - checks
-      - review
-
   # Quick flow: Skip breakdown and compound stages for smaller tasks
   quick:
     description: Skip planning breakdown for simple, well-defined tasks

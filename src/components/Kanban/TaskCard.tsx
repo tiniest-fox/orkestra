@@ -40,10 +40,10 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
     ? "border-error-300 bg-error-50 dark:border-error-700 dark:bg-error-950"
     : isBlocked
       ? "border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-950"
-      : taskNeedsReview
-        ? "border-warning-400 bg-warning-50 dark:border-warning-600 dark:bg-warning-950"
-        : hasQuestions
-          ? "border-info-400 bg-info-50 dark:border-info-600 dark:bg-info-950"
+      : hasQuestions
+        ? "border-info-400 bg-info-50 dark:border-info-600 dark:bg-info-950"
+        : taskNeedsReview
+          ? "border-warning-400 bg-warning-50 dark:border-warning-600 dark:bg-warning-950"
           : isSelected
             ? "border-orange-500 ring-2 ring-orange-200 dark:ring-orange-800"
             : "";
@@ -76,14 +76,14 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
               />
             </span>
           )}
-          {taskNeedsReview && (
-            <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
-              <Eye className="w-4 h-4 text-warning-700 dark:text-warning-300" />
-            </span>
-          )}
-          {hasQuestions && !taskNeedsReview && (
+          {hasQuestions && (
             <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
               <MessageCircle className="w-4 h-4 text-info-600 dark:text-info-300" />
+            </span>
+          )}
+          {taskNeedsReview && !hasQuestions && (
+            <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
+              <Eye className="w-4 h-4 text-warning-700 dark:text-warning-300" />
             </span>
           )}
           {showSpinner && !task.auto_mode && (

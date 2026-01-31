@@ -36,7 +36,11 @@ interface Tab {
 interface TaskDetailSidebarProps {
   task: WorkflowTaskView;
   onClose: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
+  /** Subtasks for this task (from shared TasksProvider). */
+  subtasks?: WorkflowTaskView[];
+  selectedSubtaskId?: string;
+  onSelectSubtask?: (subtask: WorkflowTaskView) => void;
 }
 
 function buildTabs(task: WorkflowTaskView): Tab[] {
@@ -89,7 +93,15 @@ function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
   return tabIds.has(preferred) ? preferred : TaskDetailTabs.details(task.id);
 }
 
-export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebarProps) {
+export function TaskDetailSidebar({
+  task,
+  onClose,
+  onDelete,
+  subtasks,
+  selectedSubtaskId,
+  onSelectSubtask,
+}: TaskDetailSidebarProps) {
+  const isSubtask = !!task.parent_id;
   const config = useWorkflowConfig();
   const {
     currentStageDisplayName,
@@ -141,13 +153,14 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
     }
   };
 
-  const footerPanelKey = confirmingDelete
-    ? TaskDetailFooterSlot.Delete
-    : task.derived.has_questions
-      ? TaskDetailFooterSlot.Questions
-      : task.derived.needs_review && task.derived.current_stage
-        ? TaskDetailFooterSlot.Review
-        : null;
+  const footerPanelKey =
+    confirmingDelete && !isSubtask
+      ? TaskDetailFooterSlot.Delete
+      : task.derived.has_questions
+        ? TaskDetailFooterSlot.Questions
+        : task.derived.needs_review && task.derived.current_stage
+          ? TaskDetailFooterSlot.Review
+          : null;
 
   return (
     <Panel className="w-[480px]">
@@ -171,9 +184,16 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
               <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />
             )}
 
-            {activeTab === TaskDetailTabs.subtasks(task.id) && task.derived.subtask_progress && (
-              <SubtasksTab parentId={task.id} progress={task.derived.subtask_progress} />
-            )}
+            {activeTab === TaskDetailTabs.subtasks(task.id) &&
+              task.derived.subtask_progress &&
+              subtasks && (
+                <SubtasksTab
+                  subtasks={subtasks}
+                  progress={task.derived.subtask_progress}
+                  selectedSubtaskId={selectedSubtaskId}
+                  onSelectSubtask={onSelectSubtask}
+                />
+              )}
 
             {activeTab === TaskDetailTabs.artifacts(task.id) && (
               <ArtifactsTab
@@ -207,7 +227,7 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
             <DeleteConfirmPanel
               onConfirm={() => {
                 setConfirmingDelete(false);
-                onDelete();
+                onDelete?.();
               }}
               onCancel={() => setConfirmingDelete(false)}
             />

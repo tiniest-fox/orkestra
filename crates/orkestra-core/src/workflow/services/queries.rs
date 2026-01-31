@@ -219,25 +219,38 @@ impl WorkflowApi {
         let iterations_by_task = group_by_task_id(self.store.list_all_iterations()?);
         let sessions_by_task = group_by_task_id(self.store.list_all_stage_sessions()?);
 
-        // Pre-compute derived states for subtasks so parents get aggregate flags
+        // Build subtask views (sorted topologically per parent) and collect
+        // derived states for parent aggregate flags.
         let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
+        let mut subtask_views: Vec<TaskView> = Vec::new();
+
         for (parent_id, subtasks) in &subtasks_by_parent {
-            let derived_states: Vec<DerivedTaskState> = subtasks
-                .iter()
-                .map(|st| {
-                    let iters = iterations_by_task
-                        .get(&st.id)
-                        .map_or(&[][..], Vec::as_slice);
-                    let sessions = sessions_by_task
-                        .get(&st.id)
-                        .map_or(&[][..], Vec::as_slice);
-                    DerivedTaskState::build(st, iters, sessions, &[])
-                })
-                .collect();
+            let sorted = topological_sort(subtasks.clone());
+            let mut derived_states = Vec::with_capacity(sorted.len());
+
+            for task in sorted {
+                let iterations = iterations_by_task
+                    .get(&task.id)
+                    .cloned()
+                    .unwrap_or_default();
+                let stage_sessions = sessions_by_task
+                    .get(&task.id)
+                    .cloned()
+                    .unwrap_or_default();
+                let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[]);
+                derived_states.push(derived.clone());
+                subtask_views.push(TaskView {
+                    task,
+                    iterations,
+                    stage_sessions,
+                    derived,
+                });
+            }
             subtask_derived_by_parent.insert(parent_id.clone(), derived_states);
         }
 
-        let mut views = Vec::with_capacity(top_level.len());
+        // Build top-level task views with subtask aggregate flags
+        let mut views = Vec::with_capacity(top_level.len() + subtask_views.len());
         for task in top_level {
             let iterations = iterations_by_task
                 .get(&task.id)
@@ -260,6 +273,9 @@ impl WorkflowApi {
                 derived,
             });
         }
+
+        // Append subtask views after parents
+        views.extend(subtask_views);
 
         Ok(views)
     }

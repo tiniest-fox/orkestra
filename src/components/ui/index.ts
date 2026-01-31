@@ -8,6 +8,7 @@ export {
   ArtifactTabs,
   LogTabs,
   SidebarSlot,
+  SubtaskSlot,
   TaskDetailFooterSlot,
   TaskDetailTabs,
 } from "./animationKeys";

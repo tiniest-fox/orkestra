@@ -3,16 +3,19 @@
  * Uses Panel-based design system with animated sidebar transitions.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useTasks, useWorkflowConfig } from "../providers";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
-import { Button, Panel, PanelContainer, PanelSlot, SidebarSlot } from "./ui";
+import { Button, Panel, PanelContainer, PanelSlot, SidebarSlot, SubtaskSlot } from "./ui";
 
-type SidebarView = { type: "none" } | { type: "create" } | { type: "task"; taskId: string };
+type SidebarView =
+  | { type: "none" }
+  | { type: "create" }
+  | { type: "task"; taskId: string; subtaskId?: string };
 
 export function Orkestra() {
   useNotificationPermission();
@@ -21,8 +24,28 @@ export function Orkestra() {
   const config = useWorkflowConfig();
   const { tasks, loading, error, createTask, deleteTask } = useTasks();
 
+  // Filter to top-level tasks only for the kanban board
+  const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parent_id), [tasks]);
+
   const currentSelectedTask: WorkflowTaskView | null =
-    sidebarView.type === "task" ? (tasks.find((t) => t.id === sidebarView.taskId) ?? null) : null;
+    sidebarView.type === "task"
+      ? (topLevelTasks.find((t) => t.id === sidebarView.taskId) ?? null)
+      : null;
+
+  // Derive subtasks for the selected parent from the shared task list
+  const currentSubtasks = useMemo(
+    () =>
+      currentSelectedTask ? tasks.filter((t) => t.parent_id === currentSelectedTask.id) : [],
+    [tasks, currentSelectedTask],
+  );
+
+  const selectedSubtaskId =
+    sidebarView.type === "task" ? sidebarView.subtaskId : undefined;
+
+  const currentSelectedSubtask: WorkflowTaskView | null =
+    selectedSubtaskId
+      ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
+      : null;
 
   const sidebarActiveKey =
     sidebarView.type === "create"
@@ -31,8 +54,24 @@ export function Orkestra() {
         ? SidebarSlot.task(currentSelectedTask.id)
         : null;
 
+  const subtaskActiveKey = currentSelectedSubtask
+    ? SubtaskSlot.subtask(currentSelectedSubtask.id)
+    : null;
+
   const handleSelectTask = (task: WorkflowTask) => {
     setSidebarView({ type: "task", taskId: task.id });
+  };
+
+  const handleSelectSubtask = (subtask: WorkflowTaskView) => {
+    if (sidebarView.type === "task") {
+      setSidebarView({ ...sidebarView, subtaskId: subtask.id });
+    }
+  };
+
+  const handleCloseSubtask = () => {
+    if (sidebarView.type === "task") {
+      setSidebarView({ type: "task", taskId: sidebarView.taskId });
+    }
   };
 
   const handleOpenCreatePanel = () => {
@@ -85,7 +124,7 @@ export function Orkestra() {
           <Panel>
             <KanbanBoard
               config={config}
-              tasks={tasks}
+              tasks={topLevelTasks}
               selectedTaskId={currentSelectedTask?.id}
               onSelectTask={handleSelectTask}
             />
@@ -103,6 +142,20 @@ export function Orkestra() {
                 task={currentSelectedTask}
                 onClose={handleCloseSidebar}
                 onDelete={() => handleDeleteTask(currentSelectedTask.id)}
+                subtasks={currentSubtasks}
+                selectedSubtaskId={selectedSubtaskId}
+                onSelectSubtask={handleSelectSubtask}
+              />
+            </PanelSlot.Panel>
+          )}
+        </PanelSlot>
+
+        <PanelSlot activeKey={subtaskActiveKey}>
+          {currentSelectedSubtask && (
+            <PanelSlot.Panel panelKey={SubtaskSlot.subtask(currentSelectedSubtask.id)}>
+              <TaskDetailSidebar
+                task={currentSelectedSubtask}
+                onClose={handleCloseSubtask}
               />
             </PanelSlot.Panel>
           )}

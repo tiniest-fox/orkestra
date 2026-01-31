@@ -20,6 +20,7 @@ interface TaskCardProps {
 function SubtaskProgressBar({ progress }: { progress: SubtaskProgress }) {
   const donePercent = (progress.done / progress.total) * 100;
   const failedPercent = (progress.failed / progress.total) * 100;
+  const inProgressPercent = (progress.in_progress / progress.total) * 100;
 
   return (
     <div className="mt-2">
@@ -27,6 +28,9 @@ function SubtaskProgressBar({ progress }: { progress: SubtaskProgress }) {
         <Layers className="w-3 h-3 text-stone-400 dark:text-stone-500" />
         <span className="text-xs text-stone-500 dark:text-stone-400">
           {progress.done}/{progress.total} subtasks
+          {progress.in_progress > 0 && (
+            <span className="text-info-600 dark:text-info-400"> ({progress.in_progress} active)</span>
+          )}
           {progress.failed > 0 && (
             <span className="text-error-600 dark:text-error-400"> ({progress.failed} failed)</span>
           )}
@@ -38,6 +42,12 @@ function SubtaskProgressBar({ progress }: { progress: SubtaskProgress }) {
             <div
               className="bg-success-500 dark:bg-success-400 transition-all duration-300"
               style={{ width: `${donePercent}%` }}
+            />
+          )}
+          {inProgressPercent > 0 && (
+            <div
+              className="bg-info-400 dark:bg-info-500 transition-all duration-300"
+              style={{ width: `${inProgressPercent}%` }}
             />
           )}
           {failedPercent > 0 && (

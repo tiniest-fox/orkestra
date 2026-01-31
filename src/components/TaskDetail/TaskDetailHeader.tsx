@@ -121,9 +121,10 @@ export function TaskDetailHeader({
       .catch((err) => console.error("Failed to detect external tools:", err));
   }, []);
 
+  const isSubtask = !!task.parent_id;
   const hasWorktree = !!task.worktree_path;
-  const showTerminalButton = hasWorktree && toolsInfo?.terminal != null;
-  const showEditorButton = hasWorktree && toolsInfo?.editor != null;
+  const showTerminalButton = !isSubtask && hasWorktree && toolsInfo?.terminal != null;
+  const showEditorButton = !isSubtask && hasWorktree && toolsInfo?.editor != null;
 
   const handleOpenTerminal = () => {
     if (!task.worktree_path) return;
@@ -184,13 +185,15 @@ export function TaskDetailHeader({
               title={`Open in ${toolsInfo.editor?.name}`}
             />
           )}
-          <IconButton
-            icon={<TrashIcon />}
-            aria-label="Delete task"
-            variant="ghost"
-            size="sm"
-            onClick={onRequestDelete}
-          />
+          {!isSubtask && (
+            <IconButton
+              icon={<TrashIcon />}
+              aria-label="Delete task"
+              variant="ghost"
+              size="sm"
+              onClick={onRequestDelete}
+            />
+          )}
           <Panel.CloseButton onClick={onClose} />
         </div>
       </div>

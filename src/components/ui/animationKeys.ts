@@ -14,6 +14,11 @@ export const SidebarSlot = {
   task: (id: string) => `SidebarSlot.Task.${id}`,
 } as const;
 
+/** Subtask detail PanelSlot (Orkestra.tsx) */
+export const SubtaskSlot = {
+  subtask: (id: string) => `SubtaskSlot.Subtask.${id}`,
+} as const;
+
 /** Task detail main tabs (TaskDetailSidebar.tsx) */
 export const TaskDetailTabs = {
   details: (taskId: string) => `TaskDetailTabs.${taskId}.Details`,

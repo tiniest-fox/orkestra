@@ -150,8 +150,7 @@ interface FlowPickerProps {
 function FlowPicker({ flows, selected, onSelect }: FlowPickerProps) {
   return (
     <fieldset className="mt-4">
-      <legend className="block text-sm font-medium text-stone-700 mb-2">Workflow</legend>
-      <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <FlowOption
           name="Standard"
           description="Full pipeline with all stages"
@@ -190,24 +189,28 @@ function FlowOption({ name, description, icon: Icon, isSelected, onClick }: Flow
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-start gap-3 px-3 py-2.5 rounded-panel-sm border text-left transition-colors ${
+      className={`flex flex-col items-start gap-1.5 px-3 py-2.5 rounded-panel-sm border text-left transition-colors ${
         isSelected
-          ? "border-orange-400 bg-orange-50"
-          : "border-stone-200 bg-white hover:border-stone-300"
+          ? "border-orange-400 bg-orange-50 dark:border-orange-500 dark:bg-orange-950"
+          : "border-stone-200 dark:border-stone-600 bg-white dark:bg-stone-800 hover:border-stone-300 dark:hover:border-stone-500"
       }`}
     >
-      {Icon && (
-        <Icon
-          size={16}
-          className={`mt-0.5 flex-shrink-0 ${isSelected ? "text-orange-600" : "text-stone-400"}`}
-        />
-      )}
-      <div className="min-w-0">
-        <div className={`text-sm font-medium ${isSelected ? "text-orange-700" : "text-stone-700"}`}>
+      <div className="flex items-center gap-2">
+        {Icon && (
+          <Icon
+            size={16}
+            className={`flex-shrink-0 ${isSelected ? "text-orange-600 dark:text-orange-400" : "text-stone-400 dark:text-stone-500"}`}
+          />
+        )}
+        <span
+          className={`text-sm font-medium ${isSelected ? "text-orange-700 dark:text-orange-300" : "text-stone-700 dark:text-stone-200"}`}
+        >
           {name}
-        </div>
-        {description && <div className="text-xs text-stone-500 mt-0.5">{description}</div>}
+        </span>
       </div>
+      {description && (
+        <div className="text-xs text-stone-500 dark:text-stone-400 line-clamp-2">{description}</div>
+      )}
     </button>
   );
 }

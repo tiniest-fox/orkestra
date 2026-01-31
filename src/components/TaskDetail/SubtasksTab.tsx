@@ -29,16 +29,14 @@ const progressSegments: { key: keyof SubtaskProgress; color: string }[] = [
 
 function ProgressBar({ progress }: { progress: SubtaskProgress }) {
   return (
-    <div className="mb-4">
+    <>
       <div className="flex justify-between text-xs text-stone-500 dark:text-stone-400 mb-1">
         <span>
           {progress.done}/{progress.total} done
         </span>
-        {progress.failed > 0 && (
-          <span className="text-error-600 dark:text-error-400">{progress.failed} failed</span>
-        )}
+        {progress.failed > 0 && <span className="text-error-600 dark:text-error-400">{progress.failed} failed</span>}
       </div>
-      <div className="h-1.5 bg-stone-200 dark:bg-stone-700 rounded-full overflow-hidden">
+      <div className="h-1.5 bg-stone-200 dark:bg-stone-700 rounded-full overflow-hidden mb-4">
         <div className="h-full flex">
           {progressSegments.map(
             ({ key, color }) =>
@@ -52,16 +50,11 @@ function ProgressBar({ progress }: { progress: SubtaskProgress }) {
           )}
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
-export function SubtasksTab({
-  subtasks,
-  progress,
-  selectedSubtaskId,
-  onSelectSubtask,
-}: SubtasksTabProps) {
+export function SubtasksTab({ subtasks, progress, selectedSubtaskId, onSelectSubtask }: SubtasksTabProps) {
   // Build id → short_id lookup for resolving dependency labels
   const shortIdById = new Map(subtasks.map((s) => [s.id, s.short_id ?? s.id]));
   // Track which subtasks are done so we only show unresolved dependencies
@@ -74,7 +67,7 @@ export function SubtasksTab({
       {subtasks.length === 0 ? (
         <div className="text-stone-500 dark:text-stone-400 text-sm">No subtasks.</div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2 flex flex-col items-stretch">
           {subtasks.map((subtask) => (
             <TaskCard
               key={subtask.id}

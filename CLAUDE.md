@@ -200,8 +200,8 @@ These docs trace operations that span multiple files. Read these instead of expl
 | Flow | Documentation | Key Files |
 |------|--------------|-----------|
 | **Stage execution** (orchestrator -> spawn -> prompt -> output) | [`docs/flows/stage-execution.md`](docs/flows/stage-execution.md) | `orchestrator.rs`, `stage_execution.rs`, `agent_execution.rs`, `agent_actions.rs`, `prompt.rs` |
-| **Task integration** (merge, conflict recovery, cleanup) | `docs/flows/task-integration.md` (planned) | `orchestrator.rs`, `integration.rs`, `git2.rs` |
-| **Subtask lifecycle** (breakdown, creation, deps, parent advance) | `docs/flows/subtask-lifecycle.md` (planned) | `agent_actions.rs`, `human_actions.rs`, `subtask_service.rs`, `orchestrator.rs` |
+| **Task integration** (merge, conflict recovery, cleanup) | [`docs/flows/task-integration.md`](docs/flows/task-integration.md) | `orchestrator.rs`, `integration.rs`, `git_service.rs` |
+| **Subtask lifecycle** (breakdown, creation, deps, parent advance) | [`docs/flows/subtask-lifecycle.md`](docs/flows/subtask-lifecycle.md) | `agent_actions.rs`, `human_actions.rs`, `subtask_service.rs`, `orchestrator.rs` |
 
 ## Architecture Overview
 

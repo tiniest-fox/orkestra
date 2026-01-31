@@ -2,7 +2,18 @@
  * Task card for the kanban board.
  */
 
-import { AlertCircle, Eye, GitBranch, Hand, Layers, MessageCircle, XCircle, Zap } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  AlertCircle,
+  CircleCheck,
+  Eye,
+  GitBranch,
+  Hand,
+  Layers,
+  MessageCircle,
+  XCircle,
+  Zap,
+} from "lucide-react";
 import { useWorkflowConfig } from "../../providers/WorkflowConfigProvider";
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
@@ -86,6 +97,7 @@ export function TaskCard({
   const hasTitle = !!task.title;
   const isSubtask = variant === "subtask";
   const hasUnresolvedDeps = isSubtask && !!dependencyNames && dependencyNames.length > 0;
+  const collapseDone = isSubtask && isDone;
 
   const isSettingUp = task.phase === "setting_up";
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
@@ -117,7 +129,7 @@ export function TaskCard({
     <Panel as="button" autoFill={false} padded onClick={onClick} className={borderClass}>
       <div className="flex items-start justify-between gap-2">
         <h3
-          className={`font-medium text-sm line-clamp-2 ${hasTitle ? "text-stone-800 dark:text-stone-100" : "text-stone-400 dark:text-stone-500"}`}
+          className={`font-medium text-sm line-clamp-2 ${collapseDone ? "text-stone-500 dark:text-stone-400" : hasTitle ? "text-stone-800 dark:text-stone-100" : "text-stone-400 dark:text-stone-500"}`}
         >
           {isSubtask && task.short_id && (
             <span className="text-stone-400 dark:text-stone-500 font-mono font-normal mr-1.5">
@@ -169,6 +181,11 @@ export function TaskCard({
               <Hand className="w-4 h-4 text-stone-500 dark:text-stone-400" />
             </span>
           )}
+          {collapseDone && (
+            <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.done.icon}`}>
+              <CircleCheck className="w-4 h-4" />
+            </span>
+          )}
           {derived.is_waiting_on_children &&
             ((derived.subtask_progress?.has_questions ?? 0) > 0 ? (
               <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.questions.icon}`}>
@@ -188,34 +205,49 @@ export function TaskCard({
         </div>
       </div>
 
-      {task.description && hasTitle && (
+      {/* Board variant: description always visible */}
+      {!isSubtask && task.description && hasTitle && (
         <p className="text-stone-500 dark:text-stone-400 text-xs mt-1 line-clamp-2">
           {task.description}
         </p>
       )}
 
-      {isSubtask && (
-        <div className="mt-1.5 flex items-center justify-between gap-2">
-          <div>
-            {isDone ? (
-              <Badge variant="done">Done</Badge>
-            ) : isFailed ? (
-              <Badge variant="failed">Failed</Badge>
-            ) : isBlocked ? (
-              <Badge variant="blocked">Blocked</Badge>
-            ) : derived.current_stage ? (
-              <Badge colorClass={stageColors[derived.current_stage]?.badge}>
-                {titleCase(derived.current_stage)}
-              </Badge>
-            ) : null}
-          </div>
-          {dependencyNames && dependencyNames.length > 0 && (
-            <span className="text-stone-400 dark:text-stone-500 text-xs font-mono truncate">
-              Depends on {dependencyNames.join(", ")}
-            </span>
-          )}
-        </div>
-      )}
+      {/* Subtask variant: description + stage row collapse when done */}
+      <AnimatePresence initial={false}>
+        {isSubtask && !isDone && (
+          <motion.div
+            key="subtask-details"
+            initial={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+            style={{ overflow: "hidden" }}
+          >
+            {task.description && hasTitle && (
+              <p className="text-stone-500 dark:text-stone-400 text-xs mt-1 line-clamp-2">
+                {task.description}
+              </p>
+            )}
+            <div className="mt-1.5 flex items-center justify-between gap-2">
+              <div>
+                {isFailed ? (
+                  <Badge variant="failed">Failed</Badge>
+                ) : isBlocked ? (
+                  <Badge variant="blocked">Blocked</Badge>
+                ) : derived.current_stage ? (
+                  <Badge colorClass={stageColors[derived.current_stage]?.badge}>
+                    {titleCase(derived.current_stage)}
+                  </Badge>
+                ) : null}
+              </div>
+              {dependencyNames && dependencyNames.length > 0 && (
+                <span className="text-stone-400 dark:text-stone-500 text-xs font-mono truncate">
+                  Depends on {dependencyNames.join(", ")}
+                </span>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {!isSubtask && derived.subtask_progress && (
         <SubtaskProgressBar progress={derived.subtask_progress} />

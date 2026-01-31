@@ -667,12 +667,7 @@ impl Default for WorkflowConfig {
                     },
                     FlowStageEntry {
                         stage_name: "review".to_string(),
-                        overrides: Some(FlowStageOverride {
-                            prompt: None,
-                            capabilities: Some(StageCapabilities::with_restage(
-                                vec!["work".into()],
-                            )),
-                        }),
+                        overrides: None,
                     },
                 ],
             },
@@ -1172,9 +1167,7 @@ flows:
     description: Simplified pipeline for subtasks
     stages:
       - work
-      - review:
-          capabilities:
-            supports_restage: [work]
+      - review
 integration:
   on_failure: work
 ";

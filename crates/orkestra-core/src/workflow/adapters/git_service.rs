@@ -612,7 +612,11 @@ impl GitService for Git2GitService {
     fn is_branch_merged(&self, branch_name: &str, target_branch: &str) -> Result<bool, GitError> {
         // Check if the branch still exists
         let verify_output = Command::new("git")
-            .args(["rev-parse", "--verify", &format!("refs/heads/{branch_name}")])
+            .args([
+                "rev-parse",
+                "--verify",
+                &format!("refs/heads/{branch_name}"),
+            ])
             .current_dir(&self.repo_path)
             .output()
             .map_err(|e| GitError::IoError(format!("Failed to check branch existence: {e}")))?;

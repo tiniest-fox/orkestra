@@ -496,6 +496,7 @@ pub mod workflows {
                 }),
             ],
             integration: IntegrationConfig::default(),
+            flows: std::collections::HashMap::new(),
         }
     }
 
@@ -514,6 +515,7 @@ pub mod workflows {
                 }),
             ],
             integration: IntegrationConfig::default(),
+            flows: std::collections::HashMap::new(),
         }
     }
 }

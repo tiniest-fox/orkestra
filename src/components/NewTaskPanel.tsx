@@ -21,7 +21,12 @@ const ICON_MAP: Record<string, LucideIcon> = {
 
 interface NewTaskPanelProps {
   onClose: () => void;
-  onSubmit: (description: string, autoMode: boolean, baseBranch: string | null, flow?: string) => Promise<void>;
+  onSubmit: (
+    description: string,
+    autoMode: boolean,
+    baseBranch: string | null,
+    flow?: string,
+  ) => Promise<void>;
 }
 
 export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {

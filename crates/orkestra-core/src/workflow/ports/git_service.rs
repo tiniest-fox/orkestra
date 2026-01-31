@@ -388,7 +388,11 @@ pub mod mock {
             Ok(self.worktrees.lock().unwrap().keys().cloned().collect())
         }
 
-        fn is_branch_merged(&self, branch_name: &str, _target_branch: &str) -> Result<bool, GitError> {
+        fn is_branch_merged(
+            &self,
+            branch_name: &str,
+            _target_branch: &str,
+        ) -> Result<bool, GitError> {
             if let Some(&merged) = self.merged_branches.lock().unwrap().get(branch_name) {
                 return Ok(merged);
             }

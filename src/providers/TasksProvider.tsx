@@ -99,7 +99,13 @@ export function TasksProvider({ children }: TasksProviderProps) {
   }, [fetchTasks]);
 
   const createTask = useCallback(
-    async (title: string, description: string, autoMode?: boolean, baseBranch?: string | null, flow?: string) => {
+    async (
+      title: string,
+      description: string,
+      autoMode?: boolean,
+      baseBranch?: string | null,
+      flow?: string,
+    ) => {
       const newTask = await invoke<WorkflowTask>("workflow_create_task", {
         title,
         description,

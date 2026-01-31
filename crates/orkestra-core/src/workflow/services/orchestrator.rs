@@ -558,11 +558,7 @@ impl OrchestratorLoop {
 
                     match api.integration_succeeded(&task.id) {
                         Ok(_) => {
-                            orkestra_debug!(
-                                "recovery",
-                                "Archived already-merged task {}",
-                                task.id
-                            );
+                            orkestra_debug!("recovery", "Archived already-merged task {}", task.id);
                             events.push(OrchestratorEvent::IntegrationCompleted {
                                 task_id: task.id.clone(),
                             });
@@ -641,10 +637,7 @@ impl OrchestratorLoop {
     /// - The branch's commits are all reachable from the target
     ///
     /// Returns `false` if the branch has unmerged commits or if the check fails.
-    fn is_branch_already_merged(
-        api: &WorkflowApi,
-        task: &crate::workflow::domain::Task,
-    ) -> bool {
+    fn is_branch_already_merged(api: &WorkflowApi, task: &crate::workflow::domain::Task) -> bool {
         let Some(ref git) = api.git_service else {
             return true; // No git = nothing to merge
         };

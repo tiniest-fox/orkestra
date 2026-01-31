@@ -1177,13 +1177,13 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
 /// 4. On restart, recovery detects the branch is merged and archives directly
 #[test]
 fn test_recovery_archives_already_merged_task() {
-    use orkestra_core::workflow::{
-        config::StageConfig, OrchestratorEvent,
-    };
+    use orkestra_core::workflow::{config::StageConfig, OrchestratorEvent};
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary"),
-        StageConfig::new("review", "verdict").automated(),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .automated(),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
@@ -1267,9 +1267,9 @@ fn test_recovery_archives_already_merged_task() {
     );
 
     // Verify IntegrationCompleted event was emitted
-    let completed = events.iter().any(|e| {
-        matches!(e, OrchestratorEvent::IntegrationCompleted { task_id: id } if id == &task_id)
-    });
+    let completed = events.iter().any(
+        |e| matches!(e, OrchestratorEvent::IntegrationCompleted { task_id: id } if id == &task_id),
+    );
     assert!(
         completed,
         "Should have emitted IntegrationCompleted event. Events: {events:?}"
@@ -1290,13 +1290,13 @@ fn test_recovery_archives_already_merged_task() {
 /// branch has unmerged commits. Recovery should re-attempt the full integration.
 #[test]
 fn test_recovery_retries_unmerged_task() {
-    use orkestra_core::workflow::{
-        config::StageConfig, OrchestratorEvent,
-    };
+    use orkestra_core::workflow::{config::StageConfig, OrchestratorEvent};
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary"),
-        StageConfig::new("review", "verdict").automated(),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .automated(),
     ]);
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
@@ -1346,9 +1346,9 @@ fn test_recovery_retries_unmerged_task() {
     );
 
     // Verify IntegrationCompleted event was emitted
-    let completed = events.iter().any(|e| {
-        matches!(e, OrchestratorEvent::IntegrationCompleted { task_id: id } if id == &task_id)
-    });
+    let completed = events.iter().any(
+        |e| matches!(e, OrchestratorEvent::IntegrationCompleted { task_id: id } if id == &task_id),
+    );
     assert!(
         completed,
         "Should have emitted IntegrationCompleted event. Events: {events:?}"

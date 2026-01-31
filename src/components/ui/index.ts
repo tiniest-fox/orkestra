@@ -23,3 +23,5 @@ export { Panel } from "./Panel/Panel";
 export { PanelContainer } from "./PanelContainer";
 export { PanelSlot } from "./PanelSlot";
 export { TabbedPanel } from "./TabbedPanel";
+export { taskStateColors } from "./taskStateColors";
+export type { StateColorSet, TaskState } from "./taskStateColors";

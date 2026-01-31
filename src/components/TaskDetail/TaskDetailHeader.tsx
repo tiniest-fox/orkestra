@@ -142,12 +142,12 @@ export function TaskDetailHeader({
 
   const statusBadgeVariant =
     task.status.type === "done"
-      ? "success"
+      ? "done"
       : task.status.type === "failed"
-        ? "error"
+        ? "failed"
         : task.status.type === "blocked"
-          ? "warning"
-          : "neutral";
+          ? "blocked"
+          : "waiting";
 
   const statusLabel =
     task.status.type === "active"
@@ -201,8 +201,8 @@ export function TaskDetailHeader({
       <div className="flex items-center gap-2 flex-wrap">
         <span className="font-mono text-sm text-stone-500 dark:text-stone-400">{task.id}</span>
         <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
-        {hasQuestions && <Badge variant="info">Questions</Badge>}
-        {needsReview && <Badge variant="warning">Review</Badge>}
+        {hasQuestions && <Badge variant="questions">Questions</Badge>}
+        {needsReview && <Badge variant="review">Review</Badge>}
 
         <label className="flex items-center gap-1.5 ml-auto cursor-pointer select-none">
           <button

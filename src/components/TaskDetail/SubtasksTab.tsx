@@ -7,6 +7,7 @@
 
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
 import { TaskCard } from "../Kanban/TaskCard";
+import { taskStateColors } from "../ui";
 
 interface SubtasksTabProps {
   subtasks: WorkflowTaskView[];
@@ -16,14 +17,14 @@ interface SubtasksTabProps {
 }
 
 /** Per-state segment colors for the subtask progress bar. */
-const progressSegments: { key: keyof SubtaskProgress; className: string }[] = [
-  { key: "done", className: "bg-success-500 dark:bg-success-400" },
-  { key: "working", className: "bg-orange-400 dark:bg-orange-500" },
-  { key: "has_questions", className: "bg-info-400 dark:bg-info-500" },
-  { key: "needs_review", className: "bg-warning-400 dark:bg-warning-500" },
-  { key: "blocked", className: "bg-warning-300 dark:bg-warning-600" },
-  { key: "failed", className: "bg-error-500 dark:bg-error-400" },
-  { key: "waiting", className: "bg-stone-300 dark:bg-stone-600" },
+const progressSegments: { key: keyof SubtaskProgress; color: string }[] = [
+  { key: "done", color: taskStateColors.done.bg },
+  { key: "working", color: taskStateColors.working.bg },
+  { key: "has_questions", color: taskStateColors.questions.bg },
+  { key: "needs_review", color: taskStateColors.review.bg },
+  { key: "blocked", color: taskStateColors.blocked.bg },
+  { key: "failed", color: taskStateColors.failed.bg },
+  { key: "waiting", color: taskStateColors.waiting.bg },
 ];
 
 function ProgressBar({ progress }: { progress: SubtaskProgress }) {
@@ -40,11 +41,11 @@ function ProgressBar({ progress }: { progress: SubtaskProgress }) {
       <div className="h-1.5 bg-stone-200 dark:bg-stone-700 rounded-full overflow-hidden">
         <div className="h-full flex">
           {progressSegments.map(
-            ({ key, className }) =>
+            ({ key, color }) =>
               progress[key] > 0 && (
                 <div
                   key={key}
-                  className={`${className} transition-all duration-300`}
+                  className={`${color} transition-all duration-300`}
                   style={{ width: `${(progress[key] / progress.total) * 100}%` }}
                 />
               ),

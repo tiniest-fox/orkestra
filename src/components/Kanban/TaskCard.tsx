@@ -5,7 +5,7 @@
 import { AlertCircle, Eye, GitBranch, Layers, MessageCircle, XCircle, Zap } from "lucide-react";
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
-import { Badge, Panel } from "../ui";
+import { Badge, Panel, taskStateColors } from "../ui";
 
 interface TaskCardProps {
   task: WorkflowTaskView;
@@ -18,14 +18,14 @@ interface TaskCardProps {
 }
 
 /** Per-state segment colors for the subtask progress bar. */
-const progressSegments: { key: keyof SubtaskProgress; className: string }[] = [
-  { key: "done", className: "bg-success-500 dark:bg-success-400" },
-  { key: "working", className: "bg-orange-400 dark:bg-orange-500" },
-  { key: "has_questions", className: "bg-info-400 dark:bg-info-500" },
-  { key: "needs_review", className: "bg-warning-400 dark:bg-warning-500" },
-  { key: "blocked", className: "bg-warning-300 dark:bg-warning-600" },
-  { key: "failed", className: "bg-error-500 dark:bg-error-400" },
-  { key: "waiting", className: "bg-stone-300 dark:bg-stone-600" },
+const progressSegments: { key: keyof SubtaskProgress; color: string }[] = [
+  { key: "done", color: taskStateColors.done.bg },
+  { key: "working", color: taskStateColors.working.bg },
+  { key: "has_questions", color: taskStateColors.questions.bg },
+  { key: "needs_review", color: taskStateColors.review.bg },
+  { key: "blocked", color: taskStateColors.blocked.bg },
+  { key: "failed", color: taskStateColors.failed.bg },
+  { key: "waiting", color: taskStateColors.waiting.bg },
 ];
 
 function SubtaskProgressBar({ progress }: { progress: SubtaskProgress }) {
@@ -40,11 +40,11 @@ function SubtaskProgressBar({ progress }: { progress: SubtaskProgress }) {
       <div className="h-1 bg-stone-200 dark:bg-stone-700 rounded-full overflow-hidden">
         <div className="h-full flex">
           {progressSegments.map(
-            ({ key, className }) =>
+            ({ key, color }) =>
               progress[key] > 0 && (
                 <div
                   key={key}
-                  className={`${className} transition-all duration-300`}
+                  className={`${color} transition-all duration-300`}
                   style={{ width: `${(progress[key] / progress.total) * 100}%` }}
                 />
               ),
@@ -136,13 +136,13 @@ export function TaskCard({
             </span>
           )}
           {hasQuestions && (
-            <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
-              <MessageCircle className="w-4 h-4 text-info-600 dark:text-info-300" />
+            <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.questions.icon}`}>
+              <MessageCircle className="w-4 h-4" />
             </span>
           )}
           {taskNeedsReview && !hasQuestions && (
-            <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
-              <Eye className="w-4 h-4 text-warning-700 dark:text-warning-300" />
+            <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.review.icon}`}>
+              <Eye className="w-4 h-4" />
             </span>
           )}
           {showSpinner && !task.auto_mode && (
@@ -151,28 +151,28 @@ export function TaskCard({
             </span>
           )}
           {isFailed && (
-            <span className="flex-shrink-0 p-1.5 rounded-md bg-error-100 dark:bg-error-900">
-              <XCircle className="w-4 h-4 text-error-600 dark:text-error-300" />
+            <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.failed.icon}`}>
+              <XCircle className="w-4 h-4" />
             </span>
           )}
           {isBlocked && (
-            <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
-              <AlertCircle className="w-4 h-4 text-warning-600 dark:text-warning-300" />
+            <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.blocked.icon}`}>
+              <AlertCircle className="w-4 h-4" />
             </span>
           )}
           {derived.is_waiting_on_children &&
             ((derived.subtask_progress?.has_questions ?? 0) > 0 ? (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
-                <MessageCircle className="w-4 h-4 text-info-600 dark:text-info-300" />
+              <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.questions.icon}`}>
+                <MessageCircle className="w-4 h-4" />
               </span>
             ) : (derived.subtask_progress?.needs_review ?? 0) > 0 ? (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
-                <Eye className="w-4 h-4 text-warning-700 dark:text-warning-300" />
+              <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.review.icon}`}>
+                <Eye className="w-4 h-4" />
               </span>
             ) : (
-              <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
+              <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.waiting.icon}`}>
                 <Layers
-                  className={`w-4 h-4 text-info-600 dark:text-info-300 ${(derived.subtask_progress?.working ?? 0) > 0 ? "animate-spin-bounce" : ""}`}
+                  className={`w-4 h-4 ${(derived.subtask_progress?.working ?? 0) > 0 ? "animate-spin-bounce" : ""}`}
                 />
               </span>
             ))}
@@ -189,13 +189,13 @@ export function TaskCard({
         <div className="mt-1.5 flex items-center justify-between gap-2">
           <div>
             {isDone ? (
-              <Badge variant="success">Done</Badge>
+              <Badge variant="done">Done</Badge>
             ) : isFailed ? (
-              <Badge variant="error">Failed</Badge>
+              <Badge variant="failed">Failed</Badge>
             ) : isBlocked ? (
               <Badge variant="blocked">Blocked</Badge>
             ) : derived.current_stage ? (
-              <Badge variant="info">{titleCase(derived.current_stage)}</Badge>
+              <Badge variant="working">{titleCase(derived.current_stage)}</Badge>
             ) : null}
           </div>
           {dependencyNames && dependencyNames.length > 0 && (

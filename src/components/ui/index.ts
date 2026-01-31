@@ -23,5 +23,7 @@ export { Panel } from "./Panel/Panel";
 export { PanelContainer } from "./PanelContainer";
 export { PanelSlot } from "./PanelSlot";
 export { TabbedPanel } from "./TabbedPanel";
+export { buildStageColorMap, STAGE_PALETTE } from "./stageColors";
+export type { StageColorSet } from "./stageColors";
 export { taskStateColors } from "./taskStateColors";
 export type { StateColorSet, TaskState } from "./taskStateColors";

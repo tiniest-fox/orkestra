@@ -3,9 +3,10 @@
  */
 
 import { AlertCircle, Eye, GitBranch, Layers, MessageCircle, XCircle, Zap } from "lucide-react";
+import { useWorkflowConfig } from "../../providers/WorkflowConfigProvider";
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
-import { Badge, Panel, taskStateColors } from "../ui";
+import { Badge, buildStageColorMap, Panel, taskStateColors } from "../ui";
 
 interface TaskCardProps {
   task: WorkflowTaskView;
@@ -73,6 +74,8 @@ export function TaskCard({
   variant = "board",
   dependencyNames,
 }: TaskCardProps) {
+  const config = useWorkflowConfig();
+  const stageColors = buildStageColorMap(config);
   const { derived } = task;
   const isFailed = derived.is_failed;
   const isBlocked = derived.is_blocked;
@@ -195,7 +198,9 @@ export function TaskCard({
             ) : isBlocked ? (
               <Badge variant="blocked">Blocked</Badge>
             ) : derived.current_stage ? (
-              <Badge variant="working">{titleCase(derived.current_stage)}</Badge>
+              <Badge colorClass={stageColors[derived.current_stage]?.badge}>
+                {titleCase(derived.current_stage)}
+              </Badge>
             ) : null}
           </div>
           {dependencyNames && dependencyNames.length > 0 && (

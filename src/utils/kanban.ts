@@ -2,6 +2,7 @@
  * Kanban board utilities.
  */
 
+import { STAGE_PALETTE } from "../components/ui/stageColors";
 import type { WorkflowConfig, WorkflowTaskView } from "../types/workflow";
 import { titleCase } from "./formatters";
 
@@ -18,20 +19,6 @@ export interface KanbanColumn {
 }
 
 /**
- * Color palette for stage columns - orange to purple gradient.
- */
-const STAGE_COLORS = [
-  "bg-orange-500",
-  "bg-orange-400",
-  "bg-purple-400",
-  "bg-purple-500",
-  "bg-purple-600",
-  "bg-purple-700",
-  "bg-purple-800",
-  "bg-stone-500",
-];
-
-/**
  * Build columns from workflow config.
  * Returns stage columns plus terminal state columns.
  */
@@ -43,7 +30,7 @@ export function buildColumns(config: WorkflowConfig): KanbanColumn[] {
     columns.push({
       id: stage.name,
       label: stage.display_name || titleCase(stage.name),
-      color: STAGE_COLORS[index % STAGE_COLORS.length],
+      color: STAGE_PALETTE[index % STAGE_PALETTE.length].dot,
     });
   });
 

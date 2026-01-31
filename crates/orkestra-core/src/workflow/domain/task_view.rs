@@ -396,23 +396,23 @@ mod tests {
             vec![Question::new("How?")],
         ));
         iter_q.ended_at = Some("now".to_string());
-        let sub_q_derived = DerivedTaskState::build(&sub_q, &[iter_q], &[], &[]);
+        let derived_questions = DerivedTaskState::build(&sub_q, &[iter_q], &[], &[]);
 
         // Subtask awaiting review
         let mut sub_r = Task::new("sub-r", "R", "Desc", "work", "now");
         sub_r.phase = Phase::AwaitingReview;
-        let sub_r_derived = DerivedTaskState::build(&sub_r, &[], &[], &[]);
+        let derived_review = DerivedTaskState::build(&sub_r, &[], &[], &[]);
 
         // Subtask working
         let mut sub_w = Task::new("sub-w", "W", "Desc", "work", "now");
         sub_w.phase = Phase::AgentWorking;
-        let sub_w_derived = DerivedTaskState::build(&sub_w, &[], &[], &[]);
+        let derived_working = DerivedTaskState::build(&sub_w, &[], &[], &[]);
 
         let derived = DerivedTaskState::build(
             &parent,
             &[],
             &[],
-            &[sub_q_derived, sub_r_derived, sub_w_derived],
+            &[derived_questions, derived_review, derived_working],
         );
 
         let progress = derived.subtask_progress.unwrap();

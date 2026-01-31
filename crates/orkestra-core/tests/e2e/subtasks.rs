@@ -375,6 +375,7 @@ fn test_parent_advances_when_all_subtasks_done() {
 // =============================================================================
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn test_diamond_dependency_orchestration() {
     let workflow = workflows::with_subtasks();
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);

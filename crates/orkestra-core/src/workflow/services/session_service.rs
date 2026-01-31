@@ -640,8 +640,8 @@ mod tests {
 
     #[test]
     fn test_mark_trigger_delivered() {
-        let (service, store) = create_service();
         use crate::workflow::domain::IterationTrigger;
+        let (service, store) = create_service();
 
         // Create session and iteration
         service.on_spawn_starting("task-1", "work").unwrap();
@@ -672,8 +672,8 @@ mod tests {
 
     #[test]
     fn test_mark_trigger_delivered_noop_when_already_delivered() {
-        let (service, store) = create_service();
         use crate::workflow::domain::IterationTrigger;
+        let (service, store) = create_service();
 
         service.on_spawn_starting("task-1", "work").unwrap();
 

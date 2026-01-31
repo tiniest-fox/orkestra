@@ -237,6 +237,7 @@ pub fn generate_short_id(task_id: &str, existing: &[Option<String>]) -> String {
         attempt.hash(&mut hasher);
         let mut h = hasher.finish();
 
+        #[allow(clippy::cast_possible_truncation)]
         let id: String = (0..4)
             .map(|_| {
                 let c = SHORT_ID_CHARS[h as usize % base] as char;

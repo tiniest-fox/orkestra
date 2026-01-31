@@ -69,23 +69,28 @@ What fixed it?
 How do we avoid this in the future?
 ```
 
-### Nested `CLAUDE.md` files
-For module-specific guidance that agents should know when working in that area.
-- `src/api/CLAUDE.md` — API layer patterns
-- `src/workflow/CLAUDE.md` — Workflow module conventions
+### `docs/flows/<operation>.md`
+For cross-cutting operations that span multiple files. These trace the full path through the code (which files, in what order) for complex flows. Existing flow docs:
+- `docs/flows/stage-execution.md` — Orchestrator → spawn → prompt → output
+- `docs/flows/task-integration.md` — Merge, conflict recovery, cleanup
+- `docs/flows/subtask-lifecycle.md` — Breakdown, creation, deps, parent advance
+
+Update these when the operation's file involvement or step order changes. Don't create new flow docs for simple operations — these are for multi-file flows where knowing the file sequence saves significant exploration time.
+
+### Subdirectory `CLAUDE.md` files
+For directory-specific guidance that agents should know when working in that area.
+- `src/CLAUDE.md` — Frontend component structure, hooks, styling, state management
+- `src-tauri/CLAUDE.md` — Tauri command organization, state management, error handling
 
 Keep these focused: 5-15 lines of high-signal guidance, not exhaustive documentation.
 
 ### Root `CLAUDE.md`
 For project-wide patterns and architectural decisions. Update existing sections rather than adding new ones when possible.
 
-### `README.md` files
-For public-facing documentation of a module or directory. Use when the guidance is relevant to humans, not just agents.
-
 ### Code comments
 For non-obvious logic in specific files. Add comments that explain *why*, not *what*.
 
-**Preference order**: More local is better. A note in `src/api/CLAUDE.md` is more discoverable than one buried in the root `CLAUDE.md`.
+**Preference order**: For module/directory guidance, more local is better — `src/CLAUDE.md` over root `CLAUDE.md`. For cross-cutting operations, use `docs/flows/`. Code comments for non-obvious logic in specific files.
 
 ## Output
 

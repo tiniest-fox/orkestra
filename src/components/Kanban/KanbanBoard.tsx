@@ -24,7 +24,7 @@ export function KanbanBoard({ config, tasks, selectedTaskId, onSelectTask }: Kan
       <div />
       <LayoutGroup>
         {columns.map((column) => {
-          const columnTasks = getTasksForColumn(visibleTasks, column.id, config);
+          const columnTasks = getTasksForColumn(visibleTasks, column.id);
           return (
             <KanbanColumn
               key={column.id}

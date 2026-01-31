@@ -4,7 +4,6 @@
 //! orchestration → parent completion detection.
 
 use orkestra_core::workflow::execution::SubtaskOutput;
-use orkestra_core::workflow::runtime::Status;
 
 use super::helpers::{workflows, MockAgentOutput, TestEnv};
 
@@ -69,7 +68,7 @@ fn test_breakdown_approval_creates_subtasks() {
     // Approve the breakdown - this should create subtasks
     let parent = env.api().approve(&parent.id).unwrap();
     assert!(
-        matches!(parent.status, Status::WaitingOnChildren),
+        parent.status.is_waiting_on_children(),
         "Parent should be WaitingOnChildren, got: {:?}",
         parent.status
     );
@@ -367,6 +366,226 @@ fn test_parent_advances_when_all_subtasks_done() {
         parent.current_stage(),
         Some("work"),
         "Parent should advance to 'work' stage after all subtasks complete. Status: {:?}",
+        parent.status
+    );
+}
+
+// =============================================================================
+// Diamond Dependency Pattern (Fan-Out / Fan-In)
+// =============================================================================
+
+#[test]
+fn test_diamond_dependency_orchestration() {
+    let workflow = workflows::with_subtasks();
+    let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    // Setup: Create parent and get through planning + breakdown
+    let parent = env.create_task("Diamond feature", "Build with diamond deps", None);
+
+    env.set_output(
+        &parent.id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Plan".into(),
+        },
+    );
+    env.tick_until_settled();
+    let _ = env.api().approve(&parent.id).unwrap();
+
+    // Breakdown: diamond pattern A → B,C → D
+    env.set_output(
+        &parent.id,
+        MockAgentOutput::Subtasks {
+            subtasks: vec![
+                SubtaskOutput {
+                    title: "Node A".into(),
+                    description: "Root node, no deps".into(),
+                    depends_on: vec![],
+                },
+                SubtaskOutput {
+                    title: "Node B".into(),
+                    description: "Depends on A".into(),
+                    depends_on: vec![0],
+                },
+                SubtaskOutput {
+                    title: "Node C".into(),
+                    description: "Depends on A".into(),
+                    depends_on: vec![0],
+                },
+                SubtaskOutput {
+                    title: "Node D".into(),
+                    description: "Depends on B and C (fan-in)".into(),
+                    depends_on: vec![1, 2],
+                },
+            ],
+            skip_reason: None,
+        },
+    );
+    env.tick_until_settled();
+    let _ = env.api().approve(&parent.id).unwrap();
+
+    // Find subtasks by title (order is nondeterministic)
+    let subtasks = env.api().list_subtasks(&parent.id).unwrap();
+    assert_eq!(subtasks.len(), 4, "Should have 4 subtasks");
+
+    let node_a = subtasks.iter().find(|s| s.title == "Node A").unwrap();
+    let node_b = subtasks.iter().find(|s| s.title == "Node B").unwrap();
+    let node_c = subtasks.iter().find(|s| s.title == "Node C").unwrap();
+    let node_d = subtasks.iter().find(|s| s.title == "Node D").unwrap();
+
+    let id_a = node_a.id.clone();
+    let id_b = node_b.id.clone();
+    let id_c = node_c.id.clone();
+    let id_d = node_d.id.clone();
+
+    // Verify dependency structure
+    assert!(node_a.depends_on.is_empty(), "A should have no deps");
+    assert_eq!(node_b.depends_on, vec![id_a.clone()], "B depends on A");
+    assert_eq!(node_c.depends_on, vec![id_a.clone()], "C depends on A");
+    assert!(node_d.depends_on.contains(&id_b), "D depends on B");
+    assert!(node_d.depends_on.contains(&id_c), "D depends on C");
+    assert_eq!(node_d.depends_on.len(), 2, "D has exactly 2 deps");
+
+    // Wait for subtask setup to complete
+    for _ in 0..100 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let tasks: Vec<_> = [&id_a, &id_b, &id_c, &id_d]
+            .iter()
+            .map(|id| env.api().get_task(id).unwrap())
+            .collect();
+        if tasks
+            .iter()
+            .all(|t| t.phase != orkestra_core::workflow::runtime::Phase::SettingUp)
+        {
+            break;
+        }
+    }
+
+    // --- Phase 1: Only A should be eligible ---
+    let eligible = env.api().get_tasks_needing_agents().unwrap();
+    let eligible_ids: Vec<&str> = eligible.iter().map(|t| t.id.as_str()).collect();
+    assert!(eligible_ids.contains(&id_a.as_str()), "A should be eligible");
+    assert!(!eligible_ids.contains(&id_b.as_str()), "B should NOT be eligible (depends on A)");
+    assert!(!eligible_ids.contains(&id_c.as_str()), "C should NOT be eligible (depends on A)");
+    assert!(!eligible_ids.contains(&id_d.as_str()), "D should NOT be eligible (depends on B,C)");
+
+    // --- Phase 2: Complete A → B and C unblock ---
+    env.set_output(
+        &id_a,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "A done".into(),
+        },
+    );
+    env.tick_until_settled();
+    let _ = env.api().approve(&id_a).unwrap();
+
+    // Pre-set outputs for B and C (they'll be spawned after A's review completes)
+    env.set_output(
+        &id_b,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "B done".into(),
+        },
+    );
+    env.set_output(
+        &id_c,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "C done".into(),
+        },
+    );
+    env.set_output(
+        &id_a,
+        MockAgentOutput::Artifact {
+            name: "verdict".into(),
+            content: "A looks good".into(),
+        },
+    );
+    env.tick_until_settled();
+
+    // A should be Done (review is automated)
+    let a = env.api().get_task(&id_a).unwrap();
+    assert!(a.is_done(), "A should be Done, got: {:?}", a.status);
+
+    // B and C should be active (unblocked by A completing)
+    let b = env.api().get_task(&id_b).unwrap();
+    let c = env.api().get_task(&id_c).unwrap();
+    assert!(b.status.is_active(), "B should be active after A done, got: {:?}", b.status);
+    assert!(c.status.is_active(), "C should be active after A done, got: {:?}", c.status);
+
+    // D should still be blocked (B and C not done yet)
+    let eligible = env.api().get_tasks_needing_agents().unwrap();
+    let eligible_ids: Vec<&str> = eligible.iter().map(|t| t.id.as_str()).collect();
+    assert!(
+        !eligible_ids.contains(&id_d.as_str()),
+        "D should NOT be eligible while B and C are still active"
+    );
+
+    // --- Phase 3: Complete B and C → D unblocks ---
+    let _ = env.api().approve(&id_b).unwrap();
+    let _ = env.api().approve(&id_c).unwrap();
+
+    // Pre-set D's work output (it'll be spawned after B and C reviews complete)
+    env.set_output(
+        &id_d,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "D done".into(),
+        },
+    );
+    env.set_output(
+        &id_b,
+        MockAgentOutput::Artifact {
+            name: "verdict".into(),
+            content: "B looks good".into(),
+        },
+    );
+    env.set_output(
+        &id_c,
+        MockAgentOutput::Artifact {
+            name: "verdict".into(),
+            content: "C looks good".into(),
+        },
+    );
+    env.tick_until_settled();
+
+    let b = env.api().get_task(&id_b).unwrap();
+    let c = env.api().get_task(&id_c).unwrap();
+    assert!(b.is_done(), "B should be Done, got: {:?}", b.status);
+    assert!(c.is_done(), "C should be Done, got: {:?}", c.status);
+
+    // D should now be active (both deps satisfied)
+    let d = env.api().get_task(&id_d).unwrap();
+    assert!(
+        d.status.is_active(),
+        "D should be active after B and C done, got: {:?}",
+        d.status
+    );
+
+    // --- Phase 4: Complete D → parent advances ---
+    let _ = env.api().approve(&id_d).unwrap();
+
+    env.set_output(
+        &id_d,
+        MockAgentOutput::Artifact {
+            name: "verdict".into(),
+            content: "D looks good".into(),
+        },
+    );
+    env.tick_until_settled();
+
+    let d = env.api().get_task(&id_d).unwrap();
+    assert!(d.is_done(), "D should be Done, got: {:?}", d.status);
+
+    // Tick to trigger parent completion check
+    env.tick();
+
+    let parent = env.api().get_task(&parent.id).unwrap();
+    assert_eq!(
+        parent.current_stage(),
+        Some("work"),
+        "Parent should advance to 'work' after all diamond subtasks complete. Status: {:?}",
         parent.status
     );
 }

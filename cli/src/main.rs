@@ -381,7 +381,7 @@ fn format_status(status: &Status) -> String {
         Status::Active { stage } => format!("Active({stage})"),
         Status::Done => "Done".to_string(),
         Status::Archived => "Archived".to_string(),
-        Status::WaitingOnChildren => "Waiting".to_string(),
+        Status::WaitingOnChildren { stage } => format!("Waiting({stage})"),
         Status::Failed { error } => {
             let msg = error.as_deref().unwrap_or("unknown");
             format!("Failed: {}", msg.chars().take(20).collect::<String>())

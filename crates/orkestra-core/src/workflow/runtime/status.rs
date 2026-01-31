@@ -20,7 +20,14 @@ pub enum Status {
     },
 
     /// Task is waiting for child tasks to complete.
-    WaitingOnChildren,
+    ///
+    /// Retains the stage the parent will resume from once children finish,
+    /// so the kanban board can display it in the correct column.
+    WaitingOnChildren {
+        /// The stage the parent is logically in while waiting (typically the
+        /// stage after the breakdown stage, e.g. "work").
+        stage: String,
+    },
 
     /// Task completed successfully.
     Done,
@@ -66,10 +73,17 @@ impl Status {
         }
     }
 
-    /// Get the current stage name, if active.
+    /// Create a waiting-on-children status in the given stage.
+    pub fn waiting_on_children(stage: impl Into<String>) -> Self {
+        Self::WaitingOnChildren {
+            stage: stage.into(),
+        }
+    }
+
+    /// Get the current stage name, if active or waiting on children.
     pub fn stage(&self) -> Option<&str> {
         match self {
-            Status::Active { stage } => Some(stage),
+            Status::Active { stage } | Status::WaitingOnChildren { stage } => Some(stage),
             _ => None,
         }
     }
@@ -99,7 +113,7 @@ impl Status {
 
     /// Check if the task is waiting for children.
     pub fn is_waiting_on_children(&self) -> bool {
-        matches!(self, Status::WaitingOnChildren)
+        matches!(self, Status::WaitingOnChildren { .. })
     }
 }
 
@@ -111,7 +125,9 @@ impl std::fmt::Display for Status {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Status::Active { stage } => write!(f, "{stage}"),
-            Status::WaitingOnChildren => write!(f, "waiting_on_children"),
+            Status::WaitingOnChildren { stage } => {
+                write!(f, "waiting_on_children ({stage})")
+            }
             Status::Done => write!(f, "done"),
             Status::Archived => write!(f, "archived"),
             Status::Failed { error } => {
@@ -223,10 +239,11 @@ mod tests {
 
     #[test]
     fn test_waiting_on_children() {
-        let status = Status::WaitingOnChildren;
+        let status = Status::waiting_on_children("work");
         assert!(!status.is_active());
         assert!(!status.is_terminal());
         assert!(status.is_waiting_on_children());
+        assert_eq!(status.stage(), Some("work"));
     }
 
     #[test]

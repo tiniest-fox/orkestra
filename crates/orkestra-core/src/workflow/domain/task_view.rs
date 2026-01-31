@@ -325,7 +325,7 @@ mod tests {
     #[test]
     fn test_derived_state_with_subtask_progress() {
         let mut parent = make_task("breakdown");
-        parent.status = Status::WaitingOnChildren;
+        parent.status = Status::waiting_on_children("work");
 
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
         sub1.parent_id = Some("task-1".to_string());

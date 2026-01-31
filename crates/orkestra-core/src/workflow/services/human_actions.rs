@@ -87,7 +87,12 @@ impl WorkflowApi {
             created.len()
         );
 
-        task.status = Status::WaitingOnChildren;
+        let next_stage = self
+            .compute_next_status_on_approve(current_stage, task.flow.as_deref())
+            .stage()
+            .unwrap_or(current_stage)
+            .to_string();
+        task.status = Status::waiting_on_children(next_stage);
         task.phase = Phase::Idle;
         task.updated_at = now;
 
@@ -423,7 +428,12 @@ impl WorkflowApi {
                 self.advance_to_next_stage(task, current_stage)?;
             } else {
                 let now = chrono::Utc::now().to_rfc3339();
-                task.status = Status::WaitingOnChildren;
+                let next_stage = self
+                    .compute_next_status_on_approve(current_stage, task.flow.as_deref())
+                    .stage()
+                    .unwrap_or(current_stage)
+                    .to_string();
+                task.status = Status::waiting_on_children(next_stage);
                 task.phase = Phase::Idle;
                 task.updated_at = now;
             }

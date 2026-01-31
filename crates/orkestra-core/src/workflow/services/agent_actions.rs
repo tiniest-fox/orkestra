@@ -117,7 +117,12 @@ impl WorkflowApi {
                 task.id,
                 created.len()
             );
-            task.status = Status::WaitingOnChildren;
+            let next_stage = self
+                .compute_next_status_on_approve(stage, task.flow.as_deref())
+                .stage()
+                .unwrap_or(stage)
+                .to_string();
+            task.status = Status::waiting_on_children(next_stage);
             task.phase = Phase::Idle;
         }
         Ok(())
@@ -419,7 +424,7 @@ impl WorkflowApi {
         let all_tasks = self.store.list_tasks()?;
         let waiting_parents: Vec<&Task> = all_tasks
             .iter()
-            .filter(|t| matches!(t.status, Status::WaitingOnChildren) && t.phase == Phase::Idle)
+            .filter(|t| t.status.is_waiting_on_children() && t.phase == Phase::Idle)
             .collect();
 
         let mut advanced = Vec::new();

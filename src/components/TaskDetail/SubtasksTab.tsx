@@ -15,19 +15,23 @@ interface SubtasksTabProps {
   onSelectSubtask?: (subtask: WorkflowTaskView) => void;
 }
 
-function ProgressBar({ progress }: { progress: SubtaskProgress }) {
-  const donePercent = (progress.done / progress.total) * 100;
-  const failedPercent = (progress.failed / progress.total) * 100;
-  const inProgressPercent = (progress.in_progress / progress.total) * 100;
+/** Per-state segment colors for the subtask progress bar. */
+const progressSegments: { key: keyof SubtaskProgress; className: string }[] = [
+  { key: "done", className: "bg-success-500 dark:bg-success-400" },
+  { key: "working", className: "bg-orange-400 dark:bg-orange-500" },
+  { key: "has_questions", className: "bg-info-400 dark:bg-info-500" },
+  { key: "needs_review", className: "bg-warning-400 dark:bg-warning-500" },
+  { key: "blocked", className: "bg-warning-300 dark:bg-warning-600" },
+  { key: "failed", className: "bg-error-500 dark:bg-error-400" },
+  { key: "waiting", className: "bg-stone-300 dark:bg-stone-600" },
+];
 
+function ProgressBar({ progress }: { progress: SubtaskProgress }) {
   return (
     <div className="mb-4">
       <div className="flex justify-between text-xs text-stone-500 dark:text-stone-400 mb-1">
         <span>
           {progress.done}/{progress.total} done
-          {progress.in_progress > 0 && (
-            <span className="text-info-600 dark:text-info-400"> ({progress.in_progress} active)</span>
-          )}
         </span>
         {progress.failed > 0 && (
           <span className="text-error-600 dark:text-error-400">{progress.failed} failed</span>
@@ -35,23 +39,15 @@ function ProgressBar({ progress }: { progress: SubtaskProgress }) {
       </div>
       <div className="h-1.5 bg-stone-200 dark:bg-stone-700 rounded-full overflow-hidden">
         <div className="h-full flex">
-          {donePercent > 0 && (
-            <div
-              className="bg-success-500 dark:bg-success-400 transition-all duration-300"
-              style={{ width: `${donePercent}%` }}
-            />
-          )}
-          {inProgressPercent > 0 && (
-            <div
-              className="bg-info-400 dark:bg-info-500 transition-all duration-300"
-              style={{ width: `${inProgressPercent}%` }}
-            />
-          )}
-          {failedPercent > 0 && (
-            <div
-              className="bg-error-500 dark:bg-error-400 transition-all duration-300"
-              style={{ width: `${failedPercent}%` }}
-            />
+          {progressSegments.map(
+            ({ key, className }) =>
+              progress[key] > 0 && (
+                <div
+                  key={key}
+                  className={`${className} transition-all duration-300`}
+                  style={{ width: `${(progress[key] / progress.total) * 100}%` }}
+                />
+              ),
           )}
         </div>
       </div>

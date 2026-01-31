@@ -336,13 +336,12 @@ export interface SubtaskProgress {
   total: number;
   done: number;
   failed: number;
-  in_progress: number;
-  /** True if any subtask has pending questions. */
-  any_has_questions: boolean;
-  /** True if any subtask is awaiting human review. */
-  any_needs_review: boolean;
-  /** True if any subtask has an active agent. */
-  any_working: boolean;
+  blocked: number;
+  has_questions: number;
+  needs_review: number;
+  working: number;
+  /** Idle/waiting — not in any of the above states. */
+  waiting: number;
 }
 
 // =============================================================================

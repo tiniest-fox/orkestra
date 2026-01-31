@@ -17,44 +17,37 @@ interface TaskCardProps {
   dependencyNames?: string[];
 }
 
-function SubtaskProgressBar({ progress }: { progress: SubtaskProgress }) {
-  const donePercent = (progress.done / progress.total) * 100;
-  const failedPercent = (progress.failed / progress.total) * 100;
-  const inProgressPercent = (progress.in_progress / progress.total) * 100;
+/** Per-state segment colors for the subtask progress bar. */
+const progressSegments: { key: keyof SubtaskProgress; className: string }[] = [
+  { key: "done", className: "bg-success-500 dark:bg-success-400" },
+  { key: "working", className: "bg-orange-400 dark:bg-orange-500" },
+  { key: "has_questions", className: "bg-info-400 dark:bg-info-500" },
+  { key: "needs_review", className: "bg-warning-400 dark:bg-warning-500" },
+  { key: "blocked", className: "bg-warning-300 dark:bg-warning-600" },
+  { key: "failed", className: "bg-error-500 dark:bg-error-400" },
+  { key: "waiting", className: "bg-stone-300 dark:bg-stone-600" },
+];
 
+function SubtaskProgressBar({ progress }: { progress: SubtaskProgress }) {
   return (
     <div className="mt-2">
       <div className="flex items-center gap-1.5 mb-1">
         <Layers className="w-3 h-3 text-stone-400 dark:text-stone-500" />
         <span className="text-xs text-stone-500 dark:text-stone-400">
           {progress.done}/{progress.total} subtasks
-          {progress.in_progress > 0 && (
-            <span className="text-info-600 dark:text-info-400"> ({progress.in_progress} active)</span>
-          )}
-          {progress.failed > 0 && (
-            <span className="text-error-600 dark:text-error-400"> ({progress.failed} failed)</span>
-          )}
         </span>
       </div>
       <div className="h-1 bg-stone-200 dark:bg-stone-700 rounded-full overflow-hidden">
         <div className="h-full flex">
-          {donePercent > 0 && (
-            <div
-              className="bg-success-500 dark:bg-success-400 transition-all duration-300"
-              style={{ width: `${donePercent}%` }}
-            />
-          )}
-          {inProgressPercent > 0 && (
-            <div
-              className="bg-info-400 dark:bg-info-500 transition-all duration-300"
-              style={{ width: `${inProgressPercent}%` }}
-            />
-          )}
-          {failedPercent > 0 && (
-            <div
-              className="bg-error-500 dark:bg-error-400 transition-all duration-300"
-              style={{ width: `${failedPercent}%` }}
-            />
+          {progressSegments.map(
+            ({ key, className }) =>
+              progress[key] > 0 && (
+                <div
+                  key={key}
+                  className={`${className} transition-all duration-300`}
+                  style={{ width: `${(progress[key] / progress.total) * 100}%` }}
+                />
+              ),
           )}
         </div>
       </div>
@@ -94,8 +87,8 @@ export function TaskCard({
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 
   // Include subtask aggregate state in border highlights
-  const effectiveQuestions = hasQuestions || !!derived.subtask_progress?.any_has_questions;
-  const effectiveReview = taskNeedsReview || !!derived.subtask_progress?.any_needs_review;
+  const effectiveQuestions = hasQuestions || (derived.subtask_progress?.has_questions ?? 0) > 0;
+  const effectiveReview = taskNeedsReview || (derived.subtask_progress?.needs_review ?? 0) > 0;
 
   const borderClass = isFailed
     ? "border-error-300 bg-error-50 dark:border-error-700 dark:bg-error-950"
@@ -168,18 +161,18 @@ export function TaskCard({
             </span>
           )}
           {derived.is_waiting_on_children &&
-            (derived.subtask_progress?.any_has_questions ? (
+            ((derived.subtask_progress?.has_questions ?? 0) > 0 ? (
               <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
                 <MessageCircle className="w-4 h-4 text-info-600 dark:text-info-300" />
               </span>
-            ) : derived.subtask_progress?.any_needs_review ? (
+            ) : (derived.subtask_progress?.needs_review ?? 0) > 0 ? (
               <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
                 <Eye className="w-4 h-4 text-warning-700 dark:text-warning-300" />
               </span>
             ) : (
               <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
                 <Layers
-                  className={`w-4 h-4 text-info-600 dark:text-info-300 ${derived.subtask_progress?.any_working ? "animate-spin-bounce" : ""}`}
+                  className={`w-4 h-4 text-info-600 dark:text-info-300 ${(derived.subtask_progress?.working ?? 0) > 0 ? "animate-spin-bounce" : ""}`}
                 />
               </span>
             ))}

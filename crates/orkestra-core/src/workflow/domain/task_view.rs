@@ -49,18 +49,20 @@ pub struct DerivedTaskState {
 }
 
 /// Progress summary for a parent task's subtasks.
+///
+/// Per-state counts mirror the primary task states so the frontend
+/// can render a segment per state in the progress bar.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubtaskProgress {
     pub total: usize,
     pub done: usize,
     pub failed: usize,
-    pub in_progress: usize,
-    /// True if any subtask has pending questions.
-    pub any_has_questions: bool,
-    /// True if any subtask is awaiting human review.
-    pub any_needs_review: bool,
-    /// True if any subtask has an active agent.
-    pub any_working: bool,
+    pub blocked: usize,
+    pub has_questions: usize,
+    pub needs_review: usize,
+    pub working: usize,
+    /// Idle/waiting — not in any of the above states.
+    pub waiting: usize,
 }
 
 impl DerivedTaskState {
@@ -100,28 +102,42 @@ impl DerivedTaskState {
 /// Compute subtask progress from pre-computed subtask derived states.
 ///
 /// Returns `None` if the list is empty (task has no children).
+/// States are checked in priority order — each subtask is counted in exactly one bucket.
 fn compute_subtask_progress(subtask_states: &[DerivedTaskState]) -> Option<SubtaskProgress> {
     if subtask_states.is_empty() {
         return None;
     }
 
-    let total = subtask_states.len();
-    let done = subtask_states
-        .iter()
-        .filter(|s| s.is_done || s.is_terminal && !s.is_failed && !s.is_blocked)
-        .count();
-    let failed = subtask_states.iter().filter(|s| s.is_failed).count();
-    let in_progress = total - done - failed;
+    let mut progress = SubtaskProgress {
+        total: subtask_states.len(),
+        done: 0,
+        failed: 0,
+        blocked: 0,
+        has_questions: 0,
+        needs_review: 0,
+        working: 0,
+        waiting: 0,
+    };
 
-    Some(SubtaskProgress {
-        total,
-        done,
-        failed,
-        in_progress,
-        any_has_questions: subtask_states.iter().any(|s| s.has_questions),
-        any_needs_review: subtask_states.iter().any(|s| s.needs_review),
-        any_working: subtask_states.iter().any(|s| s.is_working),
-    })
+    for s in subtask_states {
+        if s.is_done || (s.is_terminal && !s.is_failed && !s.is_blocked) {
+            progress.done += 1;
+        } else if s.is_failed {
+            progress.failed += 1;
+        } else if s.is_blocked {
+            progress.blocked += 1;
+        } else if s.has_questions {
+            progress.has_questions += 1;
+        } else if s.needs_review {
+            progress.needs_review += 1;
+        } else if s.is_working {
+            progress.working += 1;
+        } else {
+            progress.waiting += 1;
+        }
+    }
+
+    Some(progress)
 }
 
 /// Extract pending questions from the latest iteration of the current stage.
@@ -360,10 +376,11 @@ mod tests {
         assert_eq!(progress.total, 3);
         assert_eq!(progress.done, 1);
         assert_eq!(progress.failed, 1);
-        assert_eq!(progress.in_progress, 1);
-        assert!(!progress.any_has_questions);
-        assert!(!progress.any_needs_review);
-        assert!(!progress.any_working);
+        assert_eq!(progress.waiting, 1);
+        assert_eq!(progress.has_questions, 0);
+        assert_eq!(progress.needs_review, 0);
+        assert_eq!(progress.working, 0);
+        assert_eq!(progress.blocked, 0);
     }
 
     #[test]
@@ -399,9 +416,9 @@ mod tests {
         );
 
         let progress = derived.subtask_progress.unwrap();
-        assert!(progress.any_has_questions);
-        assert!(progress.any_needs_review);
-        assert!(progress.any_working);
+        assert_eq!(progress.has_questions, 1);
+        assert_eq!(progress.needs_review, 1);
+        assert_eq!(progress.working, 1);
     }
 
     #[test]

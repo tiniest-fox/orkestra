@@ -190,6 +190,12 @@ pub struct StageCapabilities {
     #[serde(default)]
     pub produce_subtasks: bool,
 
+    /// Named flow that subtasks created from this stage should use.
+    /// Only meaningful when `produce_subtasks` is true.
+    /// If None, subtasks use the default (full) pipeline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtask_flow: Option<String>,
+
     /// Stages this agent can redirect to (e.g., reviewer can send back to work).
     /// Empty means no restaging capability.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -218,6 +224,7 @@ impl StageCapabilities {
         Self {
             ask_questions: true,
             produce_subtasks: true,
+            subtask_flow: None,
             supports_restage: Vec::new(),
         }
     }
@@ -228,6 +235,13 @@ impl StageCapabilities {
             supports_restage: stages,
             ..Default::default()
         }
+    }
+
+    /// Builder: set the subtask flow.
+    #[must_use]
+    pub fn with_subtask_flow(mut self, flow: impl Into<String>) -> Self {
+        self.subtask_flow = Some(flow.into());
+        self
     }
 
     /// Check if this stage can restage to the given target.

@@ -25,6 +25,7 @@ import { IterationsTab } from "./IterationsTab";
 import { LogsTab } from "./LogsTab";
 import { QuestionFormPanel } from "./QuestionFormPanel";
 import { ReviewPanel } from "./ReviewPanel";
+import { SubtasksTab } from "./SubtasksTab";
 import { TaskDetailHeader } from "./TaskDetailHeader";
 
 interface Tab {
@@ -39,11 +40,20 @@ interface TaskDetailSidebarProps {
 }
 
 function buildTabs(task: WorkflowTaskView): Tab[] {
-  const tabs: Tab[] = [
-    { id: TaskDetailTabs.details(task.id), label: "Details" },
+  const tabs: Tab[] = [{ id: TaskDetailTabs.details(task.id), label: "Details" }];
+
+  if (task.derived.subtask_progress) {
+    const { done, total } = task.derived.subtask_progress;
+    tabs.push({
+      id: TaskDetailTabs.subtasks(task.id),
+      label: `Subtasks (${done}/${total})`,
+    });
+  }
+
+  tabs.push(
     { id: TaskDetailTabs.iterations(task.id), label: "Activity" },
     { id: TaskDetailTabs.logs(task.id), label: "Logs" },
-  ];
+  );
 
   const hasArtifacts = Object.keys(task.artifacts).length > 0;
   if (hasArtifacts) {
@@ -67,7 +77,7 @@ function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
   } else if (derived.is_failed || derived.is_blocked) {
     preferred = TaskDetailTabs.details(task.id);
   } else if (task.status.type === "waiting_on_children") {
-    preferred = TaskDetailTabs.details(task.id);
+    preferred = TaskDetailTabs.subtasks(task.id);
   } else if (derived.is_working || task.phase === "integrating") {
     preferred = TaskDetailTabs.logs(task.id);
   } else if (derived.needs_review) {
@@ -159,6 +169,10 @@ export function TaskDetailSidebar({ task, onClose, onDelete }: TaskDetailSidebar
           >
             {activeTab === TaskDetailTabs.details(task.id) && (
               <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />
+            )}
+
+            {activeTab === TaskDetailTabs.subtasks(task.id) && task.derived.subtask_progress && (
+              <SubtasksTab parentId={task.id} progress={task.derived.subtask_progress} />
             )}
 
             {activeTab === TaskDetailTabs.artifacts(task.id) && (

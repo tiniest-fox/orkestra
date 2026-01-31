@@ -30,11 +30,13 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     is_blocked: false,
     is_done: false,
     is_terminal: false,
+    is_waiting_on_children: false,
     needs_review: false,
     has_questions: false,
     pending_questions: [],
     rejection_feedback: null,
     stages_with_logs: [],
+    subtask_progress: null,
     ...overrides,
   };
 }

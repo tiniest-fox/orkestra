@@ -2,14 +2,49 @@
  * Task card for the kanban board.
  */
 
-import { AlertCircle, Eye, GitBranch, MessageCircle, XCircle, Zap } from "lucide-react";
-import type { WorkflowTaskView } from "../../types/workflow";
+import { AlertCircle, Eye, GitBranch, Layers, MessageCircle, XCircle, Zap } from "lucide-react";
+import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
 import { Panel } from "../ui";
 
 interface TaskCardProps {
   task: WorkflowTaskView;
   onClick?: () => void;
   isSelected?: boolean;
+}
+
+function SubtaskProgressBar({ progress }: { progress: SubtaskProgress }) {
+  const donePercent = (progress.done / progress.total) * 100;
+  const failedPercent = (progress.failed / progress.total) * 100;
+
+  return (
+    <div className="mt-2">
+      <div className="flex items-center gap-1.5 mb-1">
+        <Layers className="w-3 h-3 text-stone-400 dark:text-stone-500" />
+        <span className="text-xs text-stone-500 dark:text-stone-400">
+          {progress.done}/{progress.total} subtasks
+          {progress.failed > 0 && (
+            <span className="text-error-600 dark:text-error-400"> ({progress.failed} failed)</span>
+          )}
+        </span>
+      </div>
+      <div className="h-1 bg-stone-200 dark:bg-stone-700 rounded-full overflow-hidden">
+        <div className="h-full flex">
+          {donePercent > 0 && (
+            <div
+              className="bg-success-500 dark:bg-success-400 transition-all duration-300"
+              style={{ width: `${donePercent}%` }}
+            />
+          )}
+          {failedPercent > 0 && (
+            <div
+              className="bg-error-500 dark:bg-error-400 transition-all duration-300"
+              style={{ width: `${failedPercent}%` }}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function getDisplayTitle(task: WorkflowTaskView): string {
@@ -101,6 +136,11 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
               <AlertCircle className="w-4 h-4 text-warning-600 dark:text-warning-300" />
             </span>
           )}
+          {derived.is_waiting_on_children && (
+            <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
+              <Layers className="w-4 h-4 text-info-600 dark:text-info-300" />
+            </span>
+          )}
         </div>
       </div>
 
@@ -109,6 +149,8 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
           {task.description}
         </p>
       )}
+
+      {derived.subtask_progress && <SubtaskProgressBar progress={derived.subtask_progress} />}
 
       <span className="text-stone-400 dark:text-stone-500 text-xs font-mono mt-2.5">{task.id}</span>
 

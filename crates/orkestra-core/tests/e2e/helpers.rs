@@ -452,6 +452,11 @@ pub enum MockAgentOutput {
     Artifact { name: String, content: String },
     /// Agent (reviewer) is restaging to another stage.
     Restage { target: String, feedback: String },
+    /// Agent produced subtasks for breakdown.
+    Subtasks {
+        subtasks: Vec<orkestra_core::workflow::execution::SubtaskOutput>,
+        skip_reason: Option<String>,
+    },
     /// Agent failed.
     Failed { error: String },
     /// Agent is blocked.
@@ -466,6 +471,13 @@ impl From<MockAgentOutput> for StageOutput {
             MockAgentOutput::Restage { target, feedback } => {
                 StageOutput::Restage { target, feedback }
             }
+            MockAgentOutput::Subtasks {
+                subtasks,
+                skip_reason,
+            } => StageOutput::Subtasks {
+                subtasks,
+                skip_reason,
+            },
             MockAgentOutput::Failed { error } => StageOutput::Failed { error },
             MockAgentOutput::Blocked { reason } => StageOutput::Blocked { reason },
         }
@@ -497,6 +509,72 @@ pub mod workflows {
             ],
             integration: IntegrationConfig::default(),
             flows: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Full workflow with breakdown that produces subtasks.
+    ///
+    /// planning → breakdown → work → review
+    /// Plus a "subtask" flow: work → review
+    pub fn with_subtasks() -> WorkflowConfig {
+        use orkestra_core::workflow::config::{
+            FlowConfig, FlowStageEntry, FlowStageOverride, StageCapabilities,
+        };
+
+        let mut flows = std::collections::HashMap::new();
+        flows.insert(
+            "subtask".to_string(),
+            FlowConfig {
+                description: "Simplified pipeline for subtasks".to_string(),
+                icon: None,
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "work".to_string(),
+                        overrides: None,
+                    },
+                    FlowStageEntry {
+                        stage_name: "review".to_string(),
+                        overrides: Some(FlowStageOverride {
+                            prompt: None,
+                            capabilities: Some(StageCapabilities::with_restage(
+                                vec!["work".into()],
+                            )),
+                        }),
+                    },
+                ],
+            },
+        );
+
+        WorkflowConfig {
+            version: 1,
+            stages: vec![
+                StageConfig::new("planning", "plan")
+                    .with_prompt("planner.md")
+                    .with_capabilities(
+                        orkestra_core::workflow::config::StageCapabilities::with_questions(),
+                    ),
+                StageConfig::new("breakdown", "breakdown")
+                    .with_prompt("breakdown.md")
+                    .with_inputs(vec!["plan".into()])
+                    .with_capabilities(
+                        orkestra_core::workflow::config::StageCapabilities::with_subtasks()
+                            .with_subtask_flow("subtask"),
+                    ),
+                StageConfig::new("work", "summary")
+                    .with_prompt("worker.md")
+                    .with_inputs(vec!["plan".into()]),
+                StageConfig::new("review", "verdict")
+                    .with_prompt("reviewer.md")
+                    .with_inputs(vec!["plan".into(), "summary".into()])
+                    .with_capabilities(
+                        orkestra_core::workflow::config::StageCapabilities::with_restage(vec![
+                            "work".into(),
+                        ]),
+                    )
+                    .automated(),
+            ],
+            integration: IntegrationConfig::default(),
+            flows,
         }
     }
 

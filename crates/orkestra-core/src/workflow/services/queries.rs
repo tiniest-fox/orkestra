@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::workflow::domain::task_view::{DerivedTaskState, TaskView};
-use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession};
+use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession, Task};
 use crate::workflow::ports::WorkflowResult;
 use crate::workflow::runtime::{Artifact, Outcome};
 
@@ -124,17 +124,36 @@ impl WorkflowApi {
     /// computed from the task's domain predicates. This lets the frontend render
     /// everything without additional queries.
     pub fn list_task_views(&self) -> WorkflowResult<Vec<TaskView>> {
-        let tasks = self.list_tasks()?;
+        // Load all active tasks (parents + subtasks) in one query
+        let all_active = self.store.list_active_tasks()?;
+
+        // Separate top-level tasks from subtasks
+        let mut top_level = Vec::new();
+        let mut subtasks_by_parent: std::collections::HashMap<String, Vec<Task>> =
+            std::collections::HashMap::new();
+        for task in all_active {
+            if let Some(ref parent_id) = task.parent_id {
+                subtasks_by_parent
+                    .entry(parent_id.clone())
+                    .or_default()
+                    .push(task);
+            } else {
+                top_level.push(task);
+            }
+        }
 
         // Batch-load all iterations and sessions in 2 queries (not 2N)
         let mut iterations_by_task = group_by_task_id(self.store.list_all_iterations()?);
         let mut sessions_by_task = group_by_task_id(self.store.list_all_stage_sessions()?);
 
-        let mut views = Vec::with_capacity(tasks.len());
-        for task in tasks {
+        let mut views = Vec::with_capacity(top_level.len());
+        for task in top_level {
             let iterations = iterations_by_task.remove(&task.id).unwrap_or_default();
             let stage_sessions = sessions_by_task.remove(&task.id).unwrap_or_default();
-            let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions);
+            let subtasks = subtasks_by_parent
+                .get(&task.id)
+                .map_or(&[][..], Vec::as_slice);
+            let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, subtasks);
 
             views.push(TaskView {
                 task,

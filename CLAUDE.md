@@ -236,7 +236,7 @@ Tasks progress through an ordered list of stages defined in `StageConfig` struct
 
 - **`WorkflowConfig`** (`workflow.rs`) — Ordered list of `StageConfig` plus `IntegrationConfig`. Validated on load (no forward artifact references, unique names).
 - **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `inputs` (artifacts from earlier stages), `capabilities`, and either a `prompt` (agent stage) or `script` (script stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set.
-- **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `produce_subtasks`, `supports_restage: Vec<String>`.
+- **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `produce_subtasks`, `subtask_flow: Option<String>`, `supports_restage: Vec<String>`.
 - **`ScriptStageConfig`** (`stage.rs`) — Shell command, timeout, optional `on_failure` stage for recovery.
 - **`FlowConfig`** (`workflow.rs`) — Named alternate flow (shortened pipeline). Has a `description`, optional `icon`, and an ordered list of `FlowStageEntry`s referencing a subset of global stages with optional overrides.
 - **`FlowStageEntry`** (`workflow.rs`) — A stage reference in a flow, with optional `FlowStageOverride` for `prompt` and `capabilities` (full replacement, not merge).
@@ -297,6 +297,17 @@ Key behaviors:
 - `restage` targets and script `on_failure` targets must be within the flow's stage list
 
 This project defines two flows: `quick` (skips breakdown and compound) and `hotfix` (skips planning, breakdown, and compound).
+
+#### Subtask System
+
+Stages with `produce_subtasks: true` (e.g., breakdown) can output a list of subtasks. When their artifact is approved, `SubtaskService` (`workflow/services/subtask_service.rs`) creates child tasks:
+
+- **Parent-child relationship**: Subtasks have `parent_id` linking to the parent task. They don't appear on the Kanban board — only the parent does.
+- **Flow assignment**: Subtasks use the flow specified by `subtask_flow` on the stage's capabilities (e.g., breakdown produces subtasks that run through the `quick` flow). If `subtask_flow` is None, subtasks use the full pipeline.
+- **Dependencies**: Subtasks can depend on other subtasks (by index in the breakdown output). The orchestrator's `get_tasks_needing_agents()` only schedules subtasks whose dependencies are all done.
+- **Artifact inheritance**: Each subtask inherits the parent's plan artifact so agents have context.
+- **Parent lifecycle**: After creating subtasks, the parent enters `WaitingOnChildren` status. `advance_completed_parents()` in the orchestrator checks each tick whether all subtasks are done — if so, the parent advances to its next stage. If any subtask fails, the parent is marked failed.
+- **Kanban display**: The parent task is visually placed in the breakdown column while subtasks are running. The frontend shows a subtasks tab with progress tracking.
 
 ### Agent System
 

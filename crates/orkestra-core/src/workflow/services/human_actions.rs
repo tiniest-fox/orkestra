@@ -3,14 +3,18 @@
 use crate::orkestra_debug;
 use crate::workflow::domain::{IterationTrigger, QuestionAnswer, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
-use crate::workflow::runtime::{Outcome, Phase};
+use crate::workflow::runtime::{Outcome, Phase, Status};
 
 use super::agent_actions::AUTO_ANSWER_TEXT;
+use super::SubtaskService;
 
 use super::WorkflowApi;
 
 impl WorkflowApi {
     /// Approve the current stage's artifact. Moves to next stage.
+    ///
+    /// When approving a breakdown stage that produced subtasks, this creates
+    /// Task records for each subtask and sets the parent to `WaitingOnChildren`.
     ///
     /// # Errors
     ///
@@ -40,8 +44,64 @@ impl WorkflowApi {
         // End current iteration
         self.end_current_iteration(&task, Outcome::Approved)?;
 
-        // Compute next status (flow-aware progression)
-        let next_status = self.compute_next_status_on_approve(&current_stage, task.flow.as_deref());
+        // Check if this stage produced subtasks that need to be created
+        if self.stage_has_subtasks(&current_stage, &task) {
+            return self.approve_with_subtask_creation(&mut task, &current_stage);
+        }
+
+        // Standard approval: compute next status (flow-aware progression)
+        self.apply_standard_approval(&mut task, &current_stage)
+    }
+
+    /// Approve a breakdown stage by creating subtask Task records and setting parent to `WaitingOnChildren`.
+    fn approve_with_subtask_creation(
+        &self,
+        task: &mut Task,
+        current_stage: &str,
+    ) -> WorkflowResult<Task> {
+        let artifact_name = self
+            .workflow
+            .stage(current_stage)
+            .map_or_else(|| "breakdown".to_string(), |s| s.artifact.clone());
+
+        let created = SubtaskService::create_subtasks_from_breakdown(
+            task,
+            &self.workflow,
+            &self.store,
+            &self.iteration_service,
+            &self.setup_service,
+            &artifact_name,
+        )?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+
+        if created.is_empty() {
+            // No subtasks created (breakdown was skipped) - proceed normally
+            return self.apply_standard_approval(task, current_stage);
+        }
+
+        orkestra_debug!(
+            "action",
+            "approve {}: created {} subtasks, setting WaitingOnChildren",
+            task.id,
+            created.len()
+        );
+
+        task.status = Status::WaitingOnChildren;
+        task.phase = Phase::Idle;
+        task.updated_at = now;
+
+        self.store.save_task(task)?;
+        Ok(task.clone())
+    }
+
+    /// Apply standard approval logic: advance to next stage or mark done.
+    fn apply_standard_approval(
+        &self,
+        task: &mut Task,
+        current_stage: &str,
+    ) -> WorkflowResult<Task> {
+        let next_status = self.compute_next_status_on_approve(current_stage, task.flow.as_deref());
         let now = chrono::Utc::now().to_rfc3339();
 
         task.status = next_status.clone();
@@ -58,18 +118,42 @@ impl WorkflowApi {
 
         if task.is_done() {
             task.completed_at = Some(now);
-            orkestra_debug!("action", "approve {}: task is now Done", task_id);
+            orkestra_debug!("action", "approve {}: task is now Done", task.id);
         } else {
             orkestra_debug!(
                 "action",
                 "approve {}: moved to stage {:?}",
-                task_id,
+                task.id,
                 task.current_stage()
             );
         }
 
-        self.store.save_task(&task)?;
-        Ok(task)
+        self.store.save_task(task)?;
+        Ok(task.clone())
+    }
+
+    /// Check if a stage produced subtasks that need to be materialized.
+    ///
+    /// Returns true if the stage has `produce_subtasks` capability and
+    /// the task has structured subtask data stored.
+    fn stage_has_subtasks(&self, stage: &str, task: &Task) -> bool {
+        let has_capability = self
+            .workflow
+            .effective_capabilities(stage, task.flow.as_deref())
+            .is_some_and(|caps| caps.produce_subtasks);
+
+        if !has_capability {
+            return false;
+        }
+
+        // Check if there's structured subtask data
+        let artifact_name = self
+            .workflow
+            .stage(stage)
+            .map_or_else(|| "breakdown".to_string(), |s| s.artifact.clone());
+        let structured_key = format!("{artifact_name}_structured");
+
+        task.artifacts.content(&structured_key).is_some()
     }
 
     /// Reject the current stage's artifact with feedback. Retries current stage.
@@ -297,32 +381,7 @@ impl WorkflowApi {
                     task.phase = Phase::Idle;
                     task.updated_at = now;
                 } else {
-                    // Auto-approve the current artifact
-                    orkestra_debug!(
-                        "action",
-                        "set_auto_mode {}: auto-approving stage {}",
-                        task_id,
-                        current_stage
-                    );
-                    self.end_current_iteration(&task, Outcome::Approved)?;
-
-                    let next_status =
-                        self.compute_next_status_on_approve(&current_stage, task.flow.as_deref());
-                    let now = chrono::Utc::now().to_rfc3339();
-
-                    task.status = next_status.clone();
-                    task.phase = Phase::Idle;
-                    task.updated_at.clone_from(&now);
-
-                    if let Some(new_stage) = next_status.stage() {
-                        if new_stage != current_stage {
-                            self.iteration_service
-                                .create_iteration(&task.id, new_stage, None)?;
-                        }
-                    }
-                    if task.is_done() {
-                        task.completed_at = Some(now);
-                    }
+                    self.auto_approve_stage(&mut task, &current_stage)?;
                 }
             }
         } else {
@@ -331,6 +390,70 @@ impl WorkflowApi {
 
         self.store.save_task(&task)?;
         Ok(task)
+    }
+
+    /// Auto-approve the current stage artifact and advance the task.
+    ///
+    /// Handles subtask creation if the stage has `produce_subtasks` capability.
+    fn auto_approve_stage(&self, task: &mut Task, current_stage: &str) -> WorkflowResult<()> {
+        orkestra_debug!(
+            "action",
+            "set_auto_mode {}: auto-approving stage {}",
+            task.id,
+            current_stage
+        );
+        self.end_current_iteration(task, Outcome::Approved)?;
+
+        if self.stage_has_subtasks(current_stage, task) {
+            let artifact_name = self
+                .workflow
+                .stage(current_stage)
+                .map_or_else(|| "breakdown".to_string(), |s| s.artifact.clone());
+
+            let created = SubtaskService::create_subtasks_from_breakdown(
+                task,
+                &self.workflow,
+                &self.store,
+                &self.iteration_service,
+                &self.setup_service,
+                &artifact_name,
+            )?;
+
+            if created.is_empty() {
+                self.advance_to_next_stage(task, current_stage)?;
+            } else {
+                let now = chrono::Utc::now().to_rfc3339();
+                task.status = Status::WaitingOnChildren;
+                task.phase = Phase::Idle;
+                task.updated_at = now;
+            }
+        } else {
+            self.advance_to_next_stage(task, current_stage)?;
+        }
+
+        Ok(())
+    }
+
+    /// Advance a task to the next stage after approval.
+    fn advance_to_next_stage(&self, task: &mut Task, current_stage: &str) -> WorkflowResult<()> {
+        let next_status = self.compute_next_status_on_approve(current_stage, task.flow.as_deref());
+        let now = chrono::Utc::now().to_rfc3339();
+
+        task.status = next_status.clone();
+        task.phase = Phase::Idle;
+        task.updated_at.clone_from(&now);
+
+        if let Some(new_stage) = next_status.stage() {
+            if new_stage != current_stage {
+                self.iteration_service
+                    .create_iteration(&task.id, new_stage, None)?;
+            }
+        }
+        if task.is_done() {
+            task.completed_at = Some(now);
+        }
+
+        Ok(())
     }
 
     /// Helper: End the current active iteration with an outcome.

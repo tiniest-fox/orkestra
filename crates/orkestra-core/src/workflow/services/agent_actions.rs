@@ -44,6 +44,9 @@ impl WorkflowApi {
     }
 
     /// Auto-approve and advance if the stage/task allows it, otherwise pause for review.
+    ///
+    /// If the stage produced subtasks and is auto-advancing, creates Task records
+    /// and sets the parent to `WaitingOnChildren` instead of normal progression.
     fn auto_advance_or_review(
         &self,
         task: &mut Task,
@@ -52,10 +55,54 @@ impl WorkflowApi {
     ) -> WorkflowResult<()> {
         if self.should_auto_advance(task, stage) {
             self.end_current_iteration(task, Outcome::Approved)?;
+
+            // Check if this stage produced subtasks that need to be materialized
+            if self.stage_has_subtask_data(stage, task) {
+                self.auto_advance_with_subtask_creation(task, stage, now)?;
+            } else {
+                let next_status = self.compute_next_status_on_approve(stage, task.flow.as_deref());
+                task.status = next_status.clone();
+                task.phase = Phase::Idle;
+
+                if let Some(new_stage) = next_status.stage() {
+                    self.iteration_service
+                        .create_iteration(&task.id, new_stage, None)?;
+                }
+                if task.is_done() {
+                    task.completed_at = Some(now.to_string());
+                }
+            }
+        } else {
+            task.phase = Phase::AwaitingReview;
+        }
+        task.updated_at = now.to_string();
+        Ok(())
+    }
+
+    /// Auto-advance a breakdown stage: create subtask Tasks and set parent to `WaitingOnChildren`.
+    fn auto_advance_with_subtask_creation(
+        &self,
+        task: &mut Task,
+        stage: &str,
+        now: &str,
+    ) -> WorkflowResult<()> {
+        use super::SubtaskService;
+
+        let artifact_name = self.artifact_name_for_stage(stage, "breakdown");
+        let created = SubtaskService::create_subtasks_from_breakdown(
+            task,
+            &self.workflow,
+            &self.store,
+            &self.iteration_service,
+            &self.setup_service,
+            &artifact_name,
+        )?;
+
+        if created.is_empty() {
+            // No subtasks - proceed with normal advancement
             let next_status = self.compute_next_status_on_approve(stage, task.flow.as_deref());
             task.status = next_status.clone();
             task.phase = Phase::Idle;
-
             if let Some(new_stage) = next_status.stage() {
                 self.iteration_service
                     .create_iteration(&task.id, new_stage, None)?;
@@ -64,10 +111,30 @@ impl WorkflowApi {
                 task.completed_at = Some(now.to_string());
             }
         } else {
-            task.phase = Phase::AwaitingReview;
+            orkestra_debug!(
+                "action",
+                "auto_advance {}: created {} subtasks, WaitingOnChildren",
+                task.id,
+                created.len()
+            );
+            task.status = Status::WaitingOnChildren;
+            task.phase = Phase::Idle;
         }
-        task.updated_at = now.to_string();
         Ok(())
+    }
+
+    /// Check if a stage has structured subtask data stored on the task.
+    fn stage_has_subtask_data(&self, stage: &str, task: &Task) -> bool {
+        let has_capability = self
+            .workflow
+            .effective_capabilities(stage, task.flow.as_deref())
+            .is_some_and(|caps| caps.produce_subtasks);
+        if !has_capability {
+            return false;
+        }
+        let artifact_name = self.artifact_name_for_stage(stage, "breakdown");
+        let structured_key = format!("{artifact_name}_structured");
+        task.artifacts.content(&structured_key).is_some()
     }
 
     /// Check if a stage should auto-advance for a given task.
@@ -108,7 +175,7 @@ impl WorkflowApi {
         Ok(())
     }
 
-    /// Handle subtasks output: store breakdown artifact, auto-approve or await review.
+    /// Handle subtasks output: store breakdown artifact + structured data, auto-approve or await review.
     fn handle_subtasks_output(
         &self,
         task: &mut Task,
@@ -128,6 +195,17 @@ impl WorkflowApi {
             now,
         );
         task.artifacts.set(artifact);
+
+        // Store structured subtask data as JSON for later Task creation on approval
+        if !subtasks.is_empty() {
+            let json = serde_json::to_string(subtasks).unwrap_or_default();
+            task.artifacts.set(Artifact::new(
+                format!("{artifact_name}_structured"),
+                &json,
+                stage,
+                now,
+            ));
+        }
 
         if subtasks.is_empty() {
             if let Some(reason) = skip_reason {
@@ -306,12 +384,117 @@ impl WorkflowApi {
     }
 
     /// Get tasks that need agents spawned (in Idle phase with Active status).
+    ///
+    /// Filters out subtasks whose dependencies haven't completed yet.
     pub fn get_tasks_needing_agents(&self) -> WorkflowResult<Vec<Task>> {
         let all_tasks = self.store.list_tasks()?;
+
+        // Build a set of completed task IDs for dependency checking
+        let done_ids: std::collections::HashSet<String> = all_tasks
+            .iter()
+            .filter(|t| t.is_done() || t.is_archived())
+            .map(|t| t.id.clone())
+            .collect();
+
         Ok(all_tasks
             .into_iter()
-            .filter(|t| t.phase == Phase::Idle && t.status.is_active())
+            .filter(|t| {
+                t.phase == Phase::Idle
+                    && t.status.is_active()
+                    && t.depends_on.iter().all(|dep| done_ids.contains(dep))
+            })
             .collect())
+    }
+
+    // ========================================================================
+    // Parent Completion Detection
+    // ========================================================================
+
+    /// Advance parents whose subtasks have all completed.
+    ///
+    /// Finds tasks in `WaitingOnChildren` status, checks if all their subtasks
+    /// are `Done`, and if so, advances the parent to the next stage after the
+    /// breakdown stage. Returns the list of (`task_id`, `subtask_count`) that were advanced.
+    pub fn advance_completed_parents(&self) -> WorkflowResult<Vec<(String, usize)>> {
+        let all_tasks = self.store.list_tasks()?;
+        let waiting_parents: Vec<&Task> = all_tasks
+            .iter()
+            .filter(|t| matches!(t.status, Status::WaitingOnChildren) && t.phase == Phase::Idle)
+            .collect();
+
+        let mut advanced = Vec::new();
+
+        for parent in waiting_parents {
+            let subtasks = self.store.list_subtasks(&parent.id)?;
+            if subtasks.is_empty() {
+                continue;
+            }
+
+            let all_done = subtasks.iter().all(|s| s.is_done() || s.is_archived());
+            let any_failed = subtasks.iter().any(Task::is_failed);
+
+            if any_failed {
+                // If any subtask failed, fail the parent
+                let mut parent = parent.clone();
+                parent.status = Status::failed("One or more subtasks failed");
+                parent.phase = Phase::Idle;
+                parent.updated_at = chrono::Utc::now().to_rfc3339();
+                self.store.save_task(&parent)?;
+                continue;
+            }
+
+            if all_done {
+                let subtask_count = subtasks.len();
+                let mut parent = parent.clone();
+
+                // Find the breakdown stage (the one with produce_subtasks capability)
+                let breakdown_stage = self.find_breakdown_stage(&parent);
+
+                if let Some(stage) = breakdown_stage {
+                    let next_status =
+                        self.compute_next_status_on_approve(&stage, parent.flow.as_deref());
+                    let now = chrono::Utc::now().to_rfc3339();
+
+                    parent.status = next_status.clone();
+                    parent.phase = Phase::Idle;
+                    parent.updated_at.clone_from(&now);
+
+                    if let Some(new_stage) = next_status.stage() {
+                        self.iteration_service
+                            .create_iteration(&parent.id, new_stage, None)?;
+                    }
+                    if parent.is_done() {
+                        parent.completed_at = Some(now);
+                    }
+                } else {
+                    // Fallback: mark as Done
+                    parent.status = Status::Done;
+                    parent.phase = Phase::Idle;
+                    let now = chrono::Utc::now().to_rfc3339();
+                    parent.updated_at.clone_from(&now);
+                    parent.completed_at = Some(now);
+                }
+
+                self.store.save_task(&parent)?;
+                advanced.push((parent.id.clone(), subtask_count));
+            }
+        }
+
+        Ok(advanced)
+    }
+
+    /// Find the name of the breakdown stage (the stage with `produce_subtasks` capability).
+    fn find_breakdown_stage(&self, task: &Task) -> Option<String> {
+        for stage in &self.workflow.stages {
+            let effective_caps = self
+                .workflow
+                .effective_capabilities(&stage.name, task.flow.as_deref())
+                .unwrap_or_default();
+            if effective_caps.produce_subtasks {
+                return Some(stage.name.clone());
+            }
+        }
+        None
     }
 
     // ========================================================================

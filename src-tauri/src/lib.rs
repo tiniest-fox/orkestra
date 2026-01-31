@@ -107,88 +107,104 @@ fn start_workflow_orchestrator(
             orch_stop.store(true, Ordering::Relaxed);
         });
 
-        orchestrator.run(move |event| match &event {
-            orkestra_core::workflow::OrchestratorEvent::AgentSpawned {
-                task_id,
-                stage,
-                pid,
-            } => {
-                orkestra_debug!(
-                    "orchestrator",
-                    "Spawned {stage} agent for {task_id} (pid: {pid})"
-                );
-                let _ = app_handle.emit("task-updated", task_id);
-            }
-            orkestra_core::workflow::OrchestratorEvent::OutputProcessed {
-                task_id,
-                stage,
-                output_type,
-            } => {
-                orkestra_debug!(
-                    "orchestrator",
-                    "Processed {output_type} output from {stage} for {task_id}"
-                );
-                let _ = app_handle.emit("task-updated", task_id);
-                notify_if_review_needed(&app_handle, task_id, stage, output_type);
-            }
-            orkestra_core::workflow::OrchestratorEvent::Error { task_id, error } => {
-                orkestra_debug!("orchestrator", "Error: {error}");
-                if let Some(id) = task_id {
-                    let _ = app_handle.emit("task-updated", id);
-                }
-            }
-            orkestra_core::workflow::OrchestratorEvent::IntegrationStarted { task_id, branch } => {
-                orkestra_debug!(
-                    "orchestrator",
-                    "Starting integration for {task_id} (branch: {branch})"
-                );
-                let _ = app_handle.emit("task-updated", task_id);
-            }
-            orkestra_core::workflow::OrchestratorEvent::IntegrationCompleted { task_id } => {
-                orkestra_debug!("orchestrator", "Integration completed for {task_id}");
-                let _ = app_handle.emit("task-updated", task_id);
-            }
-            orkestra_core::workflow::OrchestratorEvent::IntegrationFailed {
-                task_id,
-                error,
-                ..
-            } => {
-                orkestra_debug!("orchestrator", "Integration failed for {task_id}: {error}");
-                let _ = app_handle.emit("task-updated", task_id);
-            }
-            orkestra_core::workflow::OrchestratorEvent::ScriptSpawned {
-                task_id,
-                stage,
-                command,
-                pid,
-            } => {
-                orkestra_debug!(
-                    "orchestrator",
-                    "Spawned script for {task_id}/{stage}: {command} (pid: {pid})"
-                );
-                let _ = app_handle.emit("task-updated", task_id);
-            }
-            orkestra_core::workflow::OrchestratorEvent::ScriptCompleted { task_id, stage } => {
-                orkestra_debug!("orchestrator", "Script completed for {task_id}/{stage}");
-                let _ = app_handle.emit("task-updated", task_id);
-            }
-            orkestra_core::workflow::OrchestratorEvent::ScriptFailed {
-                task_id,
-                stage,
-                error,
-                recovery_stage,
-            } => {
-                let recovery = recovery_stage.as_deref().unwrap_or("none");
-                orkestra_debug!(
-                    "orchestrator",
-                    "Script failed for {task_id}/{stage}: {error} (recovery: {recovery})"
-                );
-                let _ = app_handle.emit("task-updated", task_id);
-            }
-        });
+        orchestrator.run(move |event| handle_orchestrator_event(&app_handle, &event));
 
         orkestra_debug!("orchestrator", "Stopped");
     });
+}
+
+/// Log an orchestrator event and emit a task-updated signal to the frontend.
+fn handle_orchestrator_event(
+    app_handle: &AppHandle,
+    event: &orkestra_core::workflow::OrchestratorEvent,
+) {
+    match event {
+        orkestra_core::workflow::OrchestratorEvent::AgentSpawned {
+            task_id,
+            stage,
+            pid,
+        } => {
+            orkestra_debug!(
+                "orchestrator",
+                "Spawned {stage} agent for {task_id} (pid: {pid})"
+            );
+            let _ = app_handle.emit("task-updated", task_id);
+        }
+        orkestra_core::workflow::OrchestratorEvent::OutputProcessed {
+            task_id,
+            stage,
+            output_type,
+        } => {
+            orkestra_debug!(
+                "orchestrator",
+                "Processed {output_type} output from {stage} for {task_id}"
+            );
+            let _ = app_handle.emit("task-updated", task_id);
+            notify_if_review_needed(app_handle, task_id, stage, output_type);
+        }
+        orkestra_core::workflow::OrchestratorEvent::Error { task_id, error } => {
+            orkestra_debug!("orchestrator", "Error: {error}");
+            if let Some(id) = task_id {
+                let _ = app_handle.emit("task-updated", id);
+            }
+        }
+        orkestra_core::workflow::OrchestratorEvent::IntegrationStarted { task_id, branch } => {
+            orkestra_debug!(
+                "orchestrator",
+                "Starting integration for {task_id} (branch: {branch})"
+            );
+            let _ = app_handle.emit("task-updated", task_id);
+        }
+        orkestra_core::workflow::OrchestratorEvent::IntegrationCompleted { task_id } => {
+            orkestra_debug!("orchestrator", "Integration completed for {task_id}");
+            let _ = app_handle.emit("task-updated", task_id);
+        }
+        orkestra_core::workflow::OrchestratorEvent::IntegrationFailed {
+            task_id, error, ..
+        } => {
+            orkestra_debug!("orchestrator", "Integration failed for {task_id}: {error}");
+            let _ = app_handle.emit("task-updated", task_id);
+        }
+        orkestra_core::workflow::OrchestratorEvent::ScriptSpawned {
+            task_id,
+            stage,
+            command,
+            pid,
+        } => {
+            orkestra_debug!(
+                "orchestrator",
+                "Spawned script for {task_id}/{stage}: {command} (pid: {pid})"
+            );
+            let _ = app_handle.emit("task-updated", task_id);
+        }
+        orkestra_core::workflow::OrchestratorEvent::ScriptCompleted { task_id, stage } => {
+            orkestra_debug!("orchestrator", "Script completed for {task_id}/{stage}");
+            let _ = app_handle.emit("task-updated", task_id);
+        }
+        orkestra_core::workflow::OrchestratorEvent::ScriptFailed {
+            task_id,
+            stage,
+            error,
+            recovery_stage,
+        } => {
+            let recovery = recovery_stage.as_deref().unwrap_or("none");
+            orkestra_debug!(
+                "orchestrator",
+                "Script failed for {task_id}/{stage}: {error} (recovery: {recovery})"
+            );
+            let _ = app_handle.emit("task-updated", task_id);
+        }
+        orkestra_core::workflow::OrchestratorEvent::ParentAdvanced {
+            task_id,
+            subtask_count,
+        } => {
+            orkestra_debug!(
+                "orchestrator",
+                "Parent {task_id} advanced: all {subtask_count} subtasks done"
+            );
+            let _ = app_handle.emit("task-updated", task_id);
+        }
+    }
 }
 
 // =============================================================================

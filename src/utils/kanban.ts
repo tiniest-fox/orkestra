@@ -58,9 +58,24 @@ export function buildColumns(config: WorkflowConfig): KanbanColumn[] {
 }
 
 /**
+ * Find the stage name where tasks wait on children (stage with produce_subtasks capability).
+ * Falls back to null if no such stage exists.
+ */
+function findBreakdownStage(config: WorkflowConfig): string | null {
+  const stage = config.stages.find((s) => s.capabilities.produce_subtasks);
+  return stage?.name ?? null;
+}
+
+/**
  * Get tasks for a specific column.
  */
-export function getTasksForColumn(tasks: WorkflowTaskView[], columnId: string): WorkflowTaskView[] {
+export function getTasksForColumn(
+  tasks: WorkflowTaskView[],
+  columnId: string,
+  config: WorkflowConfig,
+): WorkflowTaskView[] {
+  const breakdownStage = findBreakdownStage(config);
+
   const columnTasks = tasks.filter((task) => {
     // Terminal states
     if (columnId === "done") {
@@ -73,12 +88,17 @@ export function getTasksForColumn(tasks: WorkflowTaskView[], columnId: string): 
       return task.derived.is_blocked;
     }
 
+    // Waiting on children — place in the breakdown stage column
+    if (task.derived.is_waiting_on_children) {
+      return columnId === breakdownStage;
+    }
+
     // Active tasks - match by stage name
     if (task.derived.current_stage) {
       return task.derived.current_stage === columnId;
     }
 
-    // Waiting on children, archived, etc. — not shown in stage columns
+    // Archived, etc. — not shown in stage columns
     return false;
   });
 

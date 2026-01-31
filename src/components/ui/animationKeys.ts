@@ -17,6 +17,7 @@ export const SidebarSlot = {
 /** Task detail main tabs (TaskDetailSidebar.tsx) */
 export const TaskDetailTabs = {
   details: (taskId: string) => `TaskDetailTabs.${taskId}.Details`,
+  subtasks: (taskId: string) => `TaskDetailTabs.${taskId}.Subtasks`,
   iterations: (taskId: string) => `TaskDetailTabs.${taskId}.Iterations`,
   logs: (taskId: string) => `TaskDetailTabs.${taskId}.Logs`,
   artifacts: (taskId: string) => `TaskDetailTabs.${taskId}.Artifacts`,

@@ -51,6 +51,11 @@ pub enum OrchestratorEvent {
     IntegrationStarted { task_id: String, branch: String },
     /// Integration completed successfully.
     IntegrationCompleted { task_id: String },
+    /// Parent task advanced because all subtasks completed.
+    ParentAdvanced {
+        task_id: String,
+        subtask_count: usize,
+    },
     /// Integration failed (e.g., merge conflict).
     IntegrationFailed {
         task_id: String,
@@ -227,6 +232,9 @@ impl OrchestratorLoop {
     pub fn tick(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
 
+        // Phase 0: Check if WaitingOnChildren parents can advance (all subtasks done)
+        events.extend(self.check_parent_completions()?);
+
         // Phase 1: Process completed executions (agents and scripts)
         events.extend(self.process_completed_executions()?);
 
@@ -250,6 +258,28 @@ impl OrchestratorLoop {
         // Update ready_for_integration for next tick
         if let Ok(mut ready) = self.ready_for_integration.lock() {
             *ready = current_done_tasks;
+        }
+
+        Ok(events)
+    }
+
+    /// Check if any `WaitingOnChildren` parents can advance because all subtasks are done.
+    fn check_parent_completions(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
+        let mut events = Vec::new();
+        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+
+        let advanced = api.advance_completed_parents()?;
+        for (task_id, subtask_count) in advanced {
+            orkestra_debug!(
+                "orchestrator",
+                "Parent {} advanced: all {} subtasks done",
+                task_id,
+                subtask_count
+            );
+            events.push(OrchestratorEvent::ParentAdvanced {
+                task_id,
+                subtask_count,
+            });
         }
 
         Ok(events)

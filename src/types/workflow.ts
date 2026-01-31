@@ -15,6 +15,8 @@ export interface StageCapabilities {
   ask_questions: boolean;
   /** Whether the stage can produce subtasks. */
   produce_subtasks: boolean;
+  /** Named flow that subtasks created from this stage should use. */
+  subtask_flow?: string;
   /** Which stages this stage can restage to (e.g., review can restage to work). */
   supports_restage: string[];
 }
@@ -316,11 +318,23 @@ export interface DerivedTaskState {
   is_blocked: boolean;
   is_done: boolean;
   is_terminal: boolean;
+  is_waiting_on_children: boolean;
   needs_review: boolean;
   has_questions: boolean;
   pending_questions: WorkflowQuestion[];
   rejection_feedback: string | null;
   stages_with_logs: string[];
+  subtask_progress: SubtaskProgress | null;
+}
+
+/**
+ * Progress summary for a parent task's subtasks.
+ */
+export interface SubtaskProgress {
+  total: number;
+  done: number;
+  failed: number;
+  in_progress: number;
 }
 
 // =============================================================================

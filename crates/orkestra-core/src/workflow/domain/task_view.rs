@@ -32,7 +32,6 @@ pub struct TaskView {
 /// predicates on Task/Status/Phase — no duplicated logic.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(clippy::struct_excessive_bools)]
 pub struct DerivedTaskState {
     pub current_stage: Option<String>,
     pub is_working: bool,
@@ -40,21 +39,39 @@ pub struct DerivedTaskState {
     pub is_blocked: bool,
     pub is_done: bool,
     pub is_terminal: bool,
+    pub is_waiting_on_children: bool,
     pub needs_review: bool,
     pub has_questions: bool,
     pub pending_questions: Vec<Question>,
     pub rejection_feedback: Option<String>,
     pub stages_with_logs: Vec<String>,
+    pub subtask_progress: Option<SubtaskProgress>,
+}
+
+/// Progress summary for a parent task's subtasks.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubtaskProgress {
+    pub total: usize,
+    pub done: usize,
+    pub failed: usize,
+    pub in_progress: usize,
 }
 
 impl DerivedTaskState {
     /// Build derived state from a task and its related data.
     ///
     /// Delegates to Task/Status/Phase predicates — one canonical definition per predicate.
-    pub fn build(task: &Task, iterations: &[Iteration], sessions: &[StageSession]) -> Self {
+    /// `subtasks` should be the list of child tasks (if any).
+    pub fn build(
+        task: &Task,
+        iterations: &[Iteration],
+        sessions: &[StageSession],
+        subtasks: &[Task],
+    ) -> Self {
         let pending_questions = extract_pending_questions(task, iterations);
         let rejection_feedback = extract_rejection_feedback(task, iterations);
         let stages_with_logs = sessions.iter().map(|s| s.stage.clone()).collect();
+        let subtask_progress = compute_subtask_progress(subtasks);
 
         Self {
             current_stage: task.current_stage().map(str::to_string),
@@ -63,13 +80,39 @@ impl DerivedTaskState {
             is_blocked: task.is_blocked(),
             is_done: task.is_done(),
             is_terminal: task.is_terminal(),
+            is_waiting_on_children: task.status.is_waiting_on_children(),
             needs_review: task.needs_review(),
             has_questions: !pending_questions.is_empty(),
             pending_questions,
             rejection_feedback,
             stages_with_logs,
+            subtask_progress,
         }
     }
+}
+
+/// Compute subtask progress from a list of child tasks.
+///
+/// Returns `None` if the subtask list is empty (task has no children).
+fn compute_subtask_progress(subtasks: &[Task]) -> Option<SubtaskProgress> {
+    if subtasks.is_empty() {
+        return None;
+    }
+
+    let total = subtasks.len();
+    let done = subtasks
+        .iter()
+        .filter(|t| t.is_done() || t.is_archived())
+        .count();
+    let failed = subtasks.iter().filter(|t| t.is_failed()).count();
+    let in_progress = total - done - failed;
+
+    Some(SubtaskProgress {
+        total,
+        done,
+        failed,
+        in_progress,
+    })
 }
 
 /// Extract pending questions from the latest iteration of the current stage.
@@ -137,7 +180,7 @@ mod tests {
     #[test]
     fn test_derived_state_active_task() {
         let task = make_task("planning");
-        let derived = DerivedTaskState::build(&task, &[], &[]);
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert_eq!(derived.current_stage, Some("planning".to_string()));
         assert!(!derived.is_working);
@@ -156,7 +199,7 @@ mod tests {
     fn test_derived_state_working() {
         let mut task = make_task("planning");
         task.phase = Phase::AgentWorking;
-        let derived = DerivedTaskState::build(&task, &[], &[]);
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert!(derived.is_working);
         assert!(!derived.needs_review);
@@ -166,7 +209,7 @@ mod tests {
     fn test_derived_state_needs_review() {
         let mut task = make_task("planning");
         task.phase = Phase::AwaitingReview;
-        let derived = DerivedTaskState::build(&task, &[], &[]);
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert!(derived.needs_review);
         assert!(!derived.is_working);
@@ -177,7 +220,7 @@ mod tests {
         let mut task = make_task("planning");
         task.phase = Phase::AwaitingReview;
         task.status = Status::Done;
-        let derived = DerivedTaskState::build(&task, &[], &[]);
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         // Done + AwaitingReview should not count as needs_review
         assert!(!derived.needs_review);
@@ -188,18 +231,18 @@ mod tests {
         let mut task = make_task("planning");
 
         task.status = Status::Done;
-        let derived = DerivedTaskState::build(&task, &[], &[]);
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(derived.is_done);
         assert!(derived.is_terminal);
         assert!(derived.current_stage.is_none());
 
         task.status = Status::failed("error");
-        let derived = DerivedTaskState::build(&task, &[], &[]);
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(derived.is_failed);
         assert!(derived.is_terminal);
 
         task.status = Status::blocked("reason");
-        let derived = DerivedTaskState::build(&task, &[], &[]);
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(derived.is_blocked);
         assert!(derived.is_terminal);
     }
@@ -214,7 +257,7 @@ mod tests {
         ));
         iter.ended_at = Some("now".to_string());
 
-        let derived = DerivedTaskState::build(&task, &[iter], &[]);
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[]);
 
         assert!(derived.has_questions);
         assert_eq!(derived.pending_questions.len(), 1);
@@ -228,7 +271,7 @@ mod tests {
         iter.outcome = Some(Outcome::rejected("planning", "Needs more detail"));
         iter.ended_at = Some("now".to_string());
 
-        let derived = DerivedTaskState::build(&task, &[iter], &[]);
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[]);
 
         assert_eq!(
             derived.rejection_feedback,
@@ -246,7 +289,7 @@ mod tests {
         let mut session2 = StageSession::new("ss-2", "task-1", "work", "now");
         session2.session_state = SessionState::Spawning;
 
-        let derived = DerivedTaskState::build(&task, &[], &[session1, session2]);
+        let derived = DerivedTaskState::build(&task, &[], &[session1, session2], &[]);
 
         // All sessions produce tabs, including Spawning
         assert_eq!(derived.stages_with_logs, vec!["planning", "work"]);
@@ -264,10 +307,45 @@ mod tests {
         ));
         iter.ended_at = Some("now".to_string());
 
-        let derived = DerivedTaskState::build(&task, &[iter], &[]);
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[]);
 
         assert!(!derived.has_questions);
         assert!(derived.pending_questions.is_empty());
+    }
+
+    #[test]
+    fn test_derived_state_no_subtasks() {
+        let task = make_task("planning");
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert!(derived.subtask_progress.is_none());
+        assert!(!derived.is_waiting_on_children);
+    }
+
+    #[test]
+    fn test_derived_state_with_subtask_progress() {
+        let mut parent = make_task("breakdown");
+        parent.status = Status::WaitingOnChildren;
+
+        let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
+        sub1.parent_id = Some("task-1".to_string());
+        sub1.status = Status::Done;
+
+        let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
+        sub2.parent_id = Some("task-1".to_string());
+
+        let mut sub3 = Task::new("sub-3", "Sub 3", "Desc", "work", "now");
+        sub3.parent_id = Some("task-1".to_string());
+        sub3.status = Status::failed("error");
+
+        let derived = DerivedTaskState::build(&parent, &[], &[], &[sub1, sub2, sub3]);
+
+        assert!(derived.is_waiting_on_children);
+        let progress = derived.subtask_progress.unwrap();
+        assert_eq!(progress.total, 3);
+        assert_eq!(progress.done, 1);
+        assert_eq!(progress.failed, 1);
+        assert_eq!(progress.in_progress, 1);
     }
 
     #[test]
@@ -277,7 +355,7 @@ mod tests {
             task: task.clone(),
             iterations: vec![],
             stage_sessions: vec![],
-            derived: DerivedTaskState::build(&task, &[], &[]),
+            derived: DerivedTaskState::build(&task, &[], &[], &[]),
         };
 
         let json = serde_json::to_string(&view).unwrap();

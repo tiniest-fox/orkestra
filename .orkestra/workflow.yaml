@@ -80,7 +80,8 @@ flows:
     stages:
       - work
       - checks
-      - review
+      - review:
+          prompt: hotfix_reviewer.md
 
 integration:
   on_failure: work

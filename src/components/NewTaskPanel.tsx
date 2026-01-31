@@ -3,7 +3,7 @@
  * Includes a flow picker when alternate flows are defined in the workflow config.
  */
 
-import { FileText, Layers, type LucideIcon, Rocket, Zap } from "lucide-react";
+import { CircleDot, FileText, GitBranch, Layers, type LucideIcon, Rocket, Zap } from "lucide-react";
 import { useState } from "react";
 import { useWorkflowConfig } from "../providers";
 import type { FlowConfig } from "../types/workflow";
@@ -17,7 +17,14 @@ const ICON_MAP: Record<string, LucideIcon> = {
   "file-text": FileText,
   rocket: Rocket,
   layers: Layers,
+  "git-branch": GitBranch,
 };
+
+/** Default icon for the standard (full pipeline) flow. */
+const DEFAULT_FLOW_ICON: LucideIcon = Layers;
+
+/** Fallback icon for named flows with unrecognized or missing icon names. */
+const FALLBACK_FLOW_ICON: LucideIcon = CircleDot;
 
 interface NewTaskPanelProps {
   onClose: () => void;
@@ -148,11 +155,12 @@ function FlowPicker({ flows, selected, onSelect }: FlowPickerProps) {
         <FlowOption
           name="Standard"
           description="Full pipeline with all stages"
+          icon={DEFAULT_FLOW_ICON}
           isSelected={selected === undefined}
           onClick={() => onSelect(undefined)}
         />
         {flows.map(([name, flow]) => {
-          const Icon = flow.icon ? ICON_MAP[flow.icon] : undefined;
+          const Icon = (flow.icon ? ICON_MAP[flow.icon] : undefined) ?? FALLBACK_FLOW_ICON;
           return (
             <FlowOption
               key={name}

@@ -423,8 +423,9 @@ export type ToolInput =
  * - "feedback": Human provided feedback to address
  * - "integration": Integration failed with merge conflict
  * - "answers": Human provided answers to questions
+ * - "initial": Initial agent prompt (first spawn)
  */
-export type ResumeType = "continue" | "feedback" | "integration" | "answers";
+export type ResumeType = "continue" | "feedback" | "integration" | "answers" | "initial";
 
 /**
  * Structured log entry for task execution (loaded from Claude's session files).

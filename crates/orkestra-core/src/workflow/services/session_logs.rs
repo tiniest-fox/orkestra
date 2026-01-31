@@ -441,6 +441,8 @@ pub enum ResumeMarkerType {
     Integration,
     /// Human provided answers to questions.
     Answers,
+    /// Initial agent prompt (first spawn, not a resume).
+    Initial,
 }
 
 impl ResumeMarkerType {
@@ -451,6 +453,7 @@ impl ResumeMarkerType {
             Self::Feedback => "feedback",
             Self::Integration => "integration",
             Self::Answers => "answers",
+            Self::Initial => "initial",
         }
     }
 }
@@ -473,6 +476,15 @@ const LEGACY_RESUME_MARKER: &str = "<!orkestra-resume>";
 /// Supports both typed markers (<!orkestra-resume:TYPE>) and legacy markers.
 fn parse_resume_marker(text: &str) -> Option<ResumeMarker> {
     let trimmed = text.trim();
+
+    // Initial prompt marker
+    if let Some(rest) = trimmed.strip_prefix("<!orkestra-initial>") {
+        let content = rest.trim().to_string();
+        return Some(ResumeMarker {
+            marker_type: ResumeMarkerType::Initial,
+            content,
+        });
+    }
 
     // New format: typed markers <!orkestra-resume:TYPE>
     if let Some(rest) = trimmed.strip_prefix("<!orkestra-resume:") {
@@ -875,10 +887,22 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_resume_marker_initial() {
+        let marker = parse_resume_marker(
+            "<!orkestra-initial>\n\n# Worker Agent\n\nYou are a code implementation agent...",
+        );
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::Initial);
+        assert!(marker.content.starts_with("# Worker Agent"));
+    }
+
+    #[test]
     fn test_resume_marker_type_as_str() {
         assert_eq!(ResumeMarkerType::Continue.as_str(), "continue");
         assert_eq!(ResumeMarkerType::Feedback.as_str(), "feedback");
         assert_eq!(ResumeMarkerType::Integration.as_str(), "integration");
         assert_eq!(ResumeMarkerType::Answers.as_str(), "answers");
+        assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
     }
 }

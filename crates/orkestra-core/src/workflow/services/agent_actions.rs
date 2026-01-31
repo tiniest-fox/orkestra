@@ -461,12 +461,11 @@ impl WorkflowApi {
                         .effective_capabilities(&stage, parent.flow.as_deref())
                         .unwrap_or_default();
 
-                    let next_status =
-                        if let Some(target) = effective_caps.completion_stage() {
-                            Status::active(target)
-                        } else {
-                            self.compute_next_status_on_approve(&stage, parent.flow.as_deref())
-                        };
+                    let next_status = if let Some(target) = effective_caps.completion_stage() {
+                        Status::active(target)
+                    } else {
+                        self.compute_next_status_on_approve(&stage, parent.flow.as_deref())
+                    };
                     let now = chrono::Utc::now().to_rfc3339();
 
                     parent.status = next_status.clone();

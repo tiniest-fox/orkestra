@@ -472,9 +472,7 @@ mod tests {
     #[test]
     fn test_subtask_capabilities_serialization() {
         let caps = StageCapabilities {
-            subtasks: Some(
-                SubtaskCapabilities::default().with_flow("subtask"),
-            ),
+            subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
             ..Default::default()
         };
         let yaml = serde_yaml::to_string(&caps).unwrap();

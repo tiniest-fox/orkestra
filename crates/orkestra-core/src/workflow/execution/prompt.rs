@@ -577,6 +577,9 @@ pub fn resolve_stage_agent_config_for(
 pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_>) -> String {
     let mut prompt = String::new();
 
+    // Marker for session log parser to identify initial prompts
+    prompt.push_str("<!orkestra-initial>\n\n");
+
     // Agent definition first (system instructions)
     prompt.push_str(agent_definition);
     prompt.push_str("\n\n---\n\n");
@@ -1112,6 +1115,9 @@ mod tests {
         let ctx = builder.build_context("work", &task, None, None).unwrap();
         let agent_def = "You are a worker agent. Implement the plan.";
         let prompt = build_complete_prompt(agent_def, &ctx);
+
+        // Should contain initial prompt marker
+        assert!(prompt.starts_with("<!orkestra-initial>"));
 
         // Should contain agent definition
         assert!(prompt.contains("You are a worker agent"));

@@ -1129,9 +1129,7 @@ integration:
 
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("breakdown", "breakdown").with_capabilities(StageCapabilities {
-                subtasks: Some(
-                    SubtaskCapabilities::default().with_completion_stage("nonexistent"),
-                ),
+                subtasks: Some(SubtaskCapabilities::default().with_completion_stage("nonexistent")),
                 ..Default::default()
             }),
             StageConfig::new("work", "summary"),

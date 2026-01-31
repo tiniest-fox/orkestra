@@ -233,10 +233,7 @@ impl WorkflowApi {
                     .get(&task.id)
                     .cloned()
                     .unwrap_or_default();
-                let stage_sessions = sessions_by_task
-                    .get(&task.id)
-                    .cloned()
-                    .unwrap_or_default();
+                let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
                 let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[]);
                 derived_states.push(derived.clone());
                 subtask_views.push(TaskView {
@@ -256,10 +253,7 @@ impl WorkflowApi {
                 .get(&task.id)
                 .cloned()
                 .unwrap_or_default();
-            let stage_sessions = sessions_by_task
-                .get(&task.id)
-                .cloned()
-                .unwrap_or_default();
+            let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
             let subtask_states = subtask_derived_by_parent
                 .get(&task.id)
                 .map_or(&[][..], Vec::as_slice);

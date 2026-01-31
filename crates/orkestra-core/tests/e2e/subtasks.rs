@@ -465,10 +465,22 @@ fn test_diamond_dependency_orchestration() {
     // --- Phase 1: Only A should be eligible ---
     let eligible = env.api().get_tasks_needing_agents().unwrap();
     let eligible_ids: Vec<&str> = eligible.iter().map(|t| t.id.as_str()).collect();
-    assert!(eligible_ids.contains(&id_a.as_str()), "A should be eligible");
-    assert!(!eligible_ids.contains(&id_b.as_str()), "B should NOT be eligible (depends on A)");
-    assert!(!eligible_ids.contains(&id_c.as_str()), "C should NOT be eligible (depends on A)");
-    assert!(!eligible_ids.contains(&id_d.as_str()), "D should NOT be eligible (depends on B,C)");
+    assert!(
+        eligible_ids.contains(&id_a.as_str()),
+        "A should be eligible"
+    );
+    assert!(
+        !eligible_ids.contains(&id_b.as_str()),
+        "B should NOT be eligible (depends on A)"
+    );
+    assert!(
+        !eligible_ids.contains(&id_c.as_str()),
+        "C should NOT be eligible (depends on A)"
+    );
+    assert!(
+        !eligible_ids.contains(&id_d.as_str()),
+        "D should NOT be eligible (depends on B,C)"
+    );
 
     // --- Phase 2: Complete A → B and C unblock ---
     env.set_output(
@@ -512,8 +524,16 @@ fn test_diamond_dependency_orchestration() {
     // B and C should be active (unblocked by A completing)
     let b = env.api().get_task(&id_b).unwrap();
     let c = env.api().get_task(&id_c).unwrap();
-    assert!(b.status.is_active(), "B should be active after A done, got: {:?}", b.status);
-    assert!(c.status.is_active(), "C should be active after A done, got: {:?}", c.status);
+    assert!(
+        b.status.is_active(),
+        "B should be active after A done, got: {:?}",
+        b.status
+    );
+    assert!(
+        c.status.is_active(),
+        "C should be active after A done, got: {:?}",
+        c.status
+    );
 
     // D should still be blocked (B and C not done yet)
     let eligible = env.api().get_tasks_needing_agents().unwrap();

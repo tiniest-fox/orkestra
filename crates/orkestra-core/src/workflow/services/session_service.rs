@@ -647,7 +647,10 @@ mod tests {
         service.on_spawn_starting("task-1", "work").unwrap();
 
         // Set a trigger on the active iteration
-        let mut iter = store.get_active_iteration("task-1", "work").unwrap().unwrap();
+        let mut iter = store
+            .get_active_iteration("task-1", "work")
+            .unwrap()
+            .unwrap();
         iter.incoming_context = Some(IterationTrigger::ScriptFailure {
             from_stage: "checks".into(),
             error: "test failed".into(),
@@ -655,14 +658,20 @@ mod tests {
         store.save_iteration(&iter).unwrap();
 
         // Before marking: trigger_delivered should be false
-        let iter = store.get_active_iteration("task-1", "work").unwrap().unwrap();
+        let iter = store
+            .get_active_iteration("task-1", "work")
+            .unwrap()
+            .unwrap();
         assert!(!iter.trigger_delivered);
 
         // Mark trigger as delivered
         service.mark_trigger_delivered("task-1", "work").unwrap();
 
         // After marking: trigger_delivered should be true, but incoming_context preserved
-        let iter = store.get_active_iteration("task-1", "work").unwrap().unwrap();
+        let iter = store
+            .get_active_iteration("task-1", "work")
+            .unwrap()
+            .unwrap();
         assert!(iter.trigger_delivered);
         assert!(matches!(
             iter.incoming_context,
@@ -678,7 +687,10 @@ mod tests {
         service.on_spawn_starting("task-1", "work").unwrap();
 
         // Set trigger and mark as delivered
-        let mut iter = store.get_active_iteration("task-1", "work").unwrap().unwrap();
+        let mut iter = store
+            .get_active_iteration("task-1", "work")
+            .unwrap()
+            .unwrap();
         iter.incoming_context = Some(IterationTrigger::Feedback {
             feedback: "fix this".into(),
         });
@@ -688,7 +700,10 @@ mod tests {
         // Calling again should be a no-op
         service.mark_trigger_delivered("task-1", "work").unwrap();
 
-        let iter = store.get_active_iteration("task-1", "work").unwrap().unwrap();
+        let iter = store
+            .get_active_iteration("task-1", "work")
+            .unwrap()
+            .unwrap();
         assert!(iter.trigger_delivered);
     }
 
@@ -699,13 +714,19 @@ mod tests {
         service.on_spawn_starting("task-1", "work").unwrap();
 
         // No incoming_context set (None)
-        let iter = store.get_active_iteration("task-1", "work").unwrap().unwrap();
+        let iter = store
+            .get_active_iteration("task-1", "work")
+            .unwrap()
+            .unwrap();
         assert!(iter.incoming_context.is_none());
 
         // Should succeed without marking (nothing to deliver)
         service.mark_trigger_delivered("task-1", "work").unwrap();
 
-        let iter = store.get_active_iteration("task-1", "work").unwrap().unwrap();
+        let iter = store
+            .get_active_iteration("task-1", "work")
+            .unwrap()
+            .unwrap();
         assert!(!iter.trigger_delivered);
     }
 }

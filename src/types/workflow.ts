@@ -259,6 +259,8 @@ export interface WorkflowTask {
   artifacts: Record<string, WorkflowArtifact>;
   /** Parent task ID (for subtasks). */
   parent_id?: string;
+  /** Short display ID for subtasks (e.g., "a3f2"), unique within a parent. */
+  short_id?: string;
   /** Task IDs this task depends on. */
   depends_on: string[];
   /** Git branch name. */
@@ -335,6 +337,12 @@ export interface SubtaskProgress {
   done: number;
   failed: number;
   in_progress: number;
+  /** True if any subtask has pending questions. */
+  any_has_questions: boolean;
+  /** True if any subtask is awaiting human review. */
+  any_needs_review: boolean;
+  /** True if any subtask has an active agent. */
+  any_working: boolean;
 }
 
 // =============================================================================

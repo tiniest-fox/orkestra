@@ -7,7 +7,7 @@ mod iteration;
 mod log_entry;
 mod question;
 mod stage_session;
-mod task;
+pub(crate) mod task;
 pub(crate) mod task_view;
 
 pub use iteration::{Iteration, IterationTrigger};

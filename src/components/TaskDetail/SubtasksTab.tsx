@@ -2,35 +2,17 @@
  * Subtasks tab - displays child tasks of a parent with progress summary.
  *
  * Fetches subtask data via workflow_list_subtasks Tauri command.
- * Shows each subtask's title, status, and current stage.
+ * Reuses TaskCard with "subtask" variant for consistent display.
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
-import type { SubtaskProgress, WorkflowTask } from "../../types/workflow";
-import { Badge } from "../ui";
+import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
+import { TaskCard } from "../Kanban/TaskCard";
 
 interface SubtasksTabProps {
   parentId: string;
   progress: SubtaskProgress;
-}
-
-function subtaskStatusBadge(task: WorkflowTask) {
-  switch (task.status.type) {
-    case "done":
-    case "archived":
-      return <Badge variant="success">Done</Badge>;
-    case "failed":
-      return <Badge variant="error">Failed</Badge>;
-    case "blocked":
-      return <Badge variant="blocked">Blocked</Badge>;
-    case "active":
-      return <Badge variant="info">{task.status.stage}</Badge>;
-    case "waiting_on_children":
-      return <Badge variant="neutral">Waiting</Badge>;
-    default:
-      return <Badge variant="neutral">Unknown</Badge>;
-  }
 }
 
 function ProgressBar({ progress }: { progress: SubtaskProgress }) {
@@ -68,12 +50,12 @@ function ProgressBar({ progress }: { progress: SubtaskProgress }) {
 }
 
 export function SubtasksTab({ parentId, progress }: SubtasksTabProps) {
-  const [subtasks, setSubtasks] = useState<WorkflowTask[]>([]);
+  const [subtasks, setSubtasks] = useState<WorkflowTaskView[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchSubtasks = useCallback(async () => {
     try {
-      const result = await invoke<WorkflowTask[]>("workflow_list_subtasks", {
+      const result = await invoke<WorkflowTaskView[]>("workflow_list_subtasks", {
         parentId,
       });
       setSubtasks(result);
@@ -96,6 +78,9 @@ export function SubtasksTab({ parentId, progress }: SubtasksTabProps) {
     );
   }
 
+  // Build id → short_id lookup for resolving dependency labels
+  const shortIdById = new Map(subtasks.map((s) => [s.id, s.short_id ?? s.id]));
+
   return (
     <div className="p-4">
       <ProgressBar progress={progress} />
@@ -105,22 +90,14 @@ export function SubtasksTab({ parentId, progress }: SubtasksTabProps) {
       ) : (
         <div className="space-y-2">
           {subtasks.map((subtask) => (
-            <div
+            <TaskCard
               key={subtask.id}
-              className="flex items-center justify-between p-2.5 bg-stone-50 dark:bg-stone-800/50 rounded-panel-sm border border-stone-200 dark:border-stone-700"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-stone-800 dark:text-stone-200 truncate">
-                  {subtask.title}
-                </div>
-                {subtask.description && (
-                  <div className="text-xs text-stone-500 dark:text-stone-400 truncate mt-0.5">
-                    {subtask.description}
-                  </div>
-                )}
-              </div>
-              <div className="ml-3 flex-shrink-0">{subtaskStatusBadge(subtask)}</div>
-            </div>
+              task={subtask}
+              variant="subtask"
+              dependencyNames={(subtask.depends_on ?? [])
+                .map((id) => shortIdById.get(id))
+                .filter((name): name is string => !!name)}
+            />
           ))}
         </div>
       )}

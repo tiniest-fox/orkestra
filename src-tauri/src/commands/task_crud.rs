@@ -70,13 +70,16 @@ pub fn workflow_delete_task(state: State<AppState>, task_id: String) -> Result<(
         .map_err(Into::into)
 }
 
-/// List subtasks for a parent task.
+/// List subtasks for a parent task (rich view with derived state).
 #[tauri::command]
 pub fn workflow_list_subtasks(
     state: State<AppState>,
     parent_id: String,
-) -> Result<Vec<Task>, TauriError> {
-    state.api()?.list_subtasks(&parent_id).map_err(Into::into)
+) -> Result<Vec<TaskView>, TauriError> {
+    state
+        .api()?
+        .list_subtask_views(&parent_id)
+        .map_err(Into::into)
 }
 
 /// Get all archived tasks.

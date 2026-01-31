@@ -4,12 +4,17 @@
 
 import { AlertCircle, Eye, GitBranch, Layers, MessageCircle, XCircle, Zap } from "lucide-react";
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
-import { Panel } from "../ui";
+import { titleCase } from "../../utils/formatters";
+import { Badge, Panel } from "../ui";
 
 interface TaskCardProps {
   task: WorkflowTaskView;
   onClick?: () => void;
   isSelected?: boolean;
+  /** "board" (default) shows full card; "subtask" shows stage badge, hides ID/artifacts/subtask progress. */
+  variant?: "board" | "subtask";
+  /** Resolved dependency names (subtask variant only). */
+  dependencyNames?: string[];
 }
 
 function SubtaskProgressBar({ progress }: { progress: SubtaskProgress }) {
@@ -58,7 +63,13 @@ function getDisplayTitle(task: WorkflowTaskView): string {
   return `${task.description.slice(0, maxLength)}...`;
 }
 
-export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
+export function TaskCard({
+  task,
+  onClick,
+  isSelected,
+  variant = "board",
+  dependencyNames,
+}: TaskCardProps) {
   const { derived } = task;
   const isFailed = derived.is_failed;
   const isBlocked = derived.is_blocked;
@@ -67,17 +78,22 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
   const taskNeedsReview = derived.needs_review;
   const hasQuestions = derived.has_questions;
   const hasTitle = !!task.title;
+  const isSubtask = variant === "subtask";
 
   const isSettingUp = task.phase === "setting_up";
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
+
+  // Include subtask aggregate state in border highlights
+  const effectiveQuestions = hasQuestions || !!derived.subtask_progress?.any_has_questions;
+  const effectiveReview = taskNeedsReview || !!derived.subtask_progress?.any_needs_review;
 
   const borderClass = isFailed
     ? "border-error-300 bg-error-50 dark:border-error-700 dark:bg-error-950"
     : isBlocked
       ? "border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-950"
-      : hasQuestions
+      : effectiveQuestions
         ? "border-info-400 bg-info-50 dark:border-info-600 dark:bg-info-950"
-        : taskNeedsReview
+        : effectiveReview
           ? "border-warning-400 bg-warning-50 dark:border-warning-600 dark:bg-warning-950"
           : isSelected
             ? "border-orange-500 ring-2 ring-orange-200 dark:ring-orange-800"
@@ -96,6 +112,11 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
         <h3
           className={`font-medium text-sm line-clamp-2 ${hasTitle ? "text-stone-800 dark:text-stone-100" : "text-stone-400 dark:text-stone-500"}`}
         >
+          {isSubtask && task.short_id && (
+            <span className="text-stone-400 dark:text-stone-500 font-mono font-normal mr-1.5">
+              {task.short_id}
+            </span>
+          )}
           {getDisplayTitle(task)}
         </h3>
         <div className="flex items-center gap-1.5">
@@ -136,11 +157,22 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
               <AlertCircle className="w-4 h-4 text-warning-600 dark:text-warning-300" />
             </span>
           )}
-          {derived.is_waiting_on_children && (
-            <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
-              <Layers className="w-4 h-4 text-info-600 dark:text-info-300" />
-            </span>
-          )}
+          {derived.is_waiting_on_children &&
+            (derived.subtask_progress?.any_has_questions ? (
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
+                <MessageCircle className="w-4 h-4 text-info-600 dark:text-info-300" />
+              </span>
+            ) : derived.subtask_progress?.any_needs_review ? (
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-warning-100 dark:bg-warning-900">
+                <Eye className="w-4 h-4 text-warning-700 dark:text-warning-300" />
+              </span>
+            ) : (
+              <span className="flex-shrink-0 p-1.5 rounded-md bg-info-100 dark:bg-info-900">
+                <Layers
+                  className={`w-4 h-4 text-info-600 dark:text-info-300 ${derived.subtask_progress?.any_working ? "animate-spin-bounce" : ""}`}
+                />
+              </span>
+            ))}
         </div>
       </div>
 
@@ -150,9 +182,36 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
         </p>
       )}
 
-      {derived.subtask_progress && <SubtaskProgressBar progress={derived.subtask_progress} />}
+      {isSubtask && (
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <div>
+            {isDone ? (
+              <Badge variant="success">Done</Badge>
+            ) : isFailed ? (
+              <Badge variant="error">Failed</Badge>
+            ) : isBlocked ? (
+              <Badge variant="blocked">Blocked</Badge>
+            ) : derived.current_stage ? (
+              <Badge variant="info">{titleCase(derived.current_stage)}</Badge>
+            ) : null}
+          </div>
+          {dependencyNames && dependencyNames.length > 0 && (
+            <span className="text-stone-400 dark:text-stone-500 text-xs font-mono truncate">
+              Depends on {dependencyNames.join(", ")}
+            </span>
+          )}
+        </div>
+      )}
 
-      <span className="text-stone-400 dark:text-stone-500 text-xs font-mono mt-2.5">{task.id}</span>
+      {!isSubtask && derived.subtask_progress && (
+        <SubtaskProgressBar progress={derived.subtask_progress} />
+      )}
+
+      {!isSubtask && (
+        <span className="text-stone-400 dark:text-stone-500 text-xs font-mono mt-2.5">
+          {task.id}
+        </span>
+      )}
 
       {errorText && (isFailed || isBlocked) && (
         <p
@@ -166,7 +225,7 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
         </p>
       )}
 
-      {isDone && Object.keys(task.artifacts ?? {}).length > 0 && (
+      {!isSubtask && isDone && Object.keys(task.artifacts ?? {}).length > 0 && (
         <div className="text-stone-500 dark:text-stone-400 text-xs mt-2">
           {Object.keys(task.artifacts ?? {}).length} artifact(s)
         </div>

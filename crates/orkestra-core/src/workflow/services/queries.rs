@@ -28,6 +28,79 @@ impl HasTaskId for StageSession {
     }
 }
 
+/// Sort tasks in topological order (dependencies before dependents).
+///
+/// Uses Kahn's algorithm. Within the same dependency level, preserves
+/// the original input order (typically creation order).
+fn topological_sort(tasks: Vec<Task>) -> Vec<Task> {
+    use std::collections::{HashSet, VecDeque};
+
+    let ids: HashSet<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
+
+    // Map id → index for quick lookup
+    let id_to_idx: HashMap<&str, usize> = tasks
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (t.id.as_str(), i))
+        .collect();
+
+    // Count in-degree (only deps within this task set)
+    let mut in_degree = vec![0usize; tasks.len()];
+    let mut dependents: Vec<Vec<usize>> = vec![vec![]; tasks.len()];
+    for (i, task) in tasks.iter().enumerate() {
+        for dep_id in &task.depends_on {
+            if let Some(&dep_idx) = id_to_idx.get(dep_id.as_str()) {
+                if ids.contains(dep_id.as_str()) {
+                    in_degree[i] += 1;
+                    dependents[dep_idx].push(i);
+                }
+            }
+        }
+    }
+
+    // BFS from zero-degree nodes, preserving original order within each level
+    let mut queue: VecDeque<usize> = VecDeque::new();
+    for (i, &deg) in in_degree.iter().enumerate() {
+        if deg == 0 {
+            queue.push_back(i);
+        }
+    }
+
+    let mut order: Vec<usize> = Vec::with_capacity(tasks.len());
+    while let Some(idx) = queue.pop_front() {
+        order.push(idx);
+        // Sort dependents by original index to preserve creation order
+        let mut deps = dependents[idx].clone();
+        deps.sort_unstable();
+        for dep_idx in deps {
+            in_degree[dep_idx] -= 1;
+            if in_degree[dep_idx] == 0 {
+                queue.push_back(dep_idx);
+            }
+        }
+    }
+
+    // If there are cycles (shouldn't happen), append remaining tasks
+    if order.len() < tasks.len() {
+        for i in 0..tasks.len() {
+            if !order.contains(&i) {
+                order.push(i);
+            }
+        }
+    }
+
+    // Reorder tasks by the computed indices
+    let mut indexed: Vec<(usize, Task)> = tasks.into_iter().enumerate().collect();
+    let mut result = Vec::with_capacity(indexed.len());
+    for idx in order {
+        // Find and remove by original index
+        if let Some(pos) = indexed.iter().position(|(i, _)| *i == idx) {
+            result.push(indexed.swap_remove(pos).1);
+        }
+    }
+    result
+}
+
 /// Group a flat list of items by their task ID.
 fn group_by_task_id<T: HasTaskId>(items: Vec<T>) -> HashMap<String, Vec<T>> {
     let mut map: HashMap<String, Vec<T>> = HashMap::new();
@@ -143,18 +216,72 @@ impl WorkflowApi {
         }
 
         // Batch-load all iterations and sessions in 2 queries (not 2N)
-        let mut iterations_by_task = group_by_task_id(self.store.list_all_iterations()?);
-        let mut sessions_by_task = group_by_task_id(self.store.list_all_stage_sessions()?);
+        let iterations_by_task = group_by_task_id(self.store.list_all_iterations()?);
+        let sessions_by_task = group_by_task_id(self.store.list_all_stage_sessions()?);
+
+        // Pre-compute derived states for subtasks so parents get aggregate flags
+        let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
+        for (parent_id, subtasks) in &subtasks_by_parent {
+            let derived_states: Vec<DerivedTaskState> = subtasks
+                .iter()
+                .map(|st| {
+                    let iters = iterations_by_task
+                        .get(&st.id)
+                        .map_or(&[][..], Vec::as_slice);
+                    let sessions = sessions_by_task
+                        .get(&st.id)
+                        .map_or(&[][..], Vec::as_slice);
+                    DerivedTaskState::build(st, iters, sessions, &[])
+                })
+                .collect();
+            subtask_derived_by_parent.insert(parent_id.clone(), derived_states);
+        }
 
         let mut views = Vec::with_capacity(top_level.len());
         for task in top_level {
-            let iterations = iterations_by_task.remove(&task.id).unwrap_or_default();
-            let stage_sessions = sessions_by_task.remove(&task.id).unwrap_or_default();
-            let subtasks = subtasks_by_parent
+            let iterations = iterations_by_task
+                .get(&task.id)
+                .cloned()
+                .unwrap_or_default();
+            let stage_sessions = sessions_by_task
+                .get(&task.id)
+                .cloned()
+                .unwrap_or_default();
+            let subtask_states = subtask_derived_by_parent
                 .get(&task.id)
                 .map_or(&[][..], Vec::as_slice);
-            let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, subtasks);
+            let derived =
+                DerivedTaskState::build(&task, &iterations, &stage_sessions, subtask_states);
 
+            views.push(TaskView {
+                task,
+                iterations,
+                stage_sessions,
+                derived,
+            });
+        }
+
+        Ok(views)
+    }
+
+    /// List subtasks for a parent task with pre-joined data and derived state.
+    ///
+    /// Same enrichment as `list_task_views` but scoped to a single parent's children.
+    /// Results are sorted in topological order (dependencies before dependents)
+    /// so the display matches execution order.
+    pub fn list_subtask_views(&self, parent_id: &str) -> WorkflowResult<Vec<TaskView>> {
+        let subtasks = self.store.list_subtasks(parent_id)?;
+        if subtasks.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let sorted = topological_sort(subtasks);
+
+        let mut views = Vec::with_capacity(sorted.len());
+        for task in sorted {
+            let iterations = self.store.get_iterations(&task.id)?;
+            let stage_sessions = self.store.get_stage_sessions(&task.id)?;
+            let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[]);
             views.push(TaskView {
                 task,
                 iterations,
@@ -500,5 +627,54 @@ mod tests {
             session_after.spawn_count, 1,
             "spawn_count should be preserved so next spawn uses --resume"
         );
+    }
+
+    #[test]
+    fn test_topological_sort_diamond() {
+        // Diamond: A → B, A → C, B → D, C → D
+        let a = Task::new("a", "A", "", "work", "now");
+        let mut b = Task::new("b", "B", "", "work", "now");
+        b.depends_on = vec!["a".into()];
+        let mut c = Task::new("c", "C", "", "work", "now");
+        c.depends_on = vec!["a".into()];
+        let mut d = Task::new("d", "D", "", "work", "now");
+        d.depends_on = vec!["b".into(), "c".into()];
+
+        // Provide in reverse order to verify sort works
+        let sorted = topological_sort(vec![d, c, b, a]);
+        let ids: Vec<&str> = sorted.iter().map(|t| t.id.as_str()).collect();
+
+        // A must come before B and C; B and C must come before D
+        let pos = |id: &str| ids.iter().position(|&x| x == id).unwrap();
+        assert!(pos("a") < pos("b"));
+        assert!(pos("a") < pos("c"));
+        assert!(pos("b") < pos("d"));
+        assert!(pos("c") < pos("d"));
+    }
+
+    #[test]
+    fn test_topological_sort_no_deps() {
+        let a = Task::new("a", "A", "", "work", "now");
+        let b = Task::new("b", "B", "", "work", "now");
+        let c = Task::new("c", "C", "", "work", "now");
+
+        // No dependencies — should preserve input order
+        let sorted = topological_sort(vec![a, b, c]);
+        let ids: Vec<&str> = sorted.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_topological_sort_linear_chain() {
+        let a = Task::new("a", "A", "", "work", "now");
+        let mut b = Task::new("b", "B", "", "work", "now");
+        b.depends_on = vec!["a".into()];
+        let mut c = Task::new("c", "C", "", "work", "now");
+        c.depends_on = vec!["b".into()];
+
+        // Provide in reverse order
+        let sorted = topological_sort(vec![c, b, a]);
+        let ids: Vec<&str> = sorted.iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(ids, vec!["a", "b", "c"]);
     }
 }

@@ -55,23 +55,29 @@ pub struct SubtaskProgress {
     pub done: usize,
     pub failed: usize,
     pub in_progress: usize,
+    /// True if any subtask has pending questions.
+    pub any_has_questions: bool,
+    /// True if any subtask is awaiting human review.
+    pub any_needs_review: bool,
+    /// True if any subtask has an active agent.
+    pub any_working: bool,
 }
 
 impl DerivedTaskState {
     /// Build derived state from a task and its related data.
     ///
     /// Delegates to Task/Status/Phase predicates — one canonical definition per predicate.
-    /// `subtasks` should be the list of child tasks (if any).
+    /// `subtask_states` should be the pre-computed derived states of child tasks (if any).
     pub fn build(
         task: &Task,
         iterations: &[Iteration],
         sessions: &[StageSession],
-        subtasks: &[Task],
+        subtask_states: &[DerivedTaskState],
     ) -> Self {
         let pending_questions = extract_pending_questions(task, iterations);
         let rejection_feedback = extract_rejection_feedback(task, iterations);
         let stages_with_logs = sessions.iter().map(|s| s.stage.clone()).collect();
-        let subtask_progress = compute_subtask_progress(subtasks);
+        let subtask_progress = compute_subtask_progress(subtask_states);
 
         Self {
             current_stage: task.current_stage().map(str::to_string),
@@ -91,20 +97,20 @@ impl DerivedTaskState {
     }
 }
 
-/// Compute subtask progress from a list of child tasks.
+/// Compute subtask progress from pre-computed subtask derived states.
 ///
-/// Returns `None` if the subtask list is empty (task has no children).
-fn compute_subtask_progress(subtasks: &[Task]) -> Option<SubtaskProgress> {
-    if subtasks.is_empty() {
+/// Returns `None` if the list is empty (task has no children).
+fn compute_subtask_progress(subtask_states: &[DerivedTaskState]) -> Option<SubtaskProgress> {
+    if subtask_states.is_empty() {
         return None;
     }
 
-    let total = subtasks.len();
-    let done = subtasks
+    let total = subtask_states.len();
+    let done = subtask_states
         .iter()
-        .filter(|t| t.is_done() || t.is_archived())
+        .filter(|s| s.is_done || s.is_terminal && !s.is_failed && !s.is_blocked)
         .count();
-    let failed = subtasks.iter().filter(|t| t.is_failed()).count();
+    let failed = subtask_states.iter().filter(|s| s.is_failed).count();
     let in_progress = total - done - failed;
 
     Some(SubtaskProgress {
@@ -112,6 +118,9 @@ fn compute_subtask_progress(subtasks: &[Task]) -> Option<SubtaskProgress> {
         done,
         failed,
         in_progress,
+        any_has_questions: subtask_states.iter().any(|s| s.has_questions),
+        any_needs_review: subtask_states.iter().any(|s| s.needs_review),
+        any_working: subtask_states.iter().any(|s| s.is_working),
     })
 }
 
@@ -327,18 +336,24 @@ mod tests {
         let mut parent = make_task("breakdown");
         parent.status = Status::waiting_on_children("work");
 
+        // Build derived states for subtasks
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
-        sub1.parent_id = Some("task-1".to_string());
         sub1.status = Status::Done;
+        let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[]);
 
-        let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
-        sub2.parent_id = Some("task-1".to_string());
+        let sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
+        let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[]);
 
         let mut sub3 = Task::new("sub-3", "Sub 3", "Desc", "work", "now");
-        sub3.parent_id = Some("task-1".to_string());
         sub3.status = Status::failed("error");
+        let sub3_derived = DerivedTaskState::build(&sub3, &[], &[], &[]);
 
-        let derived = DerivedTaskState::build(&parent, &[], &[], &[sub1, sub2, sub3]);
+        let derived = DerivedTaskState::build(
+            &parent,
+            &[],
+            &[],
+            &[sub1_derived, sub2_derived, sub3_derived],
+        );
 
         assert!(derived.is_waiting_on_children);
         let progress = derived.subtask_progress.unwrap();
@@ -346,6 +361,47 @@ mod tests {
         assert_eq!(progress.done, 1);
         assert_eq!(progress.failed, 1);
         assert_eq!(progress.in_progress, 1);
+        assert!(!progress.any_has_questions);
+        assert!(!progress.any_needs_review);
+        assert!(!progress.any_working);
+    }
+
+    #[test]
+    fn test_subtask_progress_aggregate_flags() {
+        let mut parent = make_task("breakdown");
+        parent.status = Status::waiting_on_children("work");
+
+        // Subtask with questions
+        let sub_q = Task::new("sub-q", "Q", "Desc", "work", "now");
+        let mut iter_q = Iteration::new("iter-q", "sub-q", "work", 1, "now");
+        iter_q.outcome = Some(Outcome::awaiting_answers(
+            "work",
+            vec![Question::new("How?")],
+        ));
+        iter_q.ended_at = Some("now".to_string());
+        let sub_q_derived = DerivedTaskState::build(&sub_q, &[iter_q], &[], &[]);
+
+        // Subtask awaiting review
+        let mut sub_r = Task::new("sub-r", "R", "Desc", "work", "now");
+        sub_r.phase = Phase::AwaitingReview;
+        let sub_r_derived = DerivedTaskState::build(&sub_r, &[], &[], &[]);
+
+        // Subtask working
+        let mut sub_w = Task::new("sub-w", "W", "Desc", "work", "now");
+        sub_w.phase = Phase::AgentWorking;
+        let sub_w_derived = DerivedTaskState::build(&sub_w, &[], &[], &[]);
+
+        let derived = DerivedTaskState::build(
+            &parent,
+            &[],
+            &[],
+            &[sub_q_derived, sub_r_derived, sub_w_derived],
+        );
+
+        let progress = derived.subtask_progress.unwrap();
+        assert!(progress.any_has_questions);
+        assert!(progress.any_needs_review);
+        assert!(progress.any_working);
     }
 
     #[test]

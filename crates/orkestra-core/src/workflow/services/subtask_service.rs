@@ -4,6 +4,7 @@
 //! to markdown artifacts, and creating Task records from approved breakdowns.
 
 use crate::workflow::config::WorkflowConfig;
+use crate::workflow::domain::task::generate_short_id;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::{subtasks_to_markdown, SubtaskOutput};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -84,9 +85,12 @@ impl SubtaskService {
         // First pass: create all tasks and collect ID mapping (index → task_id)
         let mut created_tasks: Vec<Task> = Vec::with_capacity(subtask_outputs.len());
         let mut index_to_id: Vec<String> = Vec::with_capacity(subtask_outputs.len());
+        let mut short_ids: Vec<Option<String>> = Vec::new();
 
         for output in &subtask_outputs {
             let id = store.next_task_id()?;
+            let short_id = generate_short_id(&id, &short_ids);
+
             let mut task = Task::new(
                 &id,
                 &output.title,
@@ -95,6 +99,7 @@ impl SubtaskService {
                 &now,
             );
             task.parent_id = Some(parent.id.clone());
+            task.short_id = Some(short_id.clone());
             task.flow.clone_from(&subtask_flow);
             task.auto_mode = parent.auto_mode;
 
@@ -110,6 +115,7 @@ impl SubtaskService {
             // Start in SettingUp for consistency
             task.phase = Phase::SettingUp;
 
+            short_ids.push(Some(short_id));
             index_to_id.push(id);
             created_tasks.push(task);
         }

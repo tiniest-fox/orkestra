@@ -28,8 +28,8 @@ const PROSE_CLASSES = [
   "dark:prose-p:text-stone-200",
   "prose-li:text-stone-700",
   "dark:prose-li:text-stone-200",
-  "prose-code:bg-stone-100 prose-code:px-1 prose-code:rounded",
-  "dark:prose-code:bg-stone-800",
+  "prose-code:bg-stone-100 prose-code:px-1 prose-code:rounded prose-code:text-stone-800",
+  "dark:prose-code:bg-stone-800 dark:prose-code:text-stone-200",
   "prose-pre:bg-stone-100 prose-pre:text-stone-800",
   "dark:prose-pre:bg-stone-800 dark:prose-pre:text-stone-200",
   // Compact heading sizes: h1 ~16px (1.143em of 14px base), h2 ~15px, h3 ~14.5px, h4-h6 at base

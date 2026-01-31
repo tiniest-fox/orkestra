@@ -67,6 +67,14 @@ body {
   }
 }
 
+/* Code blocks: reset inline-code styling for code inside pre */
+.artifact-prose pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: inherit;
+}
+
 /* Artifact task list checkbox styling */
 .artifact-prose ul:has(input[type="checkbox"]) {
   list-style: none;

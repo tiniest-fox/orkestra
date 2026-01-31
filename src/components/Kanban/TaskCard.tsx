@@ -2,7 +2,7 @@
  * Task card for the kanban board.
  */
 
-import { AlertCircle, Eye, GitBranch, Layers, MessageCircle, XCircle, Zap } from "lucide-react";
+import { AlertCircle, Eye, GitBranch, Hand, Layers, MessageCircle, XCircle, Zap } from "lucide-react";
 import { useWorkflowConfig } from "../../providers/WorkflowConfigProvider";
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
@@ -85,6 +85,7 @@ export function TaskCard({
   const hasQuestions = derived.has_questions;
   const hasTitle = !!task.title;
   const isSubtask = variant === "subtask";
+  const hasUnresolvedDeps = isSubtask && !!dependencyNames && dependencyNames.length > 0;
 
   const isSettingUp = task.phase === "setting_up";
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
@@ -161,6 +162,11 @@ export function TaskCard({
           {isBlocked && (
             <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.blocked.icon}`}>
               <AlertCircle className="w-4 h-4" />
+            </span>
+          )}
+          {hasUnresolvedDeps && (
+            <span className="flex-shrink-0 p-1.5 rounded-md bg-stone-100 dark:bg-stone-800">
+              <Hand className="w-4 h-4 text-stone-500 dark:text-stone-400" />
             </span>
           )}
           {derived.is_waiting_on_children &&

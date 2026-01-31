@@ -193,6 +193,16 @@ The project uses two caching mechanisms for faster builds:
 - **sccache** - Caches Rust compilation artifacts. Configured in `.cargo/config.toml`. Clean builds with warm cache: ~24s (vs ~64s without).
 - **pnpm** - Uses a global content-addressable store with hard links. Fresh `node_modules` install with warm cache: ~1.2s.
 
+## Cross-Cutting Flow Documentation
+
+These docs trace operations that span multiple files. Read these instead of exploring when working on these flows.
+
+| Flow | Documentation | Key Files |
+|------|--------------|-----------|
+| **Stage execution** (orchestrator -> spawn -> prompt -> output) | [`docs/flows/stage-execution.md`](docs/flows/stage-execution.md) | `orchestrator.rs`, `stage_execution.rs`, `agent_execution.rs`, `agent_actions.rs`, `prompt.rs` |
+| **Task integration** (merge, conflict recovery, cleanup) | `docs/flows/task-integration.md` (planned) | `orchestrator.rs`, `integration.rs`, `git2.rs` |
+| **Subtask lifecycle** (breakdown, creation, deps, parent advance) | `docs/flows/subtask-lifecycle.md` (planned) | `agent_actions.rs`, `human_actions.rs`, `subtask_service.rs`, `orchestrator.rs` |
+
 ## Architecture Overview
 
 Orkestra is a task orchestration system that spawns Claude Code instances (agents) to plan and implement software development tasks with human oversight.

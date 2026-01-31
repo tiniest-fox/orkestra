@@ -64,6 +64,8 @@ export function SubtasksTab({
 }: SubtasksTabProps) {
   // Build id → short_id lookup for resolving dependency labels
   const shortIdById = new Map(subtasks.map((s) => [s.id, s.short_id ?? s.id]));
+  // Track which subtasks are done so we only show unresolved dependencies
+  const doneIds = new Set(subtasks.filter((s) => s.derived.is_done).map((s) => s.id));
 
   return (
     <div className="p-4">
@@ -81,6 +83,7 @@ export function SubtasksTab({
               isSelected={subtask.id === selectedSubtaskId}
               onClick={onSelectSubtask ? () => onSelectSubtask(subtask) : undefined}
               dependencyNames={(subtask.depends_on ?? [])
+                .filter((id) => !doneIds.has(id))
                 .map((id) => shortIdById.get(id))
                 .filter((name): name is string => !!name)}
             />

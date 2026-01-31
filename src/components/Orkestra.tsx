@@ -1,25 +1,24 @@
 /**
  * Main application content. Only rendered after startup succeeds.
  * Uses Panel-based design system with animated sidebar transitions.
+ * Navigation state is driven by DisplayContext.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
-import { useTasks, useWorkflowConfig } from "../providers";
+import { useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
+import { CommandPalette } from "./CommandPalette";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
 import { Button, Panel, PanelContainer, PanelSlot, SidebarSlot, SubtaskSlot } from "./ui";
 
-type SidebarView =
-  | { type: "none" }
-  | { type: "create" }
-  | { type: "task"; taskId: string; subtaskId?: string };
-
 export function Orkestra() {
   useNotificationPermission();
-  const [sidebarView, setSidebarView] = useState<SidebarView>({ type: "none" });
+
+  const { focus, focusTask, focusSubtask, closeSubtask, openCreate, closeFocus } =
+    useDisplayContext();
 
   const config = useWorkflowConfig();
   const { tasks, loading, error, createTask, deleteTask } = useTasks();
@@ -28,9 +27,7 @@ export function Orkestra() {
   const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parent_id), [tasks]);
 
   const currentSelectedTask: WorkflowTaskView | null =
-    sidebarView.type === "task"
-      ? (topLevelTasks.find((t) => t.id === sidebarView.taskId) ?? null)
-      : null;
+    focus.type === "task" ? (topLevelTasks.find((t) => t.id === focus.taskId) ?? null) : null;
 
   // Derive subtasks for the selected parent from the shared task list
   const currentSubtasks = useMemo(
@@ -38,14 +35,14 @@ export function Orkestra() {
     [tasks, currentSelectedTask],
   );
 
-  const selectedSubtaskId = sidebarView.type === "task" ? sidebarView.subtaskId : undefined;
+  const selectedSubtaskId = focus.type === "task" ? focus.subtaskId : undefined;
 
   const currentSelectedSubtask: WorkflowTaskView | null = selectedSubtaskId
     ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
     : null;
 
   const sidebarActiveKey =
-    sidebarView.type === "create"
+    focus.type === "create"
       ? SidebarSlot.NewTask
       : currentSelectedTask
         ? SidebarSlot.task(currentSelectedTask.id)
@@ -56,31 +53,21 @@ export function Orkestra() {
     : null;
 
   const handleSelectTask = (task: WorkflowTask) => {
-    setSidebarView({ type: "task", taskId: task.id });
+    focusTask(task.id);
   };
 
   const handleSelectSubtask = (subtask: WorkflowTaskView) => {
-    if (sidebarView.type === "task") {
-      setSidebarView({ ...sidebarView, subtaskId: subtask.id });
+    if (focus.type === "task") {
+      focusSubtask(focus.taskId, subtask.id);
     }
   };
 
   const handleCloseSubtask = () => {
-    if (sidebarView.type === "task") {
-      setSidebarView({ type: "task", taskId: sidebarView.taskId });
-    }
-  };
-
-  const handleOpenCreatePanel = () => {
-    setSidebarView({ type: "create" });
-  };
-
-  const handleCloseSidebar = () => {
-    setSidebarView({ type: "none" });
+    closeSubtask();
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    handleCloseSidebar();
+    closeFocus();
     try {
       await deleteTask(taskId);
     } catch (err) {
@@ -95,14 +82,14 @@ export function Orkestra() {
     flow?: string,
   ) => {
     await createTask("", description, autoMode, baseBranch, flow);
-    handleCloseSidebar();
+    closeFocus();
   };
 
   return (
     <div className="w-screen h-screen bg-stone-100 dark:bg-stone-950 flex flex-col items-stretch p-4 gap-4 overflow-hidden">
       <div className="flex items-center justify-between px-2 flex-shrink-0 overflow-hidden">
         <Panel.Title>Orkestra</Panel.Title>
-        <Button onClick={handleOpenCreatePanel}>+ New Task</Button>
+        <Button onClick={openCreate}>+ New Task</Button>
       </div>
 
       <PanelContainer>
@@ -130,14 +117,14 @@ export function Orkestra() {
 
         <PanelSlot activeKey={sidebarActiveKey}>
           <PanelSlot.Panel panelKey={SidebarSlot.NewTask}>
-            <NewTaskPanel onClose={handleCloseSidebar} onSubmit={handleTaskCreated} />
+            <NewTaskPanel onClose={closeFocus} onSubmit={handleTaskCreated} />
           </PanelSlot.Panel>
 
           {currentSelectedTask && (
             <PanelSlot.Panel panelKey={SidebarSlot.task(currentSelectedTask.id)}>
               <TaskDetailSidebar
                 task={currentSelectedTask}
-                onClose={handleCloseSidebar}
+                onClose={closeFocus}
                 onDelete={() => handleDeleteTask(currentSelectedTask.id)}
                 subtasks={currentSubtasks}
                 selectedSubtaskId={selectedSubtaskId}
@@ -155,6 +142,8 @@ export function Orkestra() {
           )}
         </PanelSlot>
       </PanelContainer>
+
+      <CommandPalette />
     </div>
   );
 }

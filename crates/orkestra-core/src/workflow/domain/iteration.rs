@@ -77,6 +77,12 @@ pub struct Iteration {
     /// None = first iteration of stage (fresh start, no special context).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub incoming_context: Option<IterationTrigger>,
+
+    /// Whether the `incoming_context` trigger has been delivered to the agent.
+    /// Once delivered, crash recovery should use "session interrupted" instead of
+    /// replaying the original trigger.
+    #[serde(default)]
+    pub trigger_delivered: bool,
 }
 
 impl Iteration {
@@ -98,6 +104,7 @@ impl Iteration {
             outcome: None,
             stage_session_id: None,
             incoming_context: None,
+            trigger_delivered: false,
         }
     }
 

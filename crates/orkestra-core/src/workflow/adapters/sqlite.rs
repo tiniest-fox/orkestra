@@ -193,7 +193,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered
                  FROM workflow_iterations ORDER BY task_id, stage, iteration_number",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -215,7 +215,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered
                  FROM workflow_iterations WHERE task_id = ? ORDER BY stage, iteration_number",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -241,7 +241,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered
                  FROM workflow_iterations WHERE task_id = ? AND stage = ? ORDER BY iteration_number",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -267,7 +267,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let result = conn
             .query_row(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered
                  FROM workflow_iterations
                  WHERE task_id = ? AND stage = ? AND ended_at IS NULL
                  ORDER BY iteration_number DESC LIMIT 1",
@@ -289,7 +289,7 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         let result = conn
             .query_row(
-                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
+                "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered
                  FROM workflow_iterations
                  WHERE task_id = ? AND stage = ?
                  ORDER BY iteration_number DESC LIMIT 1",
@@ -320,8 +320,8 @@ impl WorkflowStore for SqliteWorkflowStore {
 
         conn.execute(
             "INSERT OR REPLACE INTO workflow_iterations (
-                id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 iteration.id,
                 iteration.task_id,
@@ -332,6 +332,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 outcome_json,
                 iteration.stage_session_id,
                 incoming_context_json,
+                iteration.trigger_delivered,
             ],
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -560,6 +561,9 @@ fn row_to_iteration(row: &rusqlite::Row) -> rusqlite::Result<Iteration> {
     // Column 8 is incoming_context (added in V9 migration)
     let incoming_context_json: Option<String> = row.get(8).unwrap_or(None);
 
+    // Column 9 is trigger_delivered (added in V10 migration)
+    let trigger_delivered: bool = row.get(9).unwrap_or(false);
+
     Ok(Iteration {
         id: row.get(0)?,
         task_id: row.get(1)?,
@@ -570,6 +574,7 @@ fn row_to_iteration(row: &rusqlite::Row) -> rusqlite::Result<Iteration> {
         outcome: outcome_json.and_then(|j| serde_json::from_str(&j).ok()),
         stage_session_id: row.get(7)?,
         incoming_context: incoming_context_json.and_then(|j| serde_json::from_str(&j).ok()),
+        trigger_delivered,
     })
 }
 

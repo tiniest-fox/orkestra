@@ -384,12 +384,21 @@ impl OrchestratorLoop {
                 task.current_stage()
             );
 
-            // Get incoming context from active iteration (for agent stages)
+            // Get incoming context from active iteration (for agent stages).
+            // If the trigger was already delivered to the agent on a previous spawn,
+            // skip it so crash recovery uses "session interrupted" instead of replaying
+            // stale context (e.g., script failure details the agent already received).
             let trigger = {
                 let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
                 api.store
                     .get_active_iteration(&task.id, current_stage)?
-                    .and_then(|iter| iter.incoming_context)
+                    .and_then(|iter| {
+                        if iter.trigger_delivered {
+                            None
+                        } else {
+                            iter.incoming_context
+                        }
+                    })
             };
 
             // Mark task as working

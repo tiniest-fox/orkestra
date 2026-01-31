@@ -221,6 +221,22 @@ impl StageExecutionService {
                         e
                     );
                 }
+
+                // Mark trigger as delivered so crash recovery doesn't replay it
+                if spawn_context.is_resume && trigger.is_some() {
+                    if let Err(e) =
+                        self.session_service
+                            .mark_trigger_delivered(&task.id, stage)
+                    {
+                        crate::orkestra_debug!(
+                            "stage_execution",
+                            "Failed to mark trigger delivered for {}/{}: {}",
+                            task.id,
+                            stage,
+                            e
+                        );
+                    }
+                }
             }
             Err(e) => {
                 // Record spawn failure

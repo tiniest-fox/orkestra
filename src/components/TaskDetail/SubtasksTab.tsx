@@ -34,7 +34,9 @@ function ProgressBar({ progress }: { progress: SubtaskProgress }) {
         <span>
           {progress.done}/{progress.total} done
         </span>
-        {progress.failed > 0 && <span className="text-error-600 dark:text-error-400">{progress.failed} failed</span>}
+        {progress.failed > 0 && (
+          <span className="text-error-600 dark:text-error-400">{progress.failed} failed</span>
+        )}
       </div>
       <div className="h-1.5 bg-stone-200 dark:bg-stone-700 rounded-full overflow-hidden mb-4">
         <div className="h-full flex">
@@ -54,13 +56,21 @@ function ProgressBar({ progress }: { progress: SubtaskProgress }) {
   );
 }
 
-export function SubtasksTab({ subtasks, progress, selectedSubtaskId, onSelectSubtask }: SubtasksTabProps) {
+export function SubtasksTab({
+  subtasks,
+  progress,
+  selectedSubtaskId,
+  onSelectSubtask,
+}: SubtasksTabProps) {
   // Build id → short_id lookup for resolving dependency labels
   const shortIdById = new Map(subtasks.map((s) => [s.id, s.short_id ?? s.id]));
   // Track which subtasks are done so we only show unresolved dependencies
   const doneIds = new Set(subtasks.filter((s) => s.derived.is_done).map((s) => s.id));
   // Stable partition: incomplete first, done second (preserves topological order within each group)
-  const sorted = [...subtasks.filter((s) => !s.derived.is_done), ...subtasks.filter((s) => s.derived.is_done)];
+  const sorted = [
+    ...subtasks.filter((s) => !s.derived.is_done),
+    ...subtasks.filter((s) => s.derived.is_done),
+  ];
 
   return (
     <div className="p-4">

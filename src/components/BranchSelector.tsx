@@ -60,7 +60,7 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
 
   if (loading) {
     return (
-      <div className="mt-2 text-xs text-stone-400 flex items-center gap-1.5">
+      <div className="text-xs text-stone-400 flex items-center gap-1.5">
         <BranchIcon />
         <span>Loading...</span>
       </div>
@@ -73,7 +73,7 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
   }
 
   return (
-    <div ref={containerRef} className="relative mt-2">
+    <div ref={containerRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen(!open)}

@@ -47,10 +47,7 @@ export function buildColumns(config: WorkflowConfig): KanbanColumn[] {
 /**
  * Get tasks for a specific column.
  */
-export function getTasksForColumn(
-  tasks: WorkflowTaskView[],
-  columnId: string,
-): WorkflowTaskView[] {
+export function getTasksForColumn(tasks: WorkflowTaskView[], columnId: string): WorkflowTaskView[] {
   const columnTasks = tasks.filter((task) => {
     // Terminal states
     if (columnId === "done") {

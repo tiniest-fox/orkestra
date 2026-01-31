@@ -34,18 +34,15 @@ export function Orkestra() {
 
   // Derive subtasks for the selected parent from the shared task list
   const currentSubtasks = useMemo(
-    () =>
-      currentSelectedTask ? tasks.filter((t) => t.parent_id === currentSelectedTask.id) : [],
+    () => (currentSelectedTask ? tasks.filter((t) => t.parent_id === currentSelectedTask.id) : []),
     [tasks, currentSelectedTask],
   );
 
-  const selectedSubtaskId =
-    sidebarView.type === "task" ? sidebarView.subtaskId : undefined;
+  const selectedSubtaskId = sidebarView.type === "task" ? sidebarView.subtaskId : undefined;
 
-  const currentSelectedSubtask: WorkflowTaskView | null =
-    selectedSubtaskId
-      ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
-      : null;
+  const currentSelectedSubtask: WorkflowTaskView | null = selectedSubtaskId
+    ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
+    : null;
 
   const sidebarActiveKey =
     sidebarView.type === "create"
@@ -153,10 +150,7 @@ export function Orkestra() {
         <PanelSlot activeKey={subtaskActiveKey}>
           {currentSelectedSubtask && (
             <PanelSlot.Panel panelKey={SubtaskSlot.subtask(currentSelectedSubtask.id)}>
-              <TaskDetailSidebar
-                task={currentSelectedSubtask}
-                onClose={handleCloseSubtask}
-              />
+              <TaskDetailSidebar task={currentSelectedSubtask} onClose={handleCloseSubtask} />
             </PanelSlot.Panel>
           )}
         </PanelSlot>

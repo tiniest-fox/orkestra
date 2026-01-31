@@ -89,31 +89,32 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
               // biome-ignore lint/a11y/noAutofocus: intentional focus for panel UX
               autoFocus
             />
-            <BranchSelector value={baseBranch} onChange={setBaseBranch} />
+            <div className="flex items-center justify-between mt-2">
+              <BranchSelector value={baseBranch} onChange={setBaseBranch} />
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <span className="text-xs text-stone-500 dark:text-stone-400">Auto</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoMode}
+                  onClick={() => setAutoMode(!autoMode)}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    autoMode ? "bg-orange-500" : "bg-stone-300 dark:bg-stone-600"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                      autoMode ? "translate-x-[18px]" : "translate-x-[3px]"
+                    }`}
+                  />
+                </button>
+              </label>
+            </div>
           </div>
 
           {hasFlows && (
             <FlowPicker flows={flowEntries} selected={selectedFlow} onSelect={setSelectedFlow} />
           )}
-
-          <label className="flex items-center gap-2 mt-4 cursor-pointer select-none">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoMode}
-              onClick={() => setAutoMode(!autoMode)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                autoMode ? "bg-orange-500" : "bg-stone-300 dark:bg-stone-600"
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                  autoMode ? "translate-x-[18px]" : "translate-x-[3px]"
-                }`}
-              />
-            </button>
-            <span className="text-sm text-stone-700 dark:text-stone-200">Auto mode</span>
-          </label>
         </Panel.Body>
 
         <Panel.Footer className="flex justify-end gap-3">

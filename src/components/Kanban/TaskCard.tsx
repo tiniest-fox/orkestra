@@ -40,11 +40,13 @@ export function TaskCard({ task, onClick, isSelected }: TaskCardProps) {
     ? "border-error-300 bg-error-50 dark:border-error-700 dark:bg-error-950"
     : isBlocked
       ? "border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-950"
-      : taskNeedsReview || hasQuestions
+      : taskNeedsReview
         ? "border-warning-400 bg-warning-50 dark:border-warning-600 dark:bg-warning-950"
-        : isSelected
-          ? "border-orange-500 ring-2 ring-orange-200 dark:ring-orange-800"
-          : "";
+        : hasQuestions
+          ? "border-info-400 bg-info-50 dark:border-info-600 dark:bg-info-950"
+          : isSelected
+            ? "border-orange-500 ring-2 ring-orange-200 dark:ring-orange-800"
+            : "";
 
   const errorText =
     task.status.type === "failed"

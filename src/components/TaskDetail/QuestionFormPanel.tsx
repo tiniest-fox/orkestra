@@ -36,6 +36,20 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const scrollToTop = () => {
+    scrollContainerRef.current?.scrollTo({ top: 0 });
+  };
+
+  const handleGoToNext = () => {
+    goToNext();
+    scrollToTop();
+  };
+
+  const handleGoToPrevious = () => {
+    goToPrevious();
+    scrollToTop();
+  };
+
   const handleSelectOther = (questionIndex: number) => {
     selectOther(questionIndex);
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -61,7 +75,11 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
           </div>
         </div>
 
-        <div ref={scrollContainerRef} className="overflow-y-auto max-h-[320px] p-4">
+        <div
+          key={currentIndex}
+          ref={scrollContainerRef}
+          className="overflow-y-auto max-h-[320px] p-4"
+        >
           <div className="text-sm font-medium text-stone-800 dark:text-stone-100 mb-1">
             {currentQuestion.question}
           </div>
@@ -169,7 +187,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
           <Button
             variant="ghost"
             size="sm"
-            onClick={goToPrevious}
+            onClick={handleGoToPrevious}
             disabled={isFirstQuestion || isSubmitting}
             className="text-info-600 hover:bg-info-100"
           >
@@ -189,7 +207,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
           ) : (
             <Button
               size="sm"
-              onClick={goToNext}
+              onClick={handleGoToNext}
               disabled={!currentAnswered || isSubmitting}
               className="bg-info-500 hover:bg-info-600"
             >

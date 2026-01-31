@@ -212,7 +212,7 @@ Orkestra is a task orchestration system that spawns Claude Code instances (agent
 - **`crates/orkestra-core/`** - Core library containing task management, agent spawning, and domain logic
 - **`cli/`** - CLI binary (`ork`) for task management
 - **`src-tauri/`** - Tauri desktop application backend
-- **`src/`** - React/TypeScript frontend (Kanban board UI)
+- **`src/`** - React/TypeScript frontend (Kanban board UI). **Read `src/CLAUDE.md` before making changes in this directory.**
 - **`.orkestra/`** - Runtime data directory (auto-created)
   - `orkestra.db` - SQLite database for tasks and sessions
   - `worktrees/` - Git worktrees for task isolation (one per task)

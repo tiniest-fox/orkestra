@@ -59,6 +59,8 @@ export function SubtasksTab({ subtasks, progress, selectedSubtaskId, onSelectSub
   const shortIdById = new Map(subtasks.map((s) => [s.id, s.short_id ?? s.id]));
   // Track which subtasks are done so we only show unresolved dependencies
   const doneIds = new Set(subtasks.filter((s) => s.derived.is_done).map((s) => s.id));
+  // Stable partition: incomplete first, done second (preserves topological order within each group)
+  const sorted = [...subtasks.filter((s) => !s.derived.is_done), ...subtasks.filter((s) => s.derived.is_done)];
 
   return (
     <div className="p-4">
@@ -68,7 +70,7 @@ export function SubtasksTab({ subtasks, progress, selectedSubtaskId, onSelectSub
         <div className="text-stone-500 dark:text-stone-400 text-sm">No subtasks.</div>
       ) : (
         <div className="space-y-2 flex flex-col items-stretch">
-          {subtasks.map((subtask) => (
+          {sorted.map((subtask) => (
             <TaskCard
               key={subtask.id}
               task={subtask}

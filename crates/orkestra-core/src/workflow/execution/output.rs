@@ -301,7 +301,6 @@ impl StageOutput {
 /// JSON structure for questions in agent output.
 #[derive(Debug, Deserialize)]
 struct QuestionJson {
-    id: Option<String>,
     question: String,
     context: Option<String>,
     #[serde(default)]
@@ -310,28 +309,18 @@ struct QuestionJson {
 
 #[derive(Debug, Deserialize)]
 struct OptionJson {
-    id: Option<String>,
     label: String,
     description: Option<String>,
 }
 
 impl From<QuestionJson> for Question {
     fn from(q: QuestionJson) -> Self {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static COUNTER: AtomicU64 = AtomicU64::new(1);
-
-        let gen_id = || format!("q-{}", COUNTER.fetch_add(1, Ordering::SeqCst));
-
-        let mut question = Question::new(q.id.unwrap_or_else(gen_id), &q.question);
+        let mut question = Question::new(&q.question);
         if let Some(ctx) = q.context {
             question = question.with_context(&ctx);
         }
         for opt in q.options {
-            question = question.with_option(
-                opt.id.unwrap_or_else(gen_id),
-                &opt.label,
-                opt.description.as_deref(),
-            );
+            question = question.with_option(&opt.label, opt.description.as_deref());
         }
         question
     }

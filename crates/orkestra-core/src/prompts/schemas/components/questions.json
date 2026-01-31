@@ -7,10 +7,6 @@
       "items": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string",
-            "description": "Unique identifier (e.g., q1, q2)"
-          },
           "question": {
             "type": "string",
             "description": "The question text"

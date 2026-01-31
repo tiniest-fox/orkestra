@@ -267,7 +267,7 @@ mod tests {
         use super::super::question::QuestionAnswer;
 
         let trigger = IterationTrigger::Answers {
-            answers: vec![QuestionAnswer::new("q1", "Which DB?", "PostgreSQL", "now")],
+            answers: vec![QuestionAnswer::new("Which DB?", "PostgreSQL", "now")],
         };
         let json = serde_json::to_string(&trigger).unwrap();
         assert!(json.contains("\"type\":\"answers\""));

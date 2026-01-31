@@ -286,7 +286,7 @@ impl WorkflowApi {
                     let now = chrono::Utc::now().to_rfc3339();
                     let answers: Vec<QuestionAnswer> = questions
                         .iter()
-                        .map(|q| QuestionAnswer::new(&q.id, &q.question, AUTO_ANSWER_TEXT, &now))
+                        .map(|q| QuestionAnswer::new(&q.question, AUTO_ANSWER_TEXT, &now))
                         .collect();
 
                     self.iteration_service.create_iteration(
@@ -521,7 +521,7 @@ mod tests {
         let mut iter = iter;
         iter.outcome = Some(Outcome::awaiting_answers(
             "planning",
-            vec![Question::new("q1", "What framework?")],
+            vec![Question::new("What framework?")],
         ));
         iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
         api.store.save_iteration(&iter).unwrap();
@@ -529,7 +529,6 @@ mod tests {
         api.store.save_task(&task).unwrap();
 
         let answers = vec![QuestionAnswer::new(
-            "q1",
             "What framework?",
             "React",
             chrono::Utc::now().to_rfc3339(),

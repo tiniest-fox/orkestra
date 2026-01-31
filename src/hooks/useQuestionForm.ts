@@ -1,6 +1,8 @@
 /**
  * Hook for managing question form state.
  * Handles multi-step question navigation, "Other" option selection, and answer collection.
+ *
+ * Questions and options are identified by position (array index), not IDs.
  */
 
 import { useEffect, useState } from "react";
@@ -19,18 +21,18 @@ interface UseQuestionFormResult {
   currentAnswered: boolean;
   /** Whether all questions have been answered. */
   allAnswered: boolean;
-  /** Selected answers keyed by question ID. */
-  answers: Record<string, string>;
-  /** Whether "Other" is selected for each question. */
-  otherSelected: Record<string, boolean>;
-  /** Custom text for "Other" responses. */
-  otherText: Record<string, string>;
-  /** Handle selecting an option. */
-  selectOption: (questionId: string, optionId: string) => void;
+  /** Selected answers keyed by question index. */
+  answers: Record<number, string>;
+  /** Whether "Other" is selected for each question (keyed by index). */
+  otherSelected: Record<number, boolean>;
+  /** Custom text for "Other" responses (keyed by index). */
+  otherText: Record<number, string>;
+  /** Handle selecting an option (stores the option label as the answer). */
+  selectOption: (questionIndex: number, optionLabel: string) => void;
   /** Handle selecting "Other". */
-  selectOther: (questionId: string) => void;
+  selectOther: (questionIndex: number) => void;
   /** Handle updating "Other" text. */
-  updateOtherText: (questionId: string, text: string) => void;
+  updateOtherText: (questionIndex: number, text: string) => void;
   /** Navigate to previous question. */
   goToPrevious: () => void;
   /** Navigate to next question. */
@@ -40,13 +42,13 @@ interface UseQuestionFormResult {
 }
 
 export function useQuestionForm(questions: WorkflowQuestion[]): UseQuestionFormResult {
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<number, string>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [otherSelected, setOtherSelected] = useState<Record<string, boolean>>({});
-  const [otherText, setOtherText] = useState<Record<string, string>>({});
+  const [otherSelected, setOtherSelected] = useState<Record<number, boolean>>({});
+  const [otherText, setOtherText] = useState<Record<number, string>>({});
 
   // Reset current index when questions change
-  const questionsKey = `${questions.length}-${questions[0]?.id ?? "none"}`;
+  const questionsKey = `${questions.length}-${questions[0]?.question ?? "none"}`;
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset when questionsKey changes
   useEffect(() => {
     setCurrentIndex(0);
@@ -59,30 +61,30 @@ export function useQuestionForm(questions: WorkflowQuestion[]): UseQuestionFormR
   // Check if current question is answered
   const currentAnswered =
     currentQuestion !== undefined &&
-    (otherSelected[currentQuestion.id]
-      ? Boolean(otherText[currentQuestion.id]?.trim())
-      : Boolean(answers[currentQuestion.id]?.trim()));
+    (otherSelected[currentIndex]
+      ? Boolean(otherText[currentIndex]?.trim())
+      : Boolean(answers[currentIndex]?.trim()));
 
   // Check if all questions are answered
-  const allAnswered = questions.every((q) => {
-    if (otherSelected[q.id]) {
-      return Boolean(otherText[q.id]?.trim());
+  const allAnswered = questions.every((_, i) => {
+    if (otherSelected[i]) {
+      return Boolean(otherText[i]?.trim());
     }
-    return Boolean(answers[q.id]?.trim());
+    return Boolean(answers[i]?.trim());
   });
 
-  const selectOption = (questionId: string, optionId: string) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: optionId }));
-    setOtherSelected((prev) => ({ ...prev, [questionId]: false }));
+  const selectOption = (questionIndex: number, optionLabel: string) => {
+    setAnswers((prev) => ({ ...prev, [questionIndex]: optionLabel }));
+    setOtherSelected((prev) => ({ ...prev, [questionIndex]: false }));
   };
 
-  const selectOther = (questionId: string) => {
-    setOtherSelected((prev) => ({ ...prev, [questionId]: true }));
-    setAnswers((prev) => ({ ...prev, [questionId]: "" }));
+  const selectOther = (questionIndex: number) => {
+    setOtherSelected((prev) => ({ ...prev, [questionIndex]: true }));
+    setAnswers((prev) => ({ ...prev, [questionIndex]: "" }));
   };
 
-  const updateOtherText = (questionId: string, text: string) => {
-    setOtherText((prev) => ({ ...prev, [questionId]: text }));
+  const updateOtherText = (questionIndex: number, text: string) => {
+    setOtherText((prev) => ({ ...prev, [questionIndex]: text }));
   };
 
   const goToPrevious = () => {
@@ -98,10 +100,9 @@ export function useQuestionForm(questions: WorkflowQuestion[]): UseQuestionFormR
   };
 
   const getFormattedAnswers = (): WorkflowQuestionAnswer[] => {
-    return questions.map((q) => ({
-      question_id: q.id,
+    return questions.map((q, i) => ({
       question: q.question,
-      answer: otherSelected[q.id] ? otherText[q.id] || "" : answers[q.id] || "",
+      answer: otherSelected[i] ? otherText[i] || "" : answers[i] || "",
       answered_at: new Date().toISOString(),
     }));
   };

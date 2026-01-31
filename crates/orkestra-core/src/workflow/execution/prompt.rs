@@ -1340,7 +1340,7 @@ mod tests {
             message: "conflict",
             conflict_files: vec!["file.rs"],
         };
-        let answers = vec![QuestionAnswer::new("q1", "What?", "Something", "now")];
+        let answers = vec![QuestionAnswer::new("What?", "Something", "now")];
         let result = determine_resume_type(Some("feedback"), Some(&error), &answers);
         // Integration error takes priority over everything
         assert!(matches!(result, ResumeType::Integration { .. }));
@@ -1349,7 +1349,7 @@ mod tests {
     #[test]
     fn test_determine_resume_type_feedback_over_answers() {
         use crate::workflow::domain::QuestionAnswer;
-        let answers = vec![QuestionAnswer::new("q1", "What?", "Something", "now")];
+        let answers = vec![QuestionAnswer::new("What?", "Something", "now")];
         let result = determine_resume_type(Some("please fix"), None, &answers);
         // Feedback takes priority over answers
         match result {
@@ -1362,8 +1362,8 @@ mod tests {
     fn test_determine_resume_type_answers() {
         use crate::workflow::domain::QuestionAnswer;
         let answers = vec![
-            QuestionAnswer::new("q1", "Which DB?", "PostgreSQL", "now"),
-            QuestionAnswer::new("q2", "Add cache?", "Yes", "now"),
+            QuestionAnswer::new("Which DB?", "PostgreSQL", "now"),
+            QuestionAnswer::new("Add cache?", "Yes", "now"),
         ];
         let result = determine_resume_type(None, None, &answers);
         match result {

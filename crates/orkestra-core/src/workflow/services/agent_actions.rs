@@ -477,7 +477,7 @@ fn auto_answer_questions(questions: &[crate::workflow::domain::Question]) -> Vec
     let now = chrono::Utc::now().to_rfc3339();
     questions
         .iter()
-        .map(|q| QuestionAnswer::new(&q.id, &q.question, AUTO_ANSWER_TEXT, &now))
+        .map(|q| QuestionAnswer::new(&q.question, AUTO_ANSWER_TEXT, &now))
         .collect()
 }
 
@@ -568,7 +568,7 @@ mod tests {
         let task = api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Questions {
-            questions: vec![Question::new("q1", "What framework?")],
+            questions: vec![Question::new("What framework?")],
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 

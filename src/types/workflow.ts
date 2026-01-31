@@ -159,8 +159,6 @@ export interface WorkflowArtifact {
  * An option for a multiple-choice question.
  */
 export interface WorkflowQuestionOption {
-  /** Unique ID for this option. */
-  id: string;
   /** Display label for the option. */
   label: string;
   /** Optional description explaining the option. */
@@ -171,8 +169,6 @@ export interface WorkflowQuestionOption {
  * A question asked by an agent during a stage.
  */
 export interface WorkflowQuestion {
-  /** Unique ID for this question. */
-  id: string;
   /** The question text. */
   question: string;
   /** Optional context explaining why the question is asked. */
@@ -184,13 +180,12 @@ export interface WorkflowQuestion {
 /**
  * An answer to a question.
  * Matches Rust's QuestionAnswer struct.
+ * Answers correspond to questions by position (array index).
  */
 export interface WorkflowQuestionAnswer {
-  /** ID of the question being answered. */
-  question_id: string;
   /** The original question text (stored for prompt context). */
   question: string;
-  /** The answer text (or option ID for multiple choice). */
+  /** The answer text (the full label text for predefined options). */
   answer: string;
   /** When the answer was provided (RFC3339). */
   answered_at: string;

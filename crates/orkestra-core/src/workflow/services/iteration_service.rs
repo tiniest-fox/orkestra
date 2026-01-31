@@ -238,7 +238,7 @@ mod tests {
                 feedback: "Try again".to_string(),
             },
             IterationTrigger::Answers {
-                answers: vec![QuestionAnswer::new("q1", "Q?", "A", "2024-01-01T00:00:00Z")],
+                answers: vec![QuestionAnswer::new("Q?", "A", "2024-01-01T00:00:00Z")],
             },
             IterationTrigger::Integration {
                 message: "Conflict".to_string(),

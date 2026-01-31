@@ -210,7 +210,7 @@ mod tests {
         let mut iter = Iteration::new("iter-1", "task-1", "planning", 1, "now");
         iter.outcome = Some(Outcome::awaiting_answers(
             "planning",
-            vec![Question::new("q1", "What framework?")],
+            vec![Question::new("What framework?")],
         ));
         iter.ended_at = Some("now".to_string());
 
@@ -260,7 +260,7 @@ mod tests {
         let mut iter = Iteration::new("iter-1", "task-1", "planning", 1, "now");
         iter.outcome = Some(Outcome::awaiting_answers(
             "planning",
-            vec![Question::new("q1", "Old question?")],
+            vec![Question::new("Old question?")],
         ));
         iter.ended_at = Some("now".to_string());
 

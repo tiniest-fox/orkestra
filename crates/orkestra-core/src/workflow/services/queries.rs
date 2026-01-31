@@ -293,7 +293,7 @@ mod tests {
         let mut iter = iter;
         iter.outcome = Some(Outcome::awaiting_answers(
             "planning",
-            vec![Question::new("q1", "What framework?")],
+            vec![Question::new("What framework?")],
         ));
         iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
         api.store.save_iteration(&iter).unwrap();
@@ -404,7 +404,7 @@ mod tests {
         let mut iter = iter;
         iter.outcome = Some(Outcome::awaiting_answers(
             "planning",
-            vec![Question::new("q1", "What framework?")],
+            vec![Question::new("What framework?")],
         ));
         iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
         api.store.save_iteration(&iter).unwrap();

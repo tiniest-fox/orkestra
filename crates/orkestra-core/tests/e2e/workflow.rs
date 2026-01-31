@@ -102,14 +102,13 @@ fn test_exhaustive_workflow_flow() {
 
     // Set up mock to return questions, then tick orchestrator
     let questions = vec![
-        Question::new("q1", "Which database should we use?")
+        Question::new("Which database should we use?")
             .with_context("The feature requires persistent storage")
             .with_options(vec![
-                QuestionOption::new("postgres", "PostgreSQL")
-                    .with_description("Best for complex queries"),
-                QuestionOption::new("sqlite", "SQLite").with_description("Simple, file-based"),
+                QuestionOption::new("PostgreSQL").with_description("Best for complex queries"),
+                QuestionOption::new("SQLite").with_description("Simple, file-based"),
             ]),
-        Question::new("q2", "Should we add caching?"),
+        Question::new("Should we add caching?"),
     ];
     ctx.set_output(&task_id, MockAgentOutput::Questions(questions));
     ctx.tick_until_settled();
@@ -129,13 +128,11 @@ fn test_exhaustive_workflow_flow() {
     // Human answers questions
     let answers = vec![
         QuestionAnswer::new(
-            "q1",
             "Which database should we use?",
             "PostgreSQL",
             chrono::Utc::now().to_rfc3339(),
         ),
         QuestionAnswer::new(
-            "q2",
             "Should we add caching?",
             "Yes, use Redis",
             chrono::Utc::now().to_rfc3339(),

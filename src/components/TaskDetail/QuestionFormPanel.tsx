@@ -36,8 +36,8 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleSelectOther = (questionId: string) => {
-    selectOther(questionId);
+  const handleSelectOther = (questionIndex: number) => {
+    selectOther(questionIndex);
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
@@ -71,19 +71,19 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
             </div>
           )}
           <div className="space-y-1">
-            {currentQuestion.options?.map((option) => {
+            {currentQuestion.options?.map((option, optionIndex) => {
               const isChecked =
-                answers[currentQuestion.id] === option.id && !otherSelected[currentQuestion.id];
-              const inputId = `${currentQuestion.id}-${option.id}`;
+                answers[currentIndex] === option.label && !otherSelected[currentIndex];
+              const inputId = `q${currentIndex}-opt${optionIndex}`;
               return (
-                <div key={option.id} className="flex items-start">
+                <div key={option.label} className="flex items-start">
                   <input
                     type="radio"
                     id={inputId}
-                    name={currentQuestion.id}
-                    value={option.id}
+                    name={`question-${currentIndex}`}
+                    value={option.label}
                     checked={isChecked}
-                    onChange={() => selectOption(currentQuestion.id, option.id)}
+                    onChange={() => selectOption(currentIndex, option.label)}
                     className="sr-only"
                   />
                   <label htmlFor={inputId} className="flex items-start gap-2 mb-2 cursor-pointer">
@@ -111,17 +111,17 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
               );
             })}
             {(() => {
-              const isOtherChecked = otherSelected[currentQuestion.id] === true;
-              const otherId = `${currentQuestion.id}-other`;
+              const isOtherChecked = otherSelected[currentIndex] === true;
+              const otherId = `q${currentIndex}-other`;
               return (
                 <div className="flex items-start gap-2">
                   <input
                     type="radio"
                     id={otherId}
-                    name={currentQuestion.id}
+                    name={`question-${currentIndex}`}
                     value="__other__"
                     checked={isOtherChecked}
-                    onChange={() => handleSelectOther(currentQuestion.id)}
+                    onChange={() => handleSelectOther(currentIndex)}
                     className="sr-only"
                   />
                   <label htmlFor={otherId} className="flex items-start gap-2 cursor-pointer">
@@ -142,7 +142,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
               );
             })()}
             <AnimatePresence initial={false}>
-              {otherSelected[currentQuestion.id] && (
+              {otherSelected[currentIndex] && (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: "auto", opacity: 1 }}
@@ -153,8 +153,8 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
                 >
                   <textarea
                     ref={textareaRef}
-                    value={otherText[currentQuestion.id] || ""}
-                    onChange={(e) => updateOtherText(currentQuestion.id, e.target.value)}
+                    value={otherText[currentIndex] || ""}
+                    onChange={(e) => updateOtherText(currentIndex, e.target.value)}
                     placeholder="Type your custom response..."
                     className="w-full mt-2 px-3 py-2 text-sm border border-stone-300 dark:bg-stone-800 dark:border-stone-600 dark:text-stone-100 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-info-500 resize-none text-stone-800"
                     rows={2}

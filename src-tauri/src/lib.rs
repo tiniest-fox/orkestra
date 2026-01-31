@@ -55,6 +55,9 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
             let _ = debug_handle.emit("debug-log", format!("[{component}] {message}"));
         });
 
+        // Request notification permission (triggers OS dialog if not yet determined)
+        request_notification_permission(&app_handle);
+
         // If startup succeeded, register AppState and start orchestrator
         if let Some(app_state) = startup_result.app_state {
             // Clean up orphaned agents from previous crash
@@ -192,6 +195,60 @@ fn start_workflow_orchestrator(
 // Desktop Notifications
 // =============================================================================
 
+/// Request notification permission from the OS on startup.
+///
+/// On macOS, this triggers the system dialog asking the user to allow notifications.
+/// On desktop platforms using the current `tauri-plugin-notification` v2, the Rust
+/// permission API is a no-op (always returns `Granted`), but calling it is the
+/// correct pattern and will start working when the plugin adds real desktop support.
+fn request_notification_permission(app_handle: &AppHandle) {
+    let notification = app_handle.notification();
+
+    match notification.permission_state() {
+        Ok(tauri::plugin::PermissionState::Granted) => {
+            orkestra_debug!("notification", "Notification permission: granted");
+        }
+        Ok(state) => {
+            orkestra_debug!(
+                "notification",
+                "Notification permission state: {state:?}, requesting permission"
+            );
+            match notification.request_permission() {
+                Ok(tauri::plugin::PermissionState::Granted) => {
+                    orkestra_debug!("notification", "Notification permission granted");
+                }
+                Ok(state) => {
+                    orkestra_debug!(
+                        "notification",
+                        "Notification permission not granted: {state:?}. \
+                         Enable notifications in System Settings to receive task alerts."
+                    );
+                }
+                Err(e) => {
+                    orkestra_debug!(
+                        "notification",
+                        "Failed to request notification permission: {e}"
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            orkestra_debug!(
+                "notification",
+                "Failed to check notification permission: {e}"
+            );
+        }
+    }
+
+    if tauri::is_dev() {
+        orkestra_debug!(
+            "notification",
+            "Dev mode: notifications appear under Terminal in System Settings. \
+             Ensure Terminal notifications are enabled in System Settings > Notifications."
+        );
+    }
+}
+
 /// Send a desktop notification when a task needs human attention.
 ///
 /// Fires for `OutputProcessed` events where the task has entered `AwaitingReview`.
@@ -228,6 +285,25 @@ fn notify_if_review_needed(app_handle: &AppHandle, task_id: &str, stage: &str, o
         format!("Has a {stage} ready for review")
     };
 
+    // Check permission state before attempting to send
+    match app_handle.notification().permission_state() {
+        Ok(tauri::plugin::PermissionState::Granted) => {}
+        Ok(perm) => {
+            orkestra_debug!(
+                "notification",
+                "Skipping notification (permission: {perm:?}). \
+                 Enable in System Settings > Notifications."
+            );
+            return;
+        }
+        Err(e) => {
+            orkestra_debug!(
+                "notification",
+                "Could not check permission state: {e}, attempting send anyway"
+            );
+        }
+    }
+
     let result = app_handle
         .notification()
         .builder()
@@ -235,8 +311,16 @@ fn notify_if_review_needed(app_handle: &AppHandle, task_id: &str, stage: &str, o
         .body(&body)
         .show();
 
-    if let Err(e) = result {
-        orkestra_debug!("notification", "Failed to send notification: {e}");
+    match result {
+        Ok(()) => {
+            orkestra_debug!(
+                "notification",
+                "Sent notification for task {task_id}: {body}"
+            );
+        }
+        Err(e) => {
+            orkestra_debug!("notification", "Failed to send notification: {e}");
+        }
     }
 }
 

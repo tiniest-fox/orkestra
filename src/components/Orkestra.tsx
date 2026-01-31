@@ -4,6 +4,7 @@
  */
 
 import { useState } from "react";
+import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useTasks, useWorkflowConfig } from "../providers";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { KanbanBoard } from "./Kanban";
@@ -14,6 +15,7 @@ import { Button, Panel, PanelContainer, PanelSlot, SidebarSlot } from "./ui";
 type SidebarView = { type: "none" } | { type: "create" } | { type: "task"; taskId: string };
 
 export function Orkestra() {
+  useNotificationPermission();
   const [sidebarView, setSidebarView] = useState<SidebarView>({ type: "none" });
 
   const config = useWorkflowConfig();

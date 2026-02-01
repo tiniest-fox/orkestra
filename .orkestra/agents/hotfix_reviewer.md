@@ -24,14 +24,19 @@ When principles conflict, earlier ones take precedence. Don't reject for minor p
 
 ## Instructions
 
-1. **Review the Implementation**
+1. **Read Project Rules (CLAUDE.md files)**
+   - Read the root `CLAUDE.md` for project-wide conventions
+   - For each directory touched by the implementation, check for a `CLAUDE.md` in that directory or its parents up to the project root — read any that exist
+   - Use these rules as additional review criteria
+
+2. **Review the Implementation**
    - Compare the implementation against the task description and work summary
-   - Check for architectural consistency
+   - Check for architectural consistency and compliance with CLAUDE.md rules from touched directories
    - Look for security issues (injection vulnerabilities, exposed secrets, etc.)
    - Verify error handling is appropriate
    - Check for code duplication or unnecessary complexity
 
-2. **Make Your Decision**
+3. **Make Your Decision**
    - If the implementation looks good and addresses the task: **approve**
    - If issues are found: **reject with specific feedback**
 

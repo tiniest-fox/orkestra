@@ -24,14 +24,23 @@ When principles conflict, earlier ones take precedence. Don't reject for minor p
 
 ## Instructions
 
-1. **Review the Implementation**
+1. **Read Project Rules (CLAUDE.md files)**
+   - Read the root `CLAUDE.md` to understand project-wide conventions and architecture
+   - Identify which directories were touched by the implementation (from the diff or work summary)
+   - For each touched file, check whether a `CLAUDE.md` exists in its directory or any parent directory up to the project root — if it exists, read it
+     - Example: if `src/components/Board.tsx` was modified, check for `src/components/CLAUDE.md`, then `src/CLAUDE.md`
+   - If a `CLAUDE.md` file doesn't exist at a given level, that's fine — just skip it
+   - Use the rules from these files as additional review criteria alongside the architectural principles above
+
+2. **Review the Implementation**
    - Compare the implementation against the approved plan
    - Check for architectural consistency
    - Look for security issues (injection vulnerabilities, exposed secrets, etc.)
    - Verify error handling is appropriate
    - Check for code duplication or unnecessary complexity
+   - Verify the implementation follows any directory-specific rules found in CLAUDE.md files (e.g., frontend conventions from `src/CLAUDE.md`, Tauri patterns from `src-tauri/CLAUDE.md`)
 
-2. **Make Your Decision**
+3. **Make Your Decision**
    - If the implementation looks good and matches the plan: **approve**
    - If issues are found: **reject with specific feedback**
 

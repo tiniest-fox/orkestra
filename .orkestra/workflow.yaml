@@ -8,7 +8,7 @@ version: 1
 stages:
   # Planning: Creates implementation plan, can ask clarifying questions
   - name: plan
-    display_name: Planning
+    display_name: Plan
     artifact: plan
     prompt: planner.md
     capabilities:
@@ -16,7 +16,7 @@ stages:
 
   # Breakdown: Decomposes complex tasks into subtasks with dependencies
   - name: task
-    display_name: Breaking Down
+    display_name: Task
     artifact: breakdown
     inputs: [plan]
     prompt: breakdown.md
@@ -27,7 +27,7 @@ stages:
 
   # Work: Implements the approved plan
   - name: work
-    display_name: Working
+    display_name: Work
     artifact: summary
     inputs: [plan, breakdown]
     prompt: worker.md
@@ -35,7 +35,7 @@ stages:
   # Checks: Automated quality gates (lint, test, type check)
   # Runs in the task's worktree, detects what changed, runs relevant checks
   - name: check
-    display_name: Automated Checks
+    display_name: Check
     artifact: check_results
     inputs: [summary]
     script:
@@ -45,7 +45,7 @@ stages:
 
   # Review: Automated review that can send back to work if needed
   - name: review
-    display_name: Reviewing
+    display_name: Review
     artifact: verdict
     inputs: [plan, summary, check_results]
     prompt: reviewer.md
@@ -57,7 +57,7 @@ stages:
   # Compound: Captures learnings and updates documentation
   # Reviews worker notes and reviewer observations, documents anything useful
   - name: compound
-    display_name: Compounding
+    display_name: Compound
     artifact: learnings
     inputs: [summary, verdict]
     prompt: compound.md

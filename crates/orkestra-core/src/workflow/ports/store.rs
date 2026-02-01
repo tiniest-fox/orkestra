@@ -90,6 +90,18 @@ pub trait WorkflowStore: Send + Sync {
     /// Generate the next unique task ID.
     fn next_task_id(&self) -> WorkflowResult<String>;
 
+    /// Generate a unique task ID for a subtask, ensuring the last word is unique among siblings.
+    ///
+    /// For petname-style IDs ("adverb-adjective-noun"), the last word (noun) must be
+    /// unique among all direct children of the given parent. This allows using the last
+    /// word as a readable short display ID.
+    ///
+    /// Default implementation delegates to `next_task_id()` without sibling checks.
+    /// The `SQLite` store overrides this with sibling-aware generation.
+    fn next_subtask_id(&self, _parent_id: &str) -> WorkflowResult<String> {
+        self.next_task_id()
+    }
+
     // =========================================================================
     // Iteration Operations
     // =========================================================================
@@ -249,7 +261,7 @@ mod tests {
             let id = self
                 .next_id
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok(format!("task-{id:03}"))
+            Ok(format!("adverb-adjective-noun{id:03}"))
         }
 
         fn get_iterations(&self, task_id: &str) -> WorkflowResult<Vec<Iteration>> {
@@ -474,7 +486,7 @@ mod tests {
         let id2 = store.next_task_id().unwrap();
 
         assert_ne!(id1, id2);
-        assert!(id1.starts_with("task-"));
+        assert!(id1.contains('-'));
     }
 
     #[test]

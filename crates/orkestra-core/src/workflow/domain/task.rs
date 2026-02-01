@@ -4,9 +4,6 @@
 //! Unlike the legacy Task which has separate plan/summary/breakdown fields,
 //! this uses `ArtifactStore` for stage-agnostic artifact storage.
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
 use serde::{Deserialize, Serialize};
 
 use crate::workflow::runtime::{ArtifactStore, Phase, Status};
@@ -44,7 +41,7 @@ pub struct Task {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<String>,
 
-    /// Short display ID for subtasks (e.g., "a3f2"), unique within a parent.
+    /// Short display ID for subtasks (last word of full ID, e.g., "bird"), unique within a parent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub short_id: Option<String>,
 
@@ -222,35 +219,12 @@ impl Task {
     }
 }
 
-/// Character set for short IDs: lowercase alphanumeric (no ambiguous chars).
-const SHORT_ID_CHARS: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
-
-/// Generate a 4-character short ID from a task ID, unique within `existing`.
+/// Extract the last word from a hyphenated task ID for use as a short display ID.
 ///
-/// Derives the short ID deterministically from the full task ID via hashing,
-/// with collision resolution by re-hashing with a suffix.
-pub fn generate_short_id(task_id: &str, existing: &[Option<String>]) -> String {
-    let base = SHORT_ID_CHARS.len();
-    for attempt in 0u64.. {
-        let mut hasher = DefaultHasher::new();
-        task_id.hash(&mut hasher);
-        attempt.hash(&mut hasher);
-        let mut h = hasher.finish();
-
-        #[allow(clippy::cast_possible_truncation)]
-        let id: String = (0..4)
-            .map(|_| {
-                let c = SHORT_ID_CHARS[h as usize % base] as char;
-                h /= base as u64;
-                c
-            })
-            .collect();
-
-        if !existing.iter().any(|e| e.as_deref() == Some(&id)) {
-            return id;
-        }
-    }
-    unreachable!()
+/// For petname-style IDs like "tunefully-cogent-bird", returns "bird".
+/// The last word is guaranteed unique among siblings at ID generation time.
+pub fn extract_short_id(task_id: &str) -> String {
+    task_id.rsplit('-').next().unwrap_or(task_id).to_string()
 }
 
 #[cfg(test)]
@@ -372,6 +346,14 @@ mod tests {
 
         let parsed: Task = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed, task);
+    }
+
+    #[test]
+    fn test_extract_short_id() {
+        assert_eq!(extract_short_id("tunefully-cogent-bird"), "bird");
+        assert_eq!(extract_short_id("happily-lusty-fulmar"), "fulmar");
+        assert_eq!(extract_short_id("adverb-adjective-noun001"), "noun001");
+        assert_eq!(extract_short_id("single"), "single");
     }
 
     #[test]

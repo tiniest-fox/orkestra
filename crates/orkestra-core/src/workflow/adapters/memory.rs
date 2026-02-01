@@ -74,7 +74,31 @@ impl WorkflowStore for InMemoryWorkflowStore {
 
     fn next_task_id(&self) -> WorkflowResult<String> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        Ok(format!("task-{id:03}"))
+        Ok(format!("adverb-adjective-noun{id:03}"))
+    }
+
+    fn next_subtask_id(&self, parent_id: &str) -> WorkflowResult<String> {
+        let tasks = self.tasks.lock().map_err(|_| WorkflowError::Lock)?;
+        let sibling_last_words: Vec<String> = tasks
+            .values()
+            .filter(|t| t.parent_id.as_deref() == Some(parent_id))
+            .filter_map(|t| t.id.rsplit('-').next().map(String::from))
+            .collect();
+        drop(tasks);
+
+        // Generate IDs until we find one with a unique last word among siblings
+        for _ in 0..100 {
+            let id_num = self.next_id.fetch_add(1, Ordering::SeqCst);
+            let id = format!("adverb-adjective-noun{id_num:03}");
+            let last_word = id.rsplit('-').next().unwrap_or(&id);
+            if !sibling_last_words.iter().any(|w| w == last_word) {
+                return Ok(id);
+            }
+        }
+
+        Err(WorkflowError::Storage(
+            "Failed to generate unique subtask ID after 100 attempts".into(),
+        ))
     }
 
     fn list_all_iterations(&self) -> WorkflowResult<Vec<Iteration>> {
@@ -291,8 +315,8 @@ mod tests {
         let id2 = store.next_task_id().unwrap();
         let id3 = store.next_task_id().unwrap();
 
-        assert_eq!(id1, "task-001");
-        assert_eq!(id2, "task-002");
-        assert_eq!(id3, "task-003");
+        assert_eq!(id1, "adverb-adjective-noun001");
+        assert_eq!(id2, "adverb-adjective-noun002");
+        assert_eq!(id3, "adverb-adjective-noun003");
     }
 }

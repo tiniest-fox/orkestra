@@ -267,7 +267,7 @@ export interface WorkflowTask {
   artifacts: Record<string, WorkflowArtifact>;
   /** Parent task ID (for subtasks). */
   parent_id?: string;
-  /** Short display ID for subtasks (e.g., "a3f2"), unique within a parent. */
+  /** Short display ID for subtasks (last word of full ID, e.g., "bird"), unique within a parent. */
   short_id?: string;
   /** Task IDs this task depends on. */
   depends_on: string[];

@@ -1,7 +1,7 @@
 //! Task CRUD operations.
 
 use crate::orkestra_debug;
-use crate::workflow::domain::task::generate_short_id;
+use crate::workflow::domain::task::extract_short_id;
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::Phase;
@@ -119,20 +119,13 @@ impl WorkflowApi {
             ));
         }
 
-        let id = self.store.next_task_id()?;
+        let id = self.store.next_subtask_id(parent_id)?;
         let first_stage = self
             .workflow
             .first_stage()
             .ok_or_else(|| WorkflowError::InvalidTransition("No stages in workflow".into()))?;
 
-        // Generate short_id unique among siblings
-        let existing_short_ids: Vec<Option<String>> = self
-            .store
-            .list_subtasks(parent_id)?
-            .into_iter()
-            .map(|t| t.short_id)
-            .collect();
-        let short_id = generate_short_id(&id, &existing_short_ids);
+        let short_id = extract_short_id(&id);
 
         let now = chrono::Utc::now().to_rfc3339();
         let mut task = Task::new(&id, title, description, &first_stage.name, &now);

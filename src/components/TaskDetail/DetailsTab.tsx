@@ -42,12 +42,25 @@ export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
         </div>
       )}
 
-      {task.status.type === "blocked" && task.status.reason && (
-        <div className="mt-3 p-3 bg-warning-50 dark:bg-warning-950 border border-warning-200 dark:border-warning-800 rounded-panel-sm">
-          <div className="text-xs font-medium text-warning-700 dark:text-warning-300 mb-1">
-            Blocked
-          </div>
-          <p className="text-sm text-warning-800 dark:text-warning-200">{task.status.reason}</p>
+      {task.status.type === "blocked" && (
+        <div className="mt-3 space-y-3">
+          {task.status.reason && (
+            <div className="p-3 bg-warning-50 dark:bg-warning-950 border border-warning-200 dark:border-warning-800 rounded-panel-sm">
+              <div className="text-xs font-medium text-warning-700 dark:text-warning-300 mb-1">
+                Blocked
+              </div>
+              <p className="text-sm text-warning-800 dark:text-warning-200">{task.status.reason}</p>
+            </div>
+          )}
+          <Button
+            variant="destructive"
+            fullWidth
+            onClick={onRetry}
+            disabled={isRetrying}
+            loading={isRetrying}
+          >
+            Retry Task
+          </Button>
         </div>
       )}
     </div>

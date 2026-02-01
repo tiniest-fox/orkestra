@@ -417,8 +417,7 @@ mod tests {
     #[test]
     fn test_parse_approval_reject() {
         let schema = test_schema("plan", false);
-        let json =
-            r#"{"type": "approval", "decision": "reject", "content": "Tests are failing"}"#;
+        let json = r#"{"type": "approval", "decision": "reject", "content": "Tests are failing"}"#;
         let output = StageOutput::parse(json, &schema).unwrap();
 
         match output {

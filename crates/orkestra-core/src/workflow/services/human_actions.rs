@@ -267,25 +267,34 @@ impl WorkflowApi {
         Ok(task)
     }
 
-    /// Retry a failed task by resuming it from its last active stage.
+    /// Retry a failed or blocked task by resuming it from its last active stage.
     ///
     /// This retrieves the last stage from the most recent iteration and
     /// transitions the task back to that stage with an Idle phase.
     ///
     /// # Errors
     ///
-    /// Returns `InvalidTransition` if the task is not in Failed state.
+    /// Returns `InvalidTransition` if the task is not in Failed or Blocked state.
     pub fn retry(&self, task_id: &str) -> WorkflowResult<Task> {
         let mut task = self.get_task(task_id)?;
 
-        // Verify task is in failed state
-        if !matches!(task.status, crate::workflow::runtime::Status::Failed { .. }) {
+        // Verify task is in a retryable state (failed or blocked)
+        if !matches!(
+            task.status,
+            crate::workflow::runtime::Status::Failed { .. }
+                | crate::workflow::runtime::Status::Blocked { .. }
+        ) {
             return Err(WorkflowError::InvalidTransition(format!(
-                "Cannot retry task {task_id} - not in failed state"
+                "Cannot retry task {task_id} - not in failed or blocked state"
             )));
         }
 
-        orkestra_debug!("action", "retry {}: recovering from failed state", task_id);
+        orkestra_debug!(
+            "action",
+            "retry {}: recovering from {} state",
+            task_id,
+            task.status
+        );
 
         // Get the last stage from the most recent iteration
         let iterations = self.store.get_iterations(&task.id)?;

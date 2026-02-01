@@ -321,8 +321,7 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
         // First iteration or no special context
         None | Some(IterationTrigger::Interrupted) => ResumeType::Continue,
         Some(
-            IterationTrigger::Feedback { feedback }
-            | IterationTrigger::Rejection { feedback, .. },
+            IterationTrigger::Feedback { feedback } | IterationTrigger::Rejection { feedback, .. },
         ) => ResumeType::Feedback {
             feedback: feedback.clone(),
         },

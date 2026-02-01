@@ -481,7 +481,7 @@ impl WorkflowConfig {
         }
     }
 
-    /// Check that all approval rejection_stage targets reference valid stage names.
+    /// Check that all approval `rejection_stage` targets reference valid stage names.
     fn validate_approval_targets(
         &self,
         stage_names: &[&str],

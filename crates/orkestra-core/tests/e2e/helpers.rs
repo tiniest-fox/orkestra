@@ -403,12 +403,7 @@ impl TestEnv {
     /// * `artifact` - The artifact name this stage produces (e.g., "plan", "summary", "verdict")
     /// * `can_ask_questions` - Whether the stage has `ask_questions` capability
     /// * `has_approval` - Whether the stage has approval capability
-    pub fn assert_full_prompt(
-        &self,
-        artifact: &str,
-        can_ask_questions: bool,
-        has_approval: bool,
-    ) {
+    pub fn assert_full_prompt(&self, artifact: &str, can_ask_questions: bool, has_approval: bool) {
         let prompt = self.last_prompt();
 
         // Should NOT be a resume prompt
@@ -553,9 +548,9 @@ pub mod workflows {
                         stage_name: "review".to_string(),
                         overrides: Some(FlowStageOverride {
                             prompt: None,
-                            capabilities: Some(StageCapabilities::with_approval(
-                                Some("work".into()),
-                            )),
+                            capabilities: Some(StageCapabilities::with_approval(Some(
+                                "work".into(),
+                            ))),
                             model: None,
                         }),
                     },

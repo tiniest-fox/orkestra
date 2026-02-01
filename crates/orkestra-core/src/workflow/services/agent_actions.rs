@@ -246,8 +246,7 @@ impl WorkflowApi {
             }
             "reject" => {
                 // Resolve rejection target: explicit config → previous stage in flow
-                let target =
-                    self.resolve_rejection_target(current_stage, task.flow.as_deref())?;
+                let target = self.resolve_rejection_target(current_stage, task.flow.as_deref())?;
 
                 self.end_current_iteration(
                     task,
@@ -382,13 +381,7 @@ impl WorkflowApi {
                 self.handle_artifact_output(&mut task, &content, &current_stage, &now)?;
             }
             StageOutput::Approval { decision, content } => {
-                self.handle_approval_output(
-                    &mut task,
-                    &current_stage,
-                    &decision,
-                    &content,
-                    &now,
-                )?;
+                self.handle_approval_output(&mut task, &current_stage, &decision, &content, &now)?;
             }
             StageOutput::Subtasks {
                 content,

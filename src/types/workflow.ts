@@ -70,18 +70,14 @@ export interface FlowStageOverride {
 
 /**
  * A stage entry in a flow definition (object form, when overrides are present).
+ * Serialized as a single-key map: { [stage_name]: FlowStageOverride }.
  */
-export interface FlowStageEntryObject {
-  /** The stage name (must reference a top-level stage). */
-  stage_name: string;
-  /** Overrides for this stage in this flow. */
-  overrides: FlowStageOverride;
-}
+export type FlowStageEntryObject = Record<string, FlowStageOverride>;
 
 /**
  * A stage entry in a flow definition.
  * Serialized as a plain string when there are no overrides,
- * or as an object with stage_name + overrides when overrides are present.
+ * or as a single-key map { stage_name: overrides } when overrides are present.
  */
 export type FlowStageEntry = string | FlowStageEntryObject;
 

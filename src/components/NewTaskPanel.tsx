@@ -106,7 +106,7 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
                   aria-checked={autoMode}
                   onClick={() => setAutoMode(!autoMode)}
                   className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    autoMode ? "bg-orange-500" : "bg-stone-300 dark:bg-stone-600"
+                    autoMode ? "bg-purple-500" : "bg-stone-300 dark:bg-stone-600"
                   }`}
                 >
                   <span

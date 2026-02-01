@@ -2,8 +2,9 @@
  * Command palette modal — triggered by Cmd+K (Ctrl+K on non-macOS).
  *
  * Spotlight-style overlay with search input and results list.
- * Searches tasks and subtasks by title, description, and ID.
- * Navigating to a result updates DisplayContext.
+ * Shows two kinds of items:
+ * - Actions: commands like "New Task" matched by keywords
+ * - Search results: tasks and subtasks by title, description, and ID
  *
  * Thin rendering layer: composes ModalPanel for overlay infrastructure
  * and useCommandPalette for all state and interaction logic.
@@ -12,7 +13,7 @@
 import { Search } from "lucide-react";
 import { useTasks } from "../../providers";
 import { ModalPanel } from "../ui/ModalPanel";
-import { CommandPaletteResult } from "./CommandPaletteResult";
+import { CommandPaletteAction, CommandPaletteResult } from "./CommandPaletteResult";
 import { useCommandPalette } from "./useCommandPalette";
 
 export function CommandPalette() {
@@ -24,11 +25,13 @@ export function CommandPalette() {
     updateQuery,
     activeIndex,
     onInputKeyDown,
-    selectResult,
+    selectItem,
     inputRef,
     listRef,
-    results,
+    items,
   } = useCommandPalette(tasks);
+
+  const hasQuery = query.trim().length > 0;
 
   return (
     <ModalPanel
@@ -56,13 +59,13 @@ export function CommandPalette() {
 
         {/* Results */}
         <div className="max-h-80 overflow-y-auto">
-          {results.length === 0 ? (
+          {items.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-stone-400 dark:text-stone-500">
-              {query.trim() ? "No results found" : "No tasks yet"}
+              {hasQuery ? "No results found" : "No tasks yet"}
             </div>
           ) : (
             <>
-              {!query.trim() && (
+              {!hasQuery && (
                 <div className="px-3 pt-2 pb-1">
                   <span className="text-xs font-medium text-stone-400 dark:text-stone-500 uppercase tracking-wider">
                     Recent
@@ -70,21 +73,30 @@ export function CommandPalette() {
                 </div>
               )}
               <div ref={listRef}>
-                {results.map((result, index) => (
-                  <CommandPaletteResult
-                    key={result.task.id}
-                    result={result}
-                    isActive={index === activeIndex}
-                    onClick={() => selectResult(result)}
-                  />
-                ))}
+                {items.map((item, index) =>
+                  item.type === "action" ? (
+                    <CommandPaletteAction
+                      key={item.action.id}
+                      action={item.action}
+                      isActive={index === activeIndex}
+                      onClick={() => selectItem(item)}
+                    />
+                  ) : (
+                    <CommandPaletteResult
+                      key={item.result.task.id}
+                      result={item.result}
+                      isActive={index === activeIndex}
+                      onClick={() => selectItem(item)}
+                    />
+                  ),
+                )}
               </div>
             </>
           )}
         </div>
 
         {/* Footer hint */}
-        {results.length > 0 && (
+        {items.length > 0 && (
           <div className="px-4 py-2 border-t border-stone-200 dark:border-stone-700 flex items-center gap-3">
             <span className="text-xs text-stone-400 dark:text-stone-500">
               <kbd className="bg-stone-100 dark:bg-stone-800 px-1 py-0.5 rounded text-xs mr-1">

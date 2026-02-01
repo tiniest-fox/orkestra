@@ -1,6 +1,8 @@
 /**
- * Individual result row in the command palette.
- * Shows task title, status indicator, ID, and parent context for subtasks.
+ * Individual result rows in the command palette.
+ *
+ * CommandPaletteResult: task/subtask search result with status indicator.
+ * CommandPaletteAction: action command (e.g. "New Task") with icon.
  */
 
 import {
@@ -11,11 +13,13 @@ import {
   Eye,
   Layers,
   MessageCircle,
+  Plus,
   XCircle,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { TaskState } from "../ui/taskStateColors";
 import { taskStateColors } from "../ui/taskStateColors";
+import type { PaletteAction } from "./useActionSearch";
 import type { SearchResult } from "./useTaskSearch";
 
 interface CommandPaletteResultProps {
@@ -146,6 +150,42 @@ export function CommandPaletteResult({ result, isActive, onClick }: CommandPalet
       {/* Status badge */}
       <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full ${colors.badge}`}>
         {label}
+      </span>
+    </button>
+  );
+}
+
+// =============================================================================
+// Action result
+// =============================================================================
+
+interface CommandPaletteActionProps {
+  action: PaletteAction;
+  isActive: boolean;
+  onClick: () => void;
+}
+
+export function CommandPaletteAction({ action, isActive, onClick }: CommandPaletteActionProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors ${
+        isActive
+          ? "bg-orange-50 dark:bg-orange-950"
+          : "hover:bg-stone-50 dark:hover:bg-stone-800/50"
+      }`}
+    >
+      <span className="flex-shrink-0 p-1 rounded-md text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950">
+        <Plus className="w-3.5 h-3.5" />
+      </span>
+      <span
+        className={`text-sm ${isActive ? "text-stone-900 dark:text-stone-50" : "text-stone-700 dark:text-stone-200"}`}
+      >
+        {action.label}
+      </span>
+      <span className="flex-shrink-0 ml-auto text-xs px-2 py-0.5 rounded-full text-stone-500 dark:text-stone-400 bg-stone-100 dark:bg-stone-800">
+        Action
       </span>
     </button>
   );

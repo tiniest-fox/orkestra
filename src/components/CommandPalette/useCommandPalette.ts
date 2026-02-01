@@ -3,13 +3,26 @@
  *
  * Manages open/close state, global Cmd+K hotkey, search query,
  * keyboard navigation, result selection, and auto-focus/scroll.
+ *
+ * The palette shows two kinds of items:
+ * - Actions: commands like "New Task" matched by keywords
+ * - Search results: tasks/subtasks matched by title, description, ID
+ *
+ * Actions appear above search results. Keyboard navigation spans both.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDisplayContext } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
+import type { PaletteAction } from "./useActionSearch";
+import { useActionSearch } from "./useActionSearch";
 import type { SearchResult } from "./useTaskSearch";
 import { useTaskSearch } from "./useTaskSearch";
+
+/** A single selectable item in the palette — either an action or a search result. */
+export type PaletteItem =
+  | { type: "action"; action: PaletteAction }
+  | { type: "result"; result: SearchResult };
 
 export function useCommandPalette(tasks: WorkflowTaskView[]) {
   const [isOpen, setIsOpen] = useState(false);
@@ -18,8 +31,18 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const { focusTask, focusSubtask } = useDisplayContext();
+  const { focusTask, focusSubtask, openCreate } = useDisplayContext();
+  const actions = useActionSearch(query);
   const results = useTaskSearch(tasks, query);
+
+  // Combined list: actions first, then search results
+  const items: PaletteItem[] = useMemo(
+    () => [
+      ...actions.map((action): PaletteItem => ({ type: "action", action })),
+      ...results.map((result): PaletteItem => ({ type: "result", result })),
+    ],
+    [actions, results],
+  );
 
   const open = useCallback(() => {
     setQuery("");
@@ -39,6 +62,19 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
     }
   }, [isOpen, open, close]);
 
+  // Execute an action command
+  const executeAction = useCallback(
+    (action: PaletteAction) => {
+      switch (action.id) {
+        case "create-task":
+          openCreate();
+          break;
+      }
+      close();
+    },
+    [openCreate, close],
+  );
+
   // Navigate to a search result
   const selectResult = useCallback(
     (result: SearchResult) => {
@@ -50,6 +86,18 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
       close();
     },
     [focusTask, focusSubtask, close],
+  );
+
+  // Select any palette item (action or result)
+  const selectItem = useCallback(
+    (item: PaletteItem) => {
+      if (item.type === "action") {
+        executeAction(item.action);
+      } else {
+        selectResult(item.result);
+      }
+    },
+    [executeAction, selectResult],
   );
 
   // Global Cmd+K / Ctrl+K listener
@@ -92,7 +140,7 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
-          setActiveIndex((prev) => (prev < results.length - 1 ? prev + 1 : prev));
+          setActiveIndex((prev) => (prev < items.length - 1 ? prev + 1 : prev));
           break;
         case "ArrowUp":
           e.preventDefault();
@@ -100,8 +148,8 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
           break;
         case "Enter":
           e.preventDefault();
-          if (results[activeIndex]) {
-            selectResult(results[activeIndex]);
+          if (items[activeIndex]) {
+            selectItem(items[activeIndex]);
           }
           break;
         case "Escape":
@@ -110,7 +158,7 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
           break;
       }
     },
-    [results, activeIndex, selectResult, close],
+    [items, activeIndex, selectItem, close],
   );
 
   return {
@@ -120,9 +168,9 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
     updateQuery,
     activeIndex,
     onInputKeyDown,
-    selectResult,
+    selectItem,
     inputRef,
     listRef,
-    results,
+    items,
   };
 }

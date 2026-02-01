@@ -12,7 +12,7 @@ import remarkGfm from "remark-gfm";
 import { useChunkedHtml } from "../../hooks/useChunkedHtml";
 import type { WorkflowArtifact } from "../../types/workflow";
 import { formatTimestamp } from "../../utils/formatters";
-import { useContentSettled } from "../ui";
+import { ExpandButton, useContentSettled } from "../ui";
 
 interface ArtifactViewProps {
   artifact: WorkflowArtifact;
@@ -70,6 +70,7 @@ export function ArtifactView({ artifact }: ArtifactViewProps) {
 
   return (
     <div className="p-4">
+      <ExpandButton />
       <div className="text-xs text-stone-500 dark:text-stone-400 mb-2">
         Stage: {artifact.stage} | Iteration: {artifact.iteration} |{" "}
         {formatTimestamp(artifact.created_at)}

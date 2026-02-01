@@ -5,7 +5,7 @@
 import { useSmartDefault } from "../../hooks/useSmartDefault";
 import type { WorkflowArtifact, WorkflowConfig } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
-import { ArtifactTabs, PanelContainer, TabbedPanel } from "../ui";
+import { ArtifactTabs, ExpandablePanel, PanelContainer, TabbedPanel } from "../ui";
 import { ArtifactView } from "./ArtifactView";
 
 interface ArtifactsTabProps {
@@ -43,19 +43,21 @@ export function ArtifactsTab({ taskId, currentStage, artifacts, config }: Artifa
   }
 
   return (
-    <PanelContainer direction="vertical" padded={true}>
-      <TabbedPanel
-        tabs={tabs}
-        activeTab={activeArtifact ? ArtifactTabs.artifact(activeArtifact) : ""}
-        onTabChange={(key) => {
-          // Extract raw artifact name from animation key
-          const raw = artifactNames.find((n) => ArtifactTabs.artifact(n) === key);
-          if (raw) setSelectedItem(raw);
-        }}
-        size="small"
-      >
-        <ArtifactView artifact={artifacts[activeArtifact]} />
-      </TabbedPanel>
-    </PanelContainer>
+    <ExpandablePanel>
+      <PanelContainer direction="vertical" padded={true}>
+        <TabbedPanel
+          tabs={tabs}
+          activeTab={activeArtifact ? ArtifactTabs.artifact(activeArtifact) : ""}
+          onTabChange={(key) => {
+            // Extract raw artifact name from animation key
+            const raw = artifactNames.find((n) => ArtifactTabs.artifact(n) === key);
+            if (raw) setSelectedItem(raw);
+          }}
+          size="small"
+        >
+          <ArtifactView artifact={artifacts[activeArtifact]} />
+        </TabbedPanel>
+      </PanelContainer>
+    </ExpandablePanel>
   );
 }

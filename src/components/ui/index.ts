@@ -16,10 +16,13 @@ export { Badge } from "./Badge";
 // Interactive components
 export { Button } from "./Button";
 export { useContentAnimation, useContentSettled } from "./ContentAnimation";
+export { ExpandablePanel, useExpandablePanel } from "./ExpandablePanel";
+export { ExpandButton } from "./ExpandButton";
 export { IconButton } from "./IconButton";
 export { Link } from "./Link";
 export { ModalPanel } from "./ModalPanel";
 // Layout components
+export { OverlayContainer } from "./OverlayContainer";
 export { Panel } from "./Panel/Panel";
 export { PanelContainer } from "./PanelContainer";
 export { PanelSlot } from "./PanelSlot";

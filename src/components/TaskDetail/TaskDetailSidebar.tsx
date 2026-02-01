@@ -11,6 +11,7 @@ import { useTaskDetail } from "../../hooks/useTaskDetail";
 import { useWorkflowConfig } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
 import {
+  OverlayContainer,
   Panel,
   PanelContainer,
   PanelSlot,
@@ -164,62 +165,64 @@ export function TaskDetailSidebar({
   return (
     <Panel className="w-[480px]">
       <PanelContainer direction="vertical" padded={true}>
-        <PanelContainer direction="vertical">
-          <TaskDetailHeader
-            task={task}
-            hasQuestions={task.derived.has_questions}
-            needsReview={task.derived.needs_review}
-            onClose={onClose}
-            onRequestDelete={() => setConfirmingDelete(true)}
-            onToggleAutoMode={handleToggleAutoMode}
-          />
+        <OverlayContainer className="flex flex-1 flex-col min-h-0">
+          <PanelContainer direction="vertical">
+            <TaskDetailHeader
+              task={task}
+              hasQuestions={task.derived.has_questions}
+              needsReview={task.derived.needs_review}
+              onClose={onClose}
+              onRequestDelete={() => setConfirmingDelete(true)}
+              onToggleAutoMode={handleToggleAutoMode}
+            />
 
-          <TabbedPanel
-            tabs={tabs}
-            activeTab={activeTab}
-            onTabChange={(tabId) => setActiveTab(tabId)}
-          >
-            {activeTab === TaskDetailTabs.details(task.id) && (
-              <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />
-            )}
+            <TabbedPanel
+              tabs={tabs}
+              activeTab={activeTab}
+              onTabChange={(tabId) => setActiveTab(tabId)}
+            >
+              {activeTab === TaskDetailTabs.details(task.id) && (
+                <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />
+              )}
 
-            {activeTab === TaskDetailTabs.subtasks(task.id) &&
-              task.derived.subtask_progress &&
-              subtasks && (
-                <SubtasksTab
-                  subtasks={subtasks}
-                  progress={task.derived.subtask_progress}
-                  selectedSubtaskId={selectedSubtaskId}
-                  onSelectSubtask={onSelectSubtask}
+              {activeTab === TaskDetailTabs.subtasks(task.id) &&
+                task.derived.subtask_progress &&
+                subtasks && (
+                  <SubtasksTab
+                    subtasks={subtasks}
+                    progress={task.derived.subtask_progress}
+                    selectedSubtaskId={selectedSubtaskId}
+                    onSelectSubtask={onSelectSubtask}
+                  />
+                )}
+
+              {activeTab === TaskDetailTabs.artifacts(task.id) && (
+                <ArtifactsTab
+                  taskId={task.id}
+                  currentStage={task.derived.current_stage}
+                  artifacts={task.artifacts}
+                  config={config}
                 />
               )}
 
-            {activeTab === TaskDetailTabs.artifacts(task.id) && (
-              <ArtifactsTab
-                taskId={task.id}
-                currentStage={task.derived.current_stage}
-                artifacts={task.artifacts}
-                config={config}
-              />
-            )}
+              {activeTab === TaskDetailTabs.iterations(task.id) && (
+                <IterationsTab iterations={task.iterations} />
+              )}
 
-            {activeTab === TaskDetailTabs.iterations(task.id) && (
-              <IterationsTab iterations={task.iterations} />
-            )}
-
-            {activeTab === TaskDetailTabs.logs(task.id) && (
-              <LogsTab
-                task={task}
-                logs={logsState.logs}
-                isLoading={logsState.isLoading}
-                error={logsState.error}
-                stagesWithLogs={logsState.stagesWithLogs}
-                activeLogStage={logsState.activeLogStage}
-                onStageChange={logsState.setActiveLogStage}
-              />
-            )}
-          </TabbedPanel>
-        </PanelContainer>
+              {activeTab === TaskDetailTabs.logs(task.id) && (
+                <LogsTab
+                  task={task}
+                  logs={logsState.logs}
+                  isLoading={logsState.isLoading}
+                  error={logsState.error}
+                  stagesWithLogs={logsState.stagesWithLogs}
+                  activeLogStage={logsState.activeLogStage}
+                  onStageChange={logsState.setActiveLogStage}
+                />
+              )}
+            </TabbedPanel>
+          </PanelContainer>
+        </OverlayContainer>
 
         <PanelSlot activeKey={footerPanelKey} direction="vertical">
           <PanelSlot.Panel panelKey={TaskDetailFooterSlot.Delete}>

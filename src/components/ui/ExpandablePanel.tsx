@@ -126,7 +126,9 @@ export function ExpandablePanel({ children, className = "" }: ExpandablePanelPro
   }
 
   return (
-    <div className={`grow shrink basis-0 flex flex-col overflow-hidden ${className}`}>
+    <div
+      className={`grow shrink basis-0 flex flex-col overflow-y-auto overflow-x-hidden ${className}`}
+    >
       {wrappedChildren}
     </div>
   );

@@ -816,8 +816,11 @@ impl OrchestratorLoop {
     ///
     /// Removes worktrees in two cases:
     /// 1. **Orphaned**: The task was deleted from the DB but the worktree remains on disk.
-    /// 2. **Terminal**: The task is done/archived/failed and no longer needs a worktree.
-    ///    This catches cases where integration succeeded but crashed before cleanup.
+    /// 2. **Archived**: The task was integrated but crashed before worktree cleanup.
+    ///
+    /// Other terminal states (Done, Failed, Blocked) keep their worktrees:
+    /// Done tasks still need theirs for integration, and Failed/Blocked tasks
+    /// can be retried.
     fn cleanup_orphaned_worktrees(&self) {
         let Ok(api) = self.api.lock() else {
             orkestra_debug!(
@@ -860,8 +863,11 @@ impl OrchestratorLoop {
                     orkestra_debug!("recovery", "Cleaning up orphaned worktree: {name}");
                     true
                 }
-                Some(task) if task.status.is_terminal() && task.phase == Phase::Idle => {
-                    orkestra_debug!("recovery", "Cleaning up worktree for terminal task: {name}");
+                Some(task) if task.status.is_archived() && task.phase == Phase::Idle => {
+                    orkestra_debug!(
+                        "recovery",
+                        "Cleaning up worktree for archived task: {name}"
+                    );
                     true
                 }
                 _ => false,

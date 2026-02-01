@@ -82,6 +82,7 @@ run_check() {
     local name="$1"
     shift
     local cmd="$@"
+    local start_time=$(date +%s)
 
     if $VERBOSE; then
         echo ""
@@ -89,9 +90,11 @@ run_check() {
         echo "  Command: $cmd"
         echo ""
         if eval "$cmd"; then
-            success "$name"
+            local elapsed=$(( $(date +%s) - start_time ))
+            success "$name (${elapsed}s)"
         else
-            fail "$name"
+            local elapsed=$(( $(date +%s) - start_time ))
+            fail "$name (${elapsed}s)"
             FAILED_CHECKS+=("$name")
         fi
     else
@@ -99,11 +102,12 @@ run_check() {
         local output
         local exit_code
         output=$(eval "$cmd" 2>&1) && exit_code=0 || exit_code=$?
+        local elapsed=$(( $(date +%s) - start_time ))
 
         if [ $exit_code -eq 0 ]; then
-            success "$name"
+            success "$name (${elapsed}s)"
         else
-            fail "$name"
+            fail "$name (${elapsed}s)"
             FAILED_CHECKS+=("$name")
             # Store truncated output for summary (last 50 lines)
             FAILED_OUTPUTS+=("$(echo "$output" | tail -50)")
@@ -270,6 +274,20 @@ if $VERBOSE; then
     echo "  Core (crates/):         $HAS_CORE"
     echo "  Rust config:            $HAS_RUST_CONFIG"
     echo ""
+fi
+
+# =============================================================================
+# Validate shared build symlinks
+# =============================================================================
+
+if [ -L "target" ]; then
+    SYMLINK_TARGET=$(readlink "target")
+    if [ ! -d "$SYMLINK_TARGET" ]; then
+        warn "target/ symlink is dangling (points to $SYMLINK_TARGET which doesn't exist)"
+        warn "First cargo build will create it — this is expected for fresh repos"
+    fi
+elif [ -d "target" ]; then
+    warn "target/ is a real directory, not a symlink — builds will use local target"
 fi
 
 # =============================================================================

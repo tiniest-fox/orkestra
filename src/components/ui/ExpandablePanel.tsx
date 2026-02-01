@@ -112,7 +112,7 @@ export function ExpandablePanel({ children, className = "" }: ExpandablePanelPro
               transition={overlayTransition}
               onAnimationStart={() => setPhase("entering")}
               onAnimationComplete={() => setPhase("settled")}
-              className={`absolute inset-2 z-30 flex flex-col rounded-panel shadow-panel bg-white dark:bg-stone-900 overflow-hidden ${className}`}
+              className={`absolute inset-2 z-30 flex flex-col rounded-panel shadow-panel bg-white dark:bg-stone-900 overflow-y-auto overflow-x-hidden ${className}`}
             >
               {wrappedChildren}
             </motion.div>

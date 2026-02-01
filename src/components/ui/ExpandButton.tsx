@@ -26,14 +26,14 @@ export function ExpandButton() {
   const { isExpanded, toggle } = expandable;
 
   return (
-    <div className="sticky top-0 z-10 flex justify-end pointer-events-none h-0">
+    <div className="sticky top-2 z-10 flex justify-end pointer-events-none h-0 overflow-visible">
       <IconButton
         icon={isExpanded ? <Minimize2 /> : <Maximize2 />}
         aria-label={isExpanded ? "Collapse panel" : "Expand panel"}
         variant="secondary"
         size="sm"
         onClick={toggle}
-        className="pointer-events-auto mt-1 mr-1"
+        className="pointer-events-auto mt-1 mr-1 shrink-0"
       />
     </div>
   );

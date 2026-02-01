@@ -8,6 +8,14 @@ import { titleCase } from "../../utils/formatters";
 import { ArtifactTabs, ExpandablePanel, PanelContainer, TabbedPanel } from "../ui";
 import { ArtifactView } from "./ArtifactView";
 
+function ExpandableArtifactView({ artifact }: { artifact: WorkflowArtifact }) {
+  return (
+    <ExpandablePanel>
+      <ArtifactView artifact={artifact} />
+    </ExpandablePanel>
+  );
+}
+
 interface ArtifactsTabProps {
   taskId: string;
   currentStage: string | null;
@@ -43,21 +51,19 @@ export function ArtifactsTab({ taskId, currentStage, artifacts, config }: Artifa
   }
 
   return (
-    <ExpandablePanel>
-      <PanelContainer direction="vertical" padded={true}>
-        <TabbedPanel
-          tabs={tabs}
-          activeTab={activeArtifact ? ArtifactTabs.artifact(activeArtifact) : ""}
-          onTabChange={(key) => {
-            // Extract raw artifact name from animation key
-            const raw = artifactNames.find((n) => ArtifactTabs.artifact(n) === key);
-            if (raw) setSelectedItem(raw);
-          }}
-          size="small"
-        >
-          <ArtifactView artifact={artifacts[activeArtifact]} />
-        </TabbedPanel>
-      </PanelContainer>
-    </ExpandablePanel>
+    <PanelContainer direction="vertical" padded={true}>
+      <TabbedPanel
+        tabs={tabs}
+        activeTab={activeArtifact ? ArtifactTabs.artifact(activeArtifact) : ""}
+        onTabChange={(key) => {
+          // Extract raw artifact name from animation key
+          const raw = artifactNames.find((n) => ArtifactTabs.artifact(n) === key);
+          if (raw) setSelectedItem(raw);
+        }}
+        size="small"
+      >
+        <ExpandableArtifactView artifact={artifacts[activeArtifact]} />
+      </TabbedPanel>
+    </PanelContainer>
   );
 }

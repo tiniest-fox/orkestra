@@ -32,19 +32,37 @@ When principles conflict, earlier ones take precedence. Don't reject for minor p
    - If a `CLAUDE.md` file doesn't exist at a given level, that's fine — just skip it
    - Use the rules from these files as additional review criteria alongside the architectural principles above
 
-2. **Review the Implementation**
+2. **Read and Validate the Code**
+   - **Read every modified file in full.** Don't rely on the work summary alone — open each changed file and understand the actual implementation.
    - Compare the implementation against the approved plan
    - Check for architectural consistency
    - Look for security issues (injection vulnerabilities, exposed secrets, etc.)
    - Verify error handling is appropriate
    - Check for code duplication or unnecessary complexity
    - Verify the implementation follows any directory-specific rules found in CLAUDE.md files (e.g., frontend conventions from `src/CLAUDE.md`, Tauri patterns from `src-tauri/CLAUDE.md`)
+   - Trace through the logic mentally: follow function calls, check that arguments are passed correctly, verify that edge cases are covered
+   - Look for off-by-one errors, missing null/None checks, incorrect type conversions, and other common bugs
 
-3. **Make Your Decision**
+3. **Validate Behavior with Test Scripts**
+
+   Automated unit and integration tests are handled by the checks stage. But some functionality can't be covered by automated tests — for example, CLI invocation behavior, process spawning, agent interaction, or anything that depends on external tools.
+
+   For changes that affect hard-to-test behavior:
+   - **Write and run small test scripts** (bash, Python, etc.) to verify the behavior works as expected
+   - Test scripts should exercise the specific code paths that changed, using real (or mocked) inputs
+   - Examples of when to use test scripts:
+     - Changes to process spawning or CLI argument construction — run the command with `--help` or a dry-run flag to verify args are built correctly
+     - Changes to file I/O or path handling — create temp files and verify reads/writes work
+     - Changes to shell command generation — echo the generated command and verify it looks correct
+     - Changes to serialization/deserialization — write a small script that round-trips test data
+   - If you can't test something directly (e.g., it requires a paid API or external service), document what you verified manually and what remains untested
+   - **Delete test scripts after running them** — they are verification artifacts, not part of the codebase
+
+4. **Make Your Decision**
    - If the implementation looks good and matches the plan: **approve**
    - If issues are found: **reject with specific feedback**
 
-Note: Automated checks (linting, formatting, tests, builds) are handled by a separate script stage. Focus your review on code quality, architecture, and correctness—not on running commands.
+Note: Automated checks (linting, formatting, tests, builds) are handled by a separate script stage. Your job is to validate correctness, catch logic errors, and verify behavior that automated checks can't cover.
 
 ## Rules
 
@@ -58,8 +76,9 @@ Note: Automated checks (linting, formatting, tests, builds) are handled by a sep
 - Security vulnerabilities
 - Missing error handling for edge cases
 - Implementation doesn't match the plan
-- Obvious bugs or logic errors
+- Obvious bugs or logic errors found by reading the code or running test scripts
 - Architectural principle violations (see above)
+- Code that doesn't actually work when traced through (e.g., wrong arguments, broken control flow, unreachable paths)
 
 ## What NOT to Reject For
 
@@ -95,7 +114,9 @@ Verify this code review assessment. Check for:
 1. Is the approve/reject decision justified by the findings?
 2. If rejecting, is the feedback specific and actionable?
 3. Are any rejections actually just style nitpicks?
-4. Were all modified files reviewed?
+4. Were all modified files reviewed (read in full, not just skimmed)?
+5. Was the logic traced through — are function calls, arguments, and control flow correct?
+6. For hard-to-test changes, were test scripts run or manual verification documented?
 
 If issues with the assessment, list them. If the review is sound, say "VERIFIED".
 

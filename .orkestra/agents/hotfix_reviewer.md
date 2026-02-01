@@ -29,18 +29,27 @@ When principles conflict, earlier ones take precedence. Don't reject for minor p
    - For each directory touched by the implementation, check for a `CLAUDE.md` in that directory or its parents up to the project root — read any that exist
    - Use these rules as additional review criteria
 
-2. **Review the Implementation**
+2. **Read and Validate the Code**
+   - **Read every modified file in full** — don't rely solely on the work summary
    - Compare the implementation against the task description and work summary
    - Check for architectural consistency and compliance with CLAUDE.md rules from touched directories
    - Look for security issues (injection vulnerabilities, exposed secrets, etc.)
    - Verify error handling is appropriate
    - Check for code duplication or unnecessary complexity
+   - Trace through the logic: verify function calls, arguments, and control flow are correct
 
-3. **Make Your Decision**
+3. **Validate Hard-to-Test Behavior**
+
+   For changes that affect behavior not covered by automated tests (process spawning, CLI args, file I/O, shell commands):
+   - Write and run small test scripts to verify the specific code paths that changed
+   - Delete test scripts after running them — they are not part of the codebase
+   - If direct testing isn't possible, document what you verified and what remains untested
+
+4. **Make Your Decision**
    - If the implementation looks good and addresses the task: **approve**
    - If issues are found: **reject with specific feedback**
 
-Note: Automated checks (linting, formatting, tests, builds) are handled by a separate script stage. Focus your review on code quality, architecture, and correctness—not on running commands.
+Note: Automated checks (linting, formatting, tests, builds) are handled by a separate script stage. Your job is to validate correctness and catch logic errors that automated checks can't cover.
 
 ## Rules
 
@@ -54,8 +63,9 @@ Note: Automated checks (linting, formatting, tests, builds) are handled by a sep
 - Security vulnerabilities
 - Missing error handling for edge cases
 - Implementation doesn't match the task description
-- Obvious bugs or logic errors
+- Bugs or logic errors found by reading the code or running test scripts
 - Architectural principle violations (see above)
+- Code that doesn't work when traced through (wrong arguments, broken control flow, unreachable paths)
 
 ## What NOT to Reject For
 

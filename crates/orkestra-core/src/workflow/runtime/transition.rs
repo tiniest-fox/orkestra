@@ -37,8 +37,8 @@ pub enum TransitionTrigger {
     AgentCompleted,
     /// Agent produced output.
     AgentOutput,
-    /// Agent restaged to a different stage.
-    Restage { target: String, feedback: String },
+    /// Agent rejected work back to a different stage.
+    Rejection { target: String, feedback: String },
     /// Task failed.
     Failed { error: String },
     /// Task was blocked.
@@ -224,11 +224,11 @@ impl<'a> TransitionValidator<'a> {
         ))
     }
 
-    /// Compute the transition when agent restages to a different stage.
+    /// Compute the transition when agent rejects work via approval capability.
     ///
-    /// This is used when an automated agent (e.g., reviewer) redirects work to another stage.
-    /// The current stage must have the target stage in its `supports_restage` capability.
-    pub fn restage(
+    /// This is used when an automated agent (e.g., reviewer) rejects work back to a target stage.
+    /// The current stage must have the `approval` capability.
+    pub fn rejection(
         &self,
         current_status: &Status,
         current_phase: Phase,
@@ -240,14 +240,14 @@ impl<'a> TransitionValidator<'a> {
         let target_str = target.into();
         let feedback_str = feedback.into();
 
-        // Verify the current stage has restage capability for the target
+        // Verify the current stage has approval capability
         let stage_config = self
             .workflow
             .stage(current_stage)
             .ok_or_else(|| TransitionError::UnknownStage(current_stage.into()))?;
 
-        if !stage_config.capabilities.can_restage_to(&target_str) {
-            return Err(TransitionError::CannotRestage {
+        if !stage_config.capabilities.has_approval() {
+            return Err(TransitionError::CannotReject {
                 from: current_stage.into(),
                 target: target_str,
             });
@@ -263,7 +263,7 @@ impl<'a> TransitionValidator<'a> {
             Status::active(&target_str),
             current_phase,
             Phase::Idle,
-            TransitionTrigger::Restage {
+            TransitionTrigger::Rejection {
                 target: target_str,
                 feedback: feedback_str,
             },
@@ -286,8 +286,8 @@ pub enum TransitionError {
     #[error("Task is already in terminal state")]
     AlreadyTerminal,
 
-    #[error("Stage '{from}' cannot restage to '{target}' (not in supports_restage)")]
-    CannotRestage { from: String, target: String },
+    #[error("Stage '{from}' cannot reject to '{target}' (no approval capability)")]
+    CannotReject { from: String, target: String },
 }
 
 #[cfg(test)]
@@ -426,74 +426,52 @@ mod tests {
     }
 
     #[test]
-    fn test_restage_transition() {
-        // Workflow with review that can restage to work
+    fn test_rejection_transition() {
+        // Workflow with review that has approval capability
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]))
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ]);
         let validator = TransitionValidator::new(&workflow);
 
         let status = Status::active("review");
         let transition = validator
-            .restage(&status, Phase::Idle, "work", "Tests are failing")
+            .rejection(&status, Phase::Idle, "work", "Tests are failing")
             .unwrap();
 
         assert_eq!(transition.to, Status::active("work"));
         assert_eq!(transition.to_phase, Phase::Idle);
         assert!(matches!(
             transition.trigger,
-            TransitionTrigger::Restage { target, feedback }
+            TransitionTrigger::Rejection { target, feedback }
             if target == "work" && feedback == "Tests are failing"
         ));
     }
 
     #[test]
-    fn test_restage_not_allowed() {
-        // Workflow where review cannot restage to planning
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary"),
-            StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]))
-                .automated(),
-        ]);
-        let validator = TransitionValidator::new(&workflow);
-
-        let status = Status::active("review");
-        let result = validator.restage(&status, Phase::Idle, "planning", "Bad plan");
-
-        assert!(matches!(
-            result,
-            Err(TransitionError::CannotRestage { from, target })
-            if from == "review" && target == "planning"
-        ));
-    }
-
-    #[test]
-    fn test_restage_no_capability() {
-        // Workflow where planning has no restage capability
+    fn test_rejection_no_capability() {
+        // Workflow where planning has no approval capability
         let workflow = test_workflow();
         let validator = TransitionValidator::new(&workflow);
 
         let status = Status::active("planning");
-        let result = validator.restage(&status, Phase::Idle, "work", "Skip to work");
+        let result = validator.rejection(&status, Phase::Idle, "work", "Skip to work");
 
-        assert!(matches!(result, Err(TransitionError::CannotRestage { .. })));
+        assert!(matches!(result, Err(TransitionError::CannotReject { .. })));
     }
 
     #[test]
-    fn test_restage_unknown_target() {
-        // Workflow with restage to non-existent stage
+    fn test_rejection_unknown_target() {
+        // Workflow with approval targeting non-existent stage
         let workflow = WorkflowConfig::new(vec![StageConfig::new("review", "verdict")
-            .with_capabilities(StageCapabilities::with_restage(vec!["nonexistent".into()]))]);
+            .with_capabilities(StageCapabilities::with_approval(Some("nonexistent".into())))]);
         let validator = TransitionValidator::new(&workflow);
 
         let status = Status::active("review");
-        let result = validator.restage(&status, Phase::Idle, "nonexistent", "feedback");
+        let result = validator.rejection(&status, Phase::Idle, "nonexistent", "feedback");
 
         // First validates capability (passes), then checks target exists (fails)
         assert!(matches!(result, Err(TransitionError::UnknownStage(_))));

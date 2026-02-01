@@ -20,7 +20,7 @@ pub enum SessionState {
     /// Session completed successfully (stage approved, moved to next stage).
     Completed,
 
-    /// Session was abandoned (task failed, blocked, or stage restaged from).
+    /// Session was abandoned (task failed, blocked, or stage rejected from).
     Abandoned,
 }
 
@@ -114,7 +114,7 @@ impl StageSession {
         self.updated_at = updated_at.into();
     }
 
-    /// Mark the session as abandoned (task failed, blocked, or restaged).
+    /// Mark the session as abandoned (task failed, blocked, or rejected).
     pub fn abandon(&mut self, updated_at: impl Into<String>) {
         self.session_state = SessionState::Abandoned;
         self.agent_pid = None;

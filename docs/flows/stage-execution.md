@@ -12,13 +12,14 @@ How a task goes from "needs work" to "output processed" — the path through the
 | `workflow/services/prompt_service.rs` | Facade over prompt building: resolves flow overrides, loads templates |
 | `workflow/services/session_service.rs` | Session lifecycle: create, record PID, resume detection, trigger delivery |
 | `workflow/services/iteration_service.rs` | Iteration lifecycle: create, end with outcome, per-stage numbering |
-| `workflow/services/agent_actions.rs` | Output processing: artifact storage, questions, subtasks, restage, failure |
+| `workflow/services/agent_actions.rs` | Output processing: artifact storage, questions, subtasks, approval, failure |
 | `workflow/execution/prompt.rs` | Low-level prompt assembly: template loading, context injection, resume prompts |
 | `workflow/execution/output.rs` | `StageOutput` enum: the parsed agent response types |
-| `workflow/execution/runner.rs` | `AgentRunner`: spawns Claude Code process, returns event channel |
+| `workflow/execution/runner.rs` | `AgentRunner`: resolves provider via registry, spawns agent process, returns event channel |
+| `workflow/execution/provider_registry.rs` | `ProviderRegistry`: maps model specs to `ProcessSpawner` implementations with capabilities |
 | `workflow/config/stage.rs` | `StageCapabilities`: flags that control schema composition and output types |
 | `prompts/mod.rs` | `generate_stage_schema()`: composes JSON schema from component files based on capabilities |
-| `prompts/schemas/components/*.json` | Reusable schema fragments (artifact, questions, subtasks, restage, terminal) |
+| `prompts/schemas/components/*.json` | Reusable schema fragments (artifact, questions, subtasks, approval, terminal) |
 
 All paths relative to `crates/orkestra-core/src/`.
 
@@ -28,13 +29,13 @@ All paths relative to `crates/orkestra-core/src/`.
 
 2. **StageExecutionService creates session and dispatches** — `stage_execution.rs::spawn()` creates a `StageSession` via `SessionService`, gets spawn context (`session_id` + `is_resume` flag), then delegates to `spawn_agent()` or `spawn_script()`. Records PID after successful spawn.
 
-3. **AgentExecutionService builds prompt and spawns** — `agent_execution.rs::execute_stage()` generates the JSON schema from `StageCapabilities` (via `prompts/mod.rs`), builds the prompt (full on first spawn, short resume prompt on subsequent spawns), and spawns Claude Code via `AgentRunner`.
+3. **AgentExecutionService builds prompt and spawns** — `agent_execution.rs::execute_stage()` generates the JSON schema from `StageCapabilities` (via `prompts/mod.rs`), builds the prompt (full on first spawn, short resume prompt on subsequent spawns), and spawns the agent via `AgentRunner`. The runner resolves the stage's `model` spec through `ProviderRegistry` to select a provider and model. If the provider lacks `supports_json_schema` (e.g., OpenCode), the schema is embedded in the prompt text instead of passed as a CLI flag.
 
-4. **Agent runs and produces JSON output** — Claude Code executes with `--json-schema` enforcing structured output. Output is one of: `Artifact`, `Questions`, `Subtasks`, `Restage`, `Failed`, `Blocked`.
+4. **Agent runs and produces JSON output** — The agent CLI executes with provider-appropriate flags (Claude Code uses `--json-schema`; OpenCode uses `--format json` with schema in prompt). Output is one of: `Artifact`, `Questions`, `Subtasks`, `Approval`, `Failed`, `Blocked`.
 
 5. **Orchestrator polls completion** — `orchestrator.rs::process_completed_executions()` non-blocking polls all active agents/scripts, dispatches results to `api.process_agent_output()` or `api.process_script_success/failure()`.
 
-6. **Output processing** — `agent_actions.rs::process_agent_output()` dispatches by output type: stores artifacts, records questions, stores subtask JSON, validates restage targets, or marks task failed/blocked. Sets phase to `AwaitingReview` or auto-advances to next stage.
+6. **Output processing** — `agent_actions.rs::process_agent_output()` dispatches by output type: stores artifacts, records questions, stores subtask JSON, processes approval decisions, or marks task failed/blocked. Sets phase to `AwaitingReview` or auto-advances to next stage.
 
 ## Phase Transitions
 
@@ -52,6 +53,7 @@ Idle ──[orchestrator]──> AgentWorking ──[output]──> AwaitingRevi
 | Prompt | Full (agent def + task context + artifacts) | Short (feedback/answers/continue) |
 | JSON Schema | Generated from stage config | Same — regenerated each time |
 | Claude Code flag | `--session-id {id}` | `--resume {id}` |
+| OpenCode flag | `--session {id}` | `--continue {id}` |
 | Session `spawn_count` | 0 before, 1 after | N before, N+1 after |
 
 ## Trigger Types and Their Sources
@@ -64,7 +66,7 @@ Idle ──[orchestrator]──> AgentWorking ──[output]──> AwaitingRevi
 | `Answers { answers }` | Human answers questions (`human_actions.rs::answer_questions`) | `Answers` |
 | `Integration { message, files }` | Merge conflict (`integration.rs::integration_failed`) | `Integration` |
 | `ScriptFailure { from_stage, error }` | Script stage failed (`agent_actions.rs::process_script_failure`) | `Feedback` (formatted) |
-| `Restage { from_stage, feedback }` | Agent requested restage (`agent_actions.rs::handle_restage_output`) | `Feedback` |
+| `Rejection { from_stage, feedback }` | Agent rejected via approval (`agent_actions.rs::handle_approval_output`) | `Feedback` |
 
 ## Non-Obvious Behaviors
 

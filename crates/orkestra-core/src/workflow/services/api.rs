@@ -221,7 +221,7 @@ mod tests {
             StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
             StageConfig::new("review", "verdict")
                 .with_inputs(vec!["plan".into(), "summary".into()])
-                .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]))
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
     }

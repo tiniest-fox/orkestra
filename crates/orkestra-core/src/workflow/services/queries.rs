@@ -153,7 +153,7 @@ impl WorkflowApi {
 
     /// Get feedback from the last rejection (for agent prompts).
     ///
-    /// Returns the feedback from the most recent `Rejected` or `Restage` outcome
+    /// Returns the feedback from the most recent `Rejected` or `Rejection` outcome
     /// for the task's current stage, if any.
     pub fn get_rejection_feedback(&self, task_id: &str) -> WorkflowResult<Option<String>> {
         let task = self.get_task(task_id)?;
@@ -167,9 +167,9 @@ impl WorkflowApi {
             .store
             .get_iterations_for_stage(task_id, current_stage)?;
 
-        // Find the most recent rejection or restage outcome
+        // Find the most recent rejection outcome
         for iteration in iterations.into_iter().rev() {
-            if let Some(Outcome::Rejected { feedback, .. } | Outcome::Restage { feedback, .. }) =
+            if let Some(Outcome::Rejected { feedback, .. } | Outcome::Rejection { feedback, .. }) =
                 iteration.outcome
             {
                 return Ok(Some(feedback));

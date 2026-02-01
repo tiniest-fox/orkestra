@@ -205,10 +205,19 @@ pub struct StageCapabilities {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subtasks: Option<SubtaskCapabilities>,
 
-    /// Stages this agent can redirect to (e.g., reviewer can send back to work).
-    /// Empty means no restaging capability.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub supports_restage: Vec<String>,
+    /// Approval capability. When present, the stage must produce an approve/reject
+    /// decision instead of a plain artifact. On reject, the task moves to the
+    /// `rejection_stage` (or the previous stage in the flow if not specified).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<ApprovalCapabilities>,
+}
+
+/// Configuration for a stage with approval capability.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ApprovalCapabilities {
+    /// Stage to move to on rejection. If None, defaults to the previous stage in the flow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rejection_stage: Option<String>,
 }
 
 /// Configuration for a stage that produces subtasks.
@@ -247,14 +256,14 @@ impl StageCapabilities {
         Self {
             ask_questions: true,
             subtasks: Some(SubtaskCapabilities::default()),
-            supports_restage: Vec::new(),
+            approval: None,
         }
     }
 
-    /// Create capabilities with restaging to specific stages.
-    pub fn with_restage(stages: Vec<String>) -> Self {
+    /// Create capabilities with approval (approve/reject decision).
+    pub fn with_approval(rejection_stage: Option<String>) -> Self {
         Self {
-            supports_restage: stages,
+            approval: Some(ApprovalCapabilities { rejection_stage }),
             ..Default::default()
         }
     }
@@ -274,9 +283,14 @@ impl StageCapabilities {
         self.subtasks.as_ref()?.completion_stage.as_deref()
     }
 
-    /// Check if this stage can restage to the given target.
-    pub fn can_restage_to(&self, target: &str) -> bool {
-        self.supports_restage.iter().any(|s| s == target)
+    /// Whether this stage has approval capability.
+    pub fn has_approval(&self) -> bool {
+        self.approval.is_some()
+    }
+
+    /// The explicit rejection stage, if configured.
+    pub fn rejection_stage(&self) -> Option<&str> {
+        self.approval.as_ref()?.rejection_stage.as_deref()
     }
 }
 
@@ -425,39 +439,45 @@ mod tests {
     }
 
     #[test]
-    fn test_capabilities_with_restage() {
-        let caps = StageCapabilities::with_restage(vec!["work".into(), "planning".into()]);
-        assert!(caps.can_restage_to("work"));
-        assert!(caps.can_restage_to("planning"));
-        assert!(!caps.can_restage_to("review"));
+    fn test_capabilities_with_approval() {
+        let caps = StageCapabilities::with_approval(Some("work".into()));
+        assert!(caps.has_approval());
+        assert_eq!(caps.rejection_stage(), Some("work"));
         assert!(!caps.ask_questions);
         assert!(!caps.produces_subtasks());
     }
 
     #[test]
-    fn test_capabilities_restage_default_empty() {
-        let caps = StageCapabilities::default();
-        assert!(caps.supports_restage.is_empty());
-        assert!(!caps.can_restage_to("work"));
+    fn test_capabilities_approval_default_rejection() {
+        let caps = StageCapabilities::with_approval(None);
+        assert!(caps.has_approval());
+        assert_eq!(caps.rejection_stage(), None);
     }
 
     #[test]
-    fn test_capabilities_restage_serialization() {
-        let caps = StageCapabilities::with_restage(vec!["work".into()]);
+    fn test_capabilities_approval_default_none() {
+        let caps = StageCapabilities::default();
+        assert!(!caps.has_approval());
+        assert_eq!(caps.rejection_stage(), None);
+    }
+
+    #[test]
+    fn test_capabilities_approval_serialization() {
+        let caps = StageCapabilities::with_approval(Some("work".into()));
         let yaml = serde_yaml::to_string(&caps).unwrap();
-        assert!(yaml.contains("supports_restage"));
-        assert!(yaml.contains("work"));
+        assert!(yaml.contains("approval"));
+        assert!(yaml.contains("rejection_stage: work"));
 
         let parsed: StageCapabilities = serde_yaml::from_str(&yaml).unwrap();
-        assert!(parsed.can_restage_to("work"));
+        assert!(parsed.has_approval());
+        assert_eq!(parsed.rejection_stage(), Some("work"));
     }
 
     #[test]
-    fn test_capabilities_restage_skipped_when_empty() {
+    fn test_capabilities_approval_skipped_when_none() {
         let caps = StageCapabilities::default();
         let yaml = serde_yaml::to_string(&caps).unwrap();
-        // Empty supports_restage should not appear in serialized output
-        assert!(!yaml.contains("supports_restage"));
+        assert!(!yaml.contains("approval"));
     }
 
     #[test]

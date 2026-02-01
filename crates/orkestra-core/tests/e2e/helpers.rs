@@ -316,7 +316,7 @@ impl TestEnv {
         self.orchestrator.tick().expect("Tick should succeed");
     }
 
-    /// Tick until all active work settles (handles multi-step like restage).
+    /// Tick until all active work settles (handles multi-step like rejection).
     ///
     /// Use this for agent stages where mock callbacks complete asynchronously.
     pub fn tick_until_settled(&self) {
@@ -402,12 +402,12 @@ impl TestEnv {
     /// # Arguments
     /// * `artifact` - The artifact name this stage produces (e.g., "plan", "summary", "verdict")
     /// * `can_ask_questions` - Whether the stage has `ask_questions` capability
-    /// * `restage_targets` - Stages this stage can restage to (empty if no restage capability)
+    /// * `has_approval` - Whether the stage has approval capability
     pub fn assert_full_prompt(
         &self,
         artifact: &str,
         can_ask_questions: bool,
-        restage_targets: &[&str],
+        has_approval: bool,
     ) {
         let prompt = self.last_prompt();
 
@@ -441,17 +441,11 @@ impl TestEnv {
             );
         }
 
-        // Check restage capability
-        for target in restage_targets {
+        // Check approval capability
+        if has_approval {
             assert!(
-                prompt.contains("restage") || prompt.contains("rejected"),
-                "Prompt for stage with restage capability should mention restage/rejected"
-            );
-            assert!(
-                prompt.contains(target),
-                "Prompt should mention restage target '{}' but doesn't. Prompt: {}...",
-                target,
-                &prompt[..prompt.len().min(500)]
+                prompt.contains("approval") || prompt.contains("approve"),
+                "Prompt for stage with approval capability should mention approval"
             );
         }
     }
@@ -470,8 +464,8 @@ pub enum MockAgentOutput {
     Questions(Vec<Question>),
     /// Agent produced an artifact (plan, summary, verdict).
     Artifact { name: String, content: String },
-    /// Agent (reviewer) is restaging to another stage.
-    Restage { target: String, feedback: String },
+    /// Agent (reviewer) is producing an approval decision.
+    Approval { decision: String, content: String },
     /// Agent produced subtasks for breakdown.
     Subtasks {
         content: String,
@@ -489,8 +483,8 @@ impl From<MockAgentOutput> for StageOutput {
         match mock {
             MockAgentOutput::Questions(questions) => StageOutput::Questions { questions },
             MockAgentOutput::Artifact { content, .. } => StageOutput::Artifact { content },
-            MockAgentOutput::Restage { target, feedback } => {
-                StageOutput::Restage { target, feedback }
+            MockAgentOutput::Approval { decision, content } => {
+                StageOutput::Approval { decision, content }
             }
             MockAgentOutput::Subtasks {
                 content,
@@ -559,8 +553,8 @@ pub mod workflows {
                         stage_name: "review".to_string(),
                         overrides: Some(FlowStageOverride {
                             prompt: None,
-                            capabilities: Some(StageCapabilities::with_restage(
-                                vec!["work".into()],
+                            capabilities: Some(StageCapabilities::with_approval(
+                                Some("work".into()),
                             )),
                             model: None,
                         }),
@@ -594,9 +588,9 @@ pub mod workflows {
                     .with_prompt("reviewer.md")
                     .with_inputs(vec!["plan".into(), "summary".into()])
                     .with_capabilities(
-                        orkestra_core::workflow::config::StageCapabilities::with_restage(vec![
+                        orkestra_core::workflow::config::StageCapabilities::with_approval(Some(
                             "work".into(),
-                        ]),
+                        )),
                     )
                     .automated(),
             ],

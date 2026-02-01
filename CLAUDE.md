@@ -66,13 +66,13 @@ These docs trace operations that span multiple files. Read these instead of expl
 
 | Flow | Documentation | Key Files |
 |------|--------------|-----------|
-| **Stage execution** (orchestrator -> spawn -> prompt -> output) | [`docs/flows/stage-execution.md`](docs/flows/stage-execution.md) | `orchestrator.rs`, `stage_execution.rs`, `agent_execution.rs`, `agent_actions.rs`, `prompt.rs` |
+| **Stage execution** (orchestrator -> spawn -> prompt -> output) | [`docs/flows/stage-execution.md`](docs/flows/stage-execution.md) | `orchestrator.rs`, `stage_execution.rs`, `agent_execution.rs`, `provider_registry.rs`, `agent_actions.rs`, `prompt.rs` |
 | **Task integration** (merge, conflict recovery, cleanup) | [`docs/flows/task-integration.md`](docs/flows/task-integration.md) | `orchestrator.rs`, `integration.rs`, `git_service.rs` |
 | **Subtask lifecycle** (breakdown, creation, deps, parent advance) | [`docs/flows/subtask-lifecycle.md`](docs/flows/subtask-lifecycle.md) | `agent_actions.rs`, `human_actions.rs`, `subtask_service.rs`, `orchestrator.rs` |
 
 ## Architecture Overview
 
-Orkestra is a task orchestration system that spawns Claude Code instances (agents) to plan and implement software development tasks with human oversight.
+Orkestra is a task orchestration system that spawns AI coding agents (Claude Code, OpenCode, etc.) to plan and implement software development tasks with human oversight.
 
 ### Workspace Structure
 
@@ -91,10 +91,10 @@ Orkestra is a task orchestration system that spawns Claude Code instances (agent
 
 The core library is organized around the `workflow/` module, which provides a configurable workflow system:
 
-- **`workflow/adapters/`** - Storage implementations (`SqliteWorkflowStore`, `InMemoryWorkflowStore`, `Git2GitService`)
+- **`workflow/adapters/`** - Storage and process implementations (`SqliteWorkflowStore`, `InMemoryWorkflowStore`, `Git2GitService`, `ClaudeProcessSpawner`, `OpenCodeProcessSpawner`)
 - **`workflow/config/`** - Workflow configuration loading and stage definitions
 - **`workflow/domain/`** - Core domain models (`Task`, `Iteration`, `Question`, `LogEntry`, `StageSession`)
-- **`workflow/execution/`** - Agent execution logic (`AgentRunner`, `PromptBuilder`, `StageOutput`)
+- **`workflow/execution/`** - Agent execution logic (`AgentRunner`, `ProviderRegistry`, `PromptBuilder`, `StageOutput`)
 - **`workflow/ports/`** - Trait interfaces (`WorkflowStore`, `GitService`, `ProcessSpawner`)
 - **`workflow/runtime/`** - Runtime state management (`Artifact`, `ArtifactStore`, `Phase`, `Status`, `Transition`)
 - **`workflow/services/`** - Business logic (`WorkflowApi`, `TaskExecutionService`, `OrchestratorLoop`)
@@ -112,8 +112,8 @@ Tasks progress through an ordered list of stages defined in `StageConfig` struct
 **Key domain types** (`workflow/config/`):
 
 - **`WorkflowConfig`** (`workflow.rs`) — Ordered list of `StageConfig` plus `IntegrationConfig`. Validated on load (no forward artifact references, unique names).
-- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `inputs` (artifacts from earlier stages), `capabilities`, and either a `prompt` (agent stage) or `script` (script stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set.
-- **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `subtasks: Option<SubtaskCapabilities>` (with `flow` and `completion_stage`), `supports_restage: Vec<String>`.
+- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `inputs` (artifacts from earlier stages), `capabilities`, optional `model` (provider/model spec like `"claudecode/sonnet"`), and either a `prompt` (agent stage) or `script` (script stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set.
+- **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `subtasks: Option<SubtaskCapabilities>` (with `flow` and `completion_stage`), `approval: Option<ApprovalCapabilities>` (with optional `rejection_stage`).
 - **`ScriptStageConfig`** (`stage.rs`) — Shell command, timeout, optional `on_failure` stage for recovery.
 - **`FlowConfig`** (`workflow.rs`) — Named alternate flow (shortened pipeline). Has a `description`, optional `icon`, and an ordered list of `FlowStageEntry`s referencing a subset of global stages with optional overrides.
 - **`FlowStageEntry`** (`workflow.rs`) — A stage reference in a flow, with optional `FlowStageOverride` for `prompt` and `capabilities` (full replacement, not merge).
@@ -148,7 +148,7 @@ Key behaviors:
 - Stage navigation (`first_stage_in_flow`, `next_stage_in_flow`) respects flow ordering
 - Script stages in flows cannot have overrides
 - The name "default" is reserved and cannot be used as a flow name
-- `restage` targets and script `on_failure` targets must be within the flow's stage list
+- Approval `rejection_stage` targets and script `on_failure` targets must be within the flow's stage list
 
 This project defines two flows: `quick` (skips breakdown and compound) and `hotfix` (skips planning, breakdown, and compound).
 
@@ -158,10 +158,19 @@ See [`docs/flows/subtask-lifecycle.md`](docs/flows/subtask-lifecycle.md) for the
 
 ### Agent System
 
-Agents are Claude Code instances spawned with:
-1. A prompt built dynamically from markdown templates in `.orkestra/agents/`
-2. Structured JSON output via `--output-format json --json-schema <schema>`
-3. JSON schemas defined in `crates/orkestra-core/src/prompts/schemas/`
+Agents are spawned via a **provider registry** that supports multiple CLI backends. Each stage can specify a `model` field (e.g., `claudecode/sonnet`, `opencode/kimi-k2`) to select a provider and model. The `ProviderRegistry` (`workflow/execution/provider_registry.rs`) resolves model specs to a `ProcessSpawner` implementation with provider-specific capabilities.
+
+**Supported providers:**
+- **claudecode** (default) — Claude Code CLI. Supports `--json-schema` for structured output and `--resume` for session recovery. Aliases: `sonnet`, `opus`, `haiku`.
+- **opencode** — OpenCode CLI (`opencode run`). Uses `--format json` (no native JSON schema enforcement) and `--continue` for session recovery. Aliases: `kimi-k2`.
+
+**Model spec resolution:**
+- `None` → default provider's default model
+- `"sonnet"` → shorthand, searches all provider alias tables
+- `"claudecode/sonnet"` → explicit provider + alias
+- `"claudecode/claude-sonnet-4-5-20250514"` → explicit provider + raw model ID
+
+**Provider capabilities** (`ProviderCapabilities`) affect execution: when `supports_json_schema` is false, the JSON schema is embedded in the prompt text instead of passed as a CLI flag.
 
 Agent prompt templates (in `.orkestra/agents/`):
 - **planner.md**: Creates implementation plan, can ask clarifying questions
@@ -199,13 +208,13 @@ ork task reject ID --feedback MSG       # Reject with feedback (creates new iter
 
 ### Process Management
 
-Agent processes (Claude Code instances) are managed with multiple cleanup mechanisms:
+Agent processes are managed with multiple cleanup mechanisms:
 
 - **Signal handlers**: SIGTERM/SIGINT/SIGHUP trigger cleanup before exit
 - **Startup orphan cleanup**: Kills any orphaned agents from previous crashes on app start
 - **ProcessGuard**: RAII guard that kills processes on drop (defense against panics)
 - **Recursive tree killing**: Kills entire process trees including child shells
-- **Session-based recovery**: Session IDs are stored in the database before agent spawn, enabling `--resume` on restart
+- **Session-based recovery**: Session IDs are stored in the database before agent spawn. Resume behavior is provider-specific (Claude Code uses `--resume`, OpenCode uses `--continue`).
 
 ### Worktree Setup
 

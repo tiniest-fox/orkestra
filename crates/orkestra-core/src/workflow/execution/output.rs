@@ -50,13 +50,13 @@ pub enum StageOutput {
         questions: Vec<Question>,
     },
 
-    /// Agent wants to restage to a different stage.
-    /// Only valid if the stage has the target in `supports_restage`.
-    Restage {
-        /// Target stage to go to.
-        target: String,
-        /// Feedback for the target stage.
-        feedback: String,
+    /// Agent produced an approval decision (approve or reject).
+    /// Only valid if the stage has `approval` capability.
+    Approval {
+        /// The decision: "approve" or "reject".
+        decision: String,
+        /// Review content: becomes artifact on approve, feedback on reject.
+        content: String,
     },
 
     /// Agent produced subtasks for breakdown.
@@ -172,14 +172,14 @@ impl StageOutput {
                 })
             }
 
-            "restage" => Ok(StageOutput::Restage {
-                target: value["target"]
+            "approval" => Ok(StageOutput::Approval {
+                decision: value["decision"]
                     .as_str()
-                    .ok_or_else(|| StageOutputError::MissingField("target".into()))?
+                    .ok_or_else(|| StageOutputError::MissingField("decision".into()))?
                     .to_string(),
-                feedback: value["feedback"]
+                content: value["content"]
                     .as_str()
-                    .ok_or_else(|| StageOutputError::MissingField("feedback".into()))?
+                    .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                     .to_string(),
             }),
 
@@ -248,14 +248,14 @@ impl StageOutput {
                 })
             }
 
-            "restage" => Ok(StageOutput::Restage {
-                target: value["target"]
+            "approval" => Ok(StageOutput::Approval {
+                decision: value["decision"]
                     .as_str()
-                    .ok_or_else(|| StageOutputError::MissingField("target".into()))?
+                    .ok_or_else(|| StageOutputError::MissingField("decision".into()))?
                     .to_string(),
-                feedback: value["feedback"]
+                content: value["content"]
                     .as_str()
-                    .ok_or_else(|| StageOutputError::MissingField("feedback".into()))?
+                    .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                     .to_string(),
             }),
 
@@ -282,9 +282,9 @@ impl StageOutput {
         matches!(self, StageOutput::Questions { .. })
     }
 
-    /// Check if this output is a restage request.
-    pub fn is_restage(&self) -> bool {
-        matches!(self, StageOutput::Restage { .. })
+    /// Check if this output is an approval decision.
+    pub fn is_approval(&self) -> bool {
+        matches!(self, StageOutput::Approval { .. })
     }
 
     /// Get the artifact content if this is an artifact output.
@@ -299,14 +299,6 @@ impl StageOutput {
     pub fn questions(&self) -> Option<&[Question]> {
         match self {
             StageOutput::Questions { questions } => Some(questions),
-            _ => None,
-        }
-    }
-
-    /// Get the restage target if this is a restage output.
-    pub fn restage_target(&self) -> Option<&str> {
-        match self {
-            StageOutput::Restage { target, .. } => Some(target),
             _ => None,
         }
     }
@@ -352,7 +344,7 @@ mod tests {
             json!("failed"),
             json!("blocked"),
             json!("questions"),
-            json!("restage"),
+            json!("approval"),
         ];
         if include_subtasks {
             type_enum.push(json!("subtasks"));
@@ -368,8 +360,7 @@ mod tests {
                 "content": { "type": "string" },
                 "error": { "type": "string" },
                 "reason": { "type": "string" },
-                "target": { "type": "string" },
-                "feedback": { "type": "string" },
+                "decision": { "type": "string" },
                 "questions": { "type": "array" },
                 "subtasks": { "type": "array" },
                 "skip_reason": { "type": "string" }
@@ -406,16 +397,38 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_restage() {
+    fn test_parse_approval() {
         let schema = test_schema("plan", false);
-        let json = r#"{"type": "restage", "target": "work", "feedback": "Tests failing"}"#;
+        let json = r#"{"type": "approval", "decision": "approve", "content": "Looks good"}"#;
         let output = StageOutput::parse(json, &schema).unwrap();
 
-        assert!(output.is_restage());
-        assert_eq!(output.restage_target(), Some("work"));
+        assert!(output.is_approval());
         match output {
-            StageOutput::Restage { feedback, .. } => assert_eq!(feedback, "Tests failing"),
-            _ => panic!("Expected Restage"),
+            StageOutput::Approval {
+                decision, content, ..
+            } => {
+                assert_eq!(decision, "approve");
+                assert_eq!(content, "Looks good");
+            }
+            _ => panic!("Expected Approval"),
+        }
+    }
+
+    #[test]
+    fn test_parse_approval_reject() {
+        let schema = test_schema("plan", false);
+        let json =
+            r#"{"type": "approval", "decision": "reject", "content": "Tests are failing"}"#;
+        let output = StageOutput::parse(json, &schema).unwrap();
+
+        match output {
+            StageOutput::Approval {
+                decision, content, ..
+            } => {
+                assert_eq!(decision, "reject");
+                assert_eq!(content, "Tests are failing");
+            }
+            _ => panic!("Expected Approval"),
         }
     }
 

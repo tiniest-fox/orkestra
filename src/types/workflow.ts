@@ -15,8 +15,16 @@ export interface StageCapabilities {
   ask_questions: boolean;
   /** Subtask capabilities. Presence indicates the stage can produce subtasks. */
   subtasks?: SubtaskCapabilities;
-  /** Which stages this stage can restage to (e.g., review can restage to work). */
-  supports_restage: string[];
+  /** Approval capability. Presence indicates the stage produces approve/reject decisions. */
+  approval?: ApprovalCapabilities;
+}
+
+/**
+ * Configuration for a stage that produces approval decisions.
+ */
+export interface ApprovalCapabilities {
+  /** Stage to return to on rejection (defaults to previous stage if omitted). */
+  rejection_stage?: string;
 }
 
 /**
@@ -220,7 +228,7 @@ export type WorkflowOutcome =
   | { type: "agent_error"; error: string }
   | { type: "blocked"; reason: string }
   | { type: "skipped"; stage: string; reason: string }
-  | { type: "restage"; from_stage: string; target: string; feedback: string };
+  | { type: "rejection"; from_stage: string; target: string; feedback: string };
 
 /**
  * A single iteration within a stage (one agent run).

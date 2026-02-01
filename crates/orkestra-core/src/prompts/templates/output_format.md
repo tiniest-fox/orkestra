@@ -2,11 +2,21 @@
 
 Produce your output as valid JSON with a `type` field. Your output artifact is: **{{artifact_name}}**
 
+{{#if has_approval}}
+### Approve or reject
+```json
+{"type": "approval", "decision": "approve", "content": "Your review here"}
+```
+To reject: `{"type": "approval", "decision": "reject", "content": "Issues to fix..."}`
+{{/if}}
+
+{{#unless has_approval}}
 {{#unless can_produce_subtasks}}
 ### Your artifact output
 ```json
 {"type": "{{artifact_name}}", "content": "Your content here"}
 ```
+{{/unless}}
 {{/unless}}
 
 {{#if can_ask_questions}}
@@ -23,13 +33,6 @@ Include your full technical design in `content` alongside the structured `subtas
 {{{subtasks_example}}}
 ```
 To skip breakdown: `{{{skip_example}}}`
-{{/if}}
-
-{{#if can_restage}}
-### Request revisions (restage to: {{restage_targets}})
-```json
-{"type": "restage", "target": "{{restage_first_target}}", "feedback": "What needs to be fixed"}
-```
 {{/if}}
 
 ### Terminal states

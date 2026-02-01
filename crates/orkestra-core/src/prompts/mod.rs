@@ -25,8 +25,8 @@ const QUESTIONS_COMPONENT: &str = include_str!("schemas/components/questions.jso
 /// Subtasks schema component - for stages with subtask capabilities.
 const SUBTASKS_COMPONENT: &str = include_str!("schemas/components/subtasks.json");
 
-/// Restage schema component - for stages with `supports_restage` capability.
-const RESTAGE_COMPONENT: &str = include_str!("schemas/components/restage.json");
+/// Approval schema component - for stages with `approval` capability.
+const APPROVAL_COMPONENT: &str = include_str!("schemas/components/approval.json");
 
 /// Terminal states schema component - failed, blocked.
 const TERMINAL_COMPONENT: &str = include_str!("schemas/components/terminal.json");
@@ -52,7 +52,7 @@ pub struct SchemaConfig<'a> {
 /// - Terminal states: failed, blocked
 /// - Questions (if `ask_questions` capability)
 /// - Subtasks (if subtask capabilities present)
-/// - Restage (if `supports_restage` capability)
+/// - Approval (if `approval` capability — replaces normal artifact type)
 ///
 /// # Panics
 ///
@@ -62,14 +62,16 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     let terminal = load_component(TERMINAL_COMPONENT);
     let questions = load_component(QUESTIONS_COMPONENT);
     let subtasks_component = load_component(SUBTASKS_COMPONENT);
-    let restage = load_component(RESTAGE_COMPONENT);
+    let approval = load_component(APPROVAL_COMPONENT);
 
     // Build the list of valid type values.
     // For subtask stages, the artifact is embedded in the subtasks output,
     // so the artifact type name is excluded from the enum.
+    // For approval stages, the artifact is embedded in the approval output,
+    // so the artifact type name is also excluded.
     let mut type_enum = vec!["failed".to_string(), "blocked".to_string()];
 
-    if !config.capabilities.produces_subtasks() {
+    if !config.capabilities.produces_subtasks() && !config.capabilities.has_approval() {
         type_enum.insert(0, config.artifact_name.to_string());
     }
     if config.capabilities.ask_questions {
@@ -78,8 +80,8 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     if config.capabilities.produces_subtasks() {
         type_enum.push("subtasks".to_string());
     }
-    if !config.capabilities.supports_restage.is_empty() {
-        type_enum.push("restage".to_string());
+    if config.capabilities.has_approval() {
+        type_enum.insert(0, "approval".to_string());
     }
 
     // Build properties object
@@ -137,14 +139,14 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
         }
     }
 
-    // Add restage properties if capability enabled
-    if !config.capabilities.supports_restage.is_empty() {
-        if let Some(r_props) = restage.get("properties") {
-            if let Some(target) = r_props.get("target") {
-                properties["target"] = target.clone();
+    // Add approval properties if capability enabled
+    if config.capabilities.has_approval() {
+        if let Some(a_props) = approval.get("properties") {
+            if let Some(decision) = a_props.get("decision") {
+                properties["decision"] = decision.clone();
             }
-            if let Some(feedback) = r_props.get("feedback") {
-                properties["feedback"] = feedback.clone();
+            if let Some(content) = a_props.get("content") {
+                properties["content"] = content.clone();
             }
         }
     }
@@ -272,8 +274,8 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_schema_with_restage() {
-        let caps = StageCapabilities::with_restage(vec!["work".into()]);
+    fn test_generate_schema_with_approval() {
+        let caps = StageCapabilities::with_approval(Some("work".into()));
         let config = SchemaConfig {
             artifact_name: "verdict",
             capabilities: &caps,
@@ -291,10 +293,12 @@ mod tests {
             .as_array()
             .unwrap();
 
-        // Type should be "restage" (not the legacy "rejected")
-        assert!(type_enum.iter().any(|v| v == "restage"));
-        assert!(parsed.get("properties").unwrap().get("target").is_some());
-        assert!(parsed.get("properties").unwrap().get("feedback").is_some());
+        // Type should be "approval" (not the artifact name)
+        assert!(type_enum.iter().any(|v| v == "approval"));
+        // Artifact name should NOT be in type enum (approval wraps content)
+        assert!(!type_enum.iter().any(|v| v == "verdict"));
+        assert!(parsed.get("properties").unwrap().get("decision").is_some());
+        assert!(parsed.get("properties").unwrap().get("content").is_some());
     }
 
     #[test]

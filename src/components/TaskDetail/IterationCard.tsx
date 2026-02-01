@@ -56,9 +56,9 @@ function formatOutcome(outcome: WorkflowIteration["outcome"]): {
         label: "Skipped",
         color: "text-gray-700 bg-gray-50 dark:text-gray-300 dark:bg-gray-900",
       };
-    case "restage":
+    case "rejection":
       return {
-        label: `Restage to ${outcome.target}`,
+        label: `Rejected → ${outcome.target}`,
         color: "text-purple-700 bg-purple-50 dark:text-purple-300 dark:bg-purple-950",
       };
   }

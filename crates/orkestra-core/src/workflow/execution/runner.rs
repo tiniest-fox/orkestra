@@ -571,10 +571,10 @@ pub mod mock {
                 "type": "questions",
                 "questions": questions
             }),
-            StageOutput::Restage { target, feedback } => serde_json::json!({
-                "type": "restage",
-                "target": target,
-                "feedback": feedback
+            StageOutput::Approval { decision, content } => serde_json::json!({
+                "type": "approval",
+                "decision": decision,
+                "content": content
             }),
             StageOutput::Subtasks {
                 content,

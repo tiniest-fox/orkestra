@@ -9,7 +9,7 @@
 //! 5. Breakdown approved → Working
 //! 6. Work rejected → Retry working
 //! 7. Work approved → Reviewing
-//! 8. Reviewer restages to Work → Working
+//! 8. Reviewer rejects to Work → Working
 //! 9. Work approved again → Reviewing
 //! 10. Reviewer approves → Done
 //! 11. Integration fails → Back to Working
@@ -67,7 +67,7 @@ fn test_provider_registry() -> Arc<ProviderRegistry> {
 /// 5. Breakdown approved → Working
 /// 6. Work rejected → Retry working
 /// 7. Work approved → Reviewing
-/// 8. Reviewer restages to Work → Working
+/// 8. Reviewer rejects to Work → Working
 /// 9. Work approved again → Reviewing
 /// 10. Reviewer approves → Done
 /// 11. Integration fails → Back to Working
@@ -129,7 +129,7 @@ fn test_exhaustive_workflow_flow() {
     ctx.tick_until_settled();
 
     // VERIFY: First spawn of planning stage → full prompt with questions capability
-    ctx.assert_full_prompt("plan", true, &[]);
+    ctx.assert_full_prompt("plan", true, false);
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.phase, Phase::AwaitingReview);
@@ -283,7 +283,7 @@ fn test_exhaustive_workflow_flow() {
     ctx.tick_until_settled();
 
     // VERIFY: First spawn of breakdown stage → full prompt
-    ctx.assert_full_prompt("breakdown", false, &[]);
+    ctx.assert_full_prompt("breakdown", false, false);
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.phase, Phase::AwaitingReview);
@@ -327,7 +327,7 @@ fn test_exhaustive_workflow_flow() {
     ctx.tick_until_settled();
 
     // VERIFY: First spawn of work stage → full prompt
-    ctx.assert_full_prompt("summary", false, &[]);
+    ctx.assert_full_prompt("summary", false, false);
 
     // Human rejects the work
     let task = ctx
@@ -365,16 +365,16 @@ fn test_exhaustive_workflow_flow() {
     assert_eq!(task.phase, Phase::Idle);
 
     // =========================================================================
-    // Step 8: Reviewer restages to Work → Working → AwaitingReview
+    // Step 8: Reviewer rejects to Work → Working → AwaitingReview
     // =========================================================================
 
-    // Queue outputs: first for reviewer (restage), then for worker (summary)
+    // Queue outputs: first for reviewer (rejection), then for worker (summary)
     // Both agents run in the same tick cycle
     ctx.set_output(
         &task_id,
-        MockAgentOutput::Restage {
-            target: "work".to_string(),
-            feedback: "Code style issues found - please fix formatting".to_string(),
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Code style issues found - please fix formatting".to_string(),
         },
     );
     ctx.set_output(
@@ -386,7 +386,7 @@ fn test_exhaustive_workflow_flow() {
     );
     ctx.tick_until_settled();
 
-    // VERIFY: Work agent after restage → resume with feedback prompt containing reviewer's feedback
+    // VERIFY: Work agent after rejection → resume with feedback prompt containing reviewer's feedback
     // (The reviewer ran first with full prompt, then work agent ran with resume prompt)
     ctx.assert_resume_prompt_contains(
         "feedback",
@@ -401,15 +401,15 @@ fn test_exhaustive_workflow_flow() {
         "Work agent ran and produced artifact"
     );
 
-    // Check the iteration recorded the restage
+    // Check the iteration recorded the rejection
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    let restage_iter = iterations.iter().find(|i| {
+    let rejection_iter = iterations.iter().find(|i| {
         matches!(
             i.outcome.as_ref(),
-            Some(Outcome::Restage { target, .. }) if target == "work"
+            Some(Outcome::Rejection { target, .. }) if target == "work"
         )
     });
-    assert!(restage_iter.is_some(), "Should have restage iteration");
+    assert!(rejection_iter.is_some(), "Should have rejection iteration");
 
     // =========================================================================
     // Step 9: Work approved again → Reviewing
@@ -597,15 +597,15 @@ fn test_exhaustive_workflow_flow() {
 
     // Verify runner was called the expected number of times
     // planning (questions) + planning (plan v1) + planning (plan v2) + breakdown +
-    // work (v1) + work (v2) + review (restage) + work (fix) + review (approve) +
+    // work (v1) + work (v2) + review (reject) + work (fix) + review (approve) +
     // work (conflict) + review (final) = 11 spawns
     let total_spawns = ctx.call_count();
     println!("Total agent spawns: {total_spawns}");
 }
 
-/// Test that invalid restage is rejected
+/// Test that approval output from a stage without approval capability is rejected
 #[test]
-fn test_restage_validation() {
+fn test_approval_validation() {
     let ctx = TestEnv::with_git(
         &WorkflowConfig::default(),
         &["planner", "breakdown", "worker", "reviewer"],
@@ -637,22 +637,22 @@ fn test_restage_validation() {
     ctx.tick_until_settled();
     ctx.api().approve(&task_id).unwrap();
 
-    // Now we're in work stage - try to restage from work (which doesn't have restage capability)
+    // Now we're in work stage - try approval from work (which doesn't have approval capability)
     ctx.set_output(
         &task_id,
-        MockAgentOutput::Restage {
-            target: "planning".to_string(),
-            feedback: "Should fail".to_string(),
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Should fail".to_string(),
         },
     );
     ctx.tick_until_settled();
 
-    // The task should still be in work stage (restage should have failed)
+    // The task should still be in work stage (approval should have been rejected)
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
         task.current_stage(),
         Some("work"),
-        "Restage should have been rejected"
+        "Approval should have been rejected"
     );
 }
 
@@ -671,9 +671,9 @@ fn test_workflow_config_from_file() {
         vec!["planning", "breakdown", "work", "review"]
     );
 
-    // Review can restage to work
+    // Review has approval capability
     let review = api.workflow().stage("review").unwrap();
-    assert!(review.capabilities.can_restage_to("work"));
+    assert!(review.capabilities.has_approval());
     assert!(review.is_automated);
 
     // Integration config defaults to work

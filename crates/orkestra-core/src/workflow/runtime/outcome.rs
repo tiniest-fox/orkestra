@@ -83,14 +83,14 @@ pub enum Outcome {
         reason: String,
     },
 
-    /// Agent is restaging to a different stage.
-    /// This is used when an agent (e.g., reviewer) redirects work to another stage.
-    Restage {
+    /// Agent rejected work and it needs to go back to a previous stage.
+    /// This is used when an agent (e.g., reviewer) rejects with the approval capability.
+    Rejection {
         /// The stage that produced this outcome.
         from_stage: String,
         /// The target stage to transition to.
         target: String,
-        /// Feedback explaining why restaging is needed.
+        /// Feedback explaining what needs to be fixed.
         feedback: String,
     },
 
@@ -154,13 +154,13 @@ impl Outcome {
         }
     }
 
-    /// Create a restage outcome.
-    pub fn restage(
+    /// Create a rejection outcome (agent rejected work via approval capability).
+    pub fn rejection(
         from_stage: impl Into<String>,
         target: impl Into<String>,
         feedback: impl Into<String>,
     ) -> Self {
-        Self::Restage {
+        Self::Rejection {
             from_stage: from_stage.into(),
             target: target.into(),
             feedback: feedback.into(),
@@ -180,10 +180,10 @@ impl Outcome {
         }
     }
 
-    /// Get the feedback from a rejection or restage, if applicable.
+    /// Get the feedback from a rejection, if applicable.
     pub fn feedback(&self) -> Option<&str> {
         match self {
-            Outcome::Rejected { feedback, .. } | Outcome::Restage { feedback, .. } => {
+            Outcome::Rejected { feedback, .. } | Outcome::Rejection { feedback, .. } => {
                 Some(feedback)
             }
             _ => None,
@@ -197,15 +197,15 @@ impl Outcome {
             | Outcome::AwaitingAnswers { stage, .. }
             | Outcome::Skipped { stage, .. }
             | Outcome::ScriptFailed { stage, .. } => Some(stage),
-            Outcome::Restage { from_stage, .. } => Some(from_stage),
+            Outcome::Rejection { from_stage, .. } => Some(from_stage),
             _ => None,
         }
     }
 
-    /// Get the restage target, if this is a restage outcome.
-    pub fn restage_target(&self) -> Option<&str> {
+    /// Get the rejection target, if this is a rejection outcome.
+    pub fn rejection_target(&self) -> Option<&str> {
         match self {
-            Outcome::Restage { target, .. } => Some(target),
+            Outcome::Rejection { target, .. } => Some(target),
             _ => None,
         }
     }
@@ -247,7 +247,7 @@ impl std::fmt::Display for Outcome {
             Outcome::SpawnFailed { .. } => write!(f, "spawn failed"),
             Outcome::Blocked { .. } => write!(f, "blocked"),
             Outcome::Skipped { stage, .. } => write!(f, "{stage} skipped"),
-            Outcome::Restage { target, .. } => write!(f, "restage to {target}"),
+            Outcome::Rejection { target, .. } => write!(f, "rejected, back to {target}"),
             Outcome::ScriptFailed { stage, .. } => write!(f, "{stage} script failed"),
         }
     }
@@ -334,21 +334,21 @@ mod tests {
     }
 
     #[test]
-    fn test_restage_outcome() {
-        let outcome = Outcome::restage("review", "work", "Tests are failing");
+    fn test_rejection_outcome() {
+        let outcome = Outcome::rejection("review", "work", "Tests are failing");
         assert_eq!(outcome.stage(), Some("review"));
-        assert_eq!(outcome.restage_target(), Some("work"));
+        assert_eq!(outcome.rejection_target(), Some("work"));
         assert_eq!(outcome.feedback(), Some("Tests are failing"));
         assert!(!outcome.is_terminal());
-        assert!(!outcome.requires_retry()); // Restage is not a retry, it's a redirect
+        assert!(!outcome.requires_retry()); // Rejection is not a retry, it's a redirect
     }
 
     #[test]
-    fn test_restage_serialization() {
-        let outcome = Outcome::restage("review", "work", "Fix the tests");
+    fn test_rejection_serialization() {
+        let outcome = Outcome::rejection("review", "work", "Fix the tests");
         let json = serde_json::to_string(&outcome).unwrap();
 
-        assert!(json.contains("\"type\":\"restage\""));
+        assert!(json.contains("\"type\":\"rejection\""));
         assert!(json.contains("\"from_stage\":\"review\""));
         assert!(json.contains("\"target\":\"work\""));
         assert!(json.contains("\"feedback\":\"Fix the tests\""));
@@ -358,9 +358,9 @@ mod tests {
     }
 
     #[test]
-    fn test_restage_display() {
-        let outcome = Outcome::restage("review", "work", "feedback");
-        assert_eq!(outcome.to_string(), "restage to work");
+    fn test_rejection_display() {
+        let outcome = Outcome::rejection("review", "work", "feedback");
+        assert_eq!(outcome.to_string(), "rejected, back to work");
     }
 
     #[test]

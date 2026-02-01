@@ -174,12 +174,12 @@ export function getStructuredOutputStyle(outputType: string): StructuredOutputSt
       };
 
     // Control flow - blue theme
-    case "restage":
+    case "approval":
       return {
         icon: <RotateCcw size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
         color: "bg-blue-600",
         textColor: "text-blue-300",
-        label: "Requesting restage",
+        label: "Submitting review decision",
       };
 
     // Unknown/generic - indigo theme

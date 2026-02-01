@@ -237,6 +237,38 @@ impl WorkflowConfig {
         }
     }
 
+    /// Get the previous stage in a flow before the given stage name.
+    ///
+    /// For default flow (None), uses linear ordering.
+    /// For named flows, uses the flow's stage list ordering.
+    pub fn previous_stage_in_flow(
+        &self,
+        current: &str,
+        flow: Option<&str>,
+    ) -> Option<&StageConfig> {
+        match flow {
+            None => {
+                let idx = self.stage_index(current)?;
+                if idx == 0 {
+                    return None;
+                }
+                self.stages.get(idx - 1)
+            }
+            Some(flow_name) => {
+                let flow_config = self.flows.get(flow_name)?;
+                let idx = flow_config
+                    .stages
+                    .iter()
+                    .position(|e| e.stage_name == current)?;
+                if idx == 0 {
+                    return None;
+                }
+                let prev_entry = flow_config.stages.get(idx - 1)?;
+                self.stage(&prev_entry.stage_name)
+            }
+        }
+    }
+
     /// Get the effective prompt path for a stage in a flow.
     ///
     /// Returns the flow override if one exists, otherwise the global stage's prompt path.
@@ -356,7 +388,7 @@ impl WorkflowConfig {
         self.validate_no_duplicate_artifact_names(&mut errors);
         self.validate_input_references(&artifact_names, &artifact_names_set, &mut errors);
         self.validate_input_ordering(&artifact_names_set, &mut errors);
-        self.validate_restage_targets(&stage_names, &stage_names_set, &mut errors);
+        self.validate_approval_targets(&stage_names, &stage_names_set, &mut errors);
         self.validate_integration_on_failure(&stage_names, &stage_names_set, &mut errors);
         self.validate_script_stages(&stage_names, &stage_names_set, &mut errors);
         self.validate_flows(&stage_names_set, &mut errors);
@@ -449,21 +481,23 @@ impl WorkflowConfig {
         }
     }
 
-    /// Check that all restage targets reference valid stage names.
-    fn validate_restage_targets(
+    /// Check that all approval rejection_stage targets reference valid stage names.
+    fn validate_approval_targets(
         &self,
         stage_names: &[&str],
         stage_names_set: &std::collections::HashSet<&str>,
         errors: &mut Vec<String>,
     ) {
         for stage in &self.stages {
-            for target in &stage.capabilities.supports_restage {
-                if !stage_names_set.contains(target.as_str()) {
-                    errors.push(format!(
-                        "Stage \"{}\" has restage target \"{}\" which doesn't exist. \
-                         Valid stages: {:?}",
-                        stage.name, target, stage_names
-                    ));
+            if let Some(ref approval) = stage.capabilities.approval {
+                if let Some(ref target) = approval.rejection_stage {
+                    if !stage_names_set.contains(target.as_str()) {
+                        errors.push(format!(
+                            "Stage \"{}\" has approval rejection_stage \"{}\" which doesn't exist. \
+                             Valid stages: {:?}",
+                            stage.name, target, stage_names
+                        ));
+                    }
                 }
             }
         }
@@ -575,20 +609,22 @@ impl WorkflowConfig {
                         ));
                     }
 
-                    // Validate that capability overrides with restage targets reference stages in the flow
+                    // Validate that capability overrides with approval rejection_stage reference stages in the flow
                     if let Some(ref caps) = overrides.capabilities {
-                        for target in &caps.supports_restage {
-                            if !flow_stage_names.contains(target.as_str()) {
-                                errors.push(format!(
-                                    "Flow \"{flow_name}\" stage \"{}\" can restage to \"{target}\", but \"{target}\" is not in flow \"{flow_name}\"",
-                                    entry.stage_name
-                                ));
+                        if let Some(ref approval) = caps.approval {
+                            if let Some(ref target) = approval.rejection_stage {
+                                if !flow_stage_names.contains(target.as_str()) {
+                                    errors.push(format!(
+                                        "Flow \"{flow_name}\" stage \"{}\" has approval rejection_stage \"{target}\", but \"{target}\" is not in flow \"{flow_name}\"",
+                                        entry.stage_name
+                                    ));
+                                }
                             }
                         }
                     }
                 }
 
-                // Validate restage targets from global capabilities are in the flow
+                // Validate approval rejection_stage from global capabilities are in the flow
                 if entry
                     .overrides
                     .as_ref()
@@ -596,12 +632,14 @@ impl WorkflowConfig {
                     .is_none()
                 {
                     if let Some(global_stage) = self.stage(&entry.stage_name) {
-                        for target in &global_stage.capabilities.supports_restage {
-                            if !flow_stage_names.contains(target.as_str()) {
-                                errors.push(format!(
-                                    "Flow \"{flow_name}\" includes stage \"{}\" which can restage to \"{target}\", but \"{target}\" is not in flow \"{flow_name}\"",
-                                    entry.stage_name
-                                ));
+                        if let Some(ref approval) = global_stage.capabilities.approval {
+                            if let Some(ref target) = approval.rejection_stage {
+                                if !flow_stage_names.contains(target.as_str()) {
+                                    errors.push(format!(
+                                        "Flow \"{flow_name}\" includes stage \"{}\" with approval rejection_stage \"{target}\", but \"{target}\" is not in flow \"{flow_name}\"",
+                                        entry.stage_name
+                                    ));
+                                }
                             }
                         }
                     }
@@ -774,7 +812,7 @@ impl Default for WorkflowConfig {
                 .with_display_name("Reviewing")
                 .with_prompt("reviewer.md")
                 .with_inputs(vec!["plan".into(), "summary".into()])
-                .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]))
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
         .with_flows(flows)
@@ -914,10 +952,11 @@ mod tests {
         let breakdown = workflow.stage("breakdown").unwrap();
         assert!(breakdown.capabilities.produces_subtasks());
 
-        // Review is automated and can restage to work
+        // Review is automated and has approval capability
         let review = workflow.stage("review").unwrap();
         assert!(review.is_automated);
-        assert!(review.capabilities.can_restage_to("work"));
+        assert!(review.capabilities.has_approval());
+        assert_eq!(review.capabilities.rejection_stage(), Some("work"));
     }
 
     #[test]
@@ -939,29 +978,41 @@ mod tests {
     }
 
     #[test]
-    fn test_workflow_validation_invalid_restage_target() {
+    fn test_workflow_validation_invalid_approval_target() {
         use crate::workflow::config::stage::StageCapabilities;
 
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_restage(vec!["nonexistent".into()])),
+                .with_capabilities(StageCapabilities::with_approval(Some("nonexistent".into()))),
         ]);
         let errors = workflow.validate();
         assert!(errors
             .iter()
-            .any(|e| e.contains("restage target") && e.contains("doesn't exist")));
+            .any(|e| e.contains("rejection_stage") && e.contains("doesn't exist")));
     }
 
     #[test]
-    fn test_workflow_validation_valid_restage_target() {
+    fn test_workflow_validation_valid_approval_target() {
         use crate::workflow::config::stage::StageCapabilities;
 
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_capabilities(StageCapabilities::with_restage(vec!["work".into()])),
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+        ]);
+        let errors = workflow.validate();
+        assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
+    }
+
+    #[test]
+    fn test_workflow_validation_approval_no_rejection_stage() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+            StageConfig::new("review", "verdict")
+                .with_capabilities(StageCapabilities::with_approval(None)),
         ]);
         let errors = workflow.validate();
         assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
@@ -1239,7 +1290,8 @@ stages:
   - name: review
     artifact: verdict
     capabilities:
-      supports_restage: [work]
+      approval:
+        rejection_stage: work
 flows:
   subtask:
     description: Simplified pipeline for subtasks

@@ -40,9 +40,7 @@ struct OutputFormatContext {
     can_produce_subtasks: bool,
     subtasks_example: Option<String>,
     skip_example: Option<String>,
-    can_restage: bool,
-    restage_targets: Option<String>,
-    restage_first_target: Option<String>,
+    has_approval: bool,
 }
 
 /// Build the output format context with schema-validated examples.
@@ -78,20 +76,6 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
         (None, None)
     };
 
-    let (restage_targets, restage_first_target) =
-        if ctx.stage.capabilities.supports_restage.is_empty() {
-            (None, None)
-        } else {
-            (
-                Some(ctx.stage.capabilities.supports_restage.join(", ")),
-                ctx.stage
-                    .capabilities
-                    .supports_restage
-                    .first()
-                    .map(std::string::ToString::to_string),
-            )
-        };
-
     OutputFormatContext {
         artifact_name: ctx.stage.artifact.clone(),
         can_ask_questions: ctx.stage.capabilities.ask_questions,
@@ -99,9 +83,7 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
         can_produce_subtasks: ctx.stage.capabilities.produces_subtasks(),
         subtasks_example,
         skip_example,
-        can_restage: !ctx.stage.capabilities.supports_restage.is_empty(),
-        restage_targets,
-        restage_first_target,
+        has_approval: ctx.stage.capabilities.has_approval(),
     }
 }
 
@@ -338,12 +320,8 @@ impl<'a> PromptBuilder<'a> {
         if ctx.stage.capabilities.produces_subtasks() {
             prompt.push_str("\nYou may break this down into subtasks if appropriate.\n");
         }
-        if !ctx.stage.capabilities.supports_restage.is_empty() {
-            let _ = writeln!(
-                prompt,
-                "\nYou may restage to: {:?}",
-                ctx.stage.capabilities.supports_restage
-            );
+        if ctx.stage.capabilities.has_approval() {
+            prompt.push_str("\nYou must produce an approval decision (approve or reject).\n");
         }
 
         Some(prompt)
@@ -861,7 +839,7 @@ mod tests {
             StageConfig::new("review", "verdict")
                 .with_display_name("Reviewing")
                 .with_inputs(vec!["plan".into(), "summary".into()])
-                .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]))
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
     }
@@ -958,7 +936,8 @@ mod tests {
 
         assert_eq!(ctx.stage.name, "review");
         assert_eq!(ctx.artifacts.len(), 2);
-        assert!(ctx.stage.capabilities.can_restage_to("work"));
+        assert!(ctx.stage.capabilities.has_approval());
+        assert_eq!(ctx.stage.capabilities.rejection_stage(), Some("work"));
     }
 
     #[test]
@@ -1016,7 +995,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_simple_prompt_with_restage() {
+    fn test_build_simple_prompt_with_approval() {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
@@ -1028,8 +1007,7 @@ mod tests {
 
         let prompt = builder.build_simple_prompt("review", &task, None).unwrap();
 
-        assert!(prompt.contains("restage to"));
-        assert!(prompt.contains("work"));
+        assert!(prompt.contains("approval decision"));
     }
 
     #[test]
@@ -1084,12 +1062,12 @@ mod tests {
         // Should NOT have questions (no capability)
         assert!(!schema.contains("\"questions\""));
 
-        // Review stage with restage capability
+        // Review stage with approval capability
         let review = StageConfig::new("review", "verdict")
-            .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]));
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())));
         let schema = get_agent_schema(&review, None).unwrap();
-        assert!(schema.contains("\"verdict\""));
-        assert!(schema.contains("\"restage\"")); // restage type
+        assert!(schema.contains("\"approval\"")); // approval type
+        assert!(!schema.contains("\"verdict\"")); // artifact name excluded
     }
 
     #[test]
@@ -1204,7 +1182,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_complete_prompt_with_restage_capability() {
+    fn test_build_complete_prompt_with_approval_capability() {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
@@ -1219,9 +1197,9 @@ mod tests {
         let agent_def = "Reviewer agent";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Review stage has restage capability
-        assert!(prompt.contains("restage to"));
-        assert!(prompt.contains("work"));
+        // Review stage has approval capability
+        assert!(prompt.contains("Approve or reject"));
+        assert!(prompt.contains("approval"));
     }
 
     #[test]

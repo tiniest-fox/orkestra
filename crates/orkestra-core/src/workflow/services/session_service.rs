@@ -341,7 +341,7 @@ impl SessionService {
 
     /// Mark the stage session as abandoned.
     ///
-    /// Called when the task fails, is blocked, or the stage is restaged.
+    /// Called when the task fails, is blocked, or the stage is rejected.
     /// Abandoned sessions cannot be resumed.
     pub fn on_stage_abandoned(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
         orkestra_debug!("session", "on_stage_abandoned {}/{}", task_id, stage);

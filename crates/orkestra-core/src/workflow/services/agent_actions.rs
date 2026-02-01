@@ -216,16 +216,16 @@ impl WorkflowApi {
         self.auto_advance_or_review(task, stage, now)
     }
 
-    /// Handle restage output: validate target, end iteration, move to target stage.
-    fn handle_restage_output(
+    /// Handle approval output: approve stores artifact and advances, reject sends to rejection target.
+    fn handle_approval_output(
         &self,
         task: &mut Task,
         current_stage: &str,
-        target: &str,
-        feedback: &str,
+        decision: &str,
+        content: &str,
         now: &str,
     ) -> WorkflowResult<()> {
-        // Use effective capabilities (may be overridden by flow)
+        // Verify stage has approval capability
         let effective_caps = self
             .workflow
             .effective_capabilities(current_stage, task.flow.as_deref())
@@ -233,27 +233,76 @@ impl WorkflowApi {
                 WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
             })?;
 
-        if !effective_caps.can_restage_to(target) {
+        if !effective_caps.has_approval() {
             return Err(WorkflowError::InvalidTransition(format!(
-                "Stage {current_stage} cannot restage to {target}"
+                "Stage {current_stage} does not have approval capability"
             )));
         }
 
-        self.end_current_iteration(task, Outcome::restage(current_stage, target, feedback))?;
+        match decision {
+            "approve" => {
+                // Store content as artifact, then auto-advance or review (same as artifact flow)
+                self.handle_artifact_output(task, content, current_stage, now)
+            }
+            "reject" => {
+                // Resolve rejection target: explicit config → previous stage in flow
+                let target =
+                    self.resolve_rejection_target(current_stage, task.flow.as_deref())?;
 
-        task.status = Status::active(target);
-        task.phase = Phase::Idle;
-        task.updated_at = now.to_string();
+                self.end_current_iteration(
+                    task,
+                    Outcome::rejection(current_stage, &target, content),
+                )?;
 
-        self.iteration_service.create_iteration(
-            &task.id,
-            target,
-            Some(IterationTrigger::Restage {
-                from_stage: current_stage.to_string(),
-                feedback: feedback.to_string(),
-            }),
-        )?;
-        Ok(())
+                task.status = Status::active(&target);
+                task.phase = Phase::Idle;
+                task.updated_at = now.to_string();
+
+                self.iteration_service.create_iteration(
+                    &task.id,
+                    &target,
+                    Some(IterationTrigger::Rejection {
+                        from_stage: current_stage.to_string(),
+                        feedback: content.to_string(),
+                    }),
+                )?;
+                Ok(())
+            }
+            _ => Err(WorkflowError::InvalidTransition(format!(
+                "Invalid approval decision: {decision}"
+            ))),
+        }
+    }
+
+    /// Resolve the rejection target for a stage with approval capability.
+    ///
+    /// Priority: explicit `rejection_stage` in config → previous stage in flow.
+    fn resolve_rejection_target(
+        &self,
+        current_stage: &str,
+        flow: Option<&str>,
+    ) -> WorkflowResult<String> {
+        // Check explicit rejection_stage from config
+        let effective_caps = self
+            .workflow
+            .effective_capabilities(current_stage, flow)
+            .ok_or_else(|| {
+                WorkflowError::InvalidTransition(format!("Unknown stage: {current_stage}"))
+            })?;
+
+        if let Some(target) = effective_caps.rejection_stage() {
+            return Ok(target.to_string());
+        }
+
+        // Fall back to previous stage in flow
+        self.workflow
+            .previous_stage_in_flow(current_stage, flow)
+            .map(|s| s.name.clone())
+            .ok_or_else(|| {
+                WorkflowError::InvalidTransition(format!(
+                    "Stage {current_stage} has no rejection_stage configured and no previous stage in flow"
+                ))
+            })
     }
 
     /// Mark agent as started on a task. Transitions phase to `AgentWorking`.
@@ -286,7 +335,7 @@ impl WorkflowApi {
         Ok(task)
     }
 
-    /// Process completed agent output. Handles artifacts, questions, restages, failures.
+    /// Process completed agent output. Handles artifacts, questions, approvals, failures.
     ///
     /// # Errors
     ///
@@ -310,7 +359,7 @@ impl WorkflowApi {
             StageOutput::Artifact { .. } => "artifact",
             StageOutput::Questions { .. } => "questions",
             StageOutput::Subtasks { .. } => "subtasks",
-            StageOutput::Restage { .. } => "restage",
+            StageOutput::Approval { .. } => "approval",
             StageOutput::Failed { .. } => "failed",
             StageOutput::Blocked { .. } => "blocked",
         };
@@ -332,8 +381,14 @@ impl WorkflowApi {
             StageOutput::Artifact { content } => {
                 self.handle_artifact_output(&mut task, &content, &current_stage, &now)?;
             }
-            StageOutput::Restage { target, feedback } => {
-                self.handle_restage_output(&mut task, &current_stage, &target, &feedback, &now)?;
+            StageOutput::Approval { decision, content } => {
+                self.handle_approval_output(
+                    &mut task,
+                    &current_stage,
+                    &decision,
+                    &content,
+                    &now,
+                )?;
             }
             StageOutput::Subtasks {
                 content,
@@ -702,7 +757,7 @@ mod tests {
             StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
             StageConfig::new("review", "verdict")
                 .with_inputs(vec!["summary".into()])
-                .with_capabilities(StageCapabilities::with_restage(vec!["work".into()]))
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
     }
@@ -773,7 +828,7 @@ mod tests {
     }
 
     #[test]
-    fn test_process_restage_output() {
+    fn test_process_approval_reject_output() {
         let workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
@@ -785,9 +840,9 @@ mod tests {
         task.phase = Phase::AgentWorking;
         api.store.save_task(&task).unwrap();
 
-        let output = StageOutput::Restage {
-            target: "work".to_string(),
-            feedback: "Tests failing".to_string(),
+        let output = StageOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Tests failing".to_string(),
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -796,7 +851,39 @@ mod tests {
     }
 
     #[test]
-    fn test_process_restage_invalid_target() {
+    fn test_process_approval_approve_output() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+
+        // Move to review stage (automated)
+        task.status = Status::active("review");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        let output = StageOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Looks good, well implemented".to_string(),
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        // Should auto-approve (automated stage) and be done
+        assert!(task.is_done());
+        assert_eq!(task.phase, Phase::Idle);
+        // Content should be stored as artifact
+        assert!(task.artifacts.get("verdict").is_some());
+        assert!(task
+            .artifacts
+            .get("verdict")
+            .unwrap()
+            .content
+            .contains("well implemented"));
+    }
+
+    #[test]
+    fn test_process_approval_no_capability() {
         let workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
@@ -804,10 +891,10 @@ mod tests {
         let task = create_task_ready(&api, "Test", "Description");
         let task = api.agent_started(&task.id).unwrap();
 
-        // Planning stage can't restage
-        let output = StageOutput::Restage {
-            target: "work".to_string(),
-            feedback: "Should fail".to_string(),
+        // Planning stage doesn't have approval capability
+        let output = StageOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Should fail".to_string(),
         };
         let result = api.process_agent_output(&task.id, output);
 

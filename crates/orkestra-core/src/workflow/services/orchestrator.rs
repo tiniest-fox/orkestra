@@ -882,7 +882,7 @@ fn output_type_string(output: &StageOutput) -> String {
         StageOutput::Artifact { .. } => "artifact".to_string(),
         StageOutput::Questions { .. } => "questions".to_string(),
         StageOutput::Subtasks { .. } => "subtasks".to_string(),
-        StageOutput::Restage { .. } => "restage".to_string(),
+        StageOutput::Approval { .. } => "approval".to_string(),
         StageOutput::Failed { .. } => "failed".to_string(),
         StageOutput::Blocked { .. } => "blocked".to_string(),
     }

@@ -18,8 +18,8 @@ use super::question::QuestionAnswer;
 pub enum IterationTrigger {
     /// Human rejected previous output.
     Feedback { feedback: String },
-    /// Agent (reviewer) restaged to this stage.
-    Restage {
+    /// Agent (reviewer) rejected and sent work back to this stage.
+    Rejection {
         from_stage: String,
         feedback: String,
     },
@@ -242,13 +242,13 @@ mod tests {
     }
 
     #[test]
-    fn test_iteration_trigger_restage() {
-        let trigger = IterationTrigger::Restage {
+    fn test_iteration_trigger_rejection() {
+        let trigger = IterationTrigger::Rejection {
             from_stage: "review".to_string(),
             feedback: "Needs more tests".to_string(),
         };
         let json = serde_json::to_string(&trigger).unwrap();
-        assert!(json.contains("\"type\":\"restage\""));
+        assert!(json.contains("\"type\":\"rejection\""));
         assert!(json.contains("\"from_stage\":\"review\""));
 
         let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();

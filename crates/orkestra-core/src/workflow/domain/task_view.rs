@@ -170,12 +170,12 @@ fn extract_pending_questions(task: &Task, iterations: &[Iteration]) -> Vec<Quest
 fn extract_rejection_feedback(task: &Task, iterations: &[Iteration]) -> Option<String> {
     let stage = task.current_stage()?;
 
-    // Find the most recent rejection or restage outcome for this stage
+    // Find the most recent rejection outcome for this stage
     let mut stage_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == stage).collect();
     stage_iterations.sort_by_key(|i| i.iteration_number);
 
     for iteration in stage_iterations.into_iter().rev() {
-        if let Some(Outcome::Rejected { feedback, .. } | Outcome::Restage { feedback, .. }) =
+        if let Some(Outcome::Rejected { feedback, .. } | Outcome::Rejection { feedback, .. }) =
             &iteration.outcome
         {
             return Some(feedback.clone());

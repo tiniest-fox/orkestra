@@ -244,7 +244,7 @@ mod tests {
                 message: "Conflict".to_string(),
                 conflict_files: vec!["file.rs".to_string()],
             },
-            IterationTrigger::Restage {
+            IterationTrigger::Rejection {
                 from_stage: "work".to_string(),
                 feedback: "Back to planning".to_string(),
             },

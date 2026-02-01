@@ -2,7 +2,7 @@
 //!
 //! This module provides components for executing workflow stages:
 //!
-//! - **`StageOutput`**: Parsed output from agents (artifacts, questions, restage, etc.)
+//! - **`StageOutput`**: Parsed output from agents (artifacts, questions, approval, etc.)
 //! - **`AgentRunner`**: Runs agents via `ProcessSpawner`
 //! - **`ScriptHandle`**: Async script execution for script-based stages
 //! - **`PromptBuilder`**: Generates prompts from workflow configuration

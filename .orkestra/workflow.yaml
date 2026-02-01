@@ -7,7 +7,7 @@ version: 1
 
 stages:
   # Planning: Creates implementation plan, can ask clarifying questions
-  - name: planning
+  - name: plan
     display_name: Planning
     artifact: plan
     prompt: planner.md
@@ -15,7 +15,7 @@ stages:
       ask_questions: true
 
   # Breakdown: Decomposes complex tasks into subtasks with dependencies
-  - name: breakdown
+  - name: task
     display_name: Breaking Down
     artifact: breakdown
     inputs: [plan]
@@ -34,7 +34,7 @@ stages:
 
   # Checks: Automated quality gates (lint, test, type check)
   # Runs in the task's worktree, detects what changed, runs relevant checks
-  - name: checks
+  - name: check
     display_name: Automated Checks
     artifact: check_results
     inputs: [summary]
@@ -50,7 +50,8 @@ stages:
     inputs: [plan, summary, check_results]
     prompt: reviewer.md
     capabilities:
-      supports_restage: [work]
+      approval:
+        rejection_stage: work
     is_automated: true
 
   # Compound: Captures learnings and updates documentation
@@ -68,9 +69,9 @@ flows:
     description: Skip planning breakdown for simple, well-defined tasks
     icon: zap
     stages:
-      - planning
+      - plan
       - work
-      - checks
+      - check
       - review
 
   # Hotfix flow: Straight to work, minimal overhead
@@ -79,7 +80,7 @@ flows:
     icon: rocket
     stages:
       - work
-      - checks
+      - check
       - review:
           prompt: hotfix_reviewer.md
 

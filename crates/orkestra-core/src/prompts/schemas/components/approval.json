@@ -1,0 +1,15 @@
+{
+  "description": "Approval decision with review content",
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "reject"],
+      "description": "Whether to approve or reject the work"
+    },
+    "content": {
+      "type": "string",
+      "description": "Review content: on approve this becomes the artifact, on reject this becomes feedback"
+    }
+  },
+  "required": ["decision", "content"]
+}

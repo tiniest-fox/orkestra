@@ -34,9 +34,9 @@ export function CommandPalette() {
     <ModalPanel
       isOpen={isOpen}
       onClose={close}
-      className="top-[20%] left-1/2 -translate-x-1/2 w-full max-w-lg"
+      className="inset-x-0 top-[20%] flex justify-center px-4"
     >
-      <div className="bg-white dark:bg-stone-900 rounded-panel shadow-panel-hover overflow-hidden border border-stone-200 dark:border-stone-700">
+      <div className="w-full max-w-lg bg-white dark:bg-stone-900 rounded-panel shadow-panel-hover overflow-hidden border border-stone-200 dark:border-stone-700">
         {/* Search input */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-stone-200 dark:border-stone-700">
           <Search className="w-4 h-4 text-stone-400 dark:text-stone-500 flex-shrink-0" />

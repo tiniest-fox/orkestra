@@ -18,6 +18,7 @@ export { Button } from "./Button";
 export { useContentAnimation, useContentSettled } from "./ContentAnimation";
 export { IconButton } from "./IconButton";
 export { Link } from "./Link";
+export { ModalPanel } from "./ModalPanel";
 // Layout components
 export { Panel } from "./Panel/Panel";
 export { PanelContainer } from "./PanelContainer";

@@ -180,26 +180,21 @@ impl WorkflowApi {
         Ok(())
     }
 
-    /// Handle subtasks output: store breakdown artifact + structured data, auto-approve or await review.
+    /// Handle subtasks output: store artifact content + structured data, auto-approve or await review.
     fn handle_subtasks_output(
         &self,
         task: &mut Task,
+        content: &str,
         subtasks: &[crate::workflow::execution::SubtaskOutput],
         skip_reason: Option<&str>,
         stage: &str,
         now: &str,
     ) -> WorkflowResult<()> {
-        use super::SubtaskService;
-
         let artifact_name = self.artifact_name_for_stage(stage, "breakdown");
-        let artifact = SubtaskService::new().create_breakdown_artifact(
-            subtasks,
-            skip_reason,
-            &artifact_name,
-            stage,
-            now,
-        );
-        task.artifacts.set(artifact);
+
+        // Store the agent-provided content directly as the artifact
+        task.artifacts
+            .set(Artifact::new(&artifact_name, content, stage, now));
 
         // Store structured subtask data as JSON for later Task creation on approval
         if !subtasks.is_empty() {
@@ -341,11 +336,13 @@ impl WorkflowApi {
                 self.handle_restage_output(&mut task, &current_stage, &target, &feedback, &now)?;
             }
             StageOutput::Subtasks {
+                content,
                 subtasks,
                 skip_reason,
             } => {
                 self.handle_subtasks_output(
                     &mut task,
+                    &content,
                     &subtasks,
                     skip_reason.as_deref(),
                     &current_stage,

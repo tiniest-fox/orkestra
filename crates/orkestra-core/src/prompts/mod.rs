@@ -64,13 +64,14 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     let subtasks_component = load_component(SUBTASKS_COMPONENT);
     let restage = load_component(RESTAGE_COMPONENT);
 
-    // Build the list of valid type values
-    let mut type_enum = vec![
-        config.artifact_name.to_string(),
-        "failed".to_string(),
-        "blocked".to_string(),
-    ];
+    // Build the list of valid type values.
+    // For subtask stages, the artifact is embedded in the subtasks output,
+    // so the artifact type name is excluded from the enum.
+    let mut type_enum = vec!["failed".to_string(), "blocked".to_string()];
 
+    if !config.capabilities.produces_subtasks() {
+        type_enum.insert(0, config.artifact_name.to_string());
+    }
     if config.capabilities.ask_questions {
         type_enum.push("questions".to_string());
     }
@@ -90,10 +91,13 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
         }
     });
 
-    // Add artifact content property
-    if let Some(artifact_props) = artifact.get("properties") {
-        if let Some(content) = artifact_props.get("content") {
-            properties["content"] = content.clone();
+    // Add artifact content property (only for non-subtask stages).
+    // For subtask stages, content comes from the subtasks component instead.
+    if !config.capabilities.produces_subtasks() {
+        if let Some(artifact_props) = artifact.get("properties") {
+            if let Some(content) = artifact_props.get("content") {
+                properties["content"] = content.clone();
+            }
         }
     }
 
@@ -121,6 +125,9 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     // Add subtasks properties if capability enabled
     if config.capabilities.produces_subtasks() {
         if let Some(s_props) = subtasks_component.get("properties") {
+            if let Some(c) = s_props.get("content") {
+                properties["content"] = c.clone();
+            }
             if let Some(s) = s_props.get("subtasks") {
                 properties["subtasks"] = s.clone();
             }
@@ -143,12 +150,18 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     }
 
     // Build the complete schema
-    let schema = json!({
-        "type": "object",
-        "description": format!(
+    let description = if config.capabilities.produces_subtasks() {
+        "Stage output. Use 'subtasks' with 'content' for the artifact and structured subtask data, or use terminal types (failed/blocked).".to_string()
+    } else {
+        format!(
             "Stage output. Set 'type' to '{}' with 'content' for the artifact, or use terminal types (failed/blocked).",
             config.artifact_name
-        ),
+        )
+    };
+
+    let schema = json!({
+        "type": "object",
+        "description": description,
         "properties": properties,
         "required": ["type"],
         "additionalProperties": false
@@ -247,15 +260,15 @@ mod tests {
             .as_array()
             .unwrap();
 
-        // Type should be "subtasks" (not the legacy "breakdown")
+        // Artifact name should NOT be in type enum (subtasks wraps the artifact)
+        assert!(!type_enum.iter().any(|v| v == "breakdown"));
+        // "subtasks" should be in the enum
         assert!(type_enum.iter().any(|v| v == "subtasks"));
-        assert!(parsed.get("properties").unwrap().get("subtasks").is_some());
-        // Should also have skip_reason property for skipping breakdown
-        assert!(parsed
-            .get("properties")
-            .unwrap()
-            .get("skip_reason")
-            .is_some());
+        // Should have subtasks, skip_reason, and content properties
+        let props = parsed.get("properties").unwrap();
+        assert!(props.get("subtasks").is_some());
+        assert!(props.get("skip_reason").is_some());
+        assert!(props.get("content").is_some());
     }
 
     #[test]

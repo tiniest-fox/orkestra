@@ -63,10 +63,15 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
             subtask_example("Second task", "Depends on first task", &[0]),
         ];
         (
-            Some(subtasks_output_example(&examples, None)),
+            Some(subtasks_output_example(
+                &examples,
+                None,
+                "# Technical Design\\n\\nYour detailed analysis and design content here...",
+            )),
             Some(subtasks_output_example(
                 &[],
                 Some("Task is simple enough to complete directly"),
+                "# Analysis\\n\\nBrief analysis of why this task doesn't need breakdown...",
             )),
         )
     } else {

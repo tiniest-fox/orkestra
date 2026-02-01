@@ -62,6 +62,8 @@ pub enum StageOutput {
     /// Agent produced subtasks for breakdown.
     /// Only valid if the stage has subtask capabilities.
     Subtasks {
+        /// The artifact content (technical design, analysis, etc.).
+        content: String,
         /// List of subtasks to create.
         subtasks: Vec<SubtaskOutput>,
         /// Reason for skipping breakdown (required if subtasks is empty).
@@ -152,6 +154,11 @@ impl StageOutput {
             }
 
             "subtasks" => {
+                let content = value["content"]
+                    .as_str()
+                    .ok_or_else(|| StageOutputError::MissingField("content".into()))?
+                    .to_string();
+
                 let subtasks: Vec<SubtaskOutput> =
                     serde_json::from_value(value["subtasks"].clone())
                         .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
@@ -159,6 +166,7 @@ impl StageOutput {
                 let skip_reason = value["skip_reason"].as_str().map(String::from);
 
                 Ok(StageOutput::Subtasks {
+                    content,
                     subtasks,
                     skip_reason,
                 })
@@ -222,6 +230,11 @@ impl StageOutput {
             }
 
             "subtasks" => {
+                let content = value["content"]
+                    .as_str()
+                    .ok_or_else(|| StageOutputError::MissingField("content".into()))?
+                    .to_string();
+
                 let subtasks: Vec<SubtaskOutput> =
                     serde_json::from_value(value["subtasks"].clone())
                         .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
@@ -229,6 +242,7 @@ impl StageOutput {
                 let skip_reason = value["skip_reason"].as_str().map(String::from);
 
                 Ok(StageOutput::Subtasks {
+                    content,
                     subtasks,
                     skip_reason,
                 })
@@ -410,6 +424,7 @@ mod tests {
         let schema = test_schema("breakdown", true);
         let json = r#"{
             "type": "subtasks",
+            "content": "The technical design content",
             "subtasks": [
                 {"title": "Task 1", "description": "Do first thing"},
                 {"title": "Task 2", "description": "Do second thing", "depends_on": [0]}
@@ -419,9 +434,11 @@ mod tests {
 
         match output {
             StageOutput::Subtasks {
+                content,
                 subtasks,
                 skip_reason,
             } => {
+                assert_eq!(content, "The technical design content");
                 assert_eq!(subtasks.len(), 2);
                 assert_eq!(subtasks[0].title, "Task 1");
                 assert_eq!(subtasks[1].depends_on, vec![0]);
@@ -436,6 +453,7 @@ mod tests {
         let schema = test_schema("breakdown", true);
         let json = r#"{
             "type": "subtasks",
+            "content": "Task is simple enough to handle directly",
             "subtasks": [],
             "skip_reason": "Task is simple enough to complete directly"
         }"#;
@@ -443,9 +461,11 @@ mod tests {
 
         match output {
             StageOutput::Subtasks {
+                content,
                 subtasks,
                 skip_reason,
             } => {
+                assert!(content.contains("simple enough"));
                 assert!(subtasks.is_empty());
                 assert_eq!(
                     skip_reason,
@@ -539,6 +559,7 @@ mod tests {
     fn test_parse_unvalidated_subtasks_with_skip() {
         let json = r#"{
             "type": "subtasks",
+            "content": "Breakdown skipped",
             "subtasks": [],
             "skip_reason": "Simple task"
         }"#;
@@ -546,9 +567,11 @@ mod tests {
 
         match output {
             StageOutput::Subtasks {
+                content,
                 subtasks,
                 skip_reason,
             } => {
+                assert!(content.contains("skipped"));
                 assert!(subtasks.is_empty());
                 assert_eq!(skip_reason, Some("Simple task".to_string()));
             }

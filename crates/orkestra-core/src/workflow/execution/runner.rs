@@ -528,11 +528,13 @@ pub mod mock {
                 "feedback": feedback
             }),
             StageOutput::Subtasks {
+                content,
                 subtasks,
                 skip_reason,
             } => {
                 let mut json = serde_json::json!({
                     "type": "subtasks",
+                    "content": content,
                     "subtasks": subtasks
                 });
                 if let Some(reason) = skip_reason {

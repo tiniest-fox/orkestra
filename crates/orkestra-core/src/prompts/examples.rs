@@ -41,9 +41,14 @@ pub fn subtask_example(title: &str, description: &str, depends_on: &[usize]) -> 
 /// # Panics
 ///
 /// Panics if JSON serialization fails (should never happen with valid input).
-pub fn subtasks_output_example(subtasks: &[Value], skip_reason: Option<&str>) -> String {
+pub fn subtasks_output_example(
+    subtasks: &[Value],
+    skip_reason: Option<&str>,
+    content: &str,
+) -> String {
     let mut example = json!({
         "type": "subtasks",
+        "content": content,
         "subtasks": subtasks
     });
     if let Some(reason) = skip_reason {
@@ -125,19 +130,29 @@ mod tests {
             subtask_example("Task A", "First", &[]),
             subtask_example("Task B", "Second", &[0]),
         ];
-        let output = subtasks_output_example(&subtasks, None);
+        let output = subtasks_output_example(
+            &subtasks,
+            None,
+            "# Technical Design\n\nArchitecture overview...",
+        );
 
         assert!(output.contains(r#""type":"subtasks""#));
         assert!(output.contains("Task A"));
         assert!(output.contains("Task B"));
+        assert!(output.contains("Technical Design"));
         assert!(!output.contains("skip_reason"));
     }
 
     #[test]
     fn test_subtasks_output_with_skip() {
-        let output = subtasks_output_example(&[], Some("Task is simple enough"));
+        let output = subtasks_output_example(
+            &[],
+            Some("Task is simple enough"),
+            "# Analysis\n\nTask is simple enough to complete directly.",
+        );
         assert!(output.contains("skip_reason"));
         assert!(output.contains("Task is simple enough"));
+        assert!(output.contains("Analysis"));
     }
 
     #[test]

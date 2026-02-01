@@ -405,9 +405,9 @@ impl TestEnv {
         );
 
         // Should contain the expected artifact name in output format
-        let artifact_pattern = format!("\"{artifact}\"");
+        // (may appear in quotes for artifact types, or in bold for subtask stages)
         assert!(
-            prompt.contains(&artifact_pattern),
+            prompt.contains(artifact),
             "Full prompt should reference artifact '{}'. Got prompt: {}...",
             artifact,
             &prompt[..prompt.len().min(500)]
@@ -454,6 +454,7 @@ pub enum MockAgentOutput {
     Restage { target: String, feedback: String },
     /// Agent produced subtasks for breakdown.
     Subtasks {
+        content: String,
         subtasks: Vec<orkestra_core::workflow::execution::SubtaskOutput>,
         skip_reason: Option<String>,
     },
@@ -472,9 +473,11 @@ impl From<MockAgentOutput> for StageOutput {
                 StageOutput::Restage { target, feedback }
             }
             MockAgentOutput::Subtasks {
+                content,
                 subtasks,
                 skip_reason,
             } => StageOutput::Subtasks {
+                content,
                 subtasks,
                 skip_reason,
             },

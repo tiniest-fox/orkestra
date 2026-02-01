@@ -38,6 +38,7 @@ fn test_breakdown_approval_creates_subtasks() {
     env.set_output(
         &parent.id,
         MockAgentOutput::Subtasks {
+            content: "Technical design content".into(),
             subtasks: vec![
                 SubtaskOutput {
                     title: "Setup database".into(),
@@ -138,6 +139,7 @@ fn test_dependency_aware_orchestration() {
     env.set_output(
         &parent.id,
         MockAgentOutput::Subtasks {
+            content: "Technical design content".into(),
             subtasks: vec![
                 SubtaskOutput {
                     title: "First".into(),
@@ -270,6 +272,7 @@ fn test_parent_advances_when_all_subtasks_done() {
     env.set_output(
         &parent.id,
         MockAgentOutput::Subtasks {
+            content: "Technical design content".into(),
             subtasks: vec![
                 SubtaskOutput {
                     title: "First".into(),
@@ -397,6 +400,7 @@ fn test_diamond_dependency_orchestration() {
     env.set_output(
         &parent.id,
         MockAgentOutput::Subtasks {
+            content: "Technical design content".into(),
             subtasks: vec![
                 SubtaskOutput {
                     title: "Node A".into(),
@@ -637,6 +641,7 @@ fn test_breakdown_skip_advances_normally() {
     env.set_output(
         &parent.id,
         MockAgentOutput::Subtasks {
+            content: "Technical design content".into(),
             subtasks: vec![],
             skip_reason: Some("Task is simple enough to complete directly".into()),
         },
@@ -683,6 +688,7 @@ fn test_subtask_failure_fails_parent() {
     env.set_output(
         &parent.id,
         MockAgentOutput::Subtasks {
+            content: "Technical design content".into(),
             subtasks: vec![SubtaskOutput {
                 title: "Only task".into(),
                 description: "Will fail".into(),

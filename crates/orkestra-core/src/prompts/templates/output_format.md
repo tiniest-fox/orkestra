@@ -2,10 +2,12 @@
 
 Produce your output as valid JSON with a `type` field. Your output artifact is: **{{artifact_name}}**
 
+{{#unless can_produce_subtasks}}
 ### Your artifact output
 ```json
 {"type": "{{artifact_name}}", "content": "Your content here"}
 ```
+{{/unless}}
 
 {{#if can_ask_questions}}
 ### Ask clarifying questions
@@ -15,7 +17,8 @@ Produce your output as valid JSON with a `type` field. Your output artifact is: 
 {{/if}}
 
 {{#if can_produce_subtasks}}
-### Break into subtasks
+### Your output (with subtasks)
+Include your full technical design in `content` alongside the structured `subtasks` array.
 ```json
 {{{subtasks_example}}}
 ```

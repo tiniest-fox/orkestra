@@ -1,6 +1,10 @@
 {
   "description": "Breakdown into subtasks",
   "properties": {
+    "content": {
+      "type": "string",
+      "description": "The artifact content (technical design, analysis, research findings as markdown)"
+    },
     "subtasks": {
       "type": "array",
       "description": "List of subtasks to create (empty array with skip_reason to skip breakdown)",
@@ -30,5 +34,5 @@
       "description": "Required justification when subtasks array is empty (skipping breakdown)"
     }
   },
-  "required": ["subtasks"]
+  "required": ["content", "subtasks"]
 }

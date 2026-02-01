@@ -769,11 +769,8 @@ impl OrchestratorLoop {
                 None
             };
 
-            api.setup_service.spawn_setup(
-                task.id.clone(),
-                task.base_branch.clone(),
-                description,
-            );
+            api.setup_service
+                .spawn_setup(task.id.clone(), task.base_branch.clone(), description);
         }
     }
 
@@ -864,10 +861,7 @@ impl OrchestratorLoop {
                     true
                 }
                 Some(task) if task.status.is_terminal() && task.phase == Phase::Idle => {
-                    orkestra_debug!(
-                        "recovery",
-                        "Cleaning up worktree for terminal task: {name}"
-                    );
+                    orkestra_debug!("recovery", "Cleaning up worktree for terminal task: {name}");
                     true
                 }
                 _ => false,
@@ -875,11 +869,7 @@ impl OrchestratorLoop {
 
             if should_remove {
                 if let Err(e) = git.remove_worktree(name, true) {
-                    orkestra_debug!(
-                        "recovery",
-                        "Failed to clean up worktree {name}: {}",
-                        e
-                    );
+                    orkestra_debug!("recovery", "Failed to clean up worktree {name}: {}", e);
                 }
             }
         }

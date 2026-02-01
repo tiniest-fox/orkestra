@@ -267,7 +267,10 @@ pub fn claudecode_aliases() -> HashMap<String, String> {
 
 /// `OpenCode` provider alias table.
 pub fn opencode_aliases() -> HashMap<String, String> {
-    HashMap::from([("kimi-k2".to_string(), "moonshot/kimi-k2".to_string())])
+    HashMap::from([
+        ("kimi-k2".to_string(), "moonshot/kimi-k2".to_string()),
+        ("kimi-k2.5".to_string(), "moonshot/kimi-k2.5".to_string()),
+    ])
 }
 
 /// Claude Code provider capabilities.
@@ -587,6 +590,7 @@ mod tests {
     fn opencode_aliases_are_correct() {
         let aliases = opencode_aliases();
         assert_eq!(aliases["kimi-k2"], "moonshot/kimi-k2");
-        assert_eq!(aliases.len(), 1);
+        assert_eq!(aliases["kimi-k2.5"], "moonshot/kimi-k2.5");
+        assert_eq!(aliases.len(), 2);
     }
 }

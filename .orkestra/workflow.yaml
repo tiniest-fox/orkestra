@@ -84,5 +84,13 @@ flows:
       - review:
           prompt: hotfix_reviewer.md
 
+  # OpenCode test flow: Single work stage using OpenCode with Kimi 2.5
+  opencode-test:
+    description: Test flow for OpenCode with Kimi 2.5 — work stage only
+    icon: flask
+    stages:
+      - work:
+          model: opencode/kimi-k2.5
+
 integration:
   on_failure: work

@@ -150,7 +150,7 @@ Key behaviors:
 - The name "default" is reserved and cannot be used as a flow name
 - Approval `rejection_stage` targets and script `on_failure` targets must be within the flow's stage list
 
-This project defines two flows: `quick` (skips breakdown and compound) and `hotfix` (skips planning, breakdown, and compound).
+This project defines three flows: `quick` (skips breakdown and compound), `hotfix` (skips planning, breakdown, and compound), and `opencode-test` (work stage only, using OpenCode with Kimi 2.5).
 
 #### Subtask System
 
@@ -162,7 +162,7 @@ Agents are spawned via a **provider registry** that supports multiple CLI backen
 
 **Supported providers:**
 - **claudecode** (default) — Claude Code CLI. Supports `--json-schema` for structured output and `--resume` for session recovery. Aliases: `sonnet`, `opus`, `haiku`.
-- **opencode** — OpenCode CLI (`opencode run`). Uses `--format json` (no native JSON schema enforcement) and `--continue` for session recovery. Aliases: `kimi-k2`.
+- **opencode** — OpenCode CLI (`opencode run`). Uses `--format json` (no native JSON schema enforcement) and `--continue` for session recovery. Aliases: `kimi-k2`, `kimi-k2.5`.
 
 **Model spec resolution:**
 - `None` → default provider's default model

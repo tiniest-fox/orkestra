@@ -5,9 +5,11 @@
 mod claude_process;
 mod git_service;
 mod memory;
+mod opencode_process;
 mod sqlite;
 
 pub use claude_process::ClaudeProcessSpawner;
 pub use git_service::Git2GitService;
 pub use memory::InMemoryWorkflowStore;
+pub use opencode_process::OpenCodeProcessSpawner;
 pub use sqlite::SqliteWorkflowStore;

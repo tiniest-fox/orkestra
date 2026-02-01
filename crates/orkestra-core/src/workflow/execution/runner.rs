@@ -1,7 +1,8 @@
-//! Agent runner for executing Claude Code processes.
+//! Agent runner for executing agent processes.
 //!
 //! This module provides the execution layer for running agents. It handles:
-//! - Process spawning via `ProcessSpawner`
+//! - Provider resolution from model spec via `ProviderRegistry`
+//! - Process spawning via the resolved provider's `ProcessSpawner`
 //! - Prompt writing to stdin
 //! - Output streaming and session ID extraction
 //! - Output parsing to `StageOutput`
@@ -20,6 +21,8 @@ use crate::orkestra_debug;
 use super::output::StageOutput;
 use super::parser::parse_agent_output;
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessSpawner};
+
+use super::provider_registry::ProviderRegistry;
 
 // ============================================================================
 // Run Configuration
@@ -41,6 +44,9 @@ pub struct RunConfig {
     /// Task ID (used by mock runner for output queue lookup).
     /// Not used by the real runner.
     pub task_id: Option<String>,
+    /// Model identifier to pass to the process spawner (e.g., "claudecode/sonnet").
+    /// If None, uses the provider's default model.
+    pub model: Option<String>,
 }
 
 impl RunConfig {
@@ -59,6 +65,7 @@ impl RunConfig {
             session_id: None,
             is_resume: false,
             task_id: None,
+            model: None,
         }
     }
 
@@ -74,6 +81,13 @@ impl RunConfig {
     pub fn with_session(mut self, session_id: impl Into<String>, is_resume: bool) -> Self {
         self.session_id = Some(session_id.into());
         self.is_resume = is_resume;
+        self
+    }
+
+    /// Set the model identifier.
+    #[must_use]
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = Some(model.into());
         self
     }
 }
@@ -163,10 +177,11 @@ pub trait AgentRunnerTrait: Send + Sync {
 // Agent Runner (Production)
 // ============================================================================
 
-/// Runs Claude Code agents to completion.
+/// Runs agents to completion using the provider registry.
 ///
 /// The runner is responsible for:
-/// - Spawning the process via `ProcessSpawner`
+/// - Resolving the provider from the model spec via `ProviderRegistry`
+/// - Spawning the process via the resolved provider's `ProcessSpawner`
 /// - Writing the prompt to stdin
 /// - Reading and parsing output
 /// - Extracting session ID from stream events
@@ -176,13 +191,30 @@ pub trait AgentRunnerTrait: Send + Sync {
 /// - Managing sessions (returns `session_id`)
 /// - Task state updates (caller handles)
 pub struct AgentRunner {
-    spawner: Arc<dyn ProcessSpawner>,
+    registry: Arc<ProviderRegistry>,
 }
 
 impl AgentRunner {
-    /// Create a new agent runner with the given process spawner.
+    /// Create a new agent runner with the given provider registry.
+    pub fn new_with_registry(registry: Arc<ProviderRegistry>) -> Self {
+        Self { registry }
+    }
+
+    /// Create a new agent runner with a single process spawner (backward compat).
+    ///
+    /// Wraps the spawner in a registry as the default "claudecode" provider.
     pub fn new(spawner: Arc<dyn ProcessSpawner>) -> Self {
-        Self { spawner }
+        use super::provider_registry::{claudecode_aliases, claudecode_capabilities};
+        let mut registry = ProviderRegistry::new("claudecode");
+        registry.register(
+            "claudecode",
+            spawner,
+            claudecode_capabilities(),
+            claudecode_aliases(),
+        );
+        Self {
+            registry: Arc::new(registry),
+        }
     }
 }
 
@@ -191,23 +223,31 @@ impl AgentRunnerTrait for AgentRunner {
     fn run_sync(&self, config: RunConfig) -> Result<RunResult, RunError> {
         orkestra_debug!(
             "runner",
-            "run_sync: session_id={:?}, is_resume={}",
+            "run_sync: session_id={:?}, is_resume={}, model={:?}",
             config.session_id,
-            config.is_resume
+            config.is_resume,
+            config.model
         );
+
+        // Resolve provider from model spec
+        let resolved = self
+            .registry
+            .resolve(config.model.as_deref())
+            .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
         // Parse the schema for validation (before moving json_schema to process_config)
         let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
-        // Build process config
+        // Build process config with resolved model ID
         let process_config = ProcessConfig {
             session_id: config.session_id,
             is_resume: config.is_resume,
             json_schema: config.json_schema,
+            model: resolved.model_id,
         };
 
-        // Spawn the process
-        let mut handle = self
+        // Spawn the process via the resolved provider's spawner
+        let mut handle = resolved
             .spawner
             .spawn(&config.working_dir, process_config)
             .map_err(RunError::from)?;
@@ -258,19 +298,28 @@ impl AgentRunnerTrait for AgentRunner {
     fn run_async(&self, config: RunConfig) -> Result<(u32, Receiver<RunEvent>), RunError> {
         orkestra_debug!(
             "runner",
-            "run_async: session_id={:?}, is_resume={}",
+            "run_async: session_id={:?}, is_resume={}, model={:?}",
             config.session_id,
-            config.is_resume
+            config.is_resume,
+            config.model
         );
-        // Build process config
+
+        // Resolve provider from model spec
+        let resolved = self
+            .registry
+            .resolve(config.model.as_deref())
+            .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
+
+        // Build process config with resolved model ID
         let process_config = ProcessConfig {
             session_id: config.session_id.clone(),
             is_resume: config.is_resume,
             json_schema: config.json_schema.clone(),
+            model: resolved.model_id,
         };
 
-        // Spawn the process
-        let mut handle = self
+        // Spawn the process via the resolved provider's spawner
+        let mut handle = resolved
             .spawner
             .spawn(&config.working_dir, process_config)
             .map_err(RunError::from)?;

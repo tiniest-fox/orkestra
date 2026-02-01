@@ -67,6 +67,9 @@ pub struct FlowStageOverride {
     /// Override capabilities (full replace, not merge).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<StageCapabilities>,
+    /// Override model identifier (e.g., "claudecode/haiku" for cheaper model in quick flow).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 // Custom serde for FlowStageEntry to handle the YAML format:
@@ -289,6 +292,32 @@ impl WorkflowConfig {
         self.stage(stage_name).map(|s| s.capabilities.clone())
     }
 
+    /// Get the effective model for a stage in a flow.
+    ///
+    /// Flow overrides take precedence over the global stage config.
+    /// Returns None if no model is configured (use provider default).
+    pub fn effective_model(&self, stage_name: &str, flow: Option<&str>) -> Option<String> {
+        // Check flow override first
+        if let Some(flow_name) = flow {
+            if let Some(flow_config) = self.flows.get(flow_name) {
+                if let Some(entry) = flow_config
+                    .stages
+                    .iter()
+                    .find(|e| e.stage_name == stage_name)
+                {
+                    if let Some(ref overrides) = entry.overrides {
+                        if let Some(ref model) = overrides.model {
+                            return Some(model.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fall back to global stage config
+        self.stage(stage_name).and_then(|s| s.model.clone())
+    }
+
     /// Check whether a given stage is in the specified flow.
     pub fn stage_in_flow(&self, stage_name: &str, flow: Option<&str>) -> bool {
         match flow {
@@ -332,6 +361,7 @@ impl WorkflowConfig {
         self.validate_script_stages(&stage_names, &stage_names_set, &mut errors);
         self.validate_flows(&stage_names_set, &mut errors);
         self.validate_subtask_flows(&mut errors);
+        self.validate_model_fields(&mut errors);
 
         errors
     }
@@ -636,6 +666,56 @@ impl WorkflowConfig {
                                     ));
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Validate model fields on stages and flow overrides.
+    fn validate_model_fields(&self, errors: &mut Vec<String>) {
+        // Script stages should not have model set
+        for stage in &self.stages {
+            if stage.model.is_some() && stage.is_script_stage() {
+                errors.push(format!(
+                    "Script stage \"{}\" has a model field, but model is only used by agent stages.",
+                    stage.name
+                ));
+            }
+
+            // Validate model format: must be non-empty if present
+            if let Some(ref model) = stage.model {
+                if model.trim().is_empty() {
+                    errors.push(format!(
+                        "Stage \"{}\" has an empty model field. Remove the field or specify a model identifier.",
+                        stage.name
+                    ));
+                }
+            }
+        }
+
+        // Validate model in flow overrides
+        for (flow_name, flow) in &self.flows {
+            for entry in &flow.stages {
+                if let Some(ref overrides) = entry.overrides {
+                    if let Some(ref model) = overrides.model {
+                        // Check that the overridden stage is not a script stage
+                        let is_script = self
+                            .stage(&entry.stage_name)
+                            .is_some_and(super::stage::StageConfig::is_script_stage);
+                        if is_script {
+                            errors.push(format!(
+                                "Flow \"{flow_name}\" overrides model on script stage \"{}\", but model is only used by agent stages.",
+                                entry.stage_name
+                            ));
+                        }
+
+                        if model.trim().is_empty() {
+                            errors.push(format!(
+                                "Flow \"{flow_name}\" stage \"{}\" has an empty model override. Remove the field or specify a model identifier.",
+                                entry.stage_name
+                            ));
                         }
                     }
                 }

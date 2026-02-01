@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
-use crate::workflow::execution::{AgentRunner, AgentRunnerTrait, StageOutput};
+use crate::workflow::execution::{AgentRunner, AgentRunnerTrait, ProviderRegistry, StageOutput};
 use crate::workflow::ports::WorkflowStore;
 
 use super::agent_execution::{AgentExecutionService, ExecutionHandle};
@@ -100,7 +100,7 @@ pub struct StageExecutionService {
 }
 
 impl StageExecutionService {
-    /// Create a new stage execution service with a custom runner.
+    /// Create a new stage execution service with a custom runner and registry.
     ///
     /// Use this constructor when you need to inject a mock runner for testing.
     #[allow(clippy::needless_pass_by_value)] // Arc clone is cheap, keeps API ergonomic
@@ -110,6 +110,7 @@ impl StageExecutionService {
         store: Arc<dyn WorkflowStore>,
         iteration_service: Arc<IterationService>,
         runner: Arc<dyn AgentRunnerTrait>,
+        registry: Arc<ProviderRegistry>,
     ) -> Self {
         // Create shared session service (used for unified session lifecycle)
         let session_service = Arc::new(SessionService::new(
@@ -122,6 +123,7 @@ impl StageExecutionService {
             runner,
             workflow.clone(),
             project_root.clone(),
+            registry,
         ));
 
         let script_service = Arc::new(ScriptExecutionService::new(workflow, project_root));
@@ -134,20 +136,50 @@ impl StageExecutionService {
         }
     }
 
-    /// Create a new stage execution service with the default Claude runner.
+    /// Create a new stage execution service with the default provider registry.
+    ///
+    /// Registers both `ClaudeProcessSpawner` and `OpenCodeProcessSpawner` in the
+    /// provider registry, enabling stages to use either provider via the `model`
+    /// field in stage config.
     pub fn new(
         workflow: WorkflowConfig,
         project_root: PathBuf,
         store: Arc<dyn WorkflowStore>,
         iteration_service: Arc<IterationService>,
     ) -> Self {
-        use crate::workflow::adapters::ClaudeProcessSpawner;
+        use crate::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
+        use crate::workflow::execution::{
+            claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
+            ProviderRegistry,
+        };
         use crate::workflow::ports::ProcessSpawner;
 
-        let spawner: Arc<dyn ProcessSpawner> = Arc::new(ClaudeProcessSpawner::new());
-        let runner: Arc<dyn AgentRunnerTrait> = Arc::new(AgentRunner::new(spawner));
+        let mut registry = ProviderRegistry::new("claudecode");
+        registry.register(
+            "claudecode",
+            Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+            claudecode_capabilities(),
+            claudecode_aliases(),
+        );
+        registry.register(
+            "opencode",
+            Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+            opencode_capabilities(),
+            opencode_aliases(),
+        );
 
-        Self::with_runner(workflow, project_root, store, iteration_service, runner)
+        let registry = Arc::new(registry);
+        let runner: Arc<dyn AgentRunnerTrait> =
+            Arc::new(AgentRunner::new_with_registry(Arc::clone(&registry)));
+
+        Self::with_runner(
+            workflow,
+            project_root,
+            store,
+            iteration_service,
+            runner,
+            registry,
+        )
     }
 
     /// Check if a stage is a script stage (vs agent stage).

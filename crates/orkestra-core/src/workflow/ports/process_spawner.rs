@@ -22,6 +22,9 @@ pub struct ProcessConfig {
     pub is_resume: bool,
     /// JSON schema for structured output (required).
     pub json_schema: String,
+    /// Model identifier to pass via `--model` flag.
+    /// If None, uses the provider's default model.
+    pub model: Option<String>,
 }
 
 impl ProcessConfig {
@@ -31,6 +34,7 @@ impl ProcessConfig {
             session_id: None,
             is_resume: false,
             json_schema: json_schema.into(),
+            model: None,
         }
     }
 
@@ -39,6 +43,13 @@ impl ProcessConfig {
     pub fn with_session(mut self, session_id: impl Into<String>, is_resume: bool) -> Self {
         self.session_id = Some(session_id.into());
         self.is_resume = is_resume;
+        self
+    }
+
+    /// Set the model identifier.
+    #[must_use]
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = Some(model.into());
         self
     }
 }

@@ -53,6 +53,12 @@ pub struct StageConfig {
     /// Script stages always auto-advance on success regardless of this setting.
     #[serde(default)]
     pub is_automated: bool,
+
+    /// Model identifier for agent stages (e.g., "claudecode/sonnet", "opencode/kimi-k2").
+    /// If not specified, uses the default provider and model.
+    /// Ignored for script stages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 impl StageConfig {
@@ -68,6 +74,7 @@ impl StageConfig {
             schema_file: None,
             script: None,
             is_automated: false,
+            model: None,
         }
     }
 
@@ -87,6 +94,7 @@ impl StageConfig {
             schema_file: None,
             script: Some(ScriptStageConfig::new(command)),
             is_automated: false,
+            model: None,
         }
     }
 
@@ -129,6 +137,13 @@ impl StageConfig {
     #[must_use]
     pub fn with_schema_file(mut self, path: impl Into<String>) -> Self {
         self.schema_file = Some(path.into());
+        self
+    }
+
+    /// Builder: set model identifier (e.g., "claudecode/sonnet").
+    #[must_use]
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = Some(model.into());
         self
     }
 

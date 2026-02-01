@@ -252,6 +252,7 @@ fn test_dependency_aware_orchestration() {
 // =============================================================================
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn test_parent_advances_when_all_subtasks_done() {
     let workflow = workflows::with_subtasks();
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
@@ -344,6 +345,17 @@ fn test_parent_advances_when_all_subtasks_done() {
             content: "LGTM 2".into(),
         },
     );
+    // Pre-configure output for parent's work stage BEFORE ticking, because
+    // tick_until_settled may advance the parent out of WaitingOnChildren and
+    // immediately spawn its work agent in the same tick loop.
+    env.set_output(
+        &parent.id,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Parent work".into(),
+        },
+    );
+
     env.tick_until_settled();
 
     // Both subtasks should be Done
@@ -359,9 +371,6 @@ fn test_parent_advances_when_all_subtasks_done() {
         "Second subtask should be Done, got: {:?}",
         second.status
     );
-
-    // Tick to trigger parent completion check
-    env.tick();
 
     // Parent should have advanced to the next stage after breakdown (work)
     let parent = env.api().get_task(&parent.id).unwrap();

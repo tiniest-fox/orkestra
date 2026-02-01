@@ -28,12 +28,27 @@ use orkestra_core::testutil::create_temp_git_repo;
 use orkestra_core::workflow::{
     config::{load_workflow, WorkflowConfig},
     domain::{Question, QuestionAnswer, QuestionOption},
+    execution::{claudecode_aliases, claudecode_capabilities, ProviderRegistry},
     runtime::{Outcome, Phase},
     Git2GitService, GitService, MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore,
     StageExecutionService, WorkflowApi,
 };
 
 use crate::helpers::{MockAgentOutput, TestEnv};
+
+/// Create a default provider registry for tests in this module.
+fn test_provider_registry() -> Arc<ProviderRegistry> {
+    use orkestra_core::workflow::ports::{MockProcessSpawner, ProcessSpawner};
+
+    let mut registry = ProviderRegistry::new("claudecode");
+    registry.register(
+        "claudecode",
+        Arc::new(MockProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        claudecode_capabilities(),
+        claudecode_aliases(),
+    );
+    Arc::new(registry)
+}
 
 // =============================================================================
 // The Exhaustive E2E Test
@@ -667,6 +682,7 @@ fn test_workflow_config_from_file() {
 
 /// Test custom `integration.on_failure` configuration
 #[test]
+#[allow(clippy::too_many_lines)]
 fn test_custom_integration_on_failure() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
@@ -729,6 +745,7 @@ integration:
         store,
         iteration_service,
         runner.clone(),
+        test_provider_registry(),
     ));
     let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
 
@@ -924,6 +941,7 @@ fi
         store,
         iteration_service,
         runner.clone(),
+        test_provider_registry(),
     ));
 
     let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);

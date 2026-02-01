@@ -12,11 +12,28 @@ use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
     config::WorkflowConfig,
     domain::{Question, Task},
-    execution::StageOutput,
+    execution::{claudecode_aliases, claudecode_capabilities, ProviderRegistry, StageOutput},
     runtime::Phase,
     MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService, WorkflowApi,
 };
 use orkestra_core::MockTitleGenerator;
+
+/// Create a default provider registry for tests.
+///
+/// Registers only claudecode (with a stub spawner) since tests use `MockAgentRunner`
+/// and only need the registry for capability checks.
+fn test_provider_registry() -> Arc<ProviderRegistry> {
+    use orkestra_core::workflow::ports::{MockProcessSpawner, ProcessSpawner};
+
+    let mut registry = ProviderRegistry::new("claudecode");
+    registry.register(
+        "claudecode",
+        Arc::new(MockProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        claudecode_capabilities(),
+        claudecode_aliases(),
+    );
+    Arc::new(registry)
+}
 
 // =============================================================================
 // TestEnv — Unified Test Environment
@@ -69,6 +86,7 @@ impl TestEnv {
             store,
             iteration_service,
             runner.clone(),
+            test_provider_registry(),
         ));
 
         let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
@@ -143,6 +161,7 @@ impl TestEnv {
             store,
             iteration_service,
             runner.clone(),
+            test_provider_registry(),
         ));
 
         let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
@@ -217,6 +236,7 @@ impl TestEnv {
             store,
             iteration_service,
             runner.clone(),
+            test_provider_registry(),
         ));
 
         let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
@@ -542,6 +562,7 @@ pub mod workflows {
                             capabilities: Some(StageCapabilities::with_restage(
                                 vec!["work".into()],
                             )),
+                            model: None,
                         }),
                     },
                 ],

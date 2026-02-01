@@ -6,7 +6,7 @@
 import { CircleDot, FileText, GitBranch, Layers, type LucideIcon, Rocket, Zap } from "lucide-react";
 import { useState } from "react";
 import { useWorkflowConfig } from "../providers";
-import type { FlowConfig } from "../types/workflow";
+import type { FlowConfig, StageConfig } from "../types/workflow";
 import { titleCase } from "../utils/formatters";
 import { BranchSelector } from "./BranchSelector";
 import { Button, Panel } from "./ui";
@@ -141,6 +141,11 @@ export function NewTaskPanel({ onClose, onSubmit }: NewTaskPanelProps) {
 // Flow Picker
 // =============================================================================
 
+/** Resolve display name for a stage: use display_name if available, otherwise titleCase the name. */
+function stageDisplayName(stage: StageConfig): string {
+  return stage.display_name ?? titleCase(stage.name);
+}
+
 interface FlowPickerProps {
   flows: [string, FlowConfig][];
   selected: string | undefined;
@@ -148,23 +153,30 @@ interface FlowPickerProps {
 }
 
 function FlowPicker({ flows, selected, onSelect }: FlowPickerProps) {
+  const config = useWorkflowConfig();
+  const allStageNames = config.stages.map(stageDisplayName);
+
   return (
     <fieldset className="mt-4">
       <div className="grid grid-cols-2 gap-2">
         <FlowOption
           name="Standard"
-          description="Full pipeline with all stages"
+          stageNames={allStageNames}
           icon={DEFAULT_FLOW_ICON}
           isSelected={selected === undefined}
           onClick={() => onSelect(undefined)}
         />
         {flows.map(([name, flow]) => {
           const Icon = (flow.icon ? ICON_MAP[flow.icon] : undefined) ?? FALLBACK_FLOW_ICON;
+          const stageNames = flow.stages.map((entry) => {
+            const stage = config.stages.find((s) => s.name === entry.stage_name);
+            return stage ? stageDisplayName(stage) : titleCase(entry.stage_name);
+          });
           return (
             <FlowOption
               key={name}
               name={titleCase(name)}
-              description={flow.description}
+              stageNames={stageNames}
               icon={Icon}
               isSelected={selected === name}
               onClick={() => onSelect(name)}
@@ -178,13 +190,13 @@ function FlowPicker({ flows, selected, onSelect }: FlowPickerProps) {
 
 interface FlowOptionProps {
   name: string;
-  description: string;
+  stageNames: string[];
   icon?: LucideIcon;
   isSelected: boolean;
   onClick: () => void;
 }
 
-function FlowOption({ name, description, icon: Icon, isSelected, onClick }: FlowOptionProps) {
+function FlowOption({ name, stageNames, icon: Icon, isSelected, onClick }: FlowOptionProps) {
   return (
     <button
       type="button"
@@ -208,9 +220,22 @@ function FlowOption({ name, description, icon: Icon, isSelected, onClick }: Flow
           {name}
         </span>
       </div>
-      {description && (
-        <div className="text-xs text-stone-500 dark:text-stone-400 line-clamp-2">{description}</div>
-      )}
+      {stageNames.length > 0 && <StagePipeline stageNames={stageNames} isSelected={isSelected} />}
     </button>
+  );
+}
+
+function StagePipeline({ stageNames, isSelected }: { stageNames: string[]; isSelected: boolean }) {
+  return (
+    <div
+      className={`text-[11px] leading-relaxed ${isSelected ? "text-orange-600/70 dark:text-orange-400/70" : "text-stone-400 dark:text-stone-500"}`}
+    >
+      {stageNames.map((name, i) => (
+        <span key={name}>
+          {name}
+          {i < stageNames.length - 1 && <span className="mx-0.5">{" \u2192 "}</span>}
+        </span>
+      ))}
+    </div>
   );
 }

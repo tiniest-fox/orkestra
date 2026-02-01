@@ -8,7 +8,7 @@
 //! It is driven by the workflow configuration and is stage-agnostic -
 //! it doesn't know about specific stages like "planning" or "work".
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -18,7 +18,7 @@ use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::execution::StageOutput;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Phase, Status};
+use crate::workflow::runtime::Phase;
 
 use super::stage_execution::{ExecutionComplete, ExecutionResult, StageExecutionService};
 use super::WorkflowApi;
@@ -708,9 +708,13 @@ impl OrchestratorLoop {
 
     /// Recover tasks stuck in `SettingUp` phase (from app crash during setup).
     ///
-    /// Tasks that were being set up when the app crashed will be stuck in `SettingUp`.
-    /// We mark them as Failed since the setup was interrupted and cannot be resumed.
-    /// Any partially-created worktrees are cleaned up.
+    /// Tasks stuck in `SettingUp` from a previous crash are retried from scratch.
+    ///
+    /// For parent tasks: cleans up any partial worktree/branch, then re-runs
+    /// `spawn_setup` (worktree creation + title generation). Setup steps are
+    /// idempotent after cleanup so this is safe to retry.
+    ///
+    /// For subtasks: re-runs `spawn_subtask_setup` which just transitions to Idle.
     fn recover_stale_setup_tasks(&self) {
         let Ok(api) = self.api.lock() else {
             orkestra_debug!(
@@ -727,54 +731,49 @@ impl OrchestratorLoop {
             return;
         };
 
-        for task in tasks {
-            if task.phase == Phase::SettingUp {
-                orkestra_debug!("recovery", "Found stale SettingUp task: {}", task.id);
+        for task in &tasks {
+            if task.phase != Phase::SettingUp {
+                continue;
+            }
 
-                // Only clean up worktrees for parent tasks (subtasks don't own worktrees)
-                if task.parent_id.is_none() {
-                    if let Some(ref git) = api.git_service {
-                        // Try to remove worktree - it may or may not exist depending on when crash occurred
-                        if let Err(e) = git.remove_worktree(&task.id, true) {
-                            // This is expected if worktree wasn't created yet, only warn for unexpected errors
-                            if !e.to_string().contains("not found")
-                                && !e.to_string().contains("does not exist")
-                            {
-                                orkestra_debug!(
-                                    "recovery",
-                                    "WARNING: Failed to clean up worktree for {}: {}",
-                                    task.id,
-                                    e
-                                );
-                            }
-                        }
+            orkestra_debug!("recovery", "Retrying setup for stale task: {}", task.id);
+
+            if task.parent_id.is_some() {
+                // Subtasks just need phase transition — no worktree work
+                api.setup_service.spawn_subtask_setup(task.id.clone());
+                continue;
+            }
+
+            // Parent task: clean up partial state, then re-run full setup
+            if let Some(ref git) = api.git_service {
+                if let Err(e) = git.remove_worktree(&task.id, true) {
+                    // Expected if worktree wasn't created yet
+                    if !e.to_string().contains("not found")
+                        && !e.to_string().contains("does not exist")
+                    {
+                        orkestra_debug!(
+                            "recovery",
+                            "WARNING: Failed to clean up partial worktree for {}: {}",
+                            task.id,
+                            e
+                        );
                     }
                 }
-
-                let mut task = task;
-                task.status = Status::Failed {
-                    error: Some(
-                        "Setup interrupted by app restart - please delete and recreate task".into(),
-                    ),
-                };
-                task.phase = Phase::Idle;
-
-                // Only clear worktree info for parent tasks that own their worktrees.
-                // Subtasks inherit parent's worktree and shouldn't have it cleared.
-                if task.parent_id.is_none() {
-                    task.worktree_path = None;
-                    task.branch_name = None;
-                }
-
-                if let Err(e) = api.store.save_task(&task) {
-                    orkestra_debug!(
-                        "recovery",
-                        "Failed to mark stale task {} as failed: {}",
-                        task.id,
-                        e
-                    );
-                }
             }
+
+            // Determine if title generation is needed
+            let needs_title = task.title.trim().is_empty() && !task.description.trim().is_empty();
+            let description = if needs_title {
+                Some(task.description.clone())
+            } else {
+                None
+            };
+
+            api.setup_service.spawn_setup(
+                task.id.clone(),
+                task.base_branch.clone(),
+                description,
+            );
         }
     }
 
@@ -816,11 +815,12 @@ impl OrchestratorLoop {
         }
     }
 
-    /// Clean up orphaned worktrees from deleted tasks.
+    /// Clean up worktrees that are no longer needed.
     ///
-    /// When tasks are deleted, only DB records are removed (fast path). Git worktrees
-    /// are left on disk and cleaned up here on next startup. A worktree is orphaned
-    /// if its directory name (task ID) has no matching task in the database.
+    /// Removes worktrees in two cases:
+    /// 1. **Orphaned**: The task was deleted from the DB but the worktree remains on disk.
+    /// 2. **Terminal**: The task is done/archived/failed and no longer needs a worktree.
+    ///    This catches cases where integration succeeded but crashed before cleanup.
     fn cleanup_orphaned_worktrees(&self) {
         let Ok(api) = self.api.lock() else {
             orkestra_debug!(
@@ -854,15 +854,30 @@ impl OrchestratorLoop {
             return;
         };
 
-        let task_ids: HashSet<&str> = all_tasks.iter().map(|t| t.id.as_str()).collect();
+        let tasks_by_id: HashMap<&str, &crate::workflow::domain::Task> =
+            all_tasks.iter().map(|t| (t.id.as_str(), t)).collect();
 
         for name in &worktree_names {
-            if !task_ids.contains(name.as_str()) {
-                orkestra_debug!("recovery", "Cleaning up orphaned worktree: {name}");
+            let should_remove = match tasks_by_id.get(name.as_str()) {
+                None => {
+                    orkestra_debug!("recovery", "Cleaning up orphaned worktree: {name}");
+                    true
+                }
+                Some(task) if task.status.is_terminal() && task.phase == Phase::Idle => {
+                    orkestra_debug!(
+                        "recovery",
+                        "Cleaning up worktree for terminal task: {name}"
+                    );
+                    true
+                }
+                _ => false,
+            };
+
+            if should_remove {
                 if let Err(e) = git.remove_worktree(name, true) {
                     orkestra_debug!(
                         "recovery",
-                        "Failed to clean up orphaned worktree {name}: {}",
+                        "Failed to clean up worktree {name}: {}",
                         e
                     );
                 }

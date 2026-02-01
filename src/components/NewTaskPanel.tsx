@@ -169,8 +169,11 @@ function FlowPicker({ flows, selected, onSelect }: FlowPickerProps) {
         {flows.map(([name, flow]) => {
           const Icon = (flow.icon ? ICON_MAP[flow.icon] : undefined) ?? FALLBACK_FLOW_ICON;
           const stageNames = flow.stages.map((entry) => {
-            const stage = config.stages.find((s) => s.name === entry.stage_name);
-            return stage ? stageDisplayName(stage) : titleCase(entry.stage_name);
+            // FlowStageEntry serializes as a plain string when there are no overrides,
+            // or as an object with stage_name when overrides are present.
+            const name = typeof entry === "string" ? entry : entry.stage_name;
+            const stage = config.stages.find((s) => s.name === name);
+            return stage ? stageDisplayName(stage) : titleCase(name);
           });
           return (
             <FlowOption

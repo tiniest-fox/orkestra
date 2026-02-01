@@ -69,15 +69,21 @@ export interface FlowStageOverride {
 }
 
 /**
- * A stage entry in a flow definition.
- * Can be a plain stage name (no overrides) or a stage name with overrides.
+ * A stage entry in a flow definition (object form, when overrides are present).
  */
-export interface FlowStageEntry {
+export interface FlowStageEntryObject {
   /** The stage name (must reference a top-level stage). */
   stage_name: string;
-  /** Optional overrides for this stage in this flow. */
-  overrides?: FlowStageOverride;
+  /** Overrides for this stage in this flow. */
+  overrides: FlowStageOverride;
 }
+
+/**
+ * A stage entry in a flow definition.
+ * Serialized as a plain string when there are no overrides,
+ * or as an object with stage_name + overrides when overrides are present.
+ */
+export type FlowStageEntry = string | FlowStageEntryObject;
 
 /**
  * Configuration for an alternate flow (shortened pipeline).

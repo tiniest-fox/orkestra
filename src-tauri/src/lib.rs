@@ -506,6 +506,7 @@ pub fn run() {
             commands::workflow_retry,
             commands::workflow_set_auto_mode,
             commands::workflow_get_config,
+            commands::workflow_get_auto_task_templates,
             commands::workflow_get_iterations,
             commands::workflow_get_artifact,
             commands::workflow_get_pending_questions,

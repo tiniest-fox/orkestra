@@ -6,8 +6,8 @@
 
 import { useMemo } from "react";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
-import { useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
-import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
+import { useAutoTaskTemplates, useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
+import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { CommandPalette } from "./CommandPalette";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
@@ -21,6 +21,7 @@ export function Orkestra() {
     useDisplayContext();
 
   const config = useWorkflowConfig();
+  const autoTaskTemplates = useAutoTaskTemplates();
   const { tasks, loading, error, createTask, deleteTask } = useTasks();
 
   // Filter to top-level tasks only for the kanban board
@@ -85,11 +86,33 @@ export function Orkestra() {
     closeFocus();
   };
 
+  const handleAutoTask = async (template: AutoTaskTemplate) => {
+    await createTask(
+      "",
+      template.description,
+      template.auto_run,
+      undefined,
+      template.flow ?? undefined,
+    );
+  };
+
   return (
     <div className="w-screen h-screen bg-stone-100 dark:bg-stone-950 flex flex-col items-stretch p-4 gap-4 overflow-hidden">
       <div className="flex items-center justify-between px-2 flex-shrink-0 overflow-hidden">
         <Panel.Title>Orkestra</Panel.Title>
-        <Button onClick={openCreate}>+ New Task</Button>
+        <div className="flex items-center gap-2">
+          {autoTaskTemplates.map((template) => (
+            <Button
+              key={template.filename}
+              variant="secondary"
+              size="sm"
+              onClick={() => handleAutoTask(template)}
+            >
+              {template.title}
+            </Button>
+          ))}
+          <Button onClick={openCreate}>+ New Task</Button>
+        </div>
       </div>
 
       <PanelContainer>

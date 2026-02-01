@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
-    Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi, WorkflowConfig, WorkflowStore,
+    AutoTaskTemplate, Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi, WorkflowConfig,
+    WorkflowStore,
 };
 
 use orkestra_core::orkestra_debug;
@@ -19,6 +20,7 @@ use crate::error::TauriError;
 pub struct AppState {
     api: Arc<Mutex<WorkflowApi>>,
     config: WorkflowConfig,
+    auto_task_templates: Vec<AutoTaskTemplate>,
     project_root: PathBuf,
     /// Database connection, kept alive for the lifetime of the app.
     /// We use this to create additional stores (e.g., for the orchestrator).
@@ -32,6 +34,7 @@ impl AppState {
     /// Create a new `AppState` with the given workflow config and database path.
     pub fn new(
         workflow: WorkflowConfig,
+        auto_task_templates: Vec<AutoTaskTemplate>,
         db_path: &Path,
         project_root: PathBuf,
     ) -> Result<Self, String> {
@@ -80,6 +83,7 @@ impl AppState {
 
         Ok(Self {
             config: workflow,
+            auto_task_templates,
             api: Arc::new(Mutex::new(api)),
             project_root,
             db_conn: conn,
@@ -105,6 +109,11 @@ impl AppState {
     /// Get the workflow configuration.
     pub fn config(&self) -> &WorkflowConfig {
         &self.config
+    }
+
+    /// Get the auto-task templates.
+    pub fn auto_task_templates(&self) -> &[AutoTaskTemplate] {
+        &self.auto_task_templates
     }
 
     /// Get the project root path.

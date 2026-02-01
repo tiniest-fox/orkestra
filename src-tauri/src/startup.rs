@@ -13,7 +13,7 @@ use std::sync::RwLock;
 
 use orkestra_core::{
     find_project_root,
-    workflow::{load_workflow_for_project, LoadError},
+    workflow::{load_auto_task_templates, load_workflow_for_project, LoadError},
 };
 use serde::Serialize;
 
@@ -266,9 +266,17 @@ pub fn run_startup() -> StartupResult {
         };
     }
 
-    // Step 5: Open database and create AppState (runs migrations)
+    // Step 5: Load auto-task templates (non-fatal — empty list on failure)
+    let auto_task_templates = load_auto_task_templates(&project_root, &workflow_config);
+
+    // Step 6: Open database and create AppState (runs migrations)
     let db_path = orkestra_dir.join("orkestra.db");
-    let app_state = match AppState::new(workflow_config, &db_path, project_root.clone()) {
+    let app_state = match AppState::new(
+        workflow_config,
+        auto_task_templates,
+        &db_path,
+        project_root.clone(),
+    ) {
         Ok(state) => state,
         Err(e) => {
             return StartupResult {

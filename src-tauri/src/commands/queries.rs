@@ -1,7 +1,9 @@
 //! Read-only query commands.
 
 use crate::{error::TauriError, state::AppState};
-use orkestra_core::workflow::{Artifact, Iteration, LogEntry, Question, WorkflowConfig};
+use orkestra_core::workflow::{
+    Artifact, AutoTaskTemplate, Iteration, LogEntry, Question, WorkflowConfig,
+};
 use serde::Serialize;
 use tauri::State;
 
@@ -14,6 +16,18 @@ use tauri::State;
 #[allow(clippy::unnecessary_wraps)]
 pub fn workflow_get_config(state: State<AppState>) -> Result<WorkflowConfig, TauriError> {
     Ok(state.config().clone())
+}
+
+/// Get auto-task templates.
+///
+/// Returns predefined task templates loaded from `.orkestra/tasks/*.md`.
+/// Templates are loaded once at startup and cached.
+#[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
+pub fn workflow_get_auto_task_templates(
+    state: State<AppState>,
+) -> Result<Vec<AutoTaskTemplate>, TauriError> {
+    Ok(state.auto_task_templates().to_vec())
 }
 
 /// Get all iterations for a task.

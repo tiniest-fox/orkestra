@@ -118,6 +118,9 @@ pub struct RunResult {
 pub enum RunEvent {
     /// A parsed log entry from the agent's stdout stream.
     LogLine(LogEntry),
+    /// A session ID extracted from the stream (emitted once for providers like
+    /// OpenCode that generate their own session IDs).
+    SessionId(String),
     /// Agent completed with parsed output.
     Completed(Result<StageOutput, String>),
 }
@@ -501,6 +504,7 @@ fn read_output_and_send_events(
     let mut last_text: Option<String> = None;
     let mut line_count: usize = 0;
     let mut log_entry_count: usize = 0;
+    let mut session_id_sent = false;
 
     for line_result in handle.lines() {
         match line_result {
@@ -530,6 +534,20 @@ fn read_output_and_send_events(
                     entries.len(),
                     line_count
                 );
+
+                // Surface provider-generated session ID (e.g. OpenCode's ses_...)
+                // so the caller can persist it for future resume attempts.
+                if !session_id_sent {
+                    if let Some(sid) = parser.extracted_session_id() {
+                        orkestra_debug!("runner", "Extracted session ID: {}", sid);
+                        if tx.send(RunEvent::SessionId(sid.to_string())).is_err() {
+                            orkestra_debug!("runner", "Channel closed while sending SessionId");
+                            return;
+                        }
+                        session_id_sent = true;
+                    }
+                }
+
                 for entry in entries {
                     log_entry_count += 1;
                     if let LogEntry::Text { ref content } = entry {

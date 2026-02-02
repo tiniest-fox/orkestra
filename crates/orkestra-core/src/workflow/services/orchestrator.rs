@@ -447,10 +447,18 @@ impl OrchestratorLoop {
                     }),
                 }
             }
-            ExecutionResult::PollError { error } => Ok(OrchestratorEvent::Error {
-                task_id: Some(exec.task_id),
-                error,
-            }),
+            ExecutionResult::PollError { error } => {
+                let _ = api.process_agent_output(
+                    &exec.task_id,
+                    StageOutput::Failed {
+                        error: format!("Agent error: {error}"),
+                    },
+                );
+                Ok(OrchestratorEvent::Error {
+                    task_id: Some(exec.task_id),
+                    error,
+                })
+            }
         }
     }
 
@@ -528,9 +536,17 @@ impl OrchestratorLoop {
                     }
                 }
                 Err(e) => {
+                    let error_msg = format!("Spawn failed: {e}");
+                    let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+                    let _ = api.process_agent_output(
+                        &task.id,
+                        StageOutput::Failed {
+                            error: error_msg.clone(),
+                        },
+                    );
                     events.push(OrchestratorEvent::Error {
                         task_id: Some(task.id.clone()),
-                        error: e.to_string(),
+                        error: error_msg,
                     });
                 }
             }

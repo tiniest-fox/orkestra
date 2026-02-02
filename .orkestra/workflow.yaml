@@ -31,6 +31,7 @@ stages:
     artifact: summary
     inputs: [plan, breakdown]
     prompt: worker.md
+    model: opencode/kimi-k2.5
 
   # Checks: Automated quality gates (lint, test, type check)
   # Runs in the task's worktree, detects what changed, runs relevant checks

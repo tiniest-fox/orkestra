@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
     config::{IntegrationConfig, StageConfig, WorkflowConfig},
-    domain::{LogEntry, Task},
+    domain::{LogEntry, StageSession, Task},
     runtime::Phase,
     Git2GitService, GitService, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService,
     WorkflowApi,
@@ -282,6 +282,36 @@ impl AgentTestEnv {
             text_count > 0 || tool_use_count > 0,
             "Should have at least one text or tool_use log entry"
         );
+    }
+
+    /// Reject the current work with feedback, sending the task back to Idle.
+    pub fn reject(&self, task_id: &str, feedback: &str) {
+        self.api
+            .lock()
+            .unwrap()
+            .reject(task_id, feedback)
+            .expect("reject should succeed");
+        println!("Rejected task {task_id} with feedback: {feedback}");
+    }
+
+    /// Get the stage session for a task+stage. Panics if not found.
+    pub fn get_stage_session(&self, task_id: &str, stage: &str) -> StageSession {
+        self.api
+            .lock()
+            .unwrap()
+            .get_stage_session(task_id, stage)
+            .expect("get_stage_session should succeed")
+            .unwrap_or_else(|| panic!("No stage session found for {task_id}/{stage}"))
+    }
+
+    /// Get the number of log entries for a task+stage.
+    pub fn get_log_count(&self, task_id: &str, stage: &str) -> usize {
+        self.api
+            .lock()
+            .unwrap()
+            .get_task_logs(task_id, Some(stage))
+            .expect("get_task_logs should succeed")
+            .len()
     }
 
     /// Assert that a named artifact was stored and is non-empty.

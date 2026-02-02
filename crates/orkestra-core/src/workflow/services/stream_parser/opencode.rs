@@ -13,7 +13,14 @@ use crate::workflow::services::session_logs::{extract_tool_result_content, parse
 use super::StreamParser;
 
 /// Parses OpenCode `--format json` stdout events into `LogEntry` values.
-pub struct OpenCodeStreamParser;
+///
+/// Also extracts the provider-generated session ID (`ses_...`) from the first
+/// JSON event that contains a `sessionID` field. This is needed because OpenCode
+/// generates its own session IDs — we can't set one upfront.
+pub struct OpenCodeStreamParser {
+    /// The session ID extracted from the stream, if any.
+    session_id: Option<String>,
+}
 
 impl Default for OpenCodeStreamParser {
     fn default() -> Self {
@@ -23,7 +30,7 @@ impl Default for OpenCodeStreamParser {
 
 impl OpenCodeStreamParser {
     pub fn new() -> Self {
-        Self
+        Self { session_id: None }
     }
 
     /// Extract text content from a text/assistant event.
@@ -156,6 +163,15 @@ impl StreamParser for OpenCodeStreamParser {
             }
         };
 
+        // Extract session ID from the first event that has one.
+        if self.session_id.is_none() {
+            if let Some(sid) = v.get("sessionID").and_then(|s| s.as_str()) {
+                if !sid.is_empty() {
+                    self.session_id = Some(sid.to_string());
+                }
+            }
+        }
+
         let event_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
         match event_type {
@@ -212,6 +228,10 @@ impl StreamParser for OpenCodeStreamParser {
 
     fn finalize(&mut self) -> Vec<LogEntry> {
         Vec::new()
+    }
+
+    fn extracted_session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
     }
 }
 

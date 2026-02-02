@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, LogEntry, Task};
@@ -40,11 +41,23 @@ enum AgentPoll {
 // Agent Execution Handle (internal)
 // ============================================================================
 
+/// How long an agent can run without producing any output before being killed.
+/// Only applies if the agent has never produced a single event — once it shows
+/// any sign of life, the timeout is disabled.
+const AGENT_STARTUP_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
 /// Internal wrapper for tracking an active agent execution.
 struct ActiveAgent {
     handle: ExecutionHandle,
     /// Stage session ID for persisting log entries to the database.
     stage_session_id: String,
+    /// When the agent was spawned.
+    spawned_at: Instant,
+    /// Whether the agent has ever produced any output.
+    has_activity: bool,
+    /// Session ID extracted from the stream (for providers like OpenCode that
+    /// generate their own session IDs). Set once, consumed by `take_extracted_session_id`.
+    extracted_session_id: Option<String>,
 }
 
 impl ActiveAgent {
@@ -52,6 +65,9 @@ impl ActiveAgent {
         Self {
             handle,
             stage_session_id,
+            spawned_at: Instant::now(),
+            has_activity: false,
+            extracted_session_id: None,
         }
     }
 
@@ -64,6 +80,11 @@ impl ActiveAgent {
         &self.handle.stage
     }
 
+    /// Consume the extracted session ID, if any. Returns `Some` only once.
+    fn take_extracted_session_id(&mut self) -> Option<String> {
+        self.extracted_session_id.take()
+    }
+
     fn poll(&mut self) -> AgentPoll {
         use crate::workflow::execution::RunEvent;
 
@@ -72,12 +93,25 @@ impl ActiveAgent {
         loop {
             match self.handle.events.try_recv() {
                 Ok(RunEvent::LogLine(entry)) => {
+                    self.has_activity = true;
                     log_entries.push(entry);
+                }
+                Ok(RunEvent::SessionId(id)) => {
+                    self.has_activity = true;
+                    self.extracted_session_id = Some(id);
                 }
                 Ok(RunEvent::Completed(result)) => {
                     return AgentPoll::Completed(result, log_entries);
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    if !self.has_activity
+                        && self.spawned_at.elapsed() > AGENT_STARTUP_TIMEOUT
+                    {
+                        return AgentPoll::Error(format!(
+                            "Agent produced no output after {}s",
+                            AGENT_STARTUP_TIMEOUT.as_secs()
+                        ));
+                    }
                     return AgentPoll::Running(log_entries);
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -401,6 +435,8 @@ impl StageExecutionService {
         let mut to_remove = Vec::new();
         // Collect (stage_session_id, entries) outside the lock to write after releasing it.
         let mut log_batches: Vec<(String, Vec<LogEntry>)> = Vec::new();
+        // Collect extracted session IDs to persist outside the lock.
+        let mut session_id_updates: Vec<(String, String, String)> = Vec::new(); // (task_id, stage, session_id)
 
         if let Ok(mut agents) = self.active_agents.lock() {
             for (task_id, agent) in agents.iter_mut() {
@@ -436,6 +472,15 @@ impl StageExecutionService {
                         });
                     }
                 }
+
+                // Check for provider-generated session IDs (e.g. OpenCode's ses_...)
+                if let Some(sid) = agent.take_extracted_session_id() {
+                    session_id_updates.push((
+                        task_id.clone(),
+                        agent.stage().to_string(),
+                        sid,
+                    ));
+                }
             }
 
             for task_id in to_remove {
@@ -446,6 +491,50 @@ impl StageExecutionService {
         // Persist log entries outside the agents lock to avoid holding it during I/O
         for (stage_session_id, entries) in &log_batches {
             self.persist_log_entries(stage_session_id, entries);
+        }
+
+        // Overwrite pre-generated UUIDs with real provider session IDs so that
+        // future resume attempts use the correct value (e.g. OpenCode's ses_...).
+        for (task_id, stage, session_id) in session_id_updates {
+            match self.store.get_stage_session(&task_id, &stage) {
+                Ok(Some(mut session)) => {
+                    session.claude_session_id = Some(session_id.clone());
+                    if let Err(e) = self.store.save_stage_session(&session) {
+                        crate::orkestra_debug!(
+                            "stage_execution",
+                            "Failed to save extracted session ID for {}/{}: {}",
+                            task_id,
+                            stage,
+                            e
+                        );
+                    } else {
+                        crate::orkestra_debug!(
+                            "stage_execution",
+                            "Saved extracted session ID for {}/{}: {}",
+                            task_id,
+                            stage,
+                            session_id
+                        );
+                    }
+                }
+                Ok(None) => {
+                    crate::orkestra_debug!(
+                        "stage_execution",
+                        "No stage session found for {}/{} to save extracted session ID",
+                        task_id,
+                        stage
+                    );
+                }
+                Err(e) => {
+                    crate::orkestra_debug!(
+                        "stage_execution",
+                        "Failed to load stage session for {}/{}: {}",
+                        task_id,
+                        stage,
+                        e
+                    );
+                }
+            }
         }
 
         completed

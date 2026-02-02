@@ -29,4 +29,11 @@ pub trait StreamParser: Send {
 
     /// Signal that the stream has ended. Returns any remaining buffered entries.
     fn finalize(&mut self) -> Vec<LogEntry>;
+
+    /// Return the session ID extracted from the stream, if the provider generates
+    /// its own (e.g. OpenCode's `ses_...` IDs). Returns `None` for providers where
+    /// we set the session ID upfront (e.g. Claude Code).
+    fn extracted_session_id(&self) -> Option<&str> {
+        None
+    }
 }

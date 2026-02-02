@@ -52,11 +52,11 @@ impl ProcessSpawner for OpenCodeProcessSpawner {
         // Non-interactive run mode
         cmd.arg("run");
 
-        // Pass session ID with appropriate flag
-        if let Some(ref sid) = config.session_id {
-            if config.is_resume {
-                cmd.args(["--continue", sid]);
-            } else {
+        // Pass session ID only when resuming.
+        // Unlike Claude Code, OpenCode generates its own session IDs on first run.
+        // The --session flag means "continue this session", not "create with this ID".
+        if config.is_resume {
+            if let Some(ref sid) = config.session_id {
                 cmd.args(["--session", sid]);
             }
         }

@@ -266,6 +266,19 @@ impl AgentRunnerTrait for AgentRunner {
 
         orkestra_debug!("runner", "run_sync: spawned process");
 
+        // Capture stderr in a background thread so we can use it for error messages
+        let stderr_handle = handle.take_stderr().map(|stderr| {
+            thread::spawn(move || {
+                use std::io::BufRead;
+                let reader = std::io::BufReader::new(stderr);
+                let mut lines = Vec::new();
+                for line in reader.lines().map_while(Result::ok) {
+                    lines.push(line);
+                }
+                lines
+            })
+        });
+
         // Write prompt to stdin
         handle
             .write_prompt(&config.prompt)
@@ -274,12 +287,17 @@ impl AgentRunnerTrait for AgentRunner {
         // Read all output, tracking last text entry for fallback parsing
         let mut full_output = String::new();
         let mut last_text: Option<String> = None;
+        let mut line_count: usize = 0;
 
         for line_result in handle.lines() {
             match line_result {
                 Ok(line) => {
                     if line.trim().is_empty() {
                         continue;
+                    }
+                    line_count += 1;
+                    if let Some(error_msg) = extract_stream_error(&line) {
+                        return Err(RunError::ParseFailed(error_msg));
                     }
                     for entry in parser.parse_line(&line) {
                         if let LogEntry::Text { ref content } = entry {
@@ -304,7 +322,16 @@ impl AgentRunnerTrait for AgentRunner {
         // Process completed normally
         handle.disarm();
 
+        // Collect stderr
+        let stderr_lines = collect_stderr(stderr_handle);
+
         orkestra_debug!("runner", "run_sync: output_len={}", full_output.len());
+
+        // If stdout produced nothing, the agent likely crashed. Use stderr for the error.
+        if line_count == 0 {
+            let error_msg = stderr_error_message(&stderr_lines);
+            return Err(RunError::ParseFailed(error_msg));
+        }
 
         // Parse output: tries raw JSONL first (Claude Code), falls back to last
         // text content (OpenCode where structured output is in text events).
@@ -380,6 +407,76 @@ impl AgentRunnerTrait for AgentRunner {
     }
 }
 
+/// Check if a stream JSON line contains an error event from the agent.
+///
+/// Claude Code emits events with an `"error"` field when API calls fail
+/// (e.g. model not found, rate limits). Without detection, the stop hook
+/// retries infinitely. Returns the error message text if found.
+fn extract_stream_error(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+
+    // Only treat events with an explicit "error" field as errors
+    v.get("error")?;
+
+    // Extract the text content from the message for a useful error message
+    let content = v
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|item| item.get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("Unknown agent error");
+
+    Some(content.to_string())
+}
+
+/// Join the stderr reader thread and return collected lines.
+fn collect_stderr(handle: Option<thread::JoinHandle<Vec<String>>>) -> Vec<String> {
+    let Some(handle) = handle else {
+        return Vec::new();
+    };
+    match handle.join() {
+        Ok(lines) => {
+            if !lines.is_empty() {
+                orkestra_debug!("runner", "stderr ({} lines):", lines.len());
+                for line in &lines {
+                    orkestra_debug!("runner", "  stderr: {}", line);
+                }
+            }
+            lines
+        }
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Build an error message from stderr lines when the agent produced no stdout.
+///
+/// Looks for known error patterns (e.g. `Error:`, `throw new`, stack traces)
+/// and returns the most useful line. Falls back to a generic message.
+fn stderr_error_message(stderr_lines: &[String]) -> String {
+    // Look for lines that contain an explicit error message
+    for line in stderr_lines {
+        let trimmed = line.trim();
+        // OpenCode throws named errors like "ProviderModelNotFoundError: ..."
+        if trimmed.contains("Error:") || trimmed.contains("error:") {
+            return format!("Agent process failed: {trimmed}");
+        }
+    }
+    // Fall back to joining all non-empty stderr as context
+    let joined: String = stderr_lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    if joined.is_empty() {
+        "Agent process exited without producing any output".to_string()
+    } else {
+        format!("Agent process failed: {joined}")
+    }
+}
+
 /// Read output from process, parse stream lines, and send events.
 fn read_output_and_send_events(
     mut handle: crate::workflow::ports::ProcessHandle,
@@ -387,8 +484,23 @@ fn read_output_and_send_events(
     schema: Option<&serde_json::Value>,
     mut parser: Box<dyn StreamParser>,
 ) {
+    // Spawn a thread to collect stderr so we can log it on failure
+    let stderr_handle = handle.take_stderr().map(|stderr| {
+        thread::spawn(move || {
+            use std::io::BufRead;
+            let reader = std::io::BufReader::new(stderr);
+            let mut lines = Vec::new();
+            for line in reader.lines().map_while(Result::ok) {
+                lines.push(line);
+            }
+            lines
+        })
+    });
+
     let mut full_output = String::new();
     let mut last_text: Option<String> = None;
+    let mut line_count: usize = 0;
+    let mut log_entry_count: usize = 0;
 
     for line_result in handle.lines() {
         match line_result {
@@ -396,9 +508,30 @@ fn read_output_and_send_events(
                 if line.trim().is_empty() {
                     continue;
                 }
+                line_count += 1;
+
+                // Log raw lines for debugging stream format issues
+                orkestra_debug!("runner", "stdout line {}: {}", line_count, line);
+
+                // Detect error events from the agent (e.g. API 404, rate limits).
+                // These have an "error" field at the top level of the JSON event.
+                // Without this check, Claude Code loops forever retrying via stop hooks.
+                if let Some(error_msg) = extract_stream_error(&line) {
+                    orkestra_debug!("runner", "Agent error detected: {}", error_msg);
+                    let _ = tx.send(RunEvent::Completed(Err(error_msg)));
+                    return;
+                }
 
                 // Parse the line for log entries before accumulating
-                for entry in parser.parse_line(&line) {
+                let entries = parser.parse_line(&line);
+                orkestra_debug!(
+                    "runner",
+                    "  parsed {} log entries from line {}",
+                    entries.len(),
+                    line_count
+                );
+                for entry in entries {
+                    log_entry_count += 1;
                     if let LogEntry::Text { ref content } = entry {
                         last_text = Some(content.clone());
                     }
@@ -440,6 +573,25 @@ fn read_output_and_send_events(
 
     // Process completed normally
     handle.disarm();
+
+    // Collect stderr
+    let stderr_lines = collect_stderr(stderr_handle);
+
+    orkestra_debug!(
+        "runner",
+        "stream ended: {} lines read, {} log entries produced, output_len={}",
+        line_count,
+        log_entry_count,
+        full_output.len()
+    );
+
+    // If stdout produced nothing, the agent likely crashed. Use stderr for the error.
+    if line_count == 0 {
+        let error_msg = stderr_error_message(&stderr_lines);
+        orkestra_debug!("runner", "Zero stdout lines — agent crashed: {}", error_msg);
+        let _ = tx.send(RunEvent::Completed(Err(error_msg)));
+        return;
+    }
 
     // Parse output: tries raw JSONL first (Claude Code), falls back to last
     // text content (OpenCode where structured output is in text events).

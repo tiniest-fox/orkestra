@@ -168,7 +168,7 @@ Agents are spawned via a **provider registry** that supports multiple CLI backen
 - `None` → default provider's default model
 - `"sonnet"` → shorthand, searches all provider alias tables
 - `"claudecode/sonnet"` → explicit provider + alias
-- `"claudecode/claude-sonnet-4-5-20250514"` → explicit provider + raw model ID
+- `"claudecode/claude-sonnet-4-20250514"` → explicit provider + raw model ID
 
 **Provider capabilities** (`ProviderCapabilities`) affect execution: when `supports_json_schema` is false, the JSON schema is embedded in the prompt text instead of passed as a CLI flag.
 

@@ -43,6 +43,10 @@ impl AgentTestEnv {
         // Create .orkestra directory + agent prompt file
         let orkestra_dir = temp_dir.path().join(".orkestra");
         std::fs::create_dir_all(orkestra_dir.join("agents")).unwrap();
+
+        // Initialize debug logging so ORKESTRA_DEBUG=1 works in tests
+        orkestra_core::debug_log::init(&orkestra_dir);
+        println!("Debug log: {}", orkestra_dir.join("debug.log").display());
         std::fs::write(
             orkestra_dir.join("agents/worker.md"),
             "You are a worker agent. Complete the task described below.",
@@ -100,6 +104,20 @@ impl AgentTestEnv {
             api,
             orchestrator,
             _temp_dir: temp_dir,
+        }
+    }
+
+    /// Print the debug log contents to stdout for test diagnostics.
+    fn dump_debug_log(&self) {
+        let log_path = self._temp_dir.path().join(".orkestra/debug.log");
+        if let Ok(contents) = std::fs::read_to_string(&log_path) {
+            println!("\n=== DEBUG LOG ({}) ===", log_path.display());
+            for line in contents.lines() {
+                println!("{line}");
+            }
+            println!("=== END DEBUG LOG ===\n");
+        } else {
+            println!("No debug log found at {}", log_path.display());
         }
     }
 
@@ -176,10 +194,59 @@ impl AgentTestEnv {
             }
 
             if start.elapsed() > timeout {
+                self.dump_debug_log();
                 panic!(
                     "Timed out after {:.0}s waiting for task completion (phase={:?})",
                     timeout.as_secs_f64(),
                     t.phase
+                );
+            }
+        }
+    }
+
+    /// Tick the orchestrator until the task reaches `Failed` status.
+    ///
+    /// Returns the failure reason. Panics on timeout or if the task succeeds unexpectedly.
+    pub fn run_to_failure(&self, task_id: &str, timeout: Duration) -> String {
+        println!("Starting orchestrator ticks (expecting failure)...");
+        let start = Instant::now();
+
+        loop {
+            self.orchestrator.tick().expect("tick should succeed");
+            std::thread::sleep(Duration::from_millis(200));
+
+            let t = self
+                .api
+                .lock()
+                .unwrap()
+                .get_task(task_id)
+                .expect("get task");
+            println!(
+                "  [{:.1}s] phase={:?} stage={:?} status={:?}",
+                start.elapsed().as_secs_f64(),
+                t.phase,
+                t.current_stage(),
+                t.status
+            );
+
+            if let orkestra_core::workflow::runtime::Status::Failed { error } = &t.status {
+                let msg = error.clone().unwrap_or_else(|| "unknown failure".to_string());
+                println!("Task failed as expected: {msg}");
+                return msg;
+            }
+
+            if t.phase == Phase::AwaitingReview {
+                self.dump_debug_log();
+                panic!("Task succeeded unexpectedly — expected failure");
+            }
+
+            if start.elapsed() > timeout {
+                self.dump_debug_log();
+                panic!(
+                    "Timed out after {:.0}s waiting for task failure (phase={:?}, status={:?})",
+                    timeout.as_secs_f64(),
+                    t.phase,
+                    t.status
                 );
             }
         }

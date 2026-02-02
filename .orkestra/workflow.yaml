@@ -23,7 +23,7 @@ stages:
     capabilities:
       subtasks:
         flow: hotfix
-        completion_stage: review
+        completion_stage: check
 
   # Work: Implements the approved plan
   - name: work

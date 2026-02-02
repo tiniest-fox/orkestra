@@ -45,10 +45,6 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
     thread::spawn(move || {
         let startup_result = run_startup();
 
-        // Update the startup state with the result
-        let startup_state: tauri::State<StartupState> = app_handle.state();
-        startup_state.set_status(startup_result.status.clone());
-
         // Register debug log hook to emit events to the frontend
         let debug_handle = app_handle.clone();
         orkestra_core::debug_log::set_hook(move |component, message| {
@@ -58,7 +54,10 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
         // Request notification permission (triggers OS dialog if not yet determined)
         request_notification_permission(&app_handle);
 
-        // If startup succeeded, register AppState and start orchestrator
+        // If startup succeeded, register AppState and start orchestrator.
+        // AppState MUST be registered before setting status to Ready,
+        // because the frontend calls commands requiring State<AppState>
+        // as soon as it sees the Ready status.
         if let Some(app_state) = startup_result.app_state {
             // Clean up orphaned agents from previous crash
             cleanup_orphaned_agents(&app_state);
@@ -71,6 +70,11 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
                 start_workflow_orchestrator(app_handle.clone(), &app_state, stop_flag);
             }
         }
+
+        // Update the startup state with the result — this unblocks the frontend.
+        // Must happen AFTER AppState is registered so commands are ready to serve.
+        let startup_state: tauri::State<StartupState> = app_handle.state();
+        startup_state.set_status(startup_result.status.clone());
     });
 }
 

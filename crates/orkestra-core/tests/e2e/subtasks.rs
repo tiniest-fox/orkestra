@@ -885,21 +885,40 @@ fn test_subtask_integration_conflict() {
     )
     .expect("Should write to B's worktree");
 
-    // Complete both subtasks in parallel → Done
-    complete_subtasks(&env, &[&id_a, &id_b]);
+    // Drive both subtasks through work → approve → review.
+    // Don't use complete_subtasks() because with instant integration, the conflicting
+    // subtask may already be back in Active/"work" by the time assertions run.
+    for id in [&id_a, &id_b] {
+        env.set_output(
+            id,
+            MockAgentOutput::Artifact {
+                name: "summary".into(),
+                content: format!("Work done for {id}"),
+            },
+        );
+    }
+    env.tick_until_settled();
+
+    for id in [&id_a, &id_b] {
+        let task = env.api().get_task(id).unwrap();
+        assert_eq!(task.phase, Phase::AwaitingReview, "Subtask {id} should be AwaitingReview");
+        env.api().approve(id).expect("Should approve work stage");
+    }
+
+    for id in [&id_a, &id_b] {
+        env.set_output(
+            id,
+            MockAgentOutput::Artifact {
+                name: "verdict".into(),
+                content: "Looks good".into(),
+            },
+        );
+    }
+    env.tick_until_settled();
 
     // Integration order is nondeterministic — one will merge cleanly, the other
     // will conflict. Wait for whichever merges first.
     let (_merged_id, conflict_id) = wait_for_one_archived(&env, &id_a, &id_b);
-
-    // The conflicting subtask should be sent to the recovery stage.
-    // Tick until it leaves Done (integration attempt + failure + recovery).
-    let conflict_id_owned = conflict_id.to_string();
-    env.tick_until(
-        || !env.api().get_task(&conflict_id_owned).unwrap().is_done(),
-        Duration::from_secs(5),
-        &format!("Conflicting subtask {conflict_id} should leave Done after integration failure"),
-    );
 
     let conflict_task = env.api().get_task(conflict_id).unwrap();
     // Should be back in the work stage (recovery from integration failure)

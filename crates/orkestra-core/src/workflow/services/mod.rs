@@ -38,6 +38,7 @@ mod integration;
 mod iteration_service;
 mod log_service;
 mod orchestrator;
+mod periodic;
 mod prompt_service;
 mod queries;
 mod script_execution;

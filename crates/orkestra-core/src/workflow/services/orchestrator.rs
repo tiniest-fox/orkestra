@@ -14,6 +14,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use super::periodic::PeriodicScheduler;
+
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::execution::StageOutput;
@@ -120,10 +122,8 @@ pub struct OrchestratorLoop {
     api: Arc<Mutex<WorkflowApi>>,
     /// Unified stage execution service.
     stage_executor: Arc<StageExecutionService>,
-    /// Task IDs that were Done at the START of the previous tick.
-    /// Only these tasks are eligible for integration, implementing a one-tick delay.
-    /// This prevents integrating a task in the same tick where it became Done.
-    ready_for_integration: Mutex<HashSet<String>>,
+    /// Periodic scheduler for tick phases.
+    scheduler: Mutex<PeriodicScheduler>,
     /// Task IDs that have a pending `spawn_setup` in a background thread.
     /// Prevents double-spawning when the orchestrator ticks faster than setup completes.
     pending_setups: Mutex<HashSet<String>>,
@@ -133,10 +133,22 @@ pub struct OrchestratorLoop {
 impl OrchestratorLoop {
     /// Create a new orchestrator loop.
     pub fn new(api: Arc<Mutex<WorkflowApi>>, stage_executor: Arc<StageExecutionService>) -> Self {
+        let mut scheduler = PeriodicScheduler::new();
+
+        // Core orchestration — runs every tick
+        scheduler.register("setup_ready_subtasks", Duration::ZERO);
+        scheduler.register("check_parent_completions", Duration::ZERO);
+        scheduler.register("process_completed_executions", Duration::ZERO);
+        scheduler.register("start_new_executions", Duration::ZERO);
+        scheduler.register("start_integrations", Duration::ZERO);
+
+        // Maintenance — runs periodically
+        scheduler.register("cleanup_worktrees", Duration::from_secs(60));
+
         Self {
             api,
             stage_executor,
-            ready_for_integration: Mutex::new(HashSet::new()),
+            scheduler: Mutex::new(scheduler),
             pending_setups: Mutex::new(HashSet::new()),
             stop_flag: Arc::new(AtomicBool::new(false)),
         }
@@ -233,38 +245,29 @@ impl OrchestratorLoop {
     }
 
     /// Run a single tick of the orchestration loop.
+    ///
+    /// Dispatches to phase methods based on which scheduled tasks are due.
+    /// Registration order in the constructor defines execution order.
     pub fn tick(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
-        let mut events = Vec::new();
-
-        // Phase 0: Set up subtasks whose dependencies are satisfied
-        self.setup_ready_subtasks()?;
-
-        // Phase 1: Check if WaitingOnChildren parents can advance (all subtasks merged)
-        events.extend(self.check_parent_completions()?);
-
-        // Phase 2: Process completed executions (agents and scripts)
-        events.extend(self.process_completed_executions()?);
-
-        // Phase 3: Start new executions for tasks needing agents or scripts
-        events.extend(self.start_new_executions()?);
-
-        // Phase 4: Start integrations for Done tasks and subtasks (one-tick delay)
-        events.extend(self.start_integrations()?);
-
-        // Snapshot Done tasks AFTER processing.
-        // Tasks that became Done this tick will be eligible for integration
-        // on the NEXT tick (one-tick delay).
-        let current_done_tasks: HashSet<String> = {
-            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-            api.get_tasks_needing_integration()?
-                .into_iter()
-                .map(|t| t.id)
-                .collect()
+        let due = {
+            let mut scheduler = self.scheduler.lock().map_err(|_| WorkflowError::Lock)?;
+            scheduler.poll_due()
         };
 
-        // Update ready_for_integration for next tick
-        if let Ok(mut ready) = self.ready_for_integration.lock() {
-            *ready = current_done_tasks;
+        let mut events = Vec::new();
+
+        for name in due {
+            match name {
+                "setup_ready_subtasks" => self.setup_ready_subtasks()?,
+                "check_parent_completions" => events.extend(self.check_parent_completions()?),
+                "process_completed_executions" => {
+                    events.extend(self.process_completed_executions()?)
+                }
+                "start_new_executions" => events.extend(self.start_new_executions()?),
+                "start_integrations" => events.extend(self.start_integrations()?),
+                "cleanup_worktrees" => self.cleanup_orphaned_worktrees(),
+                _ => orkestra_debug!("orchestrator", "Unknown scheduled task: {name}"),
+            }
         }
 
         Ok(events)
@@ -541,31 +544,15 @@ impl OrchestratorLoop {
     /// Only processes one task per tick to avoid concurrent merge issues.
     /// Integration is synchronous but fast (~100ms for git merge).
     ///
-    /// Uses a one-tick delay: only tasks that were Done at the END of the
-    /// PREVIOUS tick are eligible. This prevents integrating a task in the
-    /// same tick where it became Done.
+    /// The `mark_integrating()` call requires `Phase::Idle`, which prevents
+    /// double-integration without needing an explicit snapshot/delay mechanism.
     fn start_integrations(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
-
-        // Get tasks eligible for integration (were Done at end of previous tick)
-        let ready = self
-            .ready_for_integration
-            .lock()
-            .map_err(|_| WorkflowError::Lock)?;
-        if ready.is_empty() {
-            return Ok(events);
-        }
 
         // Hold API lock for entire operation to ensure consistent state
         let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
 
-        // Get current Done tasks and filter to those that were ready last tick
-        let tasks: Vec<_> = api
-            .get_tasks_needing_integration()?
-            .into_iter()
-            .filter(|t| ready.contains(&t.id))
-            .collect();
-        drop(ready); // Release ready lock, keep API lock
+        let tasks = api.get_tasks_needing_integration()?;
 
         // Only integrate one task per tick to avoid concurrent merge issues
         let Some(task) = tasks.first() else {
@@ -575,7 +562,7 @@ impl OrchestratorLoop {
         let task_id = task.id.clone();
         let branch = task.branch_name.clone().unwrap_or_default();
 
-        // Mark as integrating (prevents double-processing)
+        // Mark as integrating (requires Phase::Idle, prevents double-processing)
         if let Err(e) = api.mark_integrating(&task_id) {
             return Ok(vec![OrchestratorEvent::Error {
                 task_id: Some(task_id),

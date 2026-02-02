@@ -635,21 +635,44 @@ impl GitService for Git2GitService {
     }
 
     fn list_worktree_names(&self) -> Result<Vec<String>, GitError> {
-        if !self.worktrees_dir.exists() {
-            return Ok(Vec::new());
-        }
-
-        let entries = std::fs::read_dir(&self.worktrees_dir)
-            .map_err(|e| GitError::IoError(format!("Failed to read worktrees dir: {e}")))?;
-
         let mut names = Vec::new();
-        for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                if let Some(name) = entry.file_name().to_str() {
-                    names.push(name.to_string());
+
+        // Collect worktree directories on disk
+        if self.worktrees_dir.exists() {
+            let entries = std::fs::read_dir(&self.worktrees_dir)
+                .map_err(|e| GitError::IoError(format!("Failed to read worktrees dir: {e}")))?;
+
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    if let Some(name) = entry.file_name().to_str() {
+                        names.push(name.to_string());
+                    }
                 }
             }
         }
+
+        // Also collect worktrees registered in git whose path is under our
+        // worktrees_dir. This catches stale/prunable entries where the directory
+        // was deleted but git metadata in .git/worktrees/ remains.
+        if let Ok(repo) = self.repo.lock() {
+            if let Ok(git_worktree_names) = repo.worktrees() {
+                for i in 0..git_worktree_names.len() {
+                    let Some(wt_name) = git_worktree_names.get(i) else {
+                        continue;
+                    };
+                    if names.iter().any(|n| n == wt_name) {
+                        continue; // Already found on disk
+                    }
+                    // Only include if this worktree belongs to us (path under worktrees_dir)
+                    if let Ok(worktree) = repo.find_worktree(wt_name) {
+                        if worktree.path().starts_with(&self.worktrees_dir) {
+                            names.push(wt_name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(names)
     }
 

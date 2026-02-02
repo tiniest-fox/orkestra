@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-use crate::workflow::domain::{Iteration, StageSession, Task};
+use crate::workflow::domain::{Iteration, LogEntry, StageSession, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 
 /// In-memory implementation of `WorkflowStore` for testing.
@@ -15,6 +15,7 @@ pub struct InMemoryWorkflowStore {
     tasks: Mutex<HashMap<String, Task>>,
     iterations: Mutex<Vec<Iteration>>,
     stage_sessions: Mutex<Vec<StageSession>>,
+    log_entries: Mutex<Vec<(String, i32, LogEntry)>>,
     next_id: AtomicU32,
 }
 
@@ -25,6 +26,7 @@ impl InMemoryWorkflowStore {
             tasks: Mutex::new(HashMap::new()),
             iterations: Mutex::new(Vec::new()),
             stage_sessions: Mutex::new(Vec::new()),
+            log_entries: Mutex::new(Vec::new()),
             next_id: AtomicU32::new(1),
         }
     }
@@ -253,6 +255,47 @@ impl WorkflowStore for InMemoryWorkflowStore {
             .lock()
             .map_err(|_| WorkflowError::Lock)?;
         sessions.retain(|s| s.task_id != task_id);
+        Ok(())
+    }
+
+    fn append_log_entry(&self, stage_session_id: &str, entry: &LogEntry) -> WorkflowResult<()> {
+        let mut entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
+        let next_seq = entries
+            .iter()
+            .filter(|(sid, _, _)| sid == stage_session_id)
+            .map(|(_, seq, _)| *seq)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        entries.push((stage_session_id.to_string(), next_seq, entry.clone()));
+        Ok(())
+    }
+
+    fn get_log_entries(&self, stage_session_id: &str) -> WorkflowResult<Vec<LogEntry>> {
+        let entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = entries
+            .iter()
+            .filter(|(sid, _, _)| sid == stage_session_id)
+            .cloned()
+            .collect();
+        result.sort_by_key(|(_, seq, _)| *seq);
+        Ok(result.into_iter().map(|(_, _, entry)| entry).collect())
+    }
+
+    fn delete_log_entries_for_task(&self, task_id: &str) -> WorkflowResult<()> {
+        let sessions = self
+            .stage_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        let session_ids: Vec<String> = sessions
+            .iter()
+            .filter(|s| s.task_id == task_id)
+            .map(|s| s.id.clone())
+            .collect();
+        drop(sessions);
+
+        let mut entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
+        entries.retain(|(sid, _, _)| !session_ids.contains(sid));
         Ok(())
     }
 }

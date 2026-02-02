@@ -9,7 +9,7 @@ use petname::Generator;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{Iteration, SessionState, StageSession, Task};
+use crate::workflow::domain::{Iteration, LogEntry, SessionState, StageSession, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
 
@@ -536,6 +536,66 @@ impl WorkflowStore for SqliteWorkflowStore {
         Ok(())
     }
 
+    fn append_log_entry(&self, stage_session_id: &str, entry: &LogEntry) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+
+        let content_json =
+            serde_json::to_string(entry).map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        conn.execute(
+            "INSERT INTO log_entries (id, stage_session_id, sequence_number, content, created_at)
+             VALUES (?, ?, (SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM log_entries WHERE stage_session_id = ?), ?, datetime('now'))",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                stage_session_id,
+                stage_session_id,
+                content_json,
+            ],
+        )
+        .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn get_log_entries(&self, stage_session_id: &str) -> WorkflowResult<Vec<LogEntry>> {
+        let conn = self.lock_conn()?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT content FROM log_entries
+                 WHERE stage_session_id = ?
+                 ORDER BY sequence_number",
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![stage_session_id], |row| {
+                let content_json: String = row.get(0)?;
+                Ok(content_json)
+            })
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            let json = row.map_err(|e| WorkflowError::Storage(e.to_string()))?;
+            let entry: LogEntry =
+                serde_json::from_str(&json).map_err(|e| WorkflowError::Storage(e.to_string()))?;
+            entries.push(entry);
+        }
+
+        Ok(entries)
+    }
+
+    fn delete_log_entries_for_task(&self, task_id: &str) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        conn.execute(
+            "DELETE FROM log_entries WHERE stage_session_id IN (SELECT id FROM workflow_stage_sessions WHERE task_id = ?)",
+            params![task_id],
+        )
+        .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
     fn delete_task_tree(&self, task_ids: &[String]) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
         // unchecked_transaction takes &self (not &mut self), which is safe here
@@ -543,8 +603,15 @@ impl WorkflowStore for SqliteWorkflowStore {
         let tx = conn
             .unchecked_transaction()
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
-        // Delete in FK-safe order: iterations reference sessions, sessions
-        // reference tasks, and child tasks reference parent tasks.
+        // Delete in FK-safe order: log_entries reference sessions, iterations
+        // reference sessions, sessions reference tasks, and child tasks reference parent tasks.
+        for id in task_ids {
+            tx.execute(
+                "DELETE FROM log_entries WHERE stage_session_id IN (SELECT id FROM workflow_stage_sessions WHERE task_id = ?)",
+                params![id],
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        }
         for id in task_ids {
             tx.execute(
                 "DELETE FROM workflow_iterations WHERE task_id = ?",

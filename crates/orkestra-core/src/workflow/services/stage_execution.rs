@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{IterationTrigger, Task};
+use crate::workflow::domain::{IterationTrigger, LogEntry, Task};
 use crate::workflow::execution::{AgentRunner, AgentRunnerTrait, ProviderRegistry, StageOutput};
 use crate::workflow::ports::WorkflowStore;
 
@@ -28,10 +28,10 @@ use super::IterationService;
 
 /// Result of polling an agent execution for completion.
 enum AgentPoll {
-    /// Agent is still running.
-    Running,
-    /// Agent completed.
-    Completed(Result<StageOutput, String>),
+    /// Agent is still running (possibly with log entries collected this poll).
+    Running(Vec<LogEntry>),
+    /// Agent completed (possibly with log entries collected before completion).
+    Completed(Result<StageOutput, String>, Vec<LogEntry>),
     /// Error polling.
     Error(String),
 }
@@ -43,11 +43,16 @@ enum AgentPoll {
 /// Internal wrapper for tracking an active agent execution.
 struct ActiveAgent {
     handle: ExecutionHandle,
+    /// Stage session ID for persisting log entries to the database.
+    stage_session_id: String,
 }
 
 impl ActiveAgent {
-    fn new(handle: ExecutionHandle) -> Self {
-        Self { handle }
+    fn new(handle: ExecutionHandle, stage_session_id: String) -> Self {
+        Self {
+            handle,
+            stage_session_id,
+        }
     }
 
     #[allow(dead_code)]
@@ -62,11 +67,24 @@ impl ActiveAgent {
     fn poll(&mut self) -> AgentPoll {
         use crate::workflow::execution::RunEvent;
 
-        match self.handle.events.try_recv() {
-            Ok(RunEvent::Completed(result)) => AgentPoll::Completed(result),
-            Err(std::sync::mpsc::TryRecvError::Empty) => AgentPoll::Running,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                AgentPoll::Error("Agent event channel disconnected unexpectedly".to_string())
+        let mut log_entries = Vec::new();
+
+        loop {
+            match self.handle.events.try_recv() {
+                Ok(RunEvent::LogLine(entry)) => {
+                    log_entries.push(entry);
+                }
+                Ok(RunEvent::Completed(result)) => {
+                    return AgentPoll::Completed(result, log_entries);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    return AgentPoll::Running(log_entries);
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    return AgentPoll::Error(
+                        "Agent event channel disconnected unexpectedly".to_string(),
+                    );
+                }
             }
         }
     }
@@ -94,6 +112,8 @@ pub struct StageExecutionService {
     agent_service: Arc<AgentExecutionService>,
     /// Script execution service (for spawning scripts).
     script_service: Arc<ScriptExecutionService>,
+    /// Store for persisting log entries.
+    store: Arc<dyn WorkflowStore>,
     /// Active agent executions keyed by task ID.
     /// (Script executions are tracked by `ScriptExecutionService`)
     active_agents: Mutex<HashMap<String, ActiveAgent>>,
@@ -126,12 +146,17 @@ impl StageExecutionService {
             registry,
         ));
 
-        let script_service = Arc::new(ScriptExecutionService::new(workflow, project_root));
+        let script_service = Arc::new(ScriptExecutionService::new(
+            workflow,
+            project_root,
+            Arc::clone(&store),
+        ));
 
         Self {
             session_service,
             agent_service,
             script_service,
+            store,
             active_agents: Mutex::new(HashMap::new()),
         }
     }
@@ -301,7 +326,10 @@ impl StageExecutionService {
             .map_err(|e| SpawnError::AgentError(e.to_string()))?;
 
         let pid = handle.pid;
-        let agent = ActiveAgent::new(handle);
+        // Cache stage_session_id to avoid repeated lookups during polling.
+        // Format matches session_service.rs: "{task_id}-{stage}"
+        let stage_session_id = format!("{}-{}", task.id, stage);
+        let agent = ActiveAgent::new(handle, stage_session_id);
 
         self.active_agents
             .lock()
@@ -351,18 +379,41 @@ impl StageExecutionService {
         completed
     }
 
+    /// Persist collected log entries to the database.
+    ///
+    /// Non-fatal: if a write fails, logs the error and continues.
+    fn persist_log_entries(&self, stage_session_id: &str, entries: &[LogEntry]) {
+        for entry in entries {
+            if let Err(e) = self.store.append_log_entry(stage_session_id, entry) {
+                crate::orkestra_debug!(
+                    "stage_execution",
+                    "Failed to persist log entry for session {}: {}",
+                    stage_session_id,
+                    e
+                );
+            }
+        }
+    }
+
     /// Poll active agent executions.
     fn poll_agents(&self) -> Vec<ExecutionComplete> {
         let mut completed = Vec::new();
         let mut to_remove = Vec::new();
+        // Collect (stage_session_id, entries) outside the lock to write after releasing it.
+        let mut log_batches: Vec<(String, Vec<LogEntry>)> = Vec::new();
 
         if let Ok(mut agents) = self.active_agents.lock() {
             for (task_id, agent) in agents.iter_mut() {
                 match agent.poll() {
-                    AgentPoll::Running => {
-                        // Still running
+                    AgentPoll::Running(log_entries) => {
+                        if !log_entries.is_empty() {
+                            log_batches.push((agent.stage_session_id.clone(), log_entries));
+                        }
                     }
-                    AgentPoll::Completed(result) => {
+                    AgentPoll::Completed(result, log_entries) => {
+                        if !log_entries.is_empty() {
+                            log_batches.push((agent.stage_session_id.clone(), log_entries));
+                        }
                         to_remove.push(task_id.clone());
                         let exec_result = match result {
                             Ok(output) => ExecutionResult::AgentSuccess(output),
@@ -390,6 +441,11 @@ impl StageExecutionService {
             for task_id in to_remove {
                 agents.remove(&task_id);
             }
+        }
+
+        // Persist log entries outside the agents lock to avoid holding it during I/O
+        for (stage_session_id, entries) in &log_batches {
+            self.persist_log_entries(stage_session_id, entries);
         }
 
         completed

@@ -20,7 +20,11 @@ use crate::orkestra_debug;
 
 use super::output::StageOutput;
 use super::parser::parse_agent_output;
+use crate::workflow::domain::LogEntry;
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessSpawner};
+use crate::workflow::services::stream_parser::{
+    ClaudeStreamParser, OpenCodeStreamParser, StreamParser,
+};
 
 use super::provider_registry::ProviderRegistry;
 
@@ -112,6 +116,8 @@ pub struct RunResult {
 /// Events emitted during async agent execution.
 #[derive(Debug, Clone)]
 pub enum RunEvent {
+    /// A parsed log entry from the agent's stdout stream.
+    LogLine(LogEntry),
     /// Agent completed with parsed output.
     Completed(Result<StageOutput, String>),
 }
@@ -310,6 +316,12 @@ impl AgentRunnerTrait for AgentRunner {
             .resolve(config.model.as_deref())
             .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
+        // Create the appropriate stream parser based on provider
+        let parser: Box<dyn StreamParser> = match resolved.provider_name.as_str() {
+            "opencode" => Box::new(OpenCodeStreamParser::new()),
+            _ => Box::new(ClaudeStreamParser::new()),
+        };
+
         // Build process config with resolved model ID
         let process_config = ProcessConfig {
             session_id: config.session_id.clone(),
@@ -339,20 +351,21 @@ impl AgentRunnerTrait for AgentRunner {
         // Parse the schema for validation
         let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
-        // Spawn background thread to read output
+        // Spawn background thread to read output and emit log events
         thread::spawn(move || {
-            read_output_and_send_events(handle, &tx, schema.as_ref());
+            read_output_and_send_events(handle, &tx, schema.as_ref(), parser);
         });
 
         Ok((pid, rx))
     }
 }
 
-/// Read output from process and send events.
+/// Read output from process, parse stream lines, and send events.
 fn read_output_and_send_events(
     mut handle: crate::workflow::ports::ProcessHandle,
     tx: &Sender<RunEvent>,
     schema: Option<&serde_json::Value>,
+    mut parser: Box<dyn StreamParser>,
 ) {
     let mut full_output = String::new();
 
@@ -362,6 +375,15 @@ fn read_output_and_send_events(
                 if line.trim().is_empty() {
                     continue;
                 }
+
+                // Parse the line for log entries before accumulating
+                for entry in parser.parse_line(&line) {
+                    if tx.send(RunEvent::LogLine(entry)).is_err() {
+                        orkestra_debug!("runner", "Channel closed while sending LogLine");
+                        return;
+                    }
+                }
+
                 full_output.push_str(&line);
                 full_output.push('\n');
             }
@@ -378,6 +400,14 @@ fn read_output_and_send_events(
                 }
                 return; // Exit - don't try to parse partial output
             }
+        }
+    }
+
+    // Finalize the parser to flush any buffered entries
+    for entry in parser.finalize() {
+        if tx.send(RunEvent::LogLine(entry)).is_err() {
+            orkestra_debug!("runner", "Channel closed while sending finalized LogLine");
+            return;
         }
     }
 

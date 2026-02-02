@@ -17,6 +17,8 @@ How a task goes from "needs work" to "output processed" — the path through the
 | `workflow/execution/output.rs` | `StageOutput` enum: the parsed agent response types |
 | `workflow/execution/runner.rs` | `AgentRunner`: resolves provider via registry, spawns agent process, returns event channel |
 | `workflow/execution/provider_registry.rs` | `ProviderRegistry`: maps model specs to `ProcessSpawner` implementations with capabilities |
+| `workflow/services/stream_parser.rs` | `StreamParser` trait + provider-specific parsers: converts stdout lines into `LogEntry` values |
+| `workflow/services/log_service.rs` | Thin DB wrapper for log entry queries |
 | `workflow/config/stage.rs` | `StageCapabilities`: flags that control schema composition and output types |
 | `prompts/mod.rs` | `generate_stage_schema()`: composes JSON schema from component files based on capabilities |
 | `prompts/schemas/components/*.json` | Reusable schema fragments (artifact, questions, subtasks, approval, terminal) |
@@ -31,9 +33,9 @@ All paths relative to `crates/orkestra-core/src/`.
 
 3. **AgentExecutionService builds prompt and spawns** — `agent_execution.rs::execute_stage()` generates the JSON schema from `StageCapabilities` (via `prompts/mod.rs`), builds the prompt (full on first spawn, short resume prompt on subsequent spawns), and spawns the agent via `AgentRunner`. The runner resolves the stage's `model` spec through `ProviderRegistry` to select a provider and model. If the provider lacks `supports_json_schema` (e.g., OpenCode), the schema is embedded in the prompt text instead of passed as a CLI flag.
 
-4. **Agent runs and produces JSON output** — The agent CLI executes with provider-appropriate flags (Claude Code uses `--json-schema`; OpenCode uses `--format json` with schema in prompt). Output is one of: `Artifact`, `Questions`, `Subtasks`, `Approval`, `Failed`, `Blocked`.
+4. **Agent runs and produces JSON output** — The agent CLI executes with provider-appropriate flags (Claude Code uses `--json-schema`; OpenCode uses `--format json` with schema in prompt). Output is one of: `Artifact`, `Questions`, `Subtasks`, `Approval`, `Failed`, `Blocked`. During execution, stdout lines are parsed in real-time by a `StreamParser` (provider-specific: `ClaudeStreamParser` or `OpenCodeStreamParser`) into `LogEntry` values and emitted as `RunEvent::LogLine` events from `runner.rs`.
 
-5. **Orchestrator polls completion** — `orchestrator.rs::process_completed_executions()` non-blocking polls all active agents/scripts, dispatches results to `api.process_agent_output()` or `api.process_script_success/failure()`.
+5. **Orchestrator polls completion and drains logs** — `orchestrator.rs::process_completed_executions()` non-blocking polls all active agents/scripts. `stage_execution.rs::poll()` drains buffered `LogLine` events and persists them to the database via `WorkflowStore::append_log_entry()`. Dispatches results to `api.process_agent_output()` or `api.process_script_success/failure()`.
 
 6. **Output processing** — `agent_actions.rs::process_agent_output()` dispatches by output type: stores artifacts, records questions, stores subtask JSON, processes approval decisions, or marks task failed/blocked. Sets phase to `AwaitingReview` or auto-advances to next stage.
 

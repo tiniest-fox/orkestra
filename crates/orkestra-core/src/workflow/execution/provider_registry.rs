@@ -53,11 +53,14 @@ pub struct ResolvedProvider {
     pub model_id: Option<String>,
     /// The provider's capabilities.
     pub capabilities: ProviderCapabilities,
+    /// The name of the resolved provider (e.g., "claudecode", "opencode").
+    pub provider_name: String,
 }
 
 impl std::fmt::Debug for ResolvedProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ResolvedProvider")
+            .field("provider_name", &self.provider_name)
             .field("model_id", &self.model_id)
             .field("capabilities", &self.capabilities)
             .finish_non_exhaustive()
@@ -175,6 +178,7 @@ impl ProviderRegistry {
             spawner: Arc::clone(&provider.spawner),
             model_id: None,
             capabilities: provider.capabilities.clone(),
+            provider_name: self.default_provider.clone(),
         })
     }
 
@@ -210,6 +214,7 @@ impl ProviderRegistry {
             spawner: Arc::clone(&provider.spawner),
             model_id: Some(model_id),
             capabilities: provider.capabilities.clone(),
+            provider_name: provider_name.to_string(),
         })
     }
 
@@ -222,6 +227,7 @@ impl ProviderRegistry {
                     spawner: Arc::clone(&provider.spawner),
                     model_id: Some(resolved.clone()),
                     capabilities: provider.capabilities.clone(),
+                    provider_name: provider_name.clone(),
                 });
             }
             // Also check if the alias matches a provider name itself
@@ -231,6 +237,7 @@ impl ProviderRegistry {
                     spawner: Arc::clone(&provider.spawner),
                     model_id: None,
                     capabilities: provider.capabilities.clone(),
+                    provider_name: provider_name.clone(),
                 });
             }
         }
@@ -245,6 +252,7 @@ impl ProviderRegistry {
             spawner: Arc::clone(&provider.spawner),
             model_id: Some(alias.to_string()),
             capabilities: provider.capabilities.clone(),
+            provider_name: self.default_provider.clone(),
         })
     }
 }

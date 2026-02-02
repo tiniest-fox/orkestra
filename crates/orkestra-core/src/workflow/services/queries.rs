@@ -1,7 +1,6 @@
 //! Read-only query operations.
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use crate::workflow::domain::task_view::{DerivedTaskState, TaskView};
 use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession, Task};
@@ -344,35 +343,28 @@ impl WorkflowApi {
 
     /// Get stages that have logs for a task.
     ///
-    /// Returns the names of stages that have logs available:
-    /// - Agent stages with a Claude session ID
-    /// - Script stages with a log file in `.orkestra/script_logs/`
-    pub fn get_stages_with_logs(
-        &self,
-        task_id: &str,
-        project_root: &Path,
-    ) -> WorkflowResult<Vec<String>> {
+    /// Returns the names of stages that have log entries in the database.
+    pub fn get_stages_with_logs(&self, task_id: &str) -> WorkflowResult<Vec<String>> {
         let sessions = self.store.get_stage_sessions(task_id)?;
-        let log_service = LogService::new(self.workflow.clone(), project_root.to_path_buf());
+        let log_service = LogService::new(self.store.clone());
 
-        Ok(sessions
-            .into_iter()
-            .filter(|s| {
-                log_service.stage_has_logs(task_id, &s.stage, s.claude_session_id.as_deref())
-            })
-            .map(|s| s.stage)
-            .collect())
+        let mut stages = Vec::new();
+        for session in sessions {
+            if log_service.has_logs(&session.id)? {
+                stages.push(session.stage);
+            }
+        }
+        Ok(stages)
     }
 
-    /// Get session logs for a task.
+    /// Get log entries for a task's stage.
     ///
-    /// Retrieves parsed log entries from the Claude Code session file associated with
-    /// the task's current (or specified) stage session.
+    /// Reads log entries from the database for the task's current (or specified)
+    /// stage session.
     ///
     /// # Arguments
     /// * `task_id` - The task ID
     /// * `stage` - Optional stage name. If None, uses the task's current stage.
-    /// * `project_root` - The project root directory (fallback if no worktree)
     ///
     /// # Returns
     /// Vec of `LogEntry` representing the session activity (tool uses, text output, etc.)
@@ -380,7 +372,6 @@ impl WorkflowApi {
         &self,
         task_id: &str,
         stage: Option<&str>,
-        project_root: &Path,
     ) -> WorkflowResult<Vec<LogEntry>> {
         let task = self.get_task(task_id)?;
 
@@ -393,15 +384,14 @@ impl WorkflowApi {
             },
         };
 
-        // Get the Claude session ID if this is an agent stage
-        let claude_session_id = self
-            .store
-            .get_stage_session(task_id, &stage_name)?
-            .and_then(|s| s.claude_session_id);
+        // Look up the stage session to get its ID
+        let Some(session) = self.store.get_stage_session(task_id, &stage_name)? else {
+            return Ok(vec![]);
+        };
 
-        // Use LogService for unified log reading
-        let log_service = LogService::new(self.workflow.clone(), project_root.to_path_buf());
-        Ok(log_service.get_logs(&task, &stage_name, claude_session_id.as_deref()))
+        // Read log entries from the database
+        let log_service = LogService::new(self.store.clone());
+        log_service.get_logs(&session.id)
     }
 }
 

@@ -7,17 +7,14 @@
 //! - Generating log entries
 
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::workflow::config::{ScriptStageConfig, StageConfig, WorkflowConfig};
 use crate::workflow::domain::{LogEntry, Task};
 use crate::workflow::execution::{ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult};
-
-use super::log_service::LogService;
+use crate::workflow::ports::WorkflowStore;
 
 // ============================================================================
 // Script Execution Handle
@@ -37,8 +34,8 @@ pub struct ActiveScript {
     pub handle: ScriptHandle,
     /// Recovery stage to go to on failure (if configured).
     pub recovery_stage: Option<String>,
-    /// Path to the log file for this script.
-    pub log_path: PathBuf,
+    /// Stage session ID for persisting log entries to the database.
+    pub stage_session_id: String,
 }
 
 /// Result of polling an active script.
@@ -76,16 +73,23 @@ pub struct ScriptExecutionService {
     workflow: WorkflowConfig,
     /// Project root for resolving paths.
     project_root: PathBuf,
+    /// Store for persisting log entries.
+    store: Arc<dyn WorkflowStore>,
     /// Active script executions keyed by task ID.
     active_scripts: Mutex<HashMap<String, ActiveScript>>,
 }
 
 impl ScriptExecutionService {
     /// Create a new script execution service.
-    pub fn new(workflow: WorkflowConfig, project_root: PathBuf) -> Self {
+    pub fn new(
+        workflow: WorkflowConfig,
+        project_root: PathBuf,
+        store: Arc<dyn WorkflowStore>,
+    ) -> Self {
         Self {
             workflow,
             project_root,
+            store,
             active_scripts: Mutex::new(HashMap::new()),
         }
     }
@@ -154,15 +158,12 @@ impl ScriptExecutionService {
         // Build environment variables for the script
         let env = self.build_script_env(task, primary_branch);
 
-        // Create log file path
-        let log_path = self.script_log_path(&task.id, stage);
-        if let Some(parent) = log_path.parent() {
-            fs::create_dir_all(parent).map_err(|e| ScriptError::LogError(e.to_string()))?;
-        }
+        // Look up stage_session_id (format matches session_service.rs: "{task_id}-{stage}")
+        let stage_session_id = format!("{}-{}", task.id, stage);
 
-        // Write initial log entry
-        self.write_log_entry(
-            &log_path,
+        // Write initial log entry to database
+        self.append_log_entry(
+            &stage_session_id,
             &LogEntry::ScriptStart {
                 command: command.clone(),
                 stage: stage.to_string(),
@@ -181,7 +182,7 @@ impl ScriptExecutionService {
             command,
             handle,
             recovery_stage,
-            log_path,
+            stage_session_id,
         };
 
         // Track the script
@@ -195,8 +196,8 @@ impl ScriptExecutionService {
 
     /// Poll all active scripts for completion.
     ///
-    /// Returns a list of poll results. Incremental output is written to log files
-    /// as it arrives, allowing real-time log viewing.
+    /// Returns a list of poll results. Incremental output is written to the
+    /// database as it arrives, allowing real-time log viewing.
     pub fn poll_active_scripts(&self) -> Vec<ScriptPollResult> {
         let mut results = Vec::new();
         let mut completed_task_ids = Vec::new();
@@ -208,16 +209,16 @@ impl ScriptExecutionService {
                     Ok(ScriptPollState::Completed(result)) => {
                         // Write final output if any (may contain remaining buffered output)
                         if !result.output.is_empty() {
-                            let _ = self.write_log_entry(
-                                &script.log_path,
+                            let _ = self.append_log_entry(
+                                &script.stage_session_id,
                                 &LogEntry::ScriptOutput {
                                     content: result.output.clone(),
                                 },
                             );
                         }
 
-                        let _ = self.write_log_entry(
-                            &script.log_path,
+                        let _ = self.append_log_entry(
+                            &script.stage_session_id,
                             &LogEntry::ScriptExit {
                                 code: result.exit_code,
                                 success: result.is_success(),
@@ -234,11 +235,11 @@ impl ScriptExecutionService {
                         }));
                     }
                     Ok(ScriptPollState::Running { new_output }) => {
-                        // Write incremental output to log file for real-time viewing
+                        // Write incremental output to database for real-time viewing
                         if let Some(output) = new_output {
                             if !output.is_empty() {
-                                let _ = self.write_log_entry(
-                                    &script.log_path,
+                                let _ = self.append_log_entry(
+                                    &script.stage_session_id,
                                     &LogEntry::ScriptOutput { content: output },
                                 );
                             }
@@ -293,30 +294,15 @@ impl ScriptExecutionService {
             .with_opt("ORKESTRA_PRIMARY_BRANCH", primary_branch)
     }
 
-    /// Get the log file path for a script execution.
-    ///
-    /// Delegates to `LogService::script_log_path` to maintain a single source of truth
-    /// for log file paths.
-    fn script_log_path(&self, task_id: &str, stage: &str) -> PathBuf {
-        let log_service = LogService::new(self.workflow.clone(), self.project_root.clone());
-        log_service.script_log_path(task_id, stage)
-    }
-
-    /// Write a log entry to the script log file.
-    #[allow(clippy::unused_self)] // Kept as method for API consistency
-    fn write_log_entry(&self, log_path: &Path, entry: &LogEntry) -> Result<(), ScriptError> {
-        let mut file = File::options()
-            .create(true)
-            .append(true)
-            .open(log_path)
-            .map_err(|e| ScriptError::LogError(e.to_string()))?;
-
-        let json =
-            serde_json::to_string(entry).map_err(|e| ScriptError::LogError(e.to_string()))?;
-
-        writeln!(file, "{json}").map_err(|e| ScriptError::LogError(e.to_string()))?;
-
-        Ok(())
+    /// Persist a log entry to the database via the workflow store.
+    fn append_log_entry(
+        &self,
+        stage_session_id: &str,
+        entry: &LogEntry,
+    ) -> Result<(), ScriptError> {
+        self.store
+            .append_log_entry(stage_session_id, entry)
+            .map_err(|e| ScriptError::LogError(e.to_string()))
     }
 }
 
@@ -333,7 +319,7 @@ pub enum ScriptError {
     SpawnFailed(String),
     /// Lock error.
     LockError,
-    /// Log file error.
+    /// Log persistence error.
     LogError(String),
 }
 
@@ -353,8 +339,8 @@ impl std::error::Error for ScriptError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workflow::adapters::InMemoryWorkflowStore;
     use crate::workflow::config::{IntegrationConfig, StageConfig};
-    use crate::workflow::services::LogService;
     use tempfile::TempDir;
 
     fn test_workflow_with_script() -> WorkflowConfig {
@@ -376,11 +362,20 @@ mod tests {
         }
     }
 
+    fn create_service() -> (ScriptExecutionService, Arc<InMemoryWorkflowStore>) {
+        let temp_dir = TempDir::new().unwrap();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = ScriptExecutionService::new(
+            test_workflow_with_script(),
+            temp_dir.path().to_path_buf(),
+            Arc::clone(&store) as Arc<dyn WorkflowStore>,
+        );
+        (service, store)
+    }
+
     #[test]
     fn test_is_script_stage() {
-        let temp_dir = TempDir::new().unwrap();
-        let service =
-            ScriptExecutionService::new(test_workflow_with_script(), temp_dir.path().to_path_buf());
+        let (service, _store) = create_service();
 
         assert!(!service.is_script_stage("work"));
         assert!(service.is_script_stage("checks"));
@@ -389,9 +384,7 @@ mod tests {
 
     #[test]
     fn test_get_script_config() {
-        let temp_dir = TempDir::new().unwrap();
-        let service =
-            ScriptExecutionService::new(test_workflow_with_script(), temp_dir.path().to_path_buf());
+        let (service, _store) = create_service();
 
         assert!(service.get_script_config("work").is_none());
 
@@ -402,28 +395,15 @@ mod tests {
     }
 
     #[test]
-    fn test_script_log_path() {
-        let temp_dir = TempDir::new().unwrap();
-        let service =
-            ScriptExecutionService::new(test_workflow_with_script(), temp_dir.path().to_path_buf());
+    fn test_append_and_read_logs() {
+        let (service, store) = create_service();
 
-        let path = service.script_log_path("task-123", "checks");
-        assert!(path.ends_with("script_logs/task-123_checks.jsonl"));
-    }
+        let stage_session_id = "task-456-checks";
 
-    #[test]
-    fn test_write_and_read_logs() {
-        let temp_dir = TempDir::new().unwrap();
-        let workflow = test_workflow_with_script();
-        let service = ScriptExecutionService::new(workflow.clone(), temp_dir.path().to_path_buf());
-
-        let log_path = service.script_log_path("task-456", "checks");
-        fs::create_dir_all(log_path.parent().unwrap()).unwrap();
-
-        // Write some entries
+        // Write some entries via the service
         service
-            .write_log_entry(
-                &log_path,
+            .append_log_entry(
+                stage_session_id,
                 &LogEntry::ScriptStart {
                     command: "npm test".into(),
                     stage: "checks".into(),
@@ -432,8 +412,8 @@ mod tests {
             .unwrap();
 
         service
-            .write_log_entry(
-                &log_path,
+            .append_log_entry(
+                stage_session_id,
                 &LogEntry::ScriptOutput {
                     content: "All tests passed".into(),
                 },
@@ -441,8 +421,8 @@ mod tests {
             .unwrap();
 
         service
-            .write_log_entry(
-                &log_path,
+            .append_log_entry(
+                stage_session_id,
                 &LogEntry::ScriptExit {
                     code: 0,
                     success: true,
@@ -451,9 +431,8 @@ mod tests {
             )
             .unwrap();
 
-        // Read them back using LogService
-        let log_service = LogService::new(workflow, temp_dir.path().to_path_buf());
-        let logs = log_service.read_script_logs("task-456", "checks");
+        // Read them back from the store
+        let logs = store.get_log_entries(stage_session_id).unwrap();
         assert_eq!(logs.len(), 3);
 
         match &logs[0] {

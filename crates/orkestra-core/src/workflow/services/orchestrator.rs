@@ -864,10 +864,7 @@ impl OrchestratorLoop {
                     true
                 }
                 Some(task) if task.status.is_archived() && task.phase == Phase::Idle => {
-                    orkestra_debug!(
-                        "recovery",
-                        "Cleaning up worktree for archived task: {name}"
-                    );
+                    orkestra_debug!("recovery", "Cleaning up worktree for archived task: {name}");
                     true
                 }
                 _ => false,

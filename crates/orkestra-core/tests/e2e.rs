@@ -3,6 +3,10 @@
 //! Run all:           `cargo test --test e2e`
 //! Run by module:     `cargo test --test e2e cleanup`
 //! Run specific test: `cargo test --test e2e test_exhaustive_workflow_flow`
+//!
+//! Real-agent tests (require CLI tools + API keys):
+//!   `cargo test --test e2e opencode -- --ignored --nocapture`
+//!   `cargo test --test e2e claudecode -- --ignored --nocapture`
 
 #[path = "e2e/helpers.rs"]
 mod helpers;
@@ -17,3 +21,11 @@ mod subtasks;
 mod task_creation;
 #[path = "e2e/workflow.rs"]
 mod workflow;
+
+// Real-agent tests (no mocks — require actual CLI tools + API keys)
+#[path = "e2e/agents/helpers.rs"]
+mod agent_helpers;
+#[path = "e2e/agents/opencode.rs"]
+mod opencode;
+#[path = "e2e/agents/claudecode.rs"]
+mod claudecode;

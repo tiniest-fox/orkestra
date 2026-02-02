@@ -19,7 +19,7 @@ use std::thread;
 use crate::orkestra_debug;
 
 use super::output::StageOutput;
-use super::parser::parse_agent_output;
+use super::parser::parse_output_with_text_fallback;
 use crate::workflow::domain::LogEntry;
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessSpawner};
 use crate::workflow::services::stream_parser::{
@@ -241,6 +241,12 @@ impl AgentRunnerTrait for AgentRunner {
             .resolve(config.model.as_deref())
             .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
+        // Create the appropriate stream parser based on provider
+        let mut parser: Box<dyn StreamParser> = match resolved.provider_name.as_str() {
+            "opencode" => Box::new(OpenCodeStreamParser::new()),
+            _ => Box::new(ClaudeStreamParser::new()),
+        };
+
         // Parse the schema for validation (before moving json_schema to process_config)
         let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
@@ -265,14 +271,20 @@ impl AgentRunnerTrait for AgentRunner {
             .write_prompt(&config.prompt)
             .map_err(|e| RunError::PromptWriteFailed(e.to_string()))?;
 
-        // Read all output
+        // Read all output, tracking last text entry for fallback parsing
         let mut full_output = String::new();
+        let mut last_text: Option<String> = None;
 
         for line_result in handle.lines() {
             match line_result {
                 Ok(line) => {
                     if line.trim().is_empty() {
                         continue;
+                    }
+                    for entry in parser.parse_line(&line) {
+                        if let LogEntry::Text { ref content } = entry {
+                            last_text = Some(content.clone());
+                        }
                     }
                     full_output.push_str(&line);
                     full_output.push('\n');
@@ -283,14 +295,22 @@ impl AgentRunnerTrait for AgentRunner {
             }
         }
 
+        for entry in parser.finalize() {
+            if let LogEntry::Text { ref content } = entry {
+                last_text = Some(content.clone());
+            }
+        }
+
         // Process completed normally
         handle.disarm();
 
         orkestra_debug!("runner", "run_sync: output_len={}", full_output.len());
 
-        // Parse the output with schema validation
+        // Parse output: tries raw JSONL first (Claude Code), falls back to last
+        // text content (OpenCode where structured output is in text events).
         let parsed_output =
-            parse_agent_output(&full_output, schema.as_ref()).map_err(RunError::ParseFailed)?;
+            parse_output_with_text_fallback(&full_output, last_text.as_deref(), schema.as_ref())
+                .map_err(RunError::ParseFailed)?;
 
         orkestra_debug!("runner", "run_sync: parsed output successfully");
 
@@ -368,6 +388,7 @@ fn read_output_and_send_events(
     mut parser: Box<dyn StreamParser>,
 ) {
     let mut full_output = String::new();
+    let mut last_text: Option<String> = None;
 
     for line_result in handle.lines() {
         match line_result {
@@ -378,6 +399,9 @@ fn read_output_and_send_events(
 
                 // Parse the line for log entries before accumulating
                 for entry in parser.parse_line(&line) {
+                    if let LogEntry::Text { ref content } = entry {
+                        last_text = Some(content.clone());
+                    }
                     if tx.send(RunEvent::LogLine(entry)).is_err() {
                         orkestra_debug!("runner", "Channel closed while sending LogLine");
                         return;
@@ -405,6 +429,9 @@ fn read_output_and_send_events(
 
     // Finalize the parser to flush any buffered entries
     for entry in parser.finalize() {
+        if let LogEntry::Text { ref content } = entry {
+            last_text = Some(content.clone());
+        }
         if tx.send(RunEvent::LogLine(entry)).is_err() {
             orkestra_debug!("runner", "Channel closed while sending finalized LogLine");
             return;
@@ -414,9 +441,9 @@ fn read_output_and_send_events(
     // Process completed normally
     handle.disarm();
 
-    // Parse and send completion event with schema validation
-    // Note: parse_agent_output checks for API errors in the output
-    let result = parse_agent_output(&full_output, schema);
+    // Parse output: tries raw JSONL first (Claude Code), falls back to last
+    // text content (OpenCode where structured output is in text events).
+    let result = parse_output_with_text_fallback(&full_output, last_text.as_deref(), schema);
     if tx.send(RunEvent::Completed(result)).is_err() {
         orkestra_debug!("runner", "Channel closed before completion could be sent");
     }

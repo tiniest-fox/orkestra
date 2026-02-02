@@ -16,7 +16,7 @@ use super::StageOutput;
 /// Handles patterns like:
 /// - ```json\n{...}\n```
 /// - ```\n{...}\n```
-fn strip_markdown_code_fences(s: &str) -> String {
+pub fn strip_markdown_code_fences(s: &str) -> String {
     let trimmed = s.trim();
 
     // Check if it starts with ``` and ends with ```
@@ -90,6 +90,39 @@ pub fn parse_agent_output(
 
     // Fallback: try to parse the entire output as StageOutput directly
     parse_json_output(trimmed, schema).map_err(|e| format!("Failed to parse agent output: {e}"))
+}
+
+/// Parse agent output with text fallback for providers without native `structured_output` events.
+///
+/// 1. Tries raw JSONL via [`parse_agent_output`] (works for Claude Code).
+/// 2. Falls back to parsing `last_text` directly as a `StageOutput` (works for OpenCode
+///    where the structured JSON is in `text` events, not a dedicated JSONL field).
+///
+/// Markdown code fences are stripped from `last_text` before parsing since agents
+/// sometimes wrap JSON output in fences despite instructions.
+pub fn parse_output_with_text_fallback(
+    full_output: &str,
+    last_text: Option<&str>,
+    schema: Option<&serde_json::Value>,
+) -> Result<StageOutput, String> {
+    let raw_result = parse_agent_output(full_output, schema);
+    if raw_result.is_ok() {
+        return raw_result;
+    }
+
+    // Fall back: strip markdown fences from last text, parse directly as StageOutput
+    if let Some(text) = last_text {
+        let stripped = strip_markdown_code_fences(text);
+        let text_result = match schema {
+            Some(s) => StageOutput::parse(&stripped, s).map_err(|e| e.to_string()),
+            None => StageOutput::parse_unvalidated(&stripped).map_err(|e| e.to_string()),
+        };
+        if text_result.is_ok() {
+            return text_result;
+        }
+    }
+
+    raw_result
 }
 
 /// Parse a JSON string as `StageOutput` with optional schema validation.
@@ -363,5 +396,75 @@ mod tests {
             err.contains("Rate limit exceeded"),
             "Expected rate limit error, got: {err}"
         );
+    }
+
+    // ========================================================================
+    // parse_output_with_text_fallback tests
+    // ========================================================================
+
+    #[test]
+    fn test_fallback_claude_structured_output_no_last_text() {
+        // Claude Code: raw JSONL has structured_output, no last text needed
+        let output = r#"{"type":"system","subtype":"init","session_id":"abc"}
+{"structured_output":{"type":"summary","content":"All done"}}"#;
+        let result = parse_output_with_text_fallback(output, None, None);
+        assert!(result.is_ok(), "Expected success, got: {result:?}");
+        match result.unwrap() {
+            StageOutput::Artifact { content } => assert_eq!(content, "All done"),
+            other => panic!("Expected Artifact, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_fallback_opencode_last_text_json() {
+        // OpenCode: raw JSONL has no structured_output, but last text has the JSON
+        let output = r#"{"type":"step_start","part":{"type":"step-start"}}
+{"type":"text","part":{"text":"Let me check..."}}
+{"type":"tool_use","part":{"tool":"bash","callID":"0","state":{"input":{"command":"ls"},"output":"file1.rs"}}}
+{"type":"text","part":{"text":"{\"type\":\"artifact\",\"content\":\"Found 1 file\"}"}}
+{"type":"step_finish","part":{"type":"step-finish","reason":"stop"}}"#;
+
+        let last_text = r#"{"type":"artifact","content":"Found 1 file"}"#;
+
+        let result = parse_output_with_text_fallback(output, Some(last_text), None);
+        assert!(result.is_ok(), "Expected success, got: {result:?}");
+        match result.unwrap() {
+            StageOutput::Artifact { content } => assert_eq!(content, "Found 1 file"),
+            other => panic!("Expected Artifact, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_fallback_last_text_with_markdown_fences() {
+        // Agent wraps JSON in markdown fences despite instructions
+        let output = r#"{"type":"text","part":{"text":"some stuff"}}"#;
+        let last_text = "```json\n{\"type\":\"summary\",\"content\":\"Done\"}\n```";
+
+        let result = parse_output_with_text_fallback(output, Some(last_text), None);
+        assert!(result.is_ok(), "Expected success, got: {result:?}");
+        match result.unwrap() {
+            StageOutput::Artifact { content } => assert_eq!(content, "Done"),
+            other => panic!("Expected Artifact, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_fallback_last_text_not_json() {
+        // Both raw output and last text are not parseable — returns original error
+        let output = r#"{"type":"text","part":{"text":"I couldn't complete the task"}}"#;
+        let last_text = "I couldn't complete the task";
+
+        let result = parse_output_with_text_fallback(output, Some(last_text), None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_fallback_no_last_text_fails() {
+        // Raw output fails, no last text — returns error
+        let output = r#"{"type":"step_start","part":{"type":"step-start"}}
+{"type":"step_finish","part":{"type":"step-finish","reason":"stop"}}"#;
+
+        let result = parse_output_with_text_fallback(output, None, None);
+        assert!(result.is_err());
     }
 }

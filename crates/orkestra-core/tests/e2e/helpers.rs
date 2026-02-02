@@ -5,7 +5,7 @@
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
@@ -279,7 +279,12 @@ impl TestEnv {
         panic!("Task setup did not complete in time for task {task_id}");
     }
 
-    /// Create a subtask and wait for async setup to complete.
+    /// Create a subtask and wait for setup to complete.
+    ///
+    /// Subtask setup is deferred to the orchestrator tick loop, so this method
+    /// ticks the orchestrator during the poll to trigger `setup_ready_subtasks()`.
+    /// Subtasks with unsatisfied dependencies will stay in SettingUp — use
+    /// `create_subtask_deferred` for those.
     pub fn create_subtask(&self, parent_id: &str, title: &str, desc: &str) -> Task {
         let task = self
             .api()
@@ -288,6 +293,8 @@ impl TestEnv {
         let task_id = task.id.clone();
 
         for _ in 0..100 {
+            // Tick the orchestrator to trigger deferred subtask setup
+            let _ = self.orchestrator.tick();
             std::thread::sleep(Duration::from_millis(20));
             let task = self.api().get_task(&task_id).expect("Should get task");
             if task.phase != Phase::SettingUp {
@@ -316,20 +323,52 @@ impl TestEnv {
         self.orchestrator.tick().expect("Tick should succeed");
     }
 
+    /// Tick the orchestrator until `predicate` returns true, or panic after `timeout`.
+    ///
+    /// Uses wall-clock time instead of iteration counts, so timeouts are reliable
+    /// even under CPU contention from parallel test execution.
+    pub fn tick_until(
+        &self,
+        mut predicate: impl FnMut() -> bool,
+        timeout: Duration,
+        context: &str,
+    ) {
+        let start = Instant::now();
+        while start.elapsed() < timeout {
+            self.orchestrator.tick().expect("Tick should succeed");
+            std::thread::sleep(Duration::from_millis(20));
+            if predicate() {
+                return;
+            }
+        }
+        panic!(
+            "Timed out after {:.1}s: {context}",
+            timeout.as_secs_f64()
+        );
+    }
+
     /// Tick until all active work settles (handles multi-step like rejection).
     ///
     /// Use this for agent stages where mock callbacks complete asynchronously.
+    /// Panics if active work doesn't settle within 5 seconds.
     pub fn tick_until_settled(&self) {
-        for _ in 0..10 {
+        let start = Instant::now();
+        let timeout = Duration::from_secs(5);
+        while start.elapsed() < timeout {
             self.orchestrator.tick().expect("Tick should succeed");
-            std::thread::sleep(Duration::from_millis(30));
+            std::thread::sleep(Duration::from_millis(20));
 
             if self.orchestrator.active_count() == 0 {
                 // One more tick to ensure all events are processed
                 self.orchestrator.tick().expect("Final tick should succeed");
-                break;
+                return;
             }
         }
+        panic!(
+            "tick_until_settled: active_count never reached 0 (still {} after {:.1}s)",
+            self.orchestrator.active_count(),
+            timeout.as_secs_f64()
+        );
     }
 
     // =========================================================================

@@ -56,8 +56,22 @@ impl WorkflowApi {
             .first_stage_in_flow(flow)
             .ok_or_else(|| WorkflowError::InvalidTransition("No stages in workflow".into()))?;
 
+        // Resolve base_branch eagerly: use provided value, or current branch from git.
+        let resolved_base_branch = match base_branch {
+            Some(b) => b.to_string(),
+            None => match &self.git_service {
+                Some(git) => git.current_branch().map_err(|e| {
+                    WorkflowError::InvalidTransition(format!(
+                        "Cannot determine base branch: {e}"
+                    ))
+                })?,
+                None => String::new(),
+            },
+        };
+
         let now = chrono::Utc::now().to_rfc3339();
         let mut task = Task::new(&id, title, description, &first_stage.name, &now);
+        task.base_branch = resolved_base_branch;
         task.auto_mode = auto_mode;
         task.flow = flow.map(String::from);
 
@@ -75,7 +89,7 @@ impl WorkflowApi {
         let needs_title = title.trim().is_empty() && !description.trim().is_empty();
         self.setup_service.spawn_setup(
             id.clone(),
-            base_branch.map(String::from),
+            task.base_branch.clone(),
             if needs_title {
                 Some(description.to_string())
             } else {
@@ -97,8 +111,9 @@ impl WorkflowApi {
 
     /// Create a new task with a parent (subtask).
     ///
-    /// Subtasks inherit the parent's worktree rather than creating their own.
-    /// They still go through `Phase::SettingUp` for consistency, but setup is instant.
+    /// Subtasks get their own worktree branching from the parent's branch.
+    /// Setup is deferred to the orchestrator's `setup_ready_subtasks()` phase,
+    /// which triggers `spawn_setup()` only after dependencies are satisfied.
     ///
     /// # Errors
     ///
@@ -132,9 +147,13 @@ impl WorkflowApi {
         task.parent_id = Some(parent_id.to_string());
         task.short_id = Some(short_id);
 
-        // Subtasks inherit parent's worktree (no separate worktree needed)
-        task.worktree_path.clone_from(&parent.worktree_path);
-        task.branch_name.clone_from(&parent.branch_name);
+        // Subtasks branch from parent's branch (worktree created during setup).
+        // Fall back to parent's base_branch if branch_name not yet set (shouldn't happen
+        // since we check parent setup is complete above, but be explicit).
+        task.base_branch = parent
+            .branch_name
+            .clone()
+            .unwrap_or_else(|| parent.base_branch.clone());
 
         // Subtasks inherit parent's auto_mode
         task.auto_mode = parent.auto_mode;
@@ -148,8 +167,8 @@ impl WorkflowApi {
         self.iteration_service
             .create_initial_iteration(&id, &first_stage.name)?;
 
-        // Spawn async setup - no git work needed, just transitions to Idle
-        self.setup_service.spawn_subtask_setup(id.clone());
+        // Setup is deferred to the orchestrator tick loop (setup_ready_subtasks),
+        // which triggers spawn_setup() only after dependencies are satisfied.
 
         orkestra_debug!(
             "task",

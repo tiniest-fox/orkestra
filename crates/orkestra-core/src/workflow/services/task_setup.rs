@@ -35,13 +35,17 @@ impl TaskSetupService {
     /// Runs worktree creation and title generation in parallel, then transitions
     /// to `Phase::Idle`. On failure, transitions to `Status::Failed`.
     ///
+    /// `base_branch` is already set on the task at creation time. It's passed here
+    /// so the background thread can use it for `create_worktree()` without loading
+    /// the task first.
+    ///
     /// If `description` is Some, title will be generated from it (for tasks created
     /// without a title). The title is saved as soon as it's ready, before worktree
     /// setup finishes.
     pub fn spawn_setup(
         &self,
         task_id: String,
-        base_branch: Option<String>,
+        base_branch: String,
         description: Option<String>,
     ) {
         let store = Arc::clone(&self.store);
@@ -55,50 +59,14 @@ impl TaskSetupService {
                 git.as_ref(),
                 &title_gen,
                 &task_id,
-                base_branch.as_ref(),
+                &base_branch,
                 description.as_deref(),
             );
 
-            apply_setup_result(
-                &store,
-                git.as_ref(),
-                &task_id,
-                base_branch.as_ref(),
-                worktree_result,
-            );
+            apply_setup_result(&store, &task_id, worktree_result);
         });
     }
 
-    /// Spawn background setup for a subtask.
-    ///
-    /// Subtasks inherit their parent's worktree, so this only transitions
-    /// the task from `SettingUp` to `Idle`. No worktree creation or title
-    /// generation is needed.
-    pub fn spawn_subtask_setup(&self, task_id: String) {
-        let store = Arc::clone(&self.store);
-
-        crate::orkestra_debug!("task", "spawn_subtask_setup {}: starting", task_id);
-        thread::spawn(move || match store.get_task(&task_id) {
-            Ok(Some(mut task)) => {
-                task.phase = Phase::Idle;
-                if let Err(e) = store.save_task(&task) {
-                    crate::orkestra_debug!(
-                        "setup",
-                        "CRITICAL: Failed to save subtask {task_id}: {e}"
-                    );
-                }
-            }
-            Ok(None) => {
-                crate::orkestra_debug!(
-                    "setup",
-                    "CRITICAL: Subtask {task_id} disappeared during setup"
-                );
-            }
-            Err(e) => {
-                crate::orkestra_debug!("setup", "CRITICAL: Failed to load subtask {task_id}: {e}");
-            }
-        });
-    }
 }
 
 /// Run worktree creation and title generation in parallel using scoped threads.
@@ -109,14 +77,19 @@ fn run_parallel_setup(
     git: Option<&Arc<dyn GitService>>,
     title_gen: &Arc<dyn TitleGenerator>,
     task_id: &str,
-    base_branch: Option<&String>,
+    base_branch: &str,
     description: Option<&str>,
 ) -> Result<Option<crate::workflow::ports::WorktreeCreated>, String> {
     thread::scope(|s| {
         // Spawn worktree creation
         let worktree_handle = s.spawn(|| {
             if let Some(git) = git {
-                match git.create_worktree(task_id, base_branch.map(String::as_str)) {
+                let branch = if base_branch.is_empty() {
+                    None
+                } else {
+                    Some(base_branch)
+                };
+                match git.create_worktree(task_id, branch) {
                     Ok(result) => Ok(Some(result)),
                     Err(e) => Err(format!("Worktree setup failed: {e}")),
                 }
@@ -148,11 +121,12 @@ fn run_parallel_setup(
 }
 
 /// Apply the setup result to the task (worktree info + phase transition).
+///
+/// `base_branch` is already set on the task at creation time — this function
+/// only needs to apply worktree info and transition the phase.
 fn apply_setup_result(
     store: &Arc<dyn WorkflowStore>,
-    git: Option<&Arc<dyn GitService>>,
     task_id: &str,
-    base_branch: Option<&String>,
     worktree_result: Result<Option<crate::workflow::ports::WorktreeCreated>, String>,
 ) {
     match store.get_task(task_id) {
@@ -162,14 +136,6 @@ fn apply_setup_result(
                     if let Some(ref wt) = worktree_info {
                         task.branch_name = Some(wt.branch_name.clone());
                         task.worktree_path = Some(wt.worktree_path.to_string_lossy().to_string());
-                    }
-
-                    // Persist the base branch on the task.
-                    // If explicitly provided, use that; otherwise resolve from current branch.
-                    if let Some(git) = git {
-                        task.base_branch = Some(base_branch.cloned().unwrap_or_else(|| {
-                            git.current_branch().unwrap_or_else(|_| "main".to_string())
-                        }));
                     }
 
                     task.phase = Phase::Idle;
@@ -201,16 +167,7 @@ fn apply_setup_result(
             }
         }
         Ok(None) => {
-            // Task was deleted during setup - clean up any orphaned worktree
             crate::orkestra_debug!("setup", "CRITICAL: Task {task_id} disappeared during setup");
-            if let Some(git) = git {
-                if let Err(e) = git.remove_worktree(task_id, true) {
-                    crate::orkestra_debug!(
-                        "setup",
-                        "WARNING: Failed to clean up orphaned worktree for {task_id}: {e}"
-                    );
-                }
-            }
         }
         Err(e) => {
             crate::orkestra_debug!("setup", "CRITICAL: Failed to load task {task_id}: {e}");

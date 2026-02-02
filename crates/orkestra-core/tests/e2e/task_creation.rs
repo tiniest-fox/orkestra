@@ -52,8 +52,8 @@ fn test_task_creation_sets_base_branch() {
     );
 
     assert_eq!(
-        task.base_branch.as_deref(),
-        Some("main"),
+        task.base_branch.as_str(),
+        "main",
         "Default base branch should be 'main'"
     );
 }
@@ -77,8 +77,8 @@ fn test_task_creation_from_specific_branch() {
     );
 
     assert_eq!(
-        task.base_branch.as_deref(),
-        Some("feature"),
+        task.base_branch.as_str(),
+        "feature",
         "Base branch should be 'feature' when explicitly provided"
     );
 }
@@ -163,21 +163,47 @@ fn test_setup_script_failure_fails_task() {
 // =============================================================================
 
 #[test]
-fn test_subtask_inherits_parent_worktree() {
+fn test_subtask_gets_own_worktree() {
     let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
 
     let parent = ctx.create_task("Parent", "Parent task for subtask test", None);
     let parent_id = parent.id.clone();
 
-    let child = ctx.create_subtask(&parent_id, "Child", "Subtask should inherit worktree");
+    let child = ctx.create_subtask(&parent_id, "Child", "Subtask should get own worktree");
 
-    assert_eq!(
+    // Subtask should get its OWN worktree, not share parent's
+    assert_ne!(
         child.worktree_path, parent.worktree_path,
-        "Subtask should inherit parent's worktree path"
+        "Subtask should have a different worktree path from parent"
     );
-    assert_eq!(
+    assert_ne!(
         child.branch_name, parent.branch_name,
-        "Subtask should inherit parent's branch name"
+        "Subtask should have a different branch from parent"
+    );
+
+    // Subtask's base_branch should be the parent's branch_name
+    assert_eq!(
+        child.base_branch,
+        parent.branch_name.clone().unwrap_or_default(),
+        "Subtask's base_branch should be parent's branch_name"
+    );
+
+    // Both worktrees should exist on disk
+    let parent_wt = parent
+        .worktree_path
+        .as_ref()
+        .expect("Parent should have worktree");
+    let child_wt = child
+        .worktree_path
+        .as_ref()
+        .expect("Child should have worktree");
+    assert!(
+        Path::new(parent_wt).exists(),
+        "Parent worktree should exist"
+    );
+    assert!(
+        Path::new(child_wt).exists(),
+        "Child worktree should exist"
     );
 }
 

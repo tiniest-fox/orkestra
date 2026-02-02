@@ -59,8 +59,12 @@ pub struct Task {
     pub worktree_path: Option<String>,
 
     /// The branch this task was created from (merge/rebase target).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base_branch: Option<String>,
+    ///
+    /// Always set at task creation time:
+    /// - Parent tasks: from UI branch selector, or `git.current_branch()`
+    /// - Subtasks: from parent's `branch_name`
+    #[serde(default)]
+    pub base_branch: String,
 
     // === Configuration ===
     /// Whether the task runs autonomously through all stages without pausing for review.
@@ -105,7 +109,7 @@ impl Task {
             depends_on: Vec::new(),
             branch_name: None,
             worktree_path: None,
-            base_branch: None,
+            base_branch: String::new(),
             auto_mode: false,
             flow: None,
             created_at: created.clone(),
@@ -152,7 +156,7 @@ impl Task {
     /// Builder: set base branch (the branch this task was created from).
     #[must_use]
     pub fn with_base_branch(mut self, base_branch: impl Into<String>) -> Self {
-        self.base_branch = Some(base_branch.into());
+        self.base_branch = base_branch.into();
         self
     }
 

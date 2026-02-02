@@ -69,7 +69,6 @@ impl WorkflowApi {
             &self.workflow,
             &self.store,
             &self.iteration_service,
-            &self.setup_service,
             &artifact_name,
         )?;
 
@@ -429,7 +428,6 @@ impl WorkflowApi {
                 &self.workflow,
                 &self.store,
                 &self.iteration_service,
-                &self.setup_service,
                 &artifact_name,
             )?;
 

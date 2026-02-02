@@ -11,7 +11,6 @@ use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 use std::sync::Arc;
 
-use super::task_setup::TaskSetupService;
 use super::IterationService;
 
 /// Service for subtask-related operations.
@@ -33,7 +32,6 @@ impl SubtaskService {
         workflow: &WorkflowConfig,
         store: &Arc<dyn WorkflowStore>,
         iteration_service: &Arc<IterationService>,
-        setup_service: &Arc<TaskSetupService>,
         breakdown_artifact_name: &str,
     ) -> WorkflowResult<Vec<Task>> {
         let structured_key = format!("{breakdown_artifact_name}_structured");
@@ -84,9 +82,11 @@ impl SubtaskService {
             task.flow.clone_from(&subtask_flow);
             task.auto_mode = parent.auto_mode;
 
-            // Subtasks inherit parent's worktree
-            task.worktree_path.clone_from(&parent.worktree_path);
-            task.branch_name.clone_from(&parent.branch_name);
+            // Subtasks branch from parent's branch (worktree created during setup)
+            task.base_branch = parent
+                .branch_name
+                .clone()
+                .unwrap_or_else(|| parent.base_branch.clone());
 
             // Copy parent's plan artifact to subtask (if it exists)
             if let Some(plan) = parent.artifacts.get("plan") {
@@ -115,7 +115,10 @@ impl SubtaskService {
             // Re-save with dependencies set
             store.save_task(&created_tasks[i])?;
             iteration_service.create_initial_iteration(&created_tasks[i].id, &first_stage.name)?;
-            setup_service.spawn_subtask_setup(created_tasks[i].id.clone());
+            // Setup is deferred to the orchestrator tick loop (setup_ready_subtasks),
+            // which triggers spawn_setup() only after dependencies are satisfied.
+            // This ensures dependent subtasks branch from the parent after
+            // predecessors' changes have been merged back.
         }
 
         Ok(created_tasks)

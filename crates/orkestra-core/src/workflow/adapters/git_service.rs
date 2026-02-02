@@ -163,6 +163,15 @@ impl Git2GitService {
 
         if !checkout_output.status.success() {
             let stderr = String::from_utf8_lossy(&checkout_output.stderr);
+
+            // If the target branch is checked out in a worktree (e.g., subtask merging
+            // to parent's branch), we can't checkout here. Use fast-forward via update-ref
+            // instead — after rebase, the merge is always a fast-forward.
+            if stderr.contains("checked out at") || stderr.contains("is already used by worktree")
+            {
+                return self.fast_forward_merge(primary, branch_name);
+            }
+
             return Err(GitError::MergeError(format!(
                 "Failed to checkout {primary}: {stderr}"
             )));
@@ -205,6 +214,70 @@ impl Git2GitService {
         Ok(MergeResult {
             commit_sha,
             target_branch: primary.to_string(),
+            merged_at: chrono::Utc::now().to_rfc3339(),
+        })
+    }
+
+    /// Fast-forward merge via `update-ref` (no checkout required).
+    ///
+    /// Used when the target branch is checked out in a worktree (e.g., subtask
+    /// merging to parent's branch). After rebase, the source branch is always
+    /// ahead of the target, so this is a safe fast-forward.
+    fn fast_forward_merge(
+        &self,
+        target_branch: &str,
+        source_branch: &str,
+    ) -> Result<MergeResult, GitError> {
+        // Verify the target is an ancestor of the source (fast-forward is valid)
+        let is_ancestor = Command::new("git")
+            .args(["merge-base", "--is-ancestor", target_branch, source_branch])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| {
+                GitError::MergeError(format!("Failed to check fast-forward eligibility: {e}"))
+            })?;
+
+        if !is_ancestor.status.success() {
+            return Err(GitError::MergeConflict {
+                branch: source_branch.to_string(),
+                conflict_files: vec![],
+            });
+        }
+
+        // Get the source branch's commit SHA
+        let sha_output = Command::new("git")
+            .args(["rev-parse", source_branch])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GitError::MergeError(format!("Failed to resolve {source_branch}: {e}")))?;
+
+        let commit_sha = String::from_utf8_lossy(&sha_output.stdout)
+            .trim()
+            .to_string();
+
+        // Fast-forward the target branch ref to the source branch's tip
+        let update_output = Command::new("git")
+            .args([
+                "update-ref",
+                &format!("refs/heads/{target_branch}"),
+                &commit_sha,
+            ])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| {
+                GitError::MergeError(format!("Failed to fast-forward {target_branch}: {e}"))
+            })?;
+
+        if !update_output.status.success() {
+            let stderr = String::from_utf8_lossy(&update_output.stderr);
+            return Err(GitError::MergeError(format!(
+                "Failed to fast-forward {target_branch}: {stderr}"
+            )));
+        }
+
+        Ok(MergeResult {
+            commit_sha,
+            target_branch: target_branch.to_string(),
             merged_at: chrono::Utc::now().to_rfc3339(),
         })
     }
@@ -349,25 +422,6 @@ impl GitService for Git2GitService {
         Ok(())
     }
 
-    fn detect_primary_branch(&self) -> Result<String, GitError> {
-        let repo = self
-            .repo
-            .lock()
-            .map_err(|_| GitError::IoError("Repository mutex poisoned".into()))?;
-
-        // Check if 'main' branch exists
-        if repo.find_branch("main", git2::BranchType::Local).is_ok() {
-            return Ok("main".to_string());
-        }
-        // Check if 'master' branch exists
-        if repo.find_branch("master", git2::BranchType::Local).is_ok() {
-            return Ok("master".to_string());
-        }
-        Err(GitError::BranchError(
-            "Could not detect primary branch (neither 'main' nor 'master' found)".into(),
-        ))
-    }
-
     fn list_branches(&self) -> Result<Vec<String>, GitError> {
         let output = Command::new("git")
             .args(["branch", "--format=%(refname:short)"])
@@ -456,11 +510,6 @@ impl GitService for Git2GitService {
         Ok(())
     }
 
-    fn rebase_on_primary(&self, worktree_path: &Path) -> Result<(), GitError> {
-        let primary = self.detect_primary_branch()?;
-        self.rebase_on_branch(worktree_path, &primary)
-    }
-
     fn rebase_on_branch(&self, worktree_path: &Path, target_branch: &str) -> Result<(), GitError> {
         // Resolve the task branch name for error reporting
         let branch_output = Command::new("git")
@@ -512,11 +561,6 @@ impl GitService for Git2GitService {
         }
 
         Ok(())
-    }
-
-    fn merge_to_primary(&self, branch_name: &str) -> Result<MergeResult, GitError> {
-        let primary = self.detect_primary_branch()?;
-        self.merge_to_branch(branch_name, &primary)
     }
 
     fn merge_to_branch(
@@ -748,17 +792,6 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_primary_branch() {
-        let (_temp_dir, repo_path) = create_test_repo();
-        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
-
-        let primary = git
-            .detect_primary_branch()
-            .expect("Failed to detect primary branch");
-        assert_eq!(primary, "main");
-    }
-
-    #[test]
     fn test_current_branch() {
         let (_temp_dir, repo_path) = create_test_repo();
         let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
@@ -782,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_to_primary() {
+    fn test_merge_to_branch() {
         let (_temp_dir, repo_path) = create_test_repo();
         let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
 
@@ -799,7 +832,7 @@ mod tests {
 
         // Merge to main
         let result = git
-            .merge_to_primary("task/TASK-005")
+            .merge_to_branch("task/TASK-005", "main")
             .expect("Failed to merge");
 
         assert_eq!(result.target_branch, "main");
@@ -833,14 +866,14 @@ mod tests {
             .expect("Failed to write");
         git.commit_pending_changes(&worktree.worktree_path, "Add file")
             .expect("Failed to commit");
-        git.merge_to_primary("task/TASK-MERGED")
+        git.merge_to_branch("task/TASK-MERGED", "main")
             .expect("Failed to merge");
 
         // Branch should be detected as merged
         assert!(
             git.is_branch_merged("task/TASK-MERGED", "main")
                 .expect("Should check merge status"),
-            "Branch should be merged after merge_to_primary"
+            "Branch should be merged after merge_to_branch"
         );
     }
 
@@ -862,7 +895,7 @@ mod tests {
         assert!(
             !git.is_branch_merged("task/TASK-UNMERGED", "main")
                 .expect("Should check merge status"),
-            "Branch should not be merged before merge_to_primary"
+            "Branch should not be merged before merge_to_branch"
         );
     }
 

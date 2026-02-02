@@ -133,10 +133,21 @@ impl WorkflowApi {
 
     /// Get the stage to return to on integration failure.
     ///
-    /// Uses the workflow's integration config.
-    pub fn integration_failure_stage(&self) -> Option<&str> {
-        // Use the configured on_failure stage
-        Some(self.workflow.integration.on_failure.as_str())
+    /// Uses the workflow's integration config, but validates the configured
+    /// `on_failure` stage exists in the task's flow. Falls back to the first
+    /// stage in the flow if the configured stage is not available.
+    pub fn integration_failure_stage(&self, flow: Option<&str>) -> Option<String> {
+        let configured = &self.workflow.integration.on_failure;
+
+        // Validate the configured stage exists in this task's flow
+        if self.workflow.stage_in_flow(configured, flow) {
+            return Some(configured.clone());
+        }
+
+        // Fallback: use the first stage in the flow
+        self.workflow
+            .first_stage_in_flow(flow)
+            .map(|s| s.name.clone())
     }
 
     /// Compute the next status after approving the current stage.
@@ -155,23 +166,20 @@ impl WorkflowApi {
         }
     }
 
-    /// Get tasks that are Done and ready for integration.
+    /// Get tasks that are Done and ready for integration (merge to target branch).
     ///
-    /// Returns tasks that:
-    /// - Are in Done status (not Archived - integrated tasks become Archived)
+    /// Returns both parent tasks and subtasks that:
+    /// - Are in Done status (not Archived — integrated tasks become Archived)
     /// - Are in Idle phase (not already integrating)
     /// - Have a worktree path (need merging)
-    /// - Are not subtasks (subtasks share parent's worktree)
+    ///
+    /// Parent tasks merge to primary (main/master).
+    /// Subtasks merge to their parent's branch (stored in `base_branch`).
     pub fn get_tasks_needing_integration(&self) -> WorkflowResult<Vec<Task>> {
         let tasks = self.store.list_tasks()?;
         Ok(tasks
             .into_iter()
-            .filter(|t| {
-                t.is_done()
-                    && t.phase == Phase::Idle
-                    && t.worktree_path.is_some()
-                    && t.parent_id.is_none()
-            })
+            .filter(|t| t.is_done() && t.phase == Phase::Idle && t.worktree_path.is_some())
             .collect())
     }
 
@@ -289,7 +297,10 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        // Default: "work" stage
-        assert_eq!(api.integration_failure_stage(), Some("work"));
+        // Default flow: "work" stage
+        assert_eq!(
+            api.integration_failure_stage(None),
+            Some("work".to_string())
+        );
     }
 }

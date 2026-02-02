@@ -83,13 +83,14 @@ impl WorkflowApi {
             }
         }
 
-        // Determine the target branch: use task's base_branch if set, otherwise primary.
-        let target_branch = match &task.base_branch {
-            Some(base) => base.clone(),
-            None => git
-                .detect_primary_branch()
-                .unwrap_or_else(|_| "main".to_string()),
-        };
+        // Target branch is always the task's base_branch (set at creation from UI selection or parent branch).
+        if task.base_branch.is_empty() {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Task {} has no base_branch set — cannot determine merge target",
+                task.id
+            )));
+        }
+        let target_branch = task.base_branch.clone();
 
         orkestra_debug!(
             "integration",
@@ -262,11 +263,10 @@ impl WorkflowApi {
             },
         )?;
 
-        // Determine which stage to return to
+        // Determine which stage to return to (flow-aware for subtasks)
         let recovery_stage = self
-            .integration_failure_stage()
-            .ok_or_else(|| WorkflowError::InvalidTransition("No recovery stage configured".into()))?
-            .to_string();
+            .integration_failure_stage(task.flow.as_deref())
+            .ok_or_else(|| WorkflowError::InvalidTransition("No recovery stage configured".into()))?;
 
         // Move task back to recovery stage
         let now = chrono::Utc::now().to_rfc3339();

@@ -131,21 +131,6 @@ impl ScriptExecutionService {
     ///
     /// Returns the process ID of the spawned script.
     pub fn spawn_script(&self, task: &Task, stage: &str) -> Result<u32, ScriptError> {
-        self.spawn_script_with_primary_branch(task, stage, None)
-    }
-
-    /// Spawn a script for a task with an optional primary branch.
-    ///
-    /// The primary branch is used to set `ORKESTRA_PRIMARY_BRANCH` environment variable.
-    /// If not provided, scripts can detect it themselves via git.
-    ///
-    /// Returns the process ID of the spawned script.
-    pub fn spawn_script_with_primary_branch(
-        &self,
-        task: &Task,
-        stage: &str,
-        primary_branch: Option<&str>,
-    ) -> Result<u32, ScriptError> {
         let script_config = self
             .get_script_config(stage)
             .ok_or_else(|| ScriptError::NoConfig(stage.to_string()))?;
@@ -156,7 +141,7 @@ impl ScriptExecutionService {
         let working_dir = self.get_working_dir(task);
 
         // Build environment variables for the script
-        let env = self.build_script_env(task, primary_branch);
+        let env = self.build_script_env(task);
 
         // Look up stage_session_id (format matches session_service.rs: "{task_id}-{stage}")
         let stage_session_id = format!("{}-{}", task.id, stage);
@@ -278,20 +263,22 @@ impl ScriptExecutionService {
     /// - `ORKESTRA_TASK_ID` - Unique task identifier
     /// - `ORKESTRA_TASK_TITLE` - Human-readable task title
     /// - `ORKESTRA_BRANCH` - Task's git branch (if set)
+    /// - `ORKESTRA_BASE_BRANCH` - Branch this task was forked from (parent branch for subtasks, primary for tasks)
     /// - `ORKESTRA_WORKTREE_PATH` - Path to task's worktree (if set)
     /// - `ORKESTRA_PROJECT_ROOT` - Path to main project root
-    /// - `ORKESTRA_PRIMARY_BRANCH` - Primary branch name (if provided)
-    fn build_script_env(&self, task: &Task, primary_branch: Option<&str>) -> ScriptEnv {
+    /// - `ORKESTRA_PARENT_ID` - Parent task ID (only set for subtasks)
+    fn build_script_env(&self, task: &Task) -> ScriptEnv {
         ScriptEnv::new()
             .with("ORKESTRA_TASK_ID", &task.id)
             .with("ORKESTRA_TASK_TITLE", &task.title)
             .with_opt("ORKESTRA_BRANCH", task.branch_name.as_ref())
+            .with("ORKESTRA_BASE_BRANCH", &task.base_branch)
             .with_opt("ORKESTRA_WORKTREE_PATH", task.worktree_path.as_ref())
             .with(
                 "ORKESTRA_PROJECT_ROOT",
                 self.project_root.to_string_lossy().as_ref(),
             )
-            .with_opt("ORKESTRA_PRIMARY_BRANCH", primary_branch)
+            .with_opt("ORKESTRA_PARENT_ID", task.parent_id.as_ref())
     }
 
     /// Persist a log entry to the database via the workflow store.

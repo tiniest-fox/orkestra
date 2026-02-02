@@ -110,9 +110,6 @@ pub trait GitService: Send + Sync {
     /// - `delete_branch=false`: Delete worktree only, keep branch (task merged)
     fn remove_worktree(&self, task_id: &str, delete_branch: bool) -> Result<(), GitError>;
 
-    /// Detect the primary branch (main or master).
-    fn detect_primary_branch(&self) -> Result<String, GitError>;
-
     /// List local branches, excluding task/* worktree branches.
     fn list_branches(&self) -> Result<Vec<String>, GitError>;
 
@@ -127,15 +124,10 @@ pub trait GitService: Send + Sync {
     /// No-op if there are no changes to commit.
     fn commit_pending_changes(&self, worktree_path: &Path, message: &str) -> Result<(), GitError>;
 
-    /// Merge a task branch into the primary branch.
+    /// Merge a task branch into a specific target branch.
     ///
     /// Stashes uncommitted changes in main repo, performs merge, restores stash.
     /// Returns merge result on success, or `GitError::MergeConflict` if conflicts occur.
-    fn merge_to_primary(&self, branch_name: &str) -> Result<MergeResult, GitError>;
-
-    /// Merge a task branch into a specific target branch.
-    ///
-    /// Like `merge_to_primary`, but targets an explicit branch instead of auto-detecting.
     fn merge_to_branch(
         &self,
         branch_name: &str,
@@ -148,16 +140,11 @@ pub trait GitService: Send + Sync {
     /// Abort a merge in progress.
     fn abort_merge(&self) -> Result<(), GitError>;
 
-    /// Rebase the current branch in a worktree onto the primary branch.
+    /// Rebase the current branch in a worktree onto a specific target branch.
     ///
     /// Runs in the worktree directory so the main repo checkout is never touched.
     /// If conflicts occur, the rebase is aborted and `GitError::MergeConflict`
     /// is returned.
-    fn rebase_on_primary(&self, worktree_path: &Path) -> Result<(), GitError>;
-
-    /// Rebase the current branch in a worktree onto a specific target branch.
-    ///
-    /// Like `rebase_on_primary`, but targets an explicit branch instead of auto-detecting.
     fn rebase_on_branch(&self, worktree_path: &Path, target_branch: &str) -> Result<(), GitError>;
 
     /// Delete a branch (force delete with -D).
@@ -196,7 +183,6 @@ pub mod mock {
         worktrees: Mutex<HashMap<String, PathBuf>>,
         branches: Mutex<Vec<String>>,
         current_branch: Mutex<String>,
-        primary_branch: String,
         next_merge_result: Mutex<Option<Result<MergeResult, GitError>>>,
         next_rebase_result: Mutex<Option<Result<(), GitError>>>,
         create_worktree_calls: Mutex<Vec<(String, Option<String>)>>,
@@ -211,7 +197,6 @@ pub mod mock {
                 worktrees: Mutex::new(HashMap::new()),
                 branches: Mutex::new(vec!["main".to_string()]),
                 current_branch: Mutex::new("main".to_string()),
-                primary_branch: "main".to_string(),
                 next_merge_result: Mutex::new(None),
                 next_rebase_result: Mutex::new(None),
                 create_worktree_calls: Mutex::new(Vec::new()),
@@ -304,10 +289,6 @@ pub mod mock {
             Ok(())
         }
 
-        fn detect_primary_branch(&self) -> Result<String, GitError> {
-            Ok(self.primary_branch.clone())
-        }
-
         fn list_branches(&self) -> Result<Vec<String>, GitError> {
             Ok(self.branches.lock().unwrap().clone())
         }
@@ -325,19 +306,6 @@ pub mod mock {
             Ok(())
         }
 
-        fn merge_to_primary(&self, branch_name: &str) -> Result<MergeResult, GitError> {
-            if let Some(result) = self.next_merge_result.lock().unwrap().take() {
-                return result;
-            }
-
-            // Default: successful merge
-            Ok(MergeResult {
-                commit_sha: format!("mock-sha-{}", branch_name.replace('/', "-")),
-                target_branch: self.primary_branch.clone(),
-                merged_at: chrono::Utc::now().to_rfc3339(),
-            })
-        }
-
         fn merge_to_branch(
             &self,
             branch_name: &str,
@@ -352,13 +320,6 @@ pub mod mock {
                 target_branch: target_branch.to_string(),
                 merged_at: chrono::Utc::now().to_rfc3339(),
             })
-        }
-
-        fn rebase_on_primary(&self, _worktree_path: &Path) -> Result<(), GitError> {
-            if let Some(result) = self.next_rebase_result.lock().unwrap().take() {
-                return result;
-            }
-            Ok(())
         }
 
         fn rebase_on_branch(
@@ -439,7 +400,7 @@ pub mod mock {
             let mock = MockGitService::new();
 
             // Test default success
-            let result = mock.merge_to_primary("task/TASK-001").unwrap();
+            let result = mock.merge_to_branch("task/TASK-001", "main").unwrap();
             assert!(result.commit_sha.starts_with("mock-sha"));
 
             // Test configured conflict
@@ -448,7 +409,7 @@ pub mod mock {
                 conflict_files: vec!["file.rs".to_string()],
             }));
 
-            let err = mock.merge_to_primary("task/TASK-002").unwrap_err();
+            let err = mock.merge_to_branch("task/TASK-002", "main").unwrap_err();
             assert!(matches!(err, GitError::MergeConflict { .. }));
         }
     }

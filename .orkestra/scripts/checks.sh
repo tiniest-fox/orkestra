@@ -119,14 +119,14 @@ run_check() {
 # Detect branches (use ORKESTRA_* env vars if available)
 # =============================================================================
 
-get_primary_branch() {
-    # Use ORKESTRA env var if set (when running as script stage)
-    if [ -n "$ORKESTRA_PRIMARY_BRANCH" ]; then
-        echo "$ORKESTRA_PRIMARY_BRANCH"
+get_base_branch() {
+    # When running under Orkestra, use the explicit base branch
+    if [ -n "$ORKESTRA_BASE_BRANCH" ]; then
+        echo "$ORKESTRA_BASE_BRANCH"
         return
     fi
 
-    # Try common primary branch names
+    # Manual runs: try common primary branch names
     for branch in main master; do
         if git rev-parse --verify "$branch" &>/dev/null; then
             echo "$branch"
@@ -147,11 +147,11 @@ get_current_branch() {
     git branch --show-current
 }
 
-PRIMARY_BRANCH=$(get_primary_branch)
+BASE_BRANCH=$(get_base_branch)
 CURRENT_BRANCH=$(get_current_branch)
 
 if $VERBOSE; then
-    info "Primary branch: $PRIMARY_BRANCH"
+    info "Base branch: $BASE_BRANCH"
     info "Current branch: $CURRENT_BRANCH"
 
     # Show Orkestra context if running as script stage
@@ -172,7 +172,7 @@ if $FORCE_ALL; then
 elif $CHECK_LAST_COMMIT; then
     info "Checking last commit (--last-commit flag)"
     CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
-elif [ "$CURRENT_BRANCH" = "$PRIMARY_BRANCH" ]; then
+elif [ "$CURRENT_BRANCH" = "$BASE_BRANCH" ]; then
     # On primary branch - check uncommitted changes or last commit
     if [ -n "$(git status --porcelain)" ]; then
         info "On primary branch with uncommitted changes - checking working tree"
@@ -183,7 +183,7 @@ elif [ "$CURRENT_BRANCH" = "$PRIMARY_BRANCH" ]; then
     fi
 else
     # On feature branch - compare to primary branch
-    MERGE_BASE=$(git merge-base "$PRIMARY_BRANCH" HEAD)
+    MERGE_BASE=$(git merge-base "$BASE_BRANCH" HEAD)
     # Include both committed changes (merge-base to HEAD) and uncommitted changes
     COMMITTED_CHANGES=$(git diff --name-only "$MERGE_BASE" HEAD)
     UNCOMMITTED_CHANGES=$(git diff --name-only HEAD)

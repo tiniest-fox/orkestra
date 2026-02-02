@@ -124,6 +124,9 @@ pub struct OrchestratorLoop {
     /// Only these tasks are eligible for integration, implementing a one-tick delay.
     /// This prevents integrating a task in the same tick where it became Done.
     ready_for_integration: Mutex<HashSet<String>>,
+    /// Task IDs that have a pending `spawn_setup` in a background thread.
+    /// Prevents double-spawning when the orchestrator ticks faster than setup completes.
+    pending_setups: Mutex<HashSet<String>>,
     stop_flag: Arc<AtomicBool>,
 }
 
@@ -134,6 +137,7 @@ impl OrchestratorLoop {
             api,
             stage_executor,
             ready_for_integration: Mutex::new(HashSet::new()),
+            pending_setups: Mutex::new(HashSet::new()),
             stop_flag: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -232,16 +236,19 @@ impl OrchestratorLoop {
     pub fn tick(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
 
-        // Phase 0: Check if WaitingOnChildren parents can advance (all subtasks done)
+        // Phase 0: Set up subtasks whose dependencies are satisfied
+        self.setup_ready_subtasks()?;
+
+        // Phase 1: Check if WaitingOnChildren parents can advance (all subtasks merged)
         events.extend(self.check_parent_completions()?);
 
-        // Phase 1: Process completed executions (agents and scripts)
+        // Phase 2: Process completed executions (agents and scripts)
         events.extend(self.process_completed_executions()?);
 
-        // Phase 2: Start new executions for tasks needing agents or scripts
+        // Phase 3: Start new executions for tasks needing agents or scripts
         events.extend(self.start_new_executions()?);
 
-        // Phase 3: Start integrations for Done tasks (that were Done at end of PREVIOUS tick)
+        // Phase 4: Start integrations for Done tasks and subtasks (one-tick delay)
         events.extend(self.start_integrations()?);
 
         // Snapshot Done tasks AFTER processing.
@@ -263,7 +270,69 @@ impl OrchestratorLoop {
         Ok(events)
     }
 
-    /// Check if any `WaitingOnChildren` parents can advance because all subtasks are done.
+    /// Set up subtasks whose dependencies are satisfied.
+    ///
+    /// Subtask setup is deferred from creation time to allow dependent subtasks
+    /// to branch from the parent after predecessors' changes have been merged back.
+    /// This ensures subtask B (which depends on A) sees A's code in its worktree.
+    ///
+    /// Subtasks with no dependencies are set up on the first tick after creation.
+    fn setup_ready_subtasks(&self) -> WorkflowResult<()> {
+        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+        let all_tasks = api.store.list_tasks()?;
+
+        let mut pending = self.pending_setups.lock().map_err(|_| WorkflowError::Lock)?;
+
+        // Clear entries for tasks that have left SettingUp (setup completed or failed)
+        pending.retain(|id| {
+            all_tasks
+                .iter()
+                .any(|t| t.id == *id && t.phase == Phase::SettingUp)
+        });
+
+        // Build set of completed task IDs for dependency checking
+        let done_ids: HashSet<String> = all_tasks
+            .iter()
+            .filter(|t| t.is_done() || t.is_archived())
+            .map(|t| t.id.clone())
+            .collect();
+
+        for task in &all_tasks {
+            // Only subtasks in SettingUp phase (no worktree yet)
+            if task.phase != Phase::SettingUp || task.parent_id.is_none() {
+                continue;
+            }
+
+            // Skip if setup is already in progress (background thread running)
+            if pending.contains(&task.id) {
+                continue;
+            }
+
+            // Check all dependencies are satisfied
+            if !task.depends_on.iter().all(|dep| done_ids.contains(dep)) {
+                continue;
+            }
+
+            orkestra_debug!(
+                "orchestrator",
+                "Setting up subtask {} (deps satisfied)",
+                task.id
+            );
+
+            pending.insert(task.id.clone());
+
+            // Use the same spawn_setup as parent tasks — creates worktree from base_branch
+            api.setup_service.spawn_setup(
+                task.id.clone(),
+                task.base_branch.clone(),
+                None, // Subtasks already have titles from breakdown
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Check if any `WaitingOnChildren` parents can advance because all subtasks are merged.
     fn check_parent_completions(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
         let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
@@ -685,14 +754,13 @@ impl OrchestratorLoop {
             return true; // No branch = nothing to merge
         };
 
-        let target_branch = match &task.base_branch {
-            Some(base) => base.clone(),
-            None => git
-                .detect_primary_branch()
-                .unwrap_or_else(|_| "main".to_string()),
-        };
+        if task.base_branch.is_empty() {
+            // No base_branch means we can't determine the merge target.
+            // Treat as not merged so integration can surface the error.
+            return false;
+        }
 
-        match git.is_branch_merged(branch_name, &target_branch) {
+        match git.is_branch_merged(branch_name, &task.base_branch) {
             Ok(merged) => merged,
             Err(e) => {
                 orkestra_debug!(
@@ -709,12 +777,12 @@ impl OrchestratorLoop {
     /// Recover tasks stuck in `SettingUp` phase (from app crash during setup).
     ///
     /// Tasks stuck in `SettingUp` from a previous crash are retried from scratch.
+    /// Cleans up any partial worktree/branch, clears stale worktree state,
+    /// then re-triggers setup.
     ///
-    /// For parent tasks: cleans up any partial worktree/branch, then re-runs
-    /// `spawn_setup` (worktree creation + title generation). Setup steps are
-    /// idempotent after cleanup so this is safe to retry.
-    ///
-    /// For subtasks: re-runs `spawn_subtask_setup` which just transitions to Idle.
+    /// For parent tasks: re-runs `spawn_setup` immediately.
+    /// For subtasks: clears partial state and leaves in `SettingUp` — the
+    /// `setup_ready_subtasks()` tick phase will re-trigger when deps are met.
     fn recover_stale_setup_tasks(&self) {
         let Ok(api) = self.api.lock() else {
             orkestra_debug!(
@@ -738,13 +806,7 @@ impl OrchestratorLoop {
 
             orkestra_debug!("recovery", "Retrying setup for stale task: {}", task.id);
 
-            if task.parent_id.is_some() {
-                // Subtasks just need phase transition — no worktree work
-                api.setup_service.spawn_subtask_setup(task.id.clone());
-                continue;
-            }
-
-            // Parent task: clean up partial state, then re-run full setup
+            // Clean up any partial worktree/branch from interrupted setup
             if let Some(ref git) = api.git_service {
                 if let Err(e) = git.remove_worktree(&task.id, true) {
                     // Expected if worktree wasn't created yet
@@ -761,7 +823,24 @@ impl OrchestratorLoop {
                 }
             }
 
-            // Determine if title generation is needed
+            if task.parent_id.is_some() {
+                // Subtask: clear any partial worktree state, leave in SettingUp.
+                // The setup_ready_subtasks() tick phase will re-trigger when deps are met.
+                let mut task = task.clone();
+                task.worktree_path = None;
+                task.branch_name = None;
+                if let Err(e) = api.store.save_task(&task) {
+                    orkestra_debug!(
+                        "recovery",
+                        "Failed to clear partial state for subtask {}: {}",
+                        task.id,
+                        e
+                    );
+                }
+                continue;
+            }
+
+            // Parent task: re-run full setup
             let needs_title = task.title.trim().is_empty() && !task.description.trim().is_empty();
             let description = if needs_title {
                 Some(task.description.clone())

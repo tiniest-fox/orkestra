@@ -25,15 +25,15 @@ All paths relative to `crates/orkestra-core/src/`.
 2. **Human approves breakdown** — `human_actions.rs::approve()` detects the stage has subtask capabilities and structured data exists, calls `approve_with_subtask_creation()`.
 
 3. **SubtaskService creates Task records** — `subtask_service.rs::create_subtasks_from_breakdown()` parses the structured JSON and creates tasks in two passes:
-   - **Pass 1**: Create all tasks with IDs, assign flow from `subtasks.flow` capability, inherit parent's worktree/branch/auto_mode, copy parent's plan artifact
+   - **Pass 1**: Create all tasks with IDs, assign flow from `subtasks.flow` capability, set `base_branch` to parent's branch, inherit auto_mode, copy parent's plan artifact
    - **Pass 2**: Resolve `depends_on` indices to actual task IDs
-   - **Save**: Persist each task, create initial iterations, spawn subtask setup (SettingUp -> Idle, no worktree)
+   - **Save**: Persist each task, create initial iterations. Subtasks start in SettingUp — worktree creation is deferred to `setup_ready_subtasks()` in the orchestrator tick loop
 
 4. **Parent enters WaitingOnChildren** — Parent status set to `WaitingOnChildren(next_stage)` where `next_stage` is the stage after breakdown. Parent phase is Idle.
 
 5. **Orchestrator schedules subtasks by dependency** — `api.get_tasks_needing_agents()` includes subtasks only if all entries in `depends_on` are Done or Archived. Subtasks with no dependencies start immediately. Others wait.
 
-6. **Subtasks execute through their flow** — Each subtask runs through its assigned flow's stages (e.g., "quick" flow skips breakdown and compound). They share the parent's worktree and branch.
+6. **Subtasks execute through their flow** — Each subtask runs through its assigned flow's stages (e.g., "quick" flow skips breakdown and compound). Each subtask has its own worktree and branch, created from the parent's branch. When a subtask completes, it integrates (rebase + merge) back to the parent's branch.
 
 7. **Parent advances when all subtasks done** — `orchestrator.rs::check_parent_completions()` calls `api.advance_completed_parents()` each tick. For each `WaitingOnChildren` parent: if all subtasks are done/archived, parent advances to `next_stage` with a new iteration. If any subtask failed, parent is marked Failed.
 
@@ -67,10 +67,10 @@ If the breakdown agent decides the task is simple enough to not need subtasks, i
 ## Non-Obvious Behaviors
 
 - **Deferred creation**: Subtask Task records don't exist until the breakdown is approved. Before approval, only the JSON artifact exists. This means you can reject a breakdown and get a new one without orphaned tasks.
-- **Shared worktree**: Subtasks inherit `worktree_path` and `branch_name` from the parent. They don't get their own worktrees or branches. All subtasks and the parent operate on the same git branch.
+- **Isolated worktrees**: Each subtask gets its own worktree and branch, created from the parent's branch (`base_branch`). Setup is deferred until dependencies are satisfied, so subtask B (which depends on A) branches after A's changes have been merged back to the parent's branch. This isolation allows parallel work without conflicts, but means independent subtasks editing the same files may conflict during integration (see task-integration.md).
 - **Plan inheritance**: Each subtask gets a copy of the parent's `plan` artifact, so the worker agent has context about the overall task.
 - **Flow assignment**: Subtasks use the flow specified by `subtask_flow` on the breakdown stage's capabilities (e.g., `subtask_flow: "quick"`). If not set, subtasks use the full pipeline.
-- **Subtask setup is minimal**: `spawn_subtask_setup()` only transitions SettingUp -> Idle. No worktree creation, no title generation. This is near-instant.
+- **Deferred subtask setup**: Subtask setup is deferred to the orchestrator tick loop (`setup_ready_subtasks()`). When dependencies are satisfied, it calls `spawn_setup()` which creates a worktree and branch from `base_branch`. No title generation (titles come from the breakdown output).
 - **Parent not visible on Kanban during subtask execution**: The parent stays in `WaitingOnChildren` status. The frontend shows it in the breakdown column with a subtasks progress tab.
 - **Auto-mode propagation**: Subtasks inherit `auto_mode` from the parent. If the parent is in auto-mode, all subtasks auto-advance through their stages.
 - **Failure propagation**: If *any* subtask fails, the parent is marked Failed immediately. There's no partial success — all subtasks must complete for the parent to advance.

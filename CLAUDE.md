@@ -154,7 +154,7 @@ This project defines three flows: `quick` (skips breakdown and compound), `hotfi
 
 #### Subtask System
 
-See [`docs/flows/subtask-lifecycle.md`](docs/flows/subtask-lifecycle.md) for the full lifecycle. In brief: stages with `subtasks` capabilities output subtask JSON. On approval, `SubtaskService` creates child tasks with dependencies, flow assignment (via `subtasks.flow`), and inherited artifacts. Parent enters `WaitingOnChildren` until all subtasks complete, then advances to `subtasks.completion_stage` if configured. Subtasks share the parent's worktree.
+See [`docs/flows/subtask-lifecycle.md`](docs/flows/subtask-lifecycle.md) for the full lifecycle. In brief: stages with `subtasks` capabilities output subtask JSON. On approval, `SubtaskService` creates child tasks with dependencies, flow assignment (via `subtasks.flow`), and inherited artifacts. Parent enters `WaitingOnChildren` until all subtasks complete, then advances to `subtasks.completion_stage` if configured. Each subtask gets its own worktree and branch, created from the parent's branch when its dependencies are satisfied.
 
 ### Agent System
 

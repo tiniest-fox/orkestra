@@ -285,8 +285,8 @@ export interface WorkflowTask {
   branch_name?: string;
   /** Git worktree path. */
   worktree_path?: string;
-  /** The branch this task was created from (merge/rebase target). */
-  base_branch?: string;
+  /** The branch this task was created from (merge/rebase target). Always set at creation. */
+  base_branch: string;
   /** Whether the task runs autonomously through all stages. */
   auto_mode: boolean;
   /** Named flow for this task (e.g., "quick_fix"). Null/undefined = default flow. */
@@ -484,8 +484,6 @@ export interface BranchList {
   branches: string[];
   /** Currently checked-out branch. */
   current: string | null;
-  /** Primary branch (main or master). */
-  primary: string | null;
 }
 
 // =============================================================================

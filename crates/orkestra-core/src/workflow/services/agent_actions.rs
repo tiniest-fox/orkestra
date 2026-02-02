@@ -94,7 +94,6 @@ impl WorkflowApi {
             &self.workflow,
             &self.store,
             &self.iteration_service,
-            &self.setup_service,
             &artifact_name,
         )?;
 
@@ -480,7 +479,9 @@ impl WorkflowApi {
                 continue;
             }
 
-            let all_done = subtasks.iter().all(|s| s.is_done() || s.is_archived());
+            // Subtasks must be Archived (merged back to parent branch), not just Done.
+            // Done means stages complete but branch not yet merged.
+            let all_done = subtasks.iter().all(Task::is_archived);
             let any_failed = subtasks.iter().any(Task::is_failed);
 
             if any_failed {
@@ -773,7 +774,7 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let mut task = api.create_task("Test", "Description", None).unwrap();
+        let mut task = create_task_ready(&api, "Test", "Description");
         task.phase = Phase::AgentWorking;
         api.store.save_task(&task).unwrap();
 

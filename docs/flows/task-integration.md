@@ -24,7 +24,7 @@ All paths relative to `crates/orkestra-core/src/`.
 
 3. **Commit pending changes** — `integration.rs::integrate_task()` commits any uncommitted work in the worktree using the task title as commit message. If commit fails, integration fails immediately (routes to recovery).
 
-4. **Determine target branch** — Uses `task.base_branch` if set, otherwise detects primary branch (falls back to "main").
+4. **Determine target branch** — Uses `task.base_branch` (always set at task creation from UI branch selection or parent's branch for subtasks). Errors if not set.
 
 5. **Rebase onto target** — `git.rebase_on_branch(worktree, target)`. On conflict: routes to recovery stage. On success: the merge in step 6 is guaranteed to be a clean fast-forward.
 
@@ -62,7 +62,8 @@ If the app crashes during integration (task stuck in `Phase::Integrating`):
 
 - **DB before cleanup**: `integration_succeeded()` saves `Archived` status *before* removing the worktree. If the app crashes between these, the task is correctly Archived and the orphaned worktree gets cleaned up on startup.
 - **Worktree path preserved**: `worktree_path` stays on the task record even after the physical worktree is removed. Used for log file access.
-- **Subtasks excluded**: Subtasks share their parent's worktree, so only parent tasks are integrated. Subtask completion triggers parent advancement (see subtask-lifecycle.md), not integration.
+- **Subtasks are integrated too**: Subtasks get their own worktrees and branches. When a subtask reaches Done, it goes through the same integration flow — but merges to the parent's branch (stored in `base_branch`) instead of primary. After all subtasks are Archived, the parent advances (see subtask-lifecycle.md).
+- **Nondeterministic integration order**: When multiple tasks are eligible for integration in the same tick, `start_integrations()` processes them in whatever order `get_tasks_needing_integration()` returns them (store iteration order, which is not guaranteed). This means if two independent subtasks both reach Done and modify the same files, whichever integrates first succeeds cleanly, and the other hits a rebase conflict and routes to recovery. Tests must not assume a specific integration order.
 - **One-tick delay rationale**: Without it, a task could become Done and start integrating in the same tick. If another operation in that tick also touches the task, you get a race condition.
 - **Commit uses task title**: The commit message for pending changes is the task title (or "Task {id}" if title is empty). This is not configurable.
 - **Rebase guarantees clean merge**: The integration does rebase first, then merge. After a successful rebase, the merge is always a fast-forward — a merge conflict at step 6 should be impossible in theory but is handled defensively.

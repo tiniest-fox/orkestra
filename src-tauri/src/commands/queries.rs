@@ -92,8 +92,6 @@ pub struct BranchList {
     pub branches: Vec<String>,
     /// Currently checked-out branch.
     pub current: Option<String>,
-    /// Primary branch (main or master).
-    pub primary: Option<String>,
 }
 
 /// List available git branches.
@@ -107,14 +105,12 @@ pub fn workflow_list_branches(state: State<AppState>) -> Result<BranchList, Taur
         return Ok(BranchList {
             branches: vec![],
             current: None,
-            primary: None,
         });
     };
 
     Ok(BranchList {
         branches: git.list_branches().unwrap_or_default(),
         current: git.current_branch().ok(),
-        primary: git.detect_primary_branch().ok(),
     })
 }
 

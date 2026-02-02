@@ -276,8 +276,14 @@ pub fn claudecode_aliases() -> HashMap<String, String> {
 /// `OpenCode` provider alias table.
 pub fn opencode_aliases() -> HashMap<String, String> {
     HashMap::from([
-        ("kimi-k2".to_string(), "moonshot/kimi-k2".to_string()),
-        ("kimi-k2.5".to_string(), "moonshot/kimi-k2.5".to_string()),
+        (
+            "kimi-k2".to_string(),
+            "moonshot/kimi-k2-0711-preview".to_string(),
+        ),
+        (
+            "kimi-k2.5".to_string(),
+            "opencode/kimi-k2.5-free".to_string(),
+        ),
     ])
 }
 
@@ -451,7 +457,10 @@ mod tests {
     fn resolve_opencode_kimi_alias() {
         let registry = test_registry();
         let resolved = registry.resolve(Some("opencode/kimi-k2")).unwrap();
-        assert_eq!(resolved.model_id, Some("moonshot/kimi-k2".to_string()));
+        assert_eq!(
+            resolved.model_id,
+            Some("moonshot/kimi-k2-0711-preview".to_string())
+        );
         assert!(!resolved.capabilities.supports_json_schema);
         assert!(resolved.capabilities.supports_sessions);
     }
@@ -485,7 +494,10 @@ mod tests {
     fn resolve_shorthand_kimi() {
         let registry = test_registry();
         let resolved = registry.resolve(Some("kimi-k2")).unwrap();
-        assert_eq!(resolved.model_id, Some("moonshot/kimi-k2".to_string()));
+        assert_eq!(
+            resolved.model_id,
+            Some("moonshot/kimi-k2-0711-preview".to_string())
+        );
         // Should resolve to opencode provider
         assert!(!resolved.capabilities.supports_json_schema);
     }
@@ -597,8 +609,8 @@ mod tests {
     #[test]
     fn opencode_aliases_are_correct() {
         let aliases = opencode_aliases();
-        assert_eq!(aliases["kimi-k2"], "moonshot/kimi-k2");
-        assert_eq!(aliases["kimi-k2.5"], "moonshot/kimi-k2.5");
+        assert_eq!(aliases["kimi-k2"], "moonshot/kimi-k2-0711-preview");
+        assert_eq!(aliases["kimi-k2.5"], "opencode/kimi-k2.5-free");
         assert_eq!(aliases.len(), 2);
     }
 }

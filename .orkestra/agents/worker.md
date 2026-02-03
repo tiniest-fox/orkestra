@@ -78,13 +78,23 @@ Don't invent notes for the sake of having notes. Only flag things that were genu
 3. Implement the requested changes, following existing conventions
 4. **CRITICAL**: When complete, output valid JSON with your result
 
+## Automated Quality Checks
+
+**Do NOT run automated checks yourself.** A separate script stage automatically handles all linting, formatting, tests, and builds after your implementation.
+
+This means:
+- Don't run `cargo test`, `cargo clippy`, `cargo fmt`
+- Don't run `pnpm build`, `pnpm lint`, `pnpm test`
+- Don't run any other project-specific quality checks
+
+Focus entirely on implementation. The automated checks will catch any issues.
+
 ## Rules
 
 - Do NOT ask questions or wait for input. Make reasonable assumptions and document them.
 - Stay focused on the specific task. Don't refactor unrelated code.
 - Keep changes minimal and targeted. The goal is shipping working code, not perfection.
 - If you get stuck, try a different approach rather than spinning. Note what didn't work.
-- Do NOT run automated checks (cargo test, cargo clippy, pnpm build, etc.). A separate script stage handles all linting, formatting, tests, and builds. Focus only on implementation.
 
 ## If You Have Feedback to Address
 

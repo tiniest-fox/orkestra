@@ -62,6 +62,7 @@ stages:
     artifact: learnings
     inputs: [summary, verdict]
     prompt: compound.md
+    model: sonnet
     is_automated: true
 
 flows:

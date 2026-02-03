@@ -42,7 +42,7 @@ struct RegisteredProvider {
     /// Provider capabilities.
     capabilities: ProviderCapabilities,
     /// Alias map: friendly name → resolved model ID.
-    /// e.g., "sonnet" → "claude-sonnet-4-5-20250514"
+    /// e.g., "sonnet" → "claude-sonnet-4-5-20250929"
     aliases: HashMap<String, String>,
 }
 
@@ -142,7 +142,7 @@ impl ProviderRegistry {
     ///
     /// Model spec formats:
     /// - `"provider/alias"` — Look up provider, resolve alias (e.g., "claudecode/sonnet")
-    /// - `"provider/raw-id"` — Look up provider, pass raw ID through (e.g., "claudecode/claude-sonnet-4-5-20250514")
+    /// - `"provider/raw-id"` — Look up provider, pass raw ID through (e.g., "claudecode/claude-sonnet-4-5-20250929")
     /// - `"alias"` — Search all providers' alias tables; first match wins.
     ///   If no match, use default provider with the spec as a passthrough model ID.
     ///
@@ -287,10 +287,10 @@ pub fn claudecode_aliases() -> HashMap<String, String> {
     HashMap::from([
         (
             "sonnet".to_string(),
-            "claude-sonnet-4-5-20250514".to_string(),
+            "claude-sonnet-4-5-20250929".to_string(),
         ),
         ("opus".to_string(), "claude-opus-4-5-20251101".to_string()),
-        ("haiku".to_string(), "claude-3-5-haiku-20241022".to_string()),
+        ("haiku".to_string(), "claude-haiku-4-5-20251001".to_string()),
     ])
 }
 
@@ -438,7 +438,7 @@ mod tests {
         let resolved = registry.resolve(Some("claudecode/sonnet")).unwrap();
         assert_eq!(
             resolved.model_id,
-            Some("claude-sonnet-4-5-20250514".to_string())
+            Some("claude-sonnet-4-5-20250929".to_string())
         );
         assert!(resolved.capabilities.supports_json_schema);
         assert!(resolved.capabilities.supports_sessions);
@@ -460,7 +460,7 @@ mod tests {
         let resolved = registry.resolve(Some("claudecode/haiku")).unwrap();
         assert_eq!(
             resolved.model_id,
-            Some("claude-3-5-haiku-20241022".to_string())
+            Some("claude-haiku-4-5-20251001".to_string())
         );
     }
 
@@ -468,11 +468,11 @@ mod tests {
     fn resolve_claudecode_raw_passthrough() {
         let registry = test_registry();
         let resolved = registry
-            .resolve(Some("claudecode/claude-sonnet-4-5-20250514"))
+            .resolve(Some("claudecode/claude-sonnet-4-5-20250929"))
             .unwrap();
         assert_eq!(
             resolved.model_id,
-            Some("claude-sonnet-4-5-20250514".to_string())
+            Some("claude-sonnet-4-5-20250929".to_string())
         );
     }
 
@@ -507,7 +507,7 @@ mod tests {
         let resolved = registry.resolve(Some("sonnet")).unwrap();
         assert_eq!(
             resolved.model_id,
-            Some("claude-sonnet-4-5-20250514".to_string())
+            Some("claude-sonnet-4-5-20250929".to_string())
         );
         // Should resolve to claudecode provider
         assert!(resolved.capabilities.supports_json_schema);
@@ -623,9 +623,9 @@ mod tests {
     #[test]
     fn claudecode_aliases_are_correct() {
         let aliases = claudecode_aliases();
-        assert_eq!(aliases["sonnet"], "claude-sonnet-4-5-20250514");
+        assert_eq!(aliases["sonnet"], "claude-sonnet-4-5-20250929");
         assert_eq!(aliases["opus"], "claude-opus-4-5-20251101");
-        assert_eq!(aliases["haiku"], "claude-3-5-haiku-20241022");
+        assert_eq!(aliases["haiku"], "claude-haiku-4-5-20251001");
         assert_eq!(aliases.len(), 3);
     }
 

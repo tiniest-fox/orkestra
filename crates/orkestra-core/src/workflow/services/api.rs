@@ -238,10 +238,7 @@ impl WorkflowApi {
     ///
     /// Returns `TaskNotFound` if the task doesn't exist, or `GitError` if
     /// the task doesn't have a worktree or if the git diff operation fails.
-    pub fn get_task_diff(
-        &self,
-        task_id: &str,
-    ) -> WorkflowResult<crate::workflow::ports::TaskDiff> {
+    pub fn get_task_diff(&self, task_id: &str) -> WorkflowResult<crate::workflow::ports::TaskDiff> {
         let task = self.get_task(task_id)?;
 
         let git = self
@@ -264,7 +261,7 @@ impl WorkflowApi {
             branch_name,
             &task.base_branch,
         )
-        .map_err(WorkflowError::GitError)
+        .map_err(|e| WorkflowError::GitError(e.to_string()))
     }
 
     /// Get the content of a file at HEAD in a task's worktree.
@@ -275,7 +272,11 @@ impl WorkflowApi {
     ///
     /// Returns `TaskNotFound` if the task doesn't exist, or `GitError` if
     /// the task doesn't have a worktree or if the git operation fails.
-    pub fn get_file_content(&self, task_id: &str, file_path: &str) -> WorkflowResult<Option<String>> {
+    pub fn get_file_content(
+        &self,
+        task_id: &str,
+        file_path: &str,
+    ) -> WorkflowResult<Option<String>> {
         let task = self.get_task(task_id)?;
 
         let git = self
@@ -289,7 +290,7 @@ impl WorkflowApi {
             .ok_or_else(|| WorkflowError::GitError("Task has no worktree".into()))?;
 
         git.read_file_at_head(std::path::Path::new(worktree_path), file_path)
-            .map_err(WorkflowError::GitError)
+            .map_err(|e| WorkflowError::GitError(e.to_string()))
     }
 }
 

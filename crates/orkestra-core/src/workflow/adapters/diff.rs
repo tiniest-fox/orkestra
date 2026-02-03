@@ -65,7 +65,7 @@ fn parse_diff_output(output: &str) -> Result<TaskDiff, GitError> {
             break;
         }
         if let Some(line) = lines.next() {
-            if let Some((additions, deletions, path)) = parse_numstat_line(line) {
+            if let Some((path, additions, deletions)) = parse_numstat_line(line) {
                 numstats.push((path, additions, deletions));
             }
         }
@@ -79,7 +79,8 @@ fn parse_diff_output(output: &str) -> Result<TaskDiff, GitError> {
         if line.starts_with("diff --git") {
             // Save previous file
             if let Some(path) = current_file.take() {
-                if let Some((_, additions, deletions)) = numstats.iter().find(|(p, _, _)| p == &path)
+                if let Some((_, additions, deletions)) =
+                    numstats.iter().find(|(p, _, _)| p == &path)
                 {
                     files.push(FileDiff {
                         path: path.clone(),
@@ -165,7 +166,10 @@ fn determine_change_type(additions: usize, deletions: usize) -> FileChangeType {
 }
 
 /// Read file content at HEAD in a worktree.
-pub fn read_file_at_head(worktree_path: &Path, file_path: &str) -> Result<Option<String>, GitError> {
+pub fn read_file_at_head(
+    worktree_path: &Path,
+    file_path: &str,
+) -> Result<Option<String>, GitError> {
     let output = Command::new("git")
         .args(["show", &format!("HEAD:{file_path}")])
         .current_dir(worktree_path)
@@ -178,10 +182,7 @@ pub fn read_file_at_head(worktree_path: &Path, file_path: &str) -> Result<Option
         if stderr.contains("does not exist") || stderr.contains("exists on disk, but not in") {
             return Ok(None);
         }
-        return Err(GitError::IoError(format!(
-            "git show failed: {}",
-            stderr
-        )));
+        return Err(GitError::IoError(format!("git show failed: {}", stderr)));
     }
 
     Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))

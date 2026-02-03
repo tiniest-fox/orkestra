@@ -39,6 +39,10 @@ pub enum WorkflowError {
     /// Integration (merge) failed.
     #[error("Integration failed: {0}")]
     IntegrationFailed(String),
+
+    /// Git operation failed.
+    #[error("Git error: {0}")]
+    GitError(String),
 }
 
 /// Result type for workflow operations.

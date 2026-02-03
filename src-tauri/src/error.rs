@@ -88,6 +88,10 @@ impl From<WorkflowError> for TauriError {
                 code: "INTEGRATION_FAILED".into(),
                 message: msg,
             },
+            WorkflowError::GitError(msg) => TauriError {
+                code: "GIT_ERROR".into(),
+                message: msg,
+            },
         }
     }
 }

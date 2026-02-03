@@ -3,7 +3,8 @@
 //! Provides server-side syntax highlighting for diff lines using TextMate grammars.
 //! Generates HTML with CSS classes for styling, supporting both light and dark themes.
 
-use syntect::highlighting::{ClassStyle, ClassedHTMLGenerator, ThemeSet};
+use syntect::highlighting::ThemeSet;
+use syntect::html::{ClassStyle, ClassedHTMLGenerator};
 use syntect::parsing::SyntaxSet;
 
 /// Syntax highlighter that generates CSS-classed HTML.
@@ -28,7 +29,7 @@ impl SyntaxHighlighter {
 
         // Generate CSS for light theme
         let light_theme = &theme_set.themes["InspiredGitHub"];
-        let light_css = ClassedHTMLGenerator::get_css_for_theme_with_class_style(
+        let light_css = syntect::html::css_for_theme_with_class_style(
             light_theme,
             ClassStyle::SpacedPrefixed { prefix: "syn-" },
         )
@@ -36,7 +37,7 @@ impl SyntaxHighlighter {
 
         // Generate CSS for dark theme
         let dark_theme = &theme_set.themes["base16-ocean.dark"];
-        let dark_css = ClassedHTMLGenerator::get_css_for_theme_with_class_style(
+        let dark_css = syntect::html::css_for_theme_with_class_style(
             dark_theme,
             ClassStyle::SpacedPrefixed { prefix: "syn-" },
         )
@@ -70,7 +71,10 @@ impl SyntaxHighlighter {
             ClassStyle::SpacedPrefixed { prefix: "syn-" },
         );
 
-        if generator.parse_html_for_line_which_includes_newline(line).is_err() {
+        if generator
+            .parse_html_for_line_which_includes_newline(line)
+            .is_err()
+        {
             // Fallback: return line with HTML entities escaped
             return html_escape(line);
         }

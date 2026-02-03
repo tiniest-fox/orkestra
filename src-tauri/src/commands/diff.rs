@@ -3,7 +3,7 @@
 use orkestra_core::workflow::ports::{FileChangeType, FileDiff, TaskDiff};
 use serde::Serialize;
 
-use crate::error::Result;
+use crate::error::TauriError;
 use crate::highlight::SyntaxHighlighter;
 use crate::state::AppState;
 
@@ -95,7 +95,7 @@ pub async fn workflow_get_task_diff(
     task_id: String,
     app_state: tauri::State<'_, AppState>,
     highlighter: tauri::State<'_, SyntaxHighlighter>,
-) -> Result<HighlightedTaskDiff> {
+) -> Result<HighlightedTaskDiff, TauriError> {
     let api = app_state.api()?;
     let raw_diff = api.get_task_diff(&task_id)?;
 
@@ -116,7 +116,7 @@ pub async fn workflow_get_file_content(
     file_path: String,
     app_state: tauri::State<'_, AppState>,
     highlighter: tauri::State<'_, SyntaxHighlighter>,
-) -> Result<Option<Vec<HighlightedLine>>> {
+) -> Result<Option<Vec<HighlightedLine>>, TauriError> {
     let api = app_state.api()?;
     let content = api.get_file_content(&task_id, &file_path)?;
 
@@ -154,7 +154,7 @@ pub async fn workflow_get_file_content(
 #[tauri::command]
 pub async fn workflow_get_syntax_css(
     highlighter: tauri::State<'_, SyntaxHighlighter>,
-) -> Result<SyntaxCss> {
+) -> Result<SyntaxCss, TauriError> {
     Ok(SyntaxCss {
         light: highlighter.light_css.clone(),
         dark: highlighter.dark_css.clone(),

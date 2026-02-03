@@ -1,13 +1,154 @@
 //! Git integration operations: success/failure handling.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::orkestra_debug;
 use crate::workflow::domain::{IterationTrigger, Task};
-use crate::workflow::ports::{GitError, WorkflowError, WorkflowResult};
+use crate::workflow::ports::{GitError, GitService, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase, Status};
 
 use super::{workflow_warn, WorkflowApi};
+
+// ============================================================================
+// Standalone integration types and function
+// ============================================================================
+
+/// Parameters needed to perform git integration without holding the API lock.
+pub struct IntegrationParams {
+    pub task_id: String,
+    pub branch_name: String,
+    pub target_branch: String,
+    pub worktree_path: Option<PathBuf>,
+    pub commit_message: String,
+}
+
+/// Result of the git-only portion of integration (no API lock needed).
+pub enum IntegrationGitResult {
+    /// Merge succeeded — ready to archive.
+    Success,
+    /// Committing pending changes failed.
+    CommitFailed(String),
+    /// Rebase had merge conflicts.
+    RebaseConflict { conflict_files: Vec<String> },
+    /// Rebase failed for a non-conflict reason.
+    RebaseError(String),
+    /// Merge had conflicts (rebase succeeded but merge to target failed).
+    MergeConflict { conflict_files: Vec<String> },
+    /// Merge failed for a non-conflict reason.
+    MergeError(String),
+}
+
+/// Perform the git work for integration without holding the API lock.
+///
+/// This commits pending changes, rebases onto the target, and merges.
+/// The caller is responsible for recording the result via `apply_integration_result`.
+pub fn perform_git_integration(
+    git: &dyn GitService,
+    params: &IntegrationParams,
+) -> IntegrationGitResult {
+    // Commit any pending changes in the worktree
+    if let Some(worktree_path) = &params.worktree_path {
+        let worktree = Path::new(worktree_path);
+        if worktree.exists() {
+            if let Err(e) = git.commit_pending_changes(worktree, &params.commit_message) {
+                return IntegrationGitResult::CommitFailed(format!(
+                    "Failed to commit pending changes: {e}"
+                ));
+            }
+        } else {
+            orkestra_debug!(
+                "integration",
+                "worktree missing for {}, skipping commit",
+                params.task_id
+            );
+        }
+    }
+
+    // Rebase onto target branch
+    if let Some(worktree_path) = &params.worktree_path {
+        let worktree = Path::new(worktree_path);
+        if worktree.exists() {
+            match git.rebase_on_branch(worktree, &params.target_branch) {
+                Ok(()) => {
+                    orkestra_debug!(
+                        "integration",
+                        "rebased {}: branch {} onto {}",
+                        params.task_id,
+                        params.branch_name,
+                        params.target_branch
+                    );
+                }
+                Err(GitError::MergeConflict { conflict_files, .. }) => {
+                    orkestra_debug!(
+                        "integration",
+                        "failed {}: rebase conflict, {} files",
+                        params.task_id,
+                        conflict_files.len()
+                    );
+                    return IntegrationGitResult::RebaseConflict { conflict_files };
+                }
+                Err(e) => {
+                    orkestra_debug!(
+                        "integration",
+                        "failed {}: rebase error: {}",
+                        params.task_id,
+                        e
+                    );
+                    return IntegrationGitResult::RebaseError(format!(
+                        "Failed to rebase branch on {}: {e}",
+                        params.target_branch
+                    ));
+                }
+            }
+        } else {
+            orkestra_debug!(
+                "integration",
+                "worktree missing for {}, skipping rebase",
+                params.task_id
+            );
+        }
+    }
+
+    // Merge to target branch
+    match git.merge_to_branch(&params.branch_name, &params.target_branch) {
+        Ok(_merge_result) => {
+            orkestra_debug!(
+                "integration",
+                "completed {}: merge succeeded",
+                params.task_id
+            );
+            IntegrationGitResult::Success
+        }
+        Err(GitError::MergeConflict { conflict_files, .. }) => {
+            orkestra_debug!(
+                "integration",
+                "failed {}: merge conflict, {} files",
+                params.task_id,
+                conflict_files.len()
+            );
+            // Abort the merge so the repo is left clean
+            if let Err(e) = git.abort_merge() {
+                workflow_warn!(
+                    "Failed to abort merge for {}: {}",
+                    params.task_id,
+                    e
+                );
+            }
+            IntegrationGitResult::MergeConflict { conflict_files }
+        }
+        Err(e) => {
+            orkestra_debug!("integration", "failed {}: {}", params.task_id, e);
+            if let Err(abort_err) = git.abort_merge() {
+                workflow_warn!(
+                    "Failed to abort merge for {}: {}",
+                    params.task_id,
+                    abort_err
+                );
+            }
+            IntegrationGitResult::MergeError(format!("{e}"))
+        }
+    }
+}
 
 impl WorkflowApi {
     /// Attempt to integrate a completed task by merging its branch to primary.
@@ -100,6 +241,53 @@ impl WorkflowApi {
         );
 
         self.rebase_and_merge(&task, git.as_ref(), branch_name, &target_branch)
+    }
+
+    /// Apply the result of a background git integration.
+    ///
+    /// Called from the background thread after `perform_git_integration` completes.
+    /// Records success (archive + worktree cleanup) or failure (recovery stage).
+    pub fn apply_integration_result(
+        &self,
+        task_id: &str,
+        result: IntegrationGitResult,
+        has_worktree: bool,
+    ) -> WorkflowResult<Task> {
+        match result {
+            IntegrationGitResult::Success => {
+                // Update DB FIRST — critical state change.
+                let task = self.integration_succeeded(task_id)?;
+                // Then clean up worktree (non-critical).
+                if has_worktree {
+                    if let Some(git) = &self.git_service {
+                        if let Err(e) = git.remove_worktree(task_id, true) {
+                            workflow_warn!("Failed to remove worktree for {}: {}", task_id, e);
+                        }
+                    }
+                }
+                Ok(task)
+            }
+            IntegrationGitResult::CommitFailed(error_msg) => {
+                self.integration_failed(task_id, &error_msg, &[])?;
+                Err(WorkflowError::IntegrationFailed(error_msg))
+            }
+            IntegrationGitResult::RebaseConflict { conflict_files } => {
+                self.integration_failed(task_id, "Merge conflict", &conflict_files)?;
+                Err(WorkflowError::IntegrationFailed("Merge conflict".into()))
+            }
+            IntegrationGitResult::RebaseError(error_msg) => {
+                self.integration_failed(task_id, &error_msg, &[])?;
+                Err(WorkflowError::IntegrationFailed(error_msg))
+            }
+            IntegrationGitResult::MergeConflict { conflict_files } => {
+                self.integration_failed(task_id, "Merge conflict", &conflict_files)?;
+                Err(WorkflowError::IntegrationFailed("Merge conflict".into()))
+            }
+            IntegrationGitResult::MergeError(error_msg) => {
+                self.integration_failed(task_id, &error_msg, &[])?;
+                Err(WorkflowError::IntegrationFailed(error_msg))
+            }
+        }
     }
 
     /// Rebase the task branch onto the target, then merge.

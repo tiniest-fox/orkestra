@@ -1,5 +1,6 @@
 //! Background task setup (worktree creation, title generation).
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
@@ -11,10 +12,14 @@ use crate::workflow::runtime::{Phase, Status};
 ///
 /// Runs worktree creation and title generation in parallel on a background thread,
 /// then transitions the task from `SettingUp` to `Idle` (or `Failed` on error).
+///
+/// When `sync` is true, setup runs inline on the calling thread instead of
+/// spawning a background thread. Used by tests for deterministic execution.
 pub struct TaskSetupService {
     store: Arc<dyn WorkflowStore>,
     git: Option<Arc<dyn GitService>>,
     title_gen: Arc<dyn TitleGenerator>,
+    sync: AtomicBool,
 }
 
 impl TaskSetupService {
@@ -27,7 +32,16 @@ impl TaskSetupService {
             store,
             git,
             title_gen,
+            sync: AtomicBool::new(false),
         }
+    }
+
+    /// Run setup synchronously on the calling thread instead of spawning.
+    ///
+    /// When enabled, `spawn_setup` blocks until setup is complete.
+    /// Used by tests for deterministic execution.
+    pub fn set_sync(&self, sync: bool) {
+        self.sync.store(sync, Ordering::Relaxed);
     }
 
     /// Spawn background setup for a new task.
@@ -53,7 +67,8 @@ impl TaskSetupService {
         let title_gen = Arc::clone(&self.title_gen);
 
         crate::orkestra_debug!("task", "spawn_setup {}: starting", task_id);
-        thread::spawn(move || {
+
+        let run = move || {
             let worktree_result = run_parallel_setup(
                 &store,
                 git.as_ref(),
@@ -62,9 +77,14 @@ impl TaskSetupService {
                 &base_branch,
                 description.as_deref(),
             );
-
             apply_setup_result(&store, &task_id, worktree_result);
-        });
+        };
+
+        if self.sync.load(Ordering::Relaxed) {
+            run();
+        } else {
+            thread::spawn(run);
+        }
     }
 
 }

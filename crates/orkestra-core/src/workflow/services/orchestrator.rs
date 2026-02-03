@@ -19,9 +19,10 @@ use super::periodic::PeriodicScheduler;
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::execution::StageOutput;
-use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
+use super::integration::{perform_git_integration, IntegrationParams};
 use super::stage_execution::{ExecutionComplete, ExecutionResult, StageExecutionService};
 use super::WorkflowApi;
 
@@ -122,17 +123,28 @@ pub struct OrchestratorLoop {
     api: Arc<Mutex<WorkflowApi>>,
     /// Unified stage execution service.
     stage_executor: Arc<StageExecutionService>,
+    /// Git service for background integration threads (avoids holding API lock during git ops).
+    git_service: Option<Arc<dyn GitService>>,
     /// Periodic scheduler for tick phases.
     scheduler: Mutex<PeriodicScheduler>,
     /// Task IDs that have a pending `spawn_setup` in a background thread.
     /// Prevents double-spawning when the orchestrator ticks faster than setup completes.
     pending_setups: Mutex<HashSet<String>>,
     stop_flag: Arc<AtomicBool>,
+    /// When true, operations that would normally run on background threads
+    /// (e.g., git integration) run synchronously on the tick thread instead.
+    /// Used by tests for deterministic control over execution order.
+    sync_background: bool,
 }
 
 impl OrchestratorLoop {
     /// Create a new orchestrator loop.
     pub fn new(api: Arc<Mutex<WorkflowApi>>, stage_executor: Arc<StageExecutionService>) -> Self {
+        let git_service = api
+            .lock()
+            .ok()
+            .and_then(|a| a.git_service().cloned());
+
         let mut scheduler = PeriodicScheduler::new();
 
         // Core orchestration — runs every tick
@@ -148,10 +160,21 @@ impl OrchestratorLoop {
         Self {
             api,
             stage_executor,
+            git_service,
             scheduler: Mutex::new(scheduler),
             pending_setups: Mutex::new(HashSet::new()),
             stop_flag: Arc::new(AtomicBool::new(false)),
+            sync_background: false,
         }
+    }
+
+    /// Run background operations synchronously on the tick thread.
+    ///
+    /// When enabled, operations like git integration that would normally run on
+    /// background threads run inline instead. This gives tests deterministic
+    /// control: each tick completes all its work before returning.
+    pub fn set_sync_background(&mut self, sync: bool) {
+        self.sync_background = sync;
     }
 
     /// Create with default components for a project.
@@ -256,17 +279,36 @@ impl OrchestratorLoop {
 
         let mut events = Vec::new();
 
+        // Track tasks that were just set up this tick, so start_new_executions
+        // doesn't immediately spawn agents for them. This matters when setup
+        // runs synchronously (sync_background mode) — the task transitions from
+        // SettingUp to Idle within the same tick.
+        let mut just_set_up = HashSet::new();
+
         for name in due {
             match name {
-                "setup_ready_subtasks" => self.setup_ready_subtasks()?,
+                "setup_ready_subtasks" => {
+                    just_set_up = self.setup_ready_subtasks()?;
+                }
                 "check_parent_completions" => events.extend(self.check_parent_completions()?),
                 "process_completed_executions" => {
                     events.extend(self.process_completed_executions()?);
                 }
-                "start_new_executions" => events.extend(self.start_new_executions()?),
+                "start_new_executions" => {
+                    events.extend(self.start_new_executions(&just_set_up)?);
+                }
                 "start_integrations" => events.extend(self.start_integrations()?),
                 "cleanup_worktrees" => self.cleanup_orphaned_worktrees(),
                 _ => orkestra_debug!("orchestrator", "Unknown scheduled task: {name}"),
+            }
+        }
+
+        // In sync mode, drain any active executions (scripts) so they complete
+        // within this tick. Mock agents already complete synchronously; this
+        // handles real script processes used in tests.
+        if self.sync_background {
+            for exec in self.stage_executor.drain_active() {
+                events.push(self.handle_execution_complete(exec)?);
             }
         }
 
@@ -280,7 +322,10 @@ impl OrchestratorLoop {
     /// This ensures subtask B (which depends on A) sees A's code in its worktree.
     ///
     /// Subtasks with no dependencies are set up on the first tick after creation.
-    fn setup_ready_subtasks(&self) -> WorkflowResult<()> {
+    /// Returns the set of task IDs that were set up during this call.
+    /// Used by `tick()` to prevent `start_new_executions` from immediately
+    /// spawning agents for tasks that just completed synchronous setup.
+    fn setup_ready_subtasks(&self) -> WorkflowResult<HashSet<String>> {
         let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
         let all_tasks = api.store.list_tasks()?;
 
@@ -293,12 +338,17 @@ impl OrchestratorLoop {
                 .any(|t| t.id == *id && t.phase == Phase::SettingUp)
         });
 
-        // Build set of completed task IDs for dependency checking
-        let done_ids: HashSet<String> = all_tasks
+        // Build set of fully integrated task IDs for dependency checking.
+        // Only Archived (integrated) tasks satisfy dependencies — not Done tasks
+        // that are still awaiting integration. This ensures dependent subtasks
+        // branch from the parent after predecessors' changes have been merged back.
+        let integrated_ids: HashSet<String> = all_tasks
             .iter()
-            .filter(|t| t.is_done() || t.is_archived())
+            .filter(|t| t.is_archived())
             .map(|t| t.id.clone())
             .collect();
+
+        let mut just_set_up = HashSet::new();
 
         for task in &all_tasks {
             // Only subtasks in SettingUp phase (no worktree yet)
@@ -311,8 +361,8 @@ impl OrchestratorLoop {
                 continue;
             }
 
-            // Check all dependencies are satisfied
-            if !task.depends_on.iter().all(|dep| done_ids.contains(dep)) {
+            // Check all dependencies are satisfied (fully integrated)
+            if !task.depends_on.iter().all(|dep| integrated_ids.contains(dep)) {
                 continue;
             }
 
@@ -323,6 +373,7 @@ impl OrchestratorLoop {
             );
 
             pending.insert(task.id.clone());
+            just_set_up.insert(task.id.clone());
 
             // Use the same spawn_setup as parent tasks — creates worktree from base_branch
             api.setup_service.spawn_setup(
@@ -332,7 +383,7 @@ impl OrchestratorLoop {
             );
         }
 
-        Ok(())
+        Ok(just_set_up)
     }
 
     /// Check if any `WaitingOnChildren` parents can advance because all subtasks are merged.
@@ -451,7 +502,10 @@ impl OrchestratorLoop {
     }
 
     /// Start new executions for tasks needing agents or scripts.
-    fn start_new_executions(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
+    fn start_new_executions(
+        &self,
+        skip_ids: &HashSet<String>,
+    ) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
 
         let tasks = {
@@ -469,6 +523,13 @@ impl OrchestratorLoop {
         }
 
         for task in tasks {
+            // Skip tasks that were just set up this tick (sync setup completes
+            // inline, so the task is Idle before start_new_executions runs).
+            // Let the next tick start agents, so tests can inspect post-setup state.
+            if skip_ids.contains(&task.id) {
+                continue;
+            }
+
             // Skip if we already have an active execution for this task
             if self.stage_executor.has_active_execution(&task.id) {
                 continue;
@@ -545,20 +606,27 @@ impl OrchestratorLoop {
 
     /// Start integrations for Done tasks that need merging.
     ///
-    /// Only processes one task per tick to avoid concurrent merge issues.
-    /// Integration is synchronous but fast (~100ms for git merge).
+    /// Only one integration runs at a time — if any task is already in
+    /// `Phase::Integrating`, this is a no-op. The git work runs on a
+    /// background thread so the API lock is not held during rebase/merge.
     ///
-    /// The `mark_integrating()` call requires `Phase::Idle`, which prevents
-    /// double-integration without needing an explicit snapshot/delay mechanism.
+    /// Flow:
+    /// 1. Acquire lock, find candidate, mark `Phase::Integrating`, read params, release lock
+    /// 2. Spawn background thread: git commit/rebase/merge (no lock)
+    /// 3. Background thread acquires lock briefly to record result
     fn start_integrations(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
 
-        // Hold API lock for entire operation to ensure consistent state
+        // Gather candidates and check for in-flight integration under a single lock
         let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-
         let tasks = api.get_tasks_needing_integration()?;
 
-        // Only integrate one task per tick to avoid concurrent merge issues
+        // One integration at a time — skip if any task is already integrating
+        let all_tasks = api.store.list_tasks()?;
+        if all_tasks.iter().any(|t| t.phase == Phase::Integrating) {
+            return Ok(events);
+        }
+
         let Some(task) = tasks.first() else {
             return Ok(events);
         };
@@ -574,27 +642,95 @@ impl OrchestratorLoop {
             }]);
         }
 
+        // If no git service, record success immediately (no background work needed)
+        if self.git_service.is_none() || task.branch_name.is_none() {
+            orkestra_debug!(
+                "integration",
+                "no git service or no branch for {}, marking success immediately",
+                task_id
+            );
+            let result = api.integration_succeeded(&task_id);
+            match result {
+                Ok(_) => events.push(OrchestratorEvent::IntegrationCompleted {
+                    task_id: task_id.clone(),
+                }),
+                Err(e) => events.push(OrchestratorEvent::IntegrationFailed {
+                    task_id: task_id.clone(),
+                    error: e.to_string(),
+                    conflict_files: vec![],
+                }),
+            }
+            return Ok(events);
+        }
+
+        // Read params while we have the lock
+        if task.base_branch.is_empty() {
+            // Reset phase since we can't proceed
+            let mut reset_task = api.get_task(&task_id)?;
+            reset_task.phase = Phase::Idle;
+            let _ = api.store.save_task(&reset_task);
+            return Ok(vec![OrchestratorEvent::Error {
+                task_id: Some(task_id),
+                error: "Task has no base_branch set — cannot determine merge target".into(),
+            }]);
+        }
+
+        let commit_message = if task.title.trim().is_empty() {
+            format!("Task {task_id}")
+        } else {
+            task.title.clone()
+        };
+
+        let params = IntegrationParams {
+            task_id: task_id.clone(),
+            branch_name: branch.clone(),
+            target_branch: task.base_branch.clone(),
+            worktree_path: task.worktree_path.as_ref().map(PathBuf::from),
+            commit_message,
+        };
+        let has_worktree = task.worktree_path.is_some();
+
+        // Release the API lock before spawning the background thread
+        drop(api);
+
         events.push(OrchestratorEvent::IntegrationStarted {
             task_id: task_id.clone(),
             branch: branch.clone(),
         });
 
-        // Perform the integration (synchronous but fast)
-        match api.integrate_task(&task_id) {
-            Ok(_task) => {
-                events.push(OrchestratorEvent::IntegrationCompleted {
-                    task_id: task_id.clone(),
-                });
+        let git = self.git_service.clone().unwrap(); // checked above
+        let api_clone = Arc::clone(&self.api);
+
+        let run_integration = move || {
+            let git_result = perform_git_integration(git.as_ref(), &params);
+
+            match api_clone.lock() {
+                Ok(api) => {
+                    if let Err(e) =
+                        api.apply_integration_result(&params.task_id, git_result, has_worktree)
+                    {
+                        orkestra_debug!(
+                            "integration",
+                            "integration failed for {}: {}",
+                            params.task_id,
+                            e
+                        );
+                    }
+                }
+                Err(_) => {
+                    orkestra_debug!(
+                        "integration",
+                        "failed to acquire API lock after git work for {} — will be recovered on restart",
+                        params.task_id
+                    );
+                }
             }
-            Err(e) => {
-                // integration_failed() is called internally by integrate_task on conflict,
-                // so the task is already moved to recovery stage
-                events.push(OrchestratorEvent::IntegrationFailed {
-                    task_id: task_id.clone(),
-                    error: e.to_string(),
-                    conflict_files: vec![], // Conflict files are in the iteration record
-                });
-            }
+        };
+
+        if self.sync_background {
+            run_integration();
+        } else {
+            std::thread::spawn(run_integration);
         }
 
         Ok(events)

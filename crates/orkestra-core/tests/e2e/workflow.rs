@@ -102,7 +102,8 @@ fn test_exhaustive_workflow_flow() {
         Question::new("Should we add caching?"),
     ];
     ctx.set_output(&task_id, MockAgentOutput::Questions(questions));
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns planner agent (completion ready)
+    ctx.advance(); // processes questions output
 
     // VERIFY: First spawn of planning stage → full prompt with questions capability
     ctx.assert_full_prompt("plan", true, false);
@@ -153,7 +154,8 @@ fn test_exhaustive_workflow_flow() {
             content: "Initial plan v1 - not detailed enough".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns planner agent (completion ready)
+    ctx.advance(); // processes plan output
 
     // VERIFY: After answering questions → resume with answers prompt containing the Q&A
     ctx.assert_resume_prompt_contains(
@@ -216,7 +218,8 @@ fn test_exhaustive_workflow_flow() {
                 .to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns planner agent (completion ready)
+    ctx.advance(); // processes plan v2 output
 
     // VERIFY: Planner retry after rejection → resume with feedback prompt containing the feedback
     ctx.assert_resume_prompt_contains(
@@ -256,7 +259,8 @@ fn test_exhaustive_workflow_flow() {
             content: "Subtasks:\n1. Create module\n2. Add tests".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns breakdown agent (completion ready)
+    ctx.advance(); // processes breakdown output
 
     // VERIFY: First spawn of breakdown stage → full prompt
     ctx.assert_full_prompt("breakdown", false, false);
@@ -300,7 +304,8 @@ fn test_exhaustive_workflow_flow() {
             content: "Initial implementation - tests failing".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns worker agent (completion ready)
+    ctx.advance(); // processes work output
 
     // VERIFY: First spawn of work stage → full prompt
     ctx.assert_full_prompt("summary", false, false);
@@ -326,7 +331,8 @@ fn test_exhaustive_workflow_flow() {
             content: "Implementation complete with passing tests".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns worker agent (completion ready)
+    ctx.advance(); // processes work v2 output
 
     // VERIFY: Work retry after rejection → resume with feedback prompt containing the feedback
     ctx.assert_resume_prompt_contains("feedback", &["Tests are failing, please fix them"]);
@@ -360,7 +366,9 @@ fn test_exhaustive_workflow_flow() {
             content: "Implementation with fixed formatting".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns reviewer (completion ready)
+    ctx.advance(); // processes reviewer rejection → moves to work stage → spawns work agent (completion ready)
+    ctx.advance(); // processes work output
 
     // VERIFY: Work agent after rejection → resume with feedback prompt containing reviewer's feedback
     // (The reviewer ran first with full prompt, then work agent ran with resume prompt)
@@ -457,7 +465,9 @@ fn test_exhaustive_workflow_flow() {
             content: "Resolved merge conflict".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns reviewer (completion ready)
+    ctx.advance(); // processes review → auto-approve → Done → integration fails (sync) → recovers to work → spawns work agent (completion ready)
+    ctx.advance(); // processes work output
 
     // =========================================================================
     // Step 11: Integration fails (auto-triggered) → Back to Working
@@ -497,8 +507,8 @@ fn test_exhaustive_workflow_flow() {
         .output()
         .unwrap();
 
-    // The work agent already ran (output consumed above). Wait for it to settle.
-    ctx.tick_until_settled();
+    // The work agent already ran (output consumed in the previous advance cycle).
+    // No additional advance needed — the work output was already processed.
 
     // VERIFY: Work agent after integration failure → resume with integration marker
     // containing error details (same session as previous work iterations)
@@ -522,7 +532,8 @@ fn test_exhaustive_workflow_flow() {
             content: "Conflict resolved correctly".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns reviewer (completion ready)
+    ctx.advance(); // processes review → auto-approve → Done → integration succeeds (sync) → Archived
 
     // Auto-integration should have completed successfully and task becomes Archived
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -604,7 +615,8 @@ fn test_approval_validation() {
             content: "Plan".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns planner (completion ready)
+    ctx.advance(); // processes plan output
     ctx.api().approve(&task_id).unwrap();
 
     // Breakdown stage
@@ -615,7 +627,8 @@ fn test_approval_validation() {
             content: "Breakdown".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns breakdown agent (completion ready)
+    ctx.advance(); // processes breakdown output
     ctx.api().approve(&task_id).unwrap();
 
     // Now we're in work stage - try approval from work (which doesn't have approval capability)
@@ -626,7 +639,8 @@ fn test_approval_validation() {
             content: "Should fail".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes approval output (rejected by capability check)
 
     // The task should still be in work stage (approval should have been rejected)
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -695,7 +709,8 @@ fn test_custom_integration_on_failure() {
             content: "Plan".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns planner (completion ready)
+    ctx.advance(); // processes plan output
     ctx.api().approve(&task_id).unwrap();
 
     // Work stage: commit a file in the worktree so there's something to merge
@@ -723,7 +738,8 @@ fn test_custom_integration_on_failure() {
             content: "Summary".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes work output
     ctx.api().approve(&task_id).unwrap();
 
     // Create a conflict on main BEFORE the review completes, so auto-integration fails
@@ -735,8 +751,8 @@ fn test_custom_integration_on_failure() {
     )
     .unwrap();
 
-    // Review stage (auto-approves to Done → auto-integration fails → recovery)
-    // Pre-queue the planning output that will be consumed after recovery routes to planning
+    // Review stage (auto-approves to Done → auto-integration fails → recovery to planning)
+    // Queue both: verdict for the review agent, then plan for the recovery planning agent
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -744,18 +760,36 @@ fn test_custom_integration_on_failure() {
             content: "LGTM".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Recovery plan".to_string(),
+        },
+    );
+    ctx.advance(); // spawns reviewer (completion ready)
+    ctx.advance(); // processes review → auto-approve → Done → integration fails (sync) → recovers to planning → spawns planner (completion ready)
+    ctx.advance(); // processes planner output
 
-    // Integration should have failed and routed to planning (not work)
+    // Integration should have failed and routed to planning (configured on_failure).
+    // The planning agent consumed the pre-queued plan output, so the task should
+    // be in planning stage with AwaitingReview.
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
         task.current_stage(),
         Some("planning"),
-        "Should go to planning (configured on_failure) not work"
+        "Integration failure should route to planning (on_failure config), got: {:?}",
+        task.status
     );
+
+    // Verify integration failure was recorded in iteration history
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let failed_iter = iterations
+        .iter()
+        .find(|i| matches!(i.outcome.as_ref(), Some(Outcome::IntegrationFailed { .. })));
     assert!(
-        task.status.is_active(),
-        "Task should be active after integration failure recovery"
+        failed_iter.is_some(),
+        "Should have IntegrationFailed iteration"
     );
 }
 
@@ -820,7 +854,8 @@ fn test_script_stage_with_recovery() {
             content: "Initial implementation".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes work output
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.phase, Phase::AwaitingReview);
@@ -836,7 +871,7 @@ fn test_script_stage_with_recovery() {
     // Step 3: Script runs and fails → Recovers to Work
     // =========================================================================
 
-    // Queue work output BEFORE ticking for script - when script fails and recovers
+    // Queue work output BEFORE advancing - when script fails and recovers
     // to work, the orchestrator will immediately spawn the work agent
     ctx.set_output(
         &task_id,
@@ -846,7 +881,8 @@ fn test_script_stage_with_recovery() {
         },
     );
 
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns script (drains to completion: fails) → recovers to work → spawns work agent (completion ready)
+    ctx.advance(); // processes work output
 
     // Check iteration recorded script failure
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
@@ -884,7 +920,7 @@ fn test_script_stage_with_recovery() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("checks"));
 
-    // Queue review output BEFORE ticking - when script passes, it auto-advances
+    // Queue review output BEFORE advancing - when script passes, it auto-advances
     // to review, and the automated review stage spawns the agent immediately
     ctx.set_output(
         &task_id,
@@ -894,7 +930,8 @@ fn test_script_stage_with_recovery() {
         },
     );
 
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns script (drains to completion: passes) → auto-advances to review → spawns reviewer (completion ready)
+    ctx.advance(); // processes review output → auto-approve → Done → integration (sync) → Archived
 
     // =========================================================================
     // Step 5 & 6: Script passes → Review (automated) → Task Done/Archived
@@ -1222,7 +1259,8 @@ fn test_opencode_no_pregenerated_session_id() {
             content: "First run output".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes output
 
     // VERIFY: First spawn should have NO session_id (OpenCode generates its own)
     let first_call = ctx.last_run_config();
@@ -1263,7 +1301,8 @@ fn test_opencode_no_pregenerated_session_id() {
             content: "Second run output".to_string(),
         },
     );
-    ctx.tick_until_settled();
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes output
 
     // VERIFY: Second spawn also has no session_id AND is_resume is false
     let second_call = ctx.last_run_config();

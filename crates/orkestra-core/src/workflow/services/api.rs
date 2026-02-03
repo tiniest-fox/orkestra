@@ -90,6 +90,15 @@ impl WorkflowApi {
         self
     }
 
+    /// Run task setup synchronously instead of on background threads.
+    ///
+    /// When enabled, `create_task` and subtask setup complete inline
+    /// rather than deferring to a background thread. Used by tests for
+    /// deterministic execution.
+    pub fn set_sync_setup(&self, sync: bool) {
+        self.setup_service.set_sync(sync);
+    }
+
     /// Get the git service, if configured.
     pub fn git_service(&self) -> Option<&Arc<dyn GitService>> {
         self.git_service.as_ref()

@@ -5,7 +5,6 @@
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
@@ -98,6 +97,10 @@ impl TestEnv {
             test_provider_registry(),
         ));
 
+        // Sync setup so create_task() completes inline (no worktree/title-gen to wait for).
+        // Scripts still spawn as real processes via tick() — that's the async lifecycle
+        // cleanup tests need.
+        api.lock().unwrap().set_sync_setup(true);
         let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
 
         Self {
@@ -173,7 +176,9 @@ impl TestEnv {
             test_provider_registry(),
         ));
 
-        let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
+        let mut orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
+        orchestrator.set_sync_background(true);
+        api.lock().unwrap().set_sync_setup(true);
 
         Self {
             api,
@@ -248,7 +253,9 @@ impl TestEnv {
             test_provider_registry(),
         ));
 
-        let orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
+        let mut orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
+        orchestrator.set_sync_background(true);
+        api.lock().unwrap().set_sync_setup(true);
 
         Self {
             api,
@@ -267,31 +274,34 @@ impl TestEnv {
         self.api.lock().unwrap()
     }
 
-    /// Create a task and wait for async setup to complete.
+    /// Create a task with synchronous setup.
     ///
-    /// Returns the task in Idle phase (or Failed if setup failed).
+    /// Setup (worktree creation, title generation) runs inline because
+    /// `set_sync_setup(true)` is enabled. Returns the task in Idle phase
+    /// (or Failed if setup failed).
     pub fn create_task(&self, title: &str, desc: &str, base_branch: Option<&str>) -> Task {
         let task = self
             .api()
             .create_task(title, desc, base_branch)
             .expect("Should create task");
-        let task_id = task.id.clone();
 
-        for _ in 0..100 {
-            std::thread::sleep(Duration::from_millis(20));
-            let task = self.api().get_task(&task_id).expect("Should get task");
-            if task.phase != Phase::SettingUp {
-                return task;
-            }
-        }
-
-        panic!("Task setup did not complete in time for task {task_id}");
+        // With sync setup, task is already past SettingUp
+        let task = self.api().get_task(&task.id).expect("Should get task");
+        assert_ne!(
+            task.phase,
+            Phase::SettingUp,
+            "Task should have completed setup synchronously"
+        );
+        task
     }
 
-    /// Create a subtask and wait for setup to complete.
+    /// Create a subtask with synchronous setup.
     ///
     /// Subtask setup is deferred to the orchestrator tick loop, so this method
-    /// ticks the orchestrator during the poll to trigger `setup_ready_subtasks()`.
+    /// advances once to trigger `setup_ready_subtasks()`. With sync setup
+    /// enabled, the worktree is created inline and the subtask transitions
+    /// to Idle within that advance.
+    ///
     /// Subtasks with unsatisfied dependencies will stay in `SettingUp` — use
     /// `create_subtask_deferred` for those.
     pub fn create_subtask(&self, parent_id: &str, title: &str, desc: &str) -> Task {
@@ -301,17 +311,16 @@ impl TestEnv {
             .expect("Should create subtask");
         let task_id = task.id.clone();
 
-        for _ in 0..100 {
-            // Tick the orchestrator to trigger deferred subtask setup
-            let _ = self.orchestrator.tick();
-            std::thread::sleep(Duration::from_millis(20));
-            let task = self.api().get_task(&task_id).expect("Should get task");
-            if task.phase != Phase::SettingUp {
-                return task;
-            }
-        }
+        // One advance triggers setup_ready_subtasks; with sync setup, it completes inline
+        self.advance();
 
-        panic!("Subtask setup did not complete in time for {task_id}");
+        let task = self.api().get_task(&task_id).expect("Should get task");
+        assert_ne!(
+            task.phase,
+            Phase::SettingUp,
+            "Subtask should have completed setup synchronously"
+        );
+        task
     }
 
     // =========================================================================
@@ -332,52 +341,16 @@ impl TestEnv {
         self.orchestrator.tick().expect("Tick should succeed");
     }
 
-    /// Tick the orchestrator until `predicate` returns true, or panic after `timeout`.
+    /// Run one orchestrator pass through all phases.
     ///
-    /// Uses wall-clock time instead of iteration counts, so timeouts are reliable
-    /// even under CPU contention from parallel test execution.
-    pub fn tick_until(
-        &self,
-        mut predicate: impl FnMut() -> bool,
-        timeout: Duration,
-        context: &str,
-    ) {
-        let start = Instant::now();
-        while start.elapsed() < timeout {
-            self.orchestrator.tick().expect("Tick should succeed");
-            std::thread::sleep(Duration::from_millis(20));
-            if predicate() {
-                return;
-            }
-        }
-        panic!(
-            "Timed out after {:.1}s: {context}",
-            timeout.as_secs_f64()
-        );
-    }
-
-    /// Tick until all active work settles (handles multi-step like rejection).
+    /// With sync mock agents and sync integration, each advance is deterministic:
+    /// - Agents spawned in the previous advance have completions ready
+    /// - Integration runs inline (no background thread)
     ///
-    /// Use this for agent stages where mock callbacks complete asynchronously.
-    /// Panics if active work doesn't settle within 5 seconds.
-    pub fn tick_until_settled(&self) {
-        let start = Instant::now();
-        let timeout = Duration::from_secs(5);
-        while start.elapsed() < timeout {
-            self.orchestrator.tick().expect("Tick should succeed");
-            std::thread::sleep(Duration::from_millis(20));
-
-            if self.orchestrator.active_count() == 0 {
-                // One more tick to ensure all events are processed
-                self.orchestrator.tick().expect("Final tick should succeed");
-                return;
-            }
-        }
-        panic!(
-            "tick_until_settled: active_count never reached 0 (still {} after {:.1}s)",
-            self.orchestrator.active_count(),
-            timeout.as_secs_f64()
-        );
+    /// Tests call this the exact number of times needed for their flow,
+    /// checking state between calls.
+    pub fn advance(&self) {
+        self.orchestrator.tick().expect("Advance should succeed");
     }
 
     // =========================================================================

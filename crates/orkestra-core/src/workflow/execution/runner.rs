@@ -605,7 +605,7 @@ fn send_completion(
 #[cfg(any(test, feature = "testutil"))]
 pub mod mock {
     use super::{
-        mpsc, thread, AgentRunnerTrait, Receiver, RunConfig, RunError, RunEvent, RunResult,
+        mpsc, AgentRunnerTrait, Receiver, RunConfig, RunError, RunEvent, RunResult,
         StageOutput,
     };
     use std::collections::HashMap;
@@ -744,23 +744,17 @@ pub mod mock {
                 })
             });
 
-            // Spawn thread to send events
-            let task_id_for_error = task_id.clone();
-            thread::spawn(move || {
-                // Small delay to simulate async behavior
-                thread::sleep(std::time::Duration::from_millis(10));
-
-                if let Some(output) = output {
-                    // Send completion
-                    let _ = tx.send(RunEvent::Completed(Ok(output)));
-                } else {
-                    let err_msg = match task_id_for_error {
-                        Some(id) => format!("No output configured for task {id}"),
-                        None => "No output configured (task_id unknown)".to_string(),
-                    };
-                    let _ = tx.send(RunEvent::Completed(Err(err_msg)));
-                }
-            });
+            // Send completion immediately — no thread, no delay.
+            // Tests care about the flow through the system, not simulated latency.
+            if let Some(output) = output {
+                let _ = tx.send(RunEvent::Completed(Ok(output)));
+            } else {
+                let err_msg = match task_id {
+                    Some(id) => format!("No output configured for task {id}"),
+                    None => "No output configured (task_id unknown)".to_string(),
+                };
+                let _ = tx.send(RunEvent::Completed(Err(err_msg)));
+            }
 
             Ok((pid, rx))
         }

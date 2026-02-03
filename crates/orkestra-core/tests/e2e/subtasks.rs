@@ -11,110 +11,11 @@
 //! - Parent advances only when ALL subtasks are Archived (integrated)
 
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 use orkestra_core::workflow::execution::SubtaskOutput;
 use orkestra_core::workflow::runtime::Phase;
 
 use super::helpers::{workflows, MockAgentOutput, TestEnv};
-
-// =============================================================================
-// Helper: Wait for subtask setup with orchestrator ticks
-// =============================================================================
-
-/// Trigger deferred subtask setup and wait for completion.
-///
-/// Convenience wrapper for `wait_for_subtask_setups` with a single task.
-fn wait_for_subtask_setup(env: &TestEnv, task_id: &str) {
-    wait_for_subtask_setups(env, &[task_id]);
-}
-
-/// Wait for multiple subtasks' deferred setup to complete.
-///
-/// Does at most ONE tick (to trigger `setup_ready_subtasks` for all eligible subtasks),
-/// then polls without further ticking. This avoids a race condition where ticking for
-/// a later subtask accidentally starts agents for already-setup siblings.
-///
-/// Uses wall-clock timeout (5s) instead of iteration count for reliability under load.
-fn wait_for_subtask_setups(env: &TestEnv, task_ids: &[&str]) {
-    let any_need_setup = task_ids
-        .iter()
-        .any(|&id| env.api().get_task(id).unwrap().phase == Phase::SettingUp);
-
-    if !any_need_setup {
-        return;
-    }
-
-    // Tick once to trigger setup_ready_subtasks for all eligible subtasks
-    env.tick();
-
-    // Poll without further ticking (setup runs in background threads)
-    let start = Instant::now();
-    let timeout = Duration::from_secs(5);
-    while start.elapsed() < timeout {
-        std::thread::sleep(Duration::from_millis(20));
-        if task_ids
-            .iter()
-            .all(|&id| env.api().get_task(id).unwrap().phase != Phase::SettingUp)
-        {
-            return;
-        }
-    }
-    let stuck: Vec<_> = task_ids
-        .iter()
-        .filter(|&&id| env.api().get_task(id).unwrap().phase == Phase::SettingUp)
-        .collect();
-    panic!("Subtask setup timed out after {:.1}s for: {stuck:?}", timeout.as_secs_f64());
-}
-
-/// Tick until a task reaches Archived status (integration complete).
-///
-/// Uses 10s wall-clock timeout since integration involves synchronous git
-/// operations (rebase + merge + worktree cleanup) that can be slow under load.
-fn wait_for_archived(env: &TestEnv, task_id: &str) {
-    let task_id_owned = task_id.to_string();
-    env.tick_until(
-        || env.api().get_task(&task_id_owned).unwrap().is_archived(),
-        Duration::from_secs(10),
-        &format!("Task {task_id} did not reach Archived"),
-    );
-}
-
-/// Wait for either of two tasks to reach a terminal integration state.
-///
-/// Returns the ID of whichever task was archived first, and the ID of the
-/// remaining task. This handles nondeterministic integration ordering —
-/// `start_integrations` picks one task per tick, and the order depends on
-/// the store's iteration order.
-#[allow(clippy::similar_names)]
-fn wait_for_one_archived<'a>(
-    env: &TestEnv,
-    id_a: &'a str,
-    id_b: &'a str,
-) -> (&'a str, &'a str) {
-    let (id_a_owned, id_b_owned) = (id_a.to_string(), id_b.to_string());
-    let mut archived_id = None;
-    env.tick_until(
-        || {
-            let a = env.api().get_task(&id_a_owned).unwrap();
-            let b = env.api().get_task(&id_b_owned).unwrap();
-            if a.is_archived() {
-                archived_id = Some(id_a);
-                true
-            } else if b.is_archived() {
-                archived_id = Some(id_b);
-                true
-            } else {
-                false
-            }
-        },
-        Duration::from_secs(10),
-        &format!("Neither {id_a} nor {id_b} reached Archived"),
-    );
-    let winner = archived_id.unwrap();
-    let loser = if winner == id_a { id_b } else { id_a };
-    (winner, loser)
-}
 
 // =============================================================================
 // Helper: Drive a parent through planning + breakdown + approval
@@ -136,7 +37,8 @@ fn setup_parent_with_subtasks(
             content: "Plan".into(),
         },
     );
-    env.tick_until_settled();
+    env.advance(); // spawns planner (completion ready)
+    env.advance(); // processes plan output
     let _ = env.api().approve(&parent.id).unwrap();
 
     // Breakdown
@@ -148,7 +50,8 @@ fn setup_parent_with_subtasks(
             skip_reason: None,
         },
     );
-    env.tick_until_settled();
+    env.advance(); // spawns breakdown agent (completion ready)
+    env.advance(); // processes breakdown output
     let _ = env.api().approve(&parent.id).unwrap();
 
     let subtasks = env.api().list_subtasks(&parent.id).unwrap();
@@ -186,7 +89,8 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
             },
         );
     }
-    env.tick_until_settled();
+    env.advance(); // spawns work agents for all subtasks (completions ready)
+    env.advance(); // processes all work outputs
 
     // 2. Approve all (work stage is non-automated → AwaitingReview)
     for &id in subtask_ids {
@@ -210,7 +114,8 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
             },
         );
     }
-    env.tick_until_settled();
+    env.advance(); // spawns review agents (completions ready)
+    env.advance(); // processes review outputs → auto-approve → Done
 
     // 4. Verify all are Done or Archived
     for &id in subtask_ids {
@@ -244,7 +149,8 @@ fn test_breakdown_approval_creates_subtasks() {
             content: "The implementation plan".into(),
         },
     );
-    env.tick_until_settled();
+    env.advance(); // spawns planner (completion ready)
+    env.advance(); // processes plan output
 
     // Approve the plan
     let parent = env.api().approve(&parent.id).unwrap();
@@ -275,7 +181,8 @@ fn test_breakdown_approval_creates_subtasks() {
             skip_reason: None,
         },
     );
-    env.tick_until_settled();
+    env.advance(); // spawns breakdown agent (completion ready)
+    env.advance(); // processes subtasks output
 
     // Parent should be awaiting review with breakdown artifact
     let parent = env.api().get_task(&parent.id).unwrap();
@@ -378,8 +285,8 @@ fn test_dependency_aware_orchestration() {
         .clone();
 
     // --- Phase 1: Only first subtask gets set up (no deps) ---
-    // Second stays in SettingUp because its dep (first) isn't Done yet
-    wait_for_subtask_setup(&env, &first_id);
+    // Second stays in SettingUp because its dep (first) isn't Archived yet
+    env.advance(); // setup_ready_subtasks: sets up first (no deps), skips second
 
     let second = env.api().get_task(&second_id).unwrap();
     assert_eq!(
@@ -401,10 +308,9 @@ fn test_dependency_aware_orchestration() {
     );
 
     // --- Phase 2: Complete first subtask → second's dep is satisfied ---
+    // complete_subtask drives through work → review → Done → integration (sync) → Archived.
     complete_subtask(&env, &first_id);
-
-    // Wait for second subtask setup (dep now satisfied, orchestrator triggers setup)
-    wait_for_subtask_setup(&env, &second_id);
+    env.advance(); // setup_ready_subtasks: first is Archived, sets up second
 
     // Second should now be active and eligible
     let second = env.api().get_task(&second_id).unwrap();
@@ -458,17 +364,12 @@ fn test_parent_advances_when_all_subtasks_done() {
         .1
         .clone();
 
-    // Both subtasks have no deps, so both set up on first tick
-    wait_for_subtask_setups(&env, &[&first_id, &second_id]);
+    // Both subtasks have no deps, so both set up on first advance
+    env.advance(); // setup_ready_subtasks: sets up both (no deps)
 
-    // Complete both subtasks in parallel (both are independent, both eligible at once)
-    complete_subtasks(&env, &[&first_id, &second_id]);
-
-    // Subtasks are Done — they need to go through integration to become Archived.
-    // Integration merges each subtask's branch to the parent's branch.
-    // Parent advances only when ALL subtasks are Archived.
-
-    // Pre-set parent's work output for when it advances
+    // Pre-set parent's work output before completing subtasks.
+    // Once subtasks are archived (integration complete), the parent advances
+    // and the orchestrator spawns the work agent immediately.
     env.set_output(
         &parent_id,
         MockAgentOutput::Artifact {
@@ -477,19 +378,15 @@ fn test_parent_advances_when_all_subtasks_done() {
         },
     );
 
-    // Tick until both subtasks are Archived (integration complete)
-    wait_for_archived(&env, &first_id);
-    wait_for_archived(&env, &second_id);
+    // Complete both subtasks in parallel (both are independent, both eligible at once)
+    complete_subtasks(&env, &[&first_id, &second_id]);
 
-    // Tick to trigger parent completion check + advancement
-    for _ in 0..10 {
-        env.tick();
-        std::thread::sleep(Duration::from_millis(30));
-        let parent = env.api().get_task(&parent_id).unwrap();
-        if parent.current_stage() == Some("work") {
-            break;
-        }
-    }
+    // complete_subtasks integrates one subtask (one-at-a-time) in its last advance.
+    // One more advance integrates the remaining one.
+    env.advance(); // integrates second Done subtask → Archived
+
+    // Both Archived now. Advance triggers check_parent_completions → parent advances.
+    env.advance();
 
     // Parent should have advanced to the next stage after breakdown (work)
     let parent = env.api().get_task(&parent_id).unwrap();
@@ -543,7 +440,7 @@ fn test_diamond_dependency_orchestration() {
     let id_d = id_map.iter().find(|(t, _)| t == "Node D").unwrap().1.clone();
 
     // --- Phase 1: Only A gets set up (no deps) ---
-    wait_for_subtask_setup(&env, &id_a);
+    env.advance(); // setup_ready_subtasks: sets up A (no deps), skips B/C/D
 
     let eligible = env.api().get_tasks_needing_agents().unwrap();
     let eligible_ids: Vec<&str> = eligible.iter().map(|t| t.id.as_str()).collect();
@@ -572,10 +469,9 @@ fn test_diamond_dependency_orchestration() {
     }
 
     // --- Phase 2: Complete A → B and C unblock ---
+    // complete_subtask drives through work → review → Done → integration (sync) → Archived.
     complete_subtask(&env, &id_a);
-
-    // Wait for B and C to set up (A is Done, their dep is satisfied)
-    wait_for_subtask_setups(&env, &[&id_b, &id_c]);
+    env.advance(); // setup_ready_subtasks: A is Archived, sets up B and C
 
     // B and C should be active
     let b = env.api().get_task(&id_b).unwrap();
@@ -600,10 +496,11 @@ fn test_diamond_dependency_orchestration() {
     );
 
     // --- Phase 3: Complete B and C in parallel → D unblocks ---
+    // complete_subtasks drives both through work → review → Done.
+    // Integration is one-at-a-time: the last advance integrates one of B/C (sync → Archived).
     complete_subtasks(&env, &[&id_b, &id_c]);
-
-    // Wait for D to set up (B and C are Done, its deps are satisfied)
-    wait_for_subtask_setup(&env, &id_d);
+    env.advance(); // integrates the remaining one of B/C (Done→Archived)
+    env.advance(); // setup_ready_subtasks: B and C both Archived, sets up D
 
     // D should be active
     let d = env.api().get_task(&id_d).unwrap();
@@ -633,7 +530,8 @@ fn test_breakdown_skip_advances_normally() {
             content: "Simple plan".into(),
         },
     );
-    env.tick_until_settled();
+    env.advance(); // spawns planner (completion ready)
+    env.advance(); // processes plan output
     let _ = env.api().approve(&parent.id).unwrap();
 
     // Breakdown: skip (empty subtasks with reason)
@@ -645,7 +543,8 @@ fn test_breakdown_skip_advances_normally() {
             skip_reason: Some("Task is simple enough to complete directly".into()),
         },
     );
-    env.tick_until_settled();
+    env.advance(); // spawns breakdown agent (completion ready)
+    env.advance(); // processes skip output
 
     // Approve the skipped breakdown
     let parent = env.api().approve(&parent.id).unwrap();
@@ -682,8 +581,8 @@ fn test_subtask_failure_fails_parent() {
 
     let subtask_id = id_map[0].1.clone();
 
-    // Wait for subtask setup (no deps, should set up on first tick)
-    wait_for_subtask_setup(&env, &subtask_id);
+    // Set up subtask (no deps)
+    env.advance(); // setup_ready_subtasks: sets up subtask
 
     // Fail the subtask
     env.set_output(
@@ -692,10 +591,9 @@ fn test_subtask_failure_fails_parent() {
             error: "Build error".into(),
         },
     );
-    env.tick_until_settled();
-
-    // Tick to trigger parent completion check
-    env.tick();
+    env.advance(); // spawns agent (completion ready)
+    env.advance(); // processes failure output
+    env.advance(); // check_parent_completions → parent fails
 
     // Parent should be failed
     let parent = env.api().get_task(&parent_id).unwrap();
@@ -734,8 +632,8 @@ fn test_subtask_worktrees_are_isolated() {
     let alpha_id = id_map.iter().find(|(t, _)| t == "Alpha").unwrap().1.clone();
     let beta_id = id_map.iter().find(|(t, _)| t == "Beta").unwrap().1.clone();
 
-    // Both have no deps, wait for both to set up
-    wait_for_subtask_setups(&env, &[&alpha_id, &beta_id]);
+    // Both have no deps, set up on first advance
+    env.advance(); // setup_ready_subtasks: sets up both
 
     let parent = env.api().get_task(&parent_id).unwrap();
     let alpha = env.api().get_task(&alpha_id).unwrap();
@@ -788,7 +686,7 @@ fn test_subtask_integration_merges_to_parent_branch() {
     );
 
     let subtask_id = id_map[0].1.clone();
-    wait_for_subtask_setup(&env, &subtask_id);
+    env.advance(); // setup_ready_subtasks: sets up subtask (no deps)
 
     // Write a file in the subtask's worktree (simulating agent making changes)
     let subtask = env.api().get_task(&subtask_id).unwrap();
@@ -799,11 +697,8 @@ fn test_subtask_integration_merges_to_parent_branch() {
     )
     .expect("Should write file to subtask worktree");
 
-    // Complete the subtask through work → review → Done
+    // complete_subtask drives through work → review → Done → integration (sync) → Archived.
     complete_subtask(&env, &subtask_id);
-
-    // Wait for integration → Archived
-    wait_for_archived(&env, &subtask_id);
 
     let subtask = env.api().get_task(&subtask_id).unwrap();
     assert!(
@@ -864,8 +759,8 @@ fn test_subtask_integration_conflict() {
     let id_a = id_map.iter().find(|(t, _)| t == "Sub A").unwrap().1.clone();
     let id_b = id_map.iter().find(|(t, _)| t == "Sub B").unwrap().1.clone();
 
-    // Both have no deps, wait for setup
-    wait_for_subtask_setups(&env, &[&id_a, &id_b]);
+    // Both have no deps, set up on first advance
+    env.advance(); // setup_ready_subtasks: sets up both
 
     // Write CONFLICTING changes to the same file in both worktrees
     let a = env.api().get_task(&id_a).unwrap();
@@ -898,7 +793,8 @@ fn test_subtask_integration_conflict() {
             },
         );
     }
-    env.tick_until_settled();
+    env.advance(); // spawns work agents (completions ready)
+    env.advance(); // processes work outputs
 
     for id in [&id_a, &id_b] {
         let task = env.api().get_task(id).unwrap();
@@ -906,6 +802,11 @@ fn test_subtask_integration_conflict() {
         env.api().approve(id).expect("Should approve work stage");
     }
 
+    // Queue review verdict AND recovery work outputs before advancing.
+    // The mock queue is FIFO per task: review agent consumes "verdict" first,
+    // then if integration fails and recovers to work, the recovery agent
+    // consumes "summary". We don't know which subtask will conflict, so
+    // queue both outputs for both subtasks.
     for id in [&id_a, &id_b] {
         env.set_output(
             id,
@@ -914,12 +815,36 @@ fn test_subtask_integration_conflict() {
                 content: "Looks good".into(),
             },
         );
+        env.set_output(
+            id,
+            MockAgentOutput::Artifact {
+                name: "summary".into(),
+                content: format!("Recovery work for {id}"),
+            },
+        );
     }
-    env.tick_until_settled();
+    env.advance(); // spawns review agents (completions ready)
+    env.advance(); // processes reviews → auto-approve → Done
+    // Integration is sync: one task per advance. After review, tasks are Done.
+    // First integration may conflict, triggering recovery → work agent spawn.
+    env.advance(); // integrates first task (sync); may spawn recovery agent
+    env.advance(); // integrates second task (or processes recovery output)
+    env.advance(); // catch-up for any remaining cascading work
 
-    // Integration order is nondeterministic — one will merge cleanly, the other
-    // will conflict. Wait for whichever merges first.
-    let (_merged_id, conflict_id) = wait_for_one_archived(&env, &id_a, &id_b);
+    // Integration order is nondeterministic — one merged cleanly, the other conflicted.
+    // Find which one was archived and which was recovered.
+    let a_task = env.api().get_task(&id_a).unwrap();
+    let b_task = env.api().get_task(&id_b).unwrap();
+    let conflict_id = if a_task.is_archived() {
+        &id_b
+    } else if b_task.is_archived() {
+        &id_a
+    } else {
+        panic!(
+            "Expected one task to be Archived. A: {:?}/{:?}, B: {:?}/{:?}",
+            a_task.status, a_task.phase, b_task.status, b_task.phase
+        );
+    };
 
     let conflict_task = env.api().get_task(conflict_id).unwrap();
     // Should be back in the work stage (recovery from integration failure)
@@ -928,12 +853,6 @@ fn test_subtask_integration_conflict() {
         Some("work"),
         "Conflicting subtask should be moved to recovery stage, got: {:?}",
         conflict_task.status
-    );
-    // Phase may be Idle (just assigned) or AgentWorking (orchestrator already started agent)
-    assert!(
-        conflict_task.phase == Phase::Idle || conflict_task.phase == Phase::AgentWorking,
-        "Conflicting subtask should be Idle or AgentWorking after recovery, got: {:?}",
-        conflict_task.phase
     );
     assert!(
         conflict_task.status.is_active(),

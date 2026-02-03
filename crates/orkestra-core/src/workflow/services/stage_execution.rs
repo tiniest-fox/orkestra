@@ -269,6 +269,22 @@ impl StageExecutionService {
         agent_count + self.script_service.active_count()
     }
 
+    /// Block until all active executions (agents + scripts) complete, returning results.
+    ///
+    /// Used in test mode (`sync_background`) so script stages complete within
+    /// a single orchestrator tick, making tests fully deterministic.
+    pub fn drain_active(&self) -> Vec<ExecutionComplete> {
+        let mut all_completed = Vec::new();
+        loop {
+            if self.active_count() == 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+            all_completed.extend(self.poll_active());
+        }
+        all_completed
+    }
+
     /// Spawn an execution for a task's current stage.
     ///
     /// This is the unified entry point for all stage executions. It:

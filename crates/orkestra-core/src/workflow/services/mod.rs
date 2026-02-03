@@ -64,6 +64,7 @@ macro_rules! workflow_warn {
 pub(crate) use workflow_warn;
 
 pub use api::WorkflowApi;
+pub use integration::{perform_git_integration, IntegrationGitResult, IntegrationParams};
 pub use iteration_service::IterationService;
 pub use log_service::LogService;
 pub use orchestrator::{OrchestratorError, OrchestratorEvent, OrchestratorLoop};

@@ -261,7 +261,7 @@ impl OrchestratorLoop {
                 "setup_ready_subtasks" => self.setup_ready_subtasks()?,
                 "check_parent_completions" => events.extend(self.check_parent_completions()?),
                 "process_completed_executions" => {
-                    events.extend(self.process_completed_executions()?)
+                    events.extend(self.process_completed_executions()?);
                 }
                 "start_new_executions" => events.extend(self.start_new_executions()?),
                 "start_integrations" => events.extend(self.start_integrations()?),
@@ -399,7 +399,7 @@ impl OrchestratorLoop {
                     }),
                 }
             }
-            ExecutionResult::AgentFailed(error) => {
+            ExecutionResult::AgentFailed(error) | ExecutionResult::PollError { error } => {
                 let _ = api.process_agent_output(
                     &exec.task_id,
                     StageOutput::Failed {
@@ -446,18 +446,6 @@ impl OrchestratorLoop {
                         error: e.to_string(),
                     }),
                 }
-            }
-            ExecutionResult::PollError { error } => {
-                let _ = api.process_agent_output(
-                    &exec.task_id,
-                    StageOutput::Failed {
-                        error: format!("Agent error: {error}"),
-                    },
-                );
-                Ok(OrchestratorEvent::Error {
-                    task_id: Some(exec.task_id),
-                    error,
-                })
             }
         }
     }

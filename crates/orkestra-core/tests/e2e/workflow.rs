@@ -949,7 +949,7 @@ fn test_script_stage_with_recovery() {
 /// Helper: advance a task through a simple work → review(automated) workflow to Done.
 ///
 /// Drives the task through the API directly (without orchestrator ticks) to avoid
-/// triggering auto-integration. The task will be in Done status with Phase::Idle.
+/// triggering auto-integration. The task will be in Done status with `Phase::Idle`.
 fn advance_to_done(ctx: &TestEnv, task_id: &str) {
     use orkestra_core::workflow::execution::StageOutput;
 
@@ -1185,11 +1185,11 @@ fn test_recovery_retries_unmerged_task() {
 // Provider-Aware Session ID Tests
 // =============================================================================
 
-/// Verify that OpenCode stages don't pre-generate session UUIDs and don't
+/// Verify that `OpenCode` stages don't pre-generate session UUIDs and don't
 /// attempt resume when no session ID has been extracted from the stream.
 ///
 /// This is the core regression test for the bug where a pre-generated UUID
-/// was passed to OpenCode on resume, causing it to hang forever (OpenCode
+/// was passed to `OpenCode` on resume, causing it to hang forever (`OpenCode`
 /// generates its own `ses_...` IDs and doesn't accept caller-supplied ones).
 ///
 /// Flow:
@@ -1197,7 +1197,7 @@ fn test_recovery_retries_unmerged_task() {
 /// 2. First spawn: verify `session_id` is `None` (no pre-generated UUID)
 /// 3. Reject + retry: verify `session_id` is still `None` AND `is_resume` is `false`
 ///    (mock runner doesn't emit `RunEvent::SessionId`, simulating a crash before
-///    OpenCode emits its session event)
+///    `OpenCode` emits its session event)
 #[test]
 fn test_opencode_no_pregenerated_session_id() {
     let workflow = WorkflowConfig::new(vec![

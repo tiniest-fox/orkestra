@@ -292,7 +292,7 @@ impl TestEnv {
     ///
     /// Subtask setup is deferred to the orchestrator tick loop, so this method
     /// ticks the orchestrator during the poll to trigger `setup_ready_subtasks()`.
-    /// Subtasks with unsatisfied dependencies will stay in SettingUp — use
+    /// Subtasks with unsatisfied dependencies will stay in `SettingUp` — use
     /// `create_subtask_deferred` for those.
     pub fn create_subtask(&self, parent_id: &str, title: &str, desc: &str) -> Task {
         let task = self

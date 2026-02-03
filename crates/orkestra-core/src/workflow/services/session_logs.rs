@@ -54,7 +54,7 @@ const LEGACY_RESUME_MARKER: &str = "<!orkestra-resume>";
 ///
 /// Returns Some(ResumeMarker) if this is a resumption prompt, None otherwise.
 /// Supports both typed markers (<!orkestra-resume:TYPE>) and legacy markers.
-pub(super) fn parse_resume_marker(text: &str) -> Option<ResumeMarker> {
+pub(crate) fn parse_resume_marker(text: &str) -> Option<ResumeMarker> {
     let trimmed = text.trim();
 
     // Initial prompt marker
@@ -127,7 +127,7 @@ pub(super) fn parse_resume_marker(text: &str) -> Option<ResumeMarker> {
 // ============================================================================
 
 /// Extract text content from a `tool_result` item.
-pub(super) fn extract_tool_result_content(item: &serde_json::Value) -> String {
+pub(crate) fn extract_tool_result_content(item: &serde_json::Value) -> String {
     match item.get("content") {
         Some(serde_json::Value::String(s)) => s.clone(),
         Some(serde_json::Value::Array(arr)) => arr
@@ -155,7 +155,7 @@ fn get_str_field(input: &serde_json::Value, field: &str) -> String {
 }
 
 /// Parses a tool input JSON into a structured `ToolInput`.
-pub(super) fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
+pub(crate) fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
     match tool_name {
         "Bash" => {
             let command = get_str_field(input, "command");

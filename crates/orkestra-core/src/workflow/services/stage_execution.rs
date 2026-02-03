@@ -55,7 +55,7 @@ struct ActiveAgent {
     spawned_at: Instant,
     /// Whether the agent has ever produced any output.
     has_activity: bool,
-    /// Session ID extracted from the stream (for providers like OpenCode that
+    /// Session ID extracted from the stream (for providers like `OpenCode` that
     /// generate their own session IDs). Set once, consumed by `take_extracted_session_id`.
     extracted_session_id: Option<String>,
 }

@@ -25,14 +25,14 @@ impl PeriodicScheduler {
 
     /// Register a task that should run at the given interval.
     ///
-    /// The task runs immediately on the first `poll_due` call (last_run starts
+    /// The task runs immediately on the first `poll_due` call (`last_run` starts
     /// far enough in the past to be immediately due).
     pub fn register(&mut self, name: &'static str, interval: Duration) {
         self.tasks.push(ScheduledTask {
             name,
             interval,
             // Ensure first poll triggers immediately
-            last_run: Instant::now() - interval,
+            last_run: Instant::now().checked_sub(interval).unwrap_or_else(Instant::now),
         });
     }
 

@@ -27,7 +27,7 @@ use super::IterationService;
 
 /// Context needed before spawning an agent.
 ///
-/// The session ID may be `None` for providers that generate their own IDs (e.g., OpenCode).
+/// The session ID may be `None` for providers that generate their own IDs (e.g., `OpenCode`).
 /// For providers that accept caller-supplied IDs (Claude Code), it contains a pre-generated UUID.
 #[derive(Debug, Clone)]
 pub struct SessionSpawnContext {
@@ -131,7 +131,7 @@ impl SessionService {
     /// # Arguments
     ///
     /// * `initial_session_id` — Pre-generated session ID for providers that accept caller-supplied
-    ///   IDs (Claude Code). Pass `None` for providers that generate their own (OpenCode).
+    ///   IDs (Claude Code). Pass `None` for providers that generate their own (`OpenCode`).
     ///   Only used when creating a NEW session; existing sessions keep their current ID.
     pub fn on_spawn_starting(
         &self,

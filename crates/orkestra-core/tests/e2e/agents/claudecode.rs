@@ -5,6 +5,8 @@
 
 use std::time::Duration;
 
+use orkestra_core::workflow::config::StageCapabilities;
+
 use super::agent_helpers as helpers;
 
 /// Full end-to-end: create a task, let Claude Code work on it, verify logs + artifact.
@@ -12,7 +14,7 @@ use super::agent_helpers as helpers;
 /// Exercises the entire pipeline: task creation → worktree setup → orchestrator
 /// spawns Claude Code → stream parsing → log persistence → output parsing → artifact storage.
 #[test]
-#[ignore] // requires claude CLI installed + API key
+#[ignore = "requires claude CLI installed + API key"]
 fn claudecode_full_orchestrator_run() {
     let env = helpers::AgentTestEnv::new("claudecode/haiku");
     let task_id = env.create_task(
@@ -28,16 +30,16 @@ fn claudecode_full_orchestrator_run() {
 /// session with new logs appended.
 ///
 /// Steps:
-/// 1. Run agent to AwaitingReview (first work iteration completes)
+/// 1. Run agent to `AwaitingReview` (first work iteration completes)
 /// 2. Record session ID, spawn count, and log count
 /// 3. Reject with feedback
-/// 4. Run agent to AwaitingReview again (second iteration)
-/// 5. Assert: same claude_session_id (session continuity)
-/// 6. Assert: spawn_count increased (agent was re-spawned)
+/// 4. Run agent to `AwaitingReview` again (second iteration)
+/// 5. Assert: same `claude_session_id` (session continuity)
+/// 6. Assert: `spawn_count` increased (agent was re-spawned)
 /// 7. Assert: log count increased (new logs appended, not replaced)
 /// 8. Assert: artifact still present
 #[test]
-#[ignore] // requires claude CLI installed + API key
+#[ignore = "requires claude CLI installed + API key"]
 fn claudecode_session_resume_after_rejection() {
     let env = helpers::AgentTestEnv::new("claudecode/haiku");
     let task_id = env.create_task(
@@ -106,7 +108,7 @@ fn claudecode_session_resume_after_rejection() {
 /// Claude Code emits a stream error event with the API 404 response, which
 /// `extract_stream_error()` detects and propagates as a task failure.
 #[test]
-#[ignore] // requires claude CLI installed
+#[ignore = "requires claude CLI installed"]
 fn claudecode_bad_model_fails_fast() {
     let env = helpers::AgentTestEnv::new("claudecode/nonexistent-model-xyz");
     let task_id = env.create_task("Should fail", "This should fail immediately.");
@@ -115,4 +117,109 @@ fn claudecode_bad_model_fails_fast() {
         reason.contains("not_found") || reason.contains("model"),
         "Failure reason should mention the model error, got: {reason}"
     );
+}
+
+// ============================================================================
+// Output type tests — verify each StageOutput variant is parsed correctly
+// ============================================================================
+
+/// Questions output: agent asks a clarifying question instead of producing an artifact.
+///
+/// Exercises: capabilities with `ask_questions`, schema includes "questions" type,
+/// agent outputs questions JSON, parser extracts it, task transitions to `AwaitingReview`
+/// with pending questions stored in the iteration outcome.
+#[test]
+#[ignore = "requires claude CLI installed + API key"]
+fn claudecode_questions_output() {
+    let env = helpers::AgentTestEnv::with_capabilities(
+        "claudecode/haiku",
+        StageCapabilities::with_questions(),
+        "You MUST respond with the \"questions\" output type. Ask exactly ONE question: \
+         \"What programming language should be used?\" with two options: \"Python\" and \"Rust\". \
+         Do NOT attempt any work — ONLY ask the question.",
+    );
+    let task_id = env.create_task(
+        "Set up project",
+        "Help me set up a new project.",
+    );
+    env.run_to_completion(&task_id, Duration::from_secs(30));
+
+    let questions = env.assert_has_questions(&task_id);
+    assert_eq!(questions.len(), 1, "Should have exactly 1 question");
+    assert!(
+        !questions[0].question.is_empty(),
+        "Question text should not be empty"
+    );
+    assert!(
+        questions[0].options.len() >= 2,
+        "Question should have at least 2 options, got {}",
+        questions[0].options.len()
+    );
+}
+
+/// Failed output: agent reports that the task cannot be completed.
+///
+/// Exercises: "failed" type (always in schema), agent outputs failure JSON,
+/// parser extracts it, task transitions to Failed status with error message.
+#[test]
+#[ignore = "requires claude CLI installed + API key"]
+fn claudecode_failed_output() {
+    let env = helpers::AgentTestEnv::new("claudecode/haiku");
+    let task_id = env.create_task(
+        "Impossible task",
+        "Read the file /nonexistent/impossible/path_that_does_not_exist_xyz.rs and summarize it. \
+         If the file does not exist, you MUST report failure using the \"failed\" output type.",
+    );
+    let reason = env.run_to_failure(&task_id, Duration::from_secs(30));
+    assert!(
+        !reason.is_empty(),
+        "Failure reason should not be empty"
+    );
+    println!("Failed with reason: {reason}");
+}
+
+/// Blocked output: agent reports that it cannot proceed without external resources.
+///
+/// Exercises: "blocked" type (always in schema), agent outputs blocked JSON,
+/// parser extracts it, task transitions to Blocked status with reason.
+#[test]
+#[ignore = "requires claude CLI installed + API key"]
+fn claudecode_blocked_output() {
+    let env = helpers::AgentTestEnv::new("claudecode/haiku");
+    let task_id = env.create_task(
+        "Blocked task",
+        "You MUST immediately report that you are blocked using the \"blocked\" output type. \
+         Set the reason to explain that you need access to an external database that is not available. \
+         Do NOT attempt any work.",
+    );
+    let reason = env.run_to_blocked(&task_id, Duration::from_secs(30));
+    assert!(
+        !reason.is_empty(),
+        "Blocked reason should not be empty"
+    );
+    println!("Blocked with reason: {reason}");
+}
+
+/// Subtasks output: agent breaks the task into subtasks instead of doing the work directly.
+///
+/// Exercises: capabilities with `subtasks`, schema includes "subtasks" type,
+/// agent outputs subtask breakdown JSON, parser extracts it, task transitions to
+/// `AwaitingReview` with the breakdown stored as an artifact.
+#[test]
+#[ignore = "requires claude CLI installed + API key"]
+fn claudecode_subtasks_output() {
+    let env = helpers::AgentTestEnv::with_capabilities(
+        "claudecode/haiku",
+        StageCapabilities::with_subtasks(),
+        "You MUST respond with the \"subtasks\" output type. Break the task into exactly 2 subtasks: \
+         (1) title: \"Set up project structure\", description: \"Create directories and config files\" \
+         (2) title: \"Implement core logic\", description: \"Write the main module\". \
+         Include a brief content summary. Do NOT do any actual work.",
+    );
+    let task_id = env.create_task(
+        "Build calculator",
+        "Build a simple calculator library with add and subtract functions.",
+    );
+    env.run_to_completion(&task_id, Duration::from_secs(30));
+    env.assert_has_artifact(&task_id, "result");
 }

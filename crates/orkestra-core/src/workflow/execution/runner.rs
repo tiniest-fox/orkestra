@@ -4,8 +4,8 @@
 //! - Provider resolution from model spec via `ProviderRegistry`
 //! - Process spawning via the resolved provider's `ProcessSpawner`
 //! - Prompt writing to stdin
-//! - Output streaming and session ID extraction
-//! - Output parsing to `StageOutput`
+//! - Output streaming via provider-specific `AgentParser`
+//! - Output parsing to `StageOutput` via centralized `parse_completion`
 //!
 //! The runner does NOT handle:
 //! - Session management (caller's responsibility)
@@ -19,12 +19,9 @@ use std::thread;
 use crate::orkestra_debug;
 
 use super::output::StageOutput;
-use super::parser::parse_output_with_text_fallback;
+use super::parser::{check_for_api_error, parse_completion, AgentParser};
 use crate::workflow::domain::LogEntry;
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessSpawner};
-use crate::workflow::services::stream_parser::{
-    ClaudeStreamParser, OpenCodeStreamParser, StreamParser,
-};
 
 use super::provider_registry::ProviderRegistry;
 
@@ -119,7 +116,7 @@ pub enum RunEvent {
     /// A parsed log entry from the agent's stdout stream.
     LogLine(LogEntry),
     /// A session ID extracted from the stream (emitted once for providers like
-    /// OpenCode that generate their own session IDs).
+    /// `OpenCode` that generate their own session IDs).
     SessionId(String),
     /// Agent completed with parsed output.
     Completed(Result<StageOutput, String>),
@@ -190,10 +187,10 @@ pub trait AgentRunnerTrait: Send + Sync {
 ///
 /// The runner is responsible for:
 /// - Resolving the provider from the model spec via `ProviderRegistry`
+/// - Creating a provider-specific `AgentParser` via `ProviderRegistry::create_parser`
 /// - Spawning the process via the resolved provider's `ProcessSpawner`
 /// - Writing the prompt to stdin
-/// - Reading and parsing output
-/// - Extracting session ID from stream events
+/// - Reading and parsing output through the `AgentParser`
 ///
 /// The runner is NOT responsible for:
 /// - Building prompts (receives them)
@@ -244,13 +241,13 @@ impl AgentRunnerTrait for AgentRunner {
             .resolve(config.model.as_deref())
             .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-        // Create the appropriate stream parser based on provider
-        let mut parser: Box<dyn StreamParser> = match resolved.provider_name.as_str() {
-            "opencode" => Box::new(OpenCodeStreamParser::new()),
-            _ => Box::new(ClaudeStreamParser::new()),
-        };
+        // Create the provider-specific parser
+        let mut parser = self
+            .registry
+            .create_parser(&resolved.provider_name)
+            .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-        // Parse the schema for validation (before moving json_schema to process_config)
+        // Parse the schema for validation
         let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
         // Build process config with resolved model ID
@@ -287,9 +284,8 @@ impl AgentRunnerTrait for AgentRunner {
             .write_prompt(&config.prompt)
             .map_err(|e| RunError::PromptWriteFailed(e.to_string()))?;
 
-        // Read all output, tracking last text entry for fallback parsing
+        // Read all output, parsing through the AgentParser
         let mut full_output = String::new();
-        let mut last_text: Option<String> = None;
         let mut line_count: usize = 0;
 
         for line_result in handle.lines() {
@@ -302,11 +298,7 @@ impl AgentRunnerTrait for AgentRunner {
                     if let Some(error_msg) = extract_stream_error(&line) {
                         return Err(RunError::ParseFailed(error_msg));
                     }
-                    for entry in parser.parse_line(&line) {
-                        if let LogEntry::Text { ref content } = entry {
-                            last_text = Some(content.clone());
-                        }
-                    }
+                    parser.parse_line(&line);
                     full_output.push_str(&line);
                     full_output.push('\n');
                 }
@@ -316,11 +308,7 @@ impl AgentRunnerTrait for AgentRunner {
             }
         }
 
-        for entry in parser.finalize() {
-            if let LogEntry::Text { ref content } = entry {
-                last_text = Some(content.clone());
-            }
-        }
+        parser.finalize();
 
         // Process completed normally
         handle.disarm();
@@ -336,11 +324,14 @@ impl AgentRunnerTrait for AgentRunner {
             return Err(RunError::ParseFailed(error_msg));
         }
 
-        // Parse output: tries raw JSONL first (Claude Code), falls back to last
-        // text content (OpenCode where structured output is in text events).
-        let parsed_output =
-            parse_output_with_text_fallback(&full_output, last_text.as_deref(), schema.as_ref())
-                .map_err(RunError::ParseFailed)?;
+        // Parse output: provider extracts JSON, then StageOutput::parse interprets it
+        let parsed_output = match schema {
+            Some(ref s) => parse_completion(&*parser, &full_output, s),
+            None => parser.extract_output(&full_output).and_then(|json_str| {
+                StageOutput::parse_unvalidated(&json_str).map_err(|e| e.to_string())
+            }),
+        }
+        .map_err(RunError::ParseFailed)?;
 
         orkestra_debug!("runner", "run_sync: parsed output successfully");
 
@@ -366,11 +357,11 @@ impl AgentRunnerTrait for AgentRunner {
             .resolve(config.model.as_deref())
             .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-        // Create the appropriate stream parser based on provider
-        let parser: Box<dyn StreamParser> = match resolved.provider_name.as_str() {
-            "opencode" => Box::new(OpenCodeStreamParser::new()),
-            _ => Box::new(ClaudeStreamParser::new()),
-        };
+        // Create the provider-specific parser
+        let parser = self
+            .registry
+            .create_parser(&resolved.provider_name)
+            .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
         // Build process config with resolved model ID
         let process_config = ProcessConfig {
@@ -416,22 +407,7 @@ impl AgentRunnerTrait for AgentRunner {
 /// (e.g. model not found, rate limits). Without detection, the stop hook
 /// retries infinitely. Returns the error message text if found.
 fn extract_stream_error(line: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(line).ok()?;
-
-    // Only treat events with an explicit "error" field as errors
-    v.get("error")?;
-
-    // Extract the text content from the message for a useful error message
-    let content = v
-        .get("message")
-        .and_then(|m| m.get("content"))
-        .and_then(|c| c.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|item| item.get("text"))
-        .and_then(|t| t.as_str())
-        .unwrap_or("Unknown agent error");
-
-    Some(content.to_string())
+    check_for_api_error(line)
 }
 
 /// Join the stderr reader thread and return collected lines.
@@ -485,7 +461,7 @@ fn read_output_and_send_events(
     mut handle: crate::workflow::ports::ProcessHandle,
     tx: &Sender<RunEvent>,
     schema: Option<&serde_json::Value>,
-    mut parser: Box<dyn StreamParser>,
+    mut parser: Box<dyn AgentParser>,
 ) {
     // Spawn a thread to collect stderr so we can log it on failure
     let stderr_handle = handle.take_stderr().map(|stderr| {
@@ -501,10 +477,8 @@ fn read_output_and_send_events(
     });
 
     let mut full_output = String::new();
-    let mut last_text: Option<String> = None;
     let mut line_count: usize = 0;
     let mut log_entry_count: usize = 0;
-    let mut session_id_sent = false;
 
     for line_result in handle.lines() {
         match line_result {
@@ -518,41 +492,32 @@ fn read_output_and_send_events(
                 orkestra_debug!("runner", "stdout line {}: {}", line_count, line);
 
                 // Detect error events from the agent (e.g. API 404, rate limits).
-                // These have an "error" field at the top level of the JSON event.
-                // Without this check, Claude Code loops forever retrying via stop hooks.
                 if let Some(error_msg) = extract_stream_error(&line) {
                     orkestra_debug!("runner", "Agent error detected: {}", error_msg);
                     let _ = tx.send(RunEvent::Completed(Err(error_msg)));
                     return;
                 }
 
-                // Parse the line for log entries before accumulating
-                let entries = parser.parse_line(&line);
+                // Parse the line through the provider-specific parser
+                let update = parser.parse_line(&line);
                 orkestra_debug!(
                     "runner",
                     "  parsed {} log entries from line {}",
-                    entries.len(),
+                    update.log_entries.len(),
                     line_count
                 );
 
                 // Surface provider-generated session ID (e.g. OpenCode's ses_...)
-                // so the caller can persist it for future resume attempts.
-                if !session_id_sent {
-                    if let Some(sid) = parser.extracted_session_id() {
-                        orkestra_debug!("runner", "Extracted session ID: {}", sid);
-                        if tx.send(RunEvent::SessionId(sid.to_string())).is_err() {
-                            orkestra_debug!("runner", "Channel closed while sending SessionId");
-                            return;
-                        }
-                        session_id_sent = true;
+                if let Some(sid) = update.session_id {
+                    orkestra_debug!("runner", "Extracted session ID: {}", sid);
+                    if tx.send(RunEvent::SessionId(sid)).is_err() {
+                        orkestra_debug!("runner", "Channel closed while sending SessionId");
+                        return;
                     }
                 }
 
-                for entry in entries {
+                for entry in update.log_entries {
                     log_entry_count += 1;
-                    if let LogEntry::Text { ref content } = entry {
-                        last_text = Some(content.clone());
-                    }
                     if tx.send(RunEvent::LogLine(entry)).is_err() {
                         orkestra_debug!("runner", "Channel closed while sending LogLine");
                         return;
@@ -580,9 +545,6 @@ fn read_output_and_send_events(
 
     // Finalize the parser to flush any buffered entries
     for entry in parser.finalize() {
-        if let LogEntry::Text { ref content } = entry {
-            last_text = Some(content.clone());
-        }
         if tx.send(RunEvent::LogLine(entry)).is_err() {
             orkestra_debug!("runner", "Channel closed while sending finalized LogLine");
             return;
@@ -611,9 +573,14 @@ fn read_output_and_send_events(
         return;
     }
 
-    // Parse output: tries raw JSONL first (Claude Code), falls back to last
-    // text content (OpenCode where structured output is in text events).
-    let result = parse_output_with_text_fallback(&full_output, last_text.as_deref(), schema);
+    // Parse output: provider extracts JSON, then StageOutput::parse interprets it
+    let result = match schema {
+        Some(s) => parse_completion(&*parser, &full_output, s),
+        None => parser.extract_output(&full_output).and_then(|json_str| {
+            StageOutput::parse_unvalidated(&json_str).map_err(|e| e.to_string())
+        }),
+    };
+
     if tx.send(RunEvent::Completed(result)).is_err() {
         orkestra_debug!("runner", "Channel closed before completion could be sent");
     }
@@ -857,8 +824,6 @@ mod tests {
         let err = RunError::ParseFailed("test".into());
         assert!(err.to_string().contains("parse"));
     }
-
-    // Note: parse_agent_output tests are in parser.rs
 
     #[cfg(any(test, feature = "testutil"))]
     mod mock_tests {

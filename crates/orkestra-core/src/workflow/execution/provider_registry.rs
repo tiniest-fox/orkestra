@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::workflow::ports::ProcessSpawner;
+use super::parser::{AgentParser, ClaudeAgentParser, OpenCodeAgentParser};
 
 // ============================================================================
 // Provider Capabilities
@@ -23,7 +24,7 @@ pub struct ProviderCapabilities {
     pub supports_json_schema: bool,
     /// Whether the provider supports session resume (`--session-id` / `--resume`).
     pub supports_sessions: bool,
-    /// Whether the provider generates its own session IDs (e.g., OpenCode's `ses_...`).
+    /// Whether the provider generates its own session IDs (e.g., `OpenCode`'s `ses_...`).
     /// When true, the caller should NOT pre-generate a UUID — the session ID will be
     /// extracted from the provider's output stream. When false (Claude Code), the caller
     /// supplies a UUID via `--session-id` on first spawn.
@@ -166,6 +167,21 @@ impl ProviderRegistry {
     /// List all registered provider names.
     pub fn provider_names(&self) -> Vec<&str> {
         self.providers.keys().map(String::as_str).collect()
+    }
+
+    /// Create a provider-specific `AgentParser` for the given provider name.
+    ///
+    /// This is the single dispatch point for parser creation. Adding a new provider
+    /// requires one match arm here and a new parser implementation.
+    ///
+    /// Returns `Err` if the provider has no registered parser — forces new providers
+    /// to implement one rather than silently falling back to Claude's format.
+    pub fn create_parser(&self, provider_name: &str) -> Result<Box<dyn AgentParser>, RegistryError> {
+        match provider_name {
+            "claudecode" => Ok(Box::new(ClaudeAgentParser::new())),
+            "opencode" => Ok(Box::new(OpenCodeAgentParser::new())),
+            _ => Err(RegistryError::UnknownProvider(provider_name.to_string())),
+        }
     }
 
     // ========================================================================

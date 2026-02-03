@@ -1,7 +1,7 @@
 //! Shared infrastructure for real-agent e2e tests.
 //!
 //! Provides `AgentTestEnv` — a test environment that uses real process spawners
-//! (Claude Code, OpenCode) instead of mocks. Tests using this require the actual
+//! (Claude Code, `OpenCode`) instead of mocks. Tests using this require the actual
 //! CLI tools installed and API keys configured.
 
 use std::path::PathBuf;
@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
-    config::{IntegrationConfig, StageConfig, WorkflowConfig},
-    domain::{LogEntry, StageSession, Task},
+    config::{IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig},
+    domain::{LogEntry, Question, StageSession, Task},
     runtime::Phase,
     Git2GitService, GitService, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService,
     WorkflowApi,
@@ -27,15 +27,31 @@ use tempfile::TempDir;
 pub struct AgentTestEnv {
     api: Arc<Mutex<WorkflowApi>>,
     orchestrator: OrchestratorLoop,
-    _temp_dir: TempDir,
+    temp_dir: TempDir,
 }
 
 impl AgentTestEnv {
-    /// Create a test environment for a specific model.
+    /// Create a test environment for a specific model with default capabilities.
     ///
     /// Sets up a single "work" stage workflow using the given model string
     /// (e.g., `"opencode/kimi-k2.5-free"`, `"claudecode/sonnet"`).
     pub fn new(model: &str) -> Self {
+        Self::with_capabilities(
+            model,
+            StageCapabilities::default(),
+            "You are a worker agent. Complete the task described below.",
+        )
+    }
+
+    /// Create a test environment with custom stage capabilities and prompt.
+    ///
+    /// Builds a single "work" stage workflow with the given capabilities and
+    /// writes the prompt content to `.orkestra/agents/worker.md`.
+    pub fn with_capabilities(
+        model: &str,
+        capabilities: StageCapabilities,
+        prompt: &str,
+    ) -> Self {
         use orkestra_core::testutil::create_temp_git_repo;
 
         let temp_dir = create_temp_git_repo().expect("create temp git repo");
@@ -47,18 +63,15 @@ impl AgentTestEnv {
         // Initialize debug logging so ORKESTRA_DEBUG=1 works in tests
         orkestra_core::debug_log::init(&orkestra_dir);
         println!("Debug log: {}", orkestra_dir.join("debug.log").display());
-        std::fs::write(
-            orkestra_dir.join("agents/worker.md"),
-            "You are a worker agent. Complete the task described below.",
-        )
-        .unwrap();
+        std::fs::write(orkestra_dir.join("agents/worker.md"), prompt).unwrap();
 
         // Build and save workflow config
         let workflow = WorkflowConfig {
             version: 1,
             stages: vec![StageConfig::new("work", "result")
                 .with_prompt("worker.md")
-                .with_model(model)],
+                .with_model(model)
+                .with_capabilities(capabilities)],
             integration: IntegrationConfig::default(),
             flows: std::collections::HashMap::new(),
         };
@@ -103,13 +116,13 @@ impl AgentTestEnv {
         Self {
             api,
             orchestrator,
-            _temp_dir: temp_dir,
+            temp_dir,
         }
     }
 
     /// Print the debug log contents to stdout for test diagnostics.
     fn dump_debug_log(&self) {
-        let log_path = self._temp_dir.path().join(".orkestra/debug.log");
+        let log_path = self.temp_dir.path().join(".orkestra/debug.log");
         if let Ok(contents) = std::fs::read_to_string(&log_path) {
             println!("\n=== DEBUG LOG ({}) ===", log_path.display());
             for line in contents.lines() {
@@ -147,9 +160,10 @@ impl AgentTestEnv {
                 println!("Task setup complete: phase={:?}", t.phase);
                 return task_id;
             }
-            if start.elapsed() > timeout {
-                panic!("Task setup did not complete in time");
-            }
+            assert!(
+                start.elapsed() <= timeout,
+                "Task setup did not complete in time"
+            );
         }
     }
 
@@ -349,5 +363,101 @@ impl AgentTestEnv {
             !artifact.unwrap().content.is_empty(),
             "Artifact '{artifact_name}' content should not be empty"
         );
+    }
+
+    /// Get the full task state.
+    #[allow(dead_code)]
+    pub fn get_task(&self, task_id: &str) -> Task {
+        self.api
+            .lock()
+            .unwrap()
+            .get_task(task_id)
+            .expect("get task")
+    }
+
+    /// Get pending questions for a task.
+    pub fn get_pending_questions(&self, task_id: &str) -> Vec<Question> {
+        self.api
+            .lock()
+            .unwrap()
+            .get_pending_questions(task_id)
+            .expect("get_pending_questions should succeed")
+    }
+
+    /// Assert that the task has pending questions and return them.
+    pub fn assert_has_questions(&self, task_id: &str) -> Vec<Question> {
+        let questions = self.get_pending_questions(task_id);
+        println!(
+            "Questions: {} total",
+            questions.len()
+        );
+        for (i, q) in questions.iter().enumerate() {
+            println!(
+                "  Q{}: {:?} ({} options)",
+                i + 1,
+                q.question,
+                q.options.len()
+            );
+        }
+        assert!(
+            !questions.is_empty(),
+            "Should have pending questions"
+        );
+        questions
+    }
+
+    /// Tick the orchestrator until the task reaches `Blocked` status.
+    ///
+    /// Returns the blocked reason. Panics on timeout, failure, or unexpected success.
+    pub fn run_to_blocked(&self, task_id: &str, timeout: Duration) -> String {
+        println!("Starting orchestrator ticks (expecting blocked)...");
+        let start = Instant::now();
+
+        loop {
+            self.orchestrator.tick().expect("tick should succeed");
+            std::thread::sleep(Duration::from_millis(200));
+
+            let t = self
+                .api
+                .lock()
+                .unwrap()
+                .get_task(task_id)
+                .expect("get task");
+            println!(
+                "  [{:.1}s] phase={:?} stage={:?} status={:?}",
+                start.elapsed().as_secs_f64(),
+                t.phase,
+                t.current_stage(),
+                t.status
+            );
+
+            if let orkestra_core::workflow::runtime::Status::Blocked { reason } = &t.status {
+                let msg = reason.clone().unwrap_or_else(|| "unknown block reason".to_string());
+                println!("Task blocked as expected: {msg}");
+                return msg;
+            }
+
+            if let orkestra_core::workflow::runtime::Status::Failed { error } = &t.status {
+                self.dump_debug_log();
+                panic!(
+                    "Task failed unexpectedly — expected blocked. Error: {error:?}"
+                );
+            }
+
+            if t.phase == Phase::AwaitingReview {
+                self.dump_debug_log();
+                panic!("Task succeeded unexpectedly — expected blocked");
+            }
+
+            if start.elapsed() > timeout {
+                self.dump_debug_log();
+                panic!(
+                    "Timed out after {:.0}s waiting for task to be blocked (phase={:?}, status={:?})",
+                    timeout.as_secs_f64(),
+                    t.phase,
+                    t.status
+                );
+            }
+        }
     }
 }

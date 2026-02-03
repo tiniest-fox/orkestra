@@ -5,7 +5,7 @@
 //!
 //! Key behaviors tested:
 //! - Subtask setup is deferred to orchestrator tick (not immediate at creation)
-//! - Dependent subtasks stay in SettingUp until dependencies are Done
+//! - Dependent subtasks stay in `SettingUp` until dependencies are Done
 //! - Each subtask gets its own worktree branching from the parent's branch
 //! - Subtask integration merges to parent's branch (not primary)
 //! - Parent advances only when ALL subtasks are Archived (integrated)
@@ -86,6 +86,7 @@ fn wait_for_archived(env: &TestEnv, task_id: &str) {
 /// remaining task. This handles nondeterministic integration ordering —
 /// `start_integrations` picks one task per tick, and the order depends on
 /// the store's iteration order.
+#[allow(clippy::similar_names)]
 fn wait_for_one_archived<'a>(
     env: &TestEnv,
     id_a: &'a str,
@@ -120,7 +121,7 @@ fn wait_for_one_archived<'a>(
 // =============================================================================
 
 /// Create parent task, produce plan, approve, produce breakdown, approve.
-/// Returns (parent_id, subtask_ids_by_title).
+/// Returns (`parent_id`, `subtask_ids_by_title`).
 fn setup_parent_with_subtasks(
     env: &TestEnv,
     subtask_outputs: Vec<SubtaskOutput>,
@@ -670,7 +671,7 @@ fn test_subtask_failure_fails_parent() {
     let workflow = workflows::with_subtasks();
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
-    let (_parent_id, id_map) = setup_parent_with_subtasks(
+    let (parent_id, id_map) = setup_parent_with_subtasks(
         &env,
         vec![SubtaskOutput {
             title: "Only task".into(),
@@ -697,7 +698,7 @@ fn test_subtask_failure_fails_parent() {
     env.tick();
 
     // Parent should be failed
-    let parent = env.api().get_task(&_parent_id).unwrap();
+    let parent = env.api().get_task(&parent_id).unwrap();
     assert!(
         parent.is_failed(),
         "Parent should be Failed when subtask fails, got: {:?}",

@@ -71,7 +71,7 @@ impl StageSession {
     ///
     /// The `claude_session_id` starts as `None`. For providers that accept caller-supplied
     /// session IDs (Claude Code), the caller sets it before spawn. For providers that
-    /// generate their own IDs (OpenCode), it stays `None` until extracted from the output stream.
+    /// generate their own IDs (`OpenCode`), it stays `None` until extracted from the output stream.
     pub fn new(
         id: impl Into<String>,
         task_id: impl Into<String>,

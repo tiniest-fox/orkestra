@@ -1,36 +1,45 @@
-//! OpenCode `--format json` stream parser.
+//! `OpenCode` agent parser.
 //!
-//! Parses OpenCode's JSON event output into `LogEntry` values.
-//! Supports the v1.1+ event format where data is nested under a `.part` object.
+//! Handles both stream parsing (`--format json` events → `LogEntry`) and output
+//! extraction (JSONL scan + text fallback → raw JSON string).
 //!
-//! In v1.1+, `tool_use` events contain both input and output in `.part.state`,
-//! so a single event emits both `LogEntry::ToolUse` and `LogEntry::ToolResult`.
-//! Lifecycle events (`step_start`, `step_finish`) are silently skipped.
+//! Tracks `last_text` internally during streaming so that `extract_output` can
+//! fall back to it when the JSONL stream has no `structured_output` field.
 
 use crate::workflow::domain::LogEntry;
 use crate::workflow::services::session_logs::{extract_tool_result_content, parse_tool_input};
 
-use super::StreamParser;
+use super::{extract_from_jsonl, strip_markdown_code_fences, AgentParser, ParsedUpdate};
 
-/// Parses OpenCode `--format json` stdout events into `LogEntry` values.
+/// `OpenCode` agent parser.
 ///
-/// Also extracts the provider-generated session ID (`ses_...`) from the first
-/// JSON event that contains a `sessionID` field. This is needed because OpenCode
-/// generates its own session IDs — we can't set one upfront.
-pub struct OpenCodeStreamParser {
+/// Combines stream parsing and output extraction for `OpenCode`'s `--format json` output.
+///
+/// During streaming, tracks:
+/// - `session_id`: extracted from the first event containing `sessionID`
+/// - `last_text`: the most recent text content (used as fallback for output extraction)
+pub struct OpenCodeAgentParser {
     /// The session ID extracted from the stream, if any.
     session_id: Option<String>,
+    /// Whether the session ID has been emitted via `ParsedUpdate`.
+    session_id_emitted: bool,
+    /// The last text content seen during streaming (used as extraction fallback).
+    last_text: Option<String>,
 }
 
-impl Default for OpenCodeStreamParser {
+impl Default for OpenCodeAgentParser {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl OpenCodeStreamParser {
+impl OpenCodeAgentParser {
     pub fn new() -> Self {
-        Self { session_id: None }
+        Self {
+            session_id: None,
+            session_id_emitted: false,
+            last_text: None,
+        }
     }
 
     /// Extract text content from a text/assistant event.
@@ -64,11 +73,7 @@ impl OpenCodeStreamParser {
         None
     }
 
-    /// Extract tool use (and optionally tool result) from a tool_use event.
-    ///
-    /// v1.1+ nests tool info in `.part`: tool name at `.part.tool`, ID at
-    /// `.part.callID`, input at `.part.state.input`, output at `.part.state.output`.
-    /// When the state contains output, emits both ToolUse and ToolResult.
+    /// Extract tool use (and optionally tool result) from a `tool_use` event.
     fn extract_tool_use(v: &serde_json::Value) -> Vec<LogEntry> {
         let part = v.get("part");
 
@@ -118,7 +123,7 @@ impl OpenCodeStreamParser {
         entries
     }
 
-    /// Extract a tool result from a standalone tool_result event (legacy format).
+    /// Extract a tool result from a standalone `tool_result` event (legacy format).
     fn extract_tool_result(v: &serde_json::Value) -> Option<LogEntry> {
         let tool_use_id = v
             .get("tool_use_id")
@@ -144,23 +149,20 @@ impl OpenCodeStreamParser {
             content,
         })
     }
-}
 
-impl StreamParser for OpenCodeStreamParser {
-    fn parse_line(&mut self, line: &str) -> Vec<LogEntry> {
+    /// Parse a single JSON line into log entries, tracking `last_text` internally.
+    fn parse_line_entries(&mut self, line: &str) -> Vec<LogEntry> {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             return Vec::new();
         }
 
-        let v: serde_json::Value = match serde_json::from_str(trimmed) {
-            Ok(v) => v,
-            Err(_) => {
-                // Non-JSON line — capture as raw text
-                return vec![LogEntry::Text {
-                    content: trimmed.to_string(),
-                }];
-            }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+            // Non-JSON line — capture as raw text
+            self.last_text = Some(trimmed.to_string());
+            return vec![LogEntry::Text {
+                content: trimmed.to_string(),
+            }];
         };
 
         // Extract session ID from the first event that has one.
@@ -178,6 +180,7 @@ impl StreamParser for OpenCodeStreamParser {
             // Text content from the assistant
             "text" | "assistant" => {
                 if let Some(content) = Self::extract_text(&v) {
+                    self.last_text = Some(content.clone());
                     vec![LogEntry::Text { content }]
                 } else {
                     Vec::new()
@@ -216,6 +219,7 @@ impl StreamParser for OpenCodeStreamParser {
                 if let Some(content) = v.get("content").and_then(|c| c.as_str()) {
                     let t = content.trim();
                     if !t.is_empty() {
+                        self.last_text = Some(t.to_string());
                         return vec![LogEntry::Text {
                             content: t.to_string(),
                         }];
@@ -225,13 +229,59 @@ impl StreamParser for OpenCodeStreamParser {
             }
         }
     }
+}
+
+impl AgentParser for OpenCodeAgentParser {
+    fn parse_line(&mut self, line: &str) -> ParsedUpdate {
+        let log_entries = self.parse_line_entries(line);
+
+        // Emit the session ID exactly once
+        let session_id = if self.session_id_emitted {
+            None
+        } else if let Some(ref sid) = self.session_id {
+            self.session_id_emitted = true;
+            Some(sid.clone())
+        } else {
+            None
+        };
+
+        ParsedUpdate {
+            log_entries,
+            session_id,
+        }
+    }
 
     fn finalize(&mut self) -> Vec<LogEntry> {
         Vec::new()
     }
 
-    fn extracted_session_id(&self) -> Option<&str> {
-        self.session_id.as_deref()
+    fn extract_output(&self, full_output: &str) -> Result<String, String> {
+        let trimmed = full_output.trim();
+
+        if trimmed.is_empty() {
+            return Err(
+                "Agent produced no output (process may have exited unexpectedly)".to_string(),
+            );
+        }
+
+        // Try JSONL scan first (same as Claude, for compatibility)
+        if let Some(json_str) = extract_from_jsonl(trimmed) {
+            return Ok(json_str);
+        }
+
+        // Fall back to last_text (accumulated during streaming)
+        if let Some(ref text) = self.last_text {
+            let stripped = strip_markdown_code_fences(text);
+            // Verify it's valid JSON
+            if serde_json::from_str::<serde_json::Value>(&stripped).is_ok() {
+                return Ok(stripped);
+            }
+        }
+
+        Err(format!(
+            "Failed to parse agent output: no structured output found in {} bytes of output",
+            trimmed.len()
+        ))
     }
 }
 
@@ -245,15 +295,15 @@ mod tests {
     use crate::workflow::domain::ToolInput;
 
     // ========================================================================
-    // v1.1+ format tests (data nested in .part)
+    // Stream parsing tests — v1.1+ format
     // ========================================================================
 
     #[test]
     fn parses_v1_text_event() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "text",
-            "timestamp": 1770052577999_i64,
+            "timestamp": 1_770_052_577_999_i64,
             "sessionID": "ses_abc",
             "part": {
                 "id": "prt_123",
@@ -261,26 +311,51 @@ mod tests {
                 "messageID": "msg_456",
                 "type": "text",
                 "text": " Hello! I'm ready to help.",
-                "time": {"start": 1770052577998_i64, "end": 1770052577998_i64}
+                "time": {"start": 1_770_052_577_998_i64, "end": 1_770_052_577_998_i64}
             }
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert_eq!(entries.len(), 1);
+        let update = parser.parse_line(&line);
+        assert_eq!(update.log_entries.len(), 1);
         assert_eq!(
-            entries[0],
+            update.log_entries[0],
             LogEntry::Text {
                 content: "Hello! I'm ready to help.".to_string()
             }
         );
+        // Session ID should be emitted on first event
+        assert_eq!(update.session_id, Some("ses_abc".to_string()));
+    }
+
+    #[test]
+    fn session_id_emitted_once() {
+        let mut parser = OpenCodeAgentParser::new();
+        let line1 = serde_json::json!({
+            "type": "text",
+            "sessionID": "ses_abc",
+            "part": {"type": "text", "text": "First"}
+        })
+        .to_string();
+        let line2 = serde_json::json!({
+            "type": "text",
+            "sessionID": "ses_abc",
+            "part": {"type": "text", "text": "Second"}
+        })
+        .to_string();
+
+        let update1 = parser.parse_line(&line1);
+        assert_eq!(update1.session_id, Some("ses_abc".to_string()));
+
+        let update2 = parser.parse_line(&line2);
+        assert!(update2.session_id.is_none());
     }
 
     #[test]
     fn parses_v1_tool_use_with_result() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "tool_use",
-            "timestamp": 1770052699855_i64,
+            "timestamp": 1_770_052_699_855_i64,
             "sessionID": "ses_abc",
             "part": {
                 "id": "prt_789",
@@ -295,19 +370,16 @@ mod tests {
                     "output": "file1.rs\nfile2.rs\n",
                     "title": "List files",
                     "metadata": {},
-                    "time": {"start": 1770052699528_i64, "end": 1770052699842_i64}
+                    "time": {"start": 1_770_052_699_528_i64, "end": 1_770_052_699_842_i64}
                 }
             }
         })
         .to_string();
 
-        let entries = parser.parse_line(&line);
-        assert_eq!(entries.len(), 2);
+        let update = parser.parse_line(&line);
+        assert_eq!(update.log_entries.len(), 2);
 
-        // First entry: tool use
-        // Note: OpenCode uses lowercase tool names ("bash" not "Bash"), so
-        // parse_tool_input falls through to Other since the match is case-sensitive.
-        match &entries[0] {
+        match &update.log_entries[0] {
             LogEntry::ToolUse { tool, id, .. } => {
                 assert_eq!(tool, "bash");
                 assert_eq!(id, "functions.bash:0");
@@ -315,8 +387,7 @@ mod tests {
             other => panic!("Expected ToolUse, got {other:?}"),
         }
 
-        // Second entry: tool result (from same event)
-        match &entries[1] {
+        match &update.log_entries[1] {
             LogEntry::ToolResult {
                 tool,
                 tool_use_id,
@@ -332,10 +403,10 @@ mod tests {
 
     #[test]
     fn skips_step_start_events() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "step_start",
-            "timestamp": 1770052699369_i64,
+            "timestamp": 1_770_052_699_369_i64,
             "sessionID": "ses_abc",
             "part": {
                 "id": "prt_123",
@@ -344,16 +415,16 @@ mod tests {
             }
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert!(entries.is_empty());
+        let update = parser.parse_line(&line);
+        assert!(update.log_entries.is_empty());
     }
 
     #[test]
     fn skips_step_finish_events() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "step_finish",
-            "timestamp": 1770052700099_i64,
+            "timestamp": 1_770_052_700_099_i64,
             "sessionID": "ses_abc",
             "part": {
                 "id": "prt_456",
@@ -364,16 +435,16 @@ mod tests {
             }
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert!(entries.is_empty());
+        let update = parser.parse_line(&line);
+        assert!(update.log_entries.is_empty());
     }
 
     #[test]
     fn skips_empty_v1_text() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "text",
-            "timestamp": 1770052577999_i64,
+            "timestamp": 1_770_052_577_999_i64,
             "sessionID": "ses_abc",
             "part": {
                 "id": "prt_123",
@@ -383,26 +454,26 @@ mod tests {
             }
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert!(entries.is_empty());
+        let update = parser.parse_line(&line);
+        assert!(update.log_entries.is_empty());
     }
 
     // ========================================================================
-    // Legacy format tests (data at top level)
+    // Stream parsing tests — legacy format
     // ========================================================================
 
     #[test]
     fn parses_legacy_text_event() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "text",
             "content": "Analyzing the code..."
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert_eq!(entries.len(), 1);
+        let update = parser.parse_line(&line);
+        assert_eq!(update.log_entries.len(), 1);
         assert_eq!(
-            entries[0],
+            update.log_entries[0],
             LogEntry::Text {
                 content: "Analyzing the code...".to_string()
             }
@@ -411,16 +482,16 @@ mod tests {
 
     #[test]
     fn parses_legacy_assistant_event() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "assistant",
             "content": "Working on it"
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert_eq!(entries.len(), 1);
+        let update = parser.parse_line(&line);
+        assert_eq!(update.log_entries.len(), 1);
         assert_eq!(
-            entries[0],
+            update.log_entries[0],
             LogEntry::Text {
                 content: "Working on it".to_string()
             }
@@ -429,7 +500,7 @@ mod tests {
 
     #[test]
     fn parses_legacy_tool_use_event() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "tool_use",
             "name": "Bash",
@@ -437,9 +508,9 @@ mod tests {
             "input": {"command": "ls -la"}
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert_eq!(entries.len(), 1);
-        match &entries[0] {
+        let update = parser.parse_line(&line);
+        assert_eq!(update.log_entries.len(), 1);
+        match &update.log_entries[0] {
             LogEntry::ToolUse { tool, id, input } => {
                 assert_eq!(tool, "Bash");
                 assert_eq!(id, "oc_tu_1");
@@ -456,7 +527,7 @@ mod tests {
 
     #[test]
     fn parses_legacy_tool_result_event() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "tool_result",
             "tool_use_id": "oc_tu_1",
@@ -464,9 +535,9 @@ mod tests {
             "content": "total 42\ndrwxr-xr-x ..."
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert_eq!(entries.len(), 1);
-        match &entries[0] {
+        let update = parser.parse_line(&line);
+        assert_eq!(update.log_entries.len(), 1);
+        match &update.log_entries[0] {
             LogEntry::ToolResult {
                 tool,
                 tool_use_id,
@@ -482,7 +553,7 @@ mod tests {
 
     #[test]
     fn parses_legacy_tool_field_as_fallback() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "tool_use",
             "tool": "Edit",
@@ -490,9 +561,9 @@ mod tests {
             "input": {"file_path": "/src/lib.rs"}
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert_eq!(entries.len(), 1);
-        match &entries[0] {
+        let update = parser.parse_line(&line);
+        assert_eq!(update.log_entries.len(), 1);
+        match &update.log_entries[0] {
             LogEntry::ToolUse { tool, .. } => assert_eq!(tool, "Edit"),
             other => panic!("Expected ToolUse, got {other:?}"),
         }
@@ -504,16 +575,16 @@ mod tests {
 
     #[test]
     fn parses_error_event() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "error",
             "message": "Rate limit exceeded"
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert_eq!(entries.len(), 1);
+        let update = parser.parse_line(&line);
+        assert_eq!(update.log_entries.len(), 1);
         assert_eq!(
-            entries[0],
+            update.log_entries[0],
             LogEntry::Error {
                 message: "Rate limit exceeded".to_string()
             }
@@ -522,31 +593,29 @@ mod tests {
 
     #[test]
     fn error_with_fallback_fields() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
 
-        // error field instead of message
         let line = serde_json::json!({
             "type": "error",
             "error": "Something broke"
         })
         .to_string();
-        let entries = parser.parse_line(&line);
+        let update = parser.parse_line(&line);
         assert_eq!(
-            entries[0],
+            update.log_entries[0],
             LogEntry::Error {
                 message: "Something broke".to_string()
             }
         );
 
-        // content field as last fallback
         let line = serde_json::json!({
             "type": "error",
             "content": "Another failure"
         })
         .to_string();
-        let entries = parser.parse_line(&line);
+        let update = parser.parse_line(&line);
         assert_eq!(
-            entries[0],
+            update.log_entries[0],
             LogEntry::Error {
                 message: "Another failure".to_string()
             }
@@ -555,11 +624,11 @@ mod tests {
 
     #[test]
     fn captures_non_json_as_text() {
-        let mut parser = OpenCodeStreamParser::new();
-        let entries = parser.parse_line("Some raw output from opencode");
-        assert_eq!(entries.len(), 1);
+        let mut parser = OpenCodeAgentParser::new();
+        let update = parser.parse_line("Some raw output from opencode");
+        assert_eq!(update.log_entries.len(), 1);
         assert_eq!(
-            entries[0],
+            update.log_entries[0],
             LogEntry::Text {
                 content: "Some raw output from opencode".to_string()
             }
@@ -568,26 +637,26 @@ mod tests {
 
     #[test]
     fn skips_empty_lines() {
-        let mut parser = OpenCodeStreamParser::new();
-        assert!(parser.parse_line("").is_empty());
-        assert!(parser.parse_line("   ").is_empty());
+        let mut parser = OpenCodeAgentParser::new();
+        assert!(parser.parse_line("").log_entries.is_empty());
+        assert!(parser.parse_line("   ").log_entries.is_empty());
     }
 
     #[test]
     fn skips_empty_text_content() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "text",
             "content": "  "
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert!(entries.is_empty());
+        let update = parser.parse_line(&line);
+        assert!(update.log_entries.is_empty());
     }
 
     #[test]
     fn skips_empty_tool_result_content() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "tool_result",
             "tool_use_id": "oc_tu_1",
@@ -595,34 +664,34 @@ mod tests {
             "content": ""
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert!(entries.is_empty());
+        let update = parser.parse_line(&line);
+        assert!(update.log_entries.is_empty());
     }
 
     #[test]
     fn skips_unknown_events_without_content() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "metric",
             "tokens": 1500
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert!(entries.is_empty());
+        let update = parser.parse_line(&line);
+        assert!(update.log_entries.is_empty());
     }
 
     #[test]
     fn captures_unknown_event_with_content() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         let line = serde_json::json!({
             "type": "status",
             "content": "Processing step 3/10"
         })
         .to_string();
-        let entries = parser.parse_line(&line);
-        assert_eq!(entries.len(), 1);
+        let update = parser.parse_line(&line);
+        assert_eq!(update.log_entries.len(), 1);
         assert_eq!(
-            entries[0],
+            update.log_entries[0],
             LogEntry::Text {
                 content: "Processing step 3/10".to_string()
             }
@@ -631,7 +700,120 @@ mod tests {
 
     #[test]
     fn finalize_returns_empty() {
-        let mut parser = OpenCodeStreamParser::new();
+        let mut parser = OpenCodeAgentParser::new();
         assert!(parser.finalize().is_empty());
+    }
+
+    // ========================================================================
+    // Output extraction tests
+    // ========================================================================
+
+    #[test]
+    fn extract_from_last_text() {
+        let mut parser = OpenCodeAgentParser::new();
+
+        // Simulate streaming — the structured output arrives as a text event
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "{\"type\":\"artifact\",\"content\":\"Found 1 file\"}"}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        // The raw JSONL won't have structured_output, but last_text has the JSON
+        let output = r#"{"type":"step_start","part":{"type":"step-start"}}
+{"type":"text","part":{"text":"{\"type\":\"artifact\",\"content\":\"Found 1 file\"}"}}
+{"type":"step_finish","part":{"type":"step-finish","reason":"stop"}}"#;
+
+        let result = parser.extract_output(output);
+        assert!(result.is_ok(), "Failed: {result:?}");
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "artifact");
+        assert_eq!(json["content"], "Found 1 file");
+    }
+
+    #[test]
+    fn extract_from_last_text_with_markdown_fences() {
+        let mut parser = OpenCodeAgentParser::new();
+
+        // Agent wraps JSON in markdown fences
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "```json\n{\"type\":\"summary\",\"content\":\"Done\"}\n```"}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let output = r#"{"type":"text","part":{"text":"some stuff"}}"#;
+        let result = parser.extract_output(output);
+        assert!(result.is_ok(), "Failed: {result:?}");
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "summary");
+    }
+
+    #[test]
+    fn extract_fallback_no_last_text_fails() {
+        let parser = OpenCodeAgentParser::new();
+        let output = r#"{"type":"step_start","part":{"type":"step-start"}}
+{"type":"step_finish","part":{"type":"step-finish","reason":"stop"}}"#;
+        let result = parser.extract_output(output);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_empty_output() {
+        let parser = OpenCodeAgentParser::new();
+        let result = parser.extract_output("");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("no output"));
+    }
+
+    #[test]
+    fn extract_jsonl_takes_priority_over_last_text() {
+        let mut parser = OpenCodeAgentParser::new();
+
+        // Set last_text to something different
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "{\"type\":\"artifact\",\"content\":\"old\"}"}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        // But the JSONL has structured_output — that should take priority
+        let output = r#"{"structured_output":{"type":"summary","content":"new"}}"#;
+        let result = parser.extract_output(output);
+        assert!(result.is_ok(), "Failed: {result:?}");
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "summary");
+        assert_eq!(json["content"], "new");
+    }
+
+    #[test]
+    fn tracks_last_text_across_multiple_events() {
+        let mut parser = OpenCodeAgentParser::new();
+
+        // First text event
+        let line1 = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "First thought"}
+        })
+        .to_string();
+        parser.parse_line(&line1);
+
+        // Second text event — should replace last_text
+        let line2 = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "{\"type\":\"artifact\",\"content\":\"Final output\"}"}
+        })
+        .to_string();
+        parser.parse_line(&line2);
+
+        // extract_output should use the LAST text
+        let output = r#"{"type":"step_finish","part":{"type":"step-finish"}}"#;
+        let result = parser.extract_output(output);
+        assert!(result.is_ok(), "Failed: {result:?}");
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["content"], "Final output");
     }
 }

@@ -42,10 +42,9 @@ mod periodic;
 mod prompt_service;
 mod queries;
 mod script_execution;
-mod session_logs;
+pub(crate) mod session_logs;
 mod session_service;
 mod stage_execution;
-pub mod stream_parser;
 mod subtask_service;
 mod task_crud;
 mod task_setup;
@@ -75,6 +74,5 @@ pub use session_service::{SessionService, SessionSpawnContext};
 pub use stage_execution::{
     ExecutionComplete, ExecutionResult, SpawnError, SpawnResult, StageExecutionService,
 };
-pub use stream_parser::{ClaudeStreamParser, OpenCodeStreamParser, StreamParser};
 pub use subtask_service::SubtaskService;
 // Note: AgentExecutionService is internal to StageExecutionService

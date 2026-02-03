@@ -22,7 +22,7 @@ export type View = { type: "board" };
 export type Focus =
   | { type: "none" }
   | { type: "create" }
-  | { type: "task"; taskId: string; subtaskId?: string };
+  | { type: "task"; taskId: string; subtaskId?: string; showDiff?: boolean };
 
 export interface DisplayContextValue {
   view: View;
@@ -42,6 +42,12 @@ export interface DisplayContextValue {
 
   /** Close whatever is in the side panel. */
   closeFocus: () => void;
+
+  /** Open the diff viewer for the current task. */
+  openDiff: () => void;
+
+  /** Close the diff viewer. */
+  closeDiff: () => void;
 }
 
 // =============================================================================
@@ -98,6 +104,25 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
     setFocus({ type: "none" });
   }, []);
 
+  const openDiff = useCallback(() => {
+    setFocus((prev) => {
+      if (prev.type === "task") {
+        // Close subtask if open, open diff
+        return { type: "task", taskId: prev.taskId, showDiff: true };
+      }
+      return prev;
+    });
+  }, []);
+
+  const closeDiff = useCallback(() => {
+    setFocus((prev) => {
+      if (prev.type === "task") {
+        return { type: "task", taskId: prev.taskId, showDiff: false };
+      }
+      return prev;
+    });
+  }, []);
+
   const value = useMemo<DisplayContextValue>(
     () => ({
       view,
@@ -107,8 +132,10 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeSubtask,
       openCreate,
       closeFocus,
+      openDiff,
+      closeDiff,
     }),
-    [view, focus, focusTask, focusSubtask, closeSubtask, openCreate, closeFocus],
+    [view, focus, focusTask, focusSubtask, closeSubtask, openCreate, closeFocus, openDiff, closeDiff],
   );
 
   return <DisplayContext.Provider value={value}>{children}</DisplayContext.Provider>;

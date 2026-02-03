@@ -9,6 +9,7 @@ import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useAutoTaskTemplates, useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
 import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { CommandPalette } from "./CommandPalette";
+import { DiffPanel } from "./Diff";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
@@ -37,6 +38,7 @@ export function Orkestra() {
   );
 
   const selectedSubtaskId = focus.type === "task" ? focus.subtaskId : undefined;
+  const showDiff = focus.type === "task" && focus.showDiff === true;
 
   const currentSelectedSubtask: WorkflowTaskView | null = selectedSubtaskId
     ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
@@ -123,6 +125,10 @@ export function Orkestra() {
         )}
         {loading ? (
           <Panel>{null}</Panel>
+        ) : showDiff && currentSelectedTask ? (
+          <Panel>
+            <DiffPanel taskId={currentSelectedTask.id} />
+          </Panel>
         ) : (
           <Panel>
             <KanbanBoard

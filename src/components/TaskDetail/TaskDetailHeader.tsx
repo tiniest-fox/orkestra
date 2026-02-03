@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { useDisplayContext } from "../../providers";
 import type { WorkflowTask } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { Badge, IconButton, Panel } from "../ui";
@@ -84,6 +85,25 @@ function CodeIcon() {
   );
 }
 
+function DiffIcon() {
+  return (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 4v16m8-8H4"
+      />
+    </svg>
+  );
+}
+
 /** Cache external tools detection result across renders. */
 let cachedToolsInfo: ExternalToolsInfo | null = null;
 let toolsDetectionPromise: Promise<ExternalToolsInfo> | null = null;
@@ -114,6 +134,7 @@ export function TaskDetailHeader({
   onToggleAutoMode,
 }: TaskDetailHeaderProps) {
   const [toolsInfo, setToolsInfo] = useState<ExternalToolsInfo | null>(cachedToolsInfo);
+  const { focus, openDiff, closeDiff } = useDisplayContext();
 
   useEffect(() => {
     detectTools()
@@ -125,6 +146,8 @@ export function TaskDetailHeader({
   const hasWorktree = !!task.worktree_path;
   const showTerminalButton = !isSubtask && hasWorktree && toolsInfo?.terminal != null;
   const showEditorButton = !isSubtask && hasWorktree && toolsInfo?.editor != null;
+  const showDiffButton = !isSubtask && hasWorktree;
+  const isDiffOpen = focus.type === "task" && focus.showDiff === true;
 
   const handleOpenTerminal = () => {
     if (!task.worktree_path) return;
@@ -138,6 +161,14 @@ export function TaskDetailHeader({
     invoke("open_in_editor", { path: task.worktree_path }).catch((err) =>
       console.error("Failed to open editor:", err),
     );
+  };
+
+  const handleToggleDiff = () => {
+    if (isDiffOpen) {
+      closeDiff();
+    } else {
+      openDiff();
+    }
   };
 
   const statusBadgeVariant =
@@ -165,6 +196,16 @@ export function TaskDetailHeader({
           {task.title || task.description}
         </h2>
         <div className="flex items-center gap-1 flex-shrink-0">
+          {showDiffButton && (
+            <IconButton
+              icon={<DiffIcon />}
+              aria-label={isDiffOpen ? "Close diff" : "Show diff"}
+              variant={isDiffOpen ? "secondary" : "ghost"}
+              size="sm"
+              onClick={handleToggleDiff}
+              title={isDiffOpen ? "Close diff" : "Show diff"}
+            />
+          )}
           {showTerminalButton && (
             <IconButton
               icon={<TerminalIcon />}

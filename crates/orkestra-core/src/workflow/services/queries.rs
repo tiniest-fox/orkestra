@@ -195,14 +195,20 @@ impl WorkflowApi {
     /// Enriches each task with its iterations, stage sessions, and a `DerivedTaskState`
     /// computed from the task's domain predicates. This lets the frontend render
     /// everything without additional queries.
+    ///
+    /// Loads archived subtasks for non-archived parent tasks so they appear in the
+    /// subtasks tab and count toward progress totals. Top-level tasks are filtered
+    /// to exclude archived ones.
     pub fn list_task_views(&self) -> WorkflowResult<Vec<TaskView>> {
         // Load all active tasks (parents + subtasks) in one query
         let all_active = self.store.list_active_tasks()?;
 
         // Separate top-level tasks from subtasks
         let mut top_level = Vec::new();
+        let mut parent_ids = Vec::new();
         let mut subtasks_by_parent: std::collections::HashMap<String, Vec<Task>> =
             std::collections::HashMap::new();
+
         for task in all_active {
             if let Some(ref parent_id) = task.parent_id {
                 subtasks_by_parent
@@ -210,7 +216,25 @@ impl WorkflowApi {
                     .or_default()
                     .push(task);
             } else {
+                parent_ids.push(task.id.clone());
                 top_level.push(task);
+            }
+        }
+
+        // For non-archived parent tasks, load their archived subtasks too
+        // so they appear in the subtasks tab and count in progress displays
+        for parent_id in &parent_ids {
+            let all_subtasks = self.store.list_subtasks(parent_id)?;
+            let archived_subtasks: Vec<Task> = all_subtasks
+                .into_iter()
+                .filter(super::super::domain::task::Task::is_archived)
+                .collect();
+
+            if !archived_subtasks.is_empty() {
+                subtasks_by_parent
+                    .entry(parent_id.clone())
+                    .or_default()
+                    .extend(archived_subtasks);
             }
         }
 

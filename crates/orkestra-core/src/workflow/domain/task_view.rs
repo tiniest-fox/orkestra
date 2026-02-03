@@ -38,6 +38,7 @@ pub struct DerivedTaskState {
     pub is_failed: bool,
     pub is_blocked: bool,
     pub is_done: bool,
+    pub is_archived: bool,
     pub is_terminal: bool,
     pub is_waiting_on_children: bool,
     pub needs_review: bool,
@@ -87,6 +88,7 @@ impl DerivedTaskState {
             is_failed: task.is_failed(),
             is_blocked: task.is_blocked(),
             is_done: task.is_done(),
+            is_archived: task.is_archived(),
             is_terminal: task.is_terminal(),
             is_waiting_on_children: task.status.is_waiting_on_children(),
             needs_review: task.needs_review(),
@@ -120,7 +122,8 @@ fn compute_subtask_progress(subtask_states: &[DerivedTaskState]) -> Option<Subta
     };
 
     for s in subtask_states {
-        if s.is_done || (s.is_terminal && !s.is_failed && !s.is_blocked) {
+        // Count Done and Archived subtasks as completed
+        if s.is_done || s.is_archived {
             progress.done += 1;
         } else if s.is_failed {
             progress.failed += 1;
@@ -419,6 +422,55 @@ mod tests {
         assert_eq!(progress.has_questions, 1);
         assert_eq!(progress.needs_review, 1);
         assert_eq!(progress.working, 1);
+    }
+
+    #[test]
+    fn test_subtask_progress_includes_archived() {
+        let mut parent = make_task("breakdown");
+        parent.status = Status::waiting_on_children("work");
+
+        // Done subtask
+        let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
+        sub1.status = Status::Done;
+        let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[]);
+
+        // Archived subtask (completed and integrated)
+        let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
+        sub2.status = Status::Archived;
+        let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[]);
+
+        // Active subtask
+        let sub3 = Task::new("sub-3", "Sub 3", "Desc", "work", "now");
+        let sub3_derived = DerivedTaskState::build(&sub3, &[], &[], &[]);
+
+        let derived = DerivedTaskState::build(
+            &parent,
+            &[],
+            &[],
+            &[sub1_derived, sub2_derived, sub3_derived],
+        );
+
+        assert!(derived.is_waiting_on_children);
+        let progress = derived.subtask_progress.unwrap();
+        assert_eq!(progress.total, 3);
+        assert_eq!(
+            progress.done, 2,
+            "Both Done and Archived should count as done"
+        );
+        assert_eq!(progress.waiting, 1);
+    }
+
+    #[test]
+    fn test_derived_state_archived() {
+        let mut task = make_task("work");
+        task.status = Status::Archived;
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert!(derived.is_archived);
+        assert!(derived.is_terminal);
+        assert!(!derived.is_done);
+        assert!(!derived.is_failed);
+        assert!(!derived.is_blocked);
     }
 
     #[test]

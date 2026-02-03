@@ -884,3 +884,143 @@ fn test_subtask_integration_conflict() {
         conflict_task.status
     );
 }
+
+/// Test that archived subtasks appear in `list_subtask_views` and count in progress.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn test_archived_subtasks_included_in_views_and_progress() {
+    let env = TestEnv::with_git(
+        &workflows::with_subtasks(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let (parent_id, subtask_ids) = setup_parent_with_subtasks(
+        &env,
+        vec![
+            SubtaskOutput {
+                title: "Subtask A".into(),
+                description: "Do A".into(),
+                depends_on: vec![],
+            },
+            SubtaskOutput {
+                title: "Subtask B".into(),
+                description: "Do B".into(),
+                depends_on: vec![],
+            },
+            SubtaskOutput {
+                title: "Subtask C".into(),
+                description: "Do C".into(),
+                depends_on: vec![],
+            },
+        ],
+    );
+
+    let id_a = &subtask_ids[0].1;
+    let id_b = &subtask_ids[1].1;
+    let id_c = &subtask_ids[2].1;
+
+    // Setup ready subtasks (all have no dependencies)
+    env.advance();
+
+    // Complete subtasks A and B together, leaving C incomplete
+    // Set mock outputs for all 3 to avoid failures when orchestrator spawns agents
+    env.set_output(
+        id_a,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Work done for A".into(),
+        },
+    );
+    env.set_output(
+        id_b,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Work done for B".into(),
+        },
+    );
+    // Set a mock output for C but don't approve it, so it stays in AwaitingReview
+    env.set_output(
+        id_c,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Work done for C".into(),
+        },
+    );
+
+    env.advance(); // spawns work agents for all 3 subtasks
+    env.advance(); // processes all work outputs → AwaitingReview
+
+    // Approve only A and B, leaving C awaiting review
+    env.api().approve(id_a).unwrap();
+    env.api().approve(id_b).unwrap();
+
+    // Set review outputs for A and B
+    env.set_output(
+        id_a,
+        MockAgentOutput::Artifact {
+            name: "verdict".into(),
+            content: "Looks good".into(),
+        },
+    );
+    env.set_output(
+        id_b,
+        MockAgentOutput::Artifact {
+            name: "verdict".into(),
+            content: "Looks good".into(),
+        },
+    );
+
+    env.advance(); // spawns review agents for A and B
+    env.advance(); // processes review outputs → Done
+    env.advance(); // integrates A → Archived
+    env.advance(); // integrates B → Archived
+
+    let task_a = env.api().get_task(id_a).unwrap();
+    let task_b = env.api().get_task(id_b).unwrap();
+    assert!(
+        task_a.is_archived(),
+        "Subtask A should be archived after integration"
+    );
+    assert!(
+        task_b.is_archived(),
+        "Subtask B should be archived after integration"
+    );
+
+    // Subtask C is awaiting review
+
+    // Check list_subtask_views includes archived subtasks
+    let subtask_views = env.api().list_subtask_views(&parent_id).unwrap();
+    assert_eq!(
+        subtask_views.len(),
+        3,
+        "Should include all 3 subtasks including archived ones"
+    );
+
+    // Verify archived subtasks are present
+    let archived_count = subtask_views
+        .iter()
+        .filter(|v| v.derived.is_archived)
+        .count();
+    assert_eq!(archived_count, 2, "Should have 2 archived subtasks");
+
+    // Check parent's task view includes archived subtasks in progress
+    let task_views = env.api().list_task_views().unwrap();
+    let parent_view = task_views.iter().find(|v| v.task.id == parent_id).unwrap();
+
+    let progress = parent_view
+        .derived
+        .subtask_progress
+        .as_ref()
+        .expect("Parent should have subtask progress");
+
+    assert_eq!(progress.total, 3, "Total should include all subtasks");
+    assert_eq!(
+        progress.done, 2,
+        "Done count should include both archived subtasks"
+    );
+    // Subtask C is awaiting review
+    assert_eq!(
+        progress.needs_review, 1,
+        "One subtask should be awaiting review. Progress: {progress:?}"
+    );
+}

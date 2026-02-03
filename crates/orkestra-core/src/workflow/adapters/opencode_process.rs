@@ -66,8 +66,8 @@ impl ProcessSpawner for OpenCodeProcessSpawner {
             cmd.args(["--model", model]);
         }
 
-        // Request JSON event output
-        cmd.args(["--format", "json"]);
+        // Request JSON event output and log internal state to stderr
+        cmd.args(["--format", "json", "--print-logs"]);
 
         cmd.current_dir(working_dir)
             .stdin(Stdio::piped())

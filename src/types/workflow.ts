@@ -507,3 +507,71 @@ export interface AutoTaskTemplate {
   /** Source filename (e.g., "code-cleanup.md"). */
   filename: string;
 }
+
+// =============================================================================
+// Git Diff Types
+// =============================================================================
+
+/**
+ * A single highlighted line within a diff hunk.
+ */
+export interface HighlightedLine {
+  /** Line content with ANSI escape sequences for syntax highlighting. */
+  content: string;
+  /** Old line number (null for added lines). */
+  old_line_number: number | null;
+  /** New line number (null for deleted lines). */
+  new_line_number: number | null;
+  /** Line type: "added", "deleted", or "context". */
+  line_type: "added" | "deleted" | "context";
+}
+
+/**
+ * A hunk of changes within a file diff.
+ */
+export interface HighlightedHunk {
+  /** Lines in this hunk. */
+  lines: HighlightedLine[];
+  /** Number of context lines shown before the first change. */
+  context_before: number;
+  /** Number of context lines shown after the last change. */
+  context_after: number;
+}
+
+/**
+ * A single file's diff with syntax highlighting.
+ */
+export interface HighlightedFileDiff {
+  /** File path (relative to repo root). */
+  path: string;
+  /** Change type. */
+  change_type: "added" | "modified" | "deleted" | "renamed";
+  /** Old path for renamed files (null otherwise). */
+  old_path: string | null;
+  /** Number of lines added. */
+  lines_added: number;
+  /** Number of lines deleted. */
+  lines_deleted: number;
+  /** Whether this is a binary file. */
+  is_binary: boolean;
+  /** Highlighted hunks (empty for binary files). */
+  hunks: HighlightedHunk[];
+}
+
+/**
+ * Complete diff data for a task, returned by the backend.
+ */
+export interface HighlightedTaskDiff {
+  /** All changed files in the diff. */
+  files: HighlightedFileDiff[];
+  /** The merge-base commit used for the diff. */
+  merge_base: string;
+  /** The task branch HEAD commit. */
+  head_commit: string;
+}
+
+/**
+ * CSS class names for syntax highlighting.
+ * Maps token types to CSS class names.
+ */
+export type SyntaxCss = Record<string, string>;

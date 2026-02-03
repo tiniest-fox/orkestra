@@ -358,6 +358,7 @@ impl TestEnv {
     ///
     /// Uses wall-clock time instead of iteration counts, so timeouts are reliable
     /// even under CPU contention from parallel test execution.
+    #[allow(dead_code)]
     pub fn tick_until(
         &self,
         mut predicate: impl FnMut() -> bool,

@@ -235,24 +235,25 @@ fn parse_and_highlight_diff(
 
         // Process hunk lines
         if let Some(ref mut hunk) = current_hunk {
-            let (line_type, content, old_num, new_num) = if let Some(content) = line.strip_prefix('+') {
-                let num = new_line;
-                new_line += 1;
-                (LineType::Add, content, None, Some(num))
-            } else if let Some(content) = line.strip_prefix('-') {
-                let num = old_line;
-                old_line += 1;
-                (LineType::Delete, content, Some(num), None)
-            } else if let Some(content) = line.strip_prefix(' ') {
-                let old_num = old_line;
-                let new_num = new_line;
-                old_line += 1;
-                new_line += 1;
-                (LineType::Context, content, Some(old_num), Some(new_num))
-            } else {
-                // Unknown line type, skip
-                continue;
-            };
+            let (line_type, content, old_num, new_num) =
+                if let Some(content) = line.strip_prefix('+') {
+                    let num = new_line;
+                    new_line += 1;
+                    (LineType::Add, content, None, Some(num))
+                } else if let Some(content) = line.strip_prefix('-') {
+                    let num = old_line;
+                    old_line += 1;
+                    (LineType::Delete, content, Some(num), None)
+                } else if let Some(content) = line.strip_prefix(' ') {
+                    let old_num = old_line;
+                    let new_num = new_line;
+                    old_line += 1;
+                    new_line += 1;
+                    (LineType::Context, content, Some(old_num), Some(new_num))
+                } else {
+                    // Unknown line type, skip
+                    continue;
+                };
 
             let content_with_newline = format!("{content}\n");
             let html = highlighter.highlight_line(&content_with_newline, extension);

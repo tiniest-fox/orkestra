@@ -3,6 +3,7 @@
 //! Adapters implement the port traits for specific backends.
 
 mod claude_process;
+mod diff;
 mod git_service;
 mod memory;
 mod opencode_process;

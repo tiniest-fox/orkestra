@@ -228,6 +228,69 @@ impl WorkflowApi {
         self.store.save_task(&task)?;
         Ok(task)
     }
+
+    /// Get the diff for a task against its base branch.
+    ///
+    /// Returns the structured diff data including file paths, change types,
+    /// additions/deletions counts, and unified diff content.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TaskNotFound` if the task doesn't exist, or `GitError` if
+    /// the task doesn't have a worktree or if the git diff operation fails.
+    pub fn get_task_diff(
+        &self,
+        task_id: &str,
+    ) -> WorkflowResult<crate::workflow::ports::TaskDiff> {
+        let task = self.get_task(task_id)?;
+
+        let git = self
+            .git_service
+            .as_ref()
+            .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
+
+        let worktree_path = task
+            .worktree_path
+            .as_ref()
+            .ok_or_else(|| WorkflowError::GitError("Task has no worktree".into()))?;
+
+        let branch_name = task
+            .branch_name
+            .as_ref()
+            .ok_or_else(|| WorkflowError::GitError("Task has no branch".into()))?;
+
+        git.diff_against_base(
+            std::path::Path::new(worktree_path),
+            branch_name,
+            &task.base_branch,
+        )
+        .map_err(WorkflowError::GitError)
+    }
+
+    /// Get the content of a file at HEAD in a task's worktree.
+    ///
+    /// Returns the file content as a string, or None if the file doesn't exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns `TaskNotFound` if the task doesn't exist, or `GitError` if
+    /// the task doesn't have a worktree or if the git operation fails.
+    pub fn get_file_content(&self, task_id: &str, file_path: &str) -> WorkflowResult<Option<String>> {
+        let task = self.get_task(task_id)?;
+
+        let git = self
+            .git_service
+            .as_ref()
+            .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
+
+        let worktree_path = task
+            .worktree_path
+            .as_ref()
+            .ok_or_else(|| WorkflowError::GitError("Task has no worktree".into()))?;
+
+        git.read_file_at_head(std::path::Path::new(worktree_path), file_path)
+            .map_err(WorkflowError::GitError)
+    }
 }
 
 #[cfg(test)]

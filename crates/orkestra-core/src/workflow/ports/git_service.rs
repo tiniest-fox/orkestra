@@ -424,6 +424,25 @@ pub mod mock {
             // Default: not merged (conservative)
             Ok(false)
         }
+
+        fn diff_against_base(
+            &self,
+            _worktree_path: &Path,
+            _branch_name: &str,
+            _base_branch: &str,
+        ) -> Result<TaskDiff, GitError> {
+            // Mock: return empty diff
+            Ok(TaskDiff { files: vec![] })
+        }
+
+        fn read_file_at_head(
+            &self,
+            _worktree_path: &Path,
+            _file_path: &str,
+        ) -> Result<Option<String>, GitError> {
+            // Mock: file doesn't exist
+            Ok(None)
+        }
     }
 
     #[cfg(test)]

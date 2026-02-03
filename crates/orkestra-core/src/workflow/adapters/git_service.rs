@@ -702,6 +702,23 @@ impl GitService for Git2GitService {
 
         Ok(output.status.success())
     }
+
+    fn diff_against_base(
+        &self,
+        worktree_path: &Path,
+        branch_name: &str,
+        base_branch: &str,
+    ) -> Result<crate::workflow::ports::TaskDiff, GitError> {
+        super::diff::execute_diff(worktree_path, branch_name, base_branch)
+    }
+
+    fn read_file_at_head(
+        &self,
+        worktree_path: &Path,
+        file_path: &str,
+    ) -> Result<Option<String>, GitError> {
+        super::diff::read_file_at_head(worktree_path, file_path)
+    }
 }
 
 #[cfg(test)]

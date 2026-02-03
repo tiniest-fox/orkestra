@@ -1,6 +1,6 @@
 //! Syntax highlighting using syntect.
 //!
-//! Provides server-side syntax highlighting for diff lines using TextMate grammars.
+//! Provides server-side syntax highlighting for diff lines using `TextMate` grammars.
 //! Generates HTML with CSS classes for styling, supporting both light and dark themes.
 
 use syntect::highlighting::ThemeSet;
@@ -13,7 +13,7 @@ use syntect::parsing::SyntaxSet;
 /// CSS is generated once at initialization for both light and dark themes.
 pub struct SyntaxHighlighter {
     syntax_set: SyntaxSet,
-    /// CSS for light theme (InspiredGitHub).
+    /// CSS for light theme (`InspiredGitHub`).
     pub light_css: String,
     /// CSS for dark theme (base16-ocean.dark).
     pub dark_css: String,

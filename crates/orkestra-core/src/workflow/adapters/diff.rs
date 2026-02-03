@@ -36,10 +36,10 @@ pub fn execute_diff(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_diff_output(&stdout)
+    Ok(parse_diff_output(&stdout))
 }
 
-/// Parse git diff output into structured FileDiff objects.
+/// Parse git diff output into structured `FileDiff` objects.
 ///
 /// Expected format:
 /// ```text
@@ -54,7 +54,7 @@ pub fn execute_diff(
 /// -deleted line
 /// +added line
 /// ```
-fn parse_diff_output(output: &str) -> Result<TaskDiff, GitError> {
+fn parse_diff_output(output: &str) -> TaskDiff {
     let mut files = Vec::new();
     let mut lines = output.lines().peekable();
 
@@ -128,7 +128,7 @@ fn parse_diff_output(output: &str) -> Result<TaskDiff, GitError> {
         }
     }
 
-    Ok(TaskDiff { files })
+    TaskDiff { files }
 }
 
 /// Parse a numstat line: "5\t2\tpath/to/file.rs"
@@ -182,7 +182,7 @@ pub fn read_file_at_head(
         if stderr.contains("does not exist") || stderr.contains("exists on disk, but not in") {
             return Ok(None);
         }
-        return Err(GitError::IoError(format!("git show failed: {}", stderr)));
+        return Err(GitError::IoError(format!("git show failed: {stderr}")));
     }
 
     Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))

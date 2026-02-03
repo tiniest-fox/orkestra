@@ -1,6 +1,6 @@
 //! Tauri commands for git diff operations.
 
-use orkestra_core::workflow::ports::{FileChangeType, FileDiff, TaskDiff};
+use orkestra_core::workflow::ports::{FileChangeType, FileDiff};
 use serde::Serialize;
 
 use crate::error::TauriError;
@@ -131,6 +131,7 @@ pub async fn workflow_get_file_content(
         .unwrap_or("");
 
     // Highlight each line as context
+    #[allow(clippy::cast_possible_truncation)]
     let lines: Vec<HighlightedLine> = content
         .lines()
         .enumerate()
@@ -165,7 +166,7 @@ pub async fn workflow_get_syntax_css(
 // Diff Parsing and Highlighting
 // =============================================================================
 
-/// Convert a raw FileDiff into a highlighted FileDiff with parsed hunks.
+/// Convert a raw `FileDiff` into a highlighted `FileDiff` with parsed hunks.
 fn highlight_file_diff(file: FileDiff, highlighter: &SyntaxHighlighter) -> HighlightedFileDiff {
     let hunks = if file.is_binary || file.diff_content.is_none() {
         vec![]
@@ -234,18 +235,15 @@ fn parse_and_highlight_diff(
 
         // Process hunk lines
         if let Some(ref mut hunk) = current_hunk {
-            let (line_type, content, old_num, new_num) = if line.starts_with('+') {
-                let content = &line[1..];
+            let (line_type, content, old_num, new_num) = if let Some(content) = line.strip_prefix('+') {
                 let num = new_line;
                 new_line += 1;
                 (LineType::Add, content, None, Some(num))
-            } else if line.starts_with('-') {
-                let content = &line[1..];
+            } else if let Some(content) = line.strip_prefix('-') {
                 let num = old_line;
                 old_line += 1;
                 (LineType::Delete, content, Some(num), None)
-            } else if line.starts_with(' ') {
-                let content = &line[1..];
+            } else if let Some(content) = line.strip_prefix(' ') {
                 let old_num = old_line;
                 let new_num = new_line;
                 old_line += 1;
@@ -280,7 +278,7 @@ fn parse_and_highlight_diff(
 /// Parse a hunk header line.
 ///
 /// Format: `@@ -old_start,old_count +new_start,new_count @@`
-/// Returns (old_start, old_count, new_start, new_count).
+/// Returns (`old_start`, `old_count`, `new_start`, `new_count`).
 fn parse_hunk_header(line: &str) -> Option<(u32, u32, u32, u32)> {
     // Extract the part between @@ and @@
     let parts: Vec<&str> = line.split("@@").collect();

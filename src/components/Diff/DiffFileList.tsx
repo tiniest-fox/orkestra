@@ -25,9 +25,9 @@ export function DiffFileList({ files, selectedFile, onSelectFile }: DiffFileList
 
       {/* File list */}
       <div className="flex-1 overflow-auto">
-        {files.map((file, i) => (
+        {files.map((file) => (
           <DiffFileEntry
-            key={i}
+            key={file.path}
             file={file}
             isSelected={selectedFile === file}
             onClick={() => onSelectFile(file)}

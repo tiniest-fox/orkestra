@@ -135,7 +135,17 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       openDiff,
       closeDiff,
     }),
-    [view, focus, focusTask, focusSubtask, closeSubtask, openCreate, closeFocus, openDiff, closeDiff],
+    [
+      view,
+      focus,
+      focusTask,
+      focusSubtask,
+      closeSubtask,
+      openCreate,
+      closeFocus,
+      openDiff,
+      closeDiff,
+    ],
   );
 
   return <DisplayContext.Provider value={value}>{children}</DisplayContext.Provider>;

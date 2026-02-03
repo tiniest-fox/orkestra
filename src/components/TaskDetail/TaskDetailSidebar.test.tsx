@@ -28,6 +28,17 @@ vi.mock("../../providers", () => ({
     deleteTask: vi.fn(),
     refetch: mockRefetch,
   }),
+  useDisplayContext: () => ({
+    view: { type: "board" },
+    focus: { type: "none" },
+    focusTask: vi.fn(),
+    focusSubtask: vi.fn(),
+    closeSubtask: vi.fn(),
+    openCreate: vi.fn(),
+    closeFocus: vi.fn(),
+    openDiff: vi.fn(),
+    closeDiff: vi.fn(),
+  }),
 }));
 
 // Mock the useTaskDetail hook

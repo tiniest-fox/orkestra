@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { useDiff, type HighlightedFileDiff } from "../../hooks/useDiff";
+import { type HighlightedFileDiff, useDiff } from "../../hooks/useDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
 import { DiffContent } from "./DiffContent";
 import { DiffFileList } from "./DiffFileList";
@@ -33,9 +33,7 @@ export function DiffPanel({ taskId }: DiffPanelProps) {
 
   if (loading && !diff) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-500">
-        Loading diff...
-      </div>
+      <div className="flex-1 flex items-center justify-center text-gray-500">Loading diff...</div>
     );
   }
 
@@ -60,6 +58,7 @@ export function DiffPanel({ taskId }: DiffPanelProps) {
       {/* Inject syntax CSS */}
       {css && (
         <style
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: syntect CSS output is trusted
           dangerouslySetInnerHTML={{
             __html: `
               /* Light theme syntax */

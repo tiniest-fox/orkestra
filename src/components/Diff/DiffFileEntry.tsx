@@ -23,6 +23,7 @@ export function DiffFileEntry({ file, isSelected, onClick }: DiffFileEntryProps)
 
   return (
     <button
+      type="button"
       onClick={onClick}
       className={`w-full text-left px-3 py-2 border-b border-gray-800 hover:bg-gray-800/50 transition-colors ${
         isSelected ? "bg-gray-800" : ""
@@ -42,14 +43,8 @@ export function DiffFileEntry({ file, isSelected, onClick }: DiffFileEntryProps)
       {!file.is_binary && totalChanges > 0 && (
         <div className="flex items-center gap-2 text-xs text-gray-500">
           <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden flex">
-            <div
-              className="bg-green-500 h-full"
-              style={{ width: `${additionPercent}%` }}
-            />
-            <div
-              className="bg-red-500 h-full"
-              style={{ width: `${deletionPercent}%` }}
-            />
+            <div className="bg-green-500 h-full" style={{ width: `${additionPercent}%` }} />
+            <div className="bg-red-500 h-full" style={{ width: `${deletionPercent}%` }} />
           </div>
           <span>
             +{file.additions} -{file.deletions}

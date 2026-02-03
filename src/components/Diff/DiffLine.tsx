@@ -31,9 +31,7 @@ export function DiffLine({ line }: DiffLineProps) {
   return (
     <div className={`flex font-mono text-xs leading-5 ${bgColor} transition-colors`}>
       {/* Old line number */}
-      <div
-        className={`w-12 flex-shrink-0 select-none text-right pr-2 text-gray-500 ${gutterBg}`}
-      >
+      <div className={`w-12 flex-shrink-0 select-none text-right pr-2 text-gray-500 ${gutterBg}`}>
         {line.old_line_number ?? ""}
       </div>
 
@@ -52,6 +50,7 @@ export function DiffLine({ line }: DiffLineProps) {
       {/* Syntax-highlighted content */}
       <div
         className="flex-1 whitespace-pre-wrap break-all px-2"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: syntect output is trusted
         dangerouslySetInnerHTML={{ __html: line.html }}
       />
     </div>

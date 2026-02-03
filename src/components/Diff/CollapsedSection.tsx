@@ -19,6 +19,7 @@ export function CollapsedSection({ lines }: CollapsedSectionProps) {
     return (
       <>
         {lines.map((line, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: line order is stable within collapsed section
           <DiffLine key={i} line={line} />
         ))}
       </>
@@ -27,6 +28,7 @@ export function CollapsedSection({ lines }: CollapsedSectionProps) {
 
   return (
     <button
+      type="button"
       onClick={() => setExpanded(true)}
       className="w-full flex items-center justify-center py-1 text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800/50 transition-colors"
     >

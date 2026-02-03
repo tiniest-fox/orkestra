@@ -41,16 +41,14 @@ export function DiffContent({ file }: DiffContentProps) {
       <div className="sticky top-0 bg-gray-900 border-b border-gray-700 px-4 py-2 text-sm font-medium">
         {file.path}
         {file.old_path && (
-          <span className="text-gray-500 ml-2">
-            (renamed from {file.old_path})
-          </span>
+          <span className="text-gray-500 ml-2">(renamed from {file.old_path})</span>
         )}
       </div>
 
       {/* Hunks */}
       <div>
-        {file.hunks.map((hunk, hunkIndex) => (
-          <div key={hunkIndex} className="border-b border-gray-800">
+        {file.hunks.map((hunk) => (
+          <div key={`${hunk.old_start}-${hunk.new_start}`} className="border-b border-gray-800">
             {/* Hunk header */}
             <div className="bg-gray-800 px-4 py-1 text-xs font-mono text-gray-400">
               @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@
@@ -119,8 +117,10 @@ function renderHunkLines(lines: HighlightedLine[]) {
 
   return sections.map((section, i) =>
     section.type === "collapse" ? (
+      // biome-ignore lint/suspicious/noArrayIndexKey: section order is stable within hunk
       <CollapsedSection key={i} lines={section.lines} />
     ) : (
+      // biome-ignore lint/suspicious/noArrayIndexKey: line order is stable within section
       section.lines.map((line, j) => <DiffLine key={`${i}-${j}`} line={line} />)
     ),
   );

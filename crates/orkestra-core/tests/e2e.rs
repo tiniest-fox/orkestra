@@ -25,7 +25,7 @@ mod workflow;
 // Real-agent tests (no mocks — require actual CLI tools + API keys)
 #[path = "e2e/agents/helpers.rs"]
 mod agent_helpers;
-#[path = "e2e/agents/opencode.rs"]
-mod opencode;
 #[path = "e2e/agents/claudecode.rs"]
 mod claudecode;
+#[path = "e2e/agents/opencode.rs"]
+mod opencode;

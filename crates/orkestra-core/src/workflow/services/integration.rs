@@ -454,7 +454,9 @@ impl WorkflowApi {
         // Determine which stage to return to (flow-aware for subtasks)
         let recovery_stage = self
             .integration_failure_stage(task.flow.as_deref())
-            .ok_or_else(|| WorkflowError::InvalidTransition("No recovery stage configured".into()))?;
+            .ok_or_else(|| {
+                WorkflowError::InvalidTransition("No recovery stage configured".into())
+            })?;
 
         // Move task back to recovery stage
         let now = chrono::Utc::now().to_rfc3339();

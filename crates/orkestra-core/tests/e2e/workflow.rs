@@ -1237,11 +1237,9 @@ fn test_recovery_retries_unmerged_task() {
 ///    `OpenCode` emits its session event)
 #[test]
 fn test_opencode_no_pregenerated_session_id() {
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "result")
-            .with_prompt("worker.md")
-            .with_model("opencode/kimi-k2.5"),
-    ]);
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "result")
+        .with_prompt("worker.md")
+        .with_model("opencode/kimi-k2.5")]);
     let ctx = TestEnv::with_git(&workflow, &["worker"]);
 
     let task = ctx.create_task(
@@ -1268,10 +1266,7 @@ fn test_opencode_no_pregenerated_session_id() {
         first_call.session_id, None,
         "OpenCode stage should NOT have a pre-generated session ID"
     );
-    assert!(
-        !first_call.is_resume,
-        "First spawn should not be a resume"
-    );
+    assert!(!first_call.is_resume, "First spawn should not be a resume");
 
     // Verify session in DB has no claude_session_id
     // (mock runner doesn't emit RunEvent::SessionId, simulating crash before extraction)

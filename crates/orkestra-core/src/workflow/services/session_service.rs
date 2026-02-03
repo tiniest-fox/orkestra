@@ -85,8 +85,7 @@ impl SessionService {
                     || session.session_state == SessionState::Spawning =>
             {
                 // It's a resume only if we have a session ID AND the agent was previously spawned
-                let is_resume =
-                    session.claude_session_id.is_some() && session.spawn_count > 0;
+                let is_resume = session.claude_session_id.is_some() && session.spawn_count > 0;
 
                 orkestra_debug!(
                     "session",
@@ -386,7 +385,9 @@ mod tests {
 
         // Create session (simulates on_spawn_starting)
         // This will also create an iteration via IterationService
-        service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
 
         // Get context for first spawn
         let ctx = service.get_spawn_context("task-1", "planning").unwrap();
@@ -401,7 +402,9 @@ mod tests {
         let (service, _store) = create_service();
 
         // Start agent
-        service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
         let first_ctx = service.get_spawn_context("task-1", "planning").unwrap();
         service
             .on_agent_spawned("task-1", "planning", 12345)
@@ -411,7 +414,9 @@ mod tests {
         service.on_agent_exited("task-1", "planning").unwrap();
 
         // Next spawn — existing session keeps its ID (initial_session_id ignored)
-        service.on_spawn_starting("task-1", "planning", Some("ignored-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "planning", Some("ignored-uuid".into()))
+            .unwrap();
         let ctx = service.get_spawn_context("task-1", "planning").unwrap();
         assert_eq!(ctx.session_id, first_ctx.session_id); // Same session ID from first creation
         assert!(ctx.is_resume); // spawn_count > 0
@@ -422,7 +427,9 @@ mod tests {
         let (service, _store) = create_service();
 
         // Start and complete session
-        service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
         service
             .on_agent_spawned("task-1", "planning", 12345)
             .unwrap();
@@ -438,7 +445,9 @@ mod tests {
         let (service, _store) = create_service();
 
         // Start and abandon session
-        service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
         service
             .on_agent_spawned("task-1", "planning", 12345)
             .unwrap();
@@ -463,10 +472,7 @@ mod tests {
             .get_stage_session("task-1", "planning")
             .unwrap()
             .unwrap();
-        assert_eq!(
-            session.claude_session_id,
-            Some("my-uuid".to_string())
-        );
+        assert_eq!(session.claude_session_id, Some("my-uuid".to_string()));
 
         // Spawn context returns the same ID
         let ctx = service.get_spawn_context("task-1", "planning").unwrap();
@@ -522,13 +528,17 @@ mod tests {
         let (service, _store) = create_service();
 
         // Task 1 has running agent
-        service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
         service
             .on_agent_spawned("task-1", "planning", 12345)
             .unwrap();
 
         // Task 2 agent finished
-        service.on_spawn_starting("task-2", "planning", Some("test-uuid-2".into())).unwrap();
+        service
+            .on_spawn_starting("task-2", "planning", Some("test-uuid-2".into()))
+            .unwrap();
         service
             .on_agent_spawned("task-2", "planning", 12346)
             .unwrap();
@@ -549,7 +559,9 @@ mod tests {
         let (service, store) = create_service();
 
         // on_spawn_starting creates both session and iteration (via IterationService)
-        let iter_id = service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        let iter_id = service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
 
         // Session should be in Spawning state
         let session = store
@@ -574,14 +586,18 @@ mod tests {
         let (service, store) = create_service();
 
         // First call creates iteration
-        let iter_id_1 = service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        let iter_id_1 = service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
         service
             .on_agent_spawned("task-1", "planning", 12345)
             .unwrap();
         service.on_agent_exited("task-1", "planning").unwrap();
 
         // Second call should reuse the same iteration (it's still active)
-        let iter_id_2 = service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        let iter_id_2 = service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
         assert_eq!(iter_id_1, iter_id_2);
 
         // Should still be only one iteration
@@ -594,7 +610,9 @@ mod tests {
         let (service, store) = create_service();
 
         // Start spawn (creates session and iteration)
-        service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
 
         // Spawn succeeded
         service
@@ -615,7 +633,9 @@ mod tests {
         let (service, store) = create_service();
 
         // Start spawn (creates session and iteration)
-        service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
 
         // Spawn failed
         service
@@ -651,7 +671,9 @@ mod tests {
         let (service, _store) = create_service();
 
         // Start spawn attempt
-        service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
 
         // Spawn fails before process starts (on_agent_spawned never called)
         service
@@ -659,7 +681,9 @@ mod tests {
             .unwrap();
 
         // Retry: get spawn context again
-        service.on_spawn_starting("task-1", "planning", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
         let ctx = service.get_spawn_context("task-1", "planning").unwrap();
 
         // Should NOT be a resume because on_agent_spawned was never called
@@ -679,7 +703,9 @@ mod tests {
         let (service, store) = create_service();
 
         // Create session and iteration
-        service.on_spawn_starting("task-1", "work", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "work", Some("test-uuid".into()))
+            .unwrap();
 
         // Set a trigger on the active iteration
         let mut iter = store
@@ -719,7 +745,9 @@ mod tests {
         use crate::workflow::domain::IterationTrigger;
         let (service, store) = create_service();
 
-        service.on_spawn_starting("task-1", "work", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "work", Some("test-uuid".into()))
+            .unwrap();
 
         // Set trigger and mark as delivered
         let mut iter = store
@@ -746,7 +774,9 @@ mod tests {
     fn test_mark_trigger_delivered_noop_when_no_trigger() {
         let (service, store) = create_service();
 
-        service.on_spawn_starting("task-1", "work", Some("test-uuid".into())).unwrap();
+        service
+            .on_spawn_starting("task-1", "work", Some("test-uuid".into()))
+            .unwrap();
 
         // No incoming_context set (None)
         let iter = store

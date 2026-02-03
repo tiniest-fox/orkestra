@@ -104,9 +104,7 @@ impl ActiveAgent {
                     return AgentPoll::Completed(result, log_entries);
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    if !self.has_activity
-                        && self.spawned_at.elapsed() > AGENT_STARTUP_TIMEOUT
-                    {
+                    if !self.has_activity && self.spawned_at.elapsed() > AGENT_STARTUP_TIMEOUT {
                         return AgentPoll::Error(format!(
                             "Agent produced no output after {}s",
                             AGENT_STARTUP_TIMEOUT.as_secs()
@@ -301,10 +299,7 @@ impl StageExecutionService {
 
         // Determine if the provider generates its own session IDs.
         // If so, don't pre-generate a UUID — the ID will be extracted from the output stream.
-        let model_spec = self
-            .workflow
-            .stage(stage)
-            .and_then(|s| s.model.as_deref());
+        let model_spec = self.workflow.stage(stage).and_then(|s| s.model.as_deref());
         let generates_own = self
             .registry
             .resolve(model_spec)
@@ -514,11 +509,7 @@ impl StageExecutionService {
 
                 // Check for provider-generated session IDs (e.g. OpenCode's ses_...)
                 if let Some(sid) = agent.take_extracted_session_id() {
-                    session_id_updates.push((
-                        task_id.clone(),
-                        agent.stage().to_string(),
-                        sid,
-                    ));
+                    session_id_updates.push((task_id.clone(), agent.stage().to_string(), sid));
                 }
             }
 

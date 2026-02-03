@@ -39,6 +39,10 @@ export function ToolInputSummary({ input }: ToolInputSummaryProps) {
       const style = getStructuredOutputStyle(input.output_type);
       return <span className={`${style.textColor} text-xs`}>{style.label}</span>;
     }
+    case "web_search":
+      return <span className="text-violet-300 text-xs">{input.query}</span>;
+    case "web_fetch":
+      return <span className="text-violet-300 text-xs">{input.url}</span>;
     case "other":
       return <span className="text-gray-400 text-xs">{input.summary}</span>;
     default:

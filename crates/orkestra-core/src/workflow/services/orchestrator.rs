@@ -329,7 +329,10 @@ impl OrchestratorLoop {
         let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
         let all_tasks = api.store.list_tasks()?;
 
-        let mut pending = self.pending_setups.lock().map_err(|_| WorkflowError::Lock)?;
+        let mut pending = self
+            .pending_setups
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
 
         // Clear entries for tasks that have left SettingUp (setup completed or failed)
         pending.retain(|id| {

@@ -47,11 +47,7 @@ impl AgentTestEnv {
     ///
     /// Builds a single "work" stage workflow with the given capabilities and
     /// writes the prompt content to `.orkestra/agents/worker.md`.
-    pub fn with_capabilities(
-        model: &str,
-        capabilities: StageCapabilities,
-        prompt: &str,
-    ) -> Self {
+    pub fn with_capabilities(model: &str, capabilities: StageCapabilities, prompt: &str) -> Self {
         use orkestra_core::testutil::create_temp_git_repo;
 
         let temp_dir = create_temp_git_repo().expect("create temp git repo");
@@ -252,7 +248,9 @@ impl AgentTestEnv {
             );
 
             if let orkestra_core::workflow::runtime::Status::Failed { error } = &t.status {
-                let msg = error.clone().unwrap_or_else(|| "unknown failure".to_string());
+                let msg = error
+                    .clone()
+                    .unwrap_or_else(|| "unknown failure".to_string());
                 println!("Task failed as expected: {msg}");
                 return msg;
             }
@@ -404,10 +402,7 @@ impl AgentTestEnv {
     /// Assert that the task has pending questions and return them.
     pub fn assert_has_questions(&self, task_id: &str) -> Vec<Question> {
         let questions = self.get_pending_questions(task_id);
-        println!(
-            "Questions: {} total",
-            questions.len()
-        );
+        println!("Questions: {} total", questions.len());
         for (i, q) in questions.iter().enumerate() {
             println!(
                 "  Q{}: {:?} ({} options)",
@@ -416,10 +411,7 @@ impl AgentTestEnv {
                 q.options.len()
             );
         }
-        assert!(
-            !questions.is_empty(),
-            "Should have pending questions"
-        );
+        assert!(!questions.is_empty(), "Should have pending questions");
         questions
     }
 
@@ -449,16 +441,16 @@ impl AgentTestEnv {
             );
 
             if let orkestra_core::workflow::runtime::Status::Blocked { reason } = &t.status {
-                let msg = reason.clone().unwrap_or_else(|| "unknown block reason".to_string());
+                let msg = reason
+                    .clone()
+                    .unwrap_or_else(|| "unknown block reason".to_string());
                 println!("Task blocked as expected: {msg}");
                 return msg;
             }
 
             if let orkestra_core::workflow::runtime::Status::Failed { error } = &t.status {
                 self.dump_debug_log();
-                panic!(
-                    "Task failed unexpectedly — expected blocked. Error: {error:?}"
-                );
+                panic!("Task failed unexpectedly — expected blocked. Error: {error:?}");
             }
 
             if t.phase == Phase::AwaitingReview {

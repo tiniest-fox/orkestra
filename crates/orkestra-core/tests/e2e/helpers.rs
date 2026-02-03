@@ -370,10 +370,7 @@ impl TestEnv {
     /// Get the full `RunConfig` from the last agent spawn call.
     pub fn last_run_config(&self) -> RunConfig {
         let calls = self.runner.calls();
-        calls
-            .last()
-            .expect("No agent calls recorded")
-            .clone()
+        calls.last().expect("No agent calls recorded").clone()
     }
 
     // =========================================================================

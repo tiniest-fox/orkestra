@@ -11,6 +11,7 @@ import {
   FileText,
   FolderSearch,
   GitBranch,
+  Globe,
   HelpCircle,
   ListTodo,
   MessageCircle,
@@ -74,6 +75,14 @@ const TOOL_STYLES: Record<string, ToolStyle> = {
   structuredoutput: {
     icon: (size) => <Send size={size} {...ICON_PROPS} />,
     color: "bg-indigo-600",
+  },
+  websearch: {
+    icon: (size) => <Search size={size} {...ICON_PROPS} />,
+    color: "bg-violet-600",
+  },
+  webfetch: {
+    icon: (size) => <Globe size={size} {...ICON_PROPS} />,
+    color: "bg-violet-600",
   },
 };
 

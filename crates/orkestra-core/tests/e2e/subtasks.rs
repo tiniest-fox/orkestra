@@ -434,10 +434,30 @@ fn test_diamond_dependency_orchestration() {
         ],
     );
 
-    let id_a = id_map.iter().find(|(t, _)| t == "Node A").unwrap().1.clone();
-    let id_b = id_map.iter().find(|(t, _)| t == "Node B").unwrap().1.clone();
-    let id_c = id_map.iter().find(|(t, _)| t == "Node C").unwrap().1.clone();
-    let id_d = id_map.iter().find(|(t, _)| t == "Node D").unwrap().1.clone();
+    let id_a = id_map
+        .iter()
+        .find(|(t, _)| t == "Node A")
+        .unwrap()
+        .1
+        .clone();
+    let id_b = id_map
+        .iter()
+        .find(|(t, _)| t == "Node B")
+        .unwrap()
+        .1
+        .clone();
+    let id_c = id_map
+        .iter()
+        .find(|(t, _)| t == "Node C")
+        .unwrap()
+        .1
+        .clone();
+    let id_d = id_map
+        .iter()
+        .find(|(t, _)| t == "Node D")
+        .unwrap()
+        .1
+        .clone();
 
     // --- Phase 1: Only A gets set up (no deps) ---
     env.advance(); // setup_ready_subtasks: sets up A (no deps), skips B/C/D
@@ -798,7 +818,11 @@ fn test_subtask_integration_conflict() {
 
     for id in [&id_a, &id_b] {
         let task = env.api().get_task(id).unwrap();
-        assert_eq!(task.phase, Phase::AwaitingReview, "Subtask {id} should be AwaitingReview");
+        assert_eq!(
+            task.phase,
+            Phase::AwaitingReview,
+            "Subtask {id} should be AwaitingReview"
+        );
         env.api().approve(id).expect("Should approve work stage");
     }
 

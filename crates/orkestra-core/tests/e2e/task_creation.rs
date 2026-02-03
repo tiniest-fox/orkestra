@@ -201,10 +201,7 @@ fn test_subtask_gets_own_worktree() {
         Path::new(parent_wt).exists(),
         "Parent worktree should exist"
     );
-    assert!(
-        Path::new(child_wt).exists(),
-        "Child worktree should exist"
-    );
+    assert!(Path::new(child_wt).exists(), "Child worktree should exist");
 }
 
 // =============================================================================

@@ -32,7 +32,9 @@ impl PeriodicScheduler {
             name,
             interval,
             // Ensure first poll triggers immediately
-            last_run: Instant::now().checked_sub(interval).unwrap_or_else(Instant::now),
+            last_run: Instant::now()
+                .checked_sub(interval)
+                .unwrap_or_else(Instant::now),
         });
     }
 

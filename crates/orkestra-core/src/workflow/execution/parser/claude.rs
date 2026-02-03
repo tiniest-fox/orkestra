@@ -10,7 +10,7 @@ use crate::workflow::services::session_logs::{
     extract_tool_result_content, parse_resume_marker, parse_tool_input,
 };
 
-use super::{extract_from_jsonl, check_for_api_error, AgentParser, ParsedUpdate};
+use super::{check_for_api_error, extract_from_jsonl, AgentParser, ParsedUpdate};
 
 /// Claude Code agent parser.
 ///
@@ -288,8 +288,12 @@ impl AgentParser for ClaudeAgentParser {
         }
 
         // Use shared JSONL extraction
-        extract_from_jsonl(trimmed)
-            .ok_or_else(|| format!("Failed to parse agent output: no structured output found in {} bytes of output", trimmed.len()))
+        extract_from_jsonl(trimmed).ok_or_else(|| {
+            format!(
+                "Failed to parse agent output: no structured output found in {} bytes of output",
+                trimmed.len()
+            )
+        })
     }
 }
 
@@ -314,11 +318,7 @@ mod tests {
         .to_string()
     }
 
-    fn assistant_tool_use(
-        tool_name: &str,
-        tool_id: &str,
-        input: &serde_json::Value,
-    ) -> String {
+    fn assistant_tool_use(tool_name: &str, tool_id: &str, input: &serde_json::Value) -> String {
         serde_json::json!({
             "type": "assistant",
             "message": {

@@ -10,8 +10,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::workflow::ports::ProcessSpawner;
 use super::parser::{AgentParser, ClaudeAgentParser, OpenCodeAgentParser};
+use crate::workflow::ports::ProcessSpawner;
 
 // ============================================================================
 // Provider Capabilities
@@ -176,7 +176,10 @@ impl ProviderRegistry {
     ///
     /// Returns `Err` if the provider has no registered parser — forces new providers
     /// to implement one rather than silently falling back to Claude's format.
-    pub fn create_parser(&self, provider_name: &str) -> Result<Box<dyn AgentParser>, RegistryError> {
+    pub fn create_parser(
+        &self,
+        provider_name: &str,
+    ) -> Result<Box<dyn AgentParser>, RegistryError> {
         match provider_name {
             "claudecode" => Ok(Box::new(ClaudeAgentParser::new())),
             "opencode" => Ok(Box::new(OpenCodeAgentParser::new())),

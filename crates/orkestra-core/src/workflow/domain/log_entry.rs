@@ -100,6 +100,14 @@ pub enum ToolInput {
         /// The output type (e.g., "plan", "summary", "questions", "subtasks")
         output_type: String,
     },
+    /// Web search tool - searching the internet.
+    WebSearch {
+        query: String,
+    },
+    /// Web fetch tool - fetching a specific URL.
+    WebFetch {
+        url: String,
+    },
     Other {
         summary: String,
     },

@@ -208,6 +208,12 @@ pub(crate) fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> To
                 .unwrap_or("unknown")
                 .to_string(),
         },
+        "websearch" => ToolInput::WebSearch {
+            query: get_str_field(input, "query"),
+        },
+        "webfetch" => ToolInput::WebFetch {
+            url: get_str_field(input, "url"),
+        },
         _ => ToolInput::Other {
             summary: summarize_input(input),
         },
@@ -514,5 +520,69 @@ mod tests {
         assert_eq!(ResumeMarkerType::Integration.as_str(), "integration");
         assert_eq!(ResumeMarkerType::Answers.as_str(), "answers");
         assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
+    }
+
+    #[test]
+    fn test_parse_tool_input_websearch() {
+        let input = serde_json::json!({"query": "rust syntect themes"});
+        let result = parse_tool_input("WebSearch", &input);
+        assert_eq!(
+            result,
+            ToolInput::WebSearch {
+                query: "rust syntect themes".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_tool_input_websearch_case_insensitive() {
+        let input = serde_json::json!({"query": "search query"});
+
+        // All these should parse to WebSearch
+        let variations = ["websearch", "WebSearch", "WEBSEARCH", "Websearch"];
+        for tool_name in variations {
+            let result = parse_tool_input(tool_name, &input);
+            assert!(
+                matches!(result, ToolInput::WebSearch { .. }),
+                "{tool_name} should parse to WebSearch"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_tool_input_webfetch() {
+        let input = serde_json::json!({"url": "https://example.com", "prompt": "extract info"});
+        let result = parse_tool_input("WebFetch", &input);
+        assert_eq!(
+            result,
+            ToolInput::WebFetch {
+                url: "https://example.com".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_tool_input_webfetch_case_insensitive() {
+        let input = serde_json::json!({"url": "https://example.com"});
+
+        // All these should parse to WebFetch
+        let variations = ["webfetch", "WebFetch", "WEBFETCH", "Webfetch"];
+        for tool_name in variations {
+            let result = parse_tool_input(tool_name, &input);
+            assert!(
+                matches!(result, ToolInput::WebFetch { .. }),
+                "{tool_name} should parse to WebFetch"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_tool_input_unknown_tool_fallback() {
+        let input = serde_json::json!({"some_field": "some_value"});
+        let result = parse_tool_input("UnknownTool", &input);
+        assert!(
+            matches!(result, ToolInput::Other { .. }),
+            "Unknown tools should fall through to Other"
+        );
     }
 }

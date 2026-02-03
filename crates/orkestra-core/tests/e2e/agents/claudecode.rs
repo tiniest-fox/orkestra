@@ -57,7 +57,10 @@ fn claudecode_session_resume_after_rejection() {
     let logs_before = env.get_log_count(&task_id, "work");
     println!(
         "Before rejection: session_id={}, spawn_count={}, logs={}",
-        session_before.claude_session_id.as_deref().unwrap_or("none"),
+        session_before
+            .claude_session_id
+            .as_deref()
+            .unwrap_or("none"),
         session_before.spawn_count,
         logs_before,
     );
@@ -141,10 +144,7 @@ fn claudecode_questions_output() {
          \"What programming language should be used?\" with two options: \"Python\" and \"Rust\". \
          Do NOT attempt any work — ONLY ask the question.",
     );
-    let task_id = env.create_task(
-        "Set up project",
-        "Help me set up a new project.",
-    );
+    let task_id = env.create_task("Set up project", "Help me set up a new project.");
     env.run_to_completion(&task_id, Duration::from_secs(30));
 
     let questions = env.assert_has_questions(&task_id);
@@ -174,10 +174,7 @@ fn claudecode_failed_output() {
          If the file does not exist, you MUST report failure using the \"failed\" output type.",
     );
     let reason = env.run_to_failure(&task_id, Duration::from_secs(30));
-    assert!(
-        !reason.is_empty(),
-        "Failure reason should not be empty"
-    );
+    assert!(!reason.is_empty(), "Failure reason should not be empty");
     println!("Failed with reason: {reason}");
 }
 
@@ -196,10 +193,7 @@ fn claudecode_blocked_output() {
          Do NOT attempt any work.",
     );
     let reason = env.run_to_blocked(&task_id, Duration::from_secs(30));
-    assert!(
-        !reason.is_empty(),
-        "Blocked reason should not be empty"
-    );
+    assert!(!reason.is_empty(), "Blocked reason should not be empty");
     println!("Blocked with reason: {reason}");
 }
 
@@ -312,10 +306,138 @@ fn claudecode_structured_tool_call_logs() {
 
     // Verify the file was actually created
     let task = env.get_task(&task_id);
-    let worktree = task
-        .worktree_path
-        .as_ref()
-        .expect("Should have worktree");
+    let worktree = task.worktree_path.as_ref().expect("Should have worktree");
     let file_path = std::path::Path::new(worktree).join("hello.txt");
     assert!(file_path.exists(), "hello.txt should exist in worktree");
+}
+
+/// Web search tool: verify that `WebSearch` tool uses produce properly typed
+/// `ToolInput::WebSearch` variant (not `Other`).
+///
+/// This test prompts the agent to search the web and verifies the tool call
+/// is captured with structured data. If the agent doesn't use web search
+/// (non-deterministic), the test still passes if no Other tool calls contain
+/// web search data (which would indicate a parsing miss).
+#[test]
+#[ignore = "requires claude CLI installed + API key"]
+fn claudecode_websearch_tool_logs() {
+    let env = helpers::AgentTestEnv::new("claudecode/sonnet");
+    let task_id = env.create_task(
+        "Search web for info",
+        "Use the WebSearch tool to search for 'rust programming language release date'. \
+         You MUST use the WebSearch tool - do not try to answer from your training data. \
+         Report the year Rust was first released. Only use web search.",
+    );
+    env.run_to_completion(&task_id, Duration::from_secs(60));
+
+    // Verify artifact produced
+    env.assert_has_artifact(&task_id, "result");
+
+    // Get structured logs
+    let logs = env.get_logs(&task_id, "work");
+    assert!(!logs.is_empty(), "Should have log entries");
+
+    // Check for WebSearch tool call
+    let has_websearch = logs.iter().any(|e| {
+        matches!(
+            e,
+            LogEntry::ToolUse {
+                input: ToolInput::WebSearch { .. },
+                ..
+            }
+        )
+    });
+
+    if has_websearch {
+        println!("SUCCESS: Found WebSearch tool call with structured data");
+    } else {
+        // Agent may not have used web search - verify no Other tool calls
+        // contain web search data (would indicate parsing miss)
+        let other_tool_uses: Vec<_> = logs
+            .iter()
+            .filter_map(|e| match e {
+                LogEntry::ToolUse {
+                    input: ToolInput::Other { summary },
+                    tool,
+                    ..
+                } => Some((tool.as_str(), summary.as_str())),
+                _ => None,
+            })
+            .filter(|(_, summary)| {
+                summary.to_ascii_lowercase().contains("websearch")
+                    || summary.to_ascii_lowercase().contains("query")
+            })
+            .collect();
+
+        assert!(
+            other_tool_uses.is_empty(),
+            "Found Other tool calls that might be WebSearch (parsing miss?): {other_tool_uses:?}"
+        );
+
+        println!("Note: Agent did not use web search, but no parsing errors detected");
+    }
+}
+
+/// Web fetch tool: verify that `WebFetch` tool uses produce properly typed
+/// `ToolInput::WebFetch` variant (not `Other`).
+///
+/// Similar to web search test - verifies the tool is captured with structured data.
+#[test]
+#[ignore = "requires claude CLI installed + API key"]
+fn claudecode_webfetch_tool_logs() {
+    let env = helpers::AgentTestEnv::new("claudecode/sonnet");
+    let task_id = env.create_task(
+        "Fetch web page",
+        "Use the WebFetch tool to fetch 'https://www.rust-lang.org'. \
+         You MUST use the WebFetch tool - do not try to summarize from memory. \
+         Report the title of the page. Only use web fetch.",
+    );
+    env.run_to_completion(&task_id, Duration::from_secs(60));
+
+    // Verify artifact produced
+    env.assert_has_artifact(&task_id, "result");
+
+    // Get structured logs
+    let logs = env.get_logs(&task_id, "work");
+    assert!(!logs.is_empty(), "Should have log entries");
+
+    // Check for WebFetch tool call
+    let has_webfetch = logs.iter().any(|e| {
+        matches!(
+            e,
+            LogEntry::ToolUse {
+                input: ToolInput::WebFetch { .. },
+                ..
+            }
+        )
+    });
+
+    if has_webfetch {
+        println!("SUCCESS: Found WebFetch tool call with structured data");
+    } else {
+        // Agent may not have used web fetch - verify no Other tool calls
+        // contain web fetch data (would indicate parsing miss)
+        let other_tool_uses: Vec<_> = logs
+            .iter()
+            .filter_map(|e| match e {
+                LogEntry::ToolUse {
+                    input: ToolInput::Other { summary },
+                    tool,
+                    ..
+                } => Some((tool.as_str(), summary.as_str())),
+                _ => None,
+            })
+            .filter(|(_, summary)| {
+                summary.to_ascii_lowercase().contains("webfetch")
+                    || summary.to_ascii_lowercase().contains("rust-lang.org")
+            })
+            .collect();
+
+        assert!(
+            other_tool_uses.is_empty(),
+            "Found Other tool calls that might be WebFetch (parsing miss?): {other_tool_uses:?}"
+        );
+
+        println!("Note: Agent did not use web fetch, but no parsing errors detected");
+    }
 }

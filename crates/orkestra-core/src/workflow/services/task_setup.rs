@@ -56,12 +56,7 @@ impl TaskSetupService {
     /// If `description` is Some, title will be generated from it (for tasks created
     /// without a title). The title is saved as soon as it's ready, before worktree
     /// setup finishes.
-    pub fn spawn_setup(
-        &self,
-        task_id: String,
-        base_branch: String,
-        description: Option<String>,
-    ) {
+    pub fn spawn_setup(&self, task_id: String, base_branch: String, description: Option<String>) {
         let store = Arc::clone(&self.store);
         let git = self.git.clone();
         let title_gen = Arc::clone(&self.title_gen);
@@ -86,7 +81,6 @@ impl TaskSetupService {
             thread::spawn(run);
         }
     }
-
 }
 
 /// Run worktree creation and title generation in parallel using scoped threads.
@@ -150,42 +144,37 @@ fn apply_setup_result(
     worktree_result: Result<Option<crate::workflow::ports::WorktreeCreated>, String>,
 ) {
     match store.get_task(task_id) {
-        Ok(Some(mut task)) => {
-            match worktree_result {
-                Ok(worktree_info) => {
-                    if let Some(ref wt) = worktree_info {
-                        task.branch_name = Some(wt.branch_name.clone());
-                        task.worktree_path = Some(wt.worktree_path.to_string_lossy().to_string());
-                    }
-
-                    task.phase = Phase::Idle;
-                    crate::orkestra_debug!(
-                        "task",
-                        "{} setup complete: phase=Idle, worktree={:?}, branch={:?}",
-                        task_id,
-                        task.worktree_path,
-                        task.branch_name
-                    );
-                    if let Err(e) = store.save_task(&task) {
-                        crate::orkestra_debug!(
-                            "setup",
-                            "CRITICAL: Failed to save task {task_id}: {e}"
-                        );
-                    }
+        Ok(Some(mut task)) => match worktree_result {
+            Ok(worktree_info) => {
+                if let Some(ref wt) = worktree_info {
+                    task.branch_name = Some(wt.branch_name.clone());
+                    task.worktree_path = Some(wt.worktree_path.to_string_lossy().to_string());
                 }
-                Err(error) => {
-                    crate::orkestra_debug!("setup", "Setup failed for {task_id}: {error}");
-                    task.status = Status::Failed { error: Some(error) };
-                    task.phase = Phase::Idle;
-                    if let Err(e) = store.save_task(&task) {
-                        crate::orkestra_debug!(
-                            "setup",
-                            "CRITICAL: Failed to save failed task {task_id}: {e}"
-                        );
-                    }
+
+                task.phase = Phase::Idle;
+                crate::orkestra_debug!(
+                    "task",
+                    "{} setup complete: phase=Idle, worktree={:?}, branch={:?}",
+                    task_id,
+                    task.worktree_path,
+                    task.branch_name
+                );
+                if let Err(e) = store.save_task(&task) {
+                    crate::orkestra_debug!("setup", "CRITICAL: Failed to save task {task_id}: {e}");
                 }
             }
-        }
+            Err(error) => {
+                crate::orkestra_debug!("setup", "Setup failed for {task_id}: {error}");
+                task.status = Status::Failed { error: Some(error) };
+                task.phase = Phase::Idle;
+                if let Err(e) = store.save_task(&task) {
+                    crate::orkestra_debug!(
+                        "setup",
+                        "CRITICAL: Failed to save failed task {task_id}: {e}"
+                    );
+                }
+            }
+        },
         Ok(None) => {
             crate::orkestra_debug!("setup", "CRITICAL: Task {task_id} disappeared during setup");
         }

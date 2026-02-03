@@ -1019,7 +1019,10 @@ mod tests {
         // extract_output should still work via last_text fallback
         let output = r#"{"type":"step_finish"}"#;
         let result = parser.extract_output(output);
-        assert!(result.is_ok(), "extract_output should succeed via last_text: {result:?}");
+        assert!(
+            result.is_ok(),
+            "extract_output should succeed via last_text: {result:?}"
+        );
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
         assert_eq!(json["type"], "artifact");
     }

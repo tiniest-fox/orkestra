@@ -486,7 +486,14 @@ fn read_output_and_send_events(
     flush_finalized_entries(&mut *parser, tx);
     handle.disarm();
 
-    send_completion(tx, &*parser, schema, &full_output, line_count, stderr_handle);
+    send_completion(
+        tx,
+        &*parser,
+        schema,
+        &full_output,
+        line_count,
+        stderr_handle,
+    );
 }
 
 /// Read stdout lines, parse through the agent parser, and send log events.

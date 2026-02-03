@@ -162,7 +162,12 @@ pub fn spawn_claude_process(
     cmd.args(["--print", "--verbose"]);
 
     // Always use structured JSON output with schema
-    cmd.args(["--output-format", "stream-json", "--json-schema", json_schema]);
+    cmd.args([
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        json_schema,
+    ]);
 
     cmd.args(["--dangerously-skip-permissions"])
         .env("PATH", path_env)

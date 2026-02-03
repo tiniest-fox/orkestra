@@ -167,8 +167,7 @@ impl Git2GitService {
             // If the target branch is checked out in a worktree (e.g., subtask merging
             // to parent's branch), we can't checkout here. Use fast-forward via update-ref
             // instead — after rebase, the merge is always a fast-forward.
-            if stderr.contains("checked out at") || stderr.contains("is already used by worktree")
-            {
+            if stderr.contains("checked out at") || stderr.contains("is already used by worktree") {
                 return self.fast_forward_merge(primary, branch_name);
             }
 

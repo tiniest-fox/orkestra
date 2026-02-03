@@ -425,6 +425,8 @@ export type ToolInput =
   | { tool: "todo_write"; todos: TodoItem[] }
   | { tool: "ork"; ork_action: OrkAction }
   | { tool: "structured_output"; output_type: string }
+  | { tool: "web_search"; query: string }
+  | { tool: "web_fetch"; url: string }
   | { tool: "other"; summary: string };
 
 /**

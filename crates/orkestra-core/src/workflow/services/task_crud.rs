@@ -61,9 +61,7 @@ impl WorkflowApi {
             Some(b) => b.to_string(),
             None => match &self.git_service {
                 Some(git) => git.current_branch().map_err(|e| {
-                    WorkflowError::InvalidTransition(format!(
-                        "Cannot determine base branch: {e}"
-                    ))
+                    WorkflowError::InvalidTransition(format!("Cannot determine base branch: {e}"))
                 })?,
                 None => String::new(),
             },

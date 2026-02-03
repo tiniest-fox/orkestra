@@ -16,8 +16,8 @@ mod opencode;
 pub use claude::ClaudeAgentParser;
 pub use opencode::OpenCodeAgentParser;
 
-use crate::workflow::domain::LogEntry;
 use super::StageOutput;
+use crate::workflow::domain::LogEntry;
 
 // ============================================================================
 // AgentParser trait
@@ -308,7 +308,8 @@ mod tests {
 
     #[test]
     fn test_extract_from_jsonl_json_array() {
-        let output = r#"[{"type":"system"},{"structured_output":{"type":"plan","content":"The plan"}}]"#;
+        let output =
+            r#"[{"type":"system"},{"structured_output":{"type":"plan","content":"The plan"}}]"#;
         let result = extract_from_jsonl(output);
         assert!(result.is_some());
         let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();

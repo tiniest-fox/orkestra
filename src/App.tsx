@@ -1,7 +1,4 @@
 import { Orkestra } from "./components/Orkestra";
-import { StartupErrorScreen } from "./components/StartupErrorScreen";
-import { StartupSplashScreen } from "./components/StartupSplashScreen";
-import { useStartup } from "./hooks/useStartup";
 import {
   AutoTaskTemplatesProvider,
   DisplayContextProvider,
@@ -10,19 +7,10 @@ import {
 } from "./providers";
 
 /**
- * Root component that coordinates startup before rendering the main app.
+ * Root component with all providers.
+ * Initialization now happens in main.tsx before React mounts.
  */
 function App() {
-  const { isReady, loading: startupLoading, errors: startupErrors, retry } = useStartup();
-
-  if (startupLoading) {
-    return <StartupSplashScreen />;
-  }
-
-  if (!isReady) {
-    return <StartupErrorScreen errors={startupErrors} onRetry={retry} />;
-  }
-
   return (
     <WorkflowConfigProvider>
       <AutoTaskTemplatesProvider>

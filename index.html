@@ -6,89 +6,81 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Orkestra</title>
     <style>
-      /* Inline splash screen styles - shown before React loads */
-      /* Colors match Stone & Sage design system */
-      .splash-screen {
+      /* Skeleton loader styles - shown before React loads */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
+      .skeleton-loader {
         height: 100vh;
-        background: linear-gradient(to bottom right, #fafaf9, #f5f5f4); /* stone-50 to stone-100 */
+        width: 100vw;
+        background: linear-gradient(to bottom right, #fafaf9, #f5f5f4);
         display: flex;
         flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        margin: 0;
-        font-family: 'Source Sans 3', system-ui, -apple-system, sans-serif;
+        padding: 1rem;
+        gap: 1rem;
+        font-family: system-ui, -apple-system, sans-serif;
       }
-      .splash-content {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 1.5rem;
-      }
-      .splash-logo {
-        width: 4rem;
-        height: 4rem;
-        background-color: #7d9668; /* sage-500 */
-        border-radius: 12px; /* panel radius */
+      
+      .skeleton-header {
         display: flex;
         align-items: center;
-        justify-content: center;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.08);
+        justify-content: space-between;
+        padding: 0 0.5rem;
+        flex-shrink: 0;
       }
-      .splash-logo svg {
-        width: 2.5rem;
-        height: 2.5rem;
-        color: white;
-      }
-      .splash-title {
-        font-size: 1.875rem;
+      
+      .skeleton-title {
+        font-size: 1.125rem;
         font-weight: 600;
-        color: #292524; /* stone-800 */
-        margin: 0;
-        font-family: 'Geist', 'Source Sans 3', system-ui, sans-serif;
+        color: #292524;
+        font-family: system-ui, -apple-system, sans-serif;
       }
-      .splash-dots {
-        display: flex;
-        align-items: center;
-        gap: 0.375rem;
+      
+      .skeleton-panel {
+        flex: 1;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
       }
-      .splash-dot {
-        width: 0.5rem;
-        height: 0.5rem;
-        background-color: #7d9668; /* sage-500 */
-        border-radius: 50%;
-        animation: bounce 1s infinite;
+      
+      @keyframes pulse {
+        0%, 100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
       }
-      .splash-dot:nth-child(1) { animation-delay: -0.3s; }
-      .splash-dot:nth-child(2) { animation-delay: -0.15s; }
-      .splash-text {
-        font-size: 0.875rem;
-        color: #a8a29e; /* stone-400 */
-        margin: 0;
-      }
-      @keyframes bounce {
-        0%, 80%, 100% { transform: translateY(0); }
-        40% { transform: translateY(-0.5rem); }
+      
+      /* Dark mode */
+      @media (prefers-color-scheme: dark) {
+        .skeleton-loader {
+          background: linear-gradient(to bottom right, #0c0a09, #1c1917);
+        }
+        
+        .skeleton-title {
+          color: #f5f5f4;
+        }
+        
+        .skeleton-panel {
+          background: #1c1917;
+          box-shadow: 0px 0px 16px 4px rgb(0 0 0 / 0.3), 0px 0px 2px 1px rgb(0 0 0 / 0.1);
+        }
       }
     </style>
   </head>
   <body>
     <div id="root">
-      <!-- Inline splash screen - replaced by React when it loads -->
-      <div class="splash-screen">
-        <div class="splash-content">
-          <div class="splash-logo">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/>
-            </svg>
-          </div>
-          <h1 class="splash-title">Orkestra</h1>
-          <div class="splash-dots">
-            <div class="splash-dot"></div>
-            <div class="splash-dot"></div>
-            <div class="splash-dot"></div>
-          </div>
-          <p class="splash-text">Initializing workspace...</p>
+      <!-- Skeleton loader - replaced by React when it loads -->
+      <div class="skeleton-loader">
+        <div class="skeleton-header">
+          <h1 class="skeleton-title">Orkestra</h1>
         </div>
+        <div class="skeleton-panel"></div>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

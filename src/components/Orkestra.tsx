@@ -122,11 +122,7 @@ export function Orkestra() {
           </div>
         )}
         {loading ? (
-          <Panel>
-            <div className="flex items-center justify-center h-64">
-              <div className="text-stone-500 dark:text-stone-400">Loading...</div>
-            </div>
-          </Panel>
+          <Panel>{null}</Panel>
         ) : (
           <Panel>
             <KanbanBoard

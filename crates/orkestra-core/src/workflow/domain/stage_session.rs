@@ -4,7 +4,6 @@
 //! maintaining Claude session continuity across rejections and crash recovery.
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 /// State of a `StageSession`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -70,8 +69,9 @@ pub struct StageSession {
 impl StageSession {
     /// Create a new stage session.
     ///
-    /// Generates a UUID for `claude_session_id` upfront so that log polling
-    /// can find the Claude session JSONL file immediately when the agent starts.
+    /// The `claude_session_id` starts as `None`. For providers that accept caller-supplied
+    /// session IDs (Claude Code), the caller sets it before spawn. For providers that
+    /// generate their own IDs (OpenCode), it stays `None` until extracted from the output stream.
     pub fn new(
         id: impl Into<String>,
         task_id: impl Into<String>,
@@ -83,7 +83,7 @@ impl StageSession {
             id: id.into(),
             task_id: task_id.into(),
             stage: stage.into(),
-            claude_session_id: Some(Uuid::new_v4().to_string()),
+            claude_session_id: None,
             agent_pid: None,
             spawn_count: 0,
             session_state: SessionState::Active,
@@ -152,23 +152,25 @@ mod tests {
         assert_eq!(session.id, "ss-1");
         assert_eq!(session.task_id, "task-1");
         assert_eq!(session.stage, "planning");
-        // UUID is generated upfront for immediate log access
-        assert!(session.claude_session_id.is_some());
+        // Session ID starts as None — set by caller for providers that need it
+        assert!(session.claude_session_id.is_none());
         assert!(session.agent_pid.is_none());
         assert_eq!(session.spawn_count, 0);
         assert!(session.is_active());
-        assert!(session.can_resume()); // Can resume since session ID exists
+        assert!(!session.can_resume()); // Can't resume without session ID
     }
 
     #[test]
     fn test_agent_spawned_first_time() {
         let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
+        // Simulate caller setting session ID (as Claude Code provider would)
+        session.claude_session_id = Some("test-uuid".to_string());
         let original_session_id = session.claude_session_id.clone();
 
         session.agent_spawned(12345, "later");
 
         assert_eq!(session.agent_pid, Some(12345));
-        // Session ID should remain unchanged (set at creation)
+        // Session ID should remain unchanged
         assert_eq!(session.claude_session_id, original_session_id);
         // spawn_count incremented on spawn so crashes still result in --resume
         assert_eq!(session.spawn_count, 1);
@@ -179,6 +181,7 @@ mod tests {
     #[test]
     fn test_spawn_count_increments_on_spawn() {
         let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
+        session.claude_session_id = Some("test-uuid".to_string());
         let original_session_id = session.claude_session_id.clone();
 
         // First spawn - increments spawn_count immediately
@@ -244,11 +247,12 @@ mod tests {
     #[test]
     fn test_serialization() {
         let mut session = StageSession::new("ss-1", "task-1", "work", "2025-01-24T10:00:00Z");
+        session.claude_session_id = Some("test-uuid".to_string());
         session.spawn_count = 2;
 
         let json = serde_json::to_string(&session).unwrap();
         assert!(json.contains("\"id\":\"ss-1\""));
-        assert!(json.contains("\"claude_session_id\":")); // UUID is generated
+        assert!(json.contains("\"claude_session_id\":\"test-uuid\""));
         assert!(json.contains("\"spawn_count\":2"));
 
         let parsed: StageSession = serde_json::from_str(&json).unwrap();
@@ -271,11 +275,12 @@ mod tests {
     #[test]
     fn test_spawning_state_not_resumable() {
         let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
+        session.claude_session_id = Some("test-uuid".to_string());
         session.session_state = SessionState::Spawning;
 
         // Spawning sessions should not be resumable (even with session ID)
-        assert!(session.claude_session_id.is_some()); // Has UUID
-        assert!(!session.can_resume()); // But can't resume in Spawning state
+        assert!(session.claude_session_id.is_some());
+        assert!(!session.can_resume()); // Can't resume in Spawning state
         assert!(!session.is_active());
     }
 }

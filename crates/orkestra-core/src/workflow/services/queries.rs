@@ -328,6 +328,21 @@ impl WorkflowApi {
             .collect())
     }
 
+    /// Clear the `claude_session_id` for a stage session (test-only).
+    ///
+    /// Simulates a crash before the provider's session ID was extracted from the
+    /// output stream. The session retains its `spawn_count` so the next spawn
+    /// would normally try to resume — but with no session ID, it must start fresh.
+    #[cfg(feature = "testutil")]
+    pub fn clear_session_id(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
+        if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
+            session.claude_session_id = None;
+            session.updated_at = chrono::Utc::now().to_rfc3339();
+            self.store.save_stage_session(&session)?;
+        }
+        Ok(())
+    }
+
     /// Clear the agent PID for a stage session after an orphaned agent is killed.
     ///
     /// Only clears the PID. The `spawn_count` was already incremented when

@@ -294,6 +294,19 @@ impl AgentTestEnv {
         println!("Rejected task {task_id} with feedback: {feedback}");
     }
 
+    /// Clear the `claude_session_id` for a stage session.
+    ///
+    /// Simulates a crash before the provider's session ID was extracted.
+    /// The session keeps its `spawn_count`, so the next spawn would normally
+    /// try to resume — but with no session ID, it must start fresh.
+    pub fn clear_session_id(&self, task_id: &str, stage: &str) {
+        self.api
+            .lock()
+            .unwrap()
+            .clear_session_id(task_id, stage)
+            .expect("clear_session_id should succeed");
+    }
+
     /// Get the stage session for a task+stage. Panics if not found.
     pub fn get_stage_session(&self, task_id: &str, stage: &str) -> StageSession {
         self.api

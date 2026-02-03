@@ -12,7 +12,10 @@ use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
     config::WorkflowConfig,
     domain::{Question, Task},
-    execution::{claudecode_aliases, claudecode_capabilities, ProviderRegistry, StageOutput},
+    execution::{
+        claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
+        ProviderRegistry, RunConfig, StageOutput,
+    },
     runtime::Phase,
     MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService, WorkflowApi,
 };
@@ -20,8 +23,8 @@ use orkestra_core::MockTitleGenerator;
 
 /// Create a default provider registry for tests.
 ///
-/// Registers only claudecode (with a stub spawner) since tests use `MockAgentRunner`
-/// and only need the registry for capability checks.
+/// Registers both claudecode and opencode (with stub spawners) since tests use
+/// `MockAgentRunner` and only need the registry for capability checks.
 fn test_provider_registry() -> Arc<ProviderRegistry> {
     use orkestra_core::workflow::ports::{MockProcessSpawner, ProcessSpawner};
 
@@ -31,6 +34,12 @@ fn test_provider_registry() -> Arc<ProviderRegistry> {
         Arc::new(MockProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
         claudecode_capabilities(),
         claudecode_aliases(),
+    );
+    registry.register(
+        "opencode",
+        Arc::new(MockProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+        opencode_capabilities(),
+        opencode_aliases(),
     );
     Arc::new(registry)
 }
@@ -383,6 +392,15 @@ impl TestEnv {
     /// Get the number of calls made to the mock runner.
     pub fn call_count(&self) -> usize {
         self.runner.calls().len()
+    }
+
+    /// Get the full `RunConfig` from the last agent spawn call.
+    pub fn last_run_config(&self) -> RunConfig {
+        let calls = self.runner.calls();
+        calls
+            .last()
+            .expect("No agent calls recorded")
+            .clone()
     }
 
     // =========================================================================

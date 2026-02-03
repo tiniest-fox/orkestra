@@ -19,7 +19,7 @@
 //! Claude Code responses. The test uses the `WorkflowApi` from the services layer.
 
 use orkestra_core::workflow::{
-    config::WorkflowConfig,
+    config::{StageConfig, WorkflowConfig},
     domain::{Question, QuestionAnswer, QuestionOption},
     runtime::{Outcome, Phase},
 };
@@ -1179,4 +1179,100 @@ fn test_recovery_retries_unmerged_task() {
     );
 
     println!("=== Recovery of Unmerged Task Test Complete ===");
+}
+
+// =============================================================================
+// Provider-Aware Session ID Tests
+// =============================================================================
+
+/// Verify that OpenCode stages don't pre-generate session UUIDs and don't
+/// attempt resume when no session ID has been extracted from the stream.
+///
+/// This is the core regression test for the bug where a pre-generated UUID
+/// was passed to OpenCode on resume, causing it to hang forever (OpenCode
+/// generates its own `ses_...` IDs and doesn't accept caller-supplied ones).
+///
+/// Flow:
+/// 1. Create a single-stage workflow using `opencode/kimi-k2.5`
+/// 2. First spawn: verify `session_id` is `None` (no pre-generated UUID)
+/// 3. Reject + retry: verify `session_id` is still `None` AND `is_resume` is `false`
+///    (mock runner doesn't emit `RunEvent::SessionId`, simulating a crash before
+///    OpenCode emits its session event)
+#[test]
+fn test_opencode_no_pregenerated_session_id() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "result")
+            .with_prompt("worker.md")
+            .with_model("opencode/kimi-k2.5"),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "OpenCode session test",
+        "Test that OpenCode stages don't pre-generate session UUIDs",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Queue first output and run to completion
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "result".to_string(),
+            content: "First run output".to_string(),
+        },
+    );
+    ctx.tick_until_settled();
+
+    // VERIFY: First spawn should have NO session_id (OpenCode generates its own)
+    let first_call = ctx.last_run_config();
+    assert_eq!(
+        first_call.session_id, None,
+        "OpenCode stage should NOT have a pre-generated session ID"
+    );
+    assert!(
+        !first_call.is_resume,
+        "First spawn should not be a resume"
+    );
+
+    // Verify session in DB has no claude_session_id
+    // (mock runner doesn't emit RunEvent::SessionId, simulating crash before extraction)
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .unwrap()
+        .expect("Session should exist");
+    assert!(
+        session.claude_session_id.is_none(),
+        "Session should have no claude_session_id (mock doesn't emit SessionId events)"
+    );
+    assert!(
+        session.spawn_count >= 1,
+        "Agent should have been spawned at least once"
+    );
+
+    // Reject and retry — this is the bug scenario:
+    // Without the fix, the retry would try to resume with a pre-generated UUID,
+    // causing OpenCode to hang.
+    ctx.api().reject(&task_id, "Try again").unwrap();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "result".to_string(),
+            content: "Second run output".to_string(),
+        },
+    );
+    ctx.tick_until_settled();
+
+    // VERIFY: Second spawn also has no session_id AND is_resume is false
+    let second_call = ctx.last_run_config();
+    assert_eq!(
+        second_call.session_id, None,
+        "Retry should NOT have a session ID (none was ever extracted)"
+    );
+    assert!(
+        !second_call.is_resume,
+        "Retry without session ID must NOT be a resume (would cause OpenCode to hang)"
+    );
 }

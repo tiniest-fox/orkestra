@@ -211,7 +211,7 @@ impl AgentExecutionService {
 
         orkestra_debug!(
             "exec",
-            "execute_stage {}/{}: session_id={}, is_resume={}",
+            "execute_stage {}/{}: session_id={:?}, is_resume={}",
             task.id,
             stage,
             spawn_context.session_id,
@@ -285,8 +285,13 @@ impl AgentExecutionService {
         let working_dir = self.get_working_dir(task);
 
         let mut run_config = RunConfig::new(working_dir, prompt, json_schema)
-            .with_session(spawn_context.session_id.clone(), spawn_context.is_resume)
             .with_task_id(&task.id);
+
+        // Only set session when we have a caller-provided session ID.
+        // Providers that generate their own IDs (OpenCode) start without one.
+        if let Some(ref sid) = spawn_context.session_id {
+            run_config = run_config.with_session(sid.clone(), spawn_context.is_resume);
+        }
 
         // Thread model spec from stage config (respects flow overrides)
         if let Some(model) = model_spec {

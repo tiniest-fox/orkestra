@@ -23,6 +23,11 @@ pub struct ProviderCapabilities {
     pub supports_json_schema: bool,
     /// Whether the provider supports session resume (`--session-id` / `--resume`).
     pub supports_sessions: bool,
+    /// Whether the provider generates its own session IDs (e.g., OpenCode's `ses_...`).
+    /// When true, the caller should NOT pre-generate a UUID — the session ID will be
+    /// extracted from the provider's output stream. When false (Claude Code), the caller
+    /// supplies a UUID via `--session-id` on first spawn.
+    pub generates_own_session_id: bool,
 }
 
 // ============================================================================
@@ -292,6 +297,7 @@ pub fn claudecode_capabilities() -> ProviderCapabilities {
     ProviderCapabilities {
         supports_json_schema: true,
         supports_sessions: true,
+        generates_own_session_id: false,
     }
 }
 
@@ -300,6 +306,7 @@ pub fn opencode_capabilities() -> ProviderCapabilities {
     ProviderCapabilities {
         supports_json_schema: false,
         supports_sessions: true,
+        generates_own_session_id: true,
     }
 }
 

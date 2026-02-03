@@ -148,6 +148,10 @@ pub struct StageExecutionService {
     script_service: Arc<ScriptExecutionService>,
     /// Store for persisting log entries.
     store: Arc<dyn WorkflowStore>,
+    /// Workflow config (for resolving stage model specs).
+    workflow: WorkflowConfig,
+    /// Provider registry (for checking provider capabilities).
+    registry: Arc<ProviderRegistry>,
     /// Active agent executions keyed by task ID.
     /// (Script executions are tracked by `ScriptExecutionService`)
     active_agents: Mutex<HashMap<String, ActiveAgent>>,
@@ -177,11 +181,11 @@ impl StageExecutionService {
             runner,
             workflow.clone(),
             project_root.clone(),
-            registry,
+            Arc::clone(&registry),
         ));
 
         let script_service = Arc::new(ScriptExecutionService::new(
-            workflow,
+            workflow.clone(),
             project_root,
             Arc::clone(&store),
         ));
@@ -191,6 +195,8 @@ impl StageExecutionService {
             agent_service,
             script_service,
             store,
+            workflow,
+            registry,
             active_agents: Mutex::new(HashMap::new()),
         }
     }
@@ -277,9 +283,26 @@ impl StageExecutionService {
     ) -> Result<SpawnResult, SpawnError> {
         let stage = task.current_stage().ok_or(SpawnError::NoActiveStage)?;
 
+        // Determine if the provider generates its own session IDs.
+        // If so, don't pre-generate a UUID — the ID will be extracted from the output stream.
+        let model_spec = self
+            .workflow
+            .stage(stage)
+            .and_then(|s| s.model.as_deref());
+        let generates_own = self
+            .registry
+            .resolve(model_spec)
+            .map(|r| r.capabilities.generates_own_session_id)
+            .unwrap_or(false);
+        let initial_session_id = if generates_own {
+            None
+        } else {
+            Some(uuid::Uuid::new_v4().to_string())
+        };
+
         // 1. Create session BEFORE spawn (unified for all stage types)
         self.session_service
-            .on_spawn_starting(&task.id, stage)
+            .on_spawn_starting(&task.id, stage, initial_session_id)
             .map_err(|e| SpawnError::SessionError(e.to_string()))?;
 
         // 2. Get spawn context (session ID + resume flag)
@@ -493,8 +516,8 @@ impl StageExecutionService {
             self.persist_log_entries(stage_session_id, entries);
         }
 
-        // Overwrite pre-generated UUIDs with real provider session IDs so that
-        // future resume attempts use the correct value (e.g. OpenCode's ses_...).
+        // Persist provider-generated session IDs (e.g. OpenCode's ses_...) so that
+        // future resume attempts use the correct value.
         for (task_id, stage, session_id) in session_id_updates {
             match self.store.get_stage_session(&task_id, &stage) {
                 Ok(Some(mut session)) => {

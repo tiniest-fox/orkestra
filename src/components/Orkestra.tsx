@@ -9,6 +9,7 @@ import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useAutoTaskTemplates, useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
 import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { CommandPalette } from "./CommandPalette";
+import { DiffPanel } from "./DiffPanel";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
@@ -125,10 +126,8 @@ export function Orkestra() {
         )}
         {loading ? (
           <Panel>{null}</Panel>
-        ) : showDiff ? (
-          <Panel>
-            <div className="flex items-center justify-center h-full text-stone-500">Diff panel</div>
-          </Panel>
+        ) : showDiff && currentSelectedTask ? (
+          <DiffPanel taskId={currentSelectedTask.id} />
         ) : (
           <Panel>
             <KanbanBoard

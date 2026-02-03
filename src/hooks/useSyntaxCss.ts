@@ -61,7 +61,7 @@ ${css.light}
 
     // Cleanup on unmount
     return () => {
-      if (styleElement && styleElement.parentNode) {
+      if (styleElement?.parentNode) {
         styleElement.parentNode.removeChild(styleElement);
       }
     };

@@ -102,8 +102,7 @@ export function useDiff(taskId: string, isActive: boolean): UseDiffResult {
       }));
 
       // Only update state if data changed
-      const dataChanged =
-        JSON.stringify(diffFingerprint) !== JSON.stringify(newFingerprint);
+      const dataChanged = JSON.stringify(diffFingerprint) !== JSON.stringify(newFingerprint);
 
       if (dataChanged) {
         setFiles(result.files);
@@ -116,9 +115,7 @@ export function useDiff(taskId: string, isActive: boolean): UseDiffResult {
           }
         } else {
           // Refresh — preserve selection if file still exists
-          const stillExists = result.files.some(
-            (f) => f.path === selectedFilePathRef.current,
-          );
+          const stillExists = result.files.some((f) => f.path === selectedFilePathRef.current);
           if (!stillExists) {
             // Selected file disappeared, select first file
             setSelectedFilePath(result.files.length > 0 ? result.files[0].path : null);

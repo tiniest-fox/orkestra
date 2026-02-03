@@ -459,7 +459,7 @@ impl OrchestratorLoop {
             api.get_tasks_needing_agents()?
         };
 
-        if !tasks.is_empty() || self.stage_executor.active_count() > 0 {
+        if !tasks.is_empty() {
             orkestra_debug!(
                 "orchestrator",
                 "start_new_executions: {} tasks needing execution, {} active",

@@ -115,6 +115,7 @@ pub fn log(component: &str, message: &str) {
                     let _ = file.write_all(line.as_bytes());
                     let _ = file.flush();
                 }
+                eprint!("{line}");
             }
         }
     }

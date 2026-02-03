@@ -273,6 +273,7 @@ impl AgentRunnerTrait for AgentRunner {
                 let reader = std::io::BufReader::new(stderr);
                 let mut lines = Vec::new();
                 for line in reader.lines().map_while(Result::ok) {
+                    orkestra_debug!("runner", "stderr: {}", line);
                     lines.push(line);
                 }
                 lines
@@ -469,6 +470,7 @@ fn read_output_and_send_events(
             let reader = std::io::BufReader::new(stderr);
             let mut lines = Vec::new();
             for line in reader.lines().map_while(Result::ok) {
+                orkestra_debug!("runner", "stderr: {}", line);
                 lines.push(line);
             }
             lines

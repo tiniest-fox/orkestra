@@ -705,21 +705,21 @@ impl GitService for Git2GitService {
 
     fn diff_against_base(
         &self,
-        _worktree_path: &Path,
+        worktree_path: &Path,
         _branch_name: &str,
-        _base_branch: &str,
+        base_branch: &str,
     ) -> Result<TaskDiff, GitError> {
-        // Stub implementation - to be implemented in a future task
-        Ok(TaskDiff { files: vec![] })
+        // Delegate to the diff module (doesn't need the repo mutex)
+        super::diff::compute_diff(worktree_path, base_branch)
     }
 
     fn read_file_at_head(
         &self,
-        _worktree_path: &Path,
-        _file_path: &str,
+        worktree_path: &Path,
+        file_path: &str,
     ) -> Result<Option<String>, GitError> {
-        // Stub implementation - to be implemented in a future task
-        Ok(None)
+        // Delegate to the diff module (doesn't need the repo mutex)
+        super::diff::read_file_content(worktree_path, file_path)
     }
 }
 

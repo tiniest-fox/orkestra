@@ -65,6 +65,14 @@ impl AgentTestEnv {
         println!("Debug log: {}", orkestra_dir.join("debug.log").display());
         std::fs::write(orkestra_dir.join("agents/worker.md"), prompt).unwrap();
 
+        // Allow OpenCode full permissions so it doesn't prompt interactively
+        // for external_directory access when writing to temp worktree paths.
+        std::fs::write(
+            temp_dir.path().join("opencode.json"),
+            r#"{"permission": "allow"}"#,
+        )
+        .unwrap();
+
         // Build and save workflow config
         let workflow = WorkflowConfig {
             version: 1,
@@ -329,6 +337,15 @@ impl AgentTestEnv {
             .get_stage_session(task_id, stage)
             .expect("get_stage_session should succeed")
             .unwrap_or_else(|| panic!("No stage session found for {task_id}/{stage}"))
+    }
+
+    /// Get all log entries for a task+stage.
+    pub fn get_logs(&self, task_id: &str, stage: &str) -> Vec<LogEntry> {
+        self.api
+            .lock()
+            .unwrap()
+            .get_task_logs(task_id, Some(stage))
+            .expect("get_task_logs should succeed")
     }
 
     /// Get the number of log entries for a task+stage.

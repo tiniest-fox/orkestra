@@ -463,7 +463,6 @@ fn read_output_and_send_events(
     schema: Option<&serde_json::Value>,
     mut parser: Box<dyn AgentParser>,
 ) {
-    // Spawn a thread to collect stderr so we can log it on failure
     let stderr_handle = handle.take_stderr().map(|stderr| {
         thread::spawn(move || {
             use std::io::BufRead;
@@ -476,9 +475,30 @@ fn read_output_and_send_events(
         })
     });
 
+    let stream_result = stream_stdout_lines(&mut handle, tx, &mut *parser);
+
+    let Some((full_output, line_count)) = stream_result else {
+        return; // Aborted early (error event or channel closed)
+    };
+
+    flush_finalized_entries(&mut *parser, tx);
+    handle.disarm();
+
+    send_completion(tx, &*parser, schema, &full_output, line_count, stderr_handle);
+}
+
+/// Read stdout lines, parse through the agent parser, and send log events.
+///
+/// Returns `Some((full_output, line_count))` when the stream ends normally.
+/// Returns `None` if aborted early (stream error detected, read failure, or
+/// channel closed).
+fn stream_stdout_lines(
+    handle: &mut crate::workflow::ports::ProcessHandle,
+    tx: &Sender<RunEvent>,
+    parser: &mut dyn AgentParser,
+) -> Option<(String, usize)> {
     let mut full_output = String::new();
     let mut line_count: usize = 0;
-    let mut log_entry_count: usize = 0;
 
     for line_result in handle.lines() {
         match line_result {
@@ -487,40 +507,26 @@ fn read_output_and_send_events(
                     continue;
                 }
                 line_count += 1;
-
-                // Log raw lines for debugging stream format issues
                 orkestra_debug!("runner", "stdout line {}: {}", line_count, line);
 
-                // Detect error events from the agent (e.g. API 404, rate limits).
                 if let Some(error_msg) = extract_stream_error(&line) {
                     orkestra_debug!("runner", "Agent error detected: {}", error_msg);
                     let _ = tx.send(RunEvent::Completed(Err(error_msg)));
-                    return;
+                    return None;
                 }
 
-                // Parse the line through the provider-specific parser
                 let update = parser.parse_line(&line);
-                orkestra_debug!(
-                    "runner",
-                    "  parsed {} log entries from line {}",
-                    update.log_entries.len(),
-                    line_count
-                );
 
-                // Surface provider-generated session ID (e.g. OpenCode's ses_...)
                 if let Some(sid) = update.session_id {
                     orkestra_debug!("runner", "Extracted session ID: {}", sid);
                     if tx.send(RunEvent::SessionId(sid)).is_err() {
-                        orkestra_debug!("runner", "Channel closed while sending SessionId");
-                        return;
+                        return None;
                     }
                 }
 
                 for entry in update.log_entries {
-                    log_entry_count += 1;
                     if tx.send(RunEvent::LogLine(entry)).is_err() {
-                        orkestra_debug!("runner", "Channel closed while sending LogLine");
-                        return;
+                        return None;
                     }
                 }
 
@@ -529,43 +535,47 @@ fn read_output_and_send_events(
             }
             Err(e) => {
                 orkestra_debug!("runner", "Error reading stdout: {}", e);
-                // Send error completion so orchestrator knows something went wrong
-                if tx
-                    .send(RunEvent::Completed(Err(format!(
-                        "Failed to read agent output: {e}"
-                    ))))
-                    .is_err()
-                {
-                    orkestra_debug!("runner", "Channel closed before read error could be sent");
-                }
-                return; // Exit - don't try to parse partial output
+                let _ = tx.send(RunEvent::Completed(Err(format!(
+                    "Failed to read agent output: {e}"
+                ))));
+                return None;
             }
         }
     }
 
-    // Finalize the parser to flush any buffered entries
-    for entry in parser.finalize() {
+    Some((full_output, line_count))
+}
+
+/// Flush any buffered entries from the parser's `finalize()` as log events.
+fn flush_finalized_entries(parser: &mut dyn AgentParser, tx: &Sender<RunEvent>) {
+    let finalized = parser.finalize();
+    orkestra_debug!("runner", "finalize produced {} entries", finalized.len());
+    for entry in finalized {
+        orkestra_debug!("runner", "  finalized entry: {:?}", entry);
         if tx.send(RunEvent::LogLine(entry)).is_err() {
-            orkestra_debug!("runner", "Channel closed while sending finalized LogLine");
             return;
         }
     }
+}
 
-    // Process completed normally
-    handle.disarm();
-
-    // Collect stderr
+/// Parse the agent's full output into a `StageOutput` and send the completion event.
+fn send_completion(
+    tx: &Sender<RunEvent>,
+    parser: &dyn AgentParser,
+    schema: Option<&serde_json::Value>,
+    full_output: &str,
+    line_count: usize,
+    stderr_handle: Option<thread::JoinHandle<Vec<String>>>,
+) {
     let stderr_lines = collect_stderr(stderr_handle);
 
     orkestra_debug!(
         "runner",
-        "stream ended: {} lines read, {} log entries produced, output_len={}",
+        "stream ended: {} lines, output_len={}",
         line_count,
-        log_entry_count,
         full_output.len()
     );
 
-    // If stdout produced nothing, the agent likely crashed. Use stderr for the error.
     if line_count == 0 {
         let error_msg = stderr_error_message(&stderr_lines);
         orkestra_debug!("runner", "Zero stdout lines — agent crashed: {}", error_msg);
@@ -573,13 +583,13 @@ fn read_output_and_send_events(
         return;
     }
 
-    // Parse output: provider extracts JSON, then StageOutput::parse interprets it
     let result = match schema {
-        Some(s) => parse_completion(&*parser, &full_output, s),
-        None => parser.extract_output(&full_output).and_then(|json_str| {
+        Some(s) => parse_completion(parser, full_output, s),
+        None => parser.extract_output(full_output).and_then(|json_str| {
             StageOutput::parse_unvalidated(&json_str).map_err(|e| e.to_string())
         }),
     };
+    orkestra_debug!("runner", "parse result: {:?}", result.is_ok());
 
     if tx.send(RunEvent::Completed(result)).is_err() {
         orkestra_debug!("runner", "Channel closed before completion could be sent");

@@ -5,7 +5,10 @@
 
 use std::time::Duration;
 
-use orkestra_core::workflow::config::StageCapabilities;
+use orkestra_core::workflow::{
+    config::StageCapabilities,
+    domain::{LogEntry, ToolInput},
+};
 
 use super::agent_helpers as helpers;
 
@@ -297,4 +300,90 @@ fn opencode_subtasks_output() {
     );
     env.run_to_completion(&task_id, Duration::from_secs(60));
     env.assert_has_artifact(&task_id, "result");
+}
+
+/// Structured tool call logs: verify that Write and Bash tool uses produce
+/// properly typed `ToolInput` variants (not `Other`).
+///
+/// Exercises: session log parsing → `parse_tool_input()` → `ToolInput::Write`
+/// and `ToolInput::Bash` variants with correct fields extracted.
+#[test]
+#[ignore = "requires opencode installed + API key"]
+fn opencode_structured_tool_call_logs() {
+    let env = helpers::AgentTestEnv::new("opencode/kimi-k2.5");
+    let task_id = env.create_task(
+        "Create file and list directory",
+        "Use your file Write tool (not bash echo/cat) to create a file called hello.txt \
+         with the content 'hello world'. Then use bash to run ls. \
+         Report what you see. Do NOT modify any other files.",
+    );
+    env.run_to_completion(&task_id, Duration::from_secs(60));
+
+    // Verify artifact produced
+    env.assert_has_artifact(&task_id, "result");
+
+    // Get structured logs
+    let logs = env.get_logs(&task_id, "work");
+    assert!(!logs.is_empty(), "Should have log entries");
+
+    // Verify tool use entries exist
+    let tool_uses: Vec<_> = logs
+        .iter()
+        .filter(|e| matches!(e, LogEntry::ToolUse { .. }))
+        .collect();
+    assert!(!tool_uses.is_empty(), "Should have tool use entries");
+
+    // Find a Write tool call targeting hello.txt
+    let has_write = logs.iter().any(|e| {
+        matches!(
+            e,
+            LogEntry::ToolUse {
+                input: ToolInput::Write { file_path },
+                ..
+            } if file_path.contains("hello.txt")
+        )
+    });
+    assert!(
+        has_write,
+        "Should have a Write tool call for hello.txt. Tool uses: {tool_uses:?}"
+    );
+
+    // Find a Bash tool call containing ls
+    let has_bash_ls = logs.iter().any(|e| {
+        matches!(
+            e,
+            LogEntry::ToolUse {
+                input: ToolInput::Bash { command },
+                ..
+            } if command.contains("ls")
+        )
+    });
+    assert!(
+        has_bash_ls,
+        "Should have a Bash tool call with ls. Tool uses: {tool_uses:?}"
+    );
+
+    // Verify a StructuredOutput tool call exists (final agent output)
+    let has_structured_output = logs.iter().any(|e| {
+        matches!(
+            e,
+            LogEntry::ToolUse {
+                input: ToolInput::StructuredOutput { .. },
+                ..
+            }
+        )
+    });
+    assert!(
+        has_structured_output,
+        "Should have a StructuredOutput tool call. Tool uses: {tool_uses:?}"
+    );
+
+    // Verify the file was actually created
+    let task = env.get_task(&task_id);
+    let worktree = task
+        .worktree_path
+        .as_ref()
+        .expect("Should have worktree");
+    let file_path = std::path::Path::new(worktree).join("hello.txt");
+    assert!(file_path.exists(), "hello.txt should exist in worktree");
 }

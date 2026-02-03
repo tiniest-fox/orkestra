@@ -154,38 +154,54 @@ fn get_str_field(input: &serde_json::Value, field: &str) -> String {
         .to_string()
 }
 
+/// Get a string field, trying `snake_case` first then `camelCase`.
+///
+/// Claude Code uses `file_path`; `OpenCode` uses `filePath`.
+fn get_str_field_flexible(input: &serde_json::Value, snake: &str, camel: &str) -> String {
+    input
+        .get(snake)
+        .or_else(|| input.get(camel))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
 /// Parses a tool input JSON into a structured `ToolInput`.
+///
+/// Tool names are matched case-insensitively: Claude Code uses `PascalCase` ("Bash"),
+/// while `OpenCode` emits lowercase ("bash").
 pub(crate) fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
-    match tool_name {
-        "Bash" => {
+    let normalized = tool_name.to_ascii_lowercase();
+    match normalized.as_str() {
+        "bash" => {
             let command = get_str_field(input, "command");
             if let Some(ork_action) = parse_ork_command(&command) {
                 return ToolInput::Ork { ork_action };
             }
             ToolInput::Bash { command }
         }
-        "Read" => ToolInput::Read {
-            file_path: get_str_field(input, "file_path"),
+        "read" => ToolInput::Read {
+            file_path: get_str_field_flexible(input, "file_path", "filePath"),
         },
-        "Write" => ToolInput::Write {
-            file_path: get_str_field(input, "file_path"),
+        "write" => ToolInput::Write {
+            file_path: get_str_field_flexible(input, "file_path", "filePath"),
         },
-        "Edit" => ToolInput::Edit {
-            file_path: get_str_field(input, "file_path"),
+        "edit" => ToolInput::Edit {
+            file_path: get_str_field_flexible(input, "file_path", "filePath"),
         },
-        "Glob" => ToolInput::Glob {
+        "glob" => ToolInput::Glob {
             pattern: get_str_field(input, "pattern"),
         },
-        "Grep" => ToolInput::Grep {
+        "grep" => ToolInput::Grep {
             pattern: get_str_field(input, "pattern"),
         },
-        "Task" => ToolInput::Task {
+        "task" => ToolInput::Task {
             description: get_str_field(input, "description"),
         },
-        "TodoWrite" => ToolInput::TodoWrite {
+        "todowrite" => ToolInput::TodoWrite {
             todos: parse_todo_items(input),
         },
-        "StructuredOutput" => ToolInput::StructuredOutput {
+        "structuredoutput" => ToolInput::StructuredOutput {
             output_type: input
                 .get("type")
                 .and_then(|t| t.as_str())

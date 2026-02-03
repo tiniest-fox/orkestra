@@ -6,7 +6,7 @@
 //! Tracks `last_text` internally during streaming so that `extract_output` can
 //! fall back to it when the JSONL stream has no `structured_output` field.
 
-use crate::workflow::domain::LogEntry;
+use crate::workflow::domain::{LogEntry, ToolInput};
 use crate::workflow::services::session_logs::{extract_tool_result_content, parse_tool_input};
 
 use super::{extract_from_jsonl, strip_markdown_code_fences, AgentParser, ParsedUpdate};
@@ -25,6 +25,12 @@ pub struct OpenCodeAgentParser {
     session_id_emitted: bool,
     /// The last text content seen during streaming (used as extraction fallback).
     last_text: Option<String>,
+    /// Buffered text event awaiting the next event before emission.
+    ///
+    /// Text events are deferred so that the final structured output JSON (which
+    /// arrives as a plain text event in `OpenCode`) can be emitted as a synthetic
+    /// `StructuredOutput` tool call in `finalize()` instead of a raw `Text` entry.
+    pending_text: Option<String>,
 }
 
 impl Default for OpenCodeAgentParser {
@@ -39,7 +45,15 @@ impl OpenCodeAgentParser {
             session_id: None,
             session_id_emitted: false,
             last_text: None,
+            pending_text: None,
         }
+    }
+
+    /// Drain `pending_text` into a `LogEntry::Text`, if present.
+    fn flush_pending_text(&mut self) -> Option<LogEntry> {
+        self.pending_text
+            .take()
+            .map(|content| LogEntry::Text { content })
     }
 
     /// Extract text content from a text/assistant event.
@@ -150,7 +164,24 @@ impl OpenCodeAgentParser {
         })
     }
 
+    /// Buffer a text event: flush any existing `pending_text` as `Text`, then
+    /// set the new content as `pending_text` (deferred until the next event or
+    /// `finalize()`). Also updates `last_text` for output extraction.
+    fn buffer_text(&mut self, content: String) -> Vec<LogEntry> {
+        let mut entries = Vec::new();
+        if let Some(flushed) = self.flush_pending_text() {
+            entries.push(flushed);
+        }
+        self.last_text = Some(content.clone());
+        self.pending_text = Some(content);
+        entries
+    }
+
     /// Parse a single JSON line into log entries, tracking `last_text` internally.
+    ///
+    /// Text events are **buffered** rather than emitted immediately. The buffer
+    /// is flushed as `LogEntry::Text` when the next event arrives, ensuring the
+    /// final text event stays in the buffer for `finalize()` to inspect.
     fn parse_line_entries(&mut self, line: &str) -> Vec<LogEntry> {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -158,11 +189,8 @@ impl OpenCodeAgentParser {
         }
 
         let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) else {
-            // Non-JSON line — capture as raw text
-            self.last_text = Some(trimmed.to_string());
-            return vec![LogEntry::Text {
-                content: trimmed.to_string(),
-            }];
+            // Non-JSON line — buffer as raw text
+            return self.buffer_text(trimmed.to_string());
         };
 
         // Extract session ID from the first event that has one.
@@ -177,30 +205,43 @@ impl OpenCodeAgentParser {
         let event_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
         match event_type {
-            // Text content from the assistant
+            // Text content from the assistant — buffer instead of emitting
             "text" | "assistant" => {
                 if let Some(content) = Self::extract_text(&v) {
-                    self.last_text = Some(content.clone());
-                    vec![LogEntry::Text { content }]
+                    self.buffer_text(content)
                 } else {
                     Vec::new()
                 }
             }
 
             // Tool use — may include result in v1.1+ format
-            "tool_use" => Self::extract_tool_use(&v),
+            "tool_use" => {
+                let mut entries = Vec::new();
+                if let Some(flushed) = self.flush_pending_text() {
+                    entries.push(flushed);
+                }
+                entries.extend(Self::extract_tool_use(&v));
+                entries
+            }
 
             // Standalone tool result (legacy format)
             "tool_result" => {
-                if let Some(entry) = Self::extract_tool_result(&v) {
-                    vec![entry]
-                } else {
-                    Vec::new()
+                let mut entries = Vec::new();
+                if let Some(flushed) = self.flush_pending_text() {
+                    entries.push(flushed);
                 }
+                if let Some(entry) = Self::extract_tool_result(&v) {
+                    entries.push(entry);
+                }
+                entries
             }
 
             // Error events
             "error" => {
+                let mut entries = Vec::new();
+                if let Some(flushed) = self.flush_pending_text() {
+                    entries.push(flushed);
+                }
                 let message = v
                     .get("message")
                     .or_else(|| v.get("error"))
@@ -208,10 +249,14 @@ impl OpenCodeAgentParser {
                     .and_then(|m| m.as_str())
                     .unwrap_or("Unknown error")
                     .to_string();
-                vec![LogEntry::Error { message }]
+                entries.push(LogEntry::Error { message });
+                entries
             }
 
-            // Lifecycle events — skip silently
+            // Lifecycle events — skip silently.
+            // Do NOT flush pending_text here: the structured output JSON
+            // arrives as a text event right before step_finish. Flushing
+            // would emit it as plain Text before finalize() can classify it.
             "step_start" | "step_finish" => Vec::new(),
 
             // Unknown event type
@@ -219,10 +264,7 @@ impl OpenCodeAgentParser {
                 if let Some(content) = v.get("content").and_then(|c| c.as_str()) {
                     let t = content.trim();
                     if !t.is_empty() {
-                        self.last_text = Some(t.to_string());
-                        return vec![LogEntry::Text {
-                            content: t.to_string(),
-                        }];
+                        return self.buffer_text(t.to_string());
                     }
                 }
                 Vec::new()
@@ -252,7 +294,26 @@ impl AgentParser for OpenCodeAgentParser {
     }
 
     fn finalize(&mut self) -> Vec<LogEntry> {
-        Vec::new()
+        let Some(text) = self.pending_text.take() else {
+            return Vec::new();
+        };
+
+        // Check if the buffered text is the structured JSON output.
+        let stripped = strip_markdown_code_fences(&text);
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stripped) {
+            if let Some(output_type) = json.get("type").and_then(|t| t.as_str()) {
+                return vec![LogEntry::ToolUse {
+                    tool: "StructuredOutput".to_string(),
+                    id: "structured-output".to_string(),
+                    input: ToolInput::StructuredOutput {
+                        output_type: output_type.to_string(),
+                    },
+                }];
+            }
+        }
+
+        // Not structured JSON — flush as normal text
+        vec![LogEntry::Text { content: text }]
     }
 
     fn extract_output(&self, full_output: &str) -> Result<String, String> {
@@ -316,15 +377,20 @@ mod tests {
         })
         .to_string();
         let update = parser.parse_line(&line);
-        assert_eq!(update.log_entries.len(), 1);
+        // Text is deferred (buffered), not emitted immediately
+        assert!(update.log_entries.is_empty());
+        // Session ID should still be emitted on first event
+        assert_eq!(update.session_id, Some("ses_abc".to_string()));
+
+        // Finalize flushes the buffered text (non-JSON, so as Text)
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
         assert_eq!(
-            update.log_entries[0],
+            finalized[0],
             LogEntry::Text {
                 content: "Hello! I'm ready to help.".to_string()
             }
         );
-        // Session ID should be emitted on first event
-        assert_eq!(update.session_id, Some("ses_abc".to_string()));
     }
 
     #[test]
@@ -346,8 +412,16 @@ mod tests {
         let update1 = parser.parse_line(&line1);
         assert_eq!(update1.session_id, Some("ses_abc".to_string()));
 
+        // Second text event flushes the first as Text, buffers the second
         let update2 = parser.parse_line(&line2);
         assert!(update2.session_id.is_none());
+        assert_eq!(update2.log_entries.len(), 1);
+        assert_eq!(
+            update2.log_entries[0],
+            LogEntry::Text {
+                content: "First".to_string()
+            }
+        );
     }
 
     #[test]
@@ -471,9 +545,13 @@ mod tests {
         })
         .to_string();
         let update = parser.parse_line(&line);
-        assert_eq!(update.log_entries.len(), 1);
+        // Deferred — nothing emitted yet
+        assert!(update.log_entries.is_empty());
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
         assert_eq!(
-            update.log_entries[0],
+            finalized[0],
             LogEntry::Text {
                 content: "Analyzing the code...".to_string()
             }
@@ -489,9 +567,13 @@ mod tests {
         })
         .to_string();
         let update = parser.parse_line(&line);
-        assert_eq!(update.log_entries.len(), 1);
+        // Deferred — nothing emitted yet
+        assert!(update.log_entries.is_empty());
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
         assert_eq!(
-            update.log_entries[0],
+            finalized[0],
             LogEntry::Text {
                 content: "Working on it".to_string()
             }
@@ -626,9 +708,13 @@ mod tests {
     fn captures_non_json_as_text() {
         let mut parser = OpenCodeAgentParser::new();
         let update = parser.parse_line("Some raw output from opencode");
-        assert_eq!(update.log_entries.len(), 1);
+        // Deferred — nothing emitted yet
+        assert!(update.log_entries.is_empty());
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
         assert_eq!(
-            update.log_entries[0],
+            finalized[0],
             LogEntry::Text {
                 content: "Some raw output from opencode".to_string()
             }
@@ -689,19 +775,178 @@ mod tests {
         })
         .to_string();
         let update = parser.parse_line(&line);
-        assert_eq!(update.log_entries.len(), 1);
+        // Deferred — nothing emitted yet
+        assert!(update.log_entries.is_empty());
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
         assert_eq!(
-            update.log_entries[0],
+            finalized[0],
             LogEntry::Text {
                 content: "Processing step 3/10".to_string()
             }
         );
     }
 
+    // ========================================================================
+    // Deferred text + finalize tests
+    // ========================================================================
+
     #[test]
-    fn finalize_returns_empty() {
+    fn finalize_returns_empty_with_no_pending_text() {
         let mut parser = OpenCodeAgentParser::new();
         assert!(parser.finalize().is_empty());
+    }
+
+    #[test]
+    fn finalize_emits_structured_output_from_last_text() {
+        let mut parser = OpenCodeAgentParser::new();
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "{\"type\":\"artifact\",\"content\":\"Done\"}"}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
+        assert_eq!(
+            finalized[0],
+            LogEntry::ToolUse {
+                tool: "StructuredOutput".to_string(),
+                id: "structured-output".to_string(),
+                input: ToolInput::StructuredOutput {
+                    output_type: "artifact".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn finalize_emits_structured_output_with_markdown_fences() {
+        let mut parser = OpenCodeAgentParser::new();
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "```json\n{\"type\":\"summary\",\"content\":\"Done\"}\n```"}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
+        assert_eq!(
+            finalized[0],
+            LogEntry::ToolUse {
+                tool: "StructuredOutput".to_string(),
+                id: "structured-output".to_string(),
+                input: ToolInput::StructuredOutput {
+                    output_type: "summary".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn finalize_flushes_non_json_as_text() {
+        let mut parser = OpenCodeAgentParser::new();
+        parser.parse_line("just some plain text");
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
+        assert_eq!(
+            finalized[0],
+            LogEntry::Text {
+                content: "just some plain text".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn finalize_flushes_json_without_type_as_text() {
+        let mut parser = OpenCodeAgentParser::new();
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "{\"count\":42}"}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
+        assert_eq!(
+            finalized[0],
+            LogEntry::Text {
+                content: "{\"count\":42}".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn intermediate_text_flushed_on_tool_use() {
+        let mut parser = OpenCodeAgentParser::new();
+
+        // Text event — buffered
+        let text_line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "Thinking about the problem..."}
+        })
+        .to_string();
+        let update1 = parser.parse_line(&text_line);
+        assert!(update1.log_entries.is_empty());
+
+        // Tool use event — flushes the buffered text
+        let tool_line = serde_json::json!({
+            "type": "tool_use",
+            "part": {
+                "callID": "call_1",
+                "tool": "bash",
+                "state": {"input": {"command": "ls"}}
+            }
+        })
+        .to_string();
+        let update2 = parser.parse_line(&tool_line);
+
+        // Should have the flushed text + the tool use
+        assert_eq!(update2.log_entries.len(), 2);
+        assert_eq!(
+            update2.log_entries[0],
+            LogEntry::Text {
+                content: "Thinking about the problem...".to_string()
+            }
+        );
+        assert!(matches!(update2.log_entries[1], LogEntry::ToolUse { .. }));
+    }
+
+    #[test]
+    fn last_text_persists_after_flush_for_extract_output() {
+        let mut parser = OpenCodeAgentParser::new();
+
+        // Text event with JSON — buffered, sets last_text
+        let text_line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": "{\"type\":\"artifact\",\"content\":\"Result\"}"}
+        })
+        .to_string();
+        parser.parse_line(&text_line);
+
+        // Tool use event — flushes pending_text, but last_text survives
+        let tool_line = serde_json::json!({
+            "type": "tool_use",
+            "part": {
+                "callID": "call_1",
+                "tool": "bash",
+                "state": {"input": {"command": "ls"}}
+            }
+        })
+        .to_string();
+        parser.parse_line(&tool_line);
+
+        // extract_output should still work via last_text fallback
+        let output = r#"{"type":"step_finish"}"#;
+        let result = parser.extract_output(output);
+        assert!(result.is_ok(), "extract_output should succeed via last_text: {result:?}");
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "artifact");
     }
 
     // ========================================================================

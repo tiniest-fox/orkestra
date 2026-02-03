@@ -3,7 +3,7 @@
 use crate::orkestra_debug;
 use crate::workflow::domain::{IterationTrigger, QuestionAnswer, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
-use crate::workflow::runtime::{Outcome, Phase, Status};
+use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
 
 use super::agent_actions::AUTO_ANSWER_TEXT;
 use super::SubtaskService;
@@ -188,11 +188,21 @@ impl WorkflowApi {
             feedback.len()
         );
 
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Store rejection feedback as artifact (same name as approvals, overwrite semantics)
+        let artifact_name = self.artifact_name_for_stage(&current_stage, "artifact");
+        task.artifacts.set(Artifact::new(
+            &artifact_name,
+            feedback,
+            &current_stage,
+            &now,
+        ));
+
         // End current iteration with rejection
         self.end_current_iteration(&task, Outcome::rejected(&current_stage, feedback))?;
 
         // Stay in same stage, go back to Idle
-        let now = chrono::Utc::now().to_rfc3339();
         task.phase = Phase::Idle;
         task.updated_at.clone_from(&now);
 
@@ -613,6 +623,13 @@ mod tests {
 
         assert_eq!(task.current_stage(), Some("planning"));
         assert_eq!(task.phase, Phase::Idle);
+
+        // Rejection should create an artifact with the feedback
+        assert!(task.artifacts.get("plan").is_some());
+        assert_eq!(
+            task.artifacts.get("plan").unwrap().content,
+            "Please add more detail"
+        );
     }
 
     #[test]

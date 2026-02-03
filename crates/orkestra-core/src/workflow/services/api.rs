@@ -159,6 +159,13 @@ impl WorkflowApi {
             .map(|s| s.name.clone())
     }
 
+    /// Get artifact name for a stage, with fallback default.
+    pub(crate) fn artifact_name_for_stage(&self, stage: &str, default: &str) -> String {
+        self.workflow
+            .stage(stage)
+            .map_or_else(|| default.to_string(), |s| s.artifact.clone())
+    }
+
     /// Compute the next status after approving the current stage.
     ///
     /// Returns Done if no more stages. Uses the task's flow for progression.

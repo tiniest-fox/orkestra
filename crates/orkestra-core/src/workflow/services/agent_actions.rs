@@ -22,13 +22,6 @@ fn strip_ansi_codes(input: &str) -> String {
 }
 
 impl WorkflowApi {
-    /// Get artifact name for a stage, with fallback default.
-    fn artifact_name_for_stage(&self, stage: &str, default: &str) -> String {
-        self.workflow
-            .stage(stage)
-            .map_or_else(|| default.to_string(), |s| s.artifact.clone())
-    }
-
     /// Handle artifact output: store artifact, auto-approve if automated stage or `auto_mode` task.
     fn handle_artifact_output(
         &self,
@@ -244,6 +237,11 @@ impl WorkflowApi {
                 self.handle_artifact_output(task, content, current_stage, now)
             }
             "reject" => {
+                // Store rejection content as artifact (same name as approvals, overwrite semantics)
+                let artifact_name = self.artifact_name_for_stage(current_stage, "artifact");
+                task.artifacts
+                    .set(Artifact::new(&artifact_name, content, current_stage, now));
+
                 // Resolve rejection target: explicit config → previous stage in flow
                 let target = self.resolve_rejection_target(current_stage, task.flow.as_deref())?;
 
@@ -842,6 +840,13 @@ mod tests {
 
         assert_eq!(task.current_stage(), Some("work"));
         assert_eq!(task.phase, Phase::Idle);
+
+        // Rejection should create an artifact with the rejection content
+        assert!(task.artifacts.get("verdict").is_some());
+        assert_eq!(
+            task.artifacts.get("verdict").unwrap().content,
+            "Tests failing"
+        );
     }
 
     #[test]

@@ -353,6 +353,27 @@ impl TestEnv {
         self.orchestrator.tick().expect("Advance should succeed");
     }
 
+    /// Tick until a predicate is true or timeout is reached.
+    ///
+    /// Uses wall-clock time instead of iteration counts, so timeouts are reliable
+    /// even under CPU contention from parallel test execution.
+    pub fn tick_until(
+        &self,
+        mut predicate: impl FnMut() -> bool,
+        timeout: Duration,
+        context: &str,
+    ) {
+        let start = Instant::now();
+        while start.elapsed() < timeout {
+            self.orchestrator.tick().expect("Tick should succeed");
+            std::thread::sleep(Duration::from_millis(20));
+            if predicate() {
+                return;
+            }
+        }
+        panic!("Timed out after {:.1}s: {context}", timeout.as_secs_f64());
+    }
+
     // =========================================================================
     // Mock Agent Control
     // =========================================================================

@@ -9,7 +9,6 @@ import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useAutoTaskTemplates, useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
 import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { CommandPalette } from "./CommandPalette";
-import { DiffPanel } from "./DiffPanel";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
@@ -38,12 +37,10 @@ export function Orkestra() {
   );
 
   const selectedSubtaskId = focus.type === "task" ? focus.subtaskId : undefined;
-  const showDiff = focus.type === "task" && focus.showDiff === true;
 
-  const currentSelectedSubtask: WorkflowTaskView | null =
-    selectedSubtaskId && !showDiff
-      ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
-      : null;
+  const currentSelectedSubtask: WorkflowTaskView | null = selectedSubtaskId
+    ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
+    : null;
 
   const sidebarActiveKey =
     focus.type === "create"
@@ -52,9 +49,9 @@ export function Orkestra() {
         ? SidebarSlot.task(currentSelectedTask.id)
         : null;
 
-  // Subtask panel is hidden when diff panel is open (mutual exclusion)
-  const subtaskActiveKey =
-    !showDiff && currentSelectedSubtask ? SubtaskSlot.subtask(currentSelectedSubtask.id) : null;
+  const subtaskActiveKey = currentSelectedSubtask
+    ? SubtaskSlot.subtask(currentSelectedSubtask.id)
+    : null;
 
   const handleSelectTask = (task: WorkflowTask) => {
     focusTask(task.id);
@@ -126,8 +123,6 @@ export function Orkestra() {
         )}
         {loading ? (
           <Panel>{null}</Panel>
-        ) : showDiff && currentSelectedTask ? (
-          <DiffPanel taskId={currentSelectedTask.id} />
         ) : (
           <Panel>
             <KanbanBoard

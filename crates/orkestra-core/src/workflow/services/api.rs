@@ -7,7 +7,7 @@ use super::IterationService;
 use crate::title::{ClaudeTitleGenerator, TitleGenerator};
 use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::Task;
-use crate::workflow::ports::{GitService, TaskDiff, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
 /// The main API for workflow operations.
@@ -227,95 +227,6 @@ impl WorkflowApi {
         task.updated_at = chrono::Utc::now().to_rfc3339();
         self.store.save_task(&task)?;
         Ok(task)
-    }
-
-    /// Get the git diff for a task (all files changed on the task branch).
-    ///
-    /// Computes the diff between the task's branch and its base branch.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Task not found
-    /// - Task has no worktree (git not configured)
-    /// - Task has no branch name (shouldn't happen if worktree exists)
-    /// - Git service not configured
-    /// - Git diff operation fails
-    pub fn get_task_diff(&self, task_id: &str) -> WorkflowResult<TaskDiff> {
-        let task = self.get_task(task_id)?;
-
-        // Validate task has worktree and branch
-        let worktree_path = task
-            .worktree_path
-            .as_ref()
-            .ok_or_else(|| WorkflowError::InvalidTransition("Task has no worktree".into()))?;
-
-        let branch_name = task
-            .branch_name
-            .as_ref()
-            .ok_or_else(|| WorkflowError::InvalidTransition("Task has no branch name".into()))?;
-
-        // base_branch is NOT an Option - it's a String that defaults to "main"
-        // But we still check it's not empty
-        if task.base_branch.is_empty() {
-            return Err(WorkflowError::InvalidTransition(
-                "Task has empty base_branch".into(),
-            ));
-        }
-
-        let git_service = self
-            .git_service
-            .as_ref()
-            .ok_or_else(|| WorkflowError::InvalidTransition("Git service not configured".into()))?;
-
-        git_service
-            .diff_against_base(worktree_path.as_ref(), branch_name, &task.base_branch)
-            .map_err(|e| WorkflowError::Storage(format!("Git diff failed: {e}")))
-    }
-
-    /// Get the content of a file at HEAD in the task's worktree.
-    ///
-    /// # Path Traversal Protection
-    ///
-    /// Rejects paths containing ".." segments or starting with "/" to prevent
-    /// reading files outside the repository.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Task not found
-    /// - Task has no worktree
-    /// - Path contains ".." or starts with "/"
-    /// - Git service not configured
-    /// - Git operation fails
-    pub fn get_file_content(
-        &self,
-        task_id: &str,
-        file_path: &str,
-    ) -> WorkflowResult<Option<String>> {
-        let task = self.get_task(task_id)?;
-
-        // Validate task has worktree
-        let worktree_path = task
-            .worktree_path
-            .as_ref()
-            .ok_or_else(|| WorkflowError::InvalidTransition("Task has no worktree".into()))?;
-
-        // Path traversal protection
-        if file_path.contains("..") || file_path.starts_with('/') {
-            return Err(WorkflowError::InvalidTransition(
-                "Invalid file path: path traversal not allowed".into(),
-            ));
-        }
-
-        let git_service = self
-            .git_service
-            .as_ref()
-            .ok_or_else(|| WorkflowError::InvalidTransition("Git service not configured".into()))?;
-
-        git_service
-            .read_file_at_head(worktree_path.as_ref(), file_path)
-            .map_err(|e| WorkflowError::Storage(format!("Git read file failed: {e}")))
     }
 }
 

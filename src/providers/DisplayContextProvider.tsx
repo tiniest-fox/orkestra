@@ -22,7 +22,7 @@ export type View = { type: "board" };
 export type Focus =
   | { type: "none" }
   | { type: "create" }
-  | { type: "task"; taskId: string; subtaskId?: string; showDiff?: boolean };
+  | { type: "task"; taskId: string; subtaskId?: string };
 
 export interface DisplayContextValue {
   view: View;
@@ -36,12 +36,6 @@ export interface DisplayContextValue {
 
   /** Close the subtask panel, keeping the parent task open. */
   closeSubtask: () => void;
-
-  /** Open the diff panel. Clears subtaskId (mutual exclusion). */
-  openDiff: () => void;
-
-  /** Close the diff panel. */
-  closeDiff: () => void;
 
   /** Open the create-task panel. */
   openCreate: () => void;
@@ -80,35 +74,17 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
   const [focus, setFocus] = useState<Focus>({ type: "none" });
 
   const focusTask = useCallback((taskId: string) => {
-    setFocus({ type: "task", taskId, showDiff: false });
+    setFocus({ type: "task", taskId });
   }, []);
 
   const focusSubtask = useCallback((taskId: string, subtaskId: string) => {
-    setFocus({ type: "task", taskId, subtaskId, showDiff: false });
+    setFocus({ type: "task", taskId, subtaskId });
   }, []);
 
   const closeSubtask = useCallback(() => {
     setFocus((prev) => {
       if (prev.type === "task") {
-        return { type: "task", taskId: prev.taskId, showDiff: prev.showDiff };
-      }
-      return prev;
-    });
-  }, []);
-
-  const openDiff = useCallback(() => {
-    setFocus((prev) => {
-      if (prev.type === "task") {
-        return { type: "task", taskId: prev.taskId, showDiff: true };
-      }
-      return prev;
-    });
-  }, []);
-
-  const closeDiff = useCallback(() => {
-    setFocus((prev) => {
-      if (prev.type === "task") {
-        return { type: "task", taskId: prev.taskId, showDiff: false };
+        return { type: "task", taskId: prev.taskId };
       }
       return prev;
     });
@@ -129,22 +105,10 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       focusTask,
       focusSubtask,
       closeSubtask,
-      openDiff,
-      closeDiff,
       openCreate,
       closeFocus,
     }),
-    [
-      view,
-      focus,
-      focusTask,
-      focusSubtask,
-      closeSubtask,
-      openDiff,
-      closeDiff,
-      openCreate,
-      closeFocus,
-    ],
+    [view, focus, focusTask, focusSubtask, closeSubtask, openCreate, closeFocus],
   );
 
   return <DisplayContext.Provider value={value}>{children}</DisplayContext.Provider>;

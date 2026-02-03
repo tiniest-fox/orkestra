@@ -6,7 +6,6 @@
 //! - Automatic merging when tasks complete
 //! - Testability via mock implementations
 
-use serde::Serialize;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -78,46 +77,6 @@ pub struct MergeResult {
     pub target_branch: String,
     /// RFC3339 timestamp of when the merge occurred.
     pub merged_at: String,
-}
-
-/// Type of change for a file in a diff.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FileChangeType {
-    /// File was added.
-    Added,
-    /// File was modified.
-    Modified,
-    /// File was deleted.
-    Deleted,
-    /// File was renamed.
-    Renamed,
-}
-
-/// Diff information for a single file.
-#[derive(Debug, Clone, Serialize)]
-pub struct FileDiff {
-    /// File path (relative to repo root).
-    pub path: String,
-    /// Type of change (added, modified, deleted, renamed).
-    pub change_type: FileChangeType,
-    /// Original path if renamed (None otherwise).
-    pub old_path: Option<String>,
-    /// Number of lines added.
-    pub additions: usize,
-    /// Number of lines deleted.
-    pub deletions: usize,
-    /// Whether the file is binary.
-    pub is_binary: bool,
-    /// Raw unified diff text (None for binary files).
-    pub diff_content: Option<String>,
-}
-
-/// Diff information for a task (all changed files).
-#[derive(Debug, Clone, Serialize)]
-pub struct TaskDiff {
-    /// List of file diffs.
-    pub files: Vec<FileDiff>,
 }
 
 /// Port for git worktree and branch operations.
@@ -205,27 +164,6 @@ pub trait GitService: Send + Sync {
     /// Also returns `true` if the branch does not exist — a missing branch
     /// means it was already cleaned up after a successful merge.
     fn is_branch_merged(&self, branch_name: &str, target_branch: &str) -> Result<bool, GitError>;
-
-    /// Compute diff between a branch and its base branch.
-    ///
-    /// Returns the diff from the merge-base of the two branches to the
-    /// current HEAD of the branch. This shows only changes made on the
-    /// branch, not changes that happened on the base branch after branching.
-    fn diff_against_base(
-        &self,
-        worktree_path: &Path,
-        branch_name: &str,
-        base_branch: &str,
-    ) -> Result<TaskDiff, GitError>;
-
-    /// Read file content at HEAD of the current branch.
-    ///
-    /// Returns `None` if the file doesn't exist at HEAD.
-    fn read_file_at_head(
-        &self,
-        worktree_path: &Path,
-        file_path: &str,
-    ) -> Result<Option<String>, GitError>;
 }
 
 // =============================================================================
@@ -421,23 +359,6 @@ pub mod mock {
             }
             // Default: not merged (conservative)
             Ok(false)
-        }
-
-        fn diff_against_base(
-            &self,
-            _worktree_path: &Path,
-            _branch_name: &str,
-            _base_branch: &str,
-        ) -> Result<super::TaskDiff, GitError> {
-            Ok(super::TaskDiff { files: vec![] })
-        }
-
-        fn read_file_at_head(
-            &self,
-            _worktree_path: &Path,
-            _file_path: &str,
-        ) -> Result<Option<String>, GitError> {
-            Ok(None)
         }
     }
 

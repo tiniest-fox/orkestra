@@ -4,7 +4,6 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import { useDisplayContext } from "../../providers";
 import type { WorkflowTask } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { Badge, IconButton, Panel } from "../ui";
@@ -85,25 +84,6 @@ function CodeIcon() {
   );
 }
 
-function DiffIcon() {
-  return (
-    <svg
-      className="w-5 h-5"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-      />
-    </svg>
-  );
-}
-
 /** Cache external tools detection result across renders. */
 let cachedToolsInfo: ExternalToolsInfo | null = null;
 let toolsDetectionPromise: Promise<ExternalToolsInfo> | null = null;
@@ -134,7 +114,6 @@ export function TaskDetailHeader({
   onToggleAutoMode,
 }: TaskDetailHeaderProps) {
   const [toolsInfo, setToolsInfo] = useState<ExternalToolsInfo | null>(cachedToolsInfo);
-  const { focus, openDiff, closeDiff } = useDisplayContext();
 
   useEffect(() => {
     detectTools()
@@ -146,10 +125,6 @@ export function TaskDetailHeader({
   const hasWorktree = !!task.worktree_path;
   const showTerminalButton = !isSubtask && hasWorktree && toolsInfo?.terminal != null;
   const showEditorButton = !isSubtask && hasWorktree && toolsInfo?.editor != null;
-  const showDiffButton = !isSubtask && hasWorktree;
-
-  // Check if diff is currently open
-  const isDiffOpen = focus.type === "task" && focus.showDiff === true;
 
   const handleOpenTerminal = () => {
     if (!task.worktree_path) return;
@@ -163,14 +138,6 @@ export function TaskDetailHeader({
     invoke("open_in_editor", { path: task.worktree_path }).catch((err) =>
       console.error("Failed to open editor:", err),
     );
-  };
-
-  const handleToggleDiff = () => {
-    if (isDiffOpen) {
-      closeDiff();
-    } else {
-      openDiff();
-    }
   };
 
   const statusBadgeVariant =
@@ -216,17 +183,6 @@ export function TaskDetailHeader({
               size="sm"
               onClick={handleOpenEditor}
               title={`Open in ${toolsInfo.editor?.name}`}
-            />
-          )}
-          {showDiffButton && (
-            <IconButton
-              icon={<DiffIcon />}
-              aria-label="Toggle diff view"
-              variant="ghost"
-              size="sm"
-              onClick={handleToggleDiff}
-              title="Toggle diff view"
-              className={isDiffOpen ? "bg-stone-200 dark:bg-stone-700 rounded" : ""}
             />
           )}
           {!isSubtask && (

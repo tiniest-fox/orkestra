@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use git2::{Oid, Repository};
 
-use crate::workflow::ports::{GitError, GitService, MergeResult, TaskDiff, WorktreeCreated};
+use crate::workflow::ports::{GitError, GitService, MergeResult, WorktreeCreated};
 
 /// Git service implementation using git2 and git CLI.
 ///
@@ -701,25 +701,6 @@ impl GitService for Git2GitService {
             .map_err(|e| GitError::IoError(format!("Failed to check merge-base: {e}")))?;
 
         Ok(output.status.success())
-    }
-
-    fn diff_against_base(
-        &self,
-        worktree_path: &Path,
-        _branch_name: &str,
-        base_branch: &str,
-    ) -> Result<TaskDiff, GitError> {
-        // Delegate to the diff module (doesn't need the repo mutex)
-        super::diff::compute_diff(worktree_path, base_branch)
-    }
-
-    fn read_file_at_head(
-        &self,
-        worktree_path: &Path,
-        file_path: &str,
-    ) -> Result<Option<String>, GitError> {
-        // Delegate to the diff module (doesn't need the repo mutex)
-        super::diff::read_file_content(worktree_path, file_path)
     }
 }
 

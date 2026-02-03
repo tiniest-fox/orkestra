@@ -3,7 +3,6 @@
 
 mod commands;
 mod error;
-mod highlight;
 mod startup;
 mod state;
 
@@ -490,10 +489,6 @@ pub fn run() {
         .setup(move |app| {
             // Store the stop flag in Tauri state so the init command can access it
             app.manage(OrchestratorStopFlag(stop_flag.clone()));
-
-            // Register SyntaxHighlighter (pure presentation utility, no dependencies)
-            app.manage(highlight::SyntaxHighlighter::new());
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -524,9 +519,6 @@ pub fn run() {
             commands::workflow_list_branches,
             commands::workflow_get_stages_with_logs,
             commands::workflow_get_logs,
-            commands::workflow_get_task_diff,
-            commands::workflow_get_file_content,
-            commands::workflow_get_syntax_css,
             commands::open_in_terminal,
             commands::open_in_editor,
             commands::detect_external_tools,

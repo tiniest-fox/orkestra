@@ -92,41 +92,40 @@ Break the work into 3-7 subtasks. For each subtask:
 
 ## Self-Review Before Finalizing
 
-Before outputting your final breakdown, spawn a subagent to review it. Iterate until the review passes.
+Before outputting your final breakdown, run a parallel specialist review. Iterate until all reviewers pass.
 
 ### Review Process
 1. Draft your technical design and subtask breakdown
-2. Spawn a subagent with your draft and ask it to review for:
-   - **Technical soundness**: Does the architecture make sense? Any obvious issues?
-   - **Completeness**: Do subtasks cover everything in the product plan?
-   - **Dependencies**: Are subtask dependencies correct and complete?
-   - **Parallelism**: Could any sequential tasks actually run in parallel?
-   - **Clarity**: Does each subtask have clear acceptance criteria?
-3. If the subagent identifies issues, revise and review again
-4. Only output the breakdown when the review passes
-
-### When to Stop Iterating
-Continue until one of these conditions is met:
-- **Agreement**: The subagent approves with no substantive issues
-- **Contradictory advice**: Feedback conflicts with previous feedback (can't satisfy both)
-- **Nitpicks only**: Remaining feedback is stylistic or irrelevant to technical quality
-
-If stopping due to contradictory advice or nitpicks, note this in your output and proceed with your best judgment.
+2. Spawn **all four** reviewers in parallel, passing each your draft:
+   - `breakdown-review-coverage` — Plan-to-subtask traceability (`.claude/agents/breakdown-review-coverage.md`)
+   - `breakdown-review-dependencies` — Dependency graph correctness and parallelism (`.claude/agents/breakdown-review-dependencies.md`)
+   - `breakdown-review-boundaries` — Subtask isolation and worker independence (`.claude/agents/breakdown-review-boundaries.md`)
+   - `breakdown-review-simplicity` — Right-sizing and design simplicity (`.claude/agents/breakdown-review-simplicity.md`)
+3. Read all four outputs
+4. If any reviewer reports HIGH or multiple MEDIUM findings: revise the breakdown and re-review
+5. If all reviewers are clean (only LOWs or no findings): output the final breakdown
 
 ### Subagent Prompt Template
+For each reviewer, spawn a subagent with:
 ```
-Review this technical breakdown for a task. Check for:
-1. Does the architecture follow codebase patterns?
-2. Are all product requirements covered by subtasks?
-3. Are dependencies between subtasks correct?
-4. Could any tasks be parallelized that are currently sequential?
-5. Is each subtask clear enough for a worker to implement?
+Read the reviewer instructions at .claude/agents/breakdown-review-{name}.md
 
-If issues found, list them specifically. If the breakdown is ready, say "APPROVED".
+Review this technical breakdown against the plan. The plan artifact and breakdown draft are below.
+
+Plan:
+<plan artifact>
 
 Breakdown to review:
 <your draft breakdown>
 ```
+
+### When to Stop Iterating
+Continue until one of these conditions is met:
+- **Clean pass**: All four reviewers report no HIGH or MEDIUM findings
+- **Contradictory advice**: Two reviewers give conflicting feedback (can't satisfy both)
+- **Nitpicks only**: Remaining findings are LOW severity observations
+
+If stopping due to contradictory advice or nitpicks, note this in your output and proceed with your best judgment.
 
 ## If You Have Feedback to Address
 

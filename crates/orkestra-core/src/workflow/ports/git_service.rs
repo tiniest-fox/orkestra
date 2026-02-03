@@ -6,6 +6,7 @@
 //! - Automatic merging when tasks complete
 //! - Testability via mock implementations
 
+use serde::Serialize;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -77,6 +78,46 @@ pub struct MergeResult {
     pub target_branch: String,
     /// RFC3339 timestamp of when the merge occurred.
     pub merged_at: String,
+}
+
+/// Type of change made to a file in a diff.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FileChangeType {
+    /// File was added.
+    Added,
+    /// File was modified.
+    Modified,
+    /// File was deleted.
+    Deleted,
+    /// File was renamed.
+    Renamed,
+}
+
+/// Diff information for a single file.
+#[derive(Debug, Clone, Serialize)]
+pub struct FileDiff {
+    /// Path to the file (new path if renamed).
+    pub path: String,
+    /// Type of change.
+    pub change_type: FileChangeType,
+    /// Original path (only for renames).
+    pub old_path: Option<String>,
+    /// Number of lines added.
+    pub additions: usize,
+    /// Number of lines deleted.
+    pub deletions: usize,
+    /// Whether the file is binary.
+    pub is_binary: bool,
+    /// Raw unified diff content (None for binary files).
+    pub diff_content: Option<String>,
+}
+
+/// Complete diff for a task branch against its base.
+#[derive(Debug, Clone, Serialize)]
+pub struct TaskDiff {
+    /// List of changed files with their diffs.
+    pub files: Vec<FileDiff>,
 }
 
 /// Port for git worktree and branch operations.
@@ -164,6 +205,29 @@ pub trait GitService: Send + Sync {
     /// Also returns `true` if the branch does not exist — a missing branch
     /// means it was already cleaned up after a successful merge.
     fn is_branch_merged(&self, branch_name: &str, target_branch: &str) -> Result<bool, GitError>;
+
+    /// Get the diff between a task branch and its base branch.
+    ///
+    /// Computes the diff from the merge-base of `base_branch` and `branch_name`
+    /// to the HEAD of `branch_name`, showing only changes made on the task branch.
+    ///
+    /// Returns structured diff data including file paths, change types, and
+    /// unified diff content for each file.
+    fn diff_against_base(
+        &self,
+        worktree_path: &Path,
+        branch_name: &str,
+        base_branch: &str,
+    ) -> Result<TaskDiff, GitError>;
+
+    /// Read the content of a file at HEAD in a worktree.
+    ///
+    /// Returns the file content as a string, or None if the file doesn't exist.
+    fn read_file_at_head(
+        &self,
+        worktree_path: &Path,
+        file_path: &str,
+    ) -> Result<Option<String>, GitError>;
 }
 
 // =============================================================================
@@ -172,7 +236,7 @@ pub trait GitService: Send + Sync {
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod mock {
-    use super::{GitError, GitService, MergeResult, Path, PathBuf, WorktreeCreated};
+    use super::{GitError, GitService, MergeResult, Path, PathBuf, TaskDiff, WorktreeCreated};
     use std::collections::HashMap;
     use std::sync::Mutex;
 

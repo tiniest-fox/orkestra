@@ -401,9 +401,11 @@ fn extract_fenced_json_from_mixed(text: &str) -> Option<(String, String)> {
     let closing = trimmed[fence_line_end..].find("\n```").or_else(|| {
         // The closing fence might be at the very end without a trailing newline
         if trimmed[fence_line_end..].ends_with("```") {
-            Some(trimmed[fence_line_end..].rfind("\n```").unwrap_or(
-                trimmed[fence_line_end..].len() - 3,
-            ))
+            Some(
+                trimmed[fence_line_end..]
+                    .rfind("\n```")
+                    .unwrap_or(trimmed[fence_line_end..].len() - 3),
+            )
         } else {
             None
         }
@@ -1118,7 +1120,8 @@ mod tests {
 
     #[test]
     fn mixed_helper_extracts_fenced_json() {
-        let text = "The fix is complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
+        let text =
+            "The fix is complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
         let result = extract_fenced_json_from_mixed(text);
         assert!(result.is_some());
         let (prose, json_str) = result.unwrap();
@@ -1162,7 +1165,8 @@ mod tests {
     #[test]
     fn finalize_mixed_prose_and_json_emits_text_and_structured_output() {
         let mut parser = OpenCodeAgentParser::new();
-        let mixed = "The fix is complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
+        let mixed =
+            "The fix is complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
         let line = serde_json::json!({
             "type": "text",
             "part": {"type": "text", "text": mixed}
@@ -1255,7 +1259,8 @@ mod tests {
     #[test]
     fn extract_output_mixed_last_text_extracts_json() {
         let mut parser = OpenCodeAgentParser::new();
-        let mixed = "The fix is complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
+        let mixed =
+            "The fix is complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
         let line = serde_json::json!({
             "type": "text",
             "part": {"type": "text", "text": mixed}

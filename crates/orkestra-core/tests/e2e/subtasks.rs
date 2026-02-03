@@ -849,8 +849,8 @@ fn test_subtask_integration_conflict() {
     }
     env.advance(); // spawns review agents (completions ready)
     env.advance(); // processes reviews → auto-approve → Done
-    // Integration is sync: one task per advance. After review, tasks are Done.
-    // First integration may conflict, triggering recovery → work agent spawn.
+                   // Integration is sync: one task per advance. After review, tasks are Done.
+                   // First integration may conflict, triggering recovery → work agent spawn.
     env.advance(); // integrates first task (sync); may spawn recovery agent
     env.advance(); // integrates second task (or processes recovery output)
     env.advance(); // catch-up for any remaining cascading work

@@ -140,10 +140,7 @@ pub struct OrchestratorLoop {
 impl OrchestratorLoop {
     /// Create a new orchestrator loop.
     pub fn new(api: Arc<Mutex<WorkflowApi>>, stage_executor: Arc<StageExecutionService>) -> Self {
-        let git_service = api
-            .lock()
-            .ok()
-            .and_then(|a| a.git_service().cloned());
+        let git_service = api.lock().ok().and_then(|a| a.git_service().cloned());
 
         let mut scheduler = PeriodicScheduler::new();
 
@@ -365,7 +362,11 @@ impl OrchestratorLoop {
             }
 
             // Check all dependencies are satisfied (fully integrated)
-            if !task.depends_on.iter().all(|dep| integrated_ids.contains(dep)) {
+            if !task
+                .depends_on
+                .iter()
+                .all(|dep| integrated_ids.contains(dep))
+            {
                 continue;
             }
 

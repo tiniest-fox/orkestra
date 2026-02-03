@@ -128,11 +128,7 @@ pub fn perform_git_integration(
             );
             // Abort the merge so the repo is left clean
             if let Err(e) = git.abort_merge() {
-                workflow_warn!(
-                    "Failed to abort merge for {}: {}",
-                    params.task_id,
-                    e
-                );
+                workflow_warn!("Failed to abort merge for {}: {}", params.task_id, e);
             }
             IntegrationGitResult::MergeConflict { conflict_files }
         }

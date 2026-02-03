@@ -612,8 +612,7 @@ fn send_completion(
 #[cfg(any(test, feature = "testutil"))]
 pub mod mock {
     use super::{
-        mpsc, AgentRunnerTrait, Receiver, RunConfig, RunError, RunEvent, RunResult,
-        StageOutput,
+        mpsc, AgentRunnerTrait, Receiver, RunConfig, RunError, RunEvent, RunResult, StageOutput,
     };
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicU32, Ordering};

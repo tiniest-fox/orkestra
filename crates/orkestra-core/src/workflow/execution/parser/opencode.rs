@@ -312,6 +312,26 @@ impl AgentParser for OpenCodeAgentParser {
             }
         }
 
+        // Check if the text contains prose + a fenced JSON block (mixed content).
+        if let Some((prose, json_str)) = extract_fenced_json_from_mixed(&text) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                if let Some(output_type) = json.get("type").and_then(|t| t.as_str()) {
+                    let mut entries = Vec::new();
+                    if !prose.is_empty() {
+                        entries.push(LogEntry::Text { content: prose });
+                    }
+                    entries.push(LogEntry::ToolUse {
+                        tool: "StructuredOutput".to_string(),
+                        id: "structured-output".to_string(),
+                        input: ToolInput::StructuredOutput {
+                            output_type: output_type.to_string(),
+                        },
+                    });
+                    return entries;
+                }
+            }
+        }
+
         // Not structured JSON — flush as normal text
         vec![LogEntry::Text { content: text }]
     }
@@ -337,6 +357,11 @@ impl AgentParser for OpenCodeAgentParser {
             if serde_json::from_str::<serde_json::Value>(&stripped).is_ok() {
                 return Ok(stripped);
             }
+
+            // Try extracting a fenced JSON block from mixed prose+JSON text
+            if let Some((_prose, json_str)) = extract_fenced_json_from_mixed(text) {
+                return Ok(json_str);
+            }
         }
 
         Err(format!(
@@ -344,6 +369,56 @@ impl AgentParser for OpenCodeAgentParser {
             trimmed.len()
         ))
     }
+}
+
+/// Extract a fenced JSON code block from text that contains both prose and a
+/// markdown code fence.
+///
+/// Returns `Some((prose_before, json_string))` when the text contains an
+/// embedded fence with valid JSON. Returns `None` when:
+/// - The entire string is already a fence (defer to `strip_markdown_code_fences`)
+/// - No fence is found in the text
+/// - The fenced content is not valid JSON
+fn extract_fenced_json_from_mixed(text: &str) -> Option<(String, String)> {
+    let trimmed = text.trim();
+
+    // Skip when the whole string is already a fence — let the existing
+    // `strip_markdown_code_fences` path handle it.
+    if trimmed.starts_with("```") {
+        return None;
+    }
+
+    // Look for a fence that starts on its own line within the text.
+    let fence_start = trimmed.find("\n```")?;
+    let after_backticks = fence_start + 1; // position of the opening ```
+
+    // Find the end of the opening fence line (skip optional lang tag like ```json)
+    let fence_line_end = trimmed[after_backticks..]
+        .find('\n')
+        .map(|i| after_backticks + i + 1)?;
+
+    // Find the closing ```
+    let closing = trimmed[fence_line_end..].find("\n```").or_else(|| {
+        // The closing fence might be at the very end without a trailing newline
+        if trimmed[fence_line_end..].ends_with("```") {
+            Some(trimmed[fence_line_end..].rfind("\n```").unwrap_or(
+                trimmed[fence_line_end..].len() - 3,
+            ))
+        } else {
+            None
+        }
+    })?;
+    let content_end = fence_line_end + closing;
+
+    let json_str = trimmed[fence_line_end..content_end].trim();
+
+    // Validate it's actually JSON
+    if serde_json::from_str::<serde_json::Value>(json_str).is_err() {
+        return None;
+    }
+
+    let prose = trimmed[..fence_start].trim().to_string();
+    Some((prose, json_str.to_string()))
 }
 
 // ============================================================================
@@ -1033,6 +1108,169 @@ mod tests {
         assert_eq!(json["type"], "summary");
         assert_eq!(json["content"], "new");
     }
+
+    // ========================================================================
+    // Mixed prose + fenced JSON tests — helper
+    // ========================================================================
+
+    #[test]
+    fn mixed_helper_extracts_fenced_json() {
+        let text = "The fix is complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
+        let result = extract_fenced_json_from_mixed(text);
+        assert!(result.is_some());
+        let (prose, json_str) = result.unwrap();
+        assert_eq!(prose, "The fix is complete.");
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(json["type"], "summary");
+    }
+
+    #[test]
+    fn mixed_helper_works_without_lang_tag() {
+        let text = "Done.\n\n```\n{\"type\":\"artifact\",\"content\":\"x\"}\n```";
+        let result = extract_fenced_json_from_mixed(text);
+        assert!(result.is_some());
+        let (_prose, json_str) = result.unwrap();
+        let json: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(json["type"], "artifact");
+    }
+
+    #[test]
+    fn mixed_helper_returns_none_for_whole_fence() {
+        let text = "```json\n{\"type\":\"summary\"}\n```";
+        assert!(extract_fenced_json_from_mixed(text).is_none());
+    }
+
+    #[test]
+    fn mixed_helper_returns_none_for_non_json_fence() {
+        let text = "Some text\n\n```\nnot json at all\n```";
+        assert!(extract_fenced_json_from_mixed(text).is_none());
+    }
+
+    #[test]
+    fn mixed_helper_returns_none_for_no_fence() {
+        let text = "Just some plain text without any fences";
+        assert!(extract_fenced_json_from_mixed(text).is_none());
+    }
+
+    // ========================================================================
+    // Mixed prose + fenced JSON tests — finalize
+    // ========================================================================
+
+    #[test]
+    fn finalize_mixed_prose_and_json_emits_text_and_structured_output() {
+        let mut parser = OpenCodeAgentParser::new();
+        let mixed = "The fix is complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": mixed}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 2);
+        assert_eq!(
+            finalized[0],
+            LogEntry::Text {
+                content: "The fix is complete.".to_string()
+            }
+        );
+        assert_eq!(
+            finalized[1],
+            LogEntry::ToolUse {
+                tool: "StructuredOutput".to_string(),
+                id: "structured-output".to_string(),
+                input: ToolInput::StructuredOutput {
+                    output_type: "summary".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn finalize_mixed_json_without_type_field_emits_text_only() {
+        let mut parser = OpenCodeAgentParser::new();
+        let mixed = "Some prose\n\n```json\n{\"count\":42}\n```";
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": mixed}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
+        assert!(matches!(finalized[0], LogEntry::Text { .. }));
+    }
+
+    #[test]
+    fn finalize_mixed_non_json_fence_emits_text_only() {
+        let mut parser = OpenCodeAgentParser::new();
+        let mixed = "Explanation\n\n```\nnot json\n```";
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": mixed}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
+        assert!(matches!(finalized[0], LogEntry::Text { .. }));
+    }
+
+    #[test]
+    fn finalize_mixed_empty_prose_emits_structured_output_only() {
+        let mut parser = OpenCodeAgentParser::new();
+        // Prose is just whitespace before the fence
+        let mixed = "\n```json\n{\"type\":\"artifact\",\"content\":\"result\"}\n```";
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": mixed}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let finalized = parser.finalize();
+        assert_eq!(finalized.len(), 1);
+        assert_eq!(
+            finalized[0],
+            LogEntry::ToolUse {
+                tool: "StructuredOutput".to_string(),
+                id: "structured-output".to_string(),
+                input: ToolInput::StructuredOutput {
+                    output_type: "artifact".to_string(),
+                },
+            }
+        );
+    }
+
+    // ========================================================================
+    // Mixed prose + fenced JSON tests — extract_output
+    // ========================================================================
+
+    #[test]
+    fn extract_output_mixed_last_text_extracts_json() {
+        let mut parser = OpenCodeAgentParser::new();
+        let mixed = "The fix is complete.\n\n```json\n{\"type\":\"summary\",\"content\":\"done\"}\n```";
+        let line = serde_json::json!({
+            "type": "text",
+            "part": {"type": "text", "text": mixed}
+        })
+        .to_string();
+        parser.parse_line(&line);
+
+        let output = r#"{"type":"step_finish","part":{"type":"step-finish"}}"#;
+        let result = parser.extract_output(output);
+        assert!(result.is_ok(), "Failed: {result:?}");
+        let json: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(json["type"], "summary");
+        assert_eq!(json["content"], "done");
+    }
+
+    // ========================================================================
+    // Other existing tests
+    // ========================================================================
 
     #[test]
     fn tracks_last_text_across_multiple_events() {

@@ -11,6 +11,7 @@
 mod diff;
 mod external_tools;
 mod human_actions;
+mod project;
 mod queries;
 mod task_crud;
 
@@ -21,6 +22,7 @@ use tauri::State;
 pub use diff::*;
 pub use external_tools::*;
 pub use human_actions::*;
+pub use project::*;
 pub use queries::*;
 pub use task_crud::*;
 

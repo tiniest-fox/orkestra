@@ -401,5 +401,7 @@ fn format_phase(phase: Phase) -> String {
         Phase::AgentWorking => "Working".to_string(),
         Phase::AwaitingReview => "Review".to_string(),
         Phase::Integrating => "Integrating".to_string(),
+        #[allow(unreachable_patterns)]
+        _ => format!("{phase:?}"),
     }
 }

@@ -113,6 +113,7 @@ impl StartupWarning {
 /// Result of the startup process, reported to the frontend.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[allow(dead_code)]
 pub enum StartupStatus {
     /// Startup is in progress
     Initializing,
@@ -132,11 +133,13 @@ pub enum StartupStatus {
 
 impl StartupStatus {
     /// Create an initializing status.
+    #[allow(dead_code)]
     pub fn initializing() -> Self {
         Self::Initializing
     }
 
     /// Create a ready status.
+    #[allow(dead_code)]
     pub fn ready(project_root: PathBuf, warnings: Vec<StartupWarning>) -> Self {
         Self::Ready {
             project_root: project_root.display().to_string(),
@@ -167,6 +170,7 @@ pub struct StartupState {
 
 impl StartupState {
     /// Create startup state from a status.
+    #[allow(dead_code)]
     pub fn from_status(status: StartupStatus) -> Self {
         Self {
             status: RwLock::new(status),
@@ -174,6 +178,7 @@ impl StartupState {
     }
 
     /// Create startup state in the initializing state.
+    #[allow(dead_code)]
     pub fn initializing() -> Self {
         Self::from_status(StartupStatus::initializing())
     }
@@ -184,6 +189,7 @@ impl StartupState {
     }
 
     /// Update the startup status.
+    #[allow(dead_code)]
     pub fn set_status(&self, status: StartupStatus) {
         *self.status.write().unwrap() = status;
     }
@@ -194,6 +200,7 @@ impl StartupState {
 // =============================================================================
 
 /// Result of running all startup tasks.
+#[allow(dead_code)]
 pub struct StartupResult {
     /// The status to report to frontend
     pub status: StartupStatus,
@@ -353,6 +360,7 @@ fn cleanup_orphaned_agents(project_state: &ProjectState) {
 ///
 /// This function always returns (never panics) so that Tauri can start
 /// and display an error to the user if needed.
+#[allow(dead_code)]
 pub fn run_startup() -> StartupResult {
     // Load .env files. More specific files are loaded first so their values
     // take precedence. Neither call uses _override, so process environment

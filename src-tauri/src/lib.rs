@@ -9,80 +9,18 @@ mod project_registry;
 mod startup;
 mod state;
 
-use orkestra_core::{
-    find_project_root, orkestra_debug,
-    workflow::{load_workflow_for_project, Phase},
-};
-use project_registry::ProjectRegistry;
-use startup::{run_startup, start_project_orchestrator, StartupState};
-use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
-
-use std::sync::atomic::{AtomicBool, Ordering};
+use orkestra_core::{orkestra_debug, workflow::load_workflow_for_project};
+use project_registry::{ProjectRegistry, RecentProject};
+use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
-
-/// Wrapper for the orchestrator stop flag, stored in Tauri state.
-/// TEMPORARY: Will be replaced by per-project stop flags in subtask 2.
-struct OrchestratorStopFlag(Arc<AtomicBool>);
-
-/// Guard to prevent multiple initialization calls (e.g., from React `StrictMode` double-mount).
-static INITIALIZATION_STARTED: AtomicBool = AtomicBool::new(false);
-
-/// Command for frontend to trigger initialization after splash screen loads.
-///
-/// This ensures no background work runs until the UI is ready.
-#[tauri::command]
-fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<OrchestratorStopFlag>) {
-    // Prevent multiple initialization calls (e.g., from React StrictMode double-mount)
-    if INITIALIZATION_STARTED.swap(true, Ordering::SeqCst) {
-        orkestra_debug!(
-            "startup",
-            "Initialization already started, ignoring duplicate call"
-        );
-        return;
-    }
-
-    orkestra_debug!("startup", "UI ready, beginning initialization...");
-    let _stop_flag = stop_flag.0.clone();
-
-    thread::spawn(move || {
-        let startup_result = run_startup();
-
-        // Register debug log hook to emit events to the frontend
-        let debug_handle = app_handle.clone();
-        orkestra_core::debug_log::set_hook(move |component, message| {
-            let _ = debug_handle.emit("debug-log", format!("[{component}] {message}"));
-        });
-
-        // Request notification permission (triggers OS dialog if not yet determined)
-        request_notification_permission(&app_handle);
-
-        // If startup succeeded, register project in the registry and start orchestrator.
-        // TEMPORARY SHIM: Creates a single-project registry with label "main".
-        // Subtask 2 will replace this with proper multi-project initialization.
-        if let Some(app_state) = startup_result.app_state {
-            // Get registry from app handle
-            let registry = app_handle.state::<ProjectRegistry>();
-
-            // Register the project with label "main" (temporary single-project shim)
-            if let Err(e) = registry.register("main".to_string(), app_state) {
-                orkestra_debug!("startup", "Failed to register project: {}", e);
-                return;
-            }
-
-            // Start the workflow orchestrator for the "main" project
-            if let Ok(project_state) = registry.get("main") {
-                start_project_orchestrator(app_handle.clone(), &project_state);
-            }
-        }
-
-        // Update the startup state with the result — this unblocks the frontend.
-        // Must happen AFTER AppState is registered so commands are ready to serve.
-        let startup_state: tauri::State<StartupState> = app_handle.state();
-        startup_state.set_status(startup_result.status.clone());
-    });
-}
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder},
+    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
+use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_store::StoreExt;
 
 // =============================================================================
 // Desktop Notifications
@@ -142,89 +80,14 @@ fn request_notification_permission(app_handle: &AppHandle) {
     }
 }
 
-/// Send a desktop notification when a task needs human attention.
-///
-/// Fires for `OutputProcessed` events where the task has entered `AwaitingReview`.
-/// This naturally excludes auto-mode tasks (they skip `AwaitingReview`) and
-/// terminal outputs (failed/blocked don't enter `AwaitingReview`).
-#[allow(dead_code)] // Will be used in subtask 2 for per-window notification handling
-fn notify_if_review_needed(app_handle: &AppHandle, task_id: &str, stage: &str, output_type: &str) {
-    // Only notify for output types that require human action
-    let needs_notification = matches!(output_type, "questions" | "artifact" | "subtasks");
-    if !needs_notification {
-        return;
-    }
-
-    // Look up the task to check phase and get the title.
-    // Best-effort: skip notification if state is unavailable or lock is poisoned.
-    // TEMPORARY: In single-project mode, only look up from "main" project
-    let Some(registry) = app_handle.try_state::<ProjectRegistry>() else {
-        return;
-    };
-    let Ok(project_state) = registry.get("main") else {
-        return;
-    };
-    let Ok(api) = project_state.api() else {
-        return;
-    };
-    let Ok(task) = api.get_task(task_id) else {
-        return;
-    };
-    // Release the lock before sending the notification
-    drop(api);
-
-    if task.phase != Phase::AwaitingReview {
-        return;
-    }
-
-    let body = if output_type == "questions" {
-        "Has questions that need to be answered".to_string()
-    } else {
-        format!("Has a {stage} ready for review")
-    };
-
-    // Check permission state before attempting to send
-    match app_handle.notification().permission_state() {
-        Ok(tauri::plugin::PermissionState::Granted) => {}
-        Ok(perm) => {
-            orkestra_debug!(
-                "notification",
-                "Skipping notification (permission: {perm:?}). \
-                 Enable in System Settings > Notifications."
-            );
-            return;
-        }
-        Err(e) => {
-            orkestra_debug!(
-                "notification",
-                "Could not check permission state: {e}, attempting send anyway"
-            );
-        }
-    }
-
-    let result = app_handle
-        .notification()
-        .builder()
-        .title(&task.title)
-        .body(&body)
-        .show();
-
-    match result {
-        Ok(()) => {
-            orkestra_debug!(
-                "notification",
-                "Sent notification for task {task_id}: {body}"
-            );
-        }
-        Err(e) => {
-            orkestra_debug!("notification", "Failed to send notification: {e}");
-        }
-    }
-}
-
 // =============================================================================
 // Cleanup and Signal Handling
 // =============================================================================
+
+/// Global list of project roots for signal handler cleanup.
+/// Updated when projects open/close.
+pub static PROJECT_ROOTS: std::sync::LazyLock<std::sync::Mutex<Vec<PathBuf>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
 
 /// Cleanup function to kill all tracked agents on shutdown.
 fn cleanup_agents(app_handle: &AppHandle) {
@@ -235,27 +98,48 @@ fn cleanup_agents(app_handle: &AppHandle) {
         return;
     };
 
-    // TEMPORARY: In single-project mode, only clean up the "main" project
-    // Subtask 2 will iterate over all registered projects
-    let Ok(project_state) = registry.get("main") else {
-        orkestra_debug!("cleanup", "No project state available");
+    // Get all project roots and clean up each
+    let Ok(project_roots) = registry.all_project_roots() else {
+        orkestra_debug!("cleanup", "Failed to get project roots");
         return;
     };
 
-    let Ok(api) = project_state.api() else {
-        orkestra_debug!("cleanup", "Failed to get API lock");
-        return;
-    };
+    for project_root in project_roots {
+        let db_path = project_root.join(".orkestra/orkestra.db");
+        if !db_path.exists() {
+            continue;
+        }
 
-    match api.kill_running_agents() {
-        Ok(killed) if killed > 0 => {
-            orkestra_debug!("cleanup", "Killed {} agent(s)", killed);
-        }
-        Ok(_) => {
-            orkestra_debug!("cleanup", "No active agents to kill");
-        }
-        Err(e) => {
-            orkestra_debug!("cleanup", "Failed to kill agents: {}", e);
+        let Ok(conn) = orkestra_core::adapters::sqlite::DatabaseConnection::open(&db_path) else {
+            eprintln!(
+                "[cleanup] Could not open database for {}",
+                project_root.display()
+            );
+            continue;
+        };
+
+        let workflow_config = load_workflow_for_project(&project_root).unwrap_or_default();
+        let store = orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared());
+        let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::new(store));
+
+        match api.kill_running_agents() {
+            Ok(killed) if killed > 0 => {
+                orkestra_debug!(
+                    "cleanup",
+                    "Killed {} agent(s) for {}",
+                    killed,
+                    project_root.display()
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                orkestra_debug!(
+                    "cleanup",
+                    "Failed to kill agents for {}: {}",
+                    project_root.display(),
+                    e
+                );
+            }
         }
     }
 }
@@ -266,31 +150,33 @@ fn cleanup_agents(app_handle: &AppHandle) {
 fn cleanup_agents_standalone() {
     println!("[cleanup] Killing all tracked agents (standalone)...");
 
-    let Ok(project_root) = find_project_root() else {
-        eprintln!("[cleanup] Could not find project root");
-        return;
-    };
+    let roots = PROJECT_ROOTS.lock().unwrap().clone();
 
-    let db_path = project_root.join(".orkestra/orkestra.db");
-    if !db_path.exists() {
-        return;
+    for project_root in roots {
+        let db_path = project_root.join(".orkestra/orkestra.db");
+        if !db_path.exists() {
+            continue;
+        }
+
+        let Ok(conn) = orkestra_core::adapters::sqlite::DatabaseConnection::open(&db_path) else {
+            eprintln!(
+                "[cleanup] Could not open database for {}",
+                project_root.display()
+            );
+            continue;
+        };
+
+        let workflow_config = load_workflow_for_project(&project_root).unwrap_or_default();
+        let store = orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared());
+        let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::new(store));
+
+        let _ = api.kill_running_agents();
     }
-
-    let Ok(conn) = orkestra_core::adapters::sqlite::DatabaseConnection::open(&db_path) else {
-        eprintln!("[cleanup] Could not open database");
-        return;
-    };
-
-    let workflow_config = load_workflow_for_project(&project_root).unwrap_or_default();
-    let store = orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared());
-    let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::new(store));
-
-    let _ = api.kill_running_agents();
 }
 
 /// Set up signal handlers to clean up agents on termination signals (Unix only).
 #[cfg(unix)]
-fn setup_signal_handlers(stop_flag: Arc<AtomicBool>) {
+fn setup_signal_handlers() {
     use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
     use signal_hook::iterator::Signals;
 
@@ -305,7 +191,6 @@ fn setup_signal_handlers(stop_flag: Arc<AtomicBool>) {
 
         if let Some(sig) = signals.forever().next() {
             eprintln!("[signal] Received signal {sig}, cleaning up...");
-            stop_flag.store(true, Ordering::Relaxed);
             cleanup_agents_standalone();
             std::process::exit(128 + sig);
         }
@@ -313,8 +198,57 @@ fn setup_signal_handlers(stop_flag: Arc<AtomicBool>) {
 }
 
 #[cfg(not(unix))]
-fn setup_signal_handlers(_stop_flag: Arc<AtomicBool>) {
+fn setup_signal_handlers() {
     // Signal handlers not supported on non-Unix platforms
+}
+
+// =============================================================================
+// Window Lifecycle
+// =============================================================================
+
+/// Handle window close events for project windows.
+fn handle_window_close(app_handle: &AppHandle, label: &str) {
+    orkestra_debug!("window", "Closing project window: {}", label);
+
+    let Some(registry) = app_handle.try_state::<ProjectRegistry>() else {
+        return;
+    };
+
+    // Get project before removing from registry
+    let Ok(project) = registry.get(label) else {
+        return;
+    };
+
+    // Stop orchestrator
+    let stop_flag = project.stop_flag();
+    stop_flag.store(true, Ordering::Relaxed);
+
+    // Kill running agents
+    if let Ok(api) = project.api() {
+        match api.kill_running_agents() {
+            Ok(killed) if killed > 0 => {
+                orkestra_debug!("cleanup", "Killed {} agent(s)", killed);
+            }
+            Ok(_) => {}
+            Err(e) => {
+                orkestra_debug!("cleanup", "Failed to kill agents: {}", e);
+            }
+        }
+    }
+
+    // Checkpoint database
+    project.checkpoint_database();
+
+    // Remove from global project roots list
+    {
+        let mut roots = PROJECT_ROOTS.lock().unwrap();
+        roots.retain(|r| r != project.project_root());
+    }
+
+    // Remove from registry
+    let _ = registry.remove(label);
+
+    orkestra_debug!("window", "Project window closed: {}", label);
 }
 
 // =============================================================================
@@ -323,45 +257,123 @@ fn setup_signal_handlers(_stop_flag: Arc<AtomicBool>) {
 
 /// Run the Tauri application.
 ///
-/// The app always starts (Tauri window opens) immediately with a splash screen,
-/// while initialization runs in the background. If startup fails, the frontend
-/// displays an error screen instead of the normal UI.
+/// The app supports multiple project windows. On first launch (or when no valid
+/// recent project exists), a picker window appears. On subsequent launches, the
+/// last-used project is auto-opened if its folder still exists.
 ///
 /// # Panics
 ///
 /// Panics if the Tauri application fails to build (e.g., missing resources).
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(clippy::too_many_lines)]
 pub fn run() {
-    let stop_flag = Arc::new(AtomicBool::new(false));
-    let stop_flag_for_exit = stop_flag.clone();
-
     // Set up signal handlers to ensure cleanup on external termination
-    setup_signal_handlers(stop_flag.clone());
+    setup_signal_handlers();
 
-    // Create startup state in initializing state - window opens immediately
-    let startup_state = StartupState::initializing();
+    // Load .env files. More specific files are loaded first so their values
+    // take precedence. Neither call uses _override, so process environment
+    // always wins over file values.
+    // Precedence: process env > .env.development > .env
+    if cfg!(debug_assertions) {
+        dotenvy::from_filename(".env.development").ok();
+    }
+    dotenvy::dotenv().ok();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .manage(startup_state)
         .manage(ProjectRegistry::new())
         .setup(move |app| {
-            // Store the stop flag in Tauri state so the init command can access it
-            // TEMPORARY: Will be replaced by per-project stop flags in subtask 2
-            app.manage(OrchestratorStopFlag(stop_flag.clone()));
-
             // Initialize syntax highlighter (Send + Sync, shared across commands)
             app.manage(highlight::SyntaxHighlighter::new());
 
+            // Request notification permission
+            request_notification_permission(app.handle());
+
+            // Create menu bar
+            let open_project = MenuItemBuilder::with_id("open_project", "Open Project...")
+                .accelerator("CmdOrCtrl+O")
+                .build(app)?;
+
+            let menu = MenuBuilder::new(app).item(&open_project).build()?;
+
+            app.set_menu(menu)?;
+
+            // Handle menu events
+            let app_handle = app.handle().clone();
+            app.on_menu_event(move |_app, event| {
+                if event.id() == "open_project" {
+                    // Create or focus picker window
+                    if let Some(picker) = app_handle.get_webview_window("picker") {
+                        let _ = picker.set_focus();
+                    } else {
+                        let _ = WebviewWindowBuilder::new(
+                            &app_handle,
+                            "picker",
+                            WebviewUrl::App("index.html".into()),
+                        )
+                        .title("Open Project")
+                        .build();
+                    }
+                }
+            });
+
+            // Launch phase: check for recent projects and auto-open or show picker
+            let store = app.store("store.json").expect("Failed to initialize store");
+
+            let recents: Vec<RecentProject> = store
+                .get("recent_projects")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+
+            // Try to auto-open the last project
+            if let Some(last_project) = recents.first() {
+                let path = PathBuf::from(&last_project.path);
+                if path.exists() {
+                    // Auto-open last project
+                    let app_handle = app.handle().clone();
+                    let path_str = last_project.path.clone();
+                    thread::spawn(move || {
+                        let registry = app_handle.state::<ProjectRegistry>();
+                        let _ = commands::open_project(app_handle.clone(), registry, path_str);
+                    });
+                } else {
+                    // Path invalid, show picker with error
+                    let error_msg = format!("Folder not found: {}", last_project.path);
+                    let url = format!("index.html?error={}", urlencoding::encode(&error_msg));
+                    WebviewWindowBuilder::new(app, "picker", WebviewUrl::App(url.into()))
+                        .title("Open Project")
+                        .build()?;
+                }
+            } else {
+                // No recents, show picker
+                WebviewWindowBuilder::new(app, "picker", WebviewUrl::App("index.html".into()))
+                    .title("Open Project")
+                    .build()?;
+            }
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { .. } = event {
+                let label = window.label();
+                // Don't clean up picker window
+                if label != "picker" {
+                    handle_window_close(window.app_handle(), label);
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // Startup commands (always available)
-            begin_initialization,
             commands::get_startup_status,
+            // Project commands
+            commands::open_project,
+            commands::get_recent_projects,
+            commands::remove_recent_project,
+            commands::pick_folder,
+            commands::get_project_info,
             // Workflow commands (may fail gracefully if startup failed)
             commands::workflow_get_tasks,
             commands::workflow_create_task,
@@ -397,15 +409,18 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(move |app_handle, event| {
             if let tauri::RunEvent::Exit = event {
-                // Signal orchestrator to stop
-                stop_flag_for_exit.store(true, Ordering::Relaxed);
                 // Kill all tracked agents to prevent orphaned processes
                 cleanup_agents(app_handle);
-                // Flush WAL to leave database in a clean state
-                // TEMPORARY: In single-project mode, only checkpoint "main" project
+
+                // Checkpoint all project databases
                 if let Some(registry) = app_handle.try_state::<ProjectRegistry>() {
-                    if let Ok(project_state) = registry.get("main") {
-                        project_state.checkpoint_database();
+                    if let Ok(project_roots) = registry.all_project_roots() {
+                        for project_root in project_roots {
+                            let label = ProjectRegistry::label_for_path(&project_root);
+                            if let Ok(project) = registry.get(&label) {
+                                project.checkpoint_database();
+                            }
+                        }
                     }
                 }
             }

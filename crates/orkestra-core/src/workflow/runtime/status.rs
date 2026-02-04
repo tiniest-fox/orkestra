@@ -151,6 +151,7 @@ impl std::fmt::Display for Status {
 impl std::fmt::Display for Phase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Phase::AwaitingSetup => write!(f, "awaiting_setup"),
             Phase::SettingUp => write!(f, "setting_up"),
             Phase::Idle => write!(f, "idle"),
             Phase::AgentWorking => write!(f, "agent_working"),
@@ -166,7 +167,11 @@ impl std::fmt::Display for Phase {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
-    /// Task setup in progress (worktree creation, setup script).
+    /// Task waiting for setup to be triggered by orchestrator.
+    /// For subtasks, waits until dependencies are satisfied.
+    AwaitingSetup,
+
+    /// Setup actively in progress (worktree creation, setup script).
     /// Orchestrator will not pick up tasks in this phase.
     SettingUp,
 

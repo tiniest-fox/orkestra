@@ -318,9 +318,21 @@ impl WorkflowApi {
 
         let now = chrono::Utc::now().to_rfc3339();
 
-        // Transition task back to its last stage with Idle phase
+        // Transition task back to its last stage
         task.status = crate::workflow::runtime::Status::active(&last_stage);
-        task.phase = Phase::Idle;
+
+        // If worktree setup never completed, go back to AwaitingSetup
+        if task.worktree_path.is_none() {
+            task.phase = Phase::AwaitingSetup;
+            orkestra_debug!(
+                "action",
+                "retry {}: no worktree_path, setting phase to AwaitingSetup",
+                task_id
+            );
+        } else {
+            task.phase = Phase::Idle;
+        }
+
         task.updated_at.clone_from(&now);
 
         // Create new iteration with Interrupted trigger to indicate recovery via IterationService
@@ -335,9 +347,10 @@ impl WorkflowApi {
 
         orkestra_debug!(
             "action",
-            "retry {}: resumed in stage {}",
+            "retry {}: resumed in stage {}, phase={:?}",
             task_id,
-            last_stage
+            last_stage,
+            task.phase
         );
 
         Ok(task)
@@ -524,26 +537,13 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description", None).unwrap();
-        let task_id = task.id.clone();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
 
-        // Wait for async setup to complete with bounded polling (robust for slow CI)
-        let mut task = {
-            let mut result = None;
-            for _ in 0..100 {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-                let task = api.get_task(&task_id).unwrap();
-                if task.phase != Phase::SettingUp {
-                    result = Some(task);
-                    break;
-                }
-            }
-            result.expect("Task setup should complete within 1 second")
-        };
-
-        // Verify setup succeeded
-        assert_eq!(task.phase, Phase::Idle, "Task setup should complete");
-        assert!(task.status.is_active(), "Task should not fail during setup");
+        // Unit tests don't have an orchestrator to run setup, so we manually
+        // transition the task. This is fine because these tests are testing
+        // human actions (approve/reject), not setup behavior.
+        task.phase = Phase::Idle;
+        api.store.save_task(&task).unwrap();
 
         // Simulate agent producing artifact and going to review
         let now = chrono::Utc::now().to_rfc3339();
@@ -571,22 +571,11 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        let task = api.create_task("Test", "Description", None).unwrap();
-        let task_id = task.id.clone();
+        let mut task = api.create_task("Test", "Description", None).unwrap();
 
-        // Wait for async setup to complete with bounded polling
-        let mut task = {
-            let mut result = None;
-            for _ in 0..100 {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-                let task = api.get_task(&task_id).unwrap();
-                if task.phase != Phase::SettingUp {
-                    result = Some(task);
-                    break;
-                }
-            }
-            result.expect("Task setup should complete within 1 second")
-        };
+        // Unit tests don't have an orchestrator, so manually complete setup
+        task.phase = Phase::Idle;
+        api.store.save_task(&task).unwrap();
 
         // Move to review stage
         task.status = Status::active("review");

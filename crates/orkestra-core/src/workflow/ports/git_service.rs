@@ -142,6 +142,24 @@ pub trait GitService: Send + Sync {
         base_branch: Option<&str>,
     ) -> Result<WorktreeCreated, GitError>;
 
+    /// Create worktree if it doesn't exist, or return existing info.
+    ///
+    /// Unlike `create_worktree`, this does NOT run the setup script - the caller
+    /// handles that separately via `run_setup_script`. This split allows saving
+    /// worktree info to the database before the setup script runs, enabling retry
+    /// if the setup script fails.
+    fn ensure_worktree(
+        &self,
+        task_id: &str,
+        base_branch: Option<&str>,
+    ) -> Result<WorktreeCreated, GitError>;
+
+    /// Run the worktree setup script.
+    ///
+    /// Executes `.orkestra/worktree_setup.sh` with the worktree path as an argument.
+    /// Returns `Ok(())` if the script doesn't exist or succeeds.
+    fn run_setup_script(&self, worktree_path: &Path) -> Result<(), GitError>;
+
     /// Check if a worktree exists for the given task ID.
     fn worktree_exists(&self, task_id: &str) -> bool;
 
@@ -337,6 +355,30 @@ pub mod mock {
                 branch_name,
                 worktree_path,
             })
+        }
+
+        fn ensure_worktree(
+            &self,
+            task_id: &str,
+            base_branch: Option<&str>,
+        ) -> Result<WorktreeCreated, GitError> {
+            // If worktree already exists, return its info without recording a new call
+            if self.worktree_exists(task_id) {
+                let branch_name = format!("task/{task_id}");
+                let worktree_path = PathBuf::from(format!(".orkestra/worktrees/{task_id}"));
+                return Ok(WorktreeCreated {
+                    branch_name,
+                    worktree_path,
+                });
+            }
+
+            // Otherwise, create it (this records the call)
+            self.create_worktree(task_id, base_branch)
+        }
+
+        fn run_setup_script(&self, _worktree_path: &Path) -> Result<(), GitError> {
+            // Mock: always succeeds
+            Ok(())
         }
 
         fn worktree_exists(&self, task_id: &str) -> bool {

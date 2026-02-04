@@ -99,8 +99,8 @@ fn test_task_starts_in_setting_up() {
 
     assert_eq!(
         task.phase,
-        Phase::SettingUp,
-        "Task should start in SettingUp phase"
+        Phase::AwaitingSetup,
+        "Task should start in AwaitingSetup phase"
     );
 }
 

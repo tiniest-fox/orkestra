@@ -285,13 +285,18 @@ impl TestEnv {
             .api()
             .create_task(title, desc, base_branch)
             .expect("Should create task");
+        let task_id = task.id.clone();
 
-        // With sync setup, task is already past SettingUp
-        let task = self.api().get_task(&task.id).expect("Should get task");
-        assert_ne!(
-            task.phase,
-            Phase::SettingUp,
-            "Task should have completed setup synchronously"
+        // Task starts in AwaitingSetup. One orchestrator tick triggers setup_awaiting_tasks(),
+        // which transitions to SettingUp and calls spawn_setup(). With sync setup enabled,
+        // that runs inline and transitions to Idle (or Failed).
+        self.advance();
+
+        let task = self.api().get_task(&task_id).expect("Should get task");
+        assert!(
+            task.phase != Phase::AwaitingSetup && task.phase != Phase::SettingUp,
+            "Task should have completed setup synchronously, got: {:?}",
+            task.phase
         );
         task
     }
@@ -299,11 +304,11 @@ impl TestEnv {
     /// Create a subtask with synchronous setup.
     ///
     /// Subtask setup is deferred to the orchestrator tick loop, so this method
-    /// advances once to trigger `setup_ready_subtasks()`. With sync setup
+    /// advances once to trigger `setup_awaiting_tasks()`. With sync setup
     /// enabled, the worktree is created inline and the subtask transitions
     /// to Idle within that advance.
     ///
-    /// Subtasks with unsatisfied dependencies will stay in `SettingUp` — use
+    /// Subtasks with unsatisfied dependencies will stay in `AwaitingSetup` — use
     /// `create_subtask_deferred` for those.
     pub fn create_subtask(&self, parent_id: &str, title: &str, desc: &str) -> Task {
         let task = self
@@ -312,14 +317,14 @@ impl TestEnv {
             .expect("Should create subtask");
         let task_id = task.id.clone();
 
-        // One advance triggers setup_ready_subtasks; with sync setup, it completes inline
+        // One advance triggers setup_awaiting_tasks; with sync setup, it completes inline
         self.advance();
 
         let task = self.api().get_task(&task_id).expect("Should get task");
-        assert_ne!(
-            task.phase,
-            Phase::SettingUp,
-            "Subtask should have completed setup synchronously"
+        assert!(
+            task.phase != Phase::AwaitingSetup && task.phase != Phase::SettingUp,
+            "Subtask should have completed setup synchronously, got: {:?}",
+            task.phase
         );
         task
     }

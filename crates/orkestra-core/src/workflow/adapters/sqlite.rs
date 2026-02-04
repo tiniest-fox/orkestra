@@ -697,6 +697,7 @@ fn row_to_iteration(row: &rusqlite::Row) -> rusqlite::Result<Iteration> {
 
 fn phase_to_str(phase: Phase) -> &'static str {
     match phase {
+        Phase::AwaitingSetup => "awaiting_setup",
         Phase::SettingUp => "setting_up",
         Phase::Idle => "idle",
         Phase::AgentWorking => "agent_working",
@@ -707,6 +708,7 @@ fn phase_to_str(phase: Phase) -> &'static str {
 
 fn parse_phase(s: &str) -> Phase {
     match s {
+        "awaiting_setup" => Phase::AwaitingSetup,
         "setting_up" => Phase::SettingUp,
         "agent_working" => Phase::AgentWorking,
         "awaiting_review" => Phase::AwaitingReview,

@@ -160,7 +160,7 @@ impl AgentTestEnv {
                 .unwrap()
                 .get_task(&task_id)
                 .expect("get task");
-            if t.phase != Phase::SettingUp {
+            if t.phase != Phase::AwaitingSetup && t.phase != Phase::SettingUp {
                 println!("Task setup complete: phase={:?}", t.phase);
                 return task_id;
             }

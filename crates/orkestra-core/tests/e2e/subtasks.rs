@@ -212,13 +212,13 @@ fn test_breakdown_approval_creates_subtasks() {
         assert_eq!(subtask.parent_id, Some(parent.id.clone()));
     }
 
-    // All subtasks start in SettingUp (setup is deferred to orchestrator tick)
+    // All subtasks start in AwaitingSetup (setup is deferred to orchestrator tick)
     for subtask in &subtasks {
         assert_eq!(subtask.current_stage(), Some("work"));
         assert_eq!(
             subtask.phase,
-            Phase::SettingUp,
-            "Subtask should start in SettingUp (deferred setup)"
+            Phase::AwaitingSetup,
+            "Subtask should start in AwaitingSetup (deferred setup)"
         );
     }
 
@@ -285,14 +285,14 @@ fn test_dependency_aware_orchestration() {
         .clone();
 
     // --- Phase 1: Only first subtask gets set up (no deps) ---
-    // Second stays in SettingUp because its dep (first) isn't Archived yet
-    env.advance(); // setup_ready_subtasks: sets up first (no deps), skips second
+    // Second stays in AwaitingSetup because its dep (first) isn't Archived yet
+    env.advance(); // setup_awaiting_tasks: sets up first (no deps), skips second
 
     let second = env.api().get_task(&second_id).unwrap();
     assert_eq!(
         second.phase,
-        Phase::SettingUp,
-        "Second subtask should still be in SettingUp (dep not met)"
+        Phase::AwaitingSetup,
+        "Second subtask should still be in AwaitingSetup (dep not met)"
     );
 
     // First should be eligible for agents, second should NOT
@@ -310,7 +310,7 @@ fn test_dependency_aware_orchestration() {
     // --- Phase 2: Complete first subtask → second's dep is satisfied ---
     // complete_subtask drives through work → review → Done → integration (sync) → Archived.
     complete_subtask(&env, &first_id);
-    env.advance(); // setup_ready_subtasks: first is Archived, sets up second
+    env.advance(); // setup_awaiting_tasks: first is Archived, sets up second
 
     // Second should now be active and eligible
     let second = env.api().get_task(&second_id).unwrap();
@@ -365,7 +365,7 @@ fn test_parent_advances_when_all_subtasks_done() {
         .clone();
 
     // Both subtasks have no deps, so both set up on first advance
-    env.advance(); // setup_ready_subtasks: sets up both (no deps)
+    env.advance(); // setup_awaiting_tasks: sets up both (no deps)
 
     // Pre-set parent's work output before completing subtasks.
     // Once subtasks are archived (integration complete), the parent advances
@@ -460,7 +460,7 @@ fn test_diamond_dependency_orchestration() {
         .clone();
 
     // --- Phase 1: Only A gets set up (no deps) ---
-    env.advance(); // setup_ready_subtasks: sets up A (no deps), skips B/C/D
+    env.advance(); // setup_awaiting_tasks: sets up A (no deps), skips B/C/D
 
     let eligible = env.api().get_tasks_needing_agents().unwrap();
     let eligible_ids: Vec<&str> = eligible.iter().map(|t| t.id.as_str()).collect();
@@ -477,13 +477,13 @@ fn test_diamond_dependency_orchestration() {
         "D should NOT be eligible (depends on B,C)"
     );
 
-    // B, C, D should all still be in SettingUp
+    // B, C, D should all still be in AwaitingSetup
     for id in [&id_b, &id_c, &id_d] {
         let task = env.api().get_task(id).unwrap();
         assert_eq!(
             task.phase,
-            Phase::SettingUp,
-            "Task {} should be in SettingUp",
+            Phase::AwaitingSetup,
+            "Task {} should be in AwaitingSetup",
             task.title
         );
     }
@@ -491,7 +491,7 @@ fn test_diamond_dependency_orchestration() {
     // --- Phase 2: Complete A → B and C unblock ---
     // complete_subtask drives through work → review → Done → integration (sync) → Archived.
     complete_subtask(&env, &id_a);
-    env.advance(); // setup_ready_subtasks: A is Archived, sets up B and C
+    env.advance(); // setup_awaiting_tasks: A is Archived, sets up B and C
 
     // B and C should be active
     let b = env.api().get_task(&id_b).unwrap();
@@ -507,12 +507,12 @@ fn test_diamond_dependency_orchestration() {
         c.status
     );
 
-    // D should still be in SettingUp (B and C not done yet)
+    // D should still be in AwaitingSetup (B and C not done yet)
     let d = env.api().get_task(&id_d).unwrap();
     assert_eq!(
         d.phase,
-        Phase::SettingUp,
-        "D should still be in SettingUp (B,C not done)"
+        Phase::AwaitingSetup,
+        "D should still be in AwaitingSetup (B,C not done)"
     );
 
     // --- Phase 3: Complete B and C in parallel → D unblocks ---
@@ -520,7 +520,7 @@ fn test_diamond_dependency_orchestration() {
     // Integration is one-at-a-time: the last advance integrates one of B/C (sync → Archived).
     complete_subtasks(&env, &[&id_b, &id_c]);
     env.advance(); // integrates the remaining one of B/C (Done→Archived)
-    env.advance(); // setup_ready_subtasks: B and C both Archived, sets up D
+    env.advance(); // setup_awaiting_tasks: B and C both Archived, sets up D
 
     // D should be active
     let d = env.api().get_task(&id_d).unwrap();
@@ -582,11 +582,11 @@ fn test_breakdown_skip_advances_normally() {
 }
 
 // =============================================================================
-// Subtask Failure Fails Parent
+// Subtask Failure: Parent Stays in WaitingOnChildren
 // =============================================================================
 
 #[test]
-fn test_subtask_failure_fails_parent() {
+fn test_subtask_failure_parent_stays_waiting() {
     let workflow = workflows::with_subtasks();
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
@@ -602,7 +602,7 @@ fn test_subtask_failure_fails_parent() {
     let subtask_id = id_map[0].1.clone();
 
     // Set up subtask (no deps)
-    env.advance(); // setup_ready_subtasks: sets up subtask
+    env.advance(); // setup_awaiting_tasks: sets up subtask
 
     // Fail the subtask
     env.set_output(
@@ -613,14 +613,22 @@ fn test_subtask_failure_fails_parent() {
     );
     env.advance(); // spawns agent (completion ready)
     env.advance(); // processes failure output
-    env.advance(); // check_parent_completions → parent fails
+    env.advance(); // check_parent_completions - parent should NOT fail
 
-    // Parent should be failed
+    // Parent should stay in WaitingOnChildren (subtask can be retried)
     let parent = env.api().get_task(&parent_id).unwrap();
     assert!(
-        parent.is_failed(),
-        "Parent should be Failed when subtask fails, got: {:?}",
+        parent.status.is_waiting_on_children(),
+        "Parent should stay in WaitingOnChildren when subtask fails, got: {:?}",
         parent.status
+    );
+
+    // Subtask should be Failed but can be retried
+    let subtask = env.api().get_task(&subtask_id).unwrap();
+    assert!(
+        subtask.is_failed(),
+        "Subtask should be Failed, got: {:?}",
+        subtask.status
     );
 }
 
@@ -653,7 +661,7 @@ fn test_subtask_worktrees_are_isolated() {
     let beta_id = id_map.iter().find(|(t, _)| t == "Beta").unwrap().1.clone();
 
     // Both have no deps, set up on first advance
-    env.advance(); // setup_ready_subtasks: sets up both
+    env.advance(); // setup_awaiting_tasks: sets up both
 
     let parent = env.api().get_task(&parent_id).unwrap();
     let alpha = env.api().get_task(&alpha_id).unwrap();
@@ -706,7 +714,7 @@ fn test_subtask_integration_merges_to_parent_branch() {
     );
 
     let subtask_id = id_map[0].1.clone();
-    env.advance(); // setup_ready_subtasks: sets up subtask (no deps)
+    env.advance(); // setup_awaiting_tasks: sets up subtask (no deps)
 
     // Write a file in the subtask's worktree (simulating agent making changes)
     let subtask = env.api().get_task(&subtask_id).unwrap();
@@ -780,7 +788,7 @@ fn test_subtask_integration_conflict() {
     let id_b = id_map.iter().find(|(t, _)| t == "Sub B").unwrap().1.clone();
 
     // Both have no deps, set up on first advance
-    env.advance(); // setup_ready_subtasks: sets up both
+    env.advance(); // setup_awaiting_tasks: sets up both
 
     // Write CONFLICTING changes to the same file in both worktrees
     let a = env.api().get_task(&id_a).unwrap();

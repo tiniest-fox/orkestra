@@ -85,7 +85,13 @@ impl TaskSetupService {
 
 /// Run worktree creation and title generation in parallel using scoped threads.
 ///
-/// Returns the worktree result. Title is saved directly to the store by its thread.
+/// The worktree is created in two phases:
+/// 1. `ensure_worktree` - creates branch + worktree (fast, rarely fails)
+/// 2. Save worktree info to DB immediately (so retry can skip step 1)
+/// 3. `run_setup_script` - runs project-specific setup (may fail)
+///
+/// This split ensures that if the setup script fails, the worktree info is
+/// already saved, allowing retry to skip branch/worktree creation.
 fn run_parallel_setup(
     store: &Arc<dyn WorkflowStore>,
     git: Option<&Arc<dyn GitService>>,
@@ -93,26 +99,38 @@ fn run_parallel_setup(
     task_id: &str,
     base_branch: &str,
     description: Option<&str>,
-) -> Result<Option<crate::workflow::ports::WorktreeCreated>, String> {
+) -> Result<(), String> {
     thread::scope(|s| {
-        // Spawn worktree creation
-        let worktree_handle = s.spawn(|| {
-            if let Some(git) = git {
-                let branch = if base_branch.is_empty() {
-                    None
-                } else {
-                    Some(base_branch)
-                };
-                match git.create_worktree(task_id, branch) {
-                    Ok(result) => Ok(Some(result)),
-                    Err(e) => Err(format!("Worktree setup failed: {e}")),
-                }
+        // Phase 1: Create/ensure worktree exists (no setup script yet)
+        let worktree_result = if let Some(git) = git {
+            let branch = if base_branch.is_empty() {
+                None
             } else {
-                Ok(None)
-            }
-        });
+                Some(base_branch)
+            };
+            git.ensure_worktree(task_id, branch)
+                .map(Some)
+                .map_err(|e| format!("Worktree creation failed: {e}"))
+        } else {
+            Ok(None)
+        };
 
-        // Spawn title generation if needed — saves directly to DB when ready
+        // Phase 2: IMMEDIATELY save worktree info (before setup script)
+        // This ensures retry can skip worktree creation if setup script fails
+        if let Ok(Some(ref wt)) = worktree_result {
+            if let Ok(Some(mut task)) = store.get_task(task_id) {
+                task.branch_name = Some(wt.branch_name.clone());
+                task.worktree_path = Some(wt.worktree_path.to_string_lossy().to_string());
+                if let Err(e) = store.save_task(&task) {
+                    crate::orkestra_debug!(
+                        "setup",
+                        "WARNING: Failed to save worktree info for {task_id}: {e}"
+                    );
+                }
+            }
+        }
+
+        // Spawn title generation (parallel with setup script)
         let title_store = Arc::clone(store);
         let title_handle = description.map(|desc| {
             let tg = Arc::clone(title_gen);
@@ -122,35 +140,40 @@ fn run_parallel_setup(
             })
         });
 
-        // Wait for both to complete
-        let worktree_result = worktree_handle
-            .join()
-            .unwrap_or_else(|_| Err("Worktree thread panicked".to_string()));
+        // Phase 3: Run setup script (after worktree info is saved)
+        let setup_result = match worktree_result {
+            Ok(Some(ref wt)) => {
+                if let Some(git) = git {
+                    git.run_setup_script(&wt.worktree_path)
+                        .map_err(|e| format!("Setup script failed: {e}"))
+                } else {
+                    Ok(())
+                }
+            }
+            Ok(None) => Ok(()), // No git service, nothing to do
+            Err(e) => Err(e),   // Propagate worktree creation error
+        };
+
+        // Wait for title generation to complete
         if let Some(h) = title_handle {
             let _ = h.join();
         }
 
-        worktree_result
+        // Apply phase transition (worktree info already saved)
+        apply_setup_result(store, task_id, setup_result);
+
+        Ok(())
     })
 }
 
-/// Apply the setup result to the task (worktree info + phase transition).
+/// Apply the setup result to the task (phase transition only).
 ///
-/// `base_branch` is already set on the task at creation time — this function
-/// only needs to apply worktree info and transition the phase.
-fn apply_setup_result(
-    store: &Arc<dyn WorkflowStore>,
-    task_id: &str,
-    worktree_result: Result<Option<crate::workflow::ports::WorktreeCreated>, String>,
-) {
+/// Worktree info is already saved by `run_parallel_setup` before the setup script
+/// runs. This function only transitions the phase based on whether setup succeeded.
+fn apply_setup_result(store: &Arc<dyn WorkflowStore>, task_id: &str, result: Result<(), String>) {
     match store.get_task(task_id) {
-        Ok(Some(mut task)) => match worktree_result {
-            Ok(worktree_info) => {
-                if let Some(ref wt) = worktree_info {
-                    task.branch_name = Some(wt.branch_name.clone());
-                    task.worktree_path = Some(wt.worktree_path.to_string_lossy().to_string());
-                }
-
+        Ok(Some(mut task)) => match result {
+            Ok(()) => {
                 task.phase = Phase::Idle;
                 crate::orkestra_debug!(
                     "task",
@@ -167,6 +190,7 @@ fn apply_setup_result(
                 crate::orkestra_debug!("setup", "Setup failed for {task_id}: {error}");
                 task.status = Status::Failed { error: Some(error) };
                 task.phase = Phase::Idle;
+                // Worktree info is already saved - retry will skip creation
                 if let Err(e) = store.save_task(&task) {
                     crate::orkestra_debug!(
                         "setup",

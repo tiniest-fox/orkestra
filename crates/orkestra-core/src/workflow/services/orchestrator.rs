@@ -127,9 +127,6 @@ pub struct OrchestratorLoop {
     git_service: Option<Arc<dyn GitService>>,
     /// Periodic scheduler for tick phases.
     scheduler: Mutex<PeriodicScheduler>,
-    /// Task IDs that have a pending `spawn_setup` in a background thread.
-    /// Prevents double-spawning when the orchestrator ticks faster than setup completes.
-    pending_setups: Mutex<HashSet<String>>,
     stop_flag: Arc<AtomicBool>,
     /// When true, operations that would normally run on background threads
     /// (e.g., git integration) run synchronously on the tick thread instead.
@@ -145,7 +142,7 @@ impl OrchestratorLoop {
         let mut scheduler = PeriodicScheduler::new();
 
         // Core orchestration — runs every tick
-        scheduler.register("setup_ready_subtasks", Duration::ZERO);
+        scheduler.register("setup_awaiting_tasks", Duration::ZERO);
         scheduler.register("check_parent_completions", Duration::ZERO);
         scheduler.register("process_completed_executions", Duration::ZERO);
         scheduler.register("start_new_executions", Duration::ZERO);
@@ -159,7 +156,6 @@ impl OrchestratorLoop {
             stage_executor,
             git_service,
             scheduler: Mutex::new(scheduler),
-            pending_setups: Mutex::new(HashSet::new()),
             stop_flag: Arc::new(AtomicBool::new(false)),
             sync_background: false,
         }
@@ -284,8 +280,8 @@ impl OrchestratorLoop {
 
         for name in due {
             match name {
-                "setup_ready_subtasks" => {
-                    just_set_up = self.setup_ready_subtasks()?;
+                "setup_awaiting_tasks" => {
+                    just_set_up = self.setup_awaiting_tasks()?;
                 }
                 "check_parent_completions" => events.extend(self.check_parent_completions()?),
                 "process_completed_executions" => {
@@ -312,31 +308,22 @@ impl OrchestratorLoop {
         Ok(events)
     }
 
-    /// Set up subtasks whose dependencies are satisfied.
+    /// Set up tasks in `AwaitingSetup` phase whose dependencies are satisfied.
     ///
-    /// Subtask setup is deferred from creation time to allow dependent subtasks
-    /// to branch from the parent after predecessors' changes have been merged back.
-    /// This ensures subtask B (which depends on A) sees A's code in its worktree.
+    /// Handles both parent tasks and subtasks. For subtasks, setup is deferred
+    /// from creation time to allow dependent subtasks to branch from the parent
+    /// after predecessors' changes have been merged back. This ensures subtask B
+    /// (which depends on A) sees A's code in its worktree.
     ///
-    /// Subtasks with no dependencies are set up on the first tick after creation.
+    /// Parent tasks (no dependencies) and subtasks with no dependencies are set up
+    /// on the first tick after creation.
+    ///
     /// Returns the set of task IDs that were set up during this call.
     /// Used by `tick()` to prevent `start_new_executions` from immediately
     /// spawning agents for tasks that just completed synchronous setup.
-    fn setup_ready_subtasks(&self) -> WorkflowResult<HashSet<String>> {
+    fn setup_awaiting_tasks(&self) -> WorkflowResult<HashSet<String>> {
         let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
         let all_tasks = api.store.list_tasks()?;
-
-        let mut pending = self
-            .pending_setups
-            .lock()
-            .map_err(|_| WorkflowError::Lock)?;
-
-        // Clear entries for tasks that have left SettingUp (setup completed or failed)
-        pending.retain(|id| {
-            all_tasks
-                .iter()
-                .any(|t| t.id == *id && t.phase == Phase::SettingUp)
-        });
 
         // Build set of fully integrated task IDs for dependency checking.
         // Only Archived (integrated) tasks satisfy dependencies — not Done tasks
@@ -351,39 +338,44 @@ impl OrchestratorLoop {
         let mut just_set_up = HashSet::new();
 
         for task in &all_tasks {
-            // Only subtasks in SettingUp phase (no worktree yet)
-            if task.phase != Phase::SettingUp || task.parent_id.is_none() {
+            // Only tasks in AwaitingSetup phase
+            if task.phase != Phase::AwaitingSetup {
                 continue;
             }
 
-            // Skip if setup is already in progress (background thread running)
-            if pending.contains(&task.id) {
-                continue;
-            }
-
-            // Check all dependencies are satisfied (fully integrated)
-            if !task
-                .depends_on
-                .iter()
-                .all(|dep| integrated_ids.contains(dep))
+            // For subtasks: check all dependencies are satisfied (fully integrated)
+            if task.parent_id.is_some()
+                && !task
+                    .depends_on
+                    .iter()
+                    .all(|dep| integrated_ids.contains(dep))
             {
                 continue;
             }
 
             orkestra_debug!(
                 "orchestrator",
-                "Setting up subtask {} (deps satisfied)",
+                "Setting up task {} (deps satisfied)",
                 task.id
             );
 
-            pending.insert(task.id.clone());
+            // Transition to SettingUp BEFORE spawning (prevents double-spawn)
+            let mut task = task.clone();
+            task.phase = Phase::SettingUp;
+            api.store.save_task(&task)?;
+
             just_set_up.insert(task.id.clone());
 
-            // Use the same spawn_setup as parent tasks — creates worktree from base_branch
+            // Spawn setup (handles worktree creation and title generation)
+            let needs_title = task.title.trim().is_empty() && !task.description.trim().is_empty();
             api.setup_service.spawn_setup(
                 task.id.clone(),
                 task.base_branch.clone(),
-                None, // Subtasks already have titles from breakdown
+                if needs_title {
+                    Some(task.description.clone())
+                } else {
+                    None
+                },
             );
         }
 
@@ -907,13 +899,9 @@ impl OrchestratorLoop {
 
     /// Recover tasks stuck in `SettingUp` phase (from app crash during setup).
     ///
-    /// Tasks stuck in `SettingUp` from a previous crash are retried from scratch.
-    /// Cleans up any partial worktree/branch, clears stale worktree state,
-    /// then re-triggers setup.
-    ///
-    /// For parent tasks: re-runs `spawn_setup` immediately.
-    /// For subtasks: clears partial state and leaves in `SettingUp` — the
-    /// `setup_ready_subtasks()` tick phase will re-trigger when deps are met.
+    /// Tasks stuck in `SettingUp` from a previous crash are transitioned back to
+    /// `AwaitingSetup`. The orchestrator will pick them up on the next tick.
+    /// Cleans up any partial worktree/branch before transitioning.
     fn recover_stale_setup_tasks(&self) {
         let Ok(api) = self.api.lock() else {
             orkestra_debug!(
@@ -935,7 +923,7 @@ impl OrchestratorLoop {
                 continue;
             }
 
-            orkestra_debug!("recovery", "Retrying setup for stale task: {}", task.id);
+            orkestra_debug!("recovery", "Recovering stale setup task: {}", task.id);
 
             // Clean up any partial worktree/branch from interrupted setup
             if let Some(ref git) = api.git_service {
@@ -954,33 +942,19 @@ impl OrchestratorLoop {
                 }
             }
 
-            if task.parent_id.is_some() {
-                // Subtask: clear any partial worktree state, leave in SettingUp.
-                // The setup_ready_subtasks() tick phase will re-trigger when deps are met.
-                let mut task = task.clone();
-                task.worktree_path = None;
-                task.branch_name = None;
-                if let Err(e) = api.store.save_task(&task) {
-                    orkestra_debug!(
-                        "recovery",
-                        "Failed to clear partial state for subtask {}: {}",
-                        task.id,
-                        e
-                    );
-                }
-                continue;
+            // Transition back to AwaitingSetup - orchestrator will re-trigger
+            let mut task = task.clone();
+            task.phase = Phase::AwaitingSetup;
+            task.worktree_path = None;
+            task.branch_name = None;
+            if let Err(e) = api.store.save_task(&task) {
+                orkestra_debug!(
+                    "recovery",
+                    "Failed to transition task {} to AwaitingSetup: {}",
+                    task.id,
+                    e
+                );
             }
-
-            // Parent task: re-run full setup
-            let needs_title = task.title.trim().is_empty() && !task.description.trim().is_empty();
-            let description = if needs_title {
-                Some(task.description.clone())
-            } else {
-                None
-            };
-
-            api.setup_service
-                .spawn_setup(task.id.clone(), task.base_branch.clone(), description);
         }
     }
 

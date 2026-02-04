@@ -68,9 +68,16 @@ impl Git2GitService {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let error_output = if !stderr.trim().is_empty() {
+                stderr.trim().to_string()
+            } else if !stdout.trim().is_empty() {
+                stdout.trim().to_string()
+            } else {
+                format!("exit code {}", output.status.code().unwrap_or(-1))
+            };
             return Err(GitError::WorktreeError(format!(
-                "Setup script failed: {}",
-                stderr.trim()
+                "Setup script failed: {error_output}"
             )));
         }
 
@@ -352,8 +359,27 @@ impl GitService for Git2GitService {
         task_id: &str,
         base_branch: Option<&str>,
     ) -> Result<WorktreeCreated, GitError> {
+        // Full creation: ensure worktree + run setup script
+        let result = self.ensure_worktree(task_id, base_branch)?;
+        self.run_worktree_setup(&result.worktree_path)?;
+        Ok(result)
+    }
+
+    fn ensure_worktree(
+        &self,
+        task_id: &str,
+        base_branch: Option<&str>,
+    ) -> Result<WorktreeCreated, GitError> {
         let branch_name = format!("task/{task_id}");
         let worktree_path = self.worktrees_dir.join(task_id);
+
+        // If worktree already exists, return its info
+        if self.worktree_exists(task_id) {
+            return Ok(WorktreeCreated {
+                branch_name,
+                worktree_path,
+            });
+        }
 
         // Ensure worktrees directory exists
         std::fs::create_dir_all(&self.worktrees_dir)?;
@@ -367,13 +393,14 @@ impl GitService for Git2GitService {
         // Create the worktree (acquires and releases lock)
         self.create_worktree_for_branch(task_id, &branch_name, &worktree_path)?;
 
-        // Run worktree setup script if it exists
-        self.run_worktree_setup(&worktree_path)?;
-
         Ok(WorktreeCreated {
             branch_name,
             worktree_path,
         })
+    }
+
+    fn run_setup_script(&self, worktree_path: &Path) -> Result<(), GitError> {
+        self.run_worktree_setup(worktree_path)
     }
 
     fn worktree_exists(&self, task_id: &str) -> bool {

@@ -93,8 +93,8 @@ impl SubtaskService {
                 task.artifacts.set(plan.clone());
             }
 
-            // Start in SettingUp for consistency
-            task.phase = Phase::SettingUp;
+            // Start in AwaitingSetup - orchestrator will pick this up when deps are satisfied
+            task.phase = Phase::AwaitingSetup;
 
             // Save immediately so subsequent next_subtask_id calls see this sibling
             store.save_task(&task)?;

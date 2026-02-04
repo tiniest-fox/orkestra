@@ -11,7 +11,8 @@ use super::WorkflowApi;
 impl WorkflowApi {
     /// Create a new task. Starts in the first workflow stage.
     ///
-    /// Task creation returns immediately with `Phase::SettingUp`. A background thread
+    /// Task creation returns immediately with `Phase::AwaitingSetup`. The orchestrator
+    /// picks up tasks in this phase on its next tick, transitions to `SettingUp`,
     /// handles worktree creation and setup script, then transitions to `Phase::Idle`
     /// (or `Status::Failed` if setup fails).
     ///
@@ -32,6 +33,11 @@ impl WorkflowApi {
     ///
     /// Like `create_task`, but allows setting `auto_mode` and `flow` at creation time.
     /// When `flow` is specified, the task starts at the first stage of that flow.
+    ///
+    /// Task creation returns immediately with `Phase::AwaitingSetup`. The orchestrator
+    /// picks up tasks in this phase on its next tick, transitions to `SettingUp`,
+    /// handles worktree creation and setup script, then transitions to `Phase::Idle`
+    /// (or `Status::Failed` if setup fails).
     pub fn create_task_with_options(
         &self,
         title: &str,
@@ -73,8 +79,8 @@ impl WorkflowApi {
         task.auto_mode = auto_mode;
         task.flow = flow.map(String::from);
 
-        // ALWAYS start in SettingUp - async setup will transition to Idle
-        task.phase = Phase::SettingUp;
+        // Start in AwaitingSetup - orchestrator will pick this up and trigger setup
+        task.phase = Phase::AwaitingSetup;
 
         // Save task immediately (non-blocking UI)
         self.store.save_task(&task)?;
@@ -83,17 +89,8 @@ impl WorkflowApi {
         self.iteration_service
             .create_initial_iteration(&id, &first_stage.name)?;
 
-        // Spawn async setup (handles worktree creation and title generation in parallel)
-        let needs_title = title.trim().is_empty() && !description.trim().is_empty();
-        self.setup_service.spawn_setup(
-            id.clone(),
-            task.base_branch.clone(),
-            if needs_title {
-                Some(description.to_string())
-            } else {
-                None
-            },
-        );
+        // Setup is deferred to the orchestrator tick loop (setup_awaiting_tasks),
+        // which triggers spawn_setup() for tasks in AwaitingSetup phase.
 
         orkestra_debug!(
             "task",
@@ -110,12 +107,12 @@ impl WorkflowApi {
     /// Create a new task with a parent (subtask).
     ///
     /// Subtasks get their own worktree branching from the parent's branch.
-    /// Setup is deferred to the orchestrator's `setup_ready_subtasks()` phase,
+    /// Setup is deferred to the orchestrator's `setup_awaiting_tasks()` phase,
     /// which triggers `spawn_setup()` only after dependencies are satisfied.
     ///
     /// # Errors
     ///
-    /// Returns `InvalidTransition` if the parent task is still in `SettingUp` phase.
+    /// Returns `InvalidTransition` if the parent task is still in `AwaitingSetup` or `SettingUp` phase.
     /// The parent's setup must complete before subtasks can be created.
     pub fn create_subtask(
         &self,
@@ -126,7 +123,7 @@ impl WorkflowApi {
         // Verify parent exists and its setup is complete
         let parent = self.get_task(parent_id)?;
 
-        if parent.phase == Phase::SettingUp {
+        if parent.phase == Phase::AwaitingSetup || parent.phase == Phase::SettingUp {
             return Err(WorkflowError::InvalidTransition(
                 "Cannot create subtask while parent task is still setting up".into(),
             ));
@@ -156,8 +153,8 @@ impl WorkflowApi {
         // Subtasks inherit parent's auto_mode
         task.auto_mode = parent.auto_mode;
 
-        // Start in SettingUp for consistency with create_task()
-        task.phase = Phase::SettingUp;
+        // Start in AwaitingSetup for consistency with create_task()
+        task.phase = Phase::AwaitingSetup;
 
         self.store.save_task(&task)?;
 
@@ -165,7 +162,7 @@ impl WorkflowApi {
         self.iteration_service
             .create_initial_iteration(&id, &first_stage.name)?;
 
-        // Setup is deferred to the orchestrator tick loop (setup_ready_subtasks),
+        // Setup is deferred to the orchestrator tick loop (setup_awaiting_tasks),
         // which triggers spawn_setup() only after dependencies are satisfied.
 
         orkestra_debug!(
@@ -274,16 +271,15 @@ mod tests {
         assert!(task.parent_id.is_none());
     }
 
-    /// Wait for a task's async setup to complete (bounded polling).
-    fn wait_for_setup(api: &WorkflowApi, task_id: &str) -> Task {
-        for _ in 0..100 {
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            let task = api.get_task(task_id).unwrap();
-            if task.phase != Phase::SettingUp {
-                return task;
-            }
-        }
-        panic!("Task setup did not complete in 1 second");
+    /// Complete setup for a task (unit tests don't have an orchestrator).
+    ///
+    /// Unit tests use `InMemoryWorkflowStore` without an orchestrator, so tasks
+    /// stay in `AwaitingSetup`. This helper manually transitions to `Idle`.
+    fn complete_setup(api: &WorkflowApi, task_id: &str) -> Task {
+        let mut task = api.get_task(task_id).unwrap();
+        task.phase = Phase::Idle;
+        api.store.save_task(&task).unwrap();
+        task
     }
 
     #[test]
@@ -295,7 +291,7 @@ mod tests {
         let parent = api.create_task("Parent", "Parent task", None).unwrap();
 
         // Wait for parent setup to complete
-        let parent = wait_for_setup(&api, &parent.id);
+        let parent = complete_setup(&api, &parent.id);
 
         let subtask = api
             .create_subtask(&parent.id, "Child", "Child task")
@@ -305,14 +301,14 @@ mod tests {
     }
 
     #[test]
-    fn test_create_subtask_rejects_setting_up_parent() {
+    fn test_create_subtask_rejects_awaiting_setup_parent() {
         let workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
         let parent = api.create_task("Parent", "Parent task", None).unwrap();
 
-        // Immediately try to create subtask - parent should still be in SettingUp
+        // Immediately try to create subtask - parent should still be in AwaitingSetup
         let result = api.create_subtask(&parent.id, "Child", "Child task");
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
@@ -349,7 +345,7 @@ mod tests {
         let parent = api.create_task("Parent", "Parent task", None).unwrap();
 
         // Wait for parent setup to complete
-        let parent = wait_for_setup(&api, &parent.id);
+        let parent = complete_setup(&api, &parent.id);
 
         let _ = api
             .create_subtask(&parent.id, "Child", "Child task")
@@ -371,7 +367,7 @@ mod tests {
         let parent = api.create_task("Parent", "Parent task", None).unwrap();
 
         // Wait for parent setup to complete
-        let parent = wait_for_setup(&api, &parent.id);
+        let parent = complete_setup(&api, &parent.id);
 
         let child1 = api.create_subtask(&parent.id, "Child 1", "First").unwrap();
         let child2 = api.create_subtask(&parent.id, "Child 2", "Second").unwrap();
@@ -465,7 +461,7 @@ mod tests {
         let parent = api.create_task("Parent", "Parent task", None).unwrap();
 
         // Wait for setup to complete before creating subtasks
-        let parent = wait_for_setup(&api, &parent.id);
+        let parent = complete_setup(&api, &parent.id);
 
         let child1 = api
             .create_subtask(&parent.id, "Child 1", "First child")

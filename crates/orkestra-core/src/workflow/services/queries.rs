@@ -439,18 +439,21 @@ mod tests {
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::domain::Task;
     use crate::workflow::execution::StageOutput;
-    use crate::workflow::runtime::Status;
+    use crate::workflow::runtime::{Phase, Status};
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
-    use std::time::Duration;
 
     use super::*;
 
-    /// Create a task and wait for async setup to complete.
+    /// Create a task ready for agent work (in Idle phase).
+    ///
+    /// Unit tests don't have an orchestrator to run setup, so we manually
+    /// transition the task to Idle.
     fn create_task_ready(api: &WorkflowApi, title: &str, desc: &str) -> Task {
-        let task = api.create_task(title, desc, None).unwrap();
-        std::thread::sleep(Duration::from_millis(10));
-        api.get_task(&task.id).unwrap()
+        let mut task = api.create_task(title, desc, None).unwrap();
+        task.phase = Phase::Idle;
+        api.store.save_task(&task).unwrap();
+        task
     }
 
     fn test_workflow() -> WorkflowConfig {

@@ -479,18 +479,8 @@ impl WorkflowApi {
 
             // Subtasks must be Archived (merged back to parent branch), not just Done.
             // Done means stages complete but branch not yet merged.
+            // Failed subtasks can be retried independently, so parent stays in WaitingOnChildren.
             let all_done = subtasks.iter().all(Task::is_archived);
-            let any_failed = subtasks.iter().any(Task::is_failed);
-
-            if any_failed {
-                // If any subtask failed, fail the parent
-                let mut parent = parent.clone();
-                parent.status = Status::failed("One or more subtasks failed");
-                parent.phase = Phase::Idle;
-                parent.updated_at = chrono::Utc::now().to_rfc3339();
-                self.store.save_task(&parent)?;
-                continue;
-            }
 
             if all_done {
                 let subtask_count = subtasks.len();
@@ -724,7 +714,6 @@ fn auto_answer_questions(questions: &[crate::workflow::domain::Question]) -> Vec
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::time::Duration;
 
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::domain::Question;
@@ -732,14 +721,17 @@ mod tests {
 
     use super::*;
 
-    /// Create a task and wait for async setup to complete (transition to Idle).
-    /// In tests without git configured, this is nearly instant but we need a small delay.
+    /// Create a task ready for agent work (in Idle phase).
+    ///
+    /// Unit tests don't have an orchestrator to run setup, so we manually
+    /// transition the task to Idle. This is fine because these tests are
+    /// testing agent actions, not setup behavior.
     fn create_task_ready(api: &WorkflowApi, title: &str, desc: &str) -> Task {
-        let task = api.create_task(title, desc, None).unwrap();
-        // Wait for async setup to complete (no-op without git, but still async)
-        std::thread::sleep(Duration::from_millis(10));
-        // Re-fetch to get updated phase
-        api.get_task(&task.id).unwrap()
+        let mut task = api.create_task(title, desc, None).unwrap();
+        // Manually complete "setup" for unit tests (no orchestrator)
+        task.phase = Phase::Idle;
+        api.store.save_task(&task).unwrap();
+        task
     }
 
     fn test_workflow() -> WorkflowConfig {

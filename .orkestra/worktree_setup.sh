@@ -35,6 +35,6 @@ fi
 # Install node dependencies
 # ---------------------------------------------------------------------------
 echo "Installing node dependencies..."
-cd "$WORKTREE_PATH" && pnpm install --frozen-lockfile
+cd "$WORKTREE_PATH" && pnpm install
 
 echo "Worktree setup complete: $WORKTREE_PATH"

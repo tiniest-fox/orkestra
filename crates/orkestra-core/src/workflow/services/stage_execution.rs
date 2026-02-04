@@ -299,10 +299,11 @@ impl StageExecutionService {
 
         // Determine if the provider generates its own session IDs.
         // If so, don't pre-generate a UUID — the ID will be extracted from the output stream.
-        let model_spec = self.workflow.stage(stage).and_then(|s| s.model.as_deref());
+        // Use effective_model to respect flow overrides (e.g., a flow that changes provider).
+        let model_spec = self.workflow.effective_model(stage, task.flow.as_deref());
         let generates_own = self
             .registry
-            .resolve(model_spec)
+            .resolve(model_spec.as_deref())
             .map(|r| r.capabilities.generates_own_session_id)
             .unwrap_or(false);
         let initial_session_id = if generates_own {

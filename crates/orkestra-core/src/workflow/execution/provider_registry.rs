@@ -19,6 +19,7 @@ use crate::workflow::ports::ProcessSpawner;
 
 /// Capabilities of a provider, describing what features it supports.
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ProviderCapabilities {
     /// Whether the provider supports native `--json-schema` enforcement.
     pub supports_json_schema: bool,
@@ -29,9 +30,9 @@ pub struct ProviderCapabilities {
     /// extracted from the provider's output stream. When false (Claude Code), the caller
     /// supplies a UUID via `--session-id` on first spawn.
     pub generates_own_session_id: bool,
-    /// Whether the provider's StructuredOutput tool requires JSON properties
+    /// Whether the provider's `StructuredOutput` tool requires JSON properties
     /// to be passed directly as input fields (not as a JSON string in `content` field).
-    /// True for Claude Code, false for OpenCode.
+    /// True for Claude Code, false for `OpenCode`.
     pub requires_direct_structured_output: bool,
 }
 

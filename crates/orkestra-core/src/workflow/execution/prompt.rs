@@ -33,6 +33,7 @@ static TEMPLATES: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
 
 /// Context for rendering the output format template.
 #[derive(Debug, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
 struct OutputFormatContext {
     artifact_name: String,
     can_ask_questions: bool,
@@ -123,7 +124,7 @@ pub struct StagePromptContext<'a> {
     /// Worktree path (for git worktree isolation).
     pub worktree_path: Option<&'a str>,
 
-    /// Whether to show instructions for direct StructuredOutput usage (Claude Code specific).
+    /// Whether to show instructions for direct `StructuredOutput` usage (Claude Code specific).
     pub show_direct_structured_output_hint: bool,
 }
 
@@ -506,6 +507,7 @@ pub fn resolve_stage_agent_config(
 ///
 /// Allows flow-specific prompt and capability overrides. When overrides
 /// are `None`, the stage's own configuration is used.
+#[allow(clippy::too_many_arguments)]
 pub fn resolve_stage_agent_config_for(
     workflow: &WorkflowConfig,
     task: &Task,
@@ -904,7 +906,9 @@ mod tests {
             "now",
         ));
 
-        let ctx = builder.build_context("work", &task, None, None, false).unwrap();
+        let ctx = builder
+            .build_context("work", &task, None, None, false)
+            .unwrap();
 
         assert_eq!(ctx.stage.name, "work");
         assert_eq!(ctx.artifacts.len(), 1);
@@ -949,7 +953,9 @@ mod tests {
         task.artifacts
             .set(Artifact::new("summary", "Work done", "work", "t2"));
 
-        let ctx = builder.build_context("review", &task, None, None, false).unwrap();
+        let ctx = builder
+            .build_context("review", &task, None, None, false)
+            .unwrap();
 
         assert_eq!(ctx.stage.name, "review");
         assert_eq!(ctx.artifacts.len(), 2);
@@ -1112,7 +1118,9 @@ mod tests {
             "now",
         ));
 
-        let ctx = builder.build_context("work", &task, None, None, false).unwrap();
+        let ctx = builder
+            .build_context("work", &task, None, None, false)
+            .unwrap();
         let agent_def = "You are a worker agent. Implement the plan.";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
@@ -1209,7 +1217,9 @@ mod tests {
         task.artifacts
             .set(Artifact::new("summary", "Summary", "work", "now"));
 
-        let ctx = builder.build_context("review", &task, None, None, false).unwrap();
+        let ctx = builder
+            .build_context("review", &task, None, None, false)
+            .unwrap();
 
         let agent_def = "Reviewer agent";
         let prompt = build_complete_prompt(agent_def, &ctx);

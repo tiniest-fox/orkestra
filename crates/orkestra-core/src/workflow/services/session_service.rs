@@ -143,7 +143,17 @@ impl SessionService {
 
         // Get or create session in Spawning state
         let session = if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
-            // Existing session — keep existing claude_session_id unchanged
+            // Existing session — ensure we have a session ID if one is provided.
+            // This recovers from corrupted sessions that lost their ID.
+            if session.claude_session_id.is_none() && initial_session_id.is_some() {
+                orkestra_debug!(
+                    "session",
+                    "on_spawn_starting {}/{}: recovering missing session ID",
+                    task_id,
+                    stage
+                );
+                session.claude_session_id = initial_session_id;
+            }
             session.session_state = SessionState::Spawning;
             session.updated_at.clone_from(&now);
             session
@@ -521,6 +531,42 @@ mod tests {
         let ctx = service.get_spawn_context("task-1", "planning").unwrap();
         assert!(ctx.session_id.is_none());
         assert!(!ctx.is_resume); // Forced to false — no session ID to resume with
+    }
+
+    #[test]
+    fn test_recover_missing_session_id() {
+        let (service, store) = create_service();
+
+        // Create session without a session ID (simulates corrupted state)
+        service
+            .on_spawn_starting("task-1", "planning", None)
+            .unwrap();
+
+        // Verify no session ID
+        let session = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
+        assert!(session.claude_session_id.is_none());
+
+        // Now call on_spawn_starting with a session ID — should recover
+        service
+            .on_spawn_starting("task-1", "planning", Some("recovered-uuid".into()))
+            .unwrap();
+
+        // Session should now have the ID
+        let session = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            session.claude_session_id,
+            Some("recovered-uuid".to_string())
+        );
+
+        // Spawn context should return the recovered ID
+        let ctx = service.get_spawn_context("task-1", "planning").unwrap();
+        assert_eq!(ctx.session_id, Some("recovered-uuid".to_string()));
     }
 
     #[test]

@@ -105,7 +105,13 @@ impl PromptService {
         feedback: &str,
         show_direct_structured_output_hint: bool,
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
-        self.resolve_config(workflow, task, Some(feedback), None, show_direct_structured_output_hint)
+        self.resolve_config(
+            workflow,
+            task,
+            Some(feedback),
+            None,
+            show_direct_structured_output_hint,
+        )
     }
 
     /// Resolve agent configuration with no additional context.
@@ -117,7 +123,13 @@ impl PromptService {
         task: &Task,
         show_direct_structured_output_hint: bool,
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
-        self.resolve_config(workflow, task, None, None, show_direct_structured_output_hint)
+        self.resolve_config(
+            workflow,
+            task,
+            None,
+            None,
+            show_direct_structured_output_hint,
+        )
     }
 }
 

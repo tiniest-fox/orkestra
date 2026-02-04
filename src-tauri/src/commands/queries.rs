@@ -1,11 +1,14 @@
 //! Read-only query commands.
 
-use crate::{error::TauriError, state::AppState};
+use crate::{
+    error::TauriError,
+    state::{project_for_window, ProjectRegistry},
+};
 use orkestra_core::workflow::{
     Artifact, AutoTaskTemplate, Iteration, LogEntry, Question, WorkflowConfig,
 };
 use serde::Serialize;
-use tauri::State;
+use tauri::{State, Window};
 
 /// Get the workflow configuration.
 ///
@@ -14,8 +17,12 @@ use tauri::State;
 /// for API consistency.
 #[tauri::command]
 #[allow(clippy::unnecessary_wraps)]
-pub fn workflow_get_config(state: State<AppState>) -> Result<WorkflowConfig, TauriError> {
-    Ok(state.config().clone())
+pub fn workflow_get_config(
+    registry: State<ProjectRegistry>,
+    window: Window,
+) -> Result<WorkflowConfig, TauriError> {
+    let project = project_for_window(&registry, &window)?;
+    Ok(project.config().clone())
 }
 
 /// Get auto-task templates.
@@ -25,64 +32,72 @@ pub fn workflow_get_config(state: State<AppState>) -> Result<WorkflowConfig, Tau
 #[tauri::command]
 #[allow(clippy::unnecessary_wraps)]
 pub fn workflow_get_auto_task_templates(
-    state: State<AppState>,
+    registry: State<ProjectRegistry>,
+    window: Window,
 ) -> Result<Vec<AutoTaskTemplate>, TauriError> {
-    Ok(state.auto_task_templates().to_vec())
+    let project = project_for_window(&registry, &window)?;
+    Ok(project.auto_task_templates().to_vec())
 }
 
 /// Get all iterations for a task.
 #[tauri::command]
 pub fn workflow_get_iterations(
-    state: State<AppState>,
+    registry: State<ProjectRegistry>,
+    window: Window,
     task_id: String,
 ) -> Result<Vec<Iteration>, TauriError> {
-    state.api()?.get_iterations(&task_id).map_err(Into::into)
+    let project = project_for_window(&registry, &window)?;
+    let api = project.api()?;
+    api.get_iterations(&task_id).map_err(Into::into)
 }
 
 /// Get a specific artifact by name.
 #[tauri::command]
 pub fn workflow_get_artifact(
-    state: State<AppState>,
+    registry: State<ProjectRegistry>,
+    window: Window,
     task_id: String,
     name: String,
 ) -> Result<Option<Artifact>, TauriError> {
-    state
-        .api()?
-        .get_artifact(&task_id, &name)
-        .map_err(Into::into)
+    let project = project_for_window(&registry, &window)?;
+    let api = project.api()?;
+    api.get_artifact(&task_id, &name).map_err(Into::into)
 }
 
 /// Get pending questions for a task.
 #[tauri::command]
 pub fn workflow_get_pending_questions(
-    state: State<AppState>,
+    registry: State<ProjectRegistry>,
+    window: Window,
     task_id: String,
 ) -> Result<Vec<Question>, TauriError> {
-    state
-        .api()?
-        .get_pending_questions(&task_id)
-        .map_err(Into::into)
+    let project = project_for_window(&registry, &window)?;
+    let api = project.api()?;
+    api.get_pending_questions(&task_id).map_err(Into::into)
 }
 
 /// Get the current stage for a task.
 #[tauri::command]
 pub fn workflow_get_current_stage(
-    state: State<AppState>,
+    registry: State<ProjectRegistry>,
+    window: Window,
     task_id: String,
 ) -> Result<Option<String>, TauriError> {
-    state.api()?.get_current_stage(&task_id).map_err(Into::into)
+    let project = project_for_window(&registry, &window)?;
+    let api = project.api()?;
+    api.get_current_stage(&task_id).map_err(Into::into)
 }
 
 /// Get rejection feedback from the last iteration.
 #[tauri::command]
 pub fn workflow_get_rejection_feedback(
-    state: State<AppState>,
+    registry: State<ProjectRegistry>,
+    window: Window,
     task_id: String,
 ) -> Result<Option<String>, TauriError> {
-    state
-        .api()?
-        .get_rejection_feedback(&task_id)
-        .map_err(Into::into)
+    let project = project_for_window(&registry, &window)?;
+    let api = project.api()?;
+    api.get_rejection_feedback(&task_id).map_err(Into::into)
 }
 
 /// Branch information for the UI.
@@ -98,8 +113,12 @@ pub struct BranchList {
 ///
 /// Returns empty lists if git service is not configured.
 #[tauri::command]
-pub fn workflow_list_branches(state: State<AppState>) -> Result<BranchList, TauriError> {
-    let api = state.api()?;
+pub fn workflow_list_branches(
+    registry: State<ProjectRegistry>,
+    window: Window,
+) -> Result<BranchList, TauriError> {
+    let project = project_for_window(&registry, &window)?;
+    let api = project.api()?;
 
     let Some(git) = api.git_service() else {
         return Ok(BranchList {
@@ -120,13 +139,13 @@ pub fn workflow_list_branches(state: State<AppState>) -> Result<BranchList, Taur
 /// Used by the UI to show tabs for each stage that has been executed.
 #[tauri::command]
 pub fn workflow_get_stages_with_logs(
-    state: State<AppState>,
+    registry: State<ProjectRegistry>,
+    window: Window,
     task_id: String,
 ) -> Result<Vec<String>, TauriError> {
-    state
-        .api()?
-        .get_stages_with_logs(&task_id)
-        .map_err(Into::into)
+    let project = project_for_window(&registry, &window)?;
+    let api = project.api()?;
+    api.get_stages_with_logs(&task_id).map_err(Into::into)
 }
 
 /// Get log entries for a task's stage.
@@ -143,12 +162,13 @@ pub fn workflow_get_stages_with_logs(
 #[tauri::command]
 #[allow(clippy::similar_names)]
 pub fn workflow_get_logs(
-    state: State<AppState>,
+    registry: State<ProjectRegistry>,
+    window: Window,
     task_id: String,
     stage: Option<String>,
 ) -> Result<Vec<LogEntry>, TauriError> {
-    state
-        .api()?
-        .get_task_logs(&task_id, stage.as_deref())
+    let project = project_for_window(&registry, &window)?;
+    let api = project.api()?;
+    api.get_task_logs(&task_id, stage.as_deref())
         .map_err(Into::into)
 }

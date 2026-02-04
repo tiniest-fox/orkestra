@@ -2,11 +2,13 @@
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema/capability.schema.json",
   "identifier": "default",
   "description": "Default capabilities for Orkestra",
-  "windows": ["main"],
+  "windows": ["*"],
   "permissions": [
     "core:default",
     "core:event:default",
+    "core:window:allow-create",
     "shell:allow-open",
-    "notification:default"
+    "notification:default",
+    "dialog:allow-open"
   ]
 }

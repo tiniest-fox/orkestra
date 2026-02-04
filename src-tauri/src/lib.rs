@@ -4,6 +4,7 @@
 mod commands;
 mod error;
 mod highlight;
+mod project_registry;
 mod startup;
 mod state;
 
@@ -11,6 +12,7 @@ use orkestra_core::{
     find_project_root, orkestra_debug,
     workflow::{load_workflow_for_project, OrchestratorLoop, Phase},
 };
+use project_registry::{ProjectRegistry, ProjectState};
 use startup::{run_startup, StartupState};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
@@ -21,6 +23,7 @@ use std::thread;
 use std::time::Duration;
 
 /// Wrapper for the orchestrator stop flag, stored in Tauri state.
+/// TEMPORARY: Will be replaced by per-project stop flags in subtask 2.
 struct OrchestratorStopFlag(Arc<AtomicBool>);
 
 /// Guard to prevent multiple initialization calls (e.g., from React `StrictMode` double-mount).
@@ -55,20 +58,25 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
         // Request notification permission (triggers OS dialog if not yet determined)
         request_notification_permission(&app_handle);
 
-        // If startup succeeded, register AppState and start orchestrator.
-        // AppState MUST be registered before setting status to Ready,
-        // because the frontend calls commands requiring State<AppState>
-        // as soon as it sees the Ready status.
+        // If startup succeeded, register project in the registry and start orchestrator.
+        // TEMPORARY SHIM: Creates a single-project registry with label "main".
+        // Subtask 2 will replace this with proper multi-project initialization.
         if let Some(app_state) = startup_result.app_state {
             // Clean up orphaned agents from previous crash
             cleanup_orphaned_agents(&app_state);
 
-            // Register AppState so commands can use it
-            app_handle.manage(app_state);
+            // Get registry from app handle
+            let registry = app_handle.state::<ProjectRegistry>();
 
-            // Start the workflow orchestrator
-            if let Some(app_state) = app_handle.try_state::<state::AppState>() {
-                start_workflow_orchestrator(app_handle.clone(), &app_state, stop_flag);
+            // Register the project with label "main" (temporary single-project shim)
+            if let Err(e) = registry.register("main".to_string(), app_state) {
+                orkestra_debug!("startup", "Failed to register project: {}", e);
+                return;
+            }
+
+            // Start the workflow orchestrator for the "main" project
+            if let Ok(project_state) = registry.get("main") {
+                start_workflow_orchestrator(app_handle.clone(), &project_state, stop_flag);
             }
         }
 
@@ -89,13 +97,13 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
 /// needing agents and spawns them as needed.
 fn start_workflow_orchestrator(
     app_handle: AppHandle,
-    app_state: &state::AppState,
+    project_state: &Arc<ProjectState>,
     stop_flag: Arc<AtomicBool>,
 ) {
-    let api = app_state.api_arc();
-    let workflow = app_state.config().clone();
-    let project_root = app_state.project_root().to_path_buf();
-    let store = app_state.create_store();
+    let api = project_state.api_arc();
+    let workflow = project_state.config().clone();
+    let project_root = project_state.project_root().to_path_buf();
+    let store = project_state.create_store();
 
     thread::spawn(move || {
         let orchestrator = OrchestratorLoop::for_project(api, workflow, project_root, store);
@@ -284,10 +292,14 @@ fn notify_if_review_needed(app_handle: &AppHandle, task_id: &str, stage: &str, o
 
     // Look up the task to check phase and get the title.
     // Best-effort: skip notification if state is unavailable or lock is poisoned.
-    let Some(app_state) = app_handle.try_state::<state::AppState>() else {
+    // TEMPORARY: In single-project mode, only look up from "main" project
+    let Some(registry) = app_handle.try_state::<ProjectRegistry>() else {
         return;
     };
-    let Ok(api) = app_state.api() else {
+    let Ok(project_state) = registry.get("main") else {
+        return;
+    };
+    let Ok(api) = project_state.api() else {
         return;
     };
     let Ok(task) = api.get_task(task_id) else {
@@ -353,12 +365,19 @@ fn notify_if_review_needed(app_handle: &AppHandle, task_id: &str, stage: &str, o
 fn cleanup_agents(app_handle: &AppHandle) {
     orkestra_debug!("cleanup", "Killing all tracked agents...");
 
-    let Some(app_state) = app_handle.try_state::<state::AppState>() else {
-        orkestra_debug!("cleanup", "No app state available");
+    let Some(registry) = app_handle.try_state::<ProjectRegistry>() else {
+        orkestra_debug!("cleanup", "No project registry available");
         return;
     };
 
-    let Ok(api) = app_state.api() else {
+    // TEMPORARY: In single-project mode, only clean up the "main" project
+    // Subtask 2 will iterate over all registered projects
+    let Ok(project_state) = registry.get("main") else {
+        orkestra_debug!("cleanup", "No project state available");
+        return;
+    };
+
+    let Ok(api) = project_state.api() else {
         orkestra_debug!("cleanup", "Failed to get API lock");
         return;
     };
@@ -381,10 +400,10 @@ fn cleanup_agents(app_handle: &AppHandle) {
 /// Called on startup to ensure stale PIDs don't prevent new agents from spawning.
 /// Delegates to core's `cleanup_orphaned_agents()` which kills processes and
 /// clears stale PIDs from sessions.
-fn cleanup_orphaned_agents(app_state: &state::AppState) {
+fn cleanup_orphaned_agents(project_state: &ProjectState) {
     orkestra_debug!("startup", "Checking for orphaned agents...");
 
-    let Ok(api) = app_state.api() else {
+    let Ok(api) = project_state.api() else {
         orkestra_debug!("startup", "Failed to get API lock");
         return;
     };
@@ -486,9 +505,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .manage(startup_state)
+        .manage(ProjectRegistry::new())
         .setup(move |app| {
             // Store the stop flag in Tauri state so the init command can access it
+            // TEMPORARY: Will be replaced by per-project stop flags in subtask 2
             app.manage(OrchestratorStopFlag(stop_flag.clone()));
 
             // Initialize syntax highlighter (Send + Sync, shared across commands)
@@ -540,8 +563,11 @@ pub fn run() {
                 // Kill all tracked agents to prevent orphaned processes
                 cleanup_agents(app_handle);
                 // Flush WAL to leave database in a clean state
-                if let Some(app_state) = app_handle.try_state::<state::AppState>() {
-                    app_state.checkpoint_database();
+                // TEMPORARY: In single-project mode, only checkpoint "main" project
+                if let Some(registry) = app_handle.try_state::<ProjectRegistry>() {
+                    if let Ok(project_state) = registry.get("main") {
+                        project_state.checkpoint_database();
+                    }
                 }
             }
         });

@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::error::TauriError;
 use crate::highlight::SyntaxHighlighter;
-use crate::state::AppState;
+use crate::state::{project_for_window, ProjectRegistry};
 
 // =============================================================================
 // Response Types
@@ -93,10 +93,12 @@ pub struct SyntaxCss {
 #[tauri::command]
 pub async fn workflow_get_task_diff(
     task_id: String,
-    app_state: tauri::State<'_, AppState>,
+    registry: tauri::State<'_, ProjectRegistry>,
+    window: tauri::Window,
     highlighter: tauri::State<'_, SyntaxHighlighter>,
 ) -> Result<HighlightedTaskDiff, TauriError> {
-    let api = app_state.api()?;
+    let project = project_for_window(&registry, &window)?;
+    let api = project.api()?;
     let raw_diff = api.get_task_diff(&task_id)?;
 
     // Convert to highlighted format
@@ -114,10 +116,12 @@ pub async fn workflow_get_task_diff(
 pub async fn workflow_get_file_content(
     task_id: String,
     file_path: String,
-    app_state: tauri::State<'_, AppState>,
+    registry: tauri::State<'_, ProjectRegistry>,
+    window: tauri::Window,
     highlighter: tauri::State<'_, SyntaxHighlighter>,
 ) -> Result<Option<Vec<HighlightedLine>>, TauriError> {
-    let api = app_state.api()?;
+    let project = project_for_window(&registry, &window)?;
+    let api = project.api()?;
     let content = api.get_file_content(&task_id, &file_path)?;
 
     let Some(content) = content else {

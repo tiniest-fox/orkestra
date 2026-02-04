@@ -17,7 +17,7 @@ use orkestra_core::{
 };
 use serde::Serialize;
 
-use crate::state::AppState;
+use crate::project_registry::ProjectState;
 
 // =============================================================================
 // Startup Error Types
@@ -193,8 +193,8 @@ impl StartupState {
 pub struct StartupResult {
     /// The status to report to frontend
     pub status: StartupStatus,
-    /// `AppState` if initialization succeeded (None if failed)
-    pub app_state: Option<AppState>,
+    /// `ProjectState` if initialization succeeded (None if failed)
+    pub app_state: Option<ProjectState>,
 }
 
 // =============================================================================
@@ -269,9 +269,9 @@ pub fn run_startup() -> StartupResult {
     // Step 5: Load auto-task templates (non-fatal — empty list on failure)
     let auto_task_templates = load_auto_task_templates(&project_root, &workflow_config);
 
-    // Step 6: Open database and create AppState (runs migrations)
+    // Step 6: Open database and create ProjectState (runs migrations)
     let db_path = orkestra_dir.join("orkestra.db");
-    let app_state = match AppState::new(
+    let project_state = match ProjectState::new(
         workflow_config,
         auto_task_templates,
         &db_path,
@@ -294,7 +294,7 @@ pub fn run_startup() -> StartupResult {
     };
 
     // Check if git service is available (non-fatal warning if not)
-    if !app_state.has_git_service() {
+    if !project_state.has_git_service() {
         warnings.push(
             StartupWarning::new("Git service unavailable")
                 .with_context("Tasks will run without git worktree isolation"),
@@ -303,7 +303,7 @@ pub fn run_startup() -> StartupResult {
 
     StartupResult {
         status: StartupStatus::ready(project_root, warnings),
-        app_state: Some(app_state),
+        app_state: Some(project_state),
     }
 }
 

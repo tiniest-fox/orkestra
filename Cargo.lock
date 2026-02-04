@@ -2911,7 +2911,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dotenvy",
- "once_cell",
  "orkestra-core",
  "serde",
  "serde_json",
@@ -2923,7 +2922,6 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-shell",
  "tauri-plugin-store",
- "tempfile",
  "urlencoding",
 ]
 

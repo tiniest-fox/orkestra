@@ -1,249 +1,441 @@
-//! Project lifecycle commands for multi-window project management.
+//! Project management commands.
 
-use crate::{
-    error::TauriError,
-    project_init::{initialize_orkestra_dir, validate_project_path},
-    project_registry::{ProjectRegistry, RecentProject},
-    startup::{initialize_project, start_project_orchestrator},
-};
-use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_dialog::DialogExt;
+use crate::error::TauriError;
+use crate::project_init::{initialize_project, validate_project_path};
+use crate::project_registry::{ProjectRegistry, RecentProject};
+use orkestra_core::orkestra_debug;
+use serde::Serialize;
+use std::path::PathBuf;
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_store::StoreExt;
 
-const RECENT_PROJECTS_KEY: &str = "recent_projects";
-const MAX_RECENT_PROJECTS: usize = 20;
-
-/// Project information for the current window.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectInfo {
-    /// Absolute path to the project directory.
-    pub path: String,
-    /// Display name derived from folder name.
-    pub display_name: String,
+/// Response from opening a project.
+#[derive(Debug, Serialize)]
+pub struct OpenProjectResponse {
+    /// Window label for the opened project.
+    pub window_label: String,
+    /// Project root path.
+    pub project_root: String,
 }
 
-/// Open a project in a new window.
+/// Information about a project.
+#[derive(Debug, Serialize)]
+pub struct ProjectInfo {
+    /// Project root path.
+    pub project_root: String,
+    /// Whether git service is available.
+    pub has_git: bool,
+}
+
+/// Open a project folder.
 ///
-/// If the project is already open, focuses the existing window instead.
-/// If the project path doesn't have `.orkestra`, creates it silently.
+/// Creates a new window for the project if it's not already open.
+/// If already open, focuses the existing window.
 #[tauri::command]
-pub fn open_project(
+pub async fn open_project(
     app_handle: AppHandle,
-    registry: State<ProjectRegistry>,
+    registry: State<'_, ProjectRegistry>,
     path: String,
-) -> Result<(), TauriError> {
+) -> Result<OpenProjectResponse, TauriError> {
     let project_path = PathBuf::from(&path);
 
-    // Check if project is already open
-    if let Some(existing_label) = registry.is_open(&project_path)? {
-        // Focus existing window
-        if let Some(window) = app_handle.get_webview_window(&existing_label) {
-            window.set_focus().map_err(|e| {
-                TauriError::new("WINDOW_ERROR", format!("Failed to focus window: {e}"))
-            })?;
-            return Ok(());
-        }
-    }
-
-    // Validate project path
-    validate_project_path(&project_path)
-        .map_err(|e| TauriError::new("INVALID_PROJECT_PATH", e.to_string()))?;
-
-    // Initialize .orkestra directory if missing
-    initialize_orkestra_dir(&project_path)
-        .map_err(|e| TauriError::new("INIT_FAILED", e.to_string()))?;
-
-    // Initialize project state
-    let project_state = initialize_project(&project_path).map_err(|status| {
-        let error_msg = match status {
-            crate::startup::StartupStatus::Failed { errors } => errors
-                .into_iter()
-                .map(|e| e.message)
-                .collect::<Vec<_>>()
-                .join("; "),
-            _ => "Unknown initialization error".to_string(),
-        };
-        TauriError::new("INIT_FAILED", error_msg)
+    // Validate the path
+    validate_project_path(&project_path).map_err(|e| {
+        TauriError::new("INVALID_PROJECT_PATH", format!("Invalid project path: {e}"))
     })?;
 
-    // Generate window label from path
-    let label = ProjectRegistry::label_for_path(&project_path);
+    // Check if this project is already open
+    if let Some(existing_label) = registry.is_open(&project_path)? {
+        orkestra_debug!(
+            "project",
+            "Project already open in window '{existing_label}', focusing"
+        );
 
-    // Register project in registry
-    registry.register(label.clone(), project_state)?;
+        // Focus the existing window
+        if let Some(window) = app_handle.get_webview_window(&existing_label) {
+            window.set_focus().ok();
+        }
 
-    // Create new window with project query parameter
-    let url_encoded_path = urlencoding::encode(&path);
-    let url = format!("index.html?project={url_encoded_path}");
+        return Ok(OpenProjectResponse {
+            window_label: existing_label,
+            project_root: path,
+        });
+    }
 
-    // Extract folder name for window title
-    let folder_name = project_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("Orkestra");
+    // Initialize the project (creates .orkestra if needed)
+    let project_state = initialize_project(&project_path).map_err(|e| {
+        TauriError::new(
+            "PROJECT_INIT_FAILED",
+            format!("Failed to initialize project: {e}"),
+        )
+    })?;
 
-    WebviewWindowBuilder::new(&app_handle, &label, WebviewUrl::App(url.into()))
-        .title(folder_name)
-        .build()
-        .map_err(|e| TauriError::new("WINDOW_ERROR", format!("Failed to create window: {e}")))?;
-
-    // Start orchestrator for this project
-    if let Ok(project) = registry.get(&label) {
-        start_project_orchestrator(app_handle.clone(), &project);
-
-        // Add to global project roots list for signal handler cleanup
-        {
-            let mut roots = crate::PROJECT_ROOTS.lock().unwrap();
-            if !roots.contains(&project_path) {
-                roots.push(project_path.clone());
+    // Clean up orphaned agents from previous crash
+    if let Ok(api) = project_state.api() {
+        match api.cleanup_orphaned_agents() {
+            Ok(orphans) if orphans > 0 => {
+                orkestra_debug!("project", "Cleaned up {} orphaned agent(s)", orphans);
+            }
+            Ok(_) => {}
+            Err(e) => {
+                orkestra_debug!("project", "Failed to clean up orphaned agents: {}", e);
             }
         }
     }
 
+    // Generate window label
+    let window_label = ProjectRegistry::label_for_path(&project_path);
+
+    // Register the project state
+    registry
+        .register(window_label.clone(), project_state)
+        .map_err(|e| {
+            TauriError::new(
+                "PROJECT_REGISTRATION_FAILED",
+                format!("Failed to register project: {e}"),
+            )
+        })?;
+
+    // Create a new window for this project
+    let url = format!("/?project={}", urlencoding::encode(&path));
+    let _window = WebviewWindowBuilder::new(
+        &app_handle,
+        &window_label,
+        WebviewUrl::App(url.parse().unwrap()),
+    )
+    .title("Orkestra")
+    .inner_size(1200.0, 800.0)
+    .build()
+    .map_err(|e| {
+        TauriError::new(
+            "WINDOW_CREATE_FAILED",
+            format!("Failed to create window: {e}"),
+        )
+    })?;
+
+    orkestra_debug!(
+        "project",
+        "Created window '{}' for project {}",
+        window_label,
+        path
+    );
+
+    // Start orchestrator for this project
+    start_project_orchestrator(&app_handle, &window_label);
+
     // Update recent projects
-    update_recent_projects(&app_handle, &path)?;
+    add_to_recents(&app_handle, &path)?;
 
-    Ok(())
+    Ok(OpenProjectResponse {
+        window_label,
+        project_root: path,
+    })
 }
 
-/// Get the list of recently opened projects.
-#[tauri::command]
-pub fn get_recent_projects(app_handle: AppHandle) -> Result<Vec<RecentProject>, TauriError> {
-    let store = app_handle
-        .store("store.json")
-        .map_err(|e| TauriError::new("STORE_ERROR", format!("Failed to access store: {e}")))?;
-
-    let recents: Vec<RecentProject> = store
-        .get(RECENT_PROJECTS_KEY)
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
-
-    // Filter out entries whose paths no longer exist
-    let valid_recents: Vec<RecentProject> = recents
-        .into_iter()
-        .filter(|r| Path::new(&r.path).exists())
-        .collect();
-
-    // Sort by last_opened descending (most recent first)
-    let mut sorted = valid_recents;
-    sorted.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
-
-    Ok(sorted)
-}
-
-/// Remove a project from the recent projects list.
-#[tauri::command]
-pub fn remove_recent_project(app_handle: AppHandle, path: String) -> Result<(), TauriError> {
-    let store = app_handle
-        .store("store.json")
-        .map_err(|e| TauriError::new("STORE_ERROR", format!("Failed to access store: {e}")))?;
-
-    let mut recents: Vec<RecentProject> = store
-        .get(RECENT_PROJECTS_KEY)
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
-
-    recents.retain(|r| r.path != path);
-
-    store.set(RECENT_PROJECTS_KEY, serde_json::to_value(&recents).unwrap());
-    store
-        .save()
-        .map_err(|e| TauriError::new("STORE_ERROR", format!("Failed to save store: {e}")))?;
-
-    Ok(())
-}
-
-/// Open a native folder picker dialog.
-///
-/// Returns the selected path or None if the user cancelled.
-#[tauri::command]
-pub fn pick_folder(app_handle: AppHandle) -> Result<Option<String>, TauriError> {
-    use std::sync::mpsc;
-    use tauri_plugin_dialog::FilePath;
-
-    let (tx, rx) = mpsc::channel();
-
-    app_handle.dialog().file().pick_folder(move |result| {
-        let path = result.and_then(|file_path| {
-            if let FilePath::Path(p) = file_path {
-                Some(p.to_string_lossy().to_string())
-            } else {
-                None
-            }
-        });
-        let _ = tx.send(path);
-    });
-
-    rx.recv()
-        .map_err(|e| TauriError::new("DIALOG_ERROR", format!("Dialog channel error: {e}")))
-}
-
-/// Get project information for the current window.
+/// Get information about the current project.
 #[tauri::command]
 pub fn get_project_info(
     registry: State<ProjectRegistry>,
     window: tauri::Window,
 ) -> Result<ProjectInfo, TauriError> {
-    let label = window.label();
-    let project = registry.get(label)?;
+    registry.with_project(window.label(), |state| {
+        Ok(ProjectInfo {
+            project_root: state.project_root().display().to_string(),
+            has_git: state.has_git_service(),
+        })
+    })
+}
 
-    let path = project.project_root().to_string_lossy().to_string();
-    let display_name = project
-        .project_root()
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("Unknown")
-        .to_string();
+/// Get recent projects list.
+#[tauri::command]
+pub fn get_recent_projects(app_handle: AppHandle) -> Result<Vec<RecentProject>, TauriError> {
+    let store = app_handle
+        .store("recents.json")
+        .map_err(|e| TauriError::new("STORE_ERROR", format!("Failed to open store: {e}")))?;
 
-    Ok(ProjectInfo { path, display_name })
+    let recents: Vec<RecentProject> = store
+        .get("recent_projects")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    Ok(recents)
+}
+
+/// Remove a project from recents.
+#[tauri::command]
+pub fn remove_recent_project(
+    app_handle: AppHandle,
+    path: String,
+) -> Result<Vec<RecentProject>, TauriError> {
+    let store = app_handle
+        .store("recents.json")
+        .map_err(|e| TauriError::new("STORE_ERROR", format!("Failed to open store: {e}")))?;
+
+    let mut recents: Vec<RecentProject> = store
+        .get("recent_projects")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    recents.retain(|r| r.path != path);
+
+    store.set("recent_projects", serde_json::to_value(&recents).unwrap());
+    // Recent projects are best-effort: failure to persist doesn't break functionality
+    // (user can re-open via folder picker). Silent failure is acceptable here.
+    store.save().ok();
+
+    Ok(recents)
+}
+
+/// Pick a folder using the native dialog.
+#[tauri::command]
+pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, TauriError> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let path = app.dialog().file().blocking_pick_folder();
+
+    Ok(path.as_ref().map(std::string::ToString::to_string))
 }
 
 // =============================================================================
 // Helper Functions
 // =============================================================================
 
-/// Update the recent projects list with the given path.
-fn update_recent_projects(app_handle: &AppHandle, path: &str) -> Result<(), TauriError> {
+/// Start the orchestrator loop for a project.
+fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
+    let registry: State<ProjectRegistry> = app_handle.state();
+
+    // Extract the data we need from ProjectState
+    let (api, config, project_root, store, stop_flag) =
+        match registry.with_project(window_label, |state| {
+            Ok((
+                state.api_arc(),
+                state.config().clone(),
+                state.project_root().to_path_buf(),
+                state.create_store(),
+                state.stop_flag.clone(),
+            ))
+        }) {
+            Ok(data) => data,
+            Err(e) => {
+                orkestra_debug!("orchestrator", "Failed to get project state: {}", e);
+                return;
+            }
+        };
+
+    let app_handle = app_handle.clone();
+    let window_label_owned = window_label.to_string();
+    let window_label_for_log = window_label.to_string();
+
+    std::thread::spawn(move || {
+        let orchestrator = orkestra_core::workflow::OrchestratorLoop::for_project(
+            api,
+            config,
+            project_root,
+            store,
+        );
+
+        // Share stop flag with orchestrator
+        let orch_stop = orchestrator.stop_flag();
+
+        // Forward stop signal
+        let stop_flag_clone = stop_flag.clone();
+        std::thread::spawn(move || {
+            while !stop_flag_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            orch_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+
+        orchestrator.run(move |event| {
+            handle_orchestrator_event(&app_handle, &window_label_owned, &event);
+        });
+
+        orkestra_debug!(
+            "orchestrator",
+            "Stopped orchestrator for {}",
+            window_label_for_log
+        );
+    });
+}
+
+/// Handle orchestrator events for a specific project window.
+#[allow(clippy::too_many_lines)]
+fn handle_orchestrator_event(
+    app_handle: &AppHandle,
+    window_label: &str,
+    event: &orkestra_core::workflow::OrchestratorEvent,
+) {
+    use orkestra_core::workflow::OrchestratorEvent;
+
+    // Get the window for this project
+    let Some(window) = app_handle.get_webview_window(window_label) else {
+        return;
+    };
+
+    match event {
+        OrchestratorEvent::AgentSpawned {
+            task_id,
+            stage,
+            pid,
+        } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Spawned {} agent for {} (pid: {})",
+                window_label,
+                stage,
+                task_id,
+                pid
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::OutputProcessed {
+            task_id,
+            stage,
+            output_type,
+        } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Processed {} output from {} for {}",
+                window_label,
+                output_type,
+                stage,
+                task_id
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::Error { task_id, error } => {
+            orkestra_debug!("orchestrator", "[{}] Error: {}", window_label, error);
+            if let Some(id) = task_id {
+                let _ = window.emit("task-updated", id);
+            }
+        }
+        OrchestratorEvent::IntegrationStarted { task_id, branch } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Starting integration for {} (branch: {})",
+                window_label,
+                task_id,
+                branch
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::IntegrationCompleted { task_id } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Integration completed for {}",
+                window_label,
+                task_id
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::IntegrationFailed { task_id, error, .. } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Integration failed for {}: {}",
+                window_label,
+                task_id,
+                error
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::ScriptSpawned {
+            task_id,
+            stage,
+            command,
+            pid,
+        } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Spawned script for {}/{}: {} (pid: {})",
+                window_label,
+                task_id,
+                stage,
+                command,
+                pid
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::ScriptCompleted { task_id, stage } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Script completed for {}/{}",
+                window_label,
+                task_id,
+                stage
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::ScriptFailed {
+            task_id,
+            stage,
+            error,
+            recovery_stage,
+        } => {
+            let recovery = recovery_stage.as_deref().unwrap_or("none");
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Script failed for {}/{}: {} (recovery: {})",
+                window_label,
+                task_id,
+                stage,
+                error,
+                recovery
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::ParentAdvanced {
+            task_id,
+            subtask_count,
+        } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Parent {} advanced: all {} subtasks done",
+                window_label,
+                task_id,
+                subtask_count
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+    }
+}
+
+/// Add a project to the recents list.
+fn add_to_recents(app_handle: &AppHandle, path: &str) -> Result<(), TauriError> {
     let store = app_handle
-        .store("store.json")
-        .map_err(|e| TauriError::new("STORE_ERROR", format!("Failed to access store: {e}")))?;
+        .store("recents.json")
+        .map_err(|e| TauriError::new("STORE_ERROR", format!("Failed to open store: {e}")))?;
 
     let mut recents: Vec<RecentProject> = store
-        .get(RECENT_PROJECTS_KEY)
+        .get("recent_projects")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
 
-    // Remove existing entry for this path
+    // Remove existing entry if present
     recents.retain(|r| r.path != path);
 
-    // Extract folder name for display
-    let display_name = Path::new(path)
+    // Add to front
+    let display_name = std::path::Path::new(path)
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("Unknown")
+        .unwrap_or(path)
         .to_string();
 
-    // Add new entry at the front
-    let now = chrono::Utc::now().to_rfc3339();
     recents.insert(
         0,
         RecentProject {
             path: path.to_string(),
             display_name,
-            last_opened: now,
+            last_opened: chrono::Utc::now().to_rfc3339(),
         },
     );
 
-    // Cap at MAX_RECENT_PROJECTS
-    recents.truncate(MAX_RECENT_PROJECTS);
+    // Keep only last 10
+    recents.truncate(10);
 
-    // Save to store
-    store.set(RECENT_PROJECTS_KEY, serde_json::to_value(&recents).unwrap());
-    store
-        .save()
-        .map_err(|e| TauriError::new("STORE_ERROR", format!("Failed to save store: {e}")))?;
+    store.set("recent_projects", serde_json::to_value(&recents).unwrap());
+    // Recent projects are best-effort: failure to persist doesn't break functionality
+    // (user can re-open via folder picker). Silent failure is acceptable here.
+    store.save().ok();
 
     Ok(())
 }

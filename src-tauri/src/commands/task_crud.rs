@@ -1,9 +1,6 @@
 //! Task CRUD commands.
 
-use crate::{
-    error::TauriError,
-    state::{project_for_window, ProjectRegistry},
-};
+use crate::{error::TauriError, project_registry::ProjectRegistry};
 use orkestra_core::workflow::{Task, TaskView};
 use tauri::{State, Window};
 
@@ -13,9 +10,9 @@ pub fn workflow_get_tasks(
     registry: State<ProjectRegistry>,
     window: Window,
 ) -> Result<Vec<TaskView>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.list_task_views().map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state.api()?.list_task_views().map_err(Into::into)
+    })
 }
 
 /// Create a new task.
@@ -34,16 +31,18 @@ pub fn workflow_create_task(
     auto_mode: Option<bool>,
     flow: Option<String>,
 ) -> Result<Task, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.create_task_with_options(
-        &title,
-        &description,
-        base_branch.as_deref(),
-        auto_mode.unwrap_or(false),
-        flow.as_deref(),
-    )
-    .map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .create_task_with_options(
+                &title,
+                &description,
+                base_branch.as_deref(),
+                auto_mode.unwrap_or(false),
+                flow.as_deref(),
+            )
+            .map_err(Into::into)
+    })
 }
 
 /// Create a subtask under a parent task.
@@ -55,10 +54,12 @@ pub fn workflow_create_subtask(
     title: String,
     description: String,
 ) -> Result<Task, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.create_subtask(&parent_id, &title, &description)
-        .map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .create_subtask(&parent_id, &title, &description)
+            .map_err(Into::into)
+    })
 }
 
 /// Get a specific task by ID.
@@ -68,9 +69,9 @@ pub fn workflow_get_task(
     window: Window,
     task_id: String,
 ) -> Result<Task, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.get_task(&task_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state.api()?.get_task(&task_id).map_err(Into::into)
+    })
 }
 
 /// Delete a task, killing any running agents first.
@@ -84,9 +85,12 @@ pub fn workflow_delete_task(
     window: Window,
     task_id: String,
 ) -> Result<(), TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.delete_task_with_cleanup(&task_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .delete_task_with_cleanup(&task_id)
+            .map_err(Into::into)
+    })
 }
 
 /// List subtasks for a parent task (rich view with derived state).
@@ -96,9 +100,12 @@ pub fn workflow_list_subtasks(
     window: Window,
     parent_id: String,
 ) -> Result<Vec<TaskView>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.list_subtask_views(&parent_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .list_subtask_views(&parent_id)
+            .map_err(Into::into)
+    })
 }
 
 /// Get all archived tasks.
@@ -109,7 +116,7 @@ pub fn workflow_get_archived_tasks(
     registry: State<ProjectRegistry>,
     window: Window,
 ) -> Result<Vec<Task>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.list_archived_tasks().map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state.api()?.list_archived_tasks().map_err(Into::into)
+    })
 }

@@ -1,244 +1,92 @@
 //! Project initialization and validation.
 //!
-//! This module handles:
-//! - Creating `.orkestra/` directory for new projects
-//! - Validating project paths before initialization
-//! - Providing structured errors with remediation suggestions
+//! Handles creating `.orkestra` directories for new projects and validating existing ones.
 
 use std::fs;
 use std::path::Path;
 
-use serde::Serialize;
+use orkestra_core::orkestra_debug;
+use orkestra_core::workflow::{load_auto_task_templates, load_workflow_for_project};
 
-// =============================================================================
-// Project Initialization Errors
-// =============================================================================
+use crate::project_registry::ProjectState;
 
-/// Errors that can occur during project initialization.
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ProjectInitError {
-    /// The provided path does not exist.
-    PathNotFound { path: String, remediation: String },
-    /// The provided path exists but is not a directory.
-    NotADirectory { path: String, remediation: String },
-    /// Permission denied when accessing the path.
-    PermissionDenied { path: String, remediation: String },
-    /// Failed to create `.orkestra/` directory.
-    CreateFailed {
-        path: String,
-        error: String,
-        remediation: String,
-    },
-}
+/// Initialize an `.orkestra` directory for a project.
+///
+/// If the directory doesn't exist, creates it with a default `workflow.yaml`.
+/// Returns a `ProjectState` for the initialized project.
+pub fn initialize_project(project_root: &Path) -> Result<ProjectState, String> {
+    let orkestra_dir = project_root.join(".orkestra");
 
-impl std::fmt::Display for ProjectInitError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::PathNotFound { path, .. } => write!(f, "Path not found: {path}"),
-            Self::NotADirectory { path, .. } => write!(f, "Not a directory: {path}"),
-            Self::PermissionDenied { path, .. } => write!(f, "Permission denied: {path}"),
-            Self::CreateFailed { path, error, .. } => {
-                write!(f, "Failed to create .orkestra in {path}: {error}")
-            }
-        }
+    // Create .orkestra directory if it doesn't exist
+    if !orkestra_dir.exists() {
+        orkestra_debug!(
+            "project_init",
+            "Creating .orkestra directory at {}",
+            orkestra_dir.display()
+        );
+        fs::create_dir_all(&orkestra_dir).map_err(|e| {
+            format!(
+                "Failed to create .orkestra directory at {}: {}",
+                orkestra_dir.display(),
+                e
+            )
+        })?;
     }
+
+    // Initialize debug logging for this project
+    orkestra_core::debug_log::init(&orkestra_dir);
+
+    // Load or create workflow config
+    let workflow_config = load_workflow_for_project(project_root).map_err(|e| {
+        format!(
+            "Failed to load workflow config for {}: {}",
+            project_root.display(),
+            e
+        )
+    })?;
+
+    // Validate config
+    let validation_errors = workflow_config.validate();
+    if !validation_errors.is_empty() {
+        return Err(format!(
+            "Workflow configuration is invalid: {}",
+            validation_errors.join("; ")
+        ));
+    }
+
+    // Load auto-task templates (non-fatal — empty list on failure)
+    let auto_task_templates = load_auto_task_templates(project_root, &workflow_config);
+
+    // Create database path
+    let db_path = orkestra_dir.join("orkestra.db");
+
+    // Create ProjectState (initializes database connection)
+    ProjectState::new(
+        workflow_config,
+        auto_task_templates,
+        &db_path,
+        project_root.to_path_buf(),
+    )
 }
 
-impl std::error::Error for ProjectInitError {}
-
-// =============================================================================
-// Project Path Validation
-// =============================================================================
-
-/// Validate that a path is suitable for use as a project directory.
-///
-/// Checks:
-/// - Path exists
-/// - Path is a directory
-/// - Path is readable and writable
-///
-/// Returns structured errors with remediation suggestions.
-pub fn validate_project_path(path: &Path) -> Result<(), ProjectInitError> {
-    // Check that path exists
+/// Validate that a project directory exists and can be initialized.
+pub fn validate_project_path(path: &Path) -> Result<(), String> {
     if !path.exists() {
-        return Err(ProjectInitError::PathNotFound {
-            path: path.display().to_string(),
-            remediation: "Choose a folder that exists, or create the folder first.".to_string(),
-        });
+        return Err(format!("Path does not exist: {}", path.display()));
     }
 
-    // Check that path is a directory
-    let metadata = fs::metadata(path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::PermissionDenied {
-            ProjectInitError::PermissionDenied {
-                path: path.display().to_string(),
-                remediation: "Check file permissions and ensure you have access to this folder."
-                    .to_string(),
-            }
-        } else {
-            ProjectInitError::CreateFailed {
-                path: path.display().to_string(),
-                error: e.to_string(),
-                remediation: "Try selecting a different folder.".to_string(),
-            }
-        }
-    })?;
-
-    if !metadata.is_dir() {
-        return Err(ProjectInitError::NotADirectory {
-            path: path.display().to_string(),
-            remediation: "Choose a folder, not a file.".to_string(),
-        });
+    if !path.is_dir() {
+        return Err(format!("Path is not a directory: {}", path.display()));
     }
 
-    // Check read/write permissions by attempting to read the directory
-    fs::read_dir(path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::PermissionDenied {
-            ProjectInitError::PermissionDenied {
-                path: path.display().to_string(),
-                remediation: "Check file permissions and ensure you have read and write access."
-                    .to_string(),
-            }
-        } else {
-            ProjectInitError::CreateFailed {
-                path: path.display().to_string(),
-                error: e.to_string(),
-                remediation: "Try selecting a different folder.".to_string(),
-            }
-        }
-    })?;
+    // Check if we can create .orkestra directory
+    let orkestra_dir = path.join(".orkestra");
+    if orkestra_dir.exists() && !orkestra_dir.is_dir() {
+        return Err(format!(
+            ".orkestra exists but is not a directory: {}",
+            orkestra_dir.display()
+        ));
+    }
 
     Ok(())
-}
-
-// =============================================================================
-// Orkestra Directory Initialization
-// =============================================================================
-
-/// Initialize `.orkestra/` directory in the given project path.
-///
-/// If `.orkestra/` already exists, this is a no-op (returns success).
-/// The database will be created automatically by `DatabaseConnection::open_validated()`
-/// during `ProjectState` construction. Workflow config falls back to default when absent.
-///
-/// # Arguments
-///
-/// * `project_path` - The project root directory
-///
-/// # Returns
-///
-/// * `Ok(())` - Directory exists or was created successfully
-/// * `Err(ProjectInitError)` - Failed to create directory
-pub fn initialize_orkestra_dir(project_path: &Path) -> Result<(), ProjectInitError> {
-    let orkestra_dir = project_path.join(".orkestra");
-
-    // If .orkestra already exists, this is a no-op
-    if orkestra_dir.exists() {
-        return Ok(());
-    }
-
-    // Create .orkestra directory
-    fs::create_dir(&orkestra_dir).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::PermissionDenied {
-            ProjectInitError::PermissionDenied {
-                path: orkestra_dir.display().to_string(),
-                remediation: "Check file permissions and ensure you have write access.".to_string(),
-            }
-        } else {
-            ProjectInitError::CreateFailed {
-                path: orkestra_dir.display().to_string(),
-                error: e.to_string(),
-                remediation: "Ensure the parent directory exists and you have write permissions."
-                    .to_string(),
-            }
-        }
-    })?;
-
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_validate_project_path_valid_dir() {
-        let temp_dir = TempDir::new().unwrap();
-        let result = validate_project_path(temp_dir.path());
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_validate_project_path_nonexistent() {
-        let path = Path::new("/nonexistent/path/that/does/not/exist");
-        let result = validate_project_path(path);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ProjectInitError::PathNotFound { .. } => {}
-            e => panic!("Expected PathNotFound, got {e:?}"),
-        }
-    }
-
-    #[test]
-    fn test_validate_project_path_file_not_dir() {
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("file.txt");
-        fs::write(&file_path, "test").unwrap();
-
-        let result = validate_project_path(&file_path);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ProjectInitError::NotADirectory { .. } => {}
-            e => panic!("Expected NotADirectory, got {e:?}"),
-        }
-    }
-
-    #[test]
-    fn test_initialize_orkestra_dir_new() {
-        let temp_dir = TempDir::new().unwrap();
-        let project_path = temp_dir.path();
-        let orkestra_dir = project_path.join(".orkestra");
-
-        // Should not exist initially
-        assert!(!orkestra_dir.exists());
-
-        // Initialize
-        let result = initialize_orkestra_dir(project_path);
-        assert!(result.is_ok());
-
-        // Should exist now
-        assert!(orkestra_dir.exists());
-        assert!(orkestra_dir.is_dir());
-    }
-
-    #[test]
-    fn test_initialize_orkestra_dir_already_exists() {
-        let temp_dir = TempDir::new().unwrap();
-        let project_path = temp_dir.path();
-        let orkestra_dir = project_path.join(".orkestra");
-
-        // Create .orkestra directory manually
-        fs::create_dir(&orkestra_dir).unwrap();
-
-        // Initialize should be a no-op
-        let result = initialize_orkestra_dir(project_path);
-        assert!(result.is_ok());
-
-        // Should still exist
-        assert!(orkestra_dir.exists());
-    }
-
-    #[test]
-    fn test_initialize_orkestra_dir_invalid_path() {
-        let path = Path::new("/nonexistent/path");
-        let result = initialize_orkestra_dir(path);
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ProjectInitError::CreateFailed { .. } => {}
-            e => panic!("Expected CreateFailed, got {e:?}"),
-        }
-    }
 }

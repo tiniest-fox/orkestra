@@ -7,8 +7,11 @@
     "core:default",
     "core:event:default",
     "core:window:allow-create",
+    "core:window:allow-close",
+    "core:window:allow-set-focus",
     "shell:allow-open",
     "notification:default",
-    "dialog:allow-open"
+    "dialog:default",
+    "store:default"
   ]
 }

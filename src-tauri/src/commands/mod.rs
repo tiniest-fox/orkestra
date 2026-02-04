@@ -15,9 +15,6 @@ mod project;
 mod queries;
 mod task_crud;
 
-use crate::startup::{StartupState, StartupStatus};
-use tauri::State;
-
 // Re-export all commands for use in invoke_handler!
 pub use diff::*;
 pub use external_tools::*;
@@ -25,16 +22,3 @@ pub use human_actions::*;
 pub use project::*;
 pub use queries::*;
 pub use task_crud::*;
-
-// =============================================================================
-// Startup Commands
-// =============================================================================
-
-/// Get the startup status.
-///
-/// This command is always available and should be called by the frontend
-/// before attempting any other workflow operations.
-#[tauri::command]
-pub fn get_startup_status(state: State<StartupState>) -> StartupStatus {
-    state.status()
-}

@@ -1,203 +1,144 @@
-/**
- * ProjectPicker - UI for selecting a project to open.
- *
- * Shown when a window has no `project` query parameter.
- * Displays an "Open Folder" button and a list of recently opened projects.
- */
-
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Clock, FolderOpen, X } from "lucide-react";
+import { ChevronRight, FolderOpen, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { RecentProject } from "../../types/project";
-import { formatRelativeTime } from "../../utils/formatters";
 import { Button } from "../ui/Button";
-import { IconButton } from "../ui/IconButton";
-import { Panel } from "../ui/Panel/Panel";
+import { Panel } from "../ui/Panel";
 
-interface RecentProjectCardProps {
-  project: RecentProject;
-  onOpen: (path: string) => void;
-  onRemove: (path: string) => void;
+interface ProjectPickerProps {
+  errorMessage?: string;
 }
 
-/**
- * Card for a single recent project entry.
- */
-function RecentProjectCard({ project, onOpen, onRemove }: RecentProjectCardProps) {
-  return (
-    <Panel as="button" className="text-left" onClick={() => onOpen(project.path)}>
-      <div className="p-3 flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-stone-900 dark:text-stone-100 mb-1">
-            {project.display_name}
-          </div>
-          <div className="text-sm text-stone-500 dark:text-stone-400 truncate mb-1">
-            {project.path}
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-stone-400 dark:text-stone-500">
-            <Clock className="w-3.5 h-3.5" />
-            <span>{formatRelativeTime(project.last_opened)}</span>
-          </div>
-        </div>
-        <IconButton
-          icon={<X />}
-          aria-label="Remove from recent projects"
-          size="sm"
-          variant="ghost"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove(project.path);
-          }}
-        />
-      </div>
-    </Panel>
-  );
-}
+export function ProjectPicker({ errorMessage: initialError }: ProjectPickerProps) {
+  const [recents, setRecents] = useState<RecentProject[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | undefined>(initialError);
 
-export function ProjectPicker() {
-  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadRecentProjects = useCallback(async () => {
+  const loadRecents = useCallback(async () => {
     try {
       const projects = await invoke<RecentProject[]>("get_recent_projects");
-      setRecentProjects(projects);
+      setRecents(projects);
     } catch (err) {
       console.error("Failed to load recent projects:", err);
-      // Non-fatal - just show empty list
+      setError(`Failed to load recent projects: ${String(err)}`);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  // Load recent projects on mount
   useEffect(() => {
-    loadRecentProjects();
-  }, [loadRecentProjects]);
-
-  // Check for error query parameter
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const errorParam = params.get("error");
-    if (errorParam) {
-      setError(decodeURIComponent(errorParam));
-    }
-  }, []);
+    loadRecents();
+  }, [loadRecents]);
 
   async function handleOpenFolder() {
     try {
-      setIsLoading(true);
-      setError(null);
-
-      // Open native folder picker
       const path = await invoke<string | null>("pick_folder");
-      if (!path) {
-        // User cancelled
-        setIsLoading(false);
-        return;
+      if (path) {
+        await invoke("open_project", { path });
+        // The command will create a new window, so this window's state is irrelevant after
       }
-
-      // Open the selected project
-      await invoke("open_project", { path });
-
-      // Close the picker window after successful project open
-      await getCurrentWindow().close();
     } catch (err) {
-      setIsLoading(false);
-      setError(String(err));
+      console.error("Failed to open project:", err);
+      setError(`Failed to open project: ${String(err)}`);
     }
   }
 
-  async function handleOpenRecent(path: string) {
+  async function handleOpenRecent(project: RecentProject) {
     try {
-      setIsLoading(true);
-      setError(null);
-
-      await invoke("open_project", { path });
-
-      // Close the picker window after successful project open
-      await getCurrentWindow().close();
+      await invoke("open_project", { path: project.path });
+      // The command will create a new window or focus existing
     } catch (err) {
-      setIsLoading(false);
-      setError(String(err));
+      console.error("Failed to open project:", err);
+      setError(`Failed to open ${project.display_name}: ${String(err)}`);
+      // Reload recents in case path is no longer valid
+      loadRecents();
     }
   }
 
-  const handleRemoveRecent = useCallback(
-    async (path: string) => {
-      try {
-        await invoke("remove_recent_project", { path });
-        // Refresh the list
-        await loadRecentProjects();
-      } catch (err) {
-        console.error("Failed to remove recent project:", err);
-        setError(String(err));
-      }
-    },
-    [loadRecentProjects],
-  );
+  async function handleRemoveRecent(project: RecentProject, event: React.MouseEvent) {
+    event.stopPropagation();
+    try {
+      const updated = await invoke<RecentProject[]>("remove_recent_project", {
+        path: project.path,
+      });
+      setRecents(updated);
+    } catch (err) {
+      console.error("Failed to remove recent project:", err);
+      setError(`Failed to remove ${project.display_name}: ${String(err)}`);
+    }
+  }
 
   return (
-    <div className="h-screen bg-stone-100 dark:bg-stone-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
-        {/* Error banner */}
-        {error && (
-          <div className="mb-4 bg-error-50 dark:bg-error-950 border border-error-200 dark:border-error-800 rounded-panel p-4">
-            <div className="flex items-start justify-between gap-3">
-              <p className="text-error-800 dark:text-error-200 text-sm flex-1">{error}</p>
-              <IconButton
-                icon={<X />}
-                aria-label="Dismiss error"
-                size="sm"
-                variant="ghost"
-                onClick={() => setError(null)}
-              />
+    <div className="flex h-screen w-screen items-center justify-center bg-stone-50 dark:bg-stone-950">
+      <Panel className="w-full max-w-2xl">
+        <Panel.Header>
+          <Panel.Title>Open Project</Panel.Title>
+        </Panel.Header>
+        <Panel.Body>
+          {error && (
+            <div className="mb-4 rounded-md bg-error/10 px-4 py-3 text-sm text-error dark:bg-error/20">
+              {error}
             </div>
-          </div>
-        )}
+          )}
 
-        <Panel className="p-8">
-          {/* Title */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-heading font-bold text-stone-900 dark:text-stone-100 mb-2">
-              Orkestra
-            </h1>
-            <p className="text-stone-500 dark:text-stone-400">Select a project to get started</p>
+          <div className="mb-6">
+            <Button onClick={handleOpenFolder} className="w-full" size="lg">
+              <FolderOpen className="mr-2 h-5 w-5" />
+              Open Folder
+            </Button>
           </div>
 
-          {/* Open Folder button */}
-          <Button
-            variant="primary"
-            size="lg"
-            fullWidth
-            loading={isLoading}
-            onClick={handleOpenFolder}
-            className="mb-8"
-          >
-            <FolderOpen className="w-5 h-5 mr-2" />
-            Open Folder
-          </Button>
+          {loading && (
+            <div className="py-8 text-center text-sm text-stone-500 dark:text-stone-400">
+              Loading recent projects...
+            </div>
+          )}
 
-          {/* Recent projects */}
-          {recentProjects.length > 0 && (
+          {!loading && recents.length === 0 && (
+            <div className="py-8 text-center text-sm text-stone-500 dark:text-stone-400">
+              No recent projects. Open a folder to get started.
+            </div>
+          )}
+
+          {!loading && recents.length > 0 && (
             <div>
-              <h2 className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-3">
+              <h3 className="mb-3 text-sm font-medium text-stone-700 dark:text-stone-300">
                 Recent Projects
-              </h2>
+              </h3>
               <div className="space-y-2">
-                {recentProjects.map((project) => (
-                  <RecentProjectCard
+                {recents.map((project) => (
+                  <button
                     key={project.path}
-                    project={project}
-                    onOpen={handleOpenRecent}
-                    onRemove={handleRemoveRecent}
-                  />
+                    type="button"
+                    onClick={() => handleOpenRecent(project)}
+                    className="group flex w-full items-center justify-between rounded-md border border-stone-200 bg-white px-4 py-3 text-left transition-colors hover:border-orange-300 hover:bg-orange-50 dark:border-stone-700 dark:bg-stone-900 dark:hover:border-orange-700 dark:hover:bg-orange-950/30"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-stone-900 dark:text-stone-100">
+                        {project.display_name}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-stone-500 dark:text-stone-400">
+                        {project.path}
+                      </div>
+                    </div>
+                    <div className="ml-4 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => handleRemoveRecent(project, e)}
+                        className="rounded p-1 text-stone-400 opacity-0 transition-all hover:bg-stone-100 hover:text-stone-600 group-hover:opacity-100 dark:hover:bg-stone-800 dark:hover:text-stone-300"
+                        aria-label={`Remove ${project.display_name} from recents`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                      <ChevronRight className="h-5 w-5 text-stone-400 transition-transform group-hover:translate-x-0.5 group-hover:text-orange-600 dark:group-hover:text-orange-400" />
+                    </div>
+                  </button>
                 ))}
               </div>
             </div>
           )}
-        </Panel>
-      </div>
+        </Panel.Body>
+      </Panel>
     </div>
   );
 }

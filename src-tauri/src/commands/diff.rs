@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::error::TauriError;
 use crate::highlight::SyntaxHighlighter;
-use crate::state::{project_for_window, ProjectRegistry};
+use crate::project_registry::ProjectRegistry;
 
 // =============================================================================
 // Response Types
@@ -97,18 +97,19 @@ pub async fn workflow_get_task_diff(
     window: tauri::Window,
     highlighter: tauri::State<'_, SyntaxHighlighter>,
 ) -> Result<HighlightedTaskDiff, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    let raw_diff = api.get_task_diff(&task_id)?;
+    registry.with_project(window.label(), |state| {
+        let api = state.api()?;
+        let raw_diff = api.get_task_diff(&task_id)?;
 
-    // Convert to highlighted format
-    let files = raw_diff
-        .files
-        .into_iter()
-        .map(|file| highlight_file_diff(file, &highlighter))
-        .collect();
+        // Convert to highlighted format
+        let files = raw_diff
+            .files
+            .into_iter()
+            .map(|file| highlight_file_diff(file, &highlighter))
+            .collect();
 
-    Ok(HighlightedTaskDiff { files })
+        Ok(HighlightedTaskDiff { files })
+    })
 }
 
 /// Get the content of a file at HEAD in a task's worktree, with syntax highlighting.
@@ -120,39 +121,40 @@ pub async fn workflow_get_file_content(
     window: tauri::Window,
     highlighter: tauri::State<'_, SyntaxHighlighter>,
 ) -> Result<Option<Vec<HighlightedLine>>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    let content = api.get_file_content(&task_id, &file_path)?;
+    registry.with_project(window.label(), |state| {
+        let api = state.api()?;
+        let content = api.get_file_content(&task_id, &file_path)?;
 
-    let Some(content) = content else {
-        return Ok(None);
-    };
+        let Some(content) = content else {
+            return Ok(None);
+        };
 
-    // Extract file extension for syntax highlighting
-    let extension = std::path::Path::new(&file_path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+        // Extract file extension for syntax highlighting
+        let extension = std::path::Path::new(&file_path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
 
-    // Highlight each line as context
-    #[allow(clippy::cast_possible_truncation)]
-    let lines: Vec<HighlightedLine> = content
-        .lines()
-        .enumerate()
-        .map(|(i, line)| {
-            let line_with_newline = format!("{line}\n");
-            let html = highlighter.highlight_line(&line_with_newline, extension);
-            HighlightedLine {
-                line_type: LineType::Context,
-                content: line.to_string(),
-                html,
-                old_line_number: Some((i + 1) as u32),
-                new_line_number: Some((i + 1) as u32),
-            }
-        })
-        .collect();
+        // Highlight each line as context
+        #[allow(clippy::cast_possible_truncation)]
+        let lines: Vec<HighlightedLine> = content
+            .lines()
+            .enumerate()
+            .map(|(i, line)| {
+                let line_with_newline = format!("{line}\n");
+                let html = highlighter.highlight_line(&line_with_newline, extension);
+                HighlightedLine {
+                    line_type: LineType::Context,
+                    content: line.to_string(),
+                    html,
+                    old_line_number: Some((i + 1) as u32),
+                    new_line_number: Some((i + 1) as u32),
+                }
+            })
+            .collect();
 
-    Ok(Some(lines))
+        Ok(Some(lines))
+    })
 }
 
 /// Get the syntax CSS for light and dark themes.

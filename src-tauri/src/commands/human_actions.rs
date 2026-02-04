@@ -1,9 +1,6 @@
 //! Human action commands: approve, reject, answer questions.
 
-use crate::{
-    error::TauriError,
-    state::{project_for_window, ProjectRegistry},
-};
+use crate::{error::TauriError, project_registry::ProjectRegistry};
 use orkestra_core::workflow::{QuestionAnswer, Task};
 use tauri::{State, Window};
 
@@ -16,9 +13,9 @@ pub fn workflow_approve(
     window: Window,
     task_id: String,
 ) -> Result<Task, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.approve(&task_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state.api()?.approve(&task_id).map_err(Into::into)
+    })
 }
 
 /// Reject the current stage artifact with feedback.
@@ -31,9 +28,9 @@ pub fn workflow_reject(
     task_id: String,
     feedback: String,
 ) -> Result<Task, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.reject(&task_id, &feedback).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state.api()?.reject(&task_id, &feedback).map_err(Into::into)
+    })
 }
 
 /// Answer pending questions from the agent.
@@ -46,9 +43,12 @@ pub fn workflow_answer_questions(
     task_id: String,
     answers: Vec<QuestionAnswer>,
 ) -> Result<Task, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.answer_questions(&task_id, answers).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .answer_questions(&task_id, answers)
+            .map_err(Into::into)
+    })
 }
 
 /// Integrate a completed task by merging its branch to primary.
@@ -61,9 +61,9 @@ pub fn workflow_integrate_task(
     window: Window,
     task_id: String,
 ) -> Result<Task, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.integrate_task(&task_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state.api()?.integrate_task(&task_id).map_err(Into::into)
+    })
 }
 
 /// Retry a failed task by resuming from its last active stage.
@@ -75,9 +75,9 @@ pub fn workflow_retry(
     window: Window,
     task_id: String,
 ) -> Result<Task, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.retry(&task_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state.api()?.retry(&task_id).map_err(Into::into)
+    })
 }
 
 /// Set the auto_mode flag on a task.
@@ -91,7 +91,10 @@ pub fn workflow_set_auto_mode(
     task_id: String,
     auto_mode: bool,
 ) -> Result<Task, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.set_auto_mode(&task_id, auto_mode).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .set_auto_mode(&task_id, auto_mode)
+            .map_err(Into::into)
+    })
 }

@@ -1,9 +1,6 @@
 //! Read-only query commands.
 
-use crate::{
-    error::TauriError,
-    state::{project_for_window, ProjectRegistry},
-};
+use crate::{error::TauriError, project_registry::ProjectRegistry};
 use orkestra_core::workflow::{
     Artifact, AutoTaskTemplate, Iteration, LogEntry, Question, WorkflowConfig,
 };
@@ -21,8 +18,7 @@ pub fn workflow_get_config(
     registry: State<ProjectRegistry>,
     window: Window,
 ) -> Result<WorkflowConfig, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    Ok(project.config().clone())
+    registry.with_project(window.label(), |state| Ok(state.config().clone()))
 }
 
 /// Get auto-task templates.
@@ -35,8 +31,9 @@ pub fn workflow_get_auto_task_templates(
     registry: State<ProjectRegistry>,
     window: Window,
 ) -> Result<Vec<AutoTaskTemplate>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    Ok(project.auto_task_templates().to_vec())
+    registry.with_project(window.label(), |state| {
+        Ok(state.auto_task_templates().to_vec())
+    })
 }
 
 /// Get all iterations for a task.
@@ -46,9 +43,9 @@ pub fn workflow_get_iterations(
     window: Window,
     task_id: String,
 ) -> Result<Vec<Iteration>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.get_iterations(&task_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state.api()?.get_iterations(&task_id).map_err(Into::into)
+    })
 }
 
 /// Get a specific artifact by name.
@@ -59,9 +56,12 @@ pub fn workflow_get_artifact(
     task_id: String,
     name: String,
 ) -> Result<Option<Artifact>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.get_artifact(&task_id, &name).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .get_artifact(&task_id, &name)
+            .map_err(Into::into)
+    })
 }
 
 /// Get pending questions for a task.
@@ -71,9 +71,12 @@ pub fn workflow_get_pending_questions(
     window: Window,
     task_id: String,
 ) -> Result<Vec<Question>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.get_pending_questions(&task_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .get_pending_questions(&task_id)
+            .map_err(Into::into)
+    })
 }
 
 /// Get the current stage for a task.
@@ -83,9 +86,9 @@ pub fn workflow_get_current_stage(
     window: Window,
     task_id: String,
 ) -> Result<Option<String>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.get_current_stage(&task_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state.api()?.get_current_stage(&task_id).map_err(Into::into)
+    })
 }
 
 /// Get rejection feedback from the last iteration.
@@ -95,9 +98,12 @@ pub fn workflow_get_rejection_feedback(
     window: Window,
     task_id: String,
 ) -> Result<Option<String>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.get_rejection_feedback(&task_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .get_rejection_feedback(&task_id)
+            .map_err(Into::into)
+    })
 }
 
 /// Branch information for the UI.
@@ -117,19 +123,20 @@ pub fn workflow_list_branches(
     registry: State<ProjectRegistry>,
     window: Window,
 ) -> Result<BranchList, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
+    registry.with_project(window.label(), |state| {
+        let api = state.api()?;
 
-    let Some(git) = api.git_service() else {
-        return Ok(BranchList {
-            branches: vec![],
-            current: None,
-        });
-    };
+        let Some(git) = api.git_service() else {
+            return Ok(BranchList {
+                branches: vec![],
+                current: None,
+            });
+        };
 
-    Ok(BranchList {
-        branches: git.list_branches().unwrap_or_default(),
-        current: git.current_branch().ok(),
+        Ok(BranchList {
+            branches: git.list_branches().unwrap_or_default(),
+            current: git.current_branch().ok(),
+        })
     })
 }
 
@@ -143,9 +150,12 @@ pub fn workflow_get_stages_with_logs(
     window: Window,
     task_id: String,
 ) -> Result<Vec<String>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.get_stages_with_logs(&task_id).map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .get_stages_with_logs(&task_id)
+            .map_err(Into::into)
+    })
 }
 
 /// Get log entries for a task's stage.
@@ -167,8 +177,10 @@ pub fn workflow_get_logs(
     task_id: String,
     stage: Option<String>,
 ) -> Result<Vec<LogEntry>, TauriError> {
-    let project = project_for_window(&registry, &window)?;
-    let api = project.api()?;
-    api.get_task_logs(&task_id, stage.as_deref())
-        .map_err(Into::into)
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .get_task_logs(&task_id, stage.as_deref())
+            .map_err(Into::into)
+    })
 }

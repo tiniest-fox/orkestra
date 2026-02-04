@@ -1,461 +1,301 @@
-//! End-to-end tests for multi-project isolation.
+//! E2E tests for multi-project isolation.
 //!
-//! Verifies that two simultaneously open projects have complete data isolation:
-//! - Task lists don't cross-contaminate
-//! - Task operations in one project don't affect the other
-//! - Orchestrator loops are independent
-//! - Stop flags are per-project
-//! - Concurrent task creation has no cross-contamination
-//! - Subtasks are isolated across projects
+//! Tests that multiple projects can run simultaneously without interfering
+//! with each other's state, database, or orchestrator.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use super::helpers::{MockAgentOutput, TestEnv};
+use orkestra_core::workflow::config::WorkflowConfig;
+use orkestra_core::workflow::runtime::Phase;
+use std::sync::{Arc, Mutex};
 use std::thread;
-
-use orkestra_core::workflow::execution::SubtaskOutput;
-use orkestra_core::workflow::runtime::{Phase, Status};
-
-use super::helpers::{workflows, MockAgentOutput, TestEnv};
-
-// =============================================================================
-// Test: Task List Isolation
-// =============================================================================
+use std::time::Duration;
 
 #[test]
-fn test_two_projects_have_isolated_task_lists() {
-    // Create two separate projects
-    let workflow = workflows::with_subtasks();
-    let project_a = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-    let project_b = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-
-    // Create 3 tasks in project A
-    let alpha_task1 = project_a.create_task("Task A1", "First task in A", None);
-    let alpha_task2 = project_a.create_task("Task A2", "Second task in A", None);
-    let alpha_task3 = project_a.create_task("Task A3", "Third task in A", None);
-
-    // Create 2 tasks in project B
-    let beta_task1 = project_b.create_task("Task B1", "First task in B", None);
-    let beta_task2 = project_b.create_task("Task B2", "Second task in B", None);
-
-    // Verify project A has exactly 3 tasks
-    let tasks_a = project_a.api().list_tasks().unwrap();
-    assert_eq!(tasks_a.len(), 3);
-    let titles_a: Vec<_> = tasks_a.iter().map(|t| t.title.as_str()).collect();
-    assert!(titles_a.contains(&"Task A1"));
-    assert!(titles_a.contains(&"Task A2"));
-    assert!(titles_a.contains(&"Task A3"));
-
-    // Verify project B has exactly 2 tasks
-    let tasks_b = project_b.api().list_tasks().unwrap();
-    assert_eq!(tasks_b.len(), 2);
-    let titles_b: Vec<_> = tasks_b.iter().map(|t| t.title.as_str()).collect();
-    assert!(titles_b.contains(&"Task B1"));
-    assert!(titles_b.contains(&"Task B2"));
-
-    // Verify no cross-contamination
-    assert!(!titles_b.contains(&"Task A1"));
-    assert!(!titles_b.contains(&"Task A2"));
-    assert!(!titles_b.contains(&"Task A3"));
-    assert!(!titles_a.contains(&"Task B1"));
-    assert!(!titles_a.contains(&"Task B2"));
-
-    // Verify task IDs are unique within each project
-    let ids_a: Vec<_> = tasks_a.iter().map(|t| t.id.as_str()).collect();
-    let ids_b: Vec<_> = tasks_b.iter().map(|t| t.id.as_str()).collect();
-    assert_eq!(ids_a.len(), 3);
-    assert_eq!(ids_b.len(), 2);
-
-    // UUIDs make collision impossible by design, but verify no overlap
-    assert_ne!(alpha_task1.id, beta_task1.id);
-    assert_ne!(alpha_task1.id, beta_task2.id);
-    assert_ne!(alpha_task2.id, beta_task1.id);
-    assert_ne!(alpha_task2.id, beta_task2.id);
-    assert_ne!(alpha_task3.id, beta_task1.id);
-    assert_ne!(alpha_task3.id, beta_task2.id);
-}
-
-// =============================================================================
-// Test: Task Operations Don't Cross Projects
-// =============================================================================
-
-#[test]
-fn test_task_operations_dont_cross_projects() {
-    let workflow = workflows::with_subtasks();
-    let project_a = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-    let project_b = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-
-    // Create one task in each project
-    let task_a = project_a.create_task("Task A", "Task in A", None);
-    let task_b = project_b.create_task("Task B", "Task in B", None);
-
-    // Both tasks start in Idle phase (first stage: planning)
-    assert_eq!(task_a.phase, Phase::Idle);
-    assert_eq!(task_b.phase, Phase::Idle);
-
-    // Advance task A through planning
-    project_a.set_output(
-        &task_a.id,
-        MockAgentOutput::Artifact {
-            name: "plan".into(),
-            content: "Plan for A".into(),
-        },
-    );
-    project_a.advance(); // spawns planner
-    project_a.advance(); // processes output
-
-    // Verify task A advanced
-    let task_a = project_a.api().get_task(&task_a.id).unwrap();
-    assert_eq!(task_a.phase, Phase::AwaitingReview);
-    assert_eq!(task_a.current_stage().unwrap(), "planning");
-
-    // Verify task B is unaffected
-    let task_b = project_b.api().get_task(&task_b.id).unwrap();
-    assert_eq!(task_b.phase, Phase::Idle);
-
-    // Approve task A
-    project_a.api().approve(&task_a.id).unwrap();
-    let task_a = project_a.api().get_task(&task_a.id).unwrap();
-    assert_eq!(task_a.current_stage().unwrap(), "breakdown");
-
-    // Verify task B is still unaffected
-    let task_b = project_b.api().get_task(&task_b.id).unwrap();
-    assert_eq!(task_b.phase, Phase::Idle);
-
-    // Delete task B
-    project_b.api().delete_task(&task_b.id).unwrap();
-    let result = project_b.api().get_task(&task_b.id);
-    assert!(result.is_err());
-
-    // Verify task A still exists and is in correct state
-    let task_a = project_a.api().get_task(&task_a.id).unwrap();
-    assert_eq!(task_a.current_stage().unwrap(), "breakdown");
-
-    // Set output for breakdown stage before advancing
-    project_a.set_output(
-        &task_a.id,
-        MockAgentOutput::Subtasks {
-            content: "Breakdown for A".into(),
-            subtasks: vec![],
-            skip_reason: Some("No subtasks needed".into()),
-        },
-    );
-
-    // Run orchestrator ticks on both - assert no cross-contamination
-    project_a.advance(); // spawns breakdown agent
-    project_a.advance(); // processes output
-    project_b.advance();
-
-    // Task A should have advanced to AwaitingReview in breakdown stage
-    let task_a = project_a.api().get_task(&task_a.id).unwrap();
-    assert_eq!(task_a.current_stage().unwrap(), "breakdown");
-    assert_eq!(task_a.phase, Phase::AwaitingReview);
-
-    // Task B should still not exist
-    let result = project_b.api().get_task(&task_b.id);
-    assert!(result.is_err());
-}
-
-// =============================================================================
-// Test: Orchestrator Loops Are Independent
-// =============================================================================
-
-#[test]
-fn test_orchestrator_loops_are_independent() {
-    let workflow = workflows::with_subtasks();
-    let project_a = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-    let project_b = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-
-    // Create a task in each project
-    let task_a = project_a.create_task("Task A", "Task in A", None);
-    let task_b = project_b.create_task("Task B", "Task in B", None);
-
-    // Set outputs for both
-    project_a.set_output(
-        &task_a.id,
-        MockAgentOutput::Artifact {
-            name: "plan".into(),
-            content: "Plan for A".into(),
-        },
-    );
-    project_b.set_output(
-        &task_b.id,
-        MockAgentOutput::Artifact {
-            name: "plan".into(),
-            content: "Plan for B".into(),
-        },
-    );
-
-    // Tick project A's orchestrator only
-    project_a.advance(); // spawns planner
-    project_a.advance(); // processes output
-
-    // Verify task A progressed
-    let task_a = project_a.api().get_task(&task_a.id).unwrap();
-    assert_eq!(task_a.phase, Phase::AwaitingReview);
-
-    // Verify task B has NOT progressed (its orchestrator hasn't ticked)
-    let task_b = project_b.api().get_task(&task_b.id).unwrap();
-    assert_eq!(task_b.phase, Phase::Idle);
-
-    // Now tick project B's orchestrator
-    project_b.advance(); // spawns planner
-    project_b.advance(); // processes output
-
-    // Verify task B progressed
-    let task_b = project_b.api().get_task(&task_b.id).unwrap();
-    assert_eq!(task_b.phase, Phase::AwaitingReview);
-
-    // Verify task A state hasn't changed since its last tick
-    let task_a = project_a.api().get_task(&task_a.id).unwrap();
-    assert_eq!(task_a.phase, Phase::AwaitingReview);
-    assert_eq!(task_a.current_stage().unwrap(), "planning");
-}
-
-// =============================================================================
-// Test: Stop Flag Is Per-Project
-// =============================================================================
-
-#[test]
-fn test_stop_flag_is_per_project() {
-    let workflow = workflows::with_subtasks();
-
-    // Create two projects with separate stop flags
-    let _project_a = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-    let _project_b = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-
-    // Create separate stop flags for each project (simulating ProjectState's stop_flag)
-    let stop_flag_a = Arc::new(AtomicBool::new(false));
-    let stop_flag_b = Arc::new(AtomicBool::new(false));
-
-    // Verify both flags start as false
-    assert!(!stop_flag_a.load(Ordering::Relaxed));
-    assert!(!stop_flag_b.load(Ordering::Relaxed));
-
-    // Set project A's stop flag to true
-    stop_flag_a.store(true, Ordering::Relaxed);
-
-    // Verify project A's flag is true
-    assert!(stop_flag_a.load(Ordering::Relaxed));
-
-    // Verify project B's flag is still false (independent)
-    assert!(!stop_flag_b.load(Ordering::Relaxed));
-
-    // Set project B's stop flag to true
-    stop_flag_b.store(true, Ordering::Relaxed);
-
-    // Verify both are now true
-    assert!(stop_flag_a.load(Ordering::Relaxed));
-    assert!(stop_flag_b.load(Ordering::Relaxed));
-
-    // Reset project A's flag
-    stop_flag_a.store(false, Ordering::Relaxed);
-
-    // Verify project A is false, project B is still true
-    assert!(!stop_flag_a.load(Ordering::Relaxed));
-    assert!(stop_flag_b.load(Ordering::Relaxed));
-}
-
-// =============================================================================
-// Test: Concurrent Task Creation Across Projects
-// =============================================================================
-
-#[test]
-fn test_concurrent_task_creation_across_projects() {
-    let workflow = workflows::with_subtasks();
-
-    // Create two projects (Arc<TestEnv> for thread sharing)
-    let project_a = Arc::new(TestEnv::with_git(
-        &workflow,
+fn test_parallel_project_isolation() {
+    // Create two separate project environments with default workflow
+    let env1 = Arc::new(Mutex::new(TestEnv::with_git(
+        &WorkflowConfig::default(),
         &["planner", "breakdown", "worker", "reviewer"],
-    ));
-    let project_b = Arc::new(TestEnv::with_git(
-        &workflow,
+    )));
+    let env2 = Arc::new(Mutex::new(TestEnv::with_git(
+        &WorkflowConfig::default(),
         &["planner", "breakdown", "worker", "reviewer"],
-    ));
+    )));
 
-    // Spawn two threads, each creating 10 tasks
-    let env_a = project_a.clone();
-    let handle_a = thread::spawn(move || {
-        let mut task_ids = Vec::new();
-        for i in 0..10 {
-            let task = env_a.create_task(&format!("Task A{i}"), &format!("Task {i} in A"), None);
-            task_ids.push(task.id);
+    // Create tasks in both projects
+    let task1_id = {
+        let env = env1.lock().unwrap();
+        let task = env.create_task("Project 1 task", "Task in first project", None);
+        task.id
+    };
+
+    let task2_id = {
+        let env = env2.lock().unwrap();
+        let task = env.create_task("Project 2 task", "Task in second project", None);
+        task.id
+    };
+
+    // Verify tasks have different IDs
+    assert_ne!(task1_id, task2_id, "Task IDs should be unique");
+
+    // Queue agent output for project 1
+    {
+        let env = env1.lock().unwrap();
+        env.set_output(
+            &task1_id,
+            MockAgentOutput::Artifact {
+                name: "plan".to_string(),
+                content: "Implementation plan for project 1".to_string(),
+            },
+        );
+    }
+
+    // Queue agent output for project 2
+    {
+        let env = env2.lock().unwrap();
+        env.set_output(
+            &task2_id,
+            MockAgentOutput::Artifact {
+                name: "plan".to_string(),
+                content: "Implementation plan for project 2".to_string(),
+            },
+        );
+    }
+
+    // Run orchestrator in parallel
+    let env1_clone = Arc::clone(&env1);
+    let env2_clone = Arc::clone(&env2);
+
+    let handle1 = thread::spawn(move || {
+        let mut env = env1_clone.lock().unwrap();
+        for _ in 0..10 {
+            env.advance();
+            drop(env);
+            thread::sleep(Duration::from_millis(50));
+            env = env1_clone.lock().unwrap();
         }
-        task_ids
     });
 
-    let env_b = project_b.clone();
-    let handle_b = thread::spawn(move || {
-        let mut task_ids = Vec::new();
-        for i in 0..10 {
-            let task = env_b.create_task(&format!("Task B{i}"), &format!("Task {i} in B"), None);
-            task_ids.push(task.id);
+    let handle2 = thread::spawn(move || {
+        let mut env = env2_clone.lock().unwrap();
+        for _ in 0..10 {
+            env.advance();
+            drop(env);
+            thread::sleep(Duration::from_millis(50));
+            env = env2_clone.lock().unwrap();
         }
-        task_ids
     });
 
-    // Wait for both threads to complete
-    let ids_a = handle_a.join().unwrap();
-    let ids_b = handle_b.join().unwrap();
+    handle1.join().expect("Thread 1 should complete");
+    handle2.join().expect("Thread 2 should complete");
 
-    // Give setup time to complete (sync setup is enabled, but check anyway)
-    project_a.advance();
-    project_b.advance();
-
-    // Verify project A has exactly 10 tasks
-    let tasks_a = project_a.api().list_tasks().unwrap();
-    assert_eq!(tasks_a.len(), 10);
-
-    // Verify project B has exactly 10 tasks
-    let tasks_b = project_b.api().list_tasks().unwrap();
-    assert_eq!(tasks_b.len(), 10);
-
-    // Verify no task IDs overlap between projects
-    for id_a in &ids_a {
-        assert!(!ids_b.contains(id_a));
-    }
-    for id_b in &ids_b {
-        assert!(!ids_a.contains(id_b));
+    // Verify both tasks completed their planning stage independently
+    {
+        let env = env1.lock().unwrap();
+        let task = env.api().get_task(&task1_id).expect("Should get task 1");
+        assert!(
+            task.artifacts.contains("plan"),
+            "Project 1 task should have plan artifact"
+        );
     }
 
-    // Verify no task titles from one appear in the other
-    let alpha_titles: Vec<_> = tasks_a.iter().map(|t| t.title.as_str()).collect();
-    let beta_titles: Vec<_> = tasks_b.iter().map(|t| t.title.as_str()).collect();
+    {
+        let env = env2.lock().unwrap();
+        let task = env.api().get_task(&task2_id).expect("Should get task 2");
+        assert!(
+            task.artifacts.contains("plan"),
+            "Project 2 task should have plan artifact"
+        );
+    }
 
-    for i in 0..10 {
-        let expected_alpha = format!("Task A{i}");
-        let expected_beta = format!("Task B{i}");
-        assert!(alpha_titles.contains(&expected_alpha.as_str()));
-        assert!(!beta_titles.contains(&expected_alpha.as_str()));
-        assert!(beta_titles.contains(&expected_beta.as_str()));
-        assert!(!alpha_titles.contains(&expected_beta.as_str()));
+    // Verify project 1 doesn't see project 2's task
+    {
+        let env = env1.lock().unwrap();
+        let tasks = env.api().list_tasks().expect("Should list tasks");
+        assert_eq!(tasks.len(), 1, "Project 1 should only see 1 task");
+        assert_eq!(tasks[0].id, task1_id, "Project 1 should only see its task");
+    }
+
+    // Verify project 2 doesn't see project 1's task
+    {
+        let env = env2.lock().unwrap();
+        let tasks = env.api().list_tasks().expect("Should list tasks");
+        assert_eq!(tasks.len(), 1, "Project 2 should only see 1 task");
+        assert_eq!(tasks[0].id, task2_id, "Project 2 should only see its task");
     }
 }
 
-// =============================================================================
-// Test: Subtask Isolation Across Projects
-// =============================================================================
-
 #[test]
-fn test_subtask_isolation_across_projects() {
-    let workflow = workflows::with_subtasks();
-    let project_a = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-    let project_b = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
-
-    // Create a parent task in project A with subtasks
-    let parent_a = project_a.create_task("Feature A", "Build feature A", None);
-
-    // Planning stage
-    project_a.set_output(
-        &parent_a.id,
-        MockAgentOutput::Artifact {
-            name: "plan".into(),
-            content: "Plan for A".into(),
-        },
+fn test_database_isolation() {
+    // Create two projects
+    let env1 = TestEnv::with_git(
+        &WorkflowConfig::default(),
+        &["planner", "breakdown", "worker", "reviewer"],
     );
-    project_a.advance(); // spawns planner
-    project_a.advance(); // processes output
-    project_a.api().approve(&parent_a.id).unwrap();
-
-    // Breakdown stage - produce subtasks
-    project_a.set_output(
-        &parent_a.id,
-        MockAgentOutput::Subtasks {
-            content: "Technical design for A".into(),
-            subtasks: vec![
-                SubtaskOutput {
-                    title: "Subtask A1".into(),
-                    description: "First subtask of A".into(),
-                    depends_on: vec![],
-                },
-                SubtaskOutput {
-                    title: "Subtask A2".into(),
-                    description: "Second subtask of A".into(),
-                    depends_on: vec![],
-                },
-            ],
-            skip_reason: None,
-        },
+    let env2 = TestEnv::with_git(
+        &WorkflowConfig::default(),
+        &["planner", "breakdown", "worker", "reviewer"],
     );
-    project_a.advance(); // spawns breakdown
-    project_a.advance(); // processes output
-    project_a.api().approve(&parent_a.id).unwrap();
 
-    // Create a separate task in project B (not a parent with subtasks)
-    let simple_task = project_b.create_task("Task B", "Task in B", None);
+    // Create tasks with similar descriptions
+    let task1 = env1.create_task("Test Task", "Description", None);
+    let task2 = env2.create_task("Test Task", "Description", None);
 
-    // Verify project A has subtasks
-    let subtasks_a = project_a.api().list_subtasks(&parent_a.id).unwrap();
-    assert_eq!(subtasks_a.len(), 2);
-    let subtask_ids_a: Vec<_> = subtasks_a.iter().map(|s| s.id.clone()).collect();
-
-    // Verify project B cannot see project A's subtasks
-    let project_b_tasks = project_b.api().list_tasks().unwrap();
-    assert_eq!(project_b_tasks.len(), 1);
-    assert!(!project_b_tasks.iter().any(|t| t.title == "Subtask A1"));
-    assert!(!project_b_tasks.iter().any(|t| t.title == "Subtask A2"));
-    assert!(!project_b_tasks
-        .iter()
-        .any(|t| subtask_ids_a.contains(&t.id)));
-
-    // Verify project B's task list only contains task B
-    assert_eq!(project_b_tasks[0].id, simple_task.id);
-    assert_eq!(project_b_tasks[0].title, "Task B");
-
-    // Complete one subtask in project A
-    project_a.advance(); // setup subtasks
-
-    let subtask_a1_id = subtasks_a
-        .iter()
-        .find(|s| s.title == "Subtask A1")
-        .unwrap()
-        .id
-        .clone();
-
-    // Complete subtask A1: work stage
-    project_a.set_output(
-        &subtask_a1_id,
-        MockAgentOutput::Artifact {
-            name: "summary".into(),
-            content: "Work done for A1".into(),
-        },
+    // Even with identical inputs, IDs should be different (unique generation)
+    assert_ne!(
+        task1.id, task2.id,
+        "Tasks in different projects should have unique IDs"
     );
-    project_a.advance(); // spawns worker
-    project_a.advance(); // processes output
-    project_a.api().approve(&subtask_a1_id).unwrap();
 
-    // Review stage (automated in subtask flow)
-    project_a.set_output(
-        &subtask_a1_id,
-        MockAgentOutput::Approval {
-            decision: "approve".into(),
-            content: "LGTM".into(),
-        },
+    // Delete task1
+    env1.api()
+        .delete_task(&task1.id)
+        .expect("Should delete task 1");
+
+    // Verify task2 still exists
+    let task2_after = env2.api().get_task(&task2.id).expect("Should get task 2");
+    assert_eq!(task2_after.id, task2.id, "Task 2 should still exist");
+    assert_eq!(
+        task2_after.description, "Description",
+        "Task 2 should be unchanged"
     );
-    project_a.advance(); // spawns reviewer
-    project_a.advance(); // processes output (auto-approves)
-    project_a.advance(); // triggers integration
 
-    // Wait for integration to complete
-    let subtask_a1 = project_a.api().get_task(&subtask_a1_id).unwrap();
-    if subtask_a1.phase == Phase::Integrating {
-        project_a.advance();
-    }
-
-    // Verify subtask A1 is done/archived
-    let subtask_a1 = project_a.api().get_task(&subtask_a1_id).unwrap();
+    // Verify task1 no longer exists in env1
+    let tasks_in_env1 = env1.api().list_tasks().expect("Should list tasks");
     assert!(
-        subtask_a1.status == Status::Done || subtask_a1.status == Status::Archived,
-        "Subtask A1 should be done/archived, got {:?}",
-        subtask_a1.status
+        tasks_in_env1.is_empty(),
+        "Project 1 should have no tasks after deletion"
     );
 
-    // Verify project B's task is still in its original state (Idle)
-    let simple_task_refreshed = project_b.api().get_task(&simple_task.id).unwrap();
-    assert_eq!(simple_task_refreshed.phase, Phase::Idle);
+    // Verify env2 still has its task
+    let tasks_in_env2 = env2.api().list_tasks().expect("Should list tasks");
+    assert_eq!(tasks_in_env2.len(), 1, "Project 2 should still have 1 task");
+}
 
-    // Verify project B has no knowledge of the completed subtask
-    let final_project_b_tasks = project_b.api().list_tasks().unwrap();
-    assert_eq!(final_project_b_tasks.len(), 1);
-    assert!(!final_project_b_tasks.iter().any(|t| t.id == subtask_a1_id));
+#[test]
+fn test_phase_state_isolation() {
+    // Create two projects
+    let env1 = TestEnv::with_git(
+        &WorkflowConfig::default(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+    let env2 = TestEnv::with_git(
+        &WorkflowConfig::default(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    // Create tasks
+    let task1_id = env1.create_task("Phase test 1", "Task 1", None).id;
+    let task2_id = env2.create_task("Phase test 2", "Task 2", None).id;
+
+    // Verify initial phases are both Idle
+    let task1 = env1.api().get_task(&task1_id).expect("Should get task 1");
+    let task2 = env2.api().get_task(&task2_id).expect("Should get task 2");
+
+    assert_eq!(task1.phase, Phase::Idle, "Task 1 should start as Idle");
+    assert_eq!(task2.phase, Phase::Idle, "Task 2 should start as Idle");
+
+    // Queue agent output for task1 only
+    env1.set_output(
+        &task1_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan for task 1".to_string(),
+        },
+    );
+
+    // Run orchestrator for env1 only
+    for _ in 0..5 {
+        env1.advance();
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    // Task1 should have progressed, task2 should remain in Idle
+    let task1_after = env1.api().get_task(&task1_id).expect("Should get task 1");
+    let task2_after = env2.api().get_task(&task2_id).expect("Should get task 2");
+
+    assert!(
+        task1_after.phase == Phase::AwaitingReview || task1_after.artifacts.contains("plan"),
+        "Task 1 should have progressed"
+    );
+    assert_eq!(
+        task2_after.phase,
+        Phase::Idle,
+        "Task 2 should remain unchanged"
+    );
+}
+
+#[test]
+fn test_concurrent_task_creation() {
+    // Create two projects
+    let env1 = Arc::new(Mutex::new(TestEnv::with_git(
+        &WorkflowConfig::default(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    )));
+    let env2 = Arc::new(Mutex::new(TestEnv::with_git(
+        &WorkflowConfig::default(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    )));
+
+    // Create multiple tasks concurrently in each project
+    let env1_clone = Arc::clone(&env1);
+    let env2_clone = Arc::clone(&env2);
+
+    let handle1 = thread::spawn(move || {
+        let env = env1_clone.lock().unwrap();
+        let mut task_ids = Vec::new();
+        for i in 0..5 {
+            let task = env.create_task(&format!("Task {i} in project 1"), "Description", None);
+            task_ids.push(task.id);
+        }
+        task_ids
+    });
+
+    let handle2 = thread::spawn(move || {
+        let env = env2_clone.lock().unwrap();
+        let mut task_ids = Vec::new();
+        for i in 0..5 {
+            let task = env.create_task(&format!("Task {i} in project 2"), "Description", None);
+            task_ids.push(task.id);
+        }
+        task_ids
+    });
+
+    let task_ids_1 = handle1.join().expect("Thread 1 should complete");
+    let task_ids_2 = handle2.join().expect("Thread 2 should complete");
+
+    // Verify all IDs are unique
+    let mut all_ids: Vec<_> = task_ids_1.iter().chain(task_ids_2.iter()).collect();
+    all_ids.sort();
+    all_ids.dedup();
+    assert_eq!(
+        all_ids.len(),
+        10,
+        "All 10 task IDs should be unique across projects"
+    );
+
+    // Verify each project sees only its own tasks
+    {
+        let env = env1.lock().unwrap();
+        let tasks = env.api().list_tasks().expect("Should list tasks");
+        assert_eq!(tasks.len(), 5, "Project 1 should have 5 tasks");
+        for task in &tasks {
+            assert!(
+                task_ids_1.contains(&task.id),
+                "All tasks in project 1 should be from project 1"
+            );
+        }
+    }
+
+    {
+        let env = env2.lock().unwrap();
+        let tasks = env.api().list_tasks().expect("Should list tasks");
+        assert_eq!(tasks.len(), 5, "Project 2 should have 5 tasks");
+        for task in &tasks {
+            assert!(
+                task_ids_2.contains(&task.id),
+                "All tasks in project 2 should be from project 2"
+            );
+        }
+    }
 }

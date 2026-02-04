@@ -1,24 +1,19 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import { ProjectPicker } from "./components/ProjectPicker/ProjectPicker";
+import { ProjectPicker } from "./components/ProjectPicker";
 import "./index.css";
 
 /**
- * Mount the main app with all providers.
- * For project windows that already have an initialized project.
+ * Extract the project path from URL query parameters.
  */
-function mountApp() {
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>,
-  );
+function getProjectPath(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("project");
 }
 
 /**
- * Mount the project picker UI.
- * For picker windows that need project selection.
+ * Mount the project picker for selecting a project.
  */
 function mountPicker() {
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
@@ -29,23 +24,29 @@ function mountPicker() {
 }
 
 /**
- * Main entry point - route to picker or app based on query parameters.
- *
- * - If `?project=<path>` is present, this is a project window (mount App)
- * - Otherwise, this is a picker window (mount ProjectPicker)
+ * Mount the main app with all providers for a specific project.
  */
-async function main() {
-  const params = new URLSearchParams(window.location.search);
-  const projectPath = params.get("project");
+function mountApp() {
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}
+
+/**
+ * Main entry point: check for project query parameter and route accordingly.
+ */
+function main() {
+  const projectPath = getProjectPath();
 
   if (projectPath) {
-    // This is a project window — project is already initialized
-    // by the time the window opens (open_project does init before creating window)
-    console.log("[startup] Project window for:", projectPath);
+    // Project window: mount the main app
+    console.log(`[routing] Mounting project app for: ${projectPath}`);
     mountApp();
   } else {
-    // This is a picker window — mount ProjectPicker
-    console.log("[startup] Picker window");
+    // Picker window: mount the project picker
+    console.log("[routing] Mounting project picker");
     mountPicker();
   }
 }

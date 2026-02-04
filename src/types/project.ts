@@ -1,27 +1,35 @@
 /**
- * Project-related types for the frontend.
- *
- * These types match the Rust types in src-tauri/src/state/mod.rs
+ * Types for the multi-project system.
  */
 
 /**
- * A recently opened project with metadata.
+ * A recent project entry stored in the recents list.
  */
 export interface RecentProject {
-  /** Absolute path to the project root */
+  /** Absolute path to the project directory. */
   path: string;
-  /** Display name (typically the folder name) */
+  /** Display name (usually folder name). */
   display_name: string;
-  /** ISO 8601 timestamp of when the project was last opened */
+  /** ISO 8601 timestamp of when it was last opened. */
   last_opened: string;
 }
 
 /**
- * Basic project information.
+ * Information about the currently open project.
  */
 export interface ProjectInfo {
-  /** Absolute path to the project root */
-  path: string;
-  /** Display name (typically the folder name) */
-  display_name: string;
+  /** Absolute path to the project root. */
+  project_root: string;
+  /** Whether the project has git service available. */
+  has_git: boolean;
+}
+
+/**
+ * Response from opening a project.
+ */
+export interface OpenProjectResponse {
+  /** Window label for the opened project. */
+  window_label: string;
+  /** Project root path. */
+  project_root: string;
 }

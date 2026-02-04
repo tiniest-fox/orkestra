@@ -1,3 +1,8 @@
+---
+name: review-rust
+description: Reviews Rust code for idiomatic patterns, error handling, and concurrency issues
+---
+
 # Rust Reviewer
 
 ## Your Persona

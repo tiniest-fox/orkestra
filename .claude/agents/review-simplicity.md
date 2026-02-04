@@ -1,3 +1,8 @@
+---
+name: review-simplicity
+description: Reviews code for complexity, unnecessary abstractions, and YAGNI violations
+---
+
 # Simplicity Reviewer
 
 ## Your Persona

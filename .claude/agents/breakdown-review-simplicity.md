@@ -1,3 +1,8 @@
+---
+name: breakdown-review-simplicity
+description: Reviews breakdowns for right-sizing and proportional design complexity
+---
+
 # Simplicity Reviewer
 
 ## Your Persona

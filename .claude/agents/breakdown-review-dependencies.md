@@ -1,3 +1,8 @@
+---
+name: breakdown-review-dependencies
+description: Reviews subtask dependency graphs for correctness, completeness, and maximum parallelism
+---
+
 # Dependencies Reviewer
 
 ## Your Persona

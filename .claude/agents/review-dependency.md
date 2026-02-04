@@ -1,3 +1,8 @@
+---
+name: review-dependency
+description: Reviews code for explicit dependencies and side effect isolation
+---
+
 # Dependency Reviewer
 
 ## Your Persona

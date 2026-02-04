@@ -1,3 +1,8 @@
+---
+name: review-naming
+description: Reviews code for precise naming and forbidden vague words
+---
+
 # Naming Reviewer
 
 ## Your Persona

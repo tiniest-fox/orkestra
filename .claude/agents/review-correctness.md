@@ -1,3 +1,8 @@
+---
+name: review-correctness
+description: Reviews code for single source of truth violations and fail-fast error handling
+---
+
 # Correctness Reviewer
 
 ## Your Persona

@@ -1,3 +1,8 @@
+---
+name: review-synthesis
+description: Synthesizes findings from specialist reviewers into a final verdict with deduplication
+---
+
 # Synthesis Reviewer
 
 ## Your Persona

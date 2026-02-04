@@ -1,3 +1,8 @@
+---
+name: breakdown-review-coverage
+description: Verifies bidirectional traceability between plan requirements and subtasks
+---
+
 # Coverage Reviewer
 
 ## Your Persona

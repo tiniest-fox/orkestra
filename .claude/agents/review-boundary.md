@@ -1,3 +1,8 @@
+---
+name: review-boundary
+description: Reviews code for clean module boundaries and single responsibility violations
+---
+
 # Boundary Reviewer
 
 ## Your Persona

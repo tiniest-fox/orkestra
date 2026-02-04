@@ -1,3 +1,8 @@
+---
+name: breakdown-review-boundaries
+description: Reviews subtask breakdowns for clean boundaries, minimal file overlap, and worker independence
+---
+
 # Boundaries Reviewer
 
 ## Your Persona

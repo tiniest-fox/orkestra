@@ -51,7 +51,7 @@ export function getTasksForColumn(tasks: WorkflowTaskView[], columnId: string): 
   const columnTasks = tasks.filter((task) => {
     // Terminal states
     if (columnId === "done") {
-      return task.derived.is_done;
+      return task.derived.is_done || task.derived.is_archived;
     }
     if (columnId === "failed") {
       return task.derived.is_failed;
@@ -65,7 +65,7 @@ export function getTasksForColumn(tasks: WorkflowTaskView[], columnId: string): 
       return task.derived.current_stage === columnId;
     }
 
-    // Archived, etc. — not shown in stage columns
+    // Archived tasks are shown in done column (handled above)
     return false;
   });
 

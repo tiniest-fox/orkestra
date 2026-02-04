@@ -97,7 +97,7 @@ export function TaskCard({
   const hasTitle = !!task.title;
   const isSubtask = variant === "subtask";
   const hasUnresolvedDeps = isSubtask && !!dependencyNames && dependencyNames.length > 0;
-  const collapseDone = isSubtask && isDone;
+  const collapseDone = isSubtask && (isDone || derived.is_archived);
 
   const isSettingUp = task.phase === "setting_up";
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
@@ -214,7 +214,7 @@ export function TaskCard({
 
       {/* Subtask variant: description + stage row collapse when done */}
       <AnimatePresence initial={false}>
-        {isSubtask && !isDone && (
+        {isSubtask && !isDone && !derived.is_archived && (
           <motion.div
             key="subtask-details"
             initial={{ height: "auto", opacity: 1 }}

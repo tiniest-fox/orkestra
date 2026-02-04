@@ -50,7 +50,7 @@ function deriveVisualState(result: SearchResult): {
       icon: <AlertCircle className="w-3.5 h-3.5" />,
     };
   }
-  if (derived.is_done) {
+  if (derived.is_done || derived.is_archived) {
     return {
       state: "done",
       label: "Done",

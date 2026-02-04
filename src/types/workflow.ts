@@ -337,6 +337,7 @@ export interface DerivedTaskState {
   is_failed: boolean;
   is_blocked: boolean;
   is_done: boolean;
+  is_archived: boolean;
   is_terminal: boolean;
   is_waiting_on_children: boolean;
   needs_review: boolean;

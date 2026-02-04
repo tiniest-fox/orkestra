@@ -64,12 +64,14 @@ export function SubtasksTab({
 }: SubtasksTabProps) {
   // Build id → short_id lookup for resolving dependency labels
   const shortIdById = new Map(subtasks.map((s) => [s.id, s.short_id ?? s.id]));
-  // Track which subtasks are done so we only show unresolved dependencies
-  const doneIds = new Set(subtasks.filter((s) => s.derived.is_done).map((s) => s.id));
-  // Stable partition: incomplete first, done second (preserves topological order within each group)
+  // Track which subtasks are done or archived so we only show unresolved dependencies
+  const doneIds = new Set(
+    subtasks.filter((s) => s.derived.is_done || s.derived.is_archived).map((s) => s.id),
+  );
+  // Stable partition: incomplete first, done/archived second (preserves topological order within each group)
   const sorted = [
-    ...subtasks.filter((s) => !s.derived.is_done),
-    ...subtasks.filter((s) => s.derived.is_done),
+    ...subtasks.filter((s) => !s.derived.is_done && !s.derived.is_archived),
+    ...subtasks.filter((s) => s.derived.is_done || s.derived.is_archived),
   ];
 
   return (

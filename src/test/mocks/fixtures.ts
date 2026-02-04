@@ -30,6 +30,7 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     is_failed: false,
     is_blocked: false,
     is_done: false,
+    is_archived: false,
     is_terminal: false,
     is_waiting_on_children: false,
     needs_review: false,
@@ -58,6 +59,11 @@ export function createMockWorkflowTaskView(
   }
   if (status.type === "done") {
     derivedDefaults.is_done = true;
+    derivedDefaults.is_terminal = true;
+    derivedDefaults.current_stage = null;
+  }
+  if (status.type === "archived") {
+    derivedDefaults.is_archived = true;
     derivedDefaults.is_terminal = true;
     derivedDefaults.current_stage = null;
   }

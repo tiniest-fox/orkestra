@@ -10,10 +10,11 @@ use orkestra_core::{
     find_project_root,
     utility::UtilityRunner,
     workflow::{
-        load_workflow_for_project, Git2GitService, GitService, Phase, SqliteWorkflowStore, Status,
-        Task, WorkflowApi, WorkflowConfig,
+        load_workflow_for_project, Git2GitService, GitService, Phase, SqliteWorkflowStore,
+        WorkflowApi, WorkflowConfig,
     },
 };
+use serde::Serialize;
 
 #[derive(Parser)]
 #[command(name = "ork")]
@@ -39,13 +40,13 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum TaskAction {
-    /// List all tasks
+    /// List all tasks (JSON output)
     List {
-        /// Filter by status (active, done, failed, blocked)
+        /// Include archived tasks
         #[arg(long)]
-        status: Option<String>,
+        archived: bool,
     },
-    /// Show details for a specific task
+    /// Show details for a specific task (JSON output)
     Show {
         /// Task ID
         id: String,
@@ -74,6 +75,70 @@ enum TaskAction {
         /// Feedback explaining why the artifact was rejected
         #[arg(short, long)]
         feedback: String,
+    },
+    /// View artifact content (JSON output)
+    Artifact {
+        #[command(subcommand)]
+        action: ArtifactAction,
+    },
+    /// View task logs (JSON output)
+    Log {
+        #[command(subcommand)]
+        action: LogAction,
+    },
+    /// Reset task state
+    Reset {
+        /// Task ID
+        id: String,
+        /// Reset to a specific stage (removes all data from that stage forward)
+        #[arg(long)]
+        to_stage: Option<String>,
+        /// Full reset (clear all iterations and artifacts)
+        #[arg(long)]
+        full: bool,
+    },
+    /// Edit task properties
+    Edit {
+        /// Task ID
+        id: String,
+        /// New title
+        #[arg(long)]
+        title: Option<String>,
+        /// New description
+        #[arg(long)]
+        description: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ArtifactAction {
+    /// Show artifact content with pagination
+    Show {
+        /// Task ID
+        task_id: String,
+        /// Artifact name (e.g., "plan", "summary")
+        artifact_name: String,
+        /// Starting line (0-indexed)
+        #[arg(long, default_value = "0")]
+        offset: usize,
+        /// Number of lines to return
+        #[arg(long, default_value = "100")]
+        limit: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum LogAction {
+    /// Show task log entries with pagination
+    Show {
+        /// Task ID
+        task_id: String,
+        /// Starting entry (0-indexed)
+        #[arg(long, default_value = "0")]
+        offset: usize,
+        /// Number of entries to return
+        #[arg(long, default_value = "50")]
+        limit: usize,
     },
 }
 
@@ -104,13 +169,13 @@ fn handle_task_action(action: TaskAction) {
     let api = match init_workflow_api() {
         Ok(api) => api,
         Err(e) => {
-            eprintln!("Error: {e}");
+            output_error(&e);
             std::process::exit(1);
         }
     };
 
     match action {
-        TaskAction::List { status } => handle_list_tasks(&api, status.as_deref()),
+        TaskAction::List { archived } => handle_list_tasks(&api, archived),
         TaskAction::Show { id } => handle_show_task(&api, &id),
         TaskAction::Create {
             title,
@@ -119,6 +184,16 @@ fn handle_task_action(action: TaskAction) {
         } => handle_create_task(&api, &title, &description, base_branch.as_deref()),
         TaskAction::Approve { id } => handle_approve_task(&api, &id),
         TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback),
+        TaskAction::Artifact { action } => handle_artifact_action(&api, action),
+        TaskAction::Log { action } => handle_log_action(&api, action),
+        TaskAction::Reset { id, to_stage, full } => {
+            handle_reset_task(&api, &id, to_stage.as_deref(), full);
+        }
+        TaskAction::Edit {
+            id,
+            title,
+            description,
+        } => handle_edit_task(&api, &id, title.as_deref(), description.as_deref()),
     }
 }
 
@@ -180,105 +255,154 @@ fn handle_reject_task(api: &WorkflowApi, id: &str, feedback: &str) {
     );
 }
 
-fn handle_list_tasks(api: &WorkflowApi, status_filter: Option<&str>) {
-    let tasks = match api.list_tasks() {
-        Ok(tasks) => tasks,
-        Err(e) => {
-            eprintln!("Error listing tasks: {e}");
-            std::process::exit(1);
+fn handle_list_tasks(api: &WorkflowApi, include_archived: bool) {
+    #[derive(Serialize)]
+    struct TaskListEntry {
+        id: String,
+        title: String,
+        description: String,
+        stage: String,
+        phase: String,
+    }
+
+    let tasks = if include_archived {
+        match api.list_archived_tasks() {
+            Ok(archived) => match api.list_tasks() {
+                Ok(active) => {
+                    let mut all = active;
+                    all.extend(archived);
+                    all
+                }
+                Err(e) => {
+                    output_error(&format!("Error listing active tasks: {e}"));
+                    std::process::exit(1);
+                }
+            },
+            Err(e) => {
+                output_error(&format!("Error listing archived tasks: {e}"));
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match api.list_tasks() {
+            Ok(tasks) => tasks,
+            Err(e) => {
+                output_error(&format!("Error listing tasks: {e}"));
+                std::process::exit(1);
+            }
         }
     };
 
-    let tasks: Vec<_> = match status_filter {
-        Some(filter) => tasks
-            .into_iter()
-            .filter(|t| matches_status_filter(t, filter))
-            .collect(),
-        None => tasks,
-    };
+    let entries: Vec<TaskListEntry> = tasks
+        .into_iter()
+        .map(|t| {
+            let description = if t.description.len() > 200 {
+                format!("{}...", &t.description[..197])
+            } else {
+                t.description.clone()
+            };
+            let stage = t.current_stage().unwrap_or_default().to_string();
+            let phase = format_phase(t.phase);
+            TaskListEntry {
+                id: t.id,
+                title: t.title,
+                description,
+                stage,
+                phase,
+            }
+        })
+        .collect();
 
-    if tasks.is_empty() {
-        println!("No tasks found.");
-        return;
-    }
-
-    println!(
-        "{:<36} {:<30} {:<20} {:<10}",
-        "ID", "Title", "Status", "Phase"
-    );
-    println!("{}", "-".repeat(96));
-
-    for task in tasks {
-        let title = if task.title.len() > 28 {
-            format!("{}...", &task.title[..25])
-        } else {
-            task.title.clone()
-        };
-        println!(
-            "{:<36} {:<30} {:<20} {:<10}",
-            task.id,
-            title,
-            format_status(&task.status),
-            format_phase(task.phase)
-        );
-    }
+    output_json(&entries);
 }
 
 fn handle_show_task(api: &WorkflowApi, id: &str) {
-    let task = match api.get_task(id) {
-        Ok(task) => task,
-        Err(e) => {
-            eprintln!("Error getting task: {e}");
-            std::process::exit(1);
-        }
+    use std::collections::HashMap;
+
+    #[derive(Serialize)]
+    struct IterationSummary {
+        stage: String,
+        iteration_number: u32,
+        started_at: String,
+        ended_at: Option<String>,
+        outcome: Option<String>,
+    }
+
+    #[derive(Serialize)]
+    struct TaskShow {
+        id: String,
+        title: String,
+        description: String,
+        stage: String,
+        phase: String,
+        iterations: Vec<IterationSummary>,
+        artifacts: HashMap<String, usize>,
+        log_count: usize,
+        parent_id: Option<String>,
+        child_ids: Vec<String>,
+    }
+
+    let Ok(task) = api.get_task(id) else {
+        output_error(&format!("Task not found: {id}"));
+        std::process::exit(1);
     };
 
-    println!("Task: {}", task.id);
-    println!("Title: {}", task.title);
-    println!("Description: {}", task.description);
-    println!("Status: {}", format_status(&task.status));
-    println!("Phase: {}", format_phase(task.phase));
+    // Get iterations
+    let iterations = match api.get_iterations(&task.id) {
+        Ok(iters) => iters
+            .into_iter()
+            .map(|i| IterationSummary {
+                stage: i.stage,
+                iteration_number: i.iteration_number,
+                started_at: i.started_at,
+                ended_at: i.ended_at,
+                outcome: i.outcome.map(|o| format!("{o:?}")),
+            })
+            .collect(),
+        Err(_) => vec![],
+    };
 
-    if let Some(stage) = task.current_stage() {
-        println!("Current Stage: {stage}");
-    }
+    // Get artifacts with line counts
+    let artifacts: HashMap<String, usize> = task
+        .artifacts
+        .names()
+        .filter_map(|name| {
+            task.artifacts.get(name).map(|artifact| {
+                let line_count = artifact.content.lines().count();
+                (name.to_string(), line_count)
+            })
+        })
+        .collect();
 
-    if let Some(branch) = &task.branch_name {
-        println!("Branch: {branch}");
-    }
+    // Get log count
+    let log_count = match api.get_task_logs(&task.id, None) {
+        Ok(logs) => logs.len(),
+        Err(_) => 0,
+    };
 
-    if let Some(worktree) = &task.worktree_path {
-        println!("Worktree: {worktree}");
-    }
+    // Get child IDs
+    let child_ids = match api.list_subtasks(&task.id) {
+        Ok(children) => children.into_iter().map(|t| t.id).collect(),
+        Err(_) => vec![],
+    };
 
-    if let Some(parent) = &task.parent_id {
-        println!("Parent: {parent}");
-    }
+    let stage = task.current_stage().unwrap_or_default().to_string();
+    let phase = format_phase(task.phase);
 
-    if !task.depends_on.is_empty() {
-        println!("Dependencies: {}", task.depends_on.join(", "));
-    }
+    let show = TaskShow {
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        stage,
+        phase,
+        iterations,
+        artifacts,
+        log_count,
+        parent_id: task.parent_id,
+        child_ids,
+    };
 
-    println!("Created: {}", task.created_at);
-    println!("Updated: {}", task.updated_at);
-
-    if let Some(completed) = &task.completed_at {
-        println!("Completed: {completed}");
-    }
-
-    // Show artifacts
-    let artifact_names: Vec<String> = task.artifacts.names().map(String::from).collect();
-    if !artifact_names.is_empty() {
-        println!("\nArtifacts:");
-        for name in &artifact_names {
-            if let Some(artifact) = task.artifacts.get(name) {
-                println!(
-                    "  [{name}] (stage: {}, created: {})",
-                    artifact.stage, artifact.created_at
-                );
-            }
-        }
-    }
+    output_json(&show);
 }
 
 fn handle_utility_action(action: UtilityAction) {
@@ -365,34 +489,6 @@ fn init_workflow_api() -> Result<WorkflowApi, String> {
     Ok(api)
 }
 
-fn matches_status_filter(task: &Task, filter: &str) -> bool {
-    match filter.to_lowercase().as_str() {
-        "active" => task.status.is_active(),
-        "done" => task.is_done(),
-        "archived" => task.is_archived(),
-        "failed" => task.is_failed(),
-        "blocked" => task.is_blocked(),
-        _ => true,
-    }
-}
-
-fn format_status(status: &Status) -> String {
-    match status {
-        Status::Active { stage } => format!("Active({stage})"),
-        Status::Done => "Done".to_string(),
-        Status::Archived => "Archived".to_string(),
-        Status::WaitingOnChildren { stage } => format!("Waiting({stage})"),
-        Status::Failed { error } => {
-            let msg = error.as_deref().unwrap_or("unknown");
-            format!("Failed: {}", msg.chars().take(20).collect::<String>())
-        }
-        Status::Blocked { reason } => {
-            let msg = reason.as_deref().unwrap_or("unknown");
-            format!("Blocked: {}", msg.chars().take(20).collect::<String>())
-        }
-    }
-}
-
 fn format_phase(phase: Phase) -> String {
     match phase {
         Phase::AwaitingSetup => "Awaiting Setup".to_string(),
@@ -402,4 +498,226 @@ fn format_phase(phase: Phase) -> String {
         Phase::AwaitingReview => "Review".to_string(),
         Phase::Integrating => "Integrating".to_string(),
     }
+}
+
+// ============================================================================
+// JSON Output Helpers
+// ============================================================================
+
+/// Output a value as JSON to stdout.
+fn output_json<T: Serialize>(value: &T) {
+    let json = serde_json::to_string_pretty(value).expect("Failed to serialize to JSON");
+    println!("{json}");
+}
+
+/// Output an error message as JSON to stderr.
+fn output_error(message: &str) {
+    #[derive(Serialize)]
+    struct ErrorOutput {
+        error: String,
+    }
+    let error = ErrorOutput {
+        error: message.to_string(),
+    };
+    let json = serde_json::to_string(&error).expect("Failed to serialize error");
+    eprintln!("{json}");
+}
+
+/// Output an error message with additional options as JSON to stderr.
+fn output_error_with_options<T: Serialize>(message: &str, options: T) {
+    #[derive(Serialize)]
+    struct ErrorWithOptions<T> {
+        error: String,
+        available_options: T,
+    }
+    let error = ErrorWithOptions {
+        error: message.to_string(),
+        available_options: options,
+    };
+    let json = serde_json::to_string(&error).expect("Failed to serialize error");
+    eprintln!("{json}");
+}
+
+// ============================================================================
+// Stub Handlers (Placeholder JSON responses)
+// ============================================================================
+
+fn handle_artifact_action(api: &WorkflowApi, action: ArtifactAction) {
+    match action {
+        ArtifactAction::Show {
+            task_id,
+            artifact_name,
+            offset,
+            limit,
+        } => {
+            #[derive(Serialize)]
+            struct ArtifactShow {
+                content: String,
+                total_lines: usize,
+                offset: usize,
+                limit: usize,
+                has_more: bool,
+            }
+
+            // Get task to validate it exists
+            let Ok(task) = api.get_task(&task_id) else {
+                output_error(&format!("Task not found: {task_id}"));
+                std::process::exit(1);
+            };
+
+            // Get artifact
+            let Some(artifact) = task.artifacts.get(&artifact_name) else {
+                use std::collections::HashMap;
+                let available: HashMap<String, usize> = task
+                    .artifacts
+                    .names()
+                    .filter_map(|name| {
+                        task.artifacts.get(name).map(|a| {
+                            let line_count = a.content.lines().count();
+                            (name.to_string(), line_count)
+                        })
+                    })
+                    .collect();
+                output_error_with_options(
+                    &format!("Artifact not found: {artifact_name}"),
+                    available,
+                );
+                std::process::exit(1);
+            };
+
+            let lines: Vec<&str> = artifact.content.lines().collect();
+            let total_lines = lines.len();
+            let end = (offset + limit).min(total_lines);
+            let content_lines = lines.get(offset..end).unwrap_or(&[]);
+            let content = content_lines.join("\n");
+
+            let response = ArtifactShow {
+                content,
+                total_lines,
+                offset,
+                limit,
+                has_more: end < total_lines,
+            };
+
+            output_json(&response);
+        }
+    }
+}
+
+fn handle_log_action(api: &WorkflowApi, action: LogAction) {
+    match action {
+        LogAction::Show {
+            task_id,
+            offset,
+            limit,
+        } => {
+            #[derive(Serialize)]
+            struct LogShow {
+                entries: Vec<serde_json::Value>,
+                total_entries: usize,
+                offset: usize,
+                limit: usize,
+                has_more: bool,
+            }
+
+            // Get task to validate it exists
+            if api.get_task(&task_id).is_err() {
+                output_error(&format!("Task not found: {task_id}"));
+                std::process::exit(1);
+            }
+
+            // Get logs
+            let all_logs = match api.get_task_logs(&task_id, None) {
+                Ok(logs) => logs,
+                Err(e) => {
+                    output_error(&format!("Error getting logs: {e}"));
+                    std::process::exit(1);
+                }
+            };
+
+            let total_entries = all_logs.len();
+            let end = (offset + limit).min(total_entries);
+            let entries: Vec<serde_json::Value> = all_logs
+                .into_iter()
+                .skip(offset)
+                .take(limit)
+                .map(|entry| serde_json::to_value(entry).unwrap())
+                .collect();
+
+            let response = LogShow {
+                entries,
+                total_entries,
+                offset,
+                limit,
+                has_more: end < total_entries,
+            };
+
+            output_json(&response);
+        }
+    }
+}
+
+fn handle_reset_task(api: &WorkflowApi, id: &str, to_stage: Option<&str>, full: bool) {
+    #[derive(Serialize)]
+    struct ResetResponse {
+        status: String,
+        message: String,
+    }
+
+    // Placeholder: Validate task exists
+    if api.get_task(id).is_err() {
+        output_error(&format!("Task not found: {id}"));
+        std::process::exit(1);
+    }
+
+    let response = if full {
+        ResetResponse {
+            status: "placeholder".to_string(),
+            message: format!("Full reset for task {id} not yet implemented"),
+        }
+    } else if let Some(stage) = to_stage {
+        ResetResponse {
+            status: "placeholder".to_string(),
+            message: format!("Reset to stage '{stage}' for task {id} not yet implemented"),
+        }
+    } else {
+        ResetResponse {
+            status: "placeholder".to_string(),
+            message: format!("Reset current stage for task {id} not yet implemented"),
+        }
+    };
+
+    output_json(&response);
+}
+
+fn handle_edit_task(api: &WorkflowApi, id: &str, title: Option<&str>, description: Option<&str>) {
+    #[derive(Serialize)]
+    struct EditResponse {
+        status: String,
+        message: String,
+    }
+
+    // Placeholder: Validate task exists
+    if api.get_task(id).is_err() {
+        output_error(&format!("Task not found: {id}"));
+        std::process::exit(1);
+    }
+
+    let mut parts = vec![];
+    if title.is_some() {
+        parts.push("title");
+    }
+    if description.is_some() {
+        parts.push("description");
+    }
+
+    let response = EditResponse {
+        status: "placeholder".to_string(),
+        message: format!(
+            "Edit {} for task {id} not yet implemented",
+            parts.join(" and ")
+        ),
+    };
+
+    output_json(&response);
 }

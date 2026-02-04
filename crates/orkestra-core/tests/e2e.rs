@@ -13,6 +13,8 @@ mod helpers;
 
 #[path = "e2e/cleanup.rs"]
 mod cleanup;
+#[path = "e2e/multi_project.rs"]
+mod multi_project;
 #[path = "e2e/startup.rs"]
 mod startup;
 #[path = "e2e/subtasks.rs"]

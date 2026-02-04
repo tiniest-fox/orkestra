@@ -17,6 +17,11 @@
 # Exit codes:
 #   0 - All checks passed (or nothing to check)
 #   1 - One or more checks failed
+#
+# Locking:
+#   Uses mkdir-based locking to serialize check runs across worktrees. Multiple
+#   worktrees share the same target/ directory, and concurrent test runs can
+#   cause spurious failures. The lock is released automatically on exit via trap.
 
 set -e
 
@@ -59,6 +64,58 @@ done
 # Suppress cargo progress bars in quiet mode (they bypass shell redirection)
 if ! $VERBOSE; then
     export CARGO_TERM_PROGRESS_WHEN=never
+fi
+
+# =============================================================================
+# Acquire exclusive lock on shared target directory
+# =============================================================================
+# Multiple worktrees share the same target/ directory. Without locking, concurrent
+# test runs can pick up stale test binaries from other worktrees, causing spurious
+# failures. This lock serializes check runs to prevent this.
+#
+# Uses mkdir-based locking (atomic on POSIX) with PID tracking for stale lock detection.
+# Works on both Linux and macOS without requiring flock.
+
+LOCK_DIR="${ORKESTRA_PROJECT_ROOT:-.}/.orkestra/target.lock.d"
+LOCK_PID_FILE="$LOCK_DIR/pid"
+
+acquire_lock() {
+    local max_wait=300  # 5 minutes max wait
+    local waited=0
+
+    while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+        # Check if lock holder is still alive
+        if [ -f "$LOCK_PID_FILE" ]; then
+            local lock_pid=$(cat "$LOCK_PID_FILE" 2>/dev/null)
+            if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+                # Stale lock - holder is dead
+                $VERBOSE && echo -e "${YELLOW:-}[WARN]${NC:-} Removing stale lock (PID $lock_pid is dead)"
+                rm -rf "$LOCK_DIR"
+                continue
+            fi
+        fi
+
+        if [ $waited -ge $max_wait ]; then
+            echo "ERROR: Timed out waiting for target lock after ${max_wait}s"
+            exit 1
+        fi
+
+        $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Waiting for target lock (held by PID $(cat "$LOCK_PID_FILE" 2>/dev/null || echo "unknown"))..."
+        sleep 2
+        waited=$((waited + 2))
+    done
+
+    # Write our PID to the lock
+    echo $$ > "$LOCK_PID_FILE"
+
+    # Release lock on exit (normal, error, or signal)
+    trap 'rm -rf "$LOCK_DIR"' EXIT
+}
+
+if [ -z "$CHECKS_LOCKED" ]; then
+    export CHECKS_LOCKED=1
+    acquire_lock
+    $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Lock acquired, running checks..."
 fi
 
 # Colors for output

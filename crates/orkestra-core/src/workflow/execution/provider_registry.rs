@@ -29,6 +29,10 @@ pub struct ProviderCapabilities {
     /// extracted from the provider's output stream. When false (Claude Code), the caller
     /// supplies a UUID via `--session-id` on first spawn.
     pub generates_own_session_id: bool,
+    /// Whether the provider's StructuredOutput tool requires JSON properties
+    /// to be passed directly as input fields (not as a JSON string in `content` field).
+    /// True for Claude Code, false for OpenCode.
+    pub requires_direct_structured_output: bool,
 }
 
 // ============================================================================
@@ -317,6 +321,7 @@ pub fn claudecode_capabilities() -> ProviderCapabilities {
         supports_json_schema: true,
         supports_sessions: true,
         generates_own_session_id: false,
+        requires_direct_structured_output: true,
     }
 }
 
@@ -326,6 +331,7 @@ pub fn opencode_capabilities() -> ProviderCapabilities {
         supports_json_schema: false,
         supports_sessions: true,
         generates_own_session_id: true,
+        requires_direct_structured_output: false,
     }
 }
 

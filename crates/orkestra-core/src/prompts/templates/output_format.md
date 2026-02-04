@@ -2,6 +2,20 @@
 
 Produce your output as valid JSON with a `type` field. Your output artifact is: **{{artifact_name}}**
 
+{{#if show_direct_structured_output_hint}}
+**IMPORTANT:** When calling the StructuredOutput tool, pass your JSON properties directly as input fields, NOT as a JSON string in a `content` field.
+
+✅ CORRECT:
+```json
+{"type": "{{artifact_name}}", "content": "..."}
+```
+
+❌ INCORRECT:
+```json
+{"content": "{\"type\": \"{{artifact_name}}\", ...}"}
+```
+{{/if}}
+
 {{#if has_approval}}
 ### Approve or reject
 ```json

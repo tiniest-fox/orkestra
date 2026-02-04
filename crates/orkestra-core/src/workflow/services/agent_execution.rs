@@ -163,6 +163,7 @@ impl AgentExecutionService {
         task: &Task,
         is_resume: bool,
         trigger: Option<&IterationTrigger>,
+        show_direct_structured_output_hint: bool,
     ) -> Result<String, ExecutionError> {
         if is_resume {
             let resume_type = trigger_to_resume_type(trigger);
@@ -174,6 +175,7 @@ impl AgentExecutionService {
                 task,
                 None, // No feedback on first spawn
                 None, // No integration error on first spawn
+                show_direct_structured_output_hint,
             )?;
             Ok(config.prompt)
         }
@@ -259,7 +261,12 @@ impl AgentExecutionService {
         let resolved = self.registry.resolve(model_spec.as_deref())?;
 
         // 3. Build prompt based on whether this is a resume
-        let mut prompt = self.build_stage_prompt(task, spawn_context.is_resume, trigger)?;
+        let mut prompt = self.build_stage_prompt(
+            task,
+            spawn_context.is_resume,
+            trigger,
+            resolved.capabilities.requires_direct_structured_output,
+        )?;
 
         // 4. If the provider doesn't support native JSON schema, embed it in the prompt
         if !resolved.capabilities.supports_json_schema {

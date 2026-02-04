@@ -62,6 +62,7 @@ impl PromptService {
         task: &Task,
         feedback: Option<&str>,
         integration_error: Option<IntegrationErrorContext<'_>>,
+        show_direct_structured_output_hint: bool,
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
         let stage_name = task
             .current_stage()
@@ -90,6 +91,7 @@ impl PromptService {
             feedback,
             integration_error,
             flow_overrides,
+            show_direct_structured_output_hint,
         )
     }
 
@@ -101,8 +103,9 @@ impl PromptService {
         workflow: &WorkflowConfig,
         task: &Task,
         feedback: &str,
+        show_direct_structured_output_hint: bool,
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
-        self.resolve_config(workflow, task, Some(feedback), None)
+        self.resolve_config(workflow, task, Some(feedback), None, show_direct_structured_output_hint)
     }
 
     /// Resolve agent configuration with no additional context.
@@ -112,8 +115,9 @@ impl PromptService {
         &self,
         workflow: &WorkflowConfig,
         task: &Task,
+        show_direct_structured_output_hint: bool,
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
-        self.resolve_config(workflow, task, None, None)
+        self.resolve_config(workflow, task, None, None, show_direct_structured_output_hint)
     }
 }
 
@@ -144,7 +148,7 @@ mod tests {
         let mut task = Task::new("task-1", "Test", "Desc", "planning", "now");
         task.status = crate::workflow::runtime::Status::Done;
 
-        let result = service.resolve_fresh(&workflow, &task);
+        let result = service.resolve_fresh(&workflow, &task, false);
         assert!(matches!(result, Err(AgentConfigError::NotInActiveStage)));
     }
 
@@ -156,7 +160,7 @@ mod tests {
         // Task in an unknown stage
         let task = Task::new("task-1", "Test", "Desc", "nonexistent", "now");
 
-        let result = service.resolve_fresh(&workflow, &task);
+        let result = service.resolve_fresh(&workflow, &task, false);
         assert!(matches!(result, Err(AgentConfigError::UnknownStage(_))));
     }
 }

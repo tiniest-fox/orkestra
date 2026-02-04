@@ -41,6 +41,7 @@ struct OutputFormatContext {
     subtasks_example: Option<String>,
     skip_example: Option<String>,
     has_approval: bool,
+    show_direct_structured_output_hint: bool,
 }
 
 /// Build the output format context with schema-validated examples.
@@ -84,6 +85,7 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
         subtasks_example,
         skip_example,
         has_approval: ctx.stage.capabilities.has_approval(),
+        show_direct_structured_output_hint: ctx.show_direct_structured_output_hint,
     }
 }
 
@@ -120,6 +122,9 @@ pub struct StagePromptContext<'a> {
 
     /// Worktree path (for git worktree isolation).
     pub worktree_path: Option<&'a str>,
+
+    /// Whether to show instructions for direct StructuredOutput usage (Claude Code specific).
+    pub show_direct_structured_output_hint: bool,
 }
 
 /// Context for an artifact available to the stage.
@@ -184,6 +189,7 @@ impl<'a> PromptBuilder<'a> {
         task: &'a Task,
         feedback: Option<&'a str>,
         integration_error: Option<IntegrationErrorContext<'a>>,
+        show_direct_structured_output_hint: bool,
     ) -> Option<StagePromptContext<'a>> {
         let stage = self.workflow.stage(stage_name)?;
 
@@ -215,6 +221,7 @@ impl<'a> PromptBuilder<'a> {
             feedback,
             integration_error,
             worktree_path: task.worktree_path.as_deref(),
+            show_direct_structured_output_hint,
         })
     }
 
@@ -228,6 +235,7 @@ impl<'a> PromptBuilder<'a> {
         task: &'a Task,
         feedback: Option<&'a str>,
         integration_error: Option<IntegrationErrorContext<'a>>,
+        show_direct_structured_output_hint: bool,
     ) -> Option<StagePromptContext<'a>> {
         let artifacts: Vec<ArtifactContext<'a>> = stage
             .inputs
@@ -254,6 +262,7 @@ impl<'a> PromptBuilder<'a> {
             feedback,
             integration_error,
             worktree_path: task.worktree_path.as_deref(),
+            show_direct_structured_output_hint,
         })
     }
 
@@ -267,7 +276,7 @@ impl<'a> PromptBuilder<'a> {
         task: &'a Task,
         feedback: Option<&'a str>,
     ) -> Option<String> {
-        let ctx = self.build_context(stage_name, task, feedback, None)?;
+        let ctx = self.build_context(stage_name, task, feedback, None, false)?;
 
         let mut prompt = String::new();
 
@@ -489,6 +498,7 @@ pub fn resolve_stage_agent_config(
         feedback,
         integration_error,
         FlowOverrides::default(),
+        false, // Default to false for backward compatibility
     )
 }
 
@@ -504,6 +514,7 @@ pub fn resolve_stage_agent_config_for(
     feedback: Option<&str>,
     integration_error: Option<IntegrationErrorContext<'_>>,
     flow_overrides: FlowOverrides<'_>,
+    show_direct_structured_output_hint: bool,
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
         .stage(stage_name)
@@ -540,7 +551,13 @@ pub fn resolve_stage_agent_config_for(
     // Build prompt context
     let builder = PromptBuilder::new(workflow);
     let ctx = builder
-        .build_context_with_stage(effective_stage, task, feedback, integration_error)
+        .build_context_with_stage(
+            effective_stage,
+            task,
+            feedback,
+            integration_error,
+            show_direct_structured_output_hint,
+        )
         .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;
 
     let prompt = build_complete_prompt(&agent_def, &ctx);
@@ -858,7 +875,7 @@ mod tests {
         );
 
         let ctx = builder
-            .build_context("planning", &task, None, None)
+            .build_context("planning", &task, None, None, false)
             .unwrap();
 
         assert_eq!(ctx.stage.name, "planning");
@@ -887,7 +904,7 @@ mod tests {
             "now",
         ));
 
-        let ctx = builder.build_context("work", &task, None, None).unwrap();
+        let ctx = builder.build_context("work", &task, None, None, false).unwrap();
 
         assert_eq!(ctx.stage.name, "work");
         assert_eq!(ctx.artifacts.len(), 1);
@@ -909,7 +926,7 @@ mod tests {
         );
 
         let ctx = builder
-            .build_context("planning", &task, Some("Add more detail"), None)
+            .build_context("planning", &task, Some("Add more detail"), None, false)
             .unwrap();
 
         assert_eq!(ctx.feedback, Some("Add more detail"));
@@ -932,7 +949,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("summary", "Work done", "work", "t2"));
 
-        let ctx = builder.build_context("review", &task, None, None).unwrap();
+        let ctx = builder.build_context("review", &task, None, None, false).unwrap();
 
         assert_eq!(ctx.stage.name, "review");
         assert_eq!(ctx.artifacts.len(), 2);
@@ -947,7 +964,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Desc", "planning", "now");
 
-        let ctx = builder.build_context("nonexistent", &task, None, None);
+        let ctx = builder.build_context("nonexistent", &task, None, None, false);
         assert!(ctx.is_none());
     }
 
@@ -1034,7 +1051,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None)
+            .build_context("planning", &task, None, None, false)
             .unwrap();
 
         assert!(ctx.question_history.is_empty());
@@ -1095,7 +1112,7 @@ mod tests {
             "now",
         ));
 
-        let ctx = builder.build_context("work", &task, None, None).unwrap();
+        let ctx = builder.build_context("work", &task, None, None, false).unwrap();
         let agent_def = "You are a worker agent. Implement the plan.";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
@@ -1126,7 +1143,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, Some("Add more detail"), None)
+            .build_context("planning", &task, Some("Add more detail"), None, false)
             .unwrap();
 
         let agent_def = "Planner agent";
@@ -1151,7 +1168,7 @@ mod tests {
         };
 
         let ctx = builder
-            .build_context("work", &task, None, Some(error))
+            .build_context("work", &task, None, Some(error), false)
             .unwrap();
 
         let agent_def = "Worker agent";
@@ -1170,7 +1187,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None)
+            .build_context("planning", &task, None, None, false)
             .unwrap();
 
         let agent_def = "Planner agent";
@@ -1192,7 +1209,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("summary", "Summary", "work", "now"));
 
-        let ctx = builder.build_context("review", &task, None, None).unwrap();
+        let ctx = builder.build_context("review", &task, None, None, false).unwrap();
 
         let agent_def = "Reviewer agent";
         let prompt = build_complete_prompt(agent_def, &ctx);
@@ -1211,7 +1228,7 @@ mod tests {
             .with_worktree("/path/to/worktree/task-1");
 
         let ctx = builder
-            .build_context("planning", &task, None, None)
+            .build_context("planning", &task, None, None, false)
             .unwrap();
 
         let agent_def = "Planner agent";
@@ -1232,7 +1249,7 @@ mod tests {
         // No worktree set
 
         let ctx = builder
-            .build_context("planning", &task, None, None)
+            .build_context("planning", &task, None, None, false)
             .unwrap();
 
         let agent_def = "Planner agent";

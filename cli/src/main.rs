@@ -296,8 +296,13 @@ fn handle_list_tasks(api: &WorkflowApi, include_archived: bool) {
     let entries: Vec<TaskListEntry> = tasks
         .into_iter()
         .map(|t| {
-            let description = if t.description.len() > 200 {
-                format!("{}...", &t.description[..197])
+            let description = if t.description.chars().count() > 200 {
+                let end_idx = t
+                    .description
+                    .char_indices()
+                    .nth(197)
+                    .map_or(t.description.len(), |(i, _)| i);
+                format!("{}...", &t.description[..end_idx])
             } else {
                 t.description.clone()
             };

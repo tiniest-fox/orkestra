@@ -4,23 +4,23 @@
 mod commands;
 mod error;
 mod highlight;
+mod project_init;
 mod project_registry;
 mod startup;
 mod state;
 
 use orkestra_core::{
     find_project_root, orkestra_debug,
-    workflow::{load_workflow_for_project, OrchestratorLoop, Phase},
+    workflow::{load_workflow_for_project, Phase},
 };
-use project_registry::{ProjectRegistry, ProjectState};
-use startup::{run_startup, StartupState};
+use project_registry::ProjectRegistry;
+use startup::{run_startup, start_project_orchestrator, StartupState};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
 
 /// Wrapper for the orchestrator stop flag, stored in Tauri state.
 /// TEMPORARY: Will be replaced by per-project stop flags in subtask 2.
@@ -44,7 +44,7 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
     }
 
     orkestra_debug!("startup", "UI ready, beginning initialization...");
-    let stop_flag = stop_flag.0.clone();
+    let _stop_flag = stop_flag.0.clone();
 
     thread::spawn(move || {
         let startup_result = run_startup();
@@ -62,9 +62,6 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
         // TEMPORARY SHIM: Creates a single-project registry with label "main".
         // Subtask 2 will replace this with proper multi-project initialization.
         if let Some(app_state) = startup_result.app_state {
-            // Clean up orphaned agents from previous crash
-            cleanup_orphaned_agents(&app_state);
-
             // Get registry from app handle
             let registry = app_handle.state::<ProjectRegistry>();
 
@@ -76,7 +73,7 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
 
             // Start the workflow orchestrator for the "main" project
             if let Ok(project_state) = registry.get("main") {
-                start_workflow_orchestrator(app_handle.clone(), &project_state, stop_flag);
+                start_project_orchestrator(app_handle.clone(), &project_state);
             }
         }
 
@@ -85,139 +82,6 @@ fn begin_initialization(app_handle: AppHandle, stop_flag: tauri::State<Orchestra
         let startup_state: tauri::State<StartupState> = app_handle.state();
         startup_state.set_status(startup_result.status.clone());
     });
-}
-
-// =============================================================================
-// Workflow Orchestrator
-// =============================================================================
-
-/// Start the workflow orchestrator loop (stage-agnostic).
-///
-/// This spawns a background thread that continuously checks for tasks
-/// needing agents and spawns them as needed.
-fn start_workflow_orchestrator(
-    app_handle: AppHandle,
-    project_state: &Arc<ProjectState>,
-    stop_flag: Arc<AtomicBool>,
-) {
-    let api = project_state.api_arc();
-    let workflow = project_state.config().clone();
-    let project_root = project_state.project_root().to_path_buf();
-    let store = project_state.create_store();
-
-    thread::spawn(move || {
-        let orchestrator = OrchestratorLoop::for_project(api, workflow, project_root, store);
-
-        // Share the stop flag with the orchestrator
-        let orch_stop = orchestrator.stop_flag();
-
-        // Forward stop signal from app to orchestrator
-        let stop_flag_clone = stop_flag.clone();
-        thread::spawn(move || {
-            while !stop_flag_clone.load(Ordering::Relaxed) {
-                thread::sleep(Duration::from_millis(100));
-            }
-            orch_stop.store(true, Ordering::Relaxed);
-        });
-
-        orchestrator.run(move |event| handle_orchestrator_event(&app_handle, &event));
-
-        orkestra_debug!("orchestrator", "Stopped");
-    });
-}
-
-/// Log an orchestrator event and emit a task-updated signal to the frontend.
-fn handle_orchestrator_event(
-    app_handle: &AppHandle,
-    event: &orkestra_core::workflow::OrchestratorEvent,
-) {
-    match event {
-        orkestra_core::workflow::OrchestratorEvent::AgentSpawned {
-            task_id,
-            stage,
-            pid,
-        } => {
-            orkestra_debug!(
-                "orchestrator",
-                "Spawned {stage} agent for {task_id} (pid: {pid})"
-            );
-            let _ = app_handle.emit("task-updated", task_id);
-        }
-        orkestra_core::workflow::OrchestratorEvent::OutputProcessed {
-            task_id,
-            stage,
-            output_type,
-        } => {
-            orkestra_debug!(
-                "orchestrator",
-                "Processed {output_type} output from {stage} for {task_id}"
-            );
-            let _ = app_handle.emit("task-updated", task_id);
-            notify_if_review_needed(app_handle, task_id, stage, output_type);
-        }
-        orkestra_core::workflow::OrchestratorEvent::Error { task_id, error } => {
-            orkestra_debug!("orchestrator", "Error: {error}");
-            if let Some(id) = task_id {
-                let _ = app_handle.emit("task-updated", id);
-            }
-        }
-        orkestra_core::workflow::OrchestratorEvent::IntegrationStarted { task_id, branch } => {
-            orkestra_debug!(
-                "orchestrator",
-                "Starting integration for {task_id} (branch: {branch})"
-            );
-            let _ = app_handle.emit("task-updated", task_id);
-        }
-        orkestra_core::workflow::OrchestratorEvent::IntegrationCompleted { task_id } => {
-            orkestra_debug!("orchestrator", "Integration completed for {task_id}");
-            let _ = app_handle.emit("task-updated", task_id);
-        }
-        orkestra_core::workflow::OrchestratorEvent::IntegrationFailed {
-            task_id, error, ..
-        } => {
-            orkestra_debug!("orchestrator", "Integration failed for {task_id}: {error}");
-            let _ = app_handle.emit("task-updated", task_id);
-        }
-        orkestra_core::workflow::OrchestratorEvent::ScriptSpawned {
-            task_id,
-            stage,
-            command,
-            pid,
-        } => {
-            orkestra_debug!(
-                "orchestrator",
-                "Spawned script for {task_id}/{stage}: {command} (pid: {pid})"
-            );
-            let _ = app_handle.emit("task-updated", task_id);
-        }
-        orkestra_core::workflow::OrchestratorEvent::ScriptCompleted { task_id, stage } => {
-            orkestra_debug!("orchestrator", "Script completed for {task_id}/{stage}");
-            let _ = app_handle.emit("task-updated", task_id);
-        }
-        orkestra_core::workflow::OrchestratorEvent::ScriptFailed {
-            task_id,
-            stage,
-            error,
-            recovery_stage,
-        } => {
-            let recovery = recovery_stage.as_deref().unwrap_or("none");
-            orkestra_debug!(
-                "orchestrator",
-                "Script failed for {task_id}/{stage}: {error} (recovery: {recovery})"
-            );
-            let _ = app_handle.emit("task-updated", task_id);
-        }
-        orkestra_core::workflow::OrchestratorEvent::ParentAdvanced {
-            task_id,
-            subtask_count,
-        } => {
-            orkestra_debug!(
-                "orchestrator",
-                "Parent {task_id} advanced: all {subtask_count} subtasks done"
-            );
-            let _ = app_handle.emit("task-updated", task_id);
-        }
-    }
 }
 
 // =============================================================================
@@ -283,6 +147,7 @@ fn request_notification_permission(app_handle: &AppHandle) {
 /// Fires for `OutputProcessed` events where the task has entered `AwaitingReview`.
 /// This naturally excludes auto-mode tasks (they skip `AwaitingReview`) and
 /// terminal outputs (failed/blocked don't enter `AwaitingReview`).
+#[allow(dead_code)] // Will be used in subtask 2 for per-window notification handling
 fn notify_if_review_needed(app_handle: &AppHandle, task_id: &str, stage: &str, output_type: &str) {
     // Only notify for output types that require human action
     let needs_notification = matches!(output_type, "questions" | "artifact" | "subtasks");
@@ -391,32 +256,6 @@ fn cleanup_agents(app_handle: &AppHandle) {
         }
         Err(e) => {
             orkestra_debug!("cleanup", "Failed to kill agents: {}", e);
-        }
-    }
-}
-
-/// Clean up any orphaned agent processes from a previous crash.
-///
-/// Called on startup to ensure stale PIDs don't prevent new agents from spawning.
-/// Delegates to core's `cleanup_orphaned_agents()` which kills processes and
-/// clears stale PIDs from sessions.
-fn cleanup_orphaned_agents(project_state: &ProjectState) {
-    orkestra_debug!("startup", "Checking for orphaned agents...");
-
-    let Ok(api) = project_state.api() else {
-        orkestra_debug!("startup", "Failed to get API lock");
-        return;
-    };
-
-    match api.cleanup_orphaned_agents() {
-        Ok(orphans) if orphans > 0 => {
-            orkestra_debug!("startup", "Cleaned up {} orphaned agent(s)", orphans);
-        }
-        Ok(_) => {
-            orkestra_debug!("startup", "No orphaned agents found");
-        }
-        Err(e) => {
-            orkestra_debug!("startup", "Failed to clean up orphaned agents: {}", e);
         }
     }
 }

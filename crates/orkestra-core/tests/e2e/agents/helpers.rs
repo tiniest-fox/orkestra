@@ -58,7 +58,10 @@ impl AgentTestEnv {
 
         // Initialize debug logging so ORKESTRA_DEBUG=1 works in tests
         orkestra_core::debug_log::init(&orkestra_dir);
-        println!("Debug log: {}", orkestra_dir.join("debug.log").display());
+        println!(
+            "Debug log: {}",
+            orkestra_dir.join(".logs/debug.log").display()
+        );
         std::fs::write(orkestra_dir.join("agents/worker.md"), prompt).unwrap();
 
         // Allow OpenCode full permissions so it doesn't prompt interactively
@@ -126,7 +129,7 @@ impl AgentTestEnv {
 
     /// Print the debug log contents to stdout for test diagnostics.
     fn dump_debug_log(&self) {
-        let log_path = self.temp_dir.path().join(".orkestra/debug.log");
+        let log_path = self.temp_dir.path().join(".orkestra/.logs/debug.log");
         if let Ok(contents) = std::fs::read_to_string(&log_path) {
             println!("\n=== DEBUG LOG ({}) ===", log_path.display());
             for line in contents.lines() {

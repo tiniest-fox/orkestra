@@ -1,11 +1,11 @@
 //! Debug logging for Orkestra.
 //!
 //! Provides debug logging with two output channels:
-//! - **File**: Written to `.orkestra/debug.log` when `ORKESTRA_DEBUG=1` is set.
+//! - **File**: Written to `.orkestra/.logs/debug.log` when `ORKESTRA_DEBUG=1` is set.
 //! - **Hook**: An optional callback registered at runtime (e.g., to emit Tauri events).
 //!
 //! Additionally provides agent output logging:
-//! - **Agent log**: Written to `.orkestra/agents.log` (always enabled when initialized).
+//! - **Agent log**: Written to `.orkestra/.logs/agents.log` (always enabled when initialized).
 //!   Contains structured `LogEntry` JSON from agent stdout for debugging agent behavior.
 //!
 //! Both debug channels are independent — either, both, or neither can be active.
@@ -18,8 +18,8 @@
 //! ORKESTRA_DEBUG=1 pnpm tauri dev
 //!
 //! # View logs
-//! tail -f .orkestra/debug.log
-//! tail -f .orkestra/agents.log
+//! tail -f .orkestra/.logs/debug.log
+//! tail -f .orkestra/.logs/agents.log
 //! ```
 //!
 //! ```ignore
@@ -58,13 +58,16 @@ struct AgentLogState {
 ///
 /// Must be called once at startup with the path to the `.orkestra` directory.
 /// If `ORKESTRA_DEBUG=1` or `ORKESTRA_DEBUG=true`, file logging is enabled.
+/// Logs are written to `.orkestra/.logs/debug.log`.
 pub fn init(orkestra_dir: &Path) {
     let enabled = std::env::var("ORKESTRA_DEBUG")
         .map(|v| v == "1" || v.to_lowercase() == "true")
         .unwrap_or(false);
 
     let file = if enabled {
-        let path = orkestra_dir.join("debug.log");
+        let logs_dir = orkestra_dir.join(".logs");
+        let _ = std::fs::create_dir_all(&logs_dir);
+        let path = logs_dir.join("debug.log");
         match OpenOptions::new().create(true).append(true).open(&path) {
             Ok(f) => {
                 eprintln!("[orkestra] Debug logging enabled: {}", path.display());
@@ -89,9 +92,11 @@ pub fn init(orkestra_dir: &Path) {
 /// Initialize the agent output logger.
 ///
 /// Must be called once at startup with the path to the `.orkestra` directory.
-/// Always creates `.orkestra/agents.log` (no env var needed since it's for structured agent output).
+/// Always creates `.orkestra/.logs/agents.log` (no env var needed since it's for structured agent output).
 pub fn init_agent_log(orkestra_dir: &Path) {
-    let path = orkestra_dir.join("agents.log");
+    let logs_dir = orkestra_dir.join(".logs");
+    let _ = std::fs::create_dir_all(&logs_dir);
+    let path = logs_dir.join("agents.log");
     match OpenOptions::new().create(true).append(true).open(&path) {
         Ok(f) => {
             let _ = AGENT_LOG_STATE.set(AgentLogState {
@@ -165,7 +170,7 @@ pub fn log(component: &str, message: &str) {
 
 /// Log agent output to the agent log file.
 ///
-/// Writes structured JSON log entries from agent stdout to `.orkestra/agents.log`.
+/// Writes structured JSON log entries from agent stdout to `.orkestra/.logs/agents.log`.
 /// Each line is formatted as: `{timestamp} [{task_id}/{stage}] {json}`
 ///
 /// This is separate from debug logging — agent logs are always written when initialized,

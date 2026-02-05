@@ -6,9 +6,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::workflow::domain::LogEntry;
-use crate::workflow::services::session_logs::{
-    extract_tool_result_content, parse_resume_marker, parse_tool_input,
-};
+use crate::workflow::services::session_logs::{extract_tool_result_content, parse_tool_input};
 
 use super::{check_for_api_error, extract_from_jsonl, AgentParser, ParsedUpdate};
 
@@ -217,37 +215,19 @@ impl ClaudeAgentParser {
                 }
             }
         } else if msg_type == "user" {
-            let content = v.get("message").and_then(|m| m.get("content"));
-
-            if let Some(arr) = content.and_then(|c| c.as_array()) {
+            if let Some(arr) = v
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_array())
+            {
                 for item in arr {
-                    match item.get("type").and_then(|t| t.as_str()) {
-                        Some("tool_result") => {
-                            if let Some(entry) =
-                                self.parse_tool_result(item, is_subagent, parent_id.as_ref())
-                            {
-                                entries.push(entry);
-                            }
+                    if item.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
+                        if let Some(entry) =
+                            self.parse_tool_result(item, is_subagent, parent_id.as_ref())
+                        {
+                            entries.push(entry);
                         }
-                        Some("text") => {
-                            if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                                if let Some(marker) = parse_resume_marker(text) {
-                                    entries.push(LogEntry::UserMessage {
-                                        resume_type: marker.marker_type.as_str().to_string(),
-                                        content: marker.content,
-                                    });
-                                }
-                            }
-                        }
-                        _ => {}
                     }
-                }
-            } else if let Some(text) = content.and_then(|c| c.as_str()) {
-                if let Some(marker) = parse_resume_marker(text) {
-                    entries.push(LogEntry::UserMessage {
-                        resume_type: marker.marker_type.as_str().to_string(),
-                        content: marker.content,
-                    });
                 }
             }
         }
@@ -346,16 +326,6 @@ mod tests {
                         "content": content
                     }
                 ]
-            }
-        })
-        .to_string()
-    }
-
-    fn user_text(text: &str) -> String {
-        serde_json::json!({
-            "type": "user",
-            "message": {
-                "content": text
             }
         })
         .to_string()
@@ -561,50 +531,6 @@ mod tests {
         .to_string();
         let update = parser.parse_line(&subagent_text);
         assert!(update.log_entries.is_empty());
-    }
-
-    #[test]
-    fn parses_resume_marker() {
-        let mut parser = ClaudeAgentParser::new();
-        let line = user_text("<!orkestra-resume:feedback>\n\nFix the bug");
-        let update = parser.parse_line(&line);
-        assert_eq!(update.log_entries.len(), 1);
-        match &update.log_entries[0] {
-            LogEntry::UserMessage {
-                resume_type,
-                content,
-            } => {
-                assert_eq!(resume_type, "feedback");
-                assert_eq!(content, "Fix the bug");
-            }
-            other => panic!("Expected UserMessage, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn parses_user_text_in_array() {
-        let mut parser = ClaudeAgentParser::new();
-        let line = serde_json::json!({
-            "type": "user",
-            "message": {
-                "content": [
-                    {"type": "text", "text": "<!orkestra-resume:continue>\n\nKeep going"}
-                ]
-            }
-        })
-        .to_string();
-        let update = parser.parse_line(&line);
-        assert_eq!(update.log_entries.len(), 1);
-        match &update.log_entries[0] {
-            LogEntry::UserMessage {
-                resume_type,
-                content,
-            } => {
-                assert_eq!(resume_type, "continue");
-                assert_eq!(content, "Keep going");
-            }
-            other => panic!("Expected UserMessage, got {other:?}"),
-        }
     }
 
     #[test]

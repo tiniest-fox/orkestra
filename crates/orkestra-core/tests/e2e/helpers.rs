@@ -434,13 +434,14 @@ impl TestEnv {
     }
 
     /// Assert that the last prompt has a specific resume marker type and contains expected strings.
+    ///
+    /// Marker format: `<!orkestra:resume:STAGE:TYPE>`
     pub fn assert_resume_prompt_contains(&self, expected_type: &str, expected_content: &[&str]) {
         let prompt = self.last_prompt();
-        let expected_marker = format!("<!orkestra-resume:{expected_type}>");
+        let type_tag = format!(":{expected_type}>");
         assert!(
-            prompt.starts_with(&expected_marker),
-            "Expected resume marker '{}', got prompt starting with: {}...",
-            expected_marker,
+            prompt.starts_with("<!orkestra:resume:") && prompt.contains(&type_tag),
+            "Expected resume marker with type '{expected_type}', got prompt starting with: {}...",
             &prompt[..prompt.len().min(100)]
         );
 
@@ -461,9 +462,9 @@ impl TestEnv {
     pub fn assert_full_prompt(&self, artifact: &str, can_ask_questions: bool, has_approval: bool) {
         let prompt = self.last_prompt();
 
-        // Should NOT be a resume prompt
+        // Should NOT be a resume prompt (full prompts use <!orkestra:spawn:STAGE>)
         assert!(
-            !prompt.starts_with("<!orkestra-resume:"),
+            !prompt.starts_with("<!orkestra:resume:"),
             "Expected full prompt (not resume), but got resume prompt starting with: {}...",
             &prompt[..prompt.len().min(100)]
         );

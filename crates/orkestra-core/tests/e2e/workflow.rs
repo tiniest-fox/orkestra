@@ -466,6 +466,10 @@ fn test_exhaustive_workflow_flow() {
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
+
+    // VERIFY: Reviewer re-entering the same stage (session exists from step 8) → recheck prompt
+    ctx.assert_resume_prompt_contains("recheck", &[]);
+
     ctx.advance(); // processes review → auto-approve → Done → integration fails (sync) → recovers to work → spawns work agent (completion ready)
     ctx.advance(); // processes work output
 

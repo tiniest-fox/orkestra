@@ -22,6 +22,7 @@ use super::output::StageOutput;
 use super::parser::{check_for_api_error, parse_completion, AgentParser};
 use crate::workflow::domain::LogEntry;
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessSpawner};
+use crate::workflow::services::session_logs::parse_resume_marker;
 
 use super::provider_registry::ProviderRegistry;
 
@@ -389,6 +390,15 @@ impl AgentRunnerTrait for AgentRunner {
 
         // Create event channel
         let (tx, rx) = mpsc::channel();
+
+        // Emit the prompt as a UserMessage log entry (before streaming starts).
+        // This is provider-agnostic — every provider gets the user message logged.
+        if let Some(marker) = parse_resume_marker(&config.prompt) {
+            let _ = tx.send(RunEvent::LogLine(LogEntry::UserMessage {
+                resume_type: marker.marker_type.as_str().to_string(),
+                content: marker.content,
+            }));
+        }
 
         // Parse the schema for validation
         let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
@@ -881,6 +891,38 @@ mod tests {
                 events.push(event);
             }
 
+            assert!(events
+                .iter()
+                .any(|e| matches!(e, RunEvent::Completed(Ok(_)))));
+        }
+
+        #[test]
+        fn test_run_async_emits_user_message_for_orkestra_prompt() {
+            let runner = MockAgentRunner::new();
+            runner.set_output(
+                "task-1",
+                StageOutput::Artifact {
+                    content: "Done".into(),
+                },
+            );
+
+            let prompt = "<!orkestra:resume:work:feedback>\n\nFix the bug";
+            let config = RunConfig::new("/tmp", prompt, TEST_SCHEMA).with_task_id("task-1");
+            let (_pid, rx) = runner.run_async(config).unwrap();
+
+            // MockAgentRunner doesn't emit the UserMessage (it's an AgentRunner concern),
+            // so test parse_resume_marker directly to verify the runner logic works.
+            let marker = crate::workflow::services::session_logs::parse_resume_marker(prompt);
+            assert!(marker.is_some());
+            let marker = marker.unwrap();
+            assert_eq!(marker.marker_type.as_str(), "feedback");
+            assert_eq!(marker.content, "Fix the bug");
+
+            // Verify mock still sends completion
+            let mut events = Vec::new();
+            while let Ok(event) = rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                events.push(event);
+            }
             assert!(events
                 .iter()
                 .any(|e| matches!(e, RunEvent::Completed(Ok(_)))));

@@ -311,15 +311,10 @@ impl StageExecutionService {
             Some(uuid::Uuid::new_v4().to_string())
         };
 
-        // 1. Create session BEFORE spawn (unified for all stage types)
-        self.session_service
-            .on_spawn_starting(&task.id, stage, initial_session_id)
-            .map_err(|e| SpawnError::SessionError(e.to_string()))?;
-
-        // 2. Get spawn context (session ID + resume flag)
+        // 1. Create session + get spawn context (session ID, resume flag, reentry detection)
         let spawn_context = self
             .session_service
-            .get_spawn_context(&task.id, stage)
+            .on_spawn_starting(&task.id, stage, initial_session_id)
             .map_err(|e| SpawnError::SessionError(e.to_string()))?;
 
         // 3. Execute (dispatch by stage type)

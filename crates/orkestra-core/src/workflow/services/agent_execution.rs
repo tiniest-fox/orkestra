@@ -95,20 +95,21 @@ impl From<RegistryError> for ExecutionError {
 // Schema Enforcement
 // ============================================================================
 
+const SCHEMA_ENFORCEMENT_TEMPLATE: &str =
+    include_str!("../../prompts/templates/schema_enforcement.md");
+
 /// Append a schema enforcement section to a prompt for providers that don't
 /// support native `--json-schema` enforcement.
 ///
 /// The section instructs the agent to output valid JSON matching the schema.
 fn append_schema_enforcement(prompt: &str, json_schema: &str) -> String {
-    format!(
-        "{prompt}\n\n\
-         ## Required Output Format\n\n\
-         You MUST respond with valid JSON matching this exact schema:\n\n\
-         ```json\n\
-         {json_schema}\n\
-         ```\n\n\
-         Output ONLY the JSON object. No markdown fences, no explanation, no other text."
-    )
+    let rendered = handlebars::Handlebars::new()
+        .render_template(
+            SCHEMA_ENFORCEMENT_TEMPLATE,
+            &serde_json::json!({ "json_schema": json_schema }),
+        )
+        .expect("schema_enforcement template should render");
+    format!("{prompt}\n\n{rendered}")
 }
 
 // ============================================================================
@@ -161,14 +162,24 @@ impl AgentExecutionService {
     fn build_stage_prompt(
         &self,
         task: &Task,
+        stage: &str,
         is_resume: bool,
+        is_stage_reentry: bool,
         trigger: Option<&IterationTrigger>,
         show_direct_structured_output_hint: bool,
     ) -> Result<String, ExecutionError> {
         if is_resume {
-            let resume_type = trigger_to_resume_type(trigger);
-            build_resume_prompt(&resume_type, Some(self.prompt_service.project_root()))
-                .map_err(ExecutionError::from)
+            let resume_type = if is_stage_reentry {
+                ResumeType::Recheck
+            } else {
+                trigger_to_resume_type(trigger)
+            };
+            build_resume_prompt(
+                stage,
+                &resume_type,
+                Some(self.prompt_service.project_root()),
+            )
+            .map_err(ExecutionError::from)
         } else {
             let config = self.prompt_service.resolve_config(
                 &self.workflow,
@@ -263,7 +274,9 @@ impl AgentExecutionService {
         // 3. Build prompt based on whether this is a resume
         let mut prompt = self.build_stage_prompt(
             task,
+            stage,
             spawn_context.is_resume,
+            spawn_context.is_stage_reentry,
             trigger,
             resolved.capabilities.requires_direct_structured_output,
         )?;

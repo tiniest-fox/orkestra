@@ -21,6 +21,8 @@ pub enum ResumeMarkerType {
     Integration,
     /// Human provided answers to questions.
     Answers,
+    /// Stage is being re-run after full cycle (untriggered re-entry).
+    Recheck,
     /// Initial agent prompt (first spawn, not a resume).
     Initial,
 }
@@ -33,6 +35,7 @@ impl ResumeMarkerType {
             Self::Feedback => "feedback",
             Self::Integration => "integration",
             Self::Answers => "answers",
+            Self::Recheck => "recheck",
             Self::Initial => "initial",
         }
     }
@@ -47,79 +50,43 @@ pub struct ResumeMarker {
     pub content: String,
 }
 
-/// Legacy marker (untyped).
-const LEGACY_RESUME_MARKER: &str = "<!orkestra-resume>";
-
-/// Parse a resume marker from a user message.
+/// Parse a marker from a user message.
 ///
-/// Returns Some(ResumeMarker) if this is a resumption prompt, None otherwise.
-/// Supports both typed markers (<!orkestra-resume:TYPE>) and legacy markers.
+/// Returns `Some(ResumeMarker)` if this is an orkestra prompt, `None` otherwise.
+/// Recognises `<!orkestra:spawn:STAGE>` (initial) and `<!orkestra:resume:STAGE:TYPE>` (resume).
 pub(crate) fn parse_resume_marker(text: &str) -> Option<ResumeMarker> {
     let trimmed = text.trim();
 
-    // Initial prompt marker
-    if let Some(rest) = trimmed.strip_prefix("<!orkestra-initial>") {
-        let content = rest.trim().to_string();
-        return Some(ResumeMarker {
+    // All orkestra markers start with <!orkestra:
+    let rest = trimmed.strip_prefix("<!orkestra:")?;
+    let end_idx = rest.find('>')?;
+    let tag = &rest[..end_idx];
+    let content = rest[end_idx + 1..].trim().to_string();
+
+    // Split tag by ':' → ["spawn", stage] or ["resume", stage, type]
+    let parts: Vec<&str> = tag.splitn(3, ':').collect();
+
+    match parts.as_slice() {
+        ["spawn", _stage] => Some(ResumeMarker {
             marker_type: ResumeMarkerType::Initial,
             content,
-        });
-    }
-
-    // New format: typed markers <!orkestra-resume:TYPE>
-    if let Some(rest) = trimmed.strip_prefix("<!orkestra-resume:") {
-        // Find the closing >
-        if let Some(end_idx) = rest.find('>') {
-            let marker_type = match &rest[..end_idx] {
+        }),
+        ["resume", _stage, resume_type] => {
+            let marker_type = match *resume_type {
                 "continue" => ResumeMarkerType::Continue,
                 "feedback" => ResumeMarkerType::Feedback,
                 "integration" => ResumeMarkerType::Integration,
                 "answers" => ResumeMarkerType::Answers,
-                _ => return None, // Unknown marker type
+                "recheck" => ResumeMarkerType::Recheck,
+                _ => return None,
             };
-            let content = rest[end_idx + 1..].trim().to_string();
-            return Some(ResumeMarker {
+            Some(ResumeMarker {
                 marker_type,
                 content,
-            });
+            })
         }
+        _ => None,
     }
-
-    // Legacy format: untyped marker <!orkestra-resume> (treat as continue)
-    if let Some(rest) = trimmed.strip_prefix(LEGACY_RESUME_MARKER) {
-        let content = rest.trim().to_string();
-        return Some(ResumeMarker {
-            marker_type: ResumeMarkerType::Continue,
-            content,
-        });
-    }
-
-    // Legacy detection: use heuristics for sessions without markers
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    // Skip initial agent prompts (long or start with agent headers)
-    let is_initial_prompt = trimmed.len() > 500
-        || trimmed.starts_with("# Worker Agent")
-        || trimmed.starts_with("# Planner Agent")
-        || trimmed.starts_with("# Reviewer Agent")
-        || trimmed.starts_with("# Breakdown Agent");
-
-    if is_initial_prompt {
-        return None;
-    }
-
-    // Skip task notifications from Claude's background Task tool
-    if trimmed.contains("<task-notification>") {
-        return None;
-    }
-
-    // Legacy: treat as continue type
-    Some(ResumeMarker {
-        marker_type: ResumeMarkerType::Continue,
-        content: trimmed.to_string(),
-    })
 }
 
 // ============================================================================
@@ -441,23 +408,24 @@ mod tests {
 
     #[test]
     fn test_parse_resume_marker_typed() {
-        // Test typed continue marker
-        let marker = parse_resume_marker("<!orkestra-resume:continue>\n\nContinue working");
+        // Test continue marker
+        let marker = parse_resume_marker("<!orkestra:resume:work:continue>\n\nContinue working");
         assert!(marker.is_some());
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::Continue);
         assert_eq!(marker.content, "Continue working");
 
-        // Test typed feedback marker
-        let marker = parse_resume_marker("<!orkestra-resume:feedback>\n\nPlease fix this bug");
+        // Test feedback marker
+        let marker =
+            parse_resume_marker("<!orkestra:resume:review:feedback>\n\nPlease fix this bug");
         assert!(marker.is_some());
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::Feedback);
         assert_eq!(marker.content, "Please fix this bug");
 
-        // Test typed integration marker
+        // Test integration marker
         let marker =
-            parse_resume_marker("<!orkestra-resume:integration>\n\nMerge conflict in file.rs");
+            parse_resume_marker("<!orkestra:resume:work:integration>\n\nMerge conflict in file.rs");
         assert!(marker.is_some());
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::Integration);
@@ -465,36 +433,16 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_resume_marker_legacy() {
-        // Legacy untyped marker should be treated as continue
-        let marker = parse_resume_marker("<!orkestra-resume>User feedback here");
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Continue);
-        assert_eq!(marker.content, "User feedback here");
-    }
-
-    #[test]
-    fn test_parse_resume_marker_heuristics() {
-        // Should skip long prompts
-        let long_text = "a".repeat(600);
-        assert!(parse_resume_marker(&long_text).is_none());
-
-        // Should skip agent prompts
+    fn test_parse_resume_marker_unrecognized_returns_none() {
+        assert!(parse_resume_marker("Fix the bug please").is_none());
         assert!(parse_resume_marker("# Worker Agent\nDo stuff").is_none());
-
-        // Short text without marker should be treated as legacy continue
-        let marker = parse_resume_marker("Fix the bug please");
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Continue);
-        assert_eq!(marker.content, "Fix the bug please");
+        assert!(parse_resume_marker("").is_none());
     }
 
     #[test]
     fn test_parse_resume_marker_answers() {
         let marker = parse_resume_marker(
-            "<!orkestra-resume:answers>\n\nHere are the answers:\n\nQ: What? A: Something",
+            "<!orkestra:resume:planning:answers>\n\nHere are the answers:\n\nQ: What? A: Something",
         );
         assert!(marker.is_some());
         let marker = marker.unwrap();
@@ -503,23 +451,34 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_resume_marker_initial() {
-        let marker = parse_resume_marker(
-            "<!orkestra-initial>\n\n# Worker Agent\n\nYou are a code implementation agent...",
-        );
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Initial);
-        assert!(marker.content.starts_with("# Worker Agent"));
-    }
-
-    #[test]
     fn test_resume_marker_type_as_str() {
         assert_eq!(ResumeMarkerType::Continue.as_str(), "continue");
         assert_eq!(ResumeMarkerType::Feedback.as_str(), "feedback");
         assert_eq!(ResumeMarkerType::Integration.as_str(), "integration");
         assert_eq!(ResumeMarkerType::Answers.as_str(), "answers");
+        assert_eq!(ResumeMarkerType::Recheck.as_str(), "recheck");
         assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
+    }
+
+    #[test]
+    fn test_parse_resume_marker_spawn() {
+        let marker = parse_resume_marker(
+            "<!orkestra:spawn:review>\n\n# Reviewer Agent\n\nYou review code...",
+        );
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::Initial);
+        assert!(marker.content.starts_with("# Reviewer Agent"));
+    }
+
+    #[test]
+    fn test_parse_resume_marker_recheck() {
+        let marker =
+            parse_resume_marker("<!orkestra:resume:review:recheck>\n\nThis stage is being re-run.");
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::Recheck);
+        assert!(marker.content.contains("re-run"));
     }
 
     #[test]

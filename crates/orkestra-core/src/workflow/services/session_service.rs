@@ -37,6 +37,11 @@ pub struct SessionSpawnContext {
     /// Based on `spawn_count > 0` — but forced to `false` when `session_id` is `None`
     /// (can't resume without a session ID).
     pub is_resume: bool,
+    /// Whether this is an untriggered stage re-entry (e.g., review running again after
+    /// work→checks→review cycle). Detected when resuming but the active iteration has
+    /// no `stage_session_id` (never linked to this session) and no `incoming_context`
+    /// (no trigger like rejection or script failure).
+    pub is_stage_reentry: bool,
 }
 
 // ============================================================================
@@ -63,69 +68,20 @@ impl SessionService {
         }
     }
 
-    /// Get spawn context before launching an agent.
-    ///
-    /// Returns the session ID (if available) and whether this is a resume.
-    /// The session must exist and be in Active or Spawning state.
-    ///
-    /// When `session_id` is `None` and `spawn_count > 0`, `is_resume` is forced to `false`
-    /// because we can't resume without a session ID — the agent starts fresh instead.
-    ///
-    /// # Errors
-    ///
-    /// Returns `StageSessionNotFound` if no session exists for this task+stage.
-    pub fn get_spawn_context(
-        &self,
-        task_id: &str,
-        stage: &str,
-    ) -> WorkflowResult<SessionSpawnContext> {
-        match self.store.get_stage_session(task_id, stage)? {
-            Some(session)
-                if session.session_state == SessionState::Active
-                    || session.session_state == SessionState::Spawning =>
-            {
-                // It's a resume only if we have a session ID AND the agent was previously spawned
-                let is_resume = session.claude_session_id.is_some() && session.spawn_count > 0;
-
-                orkestra_debug!(
-                    "session",
-                    "get_spawn_context {}/{}: session_id={:?}, is_resume={}, spawn_count={}",
-                    task_id,
-                    stage,
-                    session.claude_session_id,
-                    is_resume,
-                    session.spawn_count
-                );
-
-                Ok(SessionSpawnContext {
-                    session_id: session.claude_session_id,
-                    is_resume,
-                })
-            }
-            Some(_) => {
-                // Session exists but is Completed or Abandoned
-                Err(crate::workflow::ports::WorkflowError::StageSessionNotFound(
-                    format!("{task_id}/{stage} - session is not active"),
-                ))
-            }
-            None => {
-                // No session exists - caller should call on_spawn_starting first
-                Err(crate::workflow::ports::WorkflowError::StageSessionNotFound(
-                    format!("{task_id}/{stage} - call on_spawn_starting first"),
-                ))
-            }
-        }
-    }
     // ========================================================================
     // Spawn Lifecycle Methods
     // ========================================================================
 
-    /// Create session and iteration before spawn attempt.
+    /// Create session and iteration before spawn attempt, returning spawn context.
     ///
     /// This is called BEFORE attempting to spawn the agent process.
     /// Creates or updates a session in `Spawning` state.
     /// Creates a new iteration only if there's no active one for this stage.
-    /// Returns the iteration ID for tracking.
+    ///
+    /// Returns `SessionSpawnContext` containing the session ID, resume flag, and
+    /// stage re-entry detection. Re-entry is computed **before** linking the
+    /// iteration to the session, so the `stage_session_id.is_none()` check
+    /// correctly detects fresh iterations that haven't been spawned yet.
     ///
     /// # Arguments
     ///
@@ -137,7 +93,7 @@ impl SessionService {
         task_id: &str,
         stage: &str,
         initial_session_id: Option<String>,
-    ) -> WorkflowResult<String> {
+    ) -> WorkflowResult<SessionSpawnContext> {
         let now = chrono::Utc::now().to_rfc3339();
         let session_id = format!("{task_id}-{stage}");
 
@@ -154,6 +110,10 @@ impl SessionService {
             session.session_state = SessionState::Spawning;
             session
         };
+
+        // Compute resume/reentry BEFORE saving the session or linking the iteration.
+        // is_resume: true if we have a session ID AND the agent was previously spawned.
+        let is_resume = session.claude_session_id.is_some() && session.spawn_count > 0;
 
         orkestra_debug!(
             "session",
@@ -182,11 +142,30 @@ impl SessionService {
                     .create_iteration(task_id, stage, None)?
             };
 
+        // Detect untriggered re-entry BEFORE linking: resuming a session but with a
+        // fresh iteration that has no trigger and wasn't linked to this session yet.
+        let is_stage_reentry = is_resume
+            && iteration.stage_session_id.is_none()
+            && iteration.incoming_context.is_none();
+
+        orkestra_debug!(
+            "session",
+            "on_spawn_starting {}/{}: is_resume={}, is_stage_reentry={}",
+            task_id,
+            stage,
+            is_resume,
+            is_stage_reentry
+        );
+
         // Link the session to the iteration for log recovery
         let iteration = iteration.with_stage_session_id(&session_id);
         self.store.save_iteration(&iteration)?;
 
-        Ok(iteration.id)
+        Ok(SessionSpawnContext {
+            session_id: session.claude_session_id,
+            is_resume,
+            is_stage_reentry,
+        })
     }
 
     /// Update session after successful spawn.
@@ -371,26 +350,13 @@ mod tests {
     }
 
     #[test]
-    fn test_get_spawn_context_no_session() {
-        let (service, _store) = create_service();
-
-        // No session exists yet - should error
-        let result = service.get_spawn_context("task-1", "planning");
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_spawn_context_first_spawn() {
         let (service, _store) = create_service();
 
-        // Create session (simulates on_spawn_starting)
-        // This will also create an iteration via IterationService
-        service
+        // on_spawn_starting creates session + iteration and returns context
+        let ctx = service
             .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
             .unwrap();
-
-        // Get context for first spawn
-        let ctx = service.get_spawn_context("task-1", "planning").unwrap();
 
         // Should have session ID (caller-provided) but not be a resume
         assert_eq!(ctx.session_id, Some("test-uuid".to_string()));
@@ -402,10 +368,9 @@ mod tests {
         let (service, _store) = create_service();
 
         // Start agent
-        service
+        let first_ctx = service
             .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
             .unwrap();
-        let first_ctx = service.get_spawn_context("task-1", "planning").unwrap();
         service
             .on_agent_spawned("task-1", "planning", 12345)
             .unwrap();
@@ -414,48 +379,11 @@ mod tests {
         service.on_agent_exited("task-1", "planning").unwrap();
 
         // Next spawn — existing session keeps its ID (initial_session_id ignored)
-        service
+        let ctx = service
             .on_spawn_starting("task-1", "planning", Some("ignored-uuid".into()))
             .unwrap();
-        let ctx = service.get_spawn_context("task-1", "planning").unwrap();
         assert_eq!(ctx.session_id, first_ctx.session_id); // Same session ID from first creation
         assert!(ctx.is_resume); // spawn_count > 0
-    }
-
-    #[test]
-    fn test_completed_session_no_resume() {
-        let (service, _store) = create_service();
-
-        // Start and complete session
-        service
-            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
-            .unwrap();
-        service
-            .on_agent_spawned("task-1", "planning", 12345)
-            .unwrap();
-        service.on_stage_completed("task-1", "planning").unwrap();
-
-        // Completed sessions should error on get_spawn_context
-        let result = service.get_spawn_context("task-1", "planning");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_abandoned_session_no_resume() {
-        let (service, _store) = create_service();
-
-        // Start and abandon session
-        service
-            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
-            .unwrap();
-        service
-            .on_agent_spawned("task-1", "planning", 12345)
-            .unwrap();
-        service.on_stage_abandoned("task-1", "planning").unwrap();
-
-        // Abandoned sessions should error on get_spawn_context
-        let result = service.get_spawn_context("task-1", "planning");
-        assert!(result.is_err());
     }
 
     #[test]
@@ -463,7 +391,7 @@ mod tests {
         let (service, store) = create_service();
 
         // Create session with a caller-provided session ID (Claude Code behavior)
-        service
+        let ctx = service
             .on_spawn_starting("task-1", "planning", Some("my-uuid".into()))
             .unwrap();
 
@@ -475,7 +403,6 @@ mod tests {
         assert_eq!(session.claude_session_id, Some("my-uuid".to_string()));
 
         // Spawn context returns the same ID
-        let ctx = service.get_spawn_context("task-1", "planning").unwrap();
         assert_eq!(ctx.session_id, Some("my-uuid".to_string()));
     }
 
@@ -484,7 +411,7 @@ mod tests {
         let (service, store) = create_service();
 
         // Create session with None (OpenCode behavior — generates its own ID)
-        service
+        let ctx = service
             .on_spawn_starting("task-1", "planning", None)
             .unwrap();
 
@@ -496,7 +423,6 @@ mod tests {
         assert!(session.claude_session_id.is_none());
 
         // Spawn context returns None session ID and is_resume=false
-        let ctx = service.get_spawn_context("task-1", "planning").unwrap();
         assert!(ctx.session_id.is_none());
         assert!(!ctx.is_resume);
     }
@@ -515,10 +441,9 @@ mod tests {
         service.on_agent_exited("task-1", "planning").unwrap();
 
         // Even after spawn+exit (spawn_count > 0), can't resume without session ID
-        service
+        let ctx = service
             .on_spawn_starting("task-1", "planning", None)
             .unwrap();
-        let ctx = service.get_spawn_context("task-1", "planning").unwrap();
         assert!(ctx.session_id.is_none());
         assert!(!ctx.is_resume); // Forced to false — no session ID to resume with
     }
@@ -559,9 +484,12 @@ mod tests {
         let (service, store) = create_service();
 
         // on_spawn_starting creates both session and iteration (via IterationService)
-        let iter_id = service
+        let ctx = service
             .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
             .unwrap();
+        assert_eq!(ctx.session_id, Some("test-uuid".to_string()));
+        assert!(!ctx.is_resume);
+        assert!(!ctx.is_stage_reentry);
 
         // Session should be in Spawning state
         let session = store
@@ -575,7 +503,6 @@ mod tests {
             .get_active_iteration("task-1", "planning")
             .unwrap()
             .unwrap();
-        assert_eq!(iteration.id, iter_id);
         assert!(iteration.is_active());
         // Session should be linked to iteration
         assert!(iteration.stage_session_id.is_some());
@@ -586,7 +513,7 @@ mod tests {
         let (service, store) = create_service();
 
         // First call creates iteration
-        let iter_id_1 = service
+        service
             .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
             .unwrap();
         service
@@ -595,10 +522,9 @@ mod tests {
         service.on_agent_exited("task-1", "planning").unwrap();
 
         // Second call should reuse the same iteration (it's still active)
-        let iter_id_2 = service
+        service
             .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
             .unwrap();
-        assert_eq!(iter_id_1, iter_id_2);
 
         // Should still be only one iteration
         let iterations = store.get_iterations("task-1").unwrap();
@@ -680,16 +606,138 @@ mod tests {
             .on_spawn_failed("task-1", "planning", "Process not found")
             .unwrap();
 
-        // Retry: get spawn context again
-        service
+        // Retry: on_spawn_starting returns context directly
+        let ctx = service
             .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
             .unwrap();
-        let ctx = service.get_spawn_context("task-1", "planning").unwrap();
 
         // Should NOT be a resume because on_agent_spawned was never called
         assert!(
             !ctx.is_resume,
             "Retry after failed spawn should not be a resume (no Claude session exists)"
+        );
+    }
+
+    // ========================================================================
+    // Trigger Delivery Tests
+    // ========================================================================
+
+    // ========================================================================
+    // Stage Re-entry Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_reentry_detected_on_untriggered_fresh_iteration() {
+        // Scenario: review ran, approved, task went through work→checks→review cycle,
+        // now review has a new iteration (no trigger, no session link). Should detect re-entry.
+        let (service, store) = create_service();
+
+        // First spawn of review: create session + iteration, spawn, exit
+        service
+            .on_spawn_starting("task-1", "review", Some("test-uuid".into()))
+            .unwrap();
+        service.on_agent_spawned("task-1", "review", 12345).unwrap();
+        service.on_agent_exited("task-1", "review").unwrap();
+
+        // End the first iteration (simulating stage completion)
+        let mut iter = store
+            .get_active_iteration("task-1", "review")
+            .unwrap()
+            .unwrap();
+        iter.end("now", Outcome::Approved);
+        store.save_iteration(&iter).unwrap();
+
+        // Create a fresh iteration for re-entry (no trigger, no session link)
+        let iteration_service = Arc::new(IterationService::new(
+            Arc::clone(&store) as Arc<dyn WorkflowStore>
+        ));
+        iteration_service
+            .create_iteration("task-1", "review", None)
+            .unwrap();
+
+        // on_spawn_starting detects re-entry: the fresh iteration has no
+        // stage_session_id and no incoming_context BEFORE linking occurs.
+        let ctx = service
+            .on_spawn_starting("task-1", "review", Some("test-uuid".into()))
+            .unwrap();
+        assert!(
+            ctx.is_resume,
+            "Should be a resume (session has prior spawns)"
+        );
+        assert!(
+            ctx.is_stage_reentry,
+            "Should detect re-entry: fresh iteration with no trigger and no session link"
+        );
+    }
+
+    #[test]
+    fn test_reentry_not_detected_on_triggered_iteration() {
+        // Same setup but iteration has a Rejection trigger. Should NOT detect re-entry.
+        let (service, store) = create_service();
+
+        service
+            .on_spawn_starting("task-1", "review", Some("test-uuid".into()))
+            .unwrap();
+        service.on_agent_spawned("task-1", "review", 12345).unwrap();
+        service.on_agent_exited("task-1", "review").unwrap();
+
+        // End the first iteration
+        let mut iter = store
+            .get_active_iteration("task-1", "review")
+            .unwrap()
+            .unwrap();
+        iter.end("now", Outcome::Approved);
+        store.save_iteration(&iter).unwrap();
+
+        // Create iteration WITH a trigger (e.g., rejection feedback)
+        use crate::workflow::domain::IterationTrigger;
+        let iteration_service = Arc::new(IterationService::new(
+            Arc::clone(&store) as Arc<dyn WorkflowStore>
+        ));
+        iteration_service
+            .create_iteration(
+                "task-1",
+                "review",
+                Some(IterationTrigger::Rejection {
+                    from_stage: "review".into(),
+                    feedback: "needs more work".into(),
+                }),
+            )
+            .unwrap();
+
+        let ctx = service
+            .on_spawn_starting("task-1", "review", Some("test-uuid".into()))
+            .unwrap();
+        assert!(ctx.is_resume);
+        assert!(
+            !ctx.is_stage_reentry,
+            "Should NOT detect re-entry: iteration has a trigger"
+        );
+    }
+
+    #[test]
+    fn test_reentry_not_detected_on_crash_resume() {
+        // Agent was spawned but crashed — iteration still linked to session.
+        // Should NOT detect re-entry (it's a crash resume).
+        let (service, _store) = create_service();
+
+        service
+            .on_spawn_starting("task-1", "review", Some("test-uuid".into()))
+            .unwrap();
+        service.on_agent_spawned("task-1", "review", 12345).unwrap();
+        service.on_agent_exited("task-1", "review").unwrap();
+
+        // DON'T end iteration — it's still active and linked to the session
+        // (on_spawn_starting linked it via with_stage_session_id)
+
+        // Second on_spawn_starting should detect crash resume (not re-entry)
+        let ctx = service
+            .on_spawn_starting("task-1", "review", Some("test-uuid".into()))
+            .unwrap();
+        assert!(ctx.is_resume);
+        assert!(
+            !ctx.is_stage_reentry,
+            "Should NOT detect re-entry: iteration is still linked to session (crash resume)"
         );
     }
 

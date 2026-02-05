@@ -22,12 +22,15 @@ use crate::workflow::domain::{QuestionAnswer, Task};
 // =============================================================================
 
 const OUTPUT_FORMAT_TEMPLATE: &str = include_str!("../../prompts/templates/output_format.md");
+const INITIAL_PROMPT_TEMPLATE: &str = include_str!("../../prompts/templates/initial_prompt.md");
 
 static TEMPLATES: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
     let mut hb = Handlebars::new();
     hb.register_escape_fn(handlebars::no_escape);
     hb.register_template_string("output_format", OUTPUT_FORMAT_TEMPLATE)
         .expect("output_format template should be valid");
+    hb.register_template_string("initial_prompt", INITIAL_PROMPT_TEMPLATE)
+        .expect("initial_prompt template should be valid");
     hb
 });
 
@@ -575,86 +578,41 @@ pub fn resolve_stage_agent_config_for(
     })
 }
 
+/// Context for rendering the initial prompt template.
+#[derive(Debug, Serialize)]
+struct InitialPromptContext<'a> {
+    stage_name: &'a str,
+    agent_definition: &'a str,
+    task_id: &'a str,
+    title: &'a str,
+    description: &'a str,
+    artifacts: &'a [ArtifactContext<'a>],
+    question_history: &'a [QuestionAnswerContext<'a>],
+    feedback: Option<&'a str>,
+    integration_error: Option<&'a IntegrationErrorContext<'a>>,
+    output_format: String,
+    worktree_path: Option<&'a str>,
+}
+
 /// Build a complete prompt by combining agent definition with context.
 pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_>) -> String {
-    let mut prompt = String::new();
+    let template_ctx = InitialPromptContext {
+        stage_name: &ctx.stage.name,
+        agent_definition,
+        task_id: ctx.task_id,
+        title: ctx.title,
+        description: ctx.description,
+        artifacts: &ctx.artifacts,
+        question_history: &ctx.question_history,
+        feedback: ctx.feedback,
+        integration_error: ctx.integration_error.as_ref(),
+        output_format: render_output_format(ctx),
+        worktree_path: ctx.worktree_path,
+    };
 
-    // Marker for session log parser to identify initial prompts
-    prompt.push_str("<!orkestra-initial>\n\n");
-
-    // Agent definition first (system instructions)
-    prompt.push_str(agent_definition);
-    prompt.push_str("\n\n---\n\n");
-
-    // Task information
-    prompt.push_str("## Your Current Task\n\n");
-    let _ = writeln!(prompt, "**Task ID**: {}", ctx.task_id);
-    let _ = writeln!(prompt, "**Title**: {}\n", ctx.title);
-    prompt.push_str("### Description\n");
-    prompt.push_str(ctx.description);
-    prompt.push_str("\n\n");
-
-    // Input artifacts
-    if !ctx.artifacts.is_empty() {
-        prompt.push_str("## Input Artifacts\n\n");
-        for artifact in &ctx.artifacts {
-            let _ = write!(prompt, "### {}\n\n", artifact.name);
-            prompt.push_str(artifact.content);
-            prompt.push_str("\n\n");
-        }
-    }
-
-    // Question history
-    if !ctx.question_history.is_empty() {
-        prompt.push_str("## Previous Questions and Answers\n\n");
-        for qa in &ctx.question_history {
-            let _ = writeln!(prompt, "**Q: {}**", qa.question);
-            let _ = writeln!(prompt, "A: {}\n", qa.answer);
-        }
-    }
-
-    // Feedback
-    if let Some(fb) = ctx.feedback {
-        prompt.push_str("## Feedback to Address\n\n");
-        prompt.push_str(fb);
-        prompt.push_str("\n\n");
-    }
-
-    // Integration error
-    if let Some(ref err) = ctx.integration_error {
-        prompt.push_str("## MERGE CONFLICT - Resolution Required\n\n");
-        prompt.push_str(err.message);
-        prompt.push_str("\n\n");
-        if !err.conflict_files.is_empty() {
-            prompt.push_str("**Conflicting files:**\n");
-            for file in &err.conflict_files {
-                let _ = writeln!(prompt, "- {file}");
-            }
-            prompt.push('\n');
-        }
-        prompt.push_str(
-            "Run `git rebase main` and resolve the conflicts, then continue your work.\n\n",
-        );
-    }
-
-    // Output format section (rendered from template with validated examples)
-    prompt.push_str("---\n\n");
-    prompt.push_str(&render_output_format(ctx));
-
-    // Worktree note for subagent awareness (Claude Code subagents don't inherit cwd)
-    if let Some(worktree) = ctx.worktree_path {
-        prompt.push_str("\n---\n\n");
-        prompt.push_str("## Important: Worktree Context\n\n");
-        let _ = writeln!(prompt, "You are working in a git worktree at: `{worktree}`");
-        prompt.push('\n');
-        prompt.push_str(
-            "If you spawn any subagents (via the Task tool), you MUST explicitly tell them \
-             this worktree path. Subagents do not automatically inherit your working directory \
-             and may otherwise operate on the wrong codebase.\n",
-        );
-    }
-
-    prompt
+    TEMPLATES
+        .render("initial_prompt", &template_ctx)
+        .expect("initial_prompt template should render")
 }
 
 // ============================================================================
@@ -679,6 +637,8 @@ pub enum ResumeType {
     },
     /// Human provided answers to questions the agent asked.
     Answers { answers: Vec<ResumeQuestionAnswer> },
+    /// Stage is being re-run after the full cycle completed (untriggered re-entry).
+    Recheck,
 }
 
 /// Owned question-answer pair for use in resume prompts.
@@ -688,53 +648,23 @@ pub struct ResumeQuestionAnswer {
     pub answer: String,
 }
 
-// Builtin default templates (used when .orkestra/agents/resume/ doesn't exist)
-const DEFAULT_CONTINUE_PROMPT: &str = r"<!orkestra-resume:continue>
-
-Your previous session was interrupted. Please continue from where you left off and produce your final output as valid JSON.";
-
-const DEFAULT_FEEDBACK_PROMPT: &str = r"<!orkestra-resume:feedback>
-
-Your previous output needs revision. Please address this feedback:
-
-{{feedback}}
-
-Make the requested changes and produce your revised output as valid JSON.";
-
-const DEFAULT_INTEGRATION_PROMPT: &str = r"<!orkestra-resume:integration>
-
-Integration failed: {{error_message}}
-
-{{#if conflict_files}}
-Conflicting files:
-{{#each conflict_files}}
-- {{this}}
-{{/each}}
-{{/if}}
-
-Please run `git rebase main` to resolve conflicts, then continue and output your result.";
-
-const DEFAULT_ANSWERS_PROMPT: &str = r"<!orkestra-resume:answers>
-
-Here are the answers to your questions:
-
-{{#each answers}}
-**Q: {{this.question}}**
-A: {{this.answer}}
-
-{{/each}}
-
-Please continue your work with this information and produce your final output as valid JSON.";
+// Resume prompt templates (compiled in from prompts/templates/resume/)
+const RESUME_CONTINUE: &str = include_str!("../../prompts/templates/resume/continue.md");
+const RESUME_FEEDBACK: &str = include_str!("../../prompts/templates/resume/feedback.md");
+const RESUME_INTEGRATION: &str = include_str!("../../prompts/templates/resume/integration.md");
+const RESUME_ANSWERS: &str = include_str!("../../prompts/templates/resume/answers.md");
+const RESUME_RECHECK: &str = include_str!("../../prompts/templates/resume/recheck.md");
 
 /// Load and render a resume prompt template.
 ///
 /// This loads the appropriate template for the resume type and renders it
 /// with any required context (feedback, error details, etc.).
 pub fn build_resume_prompt(
+    stage: &str,
     resume_type: &ResumeType,
     project_root: Option<&Path>,
 ) -> Result<String, AgentConfigError> {
-    let (template_name, context) = match &resume_type {
+    let (template_name, mut context) = match &resume_type {
         ResumeType::Continue => ("continue.md", serde_json::json!({})),
         ResumeType::Feedback { feedback } => {
             ("feedback.md", serde_json::json!({ "feedback": feedback }))
@@ -752,18 +682,22 @@ pub fn build_resume_prompt(
         ResumeType::Answers { answers } => {
             ("answers.md", serde_json::json!({ "answers": answers }))
         }
+        ResumeType::Recheck => ("recheck.md", serde_json::json!({})),
     };
+
+    // All resume templates need the stage name for the marker
+    context["stage_name"] = serde_json::json!(stage);
 
     let template = load_resume_template(project_root, template_name)?;
     render_template(&template, &context)
 }
 
-/// Load a resume template from file or return builtin default.
+/// Load a resume template, checking project override first, then compiled-in default.
 fn load_resume_template(
     project_root: Option<&Path>,
     name: &str,
 ) -> Result<String, AgentConfigError> {
-    // Try project .orkestra/agents/resume/ first
+    // Try project .orkestra/agents/resume/ override first
     if let Some(root) = project_root {
         let path = root.join(".orkestra/agents/resume").join(name);
         if path.exists() {
@@ -774,20 +708,20 @@ fn load_resume_template(
                     e
                 ))
             })?;
-            // Warn if custom template missing marker
-            if !content.starts_with("<!orkestra-resume:") {
+            if !content.starts_with("<!orkestra:resume:") {
                 crate::orkestra_debug!("prompt", "Resume template {name} missing marker prefix");
             }
             return Ok(content);
         }
     }
 
-    // Fall back to builtin defaults
+    // Fall back to compiled-in templates from prompts/templates/resume/
     match name {
-        "continue.md" => Ok(DEFAULT_CONTINUE_PROMPT.to_string()),
-        "feedback.md" => Ok(DEFAULT_FEEDBACK_PROMPT.to_string()),
-        "integration.md" => Ok(DEFAULT_INTEGRATION_PROMPT.to_string()),
-        "answers.md" => Ok(DEFAULT_ANSWERS_PROMPT.to_string()),
+        "continue.md" => Ok(RESUME_CONTINUE.to_string()),
+        "feedback.md" => Ok(RESUME_FEEDBACK.to_string()),
+        "integration.md" => Ok(RESUME_INTEGRATION.to_string()),
+        "answers.md" => Ok(RESUME_ANSWERS.to_string()),
+        "recheck.md" => Ok(RESUME_RECHECK.to_string()),
         _ => Err(AgentConfigError::DefinitionNotFound(format!(
             "Unknown resume template: {name}"
         ))),
@@ -1124,8 +1058,8 @@ mod tests {
         let agent_def = "You are a worker agent. Implement the plan.";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Should contain initial prompt marker
-        assert!(prompt.starts_with("<!orkestra-initial>"));
+        // Should contain spawn marker with stage name
+        assert!(prompt.starts_with("<!orkestra:spawn:work>"));
 
         // Should contain agent definition
         assert!(prompt.contains("You are a worker agent"));
@@ -1287,8 +1221,8 @@ mod tests {
 
     #[test]
     fn test_build_resume_prompt_continue() {
-        let prompt = build_resume_prompt(&ResumeType::Continue, None).unwrap();
-        assert!(prompt.starts_with("<!orkestra-resume:continue>"));
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, None).unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
     }
@@ -1296,13 +1230,14 @@ mod tests {
     #[test]
     fn test_build_resume_prompt_feedback() {
         let prompt = build_resume_prompt(
+            "review",
             &ResumeType::Feedback {
                 feedback: "Add more error handling".to_string(),
             },
             None,
         )
         .unwrap();
-        assert!(prompt.starts_with("<!orkestra-resume:feedback>"));
+        assert!(prompt.starts_with("<!orkestra:resume:review:feedback>"));
         assert!(prompt.contains("Add more error handling"));
         assert!(prompt.contains("revision"));
     }
@@ -1310,6 +1245,7 @@ mod tests {
     #[test]
     fn test_build_resume_prompt_integration() {
         let prompt = build_resume_prompt(
+            "work",
             &ResumeType::Integration {
                 message: "Merge conflict detected".to_string(),
                 conflict_files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
@@ -1317,7 +1253,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(prompt.starts_with("<!orkestra-resume:integration>"));
+        assert!(prompt.starts_with("<!orkestra:resume:work:integration>"));
         assert!(prompt.contains("Merge conflict detected"));
         assert!(prompt.contains("src/main.rs"));
         assert!(prompt.contains("src/lib.rs"));
@@ -1327,6 +1263,7 @@ mod tests {
     #[test]
     fn test_build_resume_prompt_answers() {
         let prompt = build_resume_prompt(
+            "planning",
             &ResumeType::Answers {
                 answers: vec![
                     ResumeQuestionAnswer {
@@ -1342,11 +1279,20 @@ mod tests {
             None,
         )
         .unwrap();
-        assert!(prompt.starts_with("<!orkestra-resume:answers>"));
+        assert!(prompt.starts_with("<!orkestra:resume:planning:answers>"));
         assert!(prompt.contains("Which database?"));
         assert!(prompt.contains("PostgreSQL"));
         assert!(prompt.contains("Add caching?"));
         assert!(prompt.contains("Yes, use Redis"));
+    }
+
+    #[test]
+    fn test_build_resume_prompt_recheck() {
+        let prompt = build_resume_prompt("review", &ResumeType::Recheck, None).unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
+        assert!(prompt.contains("re-run"));
+        assert!(prompt.contains("re-examine"));
+        assert!(prompt.contains("JSON"));
     }
 
     #[test]

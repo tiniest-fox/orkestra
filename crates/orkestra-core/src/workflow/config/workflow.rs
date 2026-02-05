@@ -70,6 +70,9 @@ pub struct FlowStageOverride {
     /// Override model identifier (e.g., "claudecode/haiku" for cheaper model in quick flow).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Override input artifacts (full replace, not merge).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inputs: Option<Vec<String>>,
 }
 
 // Custom serde for FlowStageEntry to handle the YAML format:
@@ -350,6 +353,31 @@ impl WorkflowConfig {
         self.stage(stage_name).and_then(|s| s.model.clone())
     }
 
+    /// Get the effective inputs for a stage in a flow.
+    ///
+    /// Flow overrides fully replace (not merge) the global inputs.
+    pub fn effective_inputs(&self, stage_name: &str, flow: Option<&str>) -> Option<Vec<String>> {
+        // Check flow override first
+        if let Some(flow_name) = flow {
+            if let Some(flow_config) = self.flows.get(flow_name) {
+                if let Some(entry) = flow_config
+                    .stages
+                    .iter()
+                    .find(|e| e.stage_name == stage_name)
+                {
+                    if let Some(ref overrides) = entry.overrides {
+                        if let Some(ref inputs) = overrides.inputs {
+                            return Some(inputs.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fall back to global stage config
+        self.stage(stage_name).map(|s| s.inputs.clone())
+    }
+
     /// Check whether a given stage is in the specified flow.
     pub fn stage_in_flow(&self, stage_name: &str, flow: Option<&str>) -> bool {
         match flow {
@@ -391,7 +419,7 @@ impl WorkflowConfig {
         self.validate_approval_targets(&stage_names, &stage_names_set, &mut errors);
         self.validate_integration_on_failure(&stage_names, &stage_names_set, &mut errors);
         self.validate_script_stages(&stage_names, &stage_names_set, &mut errors);
-        self.validate_flows(&stage_names_set, &mut errors);
+        self.validate_flows(&stage_names_set, &artifact_names_set, &mut errors);
         self.validate_subtask_flows(&mut errors);
         self.validate_model_fields(&mut errors);
 
@@ -570,6 +598,7 @@ impl WorkflowConfig {
     fn validate_flows(
         &self,
         stage_names_set: &std::collections::HashSet<&str>,
+        artifact_names_set: &std::collections::HashSet<&str>,
         errors: &mut Vec<String>,
     ) {
         for (flow_name, flow) in &self.flows {
@@ -607,6 +636,18 @@ impl WorkflowConfig {
                             "Flow \"{flow_name}\" cannot override stage \"{}\" — script stages don't support overrides",
                             entry.stage_name
                         ));
+                    }
+
+                    // Validate that input overrides reference existing artifact names
+                    if let Some(ref inputs) = overrides.inputs {
+                        for input in inputs {
+                            if !artifact_names_set.contains(input.as_str()) {
+                                errors.push(format!(
+                                    "Flow \"{flow_name}\" stage \"{}\" overrides inputs with \"{input}\" which doesn't match any stage artifact",
+                                    entry.stage_name
+                                ));
+                            }
+                        }
                     }
 
                     // Validate that capability overrides with approval rejection_stage reference stages in the flow

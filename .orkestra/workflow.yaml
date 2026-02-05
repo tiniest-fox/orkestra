@@ -25,11 +25,11 @@ stages:
         flow: hotfix
         completion_stage: check
 
-  # Work: Implements the approved plan
+  # Work: Implements the breakdown
   - name: work
     display_name: Work
     artifact: summary
-    inputs: [plan, breakdown]
+    inputs: [breakdown]
     prompt: worker.md
     model: sonnet
 
@@ -48,7 +48,7 @@ stages:
   - name: review
     display_name: Review
     artifact: verdict
-    inputs: [plan, summary, check_results]
+    inputs: [breakdown, summary, check_results]
     prompt: reviewer.md
     capabilities:
       approval:
@@ -72,9 +72,11 @@ flows:
     icon: zap
     stages:
       - plan
-      - work
+      - work:
+          inputs: [plan]
       - check
-      - review
+      - review:
+          inputs: [plan, summary, check_results]
 
   # Hotfix flow: Straight to work, minimal overhead
   hotfix:

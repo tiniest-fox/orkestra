@@ -62,8 +62,18 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
 
     let (subtasks_example, skip_example) = if ctx.stage.capabilities.produces_subtasks() {
         let examples = vec![
-            subtask_example("First task", "What needs to be done first", &[]),
-            subtask_example("Second task", "Depends on first task", &[0]),
+            subtask_example(
+                "First task",
+                "What needs to be done first",
+                "Detailed implementation brief for the first task...",
+                &[],
+            ),
+            subtask_example(
+                "Second task",
+                "Depends on first task",
+                "Detailed implementation brief for the second task...",
+                &[0],
+            ),
         ];
         (
             Some(subtasks_output_example(
@@ -160,14 +170,16 @@ pub struct IntegrationErrorContext<'a> {
 
 /// Flow-specific overrides for agent configuration.
 ///
-/// When a task uses a named flow, the flow may override the prompt path
-/// and/or capabilities for specific stages.
-#[derive(Debug, Default, Clone, Copy)]
+/// When a task uses a named flow, the flow may override the prompt path,
+/// capabilities, and/or inputs for specific stages.
+#[derive(Debug, Default, Clone)]
 pub struct FlowOverrides<'a> {
     /// Override the prompt template path.
     pub prompt: Option<&'a str>,
     /// Override the stage capabilities.
     pub capabilities: Option<&'a crate::workflow::config::StageCapabilities>,
+    /// Override the stage inputs.
+    pub inputs: Option<Vec<String>>,
 }
 
 /// Builder for stage prompts.
@@ -540,18 +552,24 @@ pub fn resolve_stage_agent_config_for(
     let agent_def = load_agent_definition(project_root, &definition_path)
         .map_err(|e| AgentConfigError::DefinitionNotFound(e.to_string()))?;
 
-    // Build effective stage config (with capability overrides for flows)
+    // Build effective stage config (with capability/input overrides for flows)
     let overridden_stage;
-    let effective_stage = if let Some(caps) = flow_overrides.capabilities {
-        overridden_stage = {
-            let mut s = stage.clone();
-            s.capabilities = caps.clone();
-            s
+    let effective_stage =
+        if flow_overrides.capabilities.is_some() || flow_overrides.inputs.is_some() {
+            overridden_stage = {
+                let mut s = stage.clone();
+                if let Some(caps) = flow_overrides.capabilities {
+                    s.capabilities = caps.clone();
+                }
+                if let Some(inputs) = flow_overrides.inputs {
+                    s.inputs = inputs;
+                }
+                s
+            };
+            &overridden_stage
+        } else {
+            stage
         };
-        &overridden_stage
-    } else {
-        stage
-    };
 
     // Build prompt context
     let builder = PromptBuilder::new(workflow);

@@ -165,16 +165,19 @@ fn test_breakdown_approval_creates_subtasks() {
                 SubtaskOutput {
                     title: "Setup database".into(),
                     description: "Create schema and migrations".into(),
+                    detailed_instructions: "Implementation brief for database setup".into(),
                     depends_on: vec![],
                 },
                 SubtaskOutput {
                     title: "Build API".into(),
                     description: "Create REST endpoints".into(),
+                    detailed_instructions: "Implementation brief for API endpoints".into(),
                     depends_on: vec![0],
                 },
                 SubtaskOutput {
                     title: "Build UI".into(),
                     description: "Create frontend components".into(),
+                    detailed_instructions: "Implementation brief for UI components".into(),
                     depends_on: vec![0],
                 },
             ],
@@ -233,11 +236,11 @@ fn test_breakdown_approval_creates_subtasks() {
     assert_eq!(build_api.depends_on, vec![db_setup.id.clone()]);
     assert_eq!(build_ui.depends_on, vec![db_setup.id.clone()]);
 
-    // Subtasks should inherit parent's plan artifact
+    // Subtasks should have a per-subtask breakdown artifact from detailed_instructions
     for subtask in &subtasks {
         assert!(
-            subtask.artifact("plan").is_some(),
-            "Subtask should inherit plan artifact"
+            subtask.artifact("breakdown").is_some(),
+            "Subtask should have per-subtask breakdown artifact"
         );
     }
 
@@ -266,11 +269,13 @@ fn test_dependency_aware_orchestration() {
             SubtaskOutput {
                 title: "First".into(),
                 description: "Independent task".into(),
+                detailed_instructions: "Implementation brief for first task".into(),
                 depends_on: vec![],
             },
             SubtaskOutput {
                 title: "Second".into(),
                 description: "Depends on first".into(),
+                detailed_instructions: "Implementation brief for second task".into(),
                 depends_on: vec![0],
             },
         ],
@@ -346,11 +351,13 @@ fn test_parent_advances_when_all_subtasks_done() {
             SubtaskOutput {
                 title: "First".into(),
                 description: "Task 1".into(),
+                detailed_instructions: "Implementation brief for task 1".into(),
                 depends_on: vec![],
             },
             SubtaskOutput {
                 title: "Second".into(),
                 description: "Task 2".into(),
+                detailed_instructions: "Implementation brief for task 2".into(),
                 depends_on: vec![],
             },
         ],
@@ -414,21 +421,25 @@ fn test_diamond_dependency_orchestration() {
             SubtaskOutput {
                 title: "Node A".into(),
                 description: "Root node, no deps".into(),
+                detailed_instructions: "Implementation brief for node A".into(),
                 depends_on: vec![],
             },
             SubtaskOutput {
                 title: "Node B".into(),
                 description: "Depends on A".into(),
+                detailed_instructions: "Implementation brief for node B".into(),
                 depends_on: vec![0],
             },
             SubtaskOutput {
                 title: "Node C".into(),
                 description: "Depends on A".into(),
+                detailed_instructions: "Implementation brief for node C".into(),
                 depends_on: vec![0],
             },
             SubtaskOutput {
                 title: "Node D".into(),
                 description: "Depends on B and C (fan-in)".into(),
+                detailed_instructions: "Implementation brief for node D".into(),
                 depends_on: vec![1, 2],
             },
         ],
@@ -595,6 +606,7 @@ fn test_subtask_failure_parent_stays_waiting() {
         vec![SubtaskOutput {
             title: "Only task".into(),
             description: "Will fail".into(),
+            detailed_instructions: "Implementation brief for failing task".into(),
             depends_on: vec![],
         }],
     );
@@ -647,11 +659,13 @@ fn test_subtask_worktrees_are_isolated() {
             SubtaskOutput {
                 title: "Alpha".into(),
                 description: "First subtask".into(),
+                detailed_instructions: "Implementation brief for alpha".into(),
                 depends_on: vec![],
             },
             SubtaskOutput {
                 title: "Beta".into(),
                 description: "Second subtask".into(),
+                detailed_instructions: "Implementation brief for beta".into(),
                 depends_on: vec![],
             },
         ],
@@ -709,6 +723,7 @@ fn test_subtask_integration_merges_to_parent_branch() {
         vec![SubtaskOutput {
             title: "Worker".into(),
             description: "Makes file changes".into(),
+            detailed_instructions: "Implementation brief for worker".into(),
             depends_on: vec![],
         }],
     );
@@ -764,6 +779,7 @@ fn test_subtask_integration_merges_to_parent_branch() {
 // =============================================================================
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn test_subtask_integration_conflict() {
     let workflow = workflows::with_subtasks();
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
@@ -774,11 +790,13 @@ fn test_subtask_integration_conflict() {
             SubtaskOutput {
                 title: "Sub A".into(),
                 description: "Edits shared file one way".into(),
+                detailed_instructions: "Implementation brief for sub A".into(),
                 depends_on: vec![],
             },
             SubtaskOutput {
                 title: "Sub B".into(),
                 description: "Edits shared file another way".into(),
+                detailed_instructions: "Implementation brief for sub B".into(),
                 depends_on: vec![],
             },
         ],
@@ -908,16 +926,19 @@ fn test_archived_subtasks_included_in_views_and_progress() {
             SubtaskOutput {
                 title: "Subtask A".into(),
                 description: "Do A".into(),
+                detailed_instructions: "Implementation brief for subtask A".into(),
                 depends_on: vec![],
             },
             SubtaskOutput {
                 title: "Subtask B".into(),
                 description: "Do B".into(),
+                detailed_instructions: "Implementation brief for subtask B".into(),
                 depends_on: vec![],
             },
             SubtaskOutput {
                 title: "Subtask C".into(),
                 description: "Do C".into(),
+                detailed_instructions: "Implementation brief for subtask C".into(),
                 depends_on: vec![],
             },
         ],

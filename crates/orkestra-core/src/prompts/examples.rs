@@ -25,10 +25,16 @@ static QUESTION_ITEM_SCHEMA: LazyLock<Value> = LazyLock::new(|| {
 /// Generate a validated subtask example JSON value.
 ///
 /// Panics if the example doesn't match the schema (caught by tests).
-pub fn subtask_example(title: &str, description: &str, depends_on: &[usize]) -> Value {
+pub fn subtask_example(
+    title: &str,
+    description: &str,
+    detailed_instructions: &str,
+    depends_on: &[usize],
+) -> Value {
     let example = json!({
         "title": title,
         "description": description,
+        "detailed_instructions": detailed_instructions,
         "depends_on": depends_on
     });
 
@@ -107,28 +113,52 @@ mod tests {
     #[test]
     fn test_subtask_example_valid() {
         // Should not panic
-        let json = subtask_example("Task A", "Do the thing", &[]);
+        let json = subtask_example(
+            "Task A",
+            "Do the thing",
+            "Implementation details for Task A",
+            &[],
+        );
         assert_eq!(json["title"], "Task A");
         assert_eq!(json["description"], "Do the thing");
+        assert_eq!(
+            json["detailed_instructions"],
+            "Implementation details for Task A"
+        );
     }
 
     #[test]
     fn test_subtask_example_with_deps() {
-        let json = subtask_example("Task B", "Depends on A", &[0]);
+        let json = subtask_example(
+            "Task B",
+            "Depends on A",
+            "Implementation details for Task B",
+            &[0],
+        );
         assert_eq!(json["depends_on"], json!([0]));
     }
 
     #[test]
     fn test_subtask_example_multiple_deps() {
-        let json = subtask_example("Integration", "Merge results", &[0, 1]);
+        let json = subtask_example(
+            "Integration",
+            "Merge results",
+            "Implementation details for integration",
+            &[0, 1],
+        );
         assert_eq!(json["depends_on"], json!([0, 1]));
     }
 
     #[test]
     fn test_subtasks_output_example() {
         let subtasks = vec![
-            subtask_example("Task A", "First", &[]),
-            subtask_example("Task B", "Second", &[0]),
+            subtask_example("Task A", "First", "Implementation details for Task A", &[]),
+            subtask_example(
+                "Task B",
+                "Second",
+                "Implementation details for Task B",
+                &[0],
+            ),
         ];
         let output = subtasks_output_example(
             &subtasks,

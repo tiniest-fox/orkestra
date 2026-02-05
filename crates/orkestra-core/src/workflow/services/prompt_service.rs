@@ -72,12 +72,14 @@ impl PromptService {
         let prompt_override = workflow.effective_prompt_path(stage_name, task.flow.as_deref());
         let capabilities_override =
             workflow.effective_capabilities(stage_name, task.flow.as_deref());
+        let inputs_override = workflow.effective_inputs(stage_name, task.flow.as_deref());
 
         // Only pass overrides if the task has a flow (otherwise use stage defaults)
         let flow_overrides = if task.flow.is_some() {
             FlowOverrides {
                 prompt: prompt_override.as_deref(),
                 capabilities: capabilities_override.as_ref(),
+                inputs: inputs_override,
             }
         } else {
             FlowOverrides::default()

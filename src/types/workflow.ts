@@ -67,13 +67,14 @@ export interface IntegrationConfig {
 
 /**
  * Override for a stage within a flow.
- * Only prompt and capabilities can be overridden.
  */
 export interface FlowStageOverride {
   /** Override prompt template path. */
   prompt?: string;
   /** Override capabilities (full replace, not merge). */
   capabilities?: StageCapabilities;
+  /** Override input artifacts (full replace, not merge). */
+  inputs?: string[];
 }
 
 /**

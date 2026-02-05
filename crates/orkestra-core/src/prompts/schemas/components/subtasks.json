@@ -17,7 +17,11 @@
           },
           "description": {
             "type": "string",
-            "description": "Detailed description of what to do"
+            "description": "Brief summary of what this subtask accomplishes (1-2 sentences)"
+          },
+          "detailed_instructions": {
+            "type": "string",
+            "description": "Detailed implementation instructions for this specific subtask (becomes the subtask's primary artifact)"
           },
           "depends_on": {
             "type": "array",
@@ -25,7 +29,7 @@
             "items": { "type": "integer" }
           }
         },
-        "required": ["title", "description"]
+        "required": ["title", "description", "detailed_instructions"]
       },
       "minItems": 0
     },

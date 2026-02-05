@@ -90,6 +90,8 @@ pub struct SubtaskOutput {
     pub title: String,
     /// Subtask description.
     pub description: String,
+    /// Per-subtask implementation brief (becomes the subtask's primary artifact).
+    pub detailed_instructions: String,
     /// Indices of subtasks this depends on (0-based).
     #[serde(default)]
     pub depends_on: Vec<usize>,
@@ -438,8 +440,8 @@ mod tests {
             "type": "subtasks",
             "content": "The technical design content",
             "subtasks": [
-                {"title": "Task 1", "description": "Do first thing"},
-                {"title": "Task 2", "description": "Do second thing", "depends_on": [0]}
+                {"title": "Task 1", "description": "Do first thing", "detailed_instructions": "Implement first thing"},
+                {"title": "Task 2", "description": "Do second thing", "detailed_instructions": "Implement second thing", "depends_on": [0]}
             ]
         }"#;
         let output = StageOutput::parse(json, &schema).unwrap();

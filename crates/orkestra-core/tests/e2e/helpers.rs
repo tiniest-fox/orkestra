@@ -608,6 +608,7 @@ pub mod workflows {
                                 "work".into(),
                             ))),
                             model: None,
+                            inputs: None,
                         }),
                     },
                 ],

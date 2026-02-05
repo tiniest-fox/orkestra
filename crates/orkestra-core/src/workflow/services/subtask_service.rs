@@ -8,7 +8,7 @@ use crate::workflow::domain::task::extract_short_id;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::SubtaskOutput;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::{Artifact, Phase};
 use std::sync::Arc;
 
 use super::IterationService;
@@ -88,10 +88,13 @@ impl SubtaskService {
                 .clone()
                 .unwrap_or_else(|| parent.base_branch.clone());
 
-            // Copy parent's plan artifact to subtask (if it exists)
-            if let Some(plan) = parent.artifacts.get("plan") {
-                task.artifacts.set(plan.clone());
-            }
+            // Create per-subtask breakdown artifact from detailed_instructions
+            task.artifacts.set(Artifact::new(
+                breakdown_artifact_name,
+                &output.detailed_instructions,
+                breakdown_artifact_name,
+                &now,
+            ));
 
             // Start in AwaitingSetup - orchestrator will pick this up when deps are satisfied
             task.phase = Phase::AwaitingSetup;

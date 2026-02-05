@@ -134,9 +134,6 @@ pub trait WorkflowStore: Send + Sync {
     /// Delete all iterations for a task.
     fn delete_iterations(&self, task_id: &str) -> WorkflowResult<()>;
 
-    /// Delete iterations for a specific stage of a task.
-    fn delete_iterations_for_stage(&self, task_id: &str, stage: &str) -> WorkflowResult<()>;
-
     // =========================================================================
     // Stage Session Operations
     // =========================================================================
@@ -156,9 +153,6 @@ pub trait WorkflowStore: Send + Sync {
 
     /// Delete all stage sessions for a task.
     fn delete_stage_sessions(&self, task_id: &str) -> WorkflowResult<()>;
-
-    /// Delete the stage session for a specific stage of a task.
-    fn delete_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<()>;
 
     // =========================================================================
     // Log Entry Operations
@@ -356,12 +350,6 @@ mod tests {
             Ok(())
         }
 
-        fn delete_iterations_for_stage(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
-            let mut iterations = self.iterations.lock().map_err(|_| WorkflowError::Lock)?;
-            iterations.retain(|i| !(i.task_id == task_id && i.stage == stage));
-            Ok(())
-        }
-
         fn get_stage_session(
             &self,
             task_id: &str,
@@ -420,15 +408,6 @@ mod tests {
                 .lock()
                 .map_err(|_| WorkflowError::Lock)?;
             sessions.retain(|s| s.task_id != task_id);
-            Ok(())
-        }
-
-        fn delete_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
-            let mut sessions = self
-                .stage_sessions
-                .lock()
-                .map_err(|_| WorkflowError::Lock)?;
-            sessions.retain(|s| !(s.task_id == task_id && s.stage == stage));
             Ok(())
         }
 

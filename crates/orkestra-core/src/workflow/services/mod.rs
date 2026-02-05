@@ -41,7 +41,6 @@ mod orchestrator;
 mod periodic;
 mod prompt_service;
 mod queries;
-mod reset;
 mod script_execution;
 pub(crate) mod session_logs;
 mod session_service;

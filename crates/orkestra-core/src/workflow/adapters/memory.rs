@@ -183,12 +183,6 @@ impl WorkflowStore for InMemoryWorkflowStore {
         Ok(())
     }
 
-    fn delete_iterations_for_stage(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
-        let mut iterations = self.iterations.lock().map_err(|_| WorkflowError::Lock)?;
-        iterations.retain(|i| !(i.task_id == task_id && i.stage == stage));
-        Ok(())
-    }
-
     fn get_stage_session(
         &self,
         task_id: &str,
@@ -261,15 +255,6 @@ impl WorkflowStore for InMemoryWorkflowStore {
             .lock()
             .map_err(|_| WorkflowError::Lock)?;
         sessions.retain(|s| s.task_id != task_id);
-        Ok(())
-    }
-
-    fn delete_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
-        let mut sessions = self
-            .stage_sessions
-            .lock()
-            .map_err(|_| WorkflowError::Lock)?;
-        sessions.retain(|s| !(s.task_id == task_id && s.stage == stage));
         Ok(())
     }
 

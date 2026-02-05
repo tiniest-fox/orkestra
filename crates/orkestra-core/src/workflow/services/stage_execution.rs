@@ -299,11 +299,10 @@ impl StageExecutionService {
 
         // Determine if the provider generates its own session IDs.
         // If so, don't pre-generate a UUID — the ID will be extracted from the output stream.
-        // Use effective_model to respect flow overrides (e.g., a flow that changes provider).
-        let model_spec = self.workflow.effective_model(stage, task.flow.as_deref());
+        let model_spec = self.workflow.stage(stage).and_then(|s| s.model.as_deref());
         let generates_own = self
             .registry
-            .resolve(model_spec.as_deref())
+            .resolve(model_spec)
             .map(|r| r.capabilities.generates_own_session_id)
             .unwrap_or(false);
         let initial_session_id = if generates_own {
@@ -342,23 +341,6 @@ impl StageExecutionService {
                     crate::orkestra_debug!(
                         "stage_execution",
                         "Failed to record spawn for {}/{}: {}",
-                        task.id,
-                        stage,
-                        e
-                    );
-                }
-
-                // Create a user message log entry for the prompt that was sent
-                // This makes initial prompts and resume messages visible in logs
-                let user_message = Self::create_user_message_entry(&spawn_context, trigger);
-                let stage_session_id = format!("{}-{}", task.id, stage);
-                if let Err(e) = self
-                    .store
-                    .append_log_entry(&stage_session_id, &user_message)
-                {
-                    crate::orkestra_debug!(
-                        "stage_execution",
-                        "Failed to persist user message for {}/{}: {}",
                         task.id,
                         stage,
                         e
@@ -490,78 +472,6 @@ impl StageExecutionService {
             if let Ok(json) = serde_json::to_string(entry) {
                 crate::debug_log::agent_log(task_id, stage, &json);
             }
-        }
-    }
-
-    /// Create a user message log entry for the prompt that was sent to the agent.
-    ///
-    /// This captures the initial prompt or resume message so it appears in logs.
-    /// The resume type is determined from the spawn context and trigger.
-    fn create_user_message_entry(
-        spawn_context: &SessionSpawnContext,
-        trigger: Option<&IterationTrigger>,
-    ) -> LogEntry {
-        use crate::workflow::services::session_logs::ResumeMarkerType;
-
-        let (resume_type, content) = if spawn_context.is_resume {
-            // Resume - determine type from trigger
-            match trigger {
-                None | Some(IterationTrigger::Interrupted) => (
-                    ResumeMarkerType::Continue,
-                    "Resumed suspended agent".to_string(),
-                ),
-                Some(
-                    IterationTrigger::Feedback { feedback }
-                    | IterationTrigger::Rejection { feedback, .. },
-                ) => (
-                    ResumeMarkerType::Feedback,
-                    format!("Resuming agent with feedback: {feedback}"),
-                ),
-                Some(IterationTrigger::Integration {
-                    message,
-                    conflict_files,
-                }) => {
-                    let files_msg = if conflict_files.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" (conflicts in: {})", conflict_files.join(", "))
-                    };
-                    (
-                        ResumeMarkerType::Integration,
-                        format!("Resuming agent after merge conflict: {message}{files_msg}"),
-                    )
-                }
-                Some(IterationTrigger::Answers { answers }) => {
-                    let answers_summary = if answers.len() == 1 {
-                        format!("Q: {}", answers[0].question)
-                    } else {
-                        format!("{} questions answered", answers.len())
-                    };
-                    (
-                        ResumeMarkerType::Answers,
-                        format!("Resuming agent with answers: {answers_summary}"),
-                    )
-                }
-                Some(IterationTrigger::ScriptFailure { from_stage, error }) => (
-                    ResumeMarkerType::Feedback,
-                    format!(
-                        "Resuming agent after '{}' stage failure: {}",
-                        from_stage,
-                        error.lines().next().unwrap_or(error)
-                    ),
-                ),
-            }
-        } else {
-            // Initial spawn - show generic "agent spawned" message
-            (
-                ResumeMarkerType::Initial,
-                "Spawned agent with initial prompt".to_string(),
-            )
-        };
-
-        LogEntry::UserMessage {
-            resume_type: resume_type.as_str().to_string(),
-            content,
         }
     }
 

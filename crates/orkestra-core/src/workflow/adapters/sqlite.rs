@@ -399,16 +399,6 @@ impl WorkflowStore for SqliteWorkflowStore {
         Ok(())
     }
 
-    fn delete_iterations_for_stage(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
-        let conn = self.lock_conn()?;
-        conn.execute(
-            "DELETE FROM workflow_iterations WHERE task_id = ? AND stage = ?",
-            params![task_id, stage],
-        )
-        .map_err(|e| WorkflowError::Storage(e.to_string()))?;
-        Ok(())
-    }
-
     fn get_stage_session(
         &self,
         task_id: &str,
@@ -541,16 +531,6 @@ impl WorkflowStore for SqliteWorkflowStore {
         conn.execute(
             "DELETE FROM workflow_stage_sessions WHERE task_id = ?",
             params![task_id],
-        )
-        .map_err(|e| WorkflowError::Storage(e.to_string()))?;
-        Ok(())
-    }
-
-    fn delete_stage_session(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
-        let conn = self.lock_conn()?;
-        conn.execute(
-            "DELETE FROM workflow_stage_sessions WHERE task_id = ? AND stage = ?",
-            params![task_id, stage],
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
         Ok(())

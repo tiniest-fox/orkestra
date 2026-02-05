@@ -454,7 +454,6 @@ impl StageExecutionService {
         // Parse task_id and stage from stage_session_id (format: "{task_id}-{stage}")
         let (task_id, stage) = stage_session_id
             .rsplit_once('-')
-            .map(|(tid, s)| (tid, s))
             .unwrap_or((stage_session_id, "unknown"));
 
         for entry in entries {

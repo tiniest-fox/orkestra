@@ -1,5 +1,7 @@
 //! Git diff CLI execution and parsing.
 
+use std::fmt::Write;
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -9,12 +11,13 @@ use crate::workflow::ports::{FileChangeType, FileDiff, GitError, TaskDiff};
 ///
 /// Uses `git diff --merge-base` to compute the diff from the merge-base of
 /// `base_branch` to the working tree, showing both committed and uncommitted
-/// changes made on the task branch.
+/// changes made on the task branch. Also includes untracked files as new files.
 pub fn execute_diff(
     worktree_path: &Path,
     _branch_name: &str,
     base_branch: &str,
 ) -> Result<TaskDiff, GitError> {
+    // Get tracked changes via git diff
     let output = Command::new("git")
         .args([
             "diff",
@@ -36,7 +39,88 @@ pub fn execute_diff(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(parse_diff_output(&stdout))
+    let mut task_diff = parse_diff_output(&stdout);
+
+    // Add untracked files as new additions
+    let untracked = get_untracked_files(worktree_path)?;
+    for path in untracked {
+        if let Some(file_diff) = create_untracked_file_diff(worktree_path, &path) {
+            task_diff.files.push(file_diff);
+        }
+    }
+
+    Ok(task_diff)
+}
+
+/// Get list of untracked files (excluding ignored files).
+fn get_untracked_files(worktree_path: &Path) -> Result<Vec<String>, GitError> {
+    let output = Command::new("git")
+        .args(["ls-files", "--others", "--exclude-standard"])
+        .current_dir(worktree_path)
+        .output()
+        .map_err(|e| GitError::IoError(format!("Failed to list untracked files: {e}")))?;
+
+    if !output.status.success() {
+        // Non-fatal: just return empty list
+        return Ok(vec![]);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(stdout.lines().map(String::from).collect())
+}
+
+/// Create a [`FileDiff`] for an untracked file by reading its content.
+fn create_untracked_file_diff(worktree_path: &Path, path: &str) -> Option<FileDiff> {
+    let full_path = worktree_path.join(path);
+
+    // Skip directories
+    if full_path.is_dir() {
+        return None;
+    }
+
+    // Check if it's a binary file (simple heuristic: check for null bytes)
+    let content = fs::read(&full_path).ok()?;
+    let is_binary = content.contains(&0);
+
+    if is_binary {
+        return Some(FileDiff {
+            path: path.to_string(),
+            change_type: FileChangeType::Added,
+            old_path: None,
+            additions: 0,
+            deletions: 0,
+            is_binary: true,
+            diff_content: None,
+        });
+    }
+
+    // Convert to string and create synthetic diff
+    let text = String::from_utf8_lossy(&content);
+    let lines: Vec<&str> = text.lines().collect();
+    let line_count = lines.len();
+
+    // Build synthetic unified diff content
+    let mut diff_content = String::new();
+    let _ = writeln!(diff_content, "diff --git a/{path} b/{path}");
+    diff_content.push_str("new file mode 100644\n");
+    diff_content.push_str("--- /dev/null\n");
+    let _ = writeln!(diff_content, "+++ b/{path}");
+    let _ = writeln!(diff_content, "@@ -0,0 +1,{line_count} @@");
+    for line in &lines {
+        diff_content.push('+');
+        diff_content.push_str(line);
+        diff_content.push('\n');
+    }
+
+    Some(FileDiff {
+        path: path.to_string(),
+        change_type: FileChangeType::Added,
+        old_path: None,
+        additions: line_count,
+        deletions: 0,
+        is_binary: false,
+        diff_content: Some(diff_content),
+    })
 }
 
 /// Parse git diff output into structured `FileDiff` objects.
@@ -203,4 +287,335 @@ pub fn read_file_at_head(
     }
 
     Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    /// Helper to set up a test git repo with a branch.
+    fn setup_test_repo() -> TempDir {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path();
+
+        // Initialize repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+
+        // Configure git user for commits
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+
+        // Create initial commit on main
+        fs::write(path.join("existing.txt"), "existing content\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+
+        // Create feature branch
+        Command::new("git")
+            .args(["checkout", "-b", "feature"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+
+        dir
+    }
+
+    #[test]
+    fn test_untracked_files_appear_in_diff() {
+        let dir = setup_test_repo();
+        let path = dir.path();
+
+        // Create untracked files
+        fs::write(path.join("untracked1.txt"), "new content\n").unwrap();
+        fs::write(path.join("untracked2.txt"), "more content\nline 2\n").unwrap();
+
+        // Run execute_diff
+        let result = execute_diff(path, "feature", "main").unwrap();
+
+        // Should have both untracked files
+        assert_eq!(result.files.len(), 2, "Expected 2 untracked files");
+
+        let file1 = result.files.iter().find(|f| f.path == "untracked1.txt");
+        let file2 = result.files.iter().find(|f| f.path == "untracked2.txt");
+
+        assert!(file1.is_some(), "untracked1.txt should be in diff");
+        assert!(file2.is_some(), "untracked2.txt should be in diff");
+
+        let file1 = file1.unwrap();
+        assert!(matches!(file1.change_type, FileChangeType::Added));
+        assert_eq!(file1.additions, 1);
+        assert!(!file1.is_binary);
+        assert!(file1.diff_content.is_some());
+
+        let file2 = file2.unwrap();
+        assert!(matches!(file2.change_type, FileChangeType::Added));
+        assert_eq!(file2.additions, 2);
+    }
+
+    #[test]
+    fn test_tracked_and_untracked_files_combined() {
+        let dir = setup_test_repo();
+        let path = dir.path();
+
+        // Modify tracked file
+        fs::write(path.join("existing.txt"), "modified content\n").unwrap();
+
+        // Create untracked file
+        fs::write(path.join("new_file.txt"), "new file\n").unwrap();
+
+        let result = execute_diff(path, "feature", "main").unwrap();
+
+        // Should have both: 1 modified tracked + 1 untracked
+        assert_eq!(result.files.len(), 2, "Expected 2 files total");
+
+        let tracked = result.files.iter().find(|f| f.path == "existing.txt");
+        let untracked = result.files.iter().find(|f| f.path == "new_file.txt");
+
+        assert!(tracked.is_some(), "Modified tracked file should be in diff");
+        assert!(untracked.is_some(), "Untracked file should be in diff");
+
+        let tracked = tracked.unwrap();
+        assert!(matches!(tracked.change_type, FileChangeType::Modified));
+
+        let untracked = untracked.unwrap();
+        assert!(matches!(untracked.change_type, FileChangeType::Added));
+    }
+
+    #[test]
+    fn test_nested_untracked_files() {
+        let dir = setup_test_repo();
+        let path = dir.path();
+
+        // Create nested directory with untracked file
+        fs::create_dir_all(path.join("src/components")).unwrap();
+        fs::write(
+            path.join("src/components/Button.tsx"),
+            "export const Button = () => {};\n",
+        )
+        .unwrap();
+
+        let result = execute_diff(path, "feature", "main").unwrap();
+
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].path, "src/components/Button.tsx");
+        assert!(matches!(result.files[0].change_type, FileChangeType::Added));
+    }
+
+    /// Comprehensive test covering all change types: committed edits/deletes/creates
+    /// plus uncommitted modifications and untracked new files.
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn test_comprehensive_diff_all_change_types() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path();
+
+        // Initialize repo with git config
+        Command::new("git")
+            .args(["init"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+
+        // === MAIN BRANCH: Create initial files ===
+        fs::write(
+            path.join("keep_unchanged.txt"),
+            "this file stays the same\n",
+        )
+        .unwrap();
+        fs::write(path.join("will_edit_committed.txt"), "original content\n").unwrap();
+        fs::write(
+            path.join("will_delete_committed.txt"),
+            "this will be deleted\n",
+        )
+        .unwrap();
+        fs::write(
+            path.join("will_edit_uncommitted.txt"),
+            "will be edited but not committed\n",
+        )
+        .unwrap();
+        fs::write(
+            path.join("will_delete_uncommitted.txt"),
+            "will be deleted but not staged\n",
+        )
+        .unwrap();
+
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "initial commit with 5 files"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+
+        // === FEATURE BRANCH ===
+        Command::new("git")
+            .args(["checkout", "-b", "feature"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+
+        // --- Committed changes ---
+        // Edit a file
+        fs::write(
+            path.join("will_edit_committed.txt"),
+            "edited content (committed)\n",
+        )
+        .unwrap();
+        // Delete a file
+        fs::remove_file(path.join("will_delete_committed.txt")).unwrap();
+        // Create a new file
+        fs::write(
+            path.join("new_file_committed.txt"),
+            "new file content\nline 2\n",
+        )
+        .unwrap();
+
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "committed changes: edit, delete, create"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+
+        // --- Uncommitted changes (tracked) ---
+        // Edit another file (not staged)
+        fs::write(
+            path.join("will_edit_uncommitted.txt"),
+            "edited but not committed\n",
+        )
+        .unwrap();
+        // Delete another file (not staged)
+        fs::remove_file(path.join("will_delete_uncommitted.txt")).unwrap();
+
+        // --- Untracked new files ---
+        fs::write(path.join("untracked_new.txt"), "brand new untracked file\n").unwrap();
+        fs::create_dir_all(path.join("new_dir")).unwrap();
+        fs::write(
+            path.join("new_dir/nested_untracked.txt"),
+            "nested untracked\n",
+        )
+        .unwrap();
+
+        // === Run diff ===
+        let result = execute_diff(path, "feature", "main").unwrap();
+
+        // === Verify results ===
+        // Expected files:
+        // 1. will_edit_committed.txt - Modified (committed edit)
+        // 2. will_delete_committed.txt - Deleted (committed delete)
+        // 3. new_file_committed.txt - Added (committed new file)
+        // 4. will_edit_uncommitted.txt - Modified (uncommitted edit)
+        // 5. will_delete_uncommitted.txt - Deleted (uncommitted delete)
+        // 6. untracked_new.txt - Added (untracked)
+        // 7. new_dir/nested_untracked.txt - Added (untracked nested)
+        // keep_unchanged.txt should NOT appear (no changes)
+
+        println!("Found {} files:", result.files.len());
+        for f in &result.files {
+            println!(
+                "  - {} ({:?}, +{} -{}, binary={})",
+                f.path, f.change_type, f.additions, f.deletions, f.is_binary
+            );
+        }
+
+        assert_eq!(result.files.len(), 7, "Expected 7 changed files");
+
+        // Verify each file
+        let find_file = |name: &str| result.files.iter().find(|f| f.path == name);
+
+        // Committed edit
+        let edited_committed =
+            find_file("will_edit_committed.txt").expect("will_edit_committed.txt missing");
+        assert!(matches!(
+            edited_committed.change_type,
+            FileChangeType::Modified
+        ));
+
+        // Committed delete
+        let deleted_committed =
+            find_file("will_delete_committed.txt").expect("will_delete_committed.txt missing");
+        assert!(matches!(
+            deleted_committed.change_type,
+            FileChangeType::Deleted
+        ));
+
+        // Committed new file
+        let new_committed =
+            find_file("new_file_committed.txt").expect("new_file_committed.txt missing");
+        assert!(matches!(new_committed.change_type, FileChangeType::Added));
+        assert_eq!(new_committed.additions, 2);
+
+        // Uncommitted edit
+        let edited_uncommitted =
+            find_file("will_edit_uncommitted.txt").expect("will_edit_uncommitted.txt missing");
+        assert!(matches!(
+            edited_uncommitted.change_type,
+            FileChangeType::Modified
+        ));
+
+        // Uncommitted delete
+        let deleted_uncommitted =
+            find_file("will_delete_uncommitted.txt").expect("will_delete_uncommitted.txt missing");
+        assert!(matches!(
+            deleted_uncommitted.change_type,
+            FileChangeType::Deleted
+        ));
+
+        // Untracked files
+        let untracked = find_file("untracked_new.txt").expect("untracked_new.txt missing");
+        assert!(matches!(untracked.change_type, FileChangeType::Added));
+        assert_eq!(untracked.additions, 1);
+
+        let nested_untracked = find_file("new_dir/nested_untracked.txt")
+            .expect("new_dir/nested_untracked.txt missing");
+        assert!(matches!(
+            nested_untracked.change_type,
+            FileChangeType::Added
+        ));
+
+        // Unchanged file should NOT be present
+        assert!(
+            find_file("keep_unchanged.txt").is_none(),
+            "Unchanged file should not appear in diff"
+        );
+    }
 }

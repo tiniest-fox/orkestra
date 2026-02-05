@@ -52,7 +52,6 @@ coverage/
 .orkestra/tasks.jsonl
 .orkestra/worktrees
 .orkestra/worktrees/**/*
-.orkestra/script_logs/
 .orkestra/*.md
 
 # Claude Code Artifacts

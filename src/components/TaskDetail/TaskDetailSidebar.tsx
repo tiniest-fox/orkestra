@@ -11,12 +11,12 @@ import { useTaskDetail } from "../../hooks/useTaskDetail";
 import { useWorkflowConfig } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
 import {
+  FlexContainer,
   OverlayContainer,
   Panel,
-  PanelContainer,
-  PanelSlot,
+  PanelLayout,
+  Slot,
   TabbedPanel,
-  TaskDetailFooterSlot,
   TaskDetailTabs,
 } from "../ui";
 import { ArtifactsTab } from "./ArtifactsTab";
@@ -153,106 +153,109 @@ export function TaskDetailSidebar({
     }
   };
 
-  const footerPanelKey =
-    confirmingDelete && !isSubtask
-      ? TaskDetailFooterSlot.Delete
-      : task.derived.has_questions
-        ? TaskDetailFooterSlot.Questions
-        : task.derived.needs_review && task.derived.current_stage
-          ? TaskDetailFooterSlot.Review
-          : null;
+  // Determine which footer panel to show
+  const showDelete = confirmingDelete && !isSubtask;
+  const showQuestions = !showDelete && task.derived.has_questions;
+  const showReview = !showDelete && !showQuestions && task.derived.needs_review && task.derived.current_stage;
+  const showFooter = !!(showDelete || showQuestions || showReview);
 
   return (
-    <Panel className="w-[480px]">
-      <PanelContainer direction="vertical" padded={true}>
-        <OverlayContainer className="flex flex-1 flex-col min-h-0">
-          <PanelContainer direction="vertical">
-            <TaskDetailHeader
-              task={task}
-              hasQuestions={task.derived.has_questions}
-              needsReview={task.derived.needs_review}
-              onClose={onClose}
-              onRequestDelete={() => setConfirmingDelete(true)}
-              onToggleAutoMode={handleToggleAutoMode}
-            />
-
-            <TabbedPanel
-              tabs={tabs}
-              activeTab={activeTab}
-              onTabChange={(tabId) => setActiveTab(tabId)}
-            >
-              {activeTab === TaskDetailTabs.details(task.id) && (
-                <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />
-              )}
-
-              {activeTab === TaskDetailTabs.subtasks(task.id) &&
-                task.derived.subtask_progress &&
-                subtasks && (
-                  <SubtasksTab
-                    subtasks={subtasks}
-                    progress={task.derived.subtask_progress}
-                    selectedSubtaskId={selectedSubtaskId}
-                    onSelectSubtask={onSelectSubtask}
-                  />
-                )}
-
-              {activeTab === TaskDetailTabs.artifacts(task.id) && (
-                <ArtifactsTab
-                  taskId={task.id}
-                  currentStage={task.derived.current_stage}
-                  artifacts={task.artifacts}
-                  config={config}
-                />
-              )}
-
-              {activeTab === TaskDetailTabs.iterations(task.id) && (
-                <IterationsTab iterations={task.iterations} />
-              )}
-
-              {activeTab === TaskDetailTabs.logs(task.id) && (
-                <LogsTab
+    <PanelLayout direction="vertical">
+      {/* Main content panel */}
+      <Slot id="details-main" type="grow" visible={true}>
+        <Panel autoFill>
+          <FlexContainer direction="vertical" padded={true}>
+            <OverlayContainer className="flex flex-1 flex-col min-h-0">
+              <FlexContainer direction="vertical">
+                <TaskDetailHeader
                   task={task}
-                  logs={logsState.logs}
-                  isLoading={logsState.isLoading}
-                  error={logsState.error}
-                  stagesWithLogs={logsState.stagesWithLogs}
-                  activeLogStage={logsState.activeLogStage}
-                  onStageChange={logsState.setActiveLogStage}
+                  hasQuestions={task.derived.has_questions}
+                  needsReview={task.derived.needs_review}
+                  onClose={onClose}
+                  onRequestDelete={() => setConfirmingDelete(true)}
+                  onToggleAutoMode={handleToggleAutoMode}
                 />
-              )}
-            </TabbedPanel>
-          </PanelContainer>
-        </OverlayContainer>
 
-        <PanelSlot activeKey={footerPanelKey} direction="vertical">
-          <PanelSlot.Panel panelKey={TaskDetailFooterSlot.Delete}>
-            <DeleteConfirmPanel
-              onConfirm={() => {
-                setConfirmingDelete(false);
-                onDelete?.();
-              }}
-              onCancel={() => setConfirmingDelete(false)}
-            />
-          </PanelSlot.Panel>
+                <TabbedPanel
+                  tabs={tabs}
+                  activeTab={activeTab}
+                  onTabChange={(tabId) => setActiveTab(tabId)}
+                >
+                  {activeTab === TaskDetailTabs.details(task.id) && (
+                    <DetailsTab task={task} onRetry={handleRetry} isRetrying={isRetrying} />
+                  )}
 
-          <PanelSlot.Panel panelKey={TaskDetailFooterSlot.Questions}>
-            <QuestionFormPanel
-              questions={task.derived.pending_questions}
-              onSubmit={answerQuestions}
-              isSubmitting={isSubmitting}
-            />
-          </PanelSlot.Panel>
+                  {activeTab === TaskDetailTabs.subtasks(task.id) &&
+                    task.derived.subtask_progress &&
+                    subtasks && (
+                      <SubtasksTab
+                        subtasks={subtasks}
+                        progress={task.derived.subtask_progress}
+                        selectedSubtaskId={selectedSubtaskId}
+                        onSelectSubtask={onSelectSubtask}
+                      />
+                    )}
 
-          <PanelSlot.Panel panelKey={TaskDetailFooterSlot.Review}>
-            <ReviewPanel
-              stageName={currentStageDisplayName}
-              onApprove={approve}
-              onReject={reject}
-              isSubmitting={isSubmitting}
-            />
-          </PanelSlot.Panel>
-        </PanelSlot>
-      </PanelContainer>
-    </Panel>
+                  {activeTab === TaskDetailTabs.artifacts(task.id) && (
+                    <ArtifactsTab
+                      taskId={task.id}
+                      currentStage={task.derived.current_stage}
+                      artifacts={task.artifacts}
+                      config={config}
+                    />
+                  )}
+
+                  {activeTab === TaskDetailTabs.iterations(task.id) && (
+                    <IterationsTab iterations={task.iterations} />
+                  )}
+
+                  {activeTab === TaskDetailTabs.logs(task.id) && (
+                    <LogsTab
+                      task={task}
+                      logs={logsState.logs}
+                      isLoading={logsState.isLoading}
+                      error={logsState.error}
+                      stagesWithLogs={logsState.stagesWithLogs}
+                      activeLogStage={logsState.activeLogStage}
+                      onStageChange={logsState.setActiveLogStage}
+                    />
+                  )}
+                </TabbedPanel>
+              </FlexContainer>
+            </OverlayContainer>
+          </FlexContainer>
+        </Panel>
+      </Slot>
+
+      {/* Footer panel - auto-sized, animated visibility via grid */}
+      <Slot id="details-footer" type="auto" visible={showFooter} plain>
+        {showDelete && (
+          <DeleteConfirmPanel
+            onConfirm={() => {
+              setConfirmingDelete(false);
+              onDelete?.();
+            }}
+            onCancel={() => setConfirmingDelete(false)}
+          />
+        )}
+
+        {showQuestions && (
+          <QuestionFormPanel
+            questions={task.derived.pending_questions}
+            onSubmit={answerQuestions}
+            isSubmitting={isSubmitting}
+          />
+        )}
+
+        {showReview && (
+          <ReviewPanel
+            stageName={currentStageDisplayName}
+            onApprove={approve}
+            onReject={reject}
+            isSubmitting={isSubmitting}
+          />
+        )}
+      </Slot>
+    </PanelLayout>
   );
 }

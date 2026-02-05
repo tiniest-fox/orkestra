@@ -7,8 +7,10 @@
 export {
   ArtifactTabs,
   LogTabs,
+  MainContentSlot,
   SidebarSlot,
   SubtaskSlot,
+  TaskAccessorySlot,
   TaskDetailFooterSlot,
   TaskDetailTabs,
 } from "./animationKeys";
@@ -23,9 +25,10 @@ export { Link } from "./Link";
 export { ModalPanel } from "./ModalPanel";
 // Layout components
 export { OverlayContainer } from "./OverlayContainer";
+// Visual Panel component (card-like container with Header/Body/Footer)
 export { Panel } from "./Panel/Panel";
-export { PanelContainer } from "./PanelContainer";
-export { PanelSlot } from "./PanelSlot";
+// Layout components for grid-based panel layout
+export { FlexContainer, PanelContainerContext, PanelLayout, Slot } from "./PanelContainer";
 export type { StageColorSet } from "./stageColors";
 export { buildStageColorMap, STAGE_PALETTE } from "./stageColors";
 export { TabbedPanel } from "./TabbedPanel";

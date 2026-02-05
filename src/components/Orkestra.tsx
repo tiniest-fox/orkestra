@@ -13,13 +13,17 @@ import { DiffPanel } from "./Diff";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
-import { Button, Panel, PanelContainer, PanelSlot, SidebarSlot, SubtaskSlot } from "./ui";
+import {
+  Button,
+  Panel,
+  PanelLayout,
+  Slot,
+} from "./ui";
 
 export function Orkestra() {
   useNotificationPermission();
 
-  const { focus, focusTask, focusSubtask, closeSubtask, openCreate, closeFocus } =
-    useDisplayContext();
+  const { focus, focusTask, focusSubtask, closeSubtask, openCreate, closeFocus, closeDiff } = useDisplayContext();
 
   const config = useWorkflowConfig();
   const autoTaskTemplates = useAutoTaskTemplates();
@@ -44,16 +48,20 @@ export function Orkestra() {
     ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
     : null;
 
-  const sidebarActiveKey =
-    focus.type === "create"
-      ? SidebarSlot.NewTask
-      : currentSelectedTask
-        ? SidebarSlot.task(currentSelectedTask.id)
-        : null;
+  // Sidebar visibility and content key
+  const sidebarVisible = focus.type === "create" || focus.type === "task";
+  const sidebarContentKey = focus.type === "create"
+    ? "new-task"
+    : focus.type === "task"
+      ? focus.taskId
+      : null;
 
-  const subtaskActiveKey = currentSelectedSubtask
-    ? SubtaskSlot.subtask(currentSelectedSubtask.id)
-    : null;
+  // Subtask panel visibility
+  const subtaskVisible = !!currentSelectedSubtask;
+  const subtaskContentKey = currentSelectedSubtask?.id ?? null;
+
+  // Diff panel visibility
+  const diffVisible = showDiff && !!currentSelectedTask;
 
   const handleSelectTask = (task: WorkflowTask) => {
     focusTask(task.id);
@@ -89,13 +97,27 @@ export function Orkestra() {
   };
 
   const handleAutoTask = async (template: AutoTaskTemplate) => {
-    await createTask(
-      "",
-      template.description,
-      template.auto_run,
-      undefined,
-      template.flow ?? undefined,
-    );
+    await createTask("", template.description, template.auto_run, undefined, template.flow ?? undefined);
+  };
+
+  // Render sidebar content based on focus type
+  const renderSidebarContent = () => {
+    if (focus.type === "create") {
+      return <NewTaskPanel onClose={closeFocus} onSubmit={handleTaskCreated} />;
+    }
+    if (currentSelectedTask) {
+      return (
+        <TaskDetailSidebar
+          task={currentSelectedTask}
+          onClose={closeFocus}
+          onDelete={() => handleDeleteTask(currentSelectedTask.id)}
+          subtasks={currentSubtasks}
+          selectedSubtaskId={selectedSubtaskId}
+          onSelectSubtask={handleSelectSubtask}
+        />
+      );
+    }
+    return null;
   };
 
   return (
@@ -104,12 +126,7 @@ export function Orkestra() {
         <Panel.Title>Orkestra</Panel.Title>
         <div className="flex items-center gap-2">
           {autoTaskTemplates.map((template) => (
-            <Button
-              key={template.filename}
-              variant="secondary"
-              size="sm"
-              onClick={() => handleAutoTask(template)}
-            >
+            <Button key={template.filename} variant="secondary" size="sm" onClick={() => handleAutoTask(template)}>
               {template.title}
             </Button>
           ))}
@@ -117,56 +134,56 @@ export function Orkestra() {
         </div>
       </div>
 
-      <PanelContainer>
-        {error && (
-          <div className="mb-4 p-4 bg-error-50 dark:bg-error-950 border border-error-200 dark:border-error-800 rounded-panel text-error-700 dark:text-error-300">
-            Error loading tasks: {error}
-          </div>
-        )}
-        {loading ? (
-          <Panel>{null}</Panel>
-        ) : showDiff && currentSelectedTask ? (
-          <Panel>
-            <DiffPanel taskId={currentSelectedTask.id} />
-          </Panel>
-        ) : (
-          <Panel>
-            <KanbanBoard
-              config={config}
-              tasks={topLevelTasks}
-              selectedTaskId={currentSelectedTask?.id}
-              onSelectTask={handleSelectTask}
-            />
-          </Panel>
-        )}
+      {error && (
+        <div className="mb-4 p-4 bg-error-50 dark:bg-error-950 border border-error-200 dark:border-error-800 rounded-panel text-error-700 dark:text-error-300">
+          Error loading tasks: {error}
+        </div>
+      )}
 
-        <PanelSlot activeKey={sidebarActiveKey}>
-          <PanelSlot.Panel panelKey={SidebarSlot.NewTask}>
-            <NewTaskPanel onClose={closeFocus} onSubmit={handleTaskCreated} />
-          </PanelSlot.Panel>
+      <PanelLayout className="flex-1">
+        {/* Main content: KanbanBoard (hides when diff is shown) */}
+        <Slot id="board" type="grow" visible={!showDiff && !loading}>
+          <KanbanBoard
+            config={config}
+            tasks={topLevelTasks}
+            selectedTaskId={currentSelectedTask?.id}
+            onSelectTask={handleSelectTask}
+          />
+        </Slot>
 
-          {currentSelectedTask && (
-            <PanelSlot.Panel panelKey={SidebarSlot.task(currentSelectedTask.id)}>
-              <TaskDetailSidebar
-                task={currentSelectedTask}
-                onClose={closeFocus}
-                onDelete={() => handleDeleteTask(currentSelectedTask.id)}
-                subtasks={currentSubtasks}
-                selectedSubtaskId={selectedSubtaskId}
-                onSelectSubtask={handleSelectSubtask}
-              />
-            </PanelSlot.Panel>
-          )}
-        </PanelSlot>
+        {/* Sidebar: NewTaskPanel or TaskDetailSidebar */}
+        <Slot
+          id="sidebar"
+          type="fixed"
+          size={480}
+          visible={sidebarVisible}
+          contentKey={sidebarContentKey}
+          plain
+        >
+          {renderSidebarContent()}
+        </Slot>
 
-        <PanelSlot activeKey={subtaskActiveKey}>
+        {/* Subtask detail panel */}
+        <Slot
+          id="subtask"
+          type="fixed"
+          size={480}
+          visible={subtaskVisible}
+          contentKey={subtaskContentKey}
+          plain
+        >
           {currentSelectedSubtask && (
-            <PanelSlot.Panel panelKey={SubtaskSlot.subtask(currentSelectedSubtask.id)}>
-              <TaskDetailSidebar task={currentSelectedSubtask} onClose={handleCloseSubtask} />
-            </PanelSlot.Panel>
+            <TaskDetailSidebar task={currentSelectedSubtask} onClose={handleCloseSubtask} />
           )}
-        </PanelSlot>
-      </PanelContainer>
+        </Slot>
+
+        {/* Diff panel (shows when diff is open, board hides) */}
+        <Slot id="diff" type="grow" visible={diffVisible}>
+          {currentSelectedTask && (
+            <DiffPanel taskId={currentSelectedTask.id} onClose={closeDiff} />
+          )}
+        </Slot>
+      </PanelLayout>
 
       <CommandPalette />
     </div>

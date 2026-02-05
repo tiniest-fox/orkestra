@@ -227,8 +227,8 @@ export function TaskDetailSidebar({
         </Panel>
       </Slot>
 
-      {/* Footer panel - auto-sized, animated visibility via grid */}
-      <Slot id="details-footer" type="auto" visible={showFooter} plain>
+      {/* Footer panel - fixed size for smooth animation (auto can't animate) */}
+      <Slot id="details-footer" type="fixed" size={320} visible={showFooter} plain>
         {showDelete && (
           <DeleteConfirmPanel
             onConfirm={() => {

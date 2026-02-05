@@ -11,7 +11,7 @@ interface DeleteConfirmPanelProps {
 
 export function DeleteConfirmPanel({ onConfirm, onCancel }: DeleteConfirmPanelProps) {
   return (
-    <Panel accent="error" autoFill={false} padded={true}>
+    <Panel accent="error" autoFill={false} padded={true} className="h-[320px]">
       <div className="text-sm font-medium text-error-600 mb-3">
         Delete task? This cannot be undone.
       </div>

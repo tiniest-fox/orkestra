@@ -66,7 +66,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
   if (!currentQuestion) return null;
 
   return (
-    <Panel accent="info" autoFill={false}>
+    <Panel accent="info" autoFill={false} className="h-[320px]">
       <div className="flex flex-col items-stretch">
         <div className="flex items-center justify-between bg-info-500 text-white mt-1 mx-1 rounded-panel px-3 py-1">
           <div className="text-sm font-medium">Questions</div>

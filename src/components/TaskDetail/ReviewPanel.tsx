@@ -24,7 +24,7 @@ export function ReviewPanel({ stageName, onApprove, onReject, isSubmitting }: Re
   };
 
   return (
-    <Panel accent="warning" autoFill={false} padded={true}>
+    <Panel accent="warning" autoFill={false} padded={true} className="h-[320px] flex flex-col">
       <div className="text-sm font-medium text-warning-600 dark:text-warning-400 mb-3">
         {titleCase(stageName)} Review
       </div>
@@ -32,8 +32,7 @@ export function ReviewPanel({ stageName, onApprove, onReject, isSubmitting }: Re
         value={feedback}
         onChange={(e) => setFeedback(e.target.value)}
         placeholder="Leave feedback to request changes..."
-        className="w-full px-3 py-2 text-sm border border-stone-300 dark:bg-stone-800 dark:border-stone-600 dark:text-stone-100 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-warning-500 resize-none mb-3 text-stone-800"
-        rows={2}
+        className="w-full flex-1 px-3 py-2 text-sm border border-stone-300 dark:bg-stone-800 dark:border-stone-600 dark:text-stone-100 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-warning-500 resize-none mb-3 text-stone-800"
       />
       {feedback.trim() ? (
         <Button

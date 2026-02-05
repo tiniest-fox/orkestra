@@ -662,70 +662,32 @@ const RESUME_RECHECK: &str = include_str!("../../prompts/templates/resume/rechec
 pub fn build_resume_prompt(
     stage: &str,
     resume_type: &ResumeType,
-    project_root: Option<&Path>,
 ) -> Result<String, AgentConfigError> {
-    let (template_name, mut context) = match &resume_type {
-        ResumeType::Continue => ("continue.md", serde_json::json!({})),
+    let (template, mut context) = match &resume_type {
+        ResumeType::Continue => (RESUME_CONTINUE, serde_json::json!({})),
         ResumeType::Feedback { feedback } => {
-            ("feedback.md", serde_json::json!({ "feedback": feedback }))
+            (RESUME_FEEDBACK, serde_json::json!({ "feedback": feedback }))
         }
         ResumeType::Integration {
             message,
             conflict_files,
         } => (
-            "integration.md",
+            RESUME_INTEGRATION,
             serde_json::json!({
                 "error_message": message,
                 "conflict_files": conflict_files
             }),
         ),
         ResumeType::Answers { answers } => {
-            ("answers.md", serde_json::json!({ "answers": answers }))
+            (RESUME_ANSWERS, serde_json::json!({ "answers": answers }))
         }
-        ResumeType::Recheck => ("recheck.md", serde_json::json!({})),
+        ResumeType::Recheck => (RESUME_RECHECK, serde_json::json!({})),
     };
 
     // All resume templates need the stage name for the marker
     context["stage_name"] = serde_json::json!(stage);
 
-    let template = load_resume_template(project_root, template_name)?;
-    render_template(&template, &context)
-}
-
-/// Load a resume template, checking project override first, then compiled-in default.
-fn load_resume_template(
-    project_root: Option<&Path>,
-    name: &str,
-) -> Result<String, AgentConfigError> {
-    // Try project .orkestra/agents/resume/ override first
-    if let Some(root) = project_root {
-        let path = root.join(".orkestra/agents/resume").join(name);
-        if path.exists() {
-            let content = fs::read_to_string(&path).map_err(|e| {
-                AgentConfigError::DefinitionNotFound(format!(
-                    "Failed to read {}: {}",
-                    path.display(),
-                    e
-                ))
-            })?;
-            if !content.starts_with("<!orkestra:resume:") {
-                crate::orkestra_debug!("prompt", "Resume template {name} missing marker prefix");
-            }
-            return Ok(content);
-        }
-    }
-
-    // Fall back to compiled-in templates from prompts/templates/resume/
-    match name {
-        "continue.md" => Ok(RESUME_CONTINUE.to_string()),
-        "feedback.md" => Ok(RESUME_FEEDBACK.to_string()),
-        "integration.md" => Ok(RESUME_INTEGRATION.to_string()),
-        "answers.md" => Ok(RESUME_ANSWERS.to_string()),
-        "recheck.md" => Ok(RESUME_RECHECK.to_string()),
-        _ => Err(AgentConfigError::DefinitionNotFound(format!(
-            "Unknown resume template: {name}"
-        ))),
-    }
+    render_template(template, &context)
 }
 
 /// Render a Handlebars template with the given context.
@@ -1221,7 +1183,7 @@ mod tests {
 
     #[test]
     fn test_build_resume_prompt_continue() {
-        let prompt = build_resume_prompt("work", &ResumeType::Continue, None).unwrap();
+        let prompt = build_resume_prompt("work", &ResumeType::Continue).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -1234,7 +1196,6 @@ mod tests {
             &ResumeType::Feedback {
                 feedback: "Add more error handling".to_string(),
             },
-            None,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:feedback>"));
@@ -1250,7 +1211,6 @@ mod tests {
                 message: "Merge conflict detected".to_string(),
                 conflict_files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
             },
-            None,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:integration>"));
@@ -1276,7 +1236,6 @@ mod tests {
                     },
                 ],
             },
-            None,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:planning:answers>"));
@@ -1288,7 +1247,7 @@ mod tests {
 
     #[test]
     fn test_build_resume_prompt_recheck() {
-        let prompt = build_resume_prompt("review", &ResumeType::Recheck, None).unwrap();
+        let prompt = build_resume_prompt("review", &ResumeType::Recheck).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
         assert!(prompt.contains("re-run"));
         assert!(prompt.contains("re-examine"));

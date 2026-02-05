@@ -174,12 +174,7 @@ impl AgentExecutionService {
             } else {
                 trigger_to_resume_type(trigger)
             };
-            build_resume_prompt(
-                stage,
-                &resume_type,
-                Some(self.prompt_service.project_root()),
-            )
-            .map_err(ExecutionError::from)
+            build_resume_prompt(stage, &resume_type).map_err(ExecutionError::from)
         } else {
             let config = self.prompt_service.resolve_config(
                 &self.workflow,

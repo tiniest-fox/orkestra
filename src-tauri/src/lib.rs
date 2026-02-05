@@ -93,7 +93,7 @@ fn cleanup_all_agents(app_handle: &AppHandle) {
     };
 
     for project_root in project_roots {
-        let db_path = project_root.join(".orkestra/orkestra.db");
+        let db_path = project_root.join(".orkestra/.database/orkestra.db");
         if !db_path.exists() {
             continue;
         }
@@ -148,7 +148,7 @@ fn cleanup_agents_standalone() {
     let roots = PROJECT_ROOTS.lock().unwrap().clone();
 
     for project_root in roots {
-        let db_path = project_root.join(".orkestra/orkestra.db");
+        let db_path = project_root.join(".orkestra/.database/orkestra.db");
         if !db_path.exists() {
             continue;
         }

@@ -68,12 +68,12 @@ impl TestEnv {
     pub fn with_workflow(workflow: WorkflowConfig) -> Self {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
 
-        // Create .orkestra directory for script logs
+        // Create .orkestra directory structure
         let orkestra_dir = temp_dir.path().join(".orkestra");
-        std::fs::create_dir_all(&orkestra_dir).unwrap();
+        std::fs::create_dir_all(orkestra_dir.join(".database")).unwrap();
 
         // Real SQLite database
-        let db_path = orkestra_dir.join("orkestra.db");
+        let db_path = orkestra_dir.join(".database/orkestra.db");
         let db_conn = DatabaseConnection::open(&db_path).expect("Should open database");
 
         let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
@@ -125,7 +125,7 @@ impl TestEnv {
 
         // Create .orkestra directory structure
         let orkestra_dir = temp_dir.path().join(".orkestra");
-        std::fs::create_dir_all(&orkestra_dir).unwrap();
+        std::fs::create_dir_all(orkestra_dir.join(".database")).unwrap();
 
         // Create agent definition files
         let agents_dir = orkestra_dir.join("agents");
@@ -146,7 +146,7 @@ impl TestEnv {
             .expect("Should load workflow");
 
         // Real SQLite database
-        let db_path = orkestra_dir.join("orkestra.db");
+        let db_path = orkestra_dir.join(".database/orkestra.db");
         let db_conn = DatabaseConnection::open(&db_path).expect("Should open database");
         let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
             Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
@@ -202,7 +202,7 @@ impl TestEnv {
 
         // Create .orkestra directory structure
         let orkestra_dir = temp_dir.path().join(".orkestra");
-        std::fs::create_dir_all(&orkestra_dir).unwrap();
+        std::fs::create_dir_all(orkestra_dir.join(".database")).unwrap();
 
         // Create agent definition files
         let agents_dir = orkestra_dir.join("agents");
@@ -223,7 +223,7 @@ impl TestEnv {
             .expect("Should load workflow");
 
         // Real SQLite database
-        let db_path = orkestra_dir.join("orkestra.db");
+        let db_path = orkestra_dir.join(".database/orkestra.db");
         let db_conn = DatabaseConnection::open(&db_path).expect("Should open database");
         let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
             Arc::new(SqliteWorkflowStore::new(db_conn.shared()));

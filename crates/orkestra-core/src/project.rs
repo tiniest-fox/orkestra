@@ -85,15 +85,6 @@ pub fn get_orkestra_dir() -> PathBuf {
         .join(".orkestra")
 }
 
-/// Ensures the .orkestra directory exists
-pub fn ensure_orkestra_dir() -> std::io::Result<()> {
-    let dir = get_orkestra_dir();
-    if !dir.exists() {
-        fs::create_dir_all(&dir)?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

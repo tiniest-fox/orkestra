@@ -325,13 +325,11 @@ fn init_workflow_api() -> Result<WorkflowApi, String> {
         find_project_root().map_err(|e| format!("Failed to find project root: {e}"))?;
 
     let orkestra_dir = project_root.join(".orkestra");
-    let db_path = orkestra_dir.join("orkestra.db");
+    let db_path = orkestra_dir.join(".database/orkestra.db");
 
-    // Create .orkestra directory if it doesn't exist
-    if !orkestra_dir.exists() {
-        std::fs::create_dir_all(&orkestra_dir)
-            .map_err(|e| format!("Failed to create .orkestra directory: {e}"))?;
-    }
+    // Create .orkestra directory structure if needed
+    orkestra_core::ensure_orkestra_project(&orkestra_dir)
+        .map_err(|e| format!("Failed to create .orkestra structure: {e}"))?;
 
     // Load workflow config (or use default)
     let workflow_config = load_workflow_for_project(&project_root).unwrap_or_else(|e| {

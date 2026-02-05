@@ -65,11 +65,11 @@ pub fn create_temp_git_repo() -> std::io::Result<TempDir> {
     Ok(temp_dir)
 }
 
-/// Creates the `.orkestra/worktrees` directory in a repo.
+/// Creates the `.orkestra/.worktrees` directory in a repo.
 ///
 /// This is required before creating worktrees for tasks.
 pub fn create_orkestra_dirs(repo_path: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(repo_path.join(".orkestra/worktrees"))
+    std::fs::create_dir_all(repo_path.join(".orkestra/.worktrees"))
 }
 
 /// Get the current branch name of a git repository.
@@ -177,7 +177,7 @@ mod tests {
         create_orkestra_dirs(temp_dir.path()).unwrap();
 
         assert!(temp_dir.path().join(".orkestra").exists());
-        assert!(temp_dir.path().join(".orkestra/worktrees").exists());
+        assert!(temp_dir.path().join(".orkestra/.worktrees").exists());
     }
 
     #[test]

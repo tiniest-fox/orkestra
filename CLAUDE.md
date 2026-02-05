@@ -80,12 +80,13 @@ Orkestra is a task orchestration system that spawns AI coding agents (Claude Cod
 - **`cli/`** - CLI binary (`ork`) for task management
 - **`src-tauri/`** - Tauri desktop application backend. **Read `src-tauri/CLAUDE.md` before making changes in this directory.**
 - **`src/`** - React/TypeScript frontend (Kanban board UI). **Read `src/CLAUDE.md` before making changes in this directory.**
-- **`.orkestra/`** - Runtime data directory (auto-created)
-  - `orkestra.db` - SQLite database for tasks and sessions
-  - `worktrees/` - Git worktrees for task isolation (one per task)
+- **`.orkestra/`** - Runtime data directory (created on first init with sensible defaults)
+  - `.database/orkestra.db` - SQLite database for tasks and sessions
+  - `.logs/` - Debug and agent output logs
+  - `.worktrees/` - Git worktrees for task isolation (one per task)
   - `scripts/worktree_setup.sh` - Script that runs when creating new worktrees (customize for project-specific setup like copying .env files)
-  - `agents/` - Agent prompt templates (markdown files: planner.md, worker.md, etc.)
-  - `workflow.yaml` - Optional workflow configuration file (uses default if not present)
+  - `agents/` - Agent prompt templates (planner.md, breakdown.md, worker.md, reviewer.md — defaults created on init, customize per project)
+  - `workflow.yaml` - Workflow configuration (default created on init matching the 4-stage pipeline: planning → breakdown → work → review)
 
 ### Core Library Architecture (`crates/orkestra-core/`)
 
@@ -201,8 +202,8 @@ ork task reject ID --feedback MSG       # Reject with feedback (creates new iter
 
 ### Key Design Patterns
 
-- **SQLite storage**: Tasks stored in `.orkestra/orkestra.db` with full ACID guarantees
-- **Git worktrees**: Each task gets an isolated worktree at `.orkestra/worktrees/{task-id}`, allowing parallel work without conflicts
+- **SQLite storage**: Tasks stored in `.orkestra/.database/orkestra.db` with full ACID guarantees
+- **Git worktrees**: Each task gets an isolated worktree at `.orkestra/.worktrees/{task-id}`, allowing parallel work without conflicts
 - **Iteration tracking**: Each agent run within a stage creates an iteration. Rejections create new iterations, allowing for feedback loops
 - **Project root detection**: Finds workspace root by looking for `Cargo.toml` with `[workspace]` or `.orkestra/` directory
 

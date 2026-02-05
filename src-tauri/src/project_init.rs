@@ -2,7 +2,6 @@
 //!
 //! Handles creating `.orkestra` directories for new projects and validating existing ones.
 
-use std::fs;
 use std::path::Path;
 
 use orkestra_core::orkestra_debug;
@@ -17,21 +16,19 @@ use crate::project_registry::ProjectState;
 pub fn initialize_project(project_root: &Path) -> Result<ProjectState, String> {
     let orkestra_dir = project_root.join(".orkestra");
 
-    // Create .orkestra directory if it doesn't exist
-    if !orkestra_dir.exists() {
-        orkestra_debug!(
-            "project_init",
-            "Creating .orkestra directory at {}",
-            orkestra_dir.display()
-        );
-        fs::create_dir_all(&orkestra_dir).map_err(|e| {
-            format!(
-                "Failed to create .orkestra directory at {}: {}",
-                orkestra_dir.display(),
-                e
-            )
-        })?;
-    }
+    // Create .orkestra directory structure if needed
+    orkestra_debug!(
+        "project_init",
+        "Ensuring .orkestra structure at {}",
+        orkestra_dir.display()
+    );
+    orkestra_core::ensure_orkestra_project(&orkestra_dir).map_err(|e| {
+        format!(
+            "Failed to create .orkestra structure at {}: {}",
+            orkestra_dir.display(),
+            e
+        )
+    })?;
 
     // Initialize debug logging for this project
     orkestra_core::debug_log::init(&orkestra_dir);
@@ -61,7 +58,7 @@ pub fn initialize_project(project_root: &Path) -> Result<ProjectState, String> {
     let auto_task_templates = load_auto_task_templates(project_root, &workflow_config);
 
     // Create database path
-    let db_path = orkestra_dir.join("orkestra.db");
+    let db_path = orkestra_dir.join(".database/orkestra.db");
 
     // Create ProjectState (initializes database connection)
     ProjectState::new(

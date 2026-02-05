@@ -52,8 +52,9 @@ impl AgentTestEnv {
 
         let temp_dir = create_temp_git_repo().expect("create temp git repo");
 
-        // Create .orkestra directory + agent prompt file
+        // Create .orkestra directory structure + agent prompt file
         let orkestra_dir = temp_dir.path().join(".orkestra");
+        std::fs::create_dir_all(orkestra_dir.join(".database")).unwrap();
         std::fs::create_dir_all(orkestra_dir.join("agents")).unwrap();
 
         // Initialize debug logging so ORKESTRA_DEBUG=1 works in tests
@@ -89,7 +90,7 @@ impl AgentTestEnv {
             orkestra_core::workflow::config::load_workflow(&workflow_path).expect("load workflow");
 
         // Real SQLite database
-        let db_path = orkestra_dir.join("orkestra.db");
+        let db_path = orkestra_dir.join(".database/orkestra.db");
         let db_conn = DatabaseConnection::open(&db_path).expect("open database");
         let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
             Arc::new(SqliteWorkflowStore::new(db_conn.shared()));

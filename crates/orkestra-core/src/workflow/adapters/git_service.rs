@@ -31,7 +31,7 @@ impl Git2GitService {
     pub fn new(repo_path: &Path) -> Result<Self, GitError> {
         let repo = Repository::open(repo_path)
             .map_err(|e| GitError::RepositoryNotFound(format!("Failed to open repository: {e}")))?;
-        let worktrees_dir = repo_path.join(".orkestra/worktrees");
+        let worktrees_dir = repo_path.join(".orkestra/.worktrees");
         Ok(Self {
             repo: Mutex::new(repo),
             repo_path: repo_path.to_path_buf(),

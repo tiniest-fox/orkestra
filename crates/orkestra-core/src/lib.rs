@@ -6,6 +6,7 @@
 pub mod adapters;
 pub mod debug_log;
 pub mod error;
+pub mod init;
 pub mod process;
 pub mod project;
 pub mod prompts;
@@ -30,6 +31,9 @@ pub use process::{
     is_process_running, kill_process_tree, spawn_claude_process, write_prompt_to_stdin,
     ParsedStreamEvent, ProcessGuard,
 };
+
+// Init re-exports
+pub use init::ensure_orkestra_project;
 
 // Project discovery re-exports
 pub use project::{find_project_root, get_orkestra_dir};

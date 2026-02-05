@@ -132,7 +132,7 @@ pub trait GitService: Send + Sync {
     /// Create a worktree for a task.
     ///
     /// Creates branch `task/{task_id}` from `base_branch` (or current HEAD if None)
-    /// and a worktree at `.orkestra/worktrees/{task_id}`.
+    /// and a worktree at `.orkestra/.worktrees/{task_id}`.
     ///
     /// If `.orkestra/scripts/worktree_setup.sh` exists, it will be executed with the
     /// worktree path as an argument (for project-specific setup like copying .env).
@@ -344,7 +344,7 @@ pub mod mock {
                 .push((task_id.to_string(), base_branch.map(String::from)));
 
             let branch_name = format!("task/{task_id}");
-            let worktree_path = PathBuf::from(format!(".orkestra/worktrees/{task_id}"));
+            let worktree_path = PathBuf::from(format!(".orkestra/.worktrees/{task_id}"));
 
             self.worktrees
                 .lock()
@@ -365,7 +365,7 @@ pub mod mock {
             // If worktree already exists, return its info without recording a new call
             if self.worktree_exists(task_id) {
                 let branch_name = format!("task/{task_id}");
-                let worktree_path = PathBuf::from(format!(".orkestra/worktrees/{task_id}"));
+                let worktree_path = PathBuf::from(format!(".orkestra/.worktrees/{task_id}"));
                 return Ok(WorktreeCreated {
                     branch_name,
                     worktree_path,

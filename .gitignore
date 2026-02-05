@@ -46,12 +46,11 @@ coverage/
 *.tmp
 *~
 
-# Orkestra runtime data (keep agents/ tracked)
-.orkestra/orkestra.db
-.orkestra/orkestra.db*
+# Orkestra runtime data (keep agents/ and workflow.yaml tracked)
+.orkestra/.database/
+.orkestra/.logs/
 .orkestra/tasks.jsonl
-.orkestra/worktrees
-.orkestra/worktrees/**/*
+.orkestra/.worktrees/
 .orkestra/*.md
 
 # Claude Code Artifacts

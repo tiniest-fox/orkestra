@@ -1,0 +1,64 @@
+# Orkestra Workflow Configuration
+# ================================
+# Defines the stages a task passes through from creation to completion.
+# Each stage runs an AI agent (with a prompt template) or a shell script.
+#
+# Stages execute in order. Each stage produces a named artifact that
+# later stages can reference via `inputs`.
+
+version: 1
+
+stages:
+  # Planning: understand what to build, ask clarifying questions.
+  # Produces a requirements-level plan (not implementation details).
+  - name: planning
+    display_name: Planning
+    artifact: plan
+    prompt: planner.md
+    capabilities:
+      ask_questions: true
+
+  # Breakdown: research the codebase and split the plan into subtasks.
+  # Subtasks are assigned to the "subtask" flow (work → review only).
+  - name: breakdown
+    display_name: Breaking Down
+    artifact: breakdown
+    inputs: [plan]
+    prompt: breakdown.md
+    capabilities:
+      subtasks:
+        flow: subtask
+
+  # Work: implement the code changes described by the plan.
+  - name: work
+    display_name: Working
+    artifact: summary
+    inputs: [plan]
+    prompt: worker.md
+
+  # Review: check completed work, approve or reject with feedback.
+  # Automated — runs without waiting for human approval to start.
+  # On rejection, sends the task back to the work stage.
+  - name: review
+    display_name: Reviewing
+    artifact: verdict
+    inputs: [plan, summary]
+    prompt: reviewer.md
+    is_automated: true
+    capabilities:
+      approval:
+        rejection_stage: work
+
+# Where to send the task when merging its branch fails (e.g., conflict).
+integration:
+  on_failure: work
+
+# Flows: shortened pipelines for tasks that don't need every stage.
+# Each flow lists a subset of the stages above.
+flows:
+  subtask:
+    description: Simplified pipeline for subtasks (work → review)
+    icon: git-branch
+    stages:
+      - work
+      - review

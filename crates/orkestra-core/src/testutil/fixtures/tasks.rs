@@ -37,7 +37,7 @@ pub fn save_task_with_worktree(
         stage,
         FIXTURE_TIMESTAMP,
     )
-    .with_git_worktree(format!("ork/{id}"), format!("/tmp/worktrees/{id}"));
+    .with_git_worktree(format!("ork/{id}"), format!("/tmp/.worktrees/{id}"));
     store.save_task(&task)?;
     Ok(task)
 }

@@ -25,6 +25,7 @@ export interface SlotConfig {
 
 export interface SlotLayoutContextValue {
   direction: LayoutDirection;
+  gap: number;
   registerSlot: (config: SlotConfig) => void;
   unregisterSlot: (id: string) => void;
 }

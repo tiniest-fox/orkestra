@@ -1,5 +1,5 @@
 /**
- * Shared animation state tracking for content containers (PanelSlot, TabbedPanel).
+ * Shared animation state tracking for content containers (PanelContainer.Column, TabbedPanel).
  *
  * Each animation container reads the parent context, merges its own per-key
  * phases, and provides the combined state to descendants. This lets deeply

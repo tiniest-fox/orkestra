@@ -2,7 +2,7 @@
  * DiffPanel - Full-screen diff viewer.
  *
  * Layout:
- * - Left: File list (250px)
+ * - Left: File list
  * - Right: Unified diff view
  *
  * Fetches diff data with 2-second polling.
@@ -12,78 +12,111 @@
 import { useEffect, useState } from "react";
 import { type HighlightedFileDiff, useDiff } from "../../hooks/useDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
+import { FlexContainer, Panel } from "../ui";
 import { DiffContent } from "./DiffContent";
 import { DiffFileList } from "./DiffFileList";
 
 interface DiffPanelProps {
   taskId: string;
+  onClose: () => void;
 }
 
-export function DiffPanel({ taskId }: DiffPanelProps) {
+export function DiffPanel({ taskId, onClose }: DiffPanelProps) {
   const { diff, loading, error } = useDiff(taskId);
   const { css } = useSyntaxCss();
-  const [selectedFile, setSelectedFile] = useState<HighlightedFileDiff | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+
+  // Derive selected file from path (survives diff refresh)
+  const selectedFile = diff?.files.find((f) => f.path === selectedPath) ?? null;
 
   // Auto-select first file when diff loads
   useEffect(() => {
-    if (diff && diff.files.length > 0 && !selectedFile) {
-      setSelectedFile(diff.files[0]);
+    if (diff && diff.files.length > 0 && !selectedPath) {
+      setSelectedPath(diff.files[0].path);
     }
-  }, [diff, selectedFile]);
+  }, [diff, selectedPath]);
+
+  const handleSelectFile = (file: HighlightedFileDiff) => {
+    setSelectedPath(file.path);
+  };
 
   if (loading && !diff) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-500">Loading diff...</div>
+      <Panel className="flex flex-col">
+        <Panel.Header>
+          <Panel.Title>Changes</Panel.Title>
+          <Panel.CloseButton onClick={onClose} />
+        </Panel.Header>
+        <Panel.Body className="flex-1 flex items-center justify-center text-stone-400 dark:text-stone-500">
+          Loading...
+        </Panel.Body>
+      </Panel>
     );
   }
 
   if (error) {
     return (
-      <div className="flex-1 flex items-center justify-center text-red-500">
-        Error loading diff: {error}
-      </div>
+      <Panel className="flex flex-col">
+        <Panel.Header>
+          <Panel.Title>Changes</Panel.Title>
+          <Panel.CloseButton onClick={onClose} />
+        </Panel.Header>
+        <Panel.Body className="flex-1 flex items-center justify-center text-error-600 dark:text-error-400">
+          Error: {error}
+        </Panel.Body>
+      </Panel>
     );
   }
 
   if (!diff || diff.files.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-500">
-        No changes to display
-      </div>
+      <Panel className="flex flex-col">
+        <Panel.Header>
+          <Panel.Title>Changes</Panel.Title>
+          <Panel.CloseButton onClick={onClose} />
+        </Panel.Header>
+        <Panel.Body className="flex-1 flex items-center justify-center text-stone-400 dark:text-stone-500">
+          No changes to display
+        </Panel.Body>
+      </Panel>
     );
   }
 
   return (
-    <>
-      {/* Inject syntax CSS */}
-      {css && (
-        <style
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: syntect CSS output is trusted
-          dangerouslySetInnerHTML={{
-            __html: `
-              /* Light theme syntax */
-              @media (prefers-color-scheme: light) {
-                ${css.light}
-              }
+    <Panel className="flex flex-col">
+      <Panel.Header>
+        <Panel.Title>Changes</Panel.Title>
+        <Panel.CloseButton onClick={onClose} />
+      </Panel.Header>
+      <Panel.Body className="flex-1 flex pt-0">
+        {/* Inject syntax CSS */}
+        {css && (
+          <style
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: syntect CSS output is trusted
+            dangerouslySetInnerHTML={{
+              __html: `
+                /* Light theme syntax */
+                @media (prefers-color-scheme: light) {
+                  ${css.light}
+                }
 
-              /* Dark theme syntax */
-              @media (prefers-color-scheme: dark) {
-                ${css.dark}
-              }
-            `,
-          }}
-        />
-      )}
+                /* Dark theme syntax */
+                @media (prefers-color-scheme: dark) {
+                  ${css.dark}
+                }
+              `,
+            }}
+          />
+        )}
 
-      {/* Two-pane layout */}
-      <div className="flex-1 flex overflow-hidden">
-        <DiffFileList
-          files={diff.files}
-          selectedFile={selectedFile}
-          onSelectFile={setSelectedFile}
-        />
-        <DiffContent file={selectedFile} />
-      </div>
-    </>
+        {/* Two-pane layout */}
+        <FlexContainer>
+          <DiffFileList files={diff.files} selectedFile={selectedFile} onSelectFile={handleSelectFile} />
+          <Panel className="flex-1">
+            <DiffContent file={selectedFile} />
+          </Panel>
+        </FlexContainer>
+      </Panel.Body>
+    </Panel>
   );
 }

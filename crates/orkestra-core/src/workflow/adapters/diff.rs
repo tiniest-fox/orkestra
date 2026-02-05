@@ -8,7 +8,8 @@ use crate::workflow::ports::{FileChangeType, FileDiff, GitError, TaskDiff};
 /// Execute git diff and parse output into structured diff data.
 ///
 /// Uses `git diff --merge-base` to compute the diff from the merge-base of
-/// `base_branch` and HEAD to HEAD, showing only changes made on the task branch.
+/// `base_branch` to the working tree, showing both committed and uncommitted
+/// changes made on the task branch.
 pub fn execute_diff(
     worktree_path: &Path,
     _branch_name: &str,
@@ -19,7 +20,6 @@ pub fn execute_diff(
             "diff",
             "--merge-base",
             base_branch,
-            "HEAD",
             "--unified=3",
             "--no-color",
             "--numstat",
@@ -74,6 +74,8 @@ fn parse_diff_output(output: &str) -> TaskDiff {
     // Parse actual diffs
     let mut current_file: Option<String> = None;
     let mut current_diff = String::new();
+    let mut is_new_file = false;
+    let mut is_deleted_file = false;
 
     for line in lines {
         if line.starts_with("diff --git") {
@@ -84,7 +86,7 @@ fn parse_diff_output(output: &str) -> TaskDiff {
                 {
                     files.push(FileDiff {
                         path: path.clone(),
-                        change_type: determine_change_type(*additions, *deletions),
+                        change_type: determine_change_type(is_new_file, is_deleted_file),
                         old_path: None,
                         additions: *additions,
                         deletions: *deletions,
@@ -97,12 +99,23 @@ fn parse_diff_output(output: &str) -> TaskDiff {
                     });
                 }
                 current_diff.clear();
+                is_new_file = false;
+                is_deleted_file = false;
             }
 
             // Extract file path from "diff --git a/path b/path"
             if let Some(path) = extract_file_path(line) {
                 current_file = Some(path);
             }
+        }
+
+        // Detect new files (old side is /dev/null)
+        if line.starts_with("--- /dev/null") {
+            is_new_file = true;
+        }
+        // Detect deleted files (new side is /dev/null)
+        if line.starts_with("+++ /dev/null") {
+            is_deleted_file = true;
         }
 
         current_diff.push_str(line);
@@ -114,7 +127,7 @@ fn parse_diff_output(output: &str) -> TaskDiff {
         if let Some((_, additions, deletions)) = numstats.iter().find(|(p, _, _)| p == &path) {
             files.push(FileDiff {
                 path: path.clone(),
-                change_type: determine_change_type(*additions, *deletions),
+                change_type: determine_change_type(is_new_file, is_deleted_file),
                 old_path: None,
                 additions: *additions,
                 deletions: *deletions,
@@ -154,11 +167,15 @@ fn extract_file_path(line: &str) -> Option<String> {
         .map(String::from)
 }
 
-/// Determine change type based on additions and deletions.
-fn determine_change_type(additions: usize, deletions: usize) -> FileChangeType {
-    if deletions == 0 && additions > 0 {
+/// Determine change type based on git diff markers.
+///
+/// - New files have `--- /dev/null` (old side doesn't exist)
+/// - Deleted files have `+++ /dev/null` (new side doesn't exist)
+/// - Everything else is modified
+fn determine_change_type(is_new_file: bool, is_deleted_file: bool) -> FileChangeType {
+    if is_new_file {
         FileChangeType::Added
-    } else if additions == 0 && deletions > 0 {
+    } else if is_deleted_file {
         FileChangeType::Deleted
     } else {
         FileChangeType::Modified

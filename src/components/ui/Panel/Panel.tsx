@@ -3,18 +3,18 @@
  * Features 12px border radius, drop shadow, and optional Header/Body/Footer subcomponents.
  *
  * By default, panels fill their container height (h-full) and use flex column layout.
- * This makes them work correctly inside PanelContainer and PanelSlot without extra styling.
+ * This makes them work correctly inside PanelContainer without extra styling.
  *
- * When used inside a PanelSlot, shadows are automatically suppressed (PanelSlot handles them).
- * Panel resets the PanelSlot context so nested Panels have normal shadows.
+ * When used inside a PanelContainer, shadows are automatically suppressed (PanelContainer handles them).
+ * Panel resets the context so nested Panels have normal shadows.
  *
  * Button mode: Pass `as="button"` to render as a native <button> element with interactive
  * shadow transitions (elevated on hover, flattened on press). This eliminates the need to
  * nest a <button> inside a Panel <div>.
  */
 
-import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { PanelSlotContext, usePanelSlot } from "../PanelSlot";
+import { createContext, type ButtonHTMLAttributes, type ReactNode, useContext } from "react";
+import { PanelContainerContext } from "../PanelContainer";
 import { PanelBody } from "./PanelBody";
 import { PanelCloseButton } from "./PanelCloseButton";
 import { PanelFooter } from "./PanelFooter";
@@ -62,6 +62,9 @@ const accentStyles: Record<PanelAccent, string> = {
   error: "bg-gradient-to-br from-error-50 to-error-100 dark:from-error-950 dark:to-error-900",
 };
 
+// Context to reset shadow suppression for nested panels
+const PanelResetContext = createContext<boolean>(false);
+
 /**
  * Panel root component - container with rounded corners and shadow.
  */
@@ -78,11 +81,13 @@ function PanelRoot(props: PanelProps) {
     ...rest
   } = props;
 
-  const slotContext = usePanelSlot();
+  const containerContext = useContext(PanelContainerContext);
+  const isReset = useContext(PanelResetContext);
   const isButton = elementType === "button";
 
-  // When inside a PanelSlot: suppress shadows (slot handles them)
-  const effectiveVariant = slotContext?.suppressShadow ? "flat" : variant;
+  // When inside a PanelContainer (and not reset): suppress shadows (container handles them)
+  const shouldSuppressShadow = containerContext.inContainer && !isReset;
+  const effectiveVariant = shouldSuppressShadow ? "flat" : variant;
 
   let extraClasses = autoFill ? "grow shrink basis-0 flex flex-col" : "";
   if (padded) extraClasses += " p-4";
@@ -99,18 +104,18 @@ function PanelRoot(props: PanelProps) {
     // Extract only button-specific props from rest
     const buttonProps = rest as Omit<ButtonHTMLAttributes<HTMLButtonElement>, keyof PanelBaseProps>;
     return (
-      <PanelSlotContext.Provider value={null}>
+      <PanelResetContext.Provider value={true}>
         <button type="button" {...buttonProps} className={combinedClassName}>
           {children}
         </button>
-      </PanelSlotContext.Provider>
+      </PanelResetContext.Provider>
     );
   }
 
   return (
-    <PanelSlotContext.Provider value={null}>
+    <PanelResetContext.Provider value={true}>
       <div className={combinedClassName}>{children}</div>
-    </PanelSlotContext.Provider>
+    </PanelResetContext.Provider>
   );
 }
 

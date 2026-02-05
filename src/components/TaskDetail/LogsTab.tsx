@@ -6,7 +6,7 @@ import { useAutoScroll } from "../../hooks/useAutoScroll";
 import type { LogEntry, WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { LogList } from "../Logs";
-import { LogTabs, PanelContainer, TabbedPanel } from "../ui";
+import { FlexContainer, LogTabs, TabbedPanel } from "../ui";
 
 interface LogsTabProps {
   task: WorkflowTaskView;
@@ -47,7 +47,7 @@ export function LogsTab({
   };
 
   return (
-    <PanelContainer direction="vertical" padded={true}>
+    <FlexContainer direction="vertical" padded={true}>
       {tabs.length > 0 && activeLogStage && (
         <TabbedPanel
           tabs={tabs}
@@ -70,6 +70,6 @@ export function LogsTab({
           <LogList logs={logs} isLoading={isLoading} error={error} />
         </div>
       )}
-    </PanelContainer>
+    </FlexContainer>
   );
 }

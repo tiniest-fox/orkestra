@@ -7,7 +7,7 @@
  * blocking the animation.
  *
  * When `defer` is true the hook stays on the initial chunk until
- * defer becomes false (e.g. after a PanelSlot animation settles),
+ * defer becomes false (e.g. after a Column animation settles),
  * then appends the rest on the next frame.
  */
 

@@ -1,7 +1,7 @@
 /**
  * CollapsedSection - Expandable section for hidden context lines.
  *
- * Shows "⋮ N lines hidden" button that reveals the lines when clicked.
+ * Shows "N lines" button that reveals the lines when clicked.
  */
 
 import { useState } from "react";
@@ -30,10 +30,11 @@ export function CollapsedSection({ lines }: CollapsedSectionProps) {
     <button
       type="button"
       onClick={() => setExpanded(true)}
-      className="w-full flex items-center justify-center py-1 text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800/50 transition-colors"
+      className="w-full flex items-center justify-center py-1.5 text-xs text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors"
     >
-      <span className="mr-2">⋮</span>
-      <span>{lines.length} lines hidden</span>
+      <span className="px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400">
+        {lines.length} lines
+      </span>
     </button>
   );
 }

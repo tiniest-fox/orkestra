@@ -5,7 +5,7 @@
 import { useSmartDefault } from "../../hooks/useSmartDefault";
 import type { WorkflowArtifact, WorkflowConfig } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
-import { ArtifactTabs, ExpandablePanel, PanelContainer, TabbedPanel } from "../ui";
+import { ArtifactTabs, ExpandablePanel, FlexContainer, TabbedPanel } from "../ui";
 import { ArtifactView } from "./ArtifactView";
 
 function ExpandableArtifactView({ artifact }: { artifact: WorkflowArtifact }) {
@@ -51,7 +51,7 @@ export function ArtifactsTab({ taskId, currentStage, artifacts, config }: Artifa
   }
 
   return (
-    <PanelContainer direction="vertical" padded={true}>
+    <FlexContainer direction="vertical" padded={true}>
       <TabbedPanel
         tabs={tabs}
         activeTab={activeArtifact ? ArtifactTabs.artifact(activeArtifact) : ""}
@@ -64,6 +64,6 @@ export function ArtifactsTab({ taskId, currentStage, artifacts, config }: Artifa
       >
         <ExpandableArtifactView artifact={artifacts[activeArtifact]} />
       </TabbedPanel>
-    </PanelContainer>
+    </FlexContainer>
   );
 }

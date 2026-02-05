@@ -6,7 +6,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import type { WorkflowTaskView } from "../../types/workflow";
 import type { KanbanColumn as KanbanColumnType } from "../../utils/kanban";
-import { Panel, PanelContainer } from "../ui";
+import { FlexContainer, Panel } from "../ui";
 import { TaskCard } from "./TaskCard";
 
 interface KanbanColumnProps {
@@ -106,7 +106,7 @@ export function KanbanColumn({ column, tasks, selectedTaskId, onSelectTask }: Ka
               exit={{ opacity: 0 }}
               transition={labelTransition}
             >
-              <PanelContainer direction="vertical" scrolls={true} padded={true}>
+              <FlexContainer direction="vertical" scrolls={true} padded={true}>
                 <div />
                 {tasks.map((task) => (
                   <TaskCard
@@ -116,7 +116,7 @@ export function KanbanColumn({ column, tasks, selectedTaskId, onSelectTask }: Ka
                     isSelected={task.id === selectedTaskId}
                   />
                 ))}
-              </PanelContainer>
+              </FlexContainer>
             </motion.div>
           )}
         </AnimatePresence>

@@ -4,17 +4,17 @@
  * Keys are dot-namespaced strings stored in ContentAnimationState.phases.
  * Static keys are string constants. Dynamic keys use factory functions.
  *
- * Every PanelSlot and TabbedPanel should use keys from this module
+ * Every PanelContainer.Column and TabbedPanel should use keys from this module
  * as its activeKey/activeTab and panelKey values.
  */
 
-/** Main right sidebar PanelSlot (Orkestra.tsx) */
+/** Main right sidebar column (Orkestra.tsx) */
 export const SidebarSlot = {
   NewTask: "SidebarSlot.NewTask",
   task: (id: string) => `SidebarSlot.Task.${id}`,
 } as const;
 
-/** Subtask detail PanelSlot (Orkestra.tsx) */
+/** Subtask detail column (Orkestra.tsx) */
 export const SubtaskSlot = {
   subtask: (id: string) => `SubtaskSlot.Subtask.${id}`,
 } as const;
@@ -28,7 +28,7 @@ export const TaskDetailTabs = {
   artifacts: (taskId: string) => `TaskDetailTabs.${taskId}.Artifacts`,
 } as const;
 
-/** Task detail footer PanelSlot (TaskDetailSidebar.tsx) */
+/** Task detail footer column (TaskDetailSidebar.tsx) */
 export const TaskDetailFooterSlot = {
   Delete: "TaskDetailFooterSlot.Delete",
   Questions: "TaskDetailFooterSlot.Questions",
@@ -43,4 +43,14 @@ export const ArtifactTabs = {
 /** Log stage sub-tabs (LogsTab.tsx) */
 export const LogTabs = {
   stage: (name: string) => `LogTabs.${name}`,
+} as const;
+
+/** Main content area (Kanban board) */
+export const MainContentSlot = {
+  Board: "MainContentSlot.Board",
+} as const;
+
+/** Task accessory panel (diff viewer, etc.) */
+export const TaskAccessorySlot = {
+  diff: (taskId: string) => `TaskAccessorySlot.Diff.${taskId}`,
 } as const;

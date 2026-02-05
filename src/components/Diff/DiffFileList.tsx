@@ -1,5 +1,5 @@
 /**
- * DiffFileList - Left-side file list (250px fixed width).
+ * DiffFileList - Left-side file list.
  *
  * Displays:
  * - File count header
@@ -17,14 +17,14 @@ interface DiffFileListProps {
 
 export function DiffFileList({ files, selectedFile, onSelectFile }: DiffFileListProps) {
   return (
-    <div className="w-64 flex-shrink-0 border-r border-gray-700 flex flex-col">
+    <div className="w-48 flex-shrink-0 flex flex-col -mr-2">
       {/* Header */}
-      <div className="px-3 py-2 border-b border-gray-700 text-sm font-medium">
-        {files.length} {files.length === 1 ? "file" : "files"} changed
+      <div className="px-2 py-1 mr-4 bg-stone-100 dark:bg-stone-800 text-xs font-semibold text-stone-700 dark:text-stone-200 rounded">
+        {files.length} {files.length === 1 ? "file" : "files"}
       </div>
 
       {/* File list */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto mt-1 space-y-1">
         {files.map((file) => (
           <DiffFileEntry
             key={file.path}

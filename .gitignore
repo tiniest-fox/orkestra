@@ -57,3 +57,6 @@ coverage/
 
 # Claude Code Artifacts
 .plan.md
+
+# Locks
+.orkestra/target.lock.d

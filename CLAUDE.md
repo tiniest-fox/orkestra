@@ -83,7 +83,7 @@ Orkestra is a task orchestration system that spawns AI coding agents (Claude Cod
 - **`.orkestra/`** - Runtime data directory (auto-created)
   - `orkestra.db` - SQLite database for tasks and sessions
   - `worktrees/` - Git worktrees for task isolation (one per task)
-  - `worktree_setup.sh` - Script that runs when creating new worktrees (customize for project-specific setup like copying .env files)
+  - `scripts/worktree_setup.sh` - Script that runs when creating new worktrees (customize for project-specific setup like copying .env files)
   - `agents/` - Agent prompt templates (markdown files: planner.md, worker.md, etc.)
   - `workflow.yaml` - Optional workflow configuration file (uses default if not present)
 
@@ -218,7 +218,7 @@ Agent processes are managed with multiple cleanup mechanisms:
 
 ### Worktree Setup
 
-When a new worktree is created for a task, `.orkestra/worktree_setup.sh` runs automatically. Use this for project-specific setup:
+When a new worktree is created for a task, `.orkestra/scripts/worktree_setup.sh` runs automatically. Use this for project-specific setup:
 
 ```bash
 WORKTREE_PATH="$1"

@@ -112,8 +112,8 @@ pub fn make_commit(repo_path: &Path, message: &str) -> std::io::Result<()> {
 /// This is used to verify that the setup script is executed when creating worktrees.
 /// The script creates a `.setup_complete` file in the worktree.
 pub fn create_worktree_setup_script(repo_path: &Path) -> std::io::Result<()> {
-    let script_path = repo_path.join(".orkestra/worktree_setup.sh");
-    std::fs::create_dir_all(repo_path.join(".orkestra"))?;
+    let script_path = repo_path.join(".orkestra/scripts/worktree_setup.sh");
+    std::fs::create_dir_all(repo_path.join(".orkestra/scripts"))?;
 
     let script_content = r#"#!/bin/bash
 # Test worktree setup script - creates a marker file

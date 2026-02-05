@@ -134,7 +134,7 @@ pub trait GitService: Send + Sync {
     /// Creates branch `task/{task_id}` from `base_branch` (or current HEAD if None)
     /// and a worktree at `.orkestra/worktrees/{task_id}`.
     ///
-    /// If `.orkestra/worktree_setup.sh` exists, it will be executed with the
+    /// If `.orkestra/scripts/worktree_setup.sh` exists, it will be executed with the
     /// worktree path as an argument (for project-specific setup like copying .env).
     fn create_worktree(
         &self,
@@ -156,7 +156,7 @@ pub trait GitService: Send + Sync {
 
     /// Run the worktree setup script.
     ///
-    /// Executes `.orkestra/worktree_setup.sh` with the worktree path as an argument.
+    /// Executes `.orkestra/scripts/worktree_setup.sh` with the worktree path as an argument.
     /// Returns `Ok(())` if the script doesn't exist or succeeds.
     fn run_setup_script(&self, worktree_path: &Path) -> Result<(), GitError>;
 

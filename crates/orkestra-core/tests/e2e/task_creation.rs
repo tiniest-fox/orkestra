@@ -135,7 +135,8 @@ fn test_setup_script_failure_fails_task() {
     let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
 
     // Write a setup script that exits with error
-    let script_path = ctx.repo_path().join(".orkestra/worktree_setup.sh");
+    let script_path = ctx.repo_path().join(".orkestra/scripts/worktree_setup.sh");
+    std::fs::create_dir_all(script_path.parent().unwrap()).expect("Should create scripts dir");
     std::fs::write(&script_path, "#!/bin/bash\nexit 1\n").expect("Should write failing script");
 
     #[cfg(unix)]

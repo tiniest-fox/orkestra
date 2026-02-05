@@ -41,13 +41,13 @@ impl Git2GitService {
 
     /// Run the worktree setup script if it exists (synchronous, returns errors).
     ///
-    /// Looks for `.orkestra/worktree_setup.sh` in the main repo and runs it
+    /// Looks for `.orkestra/scripts/worktree_setup.sh` in the main repo and runs it
     /// with the worktree path as an argument. This allows projects to customize
     /// worktree setup (e.g., copying .env files, running pnpm install).
     ///
     /// Returns an error if the script fails - setup failures should fail the task.
     fn run_worktree_setup(&self, worktree_path: &Path) -> Result<(), GitError> {
-        let setup_script = self.repo_path.join(".orkestra/worktree_setup.sh");
+        let setup_script = self.repo_path.join(".orkestra/scripts/worktree_setup.sh");
 
         if !setup_script.exists() {
             return Ok(()); // No script = success

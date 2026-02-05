@@ -30,7 +30,7 @@ export function Slot({
     throw new Error("Slot must be used within a PanelLayout");
   }
 
-  const { direction, gap, registerSlot, unregisterSlot } = context;
+  const { direction, registerSlot, unregisterSlot } = context;
 
   // Track content switching state - use ref for synchronous checks in effects
   const prevContentKeyRef = useRef(contentKey);
@@ -132,23 +132,21 @@ export function Slot({
     ? ""
     : "shadow-panel rounded-panel bg-white dark:bg-stone-900";
 
-  // Gap is handled via margin (not grid gap) so hidden slots don't create space
-  const gapStyle: React.CSSProperties = direction === "horizontal"
-    ? { marginLeft: gap }
-    : { marginTop: gap };
-
   return (
     <div
-      className={`h-full min-w-0 min-h-0 flex flex-col ${visualClasses} ${className}`}
+      className="h-full min-w-0 min-h-0 flex flex-col"
       style={{
-        ...gapStyle,
         opacity: shouldShowContent ? 1 : 0,
+        pointerEvents: shouldShowContent ? "auto" : "none",
         transition: `opacity ${ANIMATION_CONFIG.duration * 0.5}s ease-out`,
       }}
     >
-      {/* Content wrapper - flex-1 to fill, fixed size for fixed slots to prevent squishing */}
-      <div className="flex-1 min-h-0 flex flex-col" style={contentStyle}>
-        {displayedContent}
+      {/* Visual wrapper: shadow, rounded corners, background */}
+      <div className={`flex-1 min-h-0 flex flex-col ${visualClasses} ${className}`}>
+        {/* Content wrapper - fixed size for fixed slots to prevent squishing */}
+        <div className="flex-1 min-h-0 flex flex-col" style={contentStyle}>
+          {displayedContent}
+        </div>
       </div>
     </div>
   );

@@ -77,17 +77,12 @@ export function PanelLayout({ children, direction = "horizontal", gap = 8, class
     ? { gridTemplateColumns: gridTemplate }
     : { gridTemplateRows: gridTemplate };
 
-  // Negative margin offsets the first slot's margin (slots add their own gap)
-  const containerStyle: React.CSSProperties = direction === "horizontal"
-    ? { marginLeft: -gap }
-    : { marginTop: -gap };
-
   return (
     <SlotLayoutContext.Provider value={contextValue}>
       <PanelContainerContext.Provider value={{ inContainer: true }}>
         <motion.div
           className={`grid h-full w-full min-w-0 ${className}`}
-          style={containerStyle}
+          style={{ gap }}
           animate={animateStyle}
           transition={panelTransition}
         >

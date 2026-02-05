@@ -4,7 +4,11 @@
 //! - **File**: Written to `.orkestra/debug.log` when `ORKESTRA_DEBUG=1` is set.
 //! - **Hook**: An optional callback registered at runtime (e.g., to emit Tauri events).
 //!
-//! Both channels are independent — either, both, or neither can be active.
+//! Additionally provides agent output logging:
+//! - **Agent log**: Written to `.orkestra/agents.log` (always enabled when initialized).
+//!   Contains structured `LogEntry` JSON from agent stdout for debugging agent behavior.
+//!
+//! Both debug channels are independent — either, both, or neither can be active.
 //! The `orkestra_debug!` macro only evaluates its arguments when at least one channel is active.
 //!
 //! # Usage
@@ -15,6 +19,7 @@
 //!
 //! # View logs
 //! tail -f .orkestra/debug.log
+//! tail -f .orkestra/agents.log
 //! ```
 //!
 //! ```ignore
@@ -33,12 +38,20 @@ static DEBUG_STATE: OnceLock<DebugState> = OnceLock::new();
 type DebugHookFn = Mutex<Box<dyn Fn(&str, &str) + Send>>;
 static DEBUG_HOOK: OnceLock<DebugHookFn> = OnceLock::new();
 
+/// Agent log state (separate from debug logging).
+static AGENT_LOG_STATE: OnceLock<AgentLogState> = OnceLock::new();
+
 const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024; // 5MB
 const TRUNCATE_TO: usize = 2 * 1024 * 1024; // Keep last 2MB
 
 struct DebugState {
     enabled: bool,
     file: Option<Mutex<File>>,
+}
+
+/// State for agent output logging.
+struct AgentLogState {
+    file: Mutex<File>,
 }
 
 /// Initialize the file logger.
@@ -71,6 +84,28 @@ pub fn init(orkestra_dir: &Path) {
     };
 
     let _ = DEBUG_STATE.set(DebugState { enabled, file });
+}
+
+/// Initialize the agent output logger.
+///
+/// Must be called once at startup with the path to the `.orkestra` directory.
+/// Always creates `.orkestra/agents.log` (no env var needed since it's for structured agent output).
+pub fn init_agent_log(orkestra_dir: &Path) {
+    let path = orkestra_dir.join("agents.log");
+    match OpenOptions::new().create(true).append(true).open(&path) {
+        Ok(f) => {
+            let _ = AGENT_LOG_STATE.set(AgentLogState {
+                file: Mutex::new(f),
+            });
+        }
+        Err(e) => {
+            eprintln!(
+                "[orkestra] WARNING: Failed to open agent log {}: {}",
+                path.display(),
+                e
+            );
+        }
+    }
 }
 
 /// Register a hook that receives all debug log messages.
@@ -124,6 +159,31 @@ pub fn log(component: &str, message: &str) {
     if let Some(hook_mutex) = DEBUG_HOOK.get() {
         if let Ok(hook) = hook_mutex.lock() {
             hook(component, message);
+        }
+    }
+}
+
+/// Log agent output to the agent log file.
+///
+/// Writes structured JSON log entries from agent stdout to `.orkestra/agents.log`.
+/// Each line is formatted as: `{timestamp} [{task_id}/{stage}] {json}`
+///
+/// This is separate from debug logging — agent logs are always written when initialized,
+/// regardless of `ORKESTRA_DEBUG` setting.
+pub fn agent_log(task_id: &str, stage: &str, entry_json: &str) {
+    if let Some(state) = AGENT_LOG_STATE.get() {
+        let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
+        let line = format!("{timestamp} [{task_id}/{stage}] {entry_json}\n");
+
+        if let Ok(mut file) = state.file.lock() {
+            // Check for rotation
+            if let Ok(metadata) = file.metadata() {
+                if metadata.len() > MAX_LOG_SIZE {
+                    rotate_log(&mut file);
+                }
+            }
+            let _ = file.write_all(line.as_bytes());
+            let _ = file.flush();
         }
     }
 }

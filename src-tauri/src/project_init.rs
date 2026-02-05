@@ -36,6 +36,9 @@ pub fn initialize_project(project_root: &Path) -> Result<ProjectState, String> {
     // Initialize debug logging for this project
     orkestra_core::debug_log::init(&orkestra_dir);
 
+    // Initialize agent output logging (separate from debug logs)
+    orkestra_core::debug_log::init_agent_log(&orkestra_dir);
+
     // Load or create workflow config
     let workflow_config = load_workflow_for_project(project_root).map_err(|e| {
         format!(

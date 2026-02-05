@@ -465,11 +465,18 @@ impl StageExecutionService {
         completed
     }
 
-    /// Persist collected log entries to the database.
+    /// Persist collected log entries to the database and agent log file.
     ///
     /// Non-fatal: if a write fails, logs the error and continues.
     fn persist_log_entries(&self, stage_session_id: &str, entries: &[LogEntry]) {
+        // Parse task_id and stage from stage_session_id (format: "{task_id}-{stage}")
+        let (task_id, stage) = stage_session_id
+            .rsplit_once('-')
+            .map(|(tid, s)| (tid, s))
+            .unwrap_or((stage_session_id, "unknown"));
+
         for entry in entries {
+            // Persist to database
             if let Err(e) = self.store.append_log_entry(stage_session_id, entry) {
                 crate::orkestra_debug!(
                     "stage_execution",
@@ -477,6 +484,11 @@ impl StageExecutionService {
                     stage_session_id,
                     e
                 );
+            }
+
+            // Write to agents.log file
+            if let Ok(json) = serde_json::to_string(entry) {
+                crate::debug_log::agent_log(task_id, stage, &json);
             }
         }
     }

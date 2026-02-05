@@ -17,3 +17,61 @@ pub mod tasks;
 
 /// Deterministic timestamp for test fixtures.
 pub const FIXTURE_TIMESTAMP: &str = "2025-01-24T10:00:00Z";
+
+/// Build the standard 4-stage workflow used by most tests.
+///
+/// This is the same pipeline that `WorkflowConfig` previously provided as
+/// its `Default` impl: planning → breakdown → work → review, with a
+/// "subtask" flow for child tasks.
+pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
+    use crate::workflow::config::{
+        FlowConfig, FlowStageEntry, StageCapabilities, StageConfig, SubtaskCapabilities,
+        WorkflowConfig,
+    };
+    use std::collections::HashMap;
+
+    let mut flows = HashMap::new();
+    flows.insert(
+        "subtask".to_string(),
+        FlowConfig {
+            description: "Simplified pipeline for subtasks (work → review)".to_string(),
+            icon: Some("git-branch".to_string()),
+            stages: vec![
+                FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: None,
+                },
+                FlowStageEntry {
+                    stage_name: "review".to_string(),
+                    overrides: None,
+                },
+            ],
+        },
+    );
+
+    WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_display_name("Planning")
+            .with_prompt("planner.md")
+            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("breakdown", "breakdown")
+            .with_display_name("Breaking Down")
+            .with_prompt("breakdown.md")
+            .with_inputs(vec!["plan".into()])
+            .with_capabilities(StageCapabilities {
+                subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
+                ..Default::default()
+            }),
+        StageConfig::new("work", "summary")
+            .with_display_name("Working")
+            .with_prompt("worker.md")
+            .with_inputs(vec!["plan".into()]),
+        StageConfig::new("review", "verdict")
+            .with_display_name("Reviewing")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["plan".into(), "summary".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+            .automated(),
+    ])
+    .with_flows(flows)
+}

@@ -3,7 +3,7 @@
 //! These tests verify that invalid workflow configurations produce
 //! clear, actionable error messages during startup.
 
-use orkestra_core::workflow::config::{load_workflow, WorkflowConfig};
+use orkestra_core::workflow::config::{load_workflow, LoadError, WorkflowConfig};
 use std::fs;
 use tempfile::TempDir;
 
@@ -267,15 +267,15 @@ integration:
 }
 
 #[test]
-fn test_startup_with_default_config_when_file_missing() {
+fn test_startup_with_missing_file_returns_error() {
     let temp = TempDir::new().unwrap();
     // No workflow.yaml file exists
 
     let result = load_workflow(&temp.path().join(".orkestra/workflow.yaml"));
-    assert!(result.is_ok(), "Should succeed with default config");
-
-    let config = result.unwrap();
-    assert_eq!(config, WorkflowConfig::default());
+    assert!(
+        matches!(result, Err(LoadError::NotFound(_))),
+        "Should return NotFound error when file is missing"
+    );
 }
 
 // =============================================================================

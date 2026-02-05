@@ -11,7 +11,7 @@ use orkestra_core::{
     utility::UtilityRunner,
     workflow::{
         load_workflow_for_project, Git2GitService, GitService, Phase, SqliteWorkflowStore, Status,
-        Task, WorkflowApi, WorkflowConfig,
+        Task, WorkflowApi,
     },
 };
 
@@ -331,11 +331,9 @@ fn init_workflow_api() -> Result<WorkflowApi, String> {
     orkestra_core::ensure_orkestra_project(&orkestra_dir)
         .map_err(|e| format!("Failed to create .orkestra structure: {e}"))?;
 
-    // Load workflow config (or use default)
-    let workflow_config = load_workflow_for_project(&project_root).unwrap_or_else(|e| {
-        eprintln!("Warning: Failed to load workflow config: {e}, using default");
-        WorkflowConfig::default()
-    });
+    // Load workflow config
+    let workflow_config = load_workflow_for_project(&project_root)
+        .map_err(|e| format!("Failed to load workflow config: {e}"))?;
 
     // Open database connection (creates if doesn't exist)
     let conn = DatabaseConnection::open(&db_path)

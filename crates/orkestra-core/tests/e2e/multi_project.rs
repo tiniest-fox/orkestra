@@ -4,7 +4,7 @@
 //! with each other's state, database, or orchestrator.
 
 use super::helpers::{MockAgentOutput, TestEnv};
-use orkestra_core::workflow::config::WorkflowConfig;
+use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::runtime::Phase;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -14,11 +14,11 @@ use std::time::Duration;
 fn test_parallel_project_isolation() {
     // Create two separate project environments with default workflow
     let env1 = Arc::new(Mutex::new(TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     )));
     let env2 = Arc::new(Mutex::new(TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     )));
 
@@ -129,11 +129,11 @@ fn test_parallel_project_isolation() {
 fn test_database_isolation() {
     // Create two projects
     let env1 = TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     );
     let env2 = TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     );
 
@@ -176,11 +176,11 @@ fn test_database_isolation() {
 fn test_phase_state_isolation() {
     // Create two projects
     let env1 = TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     );
     let env2 = TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     );
 
@@ -229,11 +229,11 @@ fn test_phase_state_isolation() {
 fn test_concurrent_task_creation() {
     // Create two projects
     let env1 = Arc::new(Mutex::new(TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     )));
     let env2 = Arc::new(Mutex::new(TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     )));
 

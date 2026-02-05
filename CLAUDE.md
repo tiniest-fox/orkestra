@@ -108,7 +108,7 @@ Other top-level modules:
 
 ### Configurable Workflow System
 
-Tasks progress through an ordered list of stages defined in `StageConfig` structs (`workflow/config/stage.rs`). The workflow is loaded from `.orkestra/workflow.yaml` by `load_workflow_for_project()` in `workflow/config/loader.rs`, falling back to `WorkflowConfig::default()` if absent.
+Tasks progress through an ordered list of stages defined in `StageConfig` structs (`workflow/config/stage.rs`). The workflow is loaded from `.orkestra/workflow.yaml` by `load_workflow_for_project()` in `workflow/config/loader.rs`. The file must exist — `ensure_orkestra_project()` creates it on first init.
 
 **Key domain types** (`workflow/config/`):
 
@@ -137,7 +137,7 @@ To add a stage to this project's workflow:
 2. Add the stage entry to `.orkestra/workflow.yaml`
 3. No Rust changes needed — the config loader, schema generator, and orchestrator handle it generically
 
-The built-in default workflow (`WorkflowConfig::default()` in `workflow.rs`) defines: `planning → breakdown → work → review`. This project's `.orkestra/workflow.yaml` extends it to: `planning → breakdown → work → checks (script) → review → compound`.
+The standard workflow template (created by `ensure_orkestra_project()` on init) defines: `planning → breakdown → work → review`. This project's `.orkestra/workflow.yaml` extends it to: `planning → breakdown → work → checks (script) → review → compound`.
 
 #### Flows (Alternate Pipelines)
 

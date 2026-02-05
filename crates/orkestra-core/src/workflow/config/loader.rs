@@ -1,6 +1,6 @@
 //! Workflow configuration loading.
 //!
-//! Loads workflow configuration from YAML files or uses the default.
+//! Loads workflow configuration from YAML files. Errors if the file is missing.
 
 use std::path::Path;
 
@@ -9,6 +9,10 @@ use super::workflow::WorkflowConfig;
 /// Error type for workflow loading.
 #[derive(Debug, thiserror::Error)]
 pub enum LoadError {
+    /// Workflow file not found.
+    #[error("No workflow.yaml found at {0} — Orkestra requires a workflow.yaml to operate")]
+    NotFound(String),
+
     /// File could not be read.
     #[error("Failed to read workflow file: {0}")]
     Io(#[from] std::io::Error),
@@ -24,11 +28,11 @@ pub enum LoadError {
 
 /// Load workflow configuration from a YAML file.
 ///
-/// If the file doesn't exist, returns the default workflow.
+/// Returns an error if the file doesn't exist.
 /// Validates the configuration after loading.
 pub fn load_workflow(path: &Path) -> Result<WorkflowConfig, LoadError> {
     if !path.exists() {
-        return Ok(WorkflowConfig::default());
+        return Err(LoadError::NotFound(path.display().to_string()));
     }
 
     let content = std::fs::read_to_string(path)?;
@@ -45,7 +49,7 @@ pub fn load_workflow(path: &Path) -> Result<WorkflowConfig, LoadError> {
 /// Load workflow from a project directory.
 ///
 /// Looks for `.orkestra/workflow.yaml` in the project root.
-/// Returns the default workflow if the file doesn't exist.
+/// Returns an error if the file doesn't exist.
 pub fn load_workflow_for_project(project_root: &Path) -> Result<WorkflowConfig, LoadError> {
     let workflow_path = project_root.join(".orkestra").join("workflow.yaml");
     load_workflow(&workflow_path)
@@ -57,13 +61,10 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn test_load_nonexistent_returns_default() {
+    fn test_load_nonexistent_returns_error() {
         let path = Path::new("/nonexistent/workflow.yaml");
         let result = load_workflow(path);
-        assert!(result.is_ok());
-
-        let config = result.unwrap();
-        assert_eq!(config, WorkflowConfig::default());
+        assert!(matches!(result, Err(LoadError::NotFound(_))));
     }
 
     #[test]
@@ -153,7 +154,6 @@ integration:
         // No .orkestra directory
 
         let result = load_workflow_for_project(dir.path());
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), WorkflowConfig::default());
+        assert!(matches!(result, Err(LoadError::NotFound(_))));
     }
 }

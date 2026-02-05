@@ -102,8 +102,10 @@ fn cleanup_all_agents(app_handle: &AppHandle) {
             continue;
         };
 
-        let workflow_config =
-            orkestra_core::workflow::load_workflow_for_project(&project_root).unwrap_or_default();
+        let Ok(workflow_config) = orkestra_core::workflow::load_workflow_for_project(&project_root)
+        else {
+            continue;
+        };
         let store = orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared());
         let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::new(store));
 
@@ -161,8 +163,10 @@ fn cleanup_agents_standalone() {
             continue;
         };
 
-        let workflow_config =
-            orkestra_core::workflow::load_workflow_for_project(&project_root).unwrap_or_default();
+        let Ok(workflow_config) = orkestra_core::workflow::load_workflow_for_project(&project_root)
+        else {
+            continue;
+        };
         let store = orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared());
         let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::new(store));
 

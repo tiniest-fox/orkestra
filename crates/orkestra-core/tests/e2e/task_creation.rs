@@ -6,7 +6,8 @@
 
 use std::path::Path;
 
-use orkestra_core::workflow::{config::WorkflowConfig, runtime::Phase};
+use orkestra_core::testutil::fixtures::test_default_workflow;
+use orkestra_core::workflow::runtime::Phase;
 
 use crate::helpers::TestEnv;
 
@@ -16,7 +17,7 @@ use crate::helpers::TestEnv;
 
 #[test]
 fn test_task_creation_creates_worktree() {
-    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+    let ctx = TestEnv::with_git(&test_default_workflow(), &["planner", "worker"]);
 
     let task = ctx.create_task("Test worktree", "Verify worktree creation", None);
 
@@ -43,7 +44,7 @@ fn test_task_creation_creates_worktree() {
 
 #[test]
 fn test_task_creation_sets_base_branch() {
-    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+    let ctx = TestEnv::with_git(&test_default_workflow(), &["planner", "worker"]);
 
     let task = ctx.create_task(
         "Base branch test",
@@ -60,7 +61,7 @@ fn test_task_creation_sets_base_branch() {
 
 #[test]
 fn test_task_creation_from_specific_branch() {
-    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+    let ctx = TestEnv::with_git(&test_default_workflow(), &["planner", "worker"]);
 
     // Create a "feature" branch in the test repo
     std::process::Command::new("git")
@@ -89,7 +90,7 @@ fn test_task_creation_from_specific_branch() {
 
 #[test]
 fn test_task_starts_in_setting_up() {
-    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+    let ctx = TestEnv::with_git(&test_default_workflow(), &["planner", "worker"]);
 
     // Call the API directly (don't use create_task helper which waits for setup)
     let task = ctx
@@ -110,7 +111,7 @@ fn test_task_starts_in_setting_up() {
 
 #[test]
 fn test_setup_script_runs_on_creation() {
-    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+    let ctx = TestEnv::with_git(&test_default_workflow(), &["planner", "worker"]);
 
     // Write a setup script that creates a marker file
     orkestra_core::testutil::create_worktree_setup_script(ctx.repo_path())
@@ -132,7 +133,7 @@ fn test_setup_script_runs_on_creation() {
 
 #[test]
 fn test_setup_script_failure_fails_task() {
-    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+    let ctx = TestEnv::with_git(&test_default_workflow(), &["planner", "worker"]);
 
     // Write a setup script that exits with error
     let script_path = ctx.repo_path().join(".orkestra/scripts/worktree_setup.sh");
@@ -165,7 +166,7 @@ fn test_setup_script_failure_fails_task() {
 
 #[test]
 fn test_subtask_gets_own_worktree() {
-    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+    let ctx = TestEnv::with_git(&test_default_workflow(), &["planner", "worker"]);
 
     let parent = ctx.create_task("Parent", "Parent task for subtask test", None);
     let parent_id = parent.id.clone();
@@ -211,7 +212,7 @@ fn test_subtask_gets_own_worktree() {
 
 #[test]
 fn test_multiple_tasks_get_separate_worktrees() {
-    let ctx = TestEnv::with_git(&WorkflowConfig::default(), &["planner", "worker"]);
+    let ctx = TestEnv::with_git(&test_default_workflow(), &["planner", "worker"]);
 
     let task1 = ctx.create_task("Task 1", "First task", None);
     let task2 = ctx.create_task("Task 2", "Second task", None);
@@ -241,7 +242,7 @@ fn test_multiple_tasks_get_separate_worktrees() {
 
 #[test]
 fn test_empty_title_fallback() {
-    let ctx = TestEnv::with_git_title_fail(&WorkflowConfig::default(), &["planner", "worker"]);
+    let ctx = TestEnv::with_git_title_fail(&test_default_workflow(), &["planner", "worker"]);
 
     // Empty title + description — mock title gen fails, should fall back to description
     let task = ctx.create_task("", "Fix the login bug on the dashboard", None);

@@ -767,61 +767,10 @@ impl WorkflowConfig {
     }
 }
 
-impl Default for WorkflowConfig {
-    /// Create the default workflow matching the current Orkestra behavior.
-    fn default() -> Self {
-        use super::stage::{StageCapabilities, StageConfig, SubtaskCapabilities};
-
-        let mut flows = HashMap::new();
-        flows.insert(
-            "subtask".to_string(),
-            FlowConfig {
-                description: "Simplified pipeline for subtasks (work → review)".to_string(),
-                icon: Some("git-branch".to_string()),
-                stages: vec![
-                    FlowStageEntry {
-                        stage_name: "work".to_string(),
-                        overrides: None,
-                    },
-                    FlowStageEntry {
-                        stage_name: "review".to_string(),
-                        overrides: None,
-                    },
-                ],
-            },
-        );
-
-        Self::new(vec![
-            StageConfig::new("planning", "plan")
-                .with_display_name("Planning")
-                .with_prompt("planner.md")
-                .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("breakdown", "breakdown")
-                .with_display_name("Breaking Down")
-                .with_prompt("breakdown.md")
-                .with_inputs(vec!["plan".into()])
-                .with_capabilities(StageCapabilities {
-                    subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
-                    ..Default::default()
-                }),
-            StageConfig::new("work", "summary")
-                .with_display_name("Working")
-                .with_prompt("worker.md")
-                .with_inputs(vec!["plan".into()]),
-            StageConfig::new("review", "verdict")
-                .with_display_name("Reviewing")
-                .with_prompt("reviewer.md")
-                .with_inputs(vec!["plan".into(), "summary".into()])
-                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-                .automated(),
-        ])
-        .with_flows(flows)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testutil::fixtures::test_default_workflow;
     use crate::workflow::config::stage::StageConfig;
 
     #[test]
@@ -837,7 +786,7 @@ mod tests {
 
     #[test]
     fn test_workflow_stage_lookup() {
-        let workflow = WorkflowConfig::default();
+        let workflow = test_default_workflow();
 
         let planning = workflow.stage("planning");
         assert!(planning.is_some());
@@ -849,7 +798,7 @@ mod tests {
 
     #[test]
     fn test_workflow_next_stage() {
-        let workflow = WorkflowConfig::default();
+        let workflow = test_default_workflow();
 
         let next = workflow.next_stage("planning");
         assert!(next.is_some());
@@ -861,14 +810,14 @@ mod tests {
 
     #[test]
     fn test_workflow_stage_names() {
-        let workflow = WorkflowConfig::default();
+        let workflow = test_default_workflow();
         let names = workflow.stage_names();
         assert_eq!(names, vec!["planning", "breakdown", "work", "review"]);
     }
 
     #[test]
     fn test_workflow_validation_valid() {
-        let workflow = WorkflowConfig::default();
+        let workflow = test_default_workflow();
         assert!(workflow.is_valid());
         assert!(workflow.validate().is_empty());
     }
@@ -925,7 +874,7 @@ mod tests {
 
     #[test]
     fn test_workflow_serialization() {
-        let workflow = WorkflowConfig::default();
+        let workflow = test_default_workflow();
         let yaml = serde_yaml::to_string(&workflow).unwrap();
 
         assert!(yaml.contains("version: 1"));
@@ -938,7 +887,7 @@ mod tests {
 
     #[test]
     fn test_default_workflow_matches_orkestra() {
-        let workflow = WorkflowConfig::default();
+        let workflow = test_default_workflow();
 
         // Should have 4 stages
         assert_eq!(workflow.stages.len(), 4);
@@ -961,7 +910,7 @@ mod tests {
 
     #[test]
     fn test_default_workflow_has_prompt_paths() {
-        let workflow = WorkflowConfig::default();
+        let workflow = test_default_workflow();
 
         // Each stage should have the correct prompt path
         let planning = workflow.stage("planning").unwrap();
@@ -1056,7 +1005,7 @@ mod tests {
 
     #[test]
     fn test_integration_config_serialization() {
-        let workflow = WorkflowConfig::default();
+        let workflow = test_default_workflow();
         let yaml = serde_yaml::to_string(&workflow).unwrap();
 
         // Integration config should be serialized
@@ -1220,7 +1169,7 @@ integration:
 
     #[test]
     fn test_default_workflow_has_subtask_flow() {
-        let workflow = WorkflowConfig::default();
+        let workflow = test_default_workflow();
 
         // Breakdown stage should have subtasks.flow pointing to "subtask"
         let breakdown = workflow.stage("breakdown").unwrap();

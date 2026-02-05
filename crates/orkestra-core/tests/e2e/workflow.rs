@@ -18,6 +18,7 @@
 //! This test uses real infrastructure (database, files, git) and only mocks
 //! Claude Code responses. The test uses the `WorkflowApi` from the services layer.
 
+use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::{
     config::{StageConfig, WorkflowConfig},
     domain::{Question, QuestionAnswer, QuestionOption},
@@ -52,7 +53,7 @@ use crate::helpers::{MockAgentOutput, TestEnv};
 #[allow(clippy::too_many_lines)] // Exhaustive e2e test is intentionally comprehensive
 fn test_exhaustive_workflow_flow() {
     let ctx = TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     );
 
@@ -603,7 +604,7 @@ fn test_exhaustive_workflow_flow() {
 #[test]
 fn test_approval_validation() {
     let ctx = TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     );
 
@@ -659,7 +660,7 @@ fn test_approval_validation() {
 #[test]
 fn test_workflow_config_from_file() {
     let ctx = TestEnv::with_git(
-        &WorkflowConfig::default(),
+        &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
     );
     let api = ctx.api();

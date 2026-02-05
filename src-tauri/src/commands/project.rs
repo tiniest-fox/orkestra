@@ -96,6 +96,12 @@ pub async fn open_project(
             )
         })?;
 
+    // Add to global project roots list for signal handler cleanup
+    {
+        let mut roots = crate::PROJECT_ROOTS.lock().unwrap();
+        roots.push(project_path.clone());
+    }
+
     // Create a new window for this project
     let url = format!("/?project={}", urlencoding::encode(&path));
     let _window = WebviewWindowBuilder::new(

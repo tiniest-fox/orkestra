@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import {
   ANIMATION_CONFIG,
+  PanelContainerContext,
   SlotLayoutContext,
   type SlotProps,
 } from "./types";
@@ -132,6 +133,13 @@ export function Slot({
     ? ""
     : "shadow-panel rounded-panel bg-white dark:bg-stone-900";
 
+  // When plain, reset PanelContainerContext so Panels inside render their own shadows
+  const content = (
+    <div className="flex-1 min-h-0 flex flex-col" style={contentStyle}>
+      {displayedContent}
+    </div>
+  );
+
   return (
     <div
       className="h-full min-w-0 min-h-0 flex flex-col"
@@ -143,10 +151,13 @@ export function Slot({
     >
       {/* Visual wrapper: shadow, rounded corners, background */}
       <div className={`flex-1 min-h-0 flex flex-col ${visualClasses} ${className}`}>
-        {/* Content wrapper - fixed size for fixed slots to prevent squishing */}
-        <div className="flex-1 min-h-0 flex flex-col" style={contentStyle}>
-          {displayedContent}
-        </div>
+        {plain ? (
+          <PanelContainerContext.Provider value={{ inContainer: false }}>
+            {content}
+          </PanelContainerContext.Provider>
+        ) : (
+          content
+        )}
       </div>
     </div>
   );

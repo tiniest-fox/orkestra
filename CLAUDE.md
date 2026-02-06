@@ -60,6 +60,16 @@ The project uses two caching mechanisms for faster builds:
 - **sccache** - Caches Rust compilation artifacts. Configured in `.cargo/config.toml`. Clean builds with warm cache: ~24s (vs ~64s without).
 - **pnpm** - Uses a global content-addressable store with hard links. Fresh `node_modules` install with warm cache: ~1.2s.
 
+## Schema Evolution
+
+**When adding or modifying database migrations:**
+
+1. Create the migration file in `crates/orkestra-core/src/adapters/sqlite/migrations/` (follow Refinery naming: `VN__description.sql`)
+2. Update `SCHEMA.md` to reflect the schema changes
+3. Update the Database Schema section in this file if the changes are architecturally significant
+
+This ensures schema documentation stays synchronized with the actual database structure.
+
 ## Cross-Cutting Flow Documentation
 
 These docs trace operations that span multiple files. Read these instead of exploring when working on these flows.
@@ -105,6 +115,17 @@ Other top-level modules:
 - **`prompts/`** - JSON schemas for agent outputs and prompt templates
 - **`process.rs`** - Process spawning and management
 - **`project.rs`** - Project root detection
+
+### Database Schema
+
+Orkestra stores workflow state in SQLite (`.orkestra/.database/orkestra.db`). The schema consists of four tables:
+
+- **`workflow_tasks`** — Task definitions, status, artifacts, git state, and configuration
+- **`workflow_iterations`** — Individual agent/script runs within stages (tracks rejections and feedback loops)
+- **`workflow_stage_sessions`** — Agent process session tracking for recovery across restarts
+- **`log_entries`** — Structured logs from agent sessions
+
+See [`SCHEMA.md`](SCHEMA.md) for full column definitions, relationships, and indexes.
 
 ### Configurable Workflow System
 

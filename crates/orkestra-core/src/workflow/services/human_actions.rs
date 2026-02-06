@@ -284,15 +284,13 @@ impl WorkflowApi {
     /// # Errors
     ///
     /// Returns `InvalidTransition` if the task is not in Failed or Blocked state.
-    pub fn retry(&self, task_id: &str) -> WorkflowResult<Task> {
+    pub fn retry(&self, task_id: &str, instructions: Option<&str>) -> WorkflowResult<Task> {
         let mut task = self.get_task(task_id)?;
 
         // Verify task is in a retryable state (failed or blocked)
-        if !matches!(
-            task.status,
-            crate::workflow::runtime::Status::Failed { .. }
-                | crate::workflow::runtime::Status::Blocked { .. }
-        ) {
+        let was_failed = matches!(task.status, Status::Failed { .. });
+        let was_blocked = matches!(task.status, Status::Blocked { .. });
+        if !was_failed && !was_blocked {
             return Err(WorkflowError::InvalidTransition(format!(
                 "Cannot retry task {task_id} - not in failed or blocked state"
             )));
@@ -319,7 +317,7 @@ impl WorkflowApi {
         let now = chrono::Utc::now().to_rfc3339();
 
         // Transition task back to its last stage
-        task.status = crate::workflow::runtime::Status::active(&last_stage);
+        task.status = Status::active(&last_stage);
 
         // If worktree setup never completed, go back to AwaitingSetup
         if task.worktree_path.is_none() {
@@ -335,12 +333,19 @@ impl WorkflowApi {
 
         task.updated_at.clone_from(&now);
 
-        // Create new iteration with Interrupted trigger to indicate recovery via IterationService
-        self.iteration_service.create_iteration(
-            &task.id,
-            &last_stage,
-            Some(IterationTrigger::Interrupted),
-        )?;
+        // Create new iteration with trigger that reflects the retry context
+        let trimmed = instructions.map(str::trim).filter(|s| !s.is_empty());
+        let trigger = if was_failed {
+            IterationTrigger::RetryFailed {
+                instructions: trimmed.map(String::from),
+            }
+        } else {
+            IterationTrigger::RetryBlocked {
+                instructions: trimmed.map(String::from),
+            }
+        };
+        self.iteration_service
+            .create_iteration(&task.id, &last_stage, Some(trigger))?;
 
         // Save updated task
         self.store.save_task(&task)?;
@@ -710,5 +715,123 @@ mod tests {
 
         let result = api.answer_questions(&task.id, vec![]);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    /// Create an API with a task in Failed state at the planning stage.
+    fn api_with_failed_task() -> (WorkflowApi, Task) {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+
+        // Simulate setup completion + agent failure
+        task.phase = Phase::Idle;
+        task.worktree_path = Some("/tmp/fake-worktree".into());
+        task.status = Status::failed("Something went wrong");
+        api.store.save_task(&task).unwrap();
+
+        (api, task)
+    }
+
+    /// Create an API with a task in Blocked state at the planning stage.
+    fn api_with_blocked_task() -> (WorkflowApi, Task) {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+
+        // Simulate setup completion + agent blocked
+        task.phase = Phase::Idle;
+        task.worktree_path = Some("/tmp/fake-worktree".into());
+        task.status = Status::blocked("Waiting on external service");
+        api.store.save_task(&task).unwrap();
+
+        (api, task)
+    }
+
+    #[test]
+    fn test_retry_failed_without_instructions() {
+        let (api, task) = api_with_failed_task();
+
+        let task = api.retry(&task.id, None).unwrap();
+
+        assert_eq!(task.current_stage(), Some("planning"));
+        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.status, Status::Active { .. }));
+
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let last = iterations.last().unwrap();
+        match &last.incoming_context {
+            Some(IterationTrigger::RetryFailed { instructions }) => {
+                assert!(instructions.is_none());
+            }
+            other => panic!("Expected RetryFailed trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_retry_failed_with_instructions() {
+        let (api, task) = api_with_failed_task();
+
+        let task = api
+            .retry(&task.id, Some("Try using the backup API endpoint"))
+            .unwrap();
+
+        assert_eq!(task.current_stage(), Some("planning"));
+        assert_eq!(task.phase, Phase::Idle);
+
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let last = iterations.last().unwrap();
+        match &last.incoming_context {
+            Some(IterationTrigger::RetryFailed { instructions }) => {
+                assert_eq!(
+                    instructions.as_deref(),
+                    Some("Try using the backup API endpoint")
+                );
+            }
+            other => panic!("Expected RetryFailed trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_retry_blocked_with_instructions() {
+        let (api, task) = api_with_blocked_task();
+
+        let task = api
+            .retry(&task.id, Some("The dependency is now available"))
+            .unwrap();
+
+        assert_eq!(task.current_stage(), Some("planning"));
+        assert_eq!(task.phase, Phase::Idle);
+
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let last = iterations.last().unwrap();
+        match &last.incoming_context {
+            Some(IterationTrigger::RetryBlocked { instructions }) => {
+                assert_eq!(
+                    instructions.as_deref(),
+                    Some("The dependency is now available")
+                );
+            }
+            other => panic!("Expected RetryBlocked trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_retry_with_empty_instructions() {
+        let (api, task) = api_with_failed_task();
+
+        let task = api.retry(&task.id, Some("  ")).unwrap();
+
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let last = iterations.last().unwrap();
+        match &last.incoming_context {
+            Some(IterationTrigger::RetryFailed { instructions }) => {
+                assert!(instructions.is_none());
+            }
+            other => panic!("Expected RetryFailed with no instructions, got {other:?}"),
+        }
     }
 }

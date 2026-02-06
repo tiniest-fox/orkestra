@@ -678,6 +678,8 @@ mod tests {
 
     #[test]
     fn test_reentry_not_detected_on_triggered_iteration() {
+        use crate::workflow::domain::IterationTrigger;
+
         // Same setup but iteration has a Rejection trigger. Should NOT detect re-entry.
         let (service, store) = create_service();
 
@@ -696,7 +698,6 @@ mod tests {
         store.save_iteration(&iter).unwrap();
 
         // Create iteration WITH a trigger (e.g., rejection feedback)
-        use crate::workflow::domain::IterationTrigger;
         let iteration_service = Arc::new(IterationService::new(
             Arc::clone(&store) as Arc<dyn WorkflowStore>
         ));

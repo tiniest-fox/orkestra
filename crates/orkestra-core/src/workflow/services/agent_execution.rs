@@ -181,6 +181,8 @@ impl AgentExecutionService {
                 IterationTrigger::Rejection { feedback, .. }
                 | IterationTrigger::Feedback { feedback } => Some(feedback.as_str()),
                 IterationTrigger::ScriptFailure { error, .. } => Some(error.as_str()),
+                IterationTrigger::RetryFailed { instructions }
+                | IterationTrigger::RetryBlocked { instructions } => instructions.as_deref(),
                 _ => None,
             });
 
@@ -374,6 +376,12 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
             feedback: format!(
                 "The automated checks in the '{from_stage}' stage failed:\n\n{error}"
             ),
+        },
+        Some(IterationTrigger::RetryFailed { instructions }) => ResumeType::RetryFailed {
+            instructions: instructions.clone(),
+        },
+        Some(IterationTrigger::RetryBlocked { instructions }) => ResumeType::RetryBlocked {
+            instructions: instructions.clone(),
         },
     }
 }

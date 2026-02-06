@@ -74,9 +74,13 @@ pub fn workflow_retry(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
+    instructions: Option<String>,
 ) -> Result<Task, TauriError> {
     registry.with_project(window.label(), |state| {
-        state.api()?.retry(&task_id).map_err(Into::into)
+        state
+            .api()?
+            .retry(&task_id, instructions.as_deref())
+            .map_err(Into::into)
     })
 }
 

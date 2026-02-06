@@ -360,7 +360,8 @@ if $HAS_FRONTEND; then
         run_check "pnpm install" "pnpm install"
     fi
 
-    run_check "Frontend lint+format (biome)" "pnpm check:fix"
+    run_check "Frontend lint+format fix (biome)" "pnpm check:fix"
+    run_check "Frontend lint+format verify (biome)" "pnpm check"
     run_check "Frontend type check" "pnpm exec tsc --noEmit"
     run_check "Frontend tests" "pnpm test:run"
 fi
@@ -379,8 +380,9 @@ if $HAS_RUST; then
         run_check "Frontend build" "pnpm build"
     fi
 
-    # Auto-format Rust code
-    run_check "Cargo fmt" "cargo fmt --all"
+    # Auto-format Rust code, then verify nothing changed
+    run_check "Cargo fmt fix" "cargo fmt --all"
+    run_check "Cargo fmt verify" "cargo fmt --all --check"
 
     # Run clippy with auto-fix, then verify no remaining warnings
     # --fix applies automatic fixes, --allow-dirty/--allow-staged permit uncommitted changes

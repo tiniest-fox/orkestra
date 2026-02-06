@@ -22,7 +22,7 @@ pub enum SessionState {
     /// Session was abandoned (task failed, blocked, or stage rejected from).
     Abandoned,
 
-    /// Session was replaced by a newer session for the same (task_id, stage).
+    /// Session was replaced by a newer session for the same (`task_id`, stage).
     /// Preserves full audit trail — the old session's logs and history remain intact.
     Superseded,
 }
@@ -282,7 +282,10 @@ mod tests {
         assert_eq!(serde_json::to_string(&active).unwrap(), "\"active\"");
         assert_eq!(serde_json::to_string(&completed).unwrap(), "\"completed\"");
         assert_eq!(serde_json::to_string(&abandoned).unwrap(), "\"abandoned\"");
-        assert_eq!(serde_json::to_string(&superseded).unwrap(), "\"superseded\"");
+        assert_eq!(
+            serde_json::to_string(&superseded).unwrap(),
+            "\"superseded\""
+        );
     }
 
     #[test]

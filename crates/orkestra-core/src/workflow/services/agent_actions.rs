@@ -247,9 +247,7 @@ impl WorkflowApi {
 
                 // Supersede target stage session if configured (forces fresh spawn)
                 if effective_caps.rejection_resets_session() {
-                    if let Ok(Some(mut session)) =
-                        self.store.get_stage_session(&task.id, &target)
-                    {
+                    if let Ok(Some(mut session)) = self.store.get_stage_session(&task.id, &target) {
                         session.supersede(now);
                         let _ = self.store.save_stage_session(&session);
                     }

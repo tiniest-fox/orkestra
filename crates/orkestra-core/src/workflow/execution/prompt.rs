@@ -641,11 +641,10 @@ fn render_agent_definition(template: &str, ctx: &StagePromptContext<'_>) -> Stri
 
     let mut hb = Handlebars::new();
     hb.register_escape_fn(handlebars::no_escape);
-    hb.render_template(template, &def_ctx)
-        .unwrap_or_else(|e| {
-            eprintln!("Warning: agent definition template error: {e}");
-            template.to_string()
-        })
+    hb.render_template(template, &def_ctx).unwrap_or_else(|e| {
+        eprintln!("Warning: agent definition template error: {e}");
+        template.to_string()
+    })
 }
 
 /// Build a complete prompt by combining agent definition with context.
@@ -694,6 +693,10 @@ pub enum ResumeType {
     Answers { answers: Vec<ResumeQuestionAnswer> },
     /// Stage is being re-run after the full cycle completed (untriggered re-entry).
     Recheck,
+    /// Human retried a failed task, optionally with instructions.
+    RetryFailed { instructions: Option<String> },
+    /// Human retried a blocked task, optionally with instructions.
+    RetryBlocked { instructions: Option<String> },
 }
 
 /// Owned question-answer pair for use in resume prompts.
@@ -709,6 +712,8 @@ const RESUME_FEEDBACK: &str = include_str!("../../prompts/templates/resume/feedb
 const RESUME_INTEGRATION: &str = include_str!("../../prompts/templates/resume/integration.md");
 const RESUME_ANSWERS: &str = include_str!("../../prompts/templates/resume/answers.md");
 const RESUME_RECHECK: &str = include_str!("../../prompts/templates/resume/recheck.md");
+const RESUME_RETRY_FAILED: &str = include_str!("../../prompts/templates/resume/retry_failed.md");
+const RESUME_RETRY_BLOCKED: &str = include_str!("../../prompts/templates/resume/retry_blocked.md");
 
 /// Load and render a resume prompt template.
 ///
@@ -737,6 +742,14 @@ pub fn build_resume_prompt(
             (RESUME_ANSWERS, serde_json::json!({ "answers": answers }))
         }
         ResumeType::Recheck => (RESUME_RECHECK, serde_json::json!({})),
+        ResumeType::RetryFailed { instructions } => (
+            RESUME_RETRY_FAILED,
+            serde_json::json!({ "instructions": instructions }),
+        ),
+        ResumeType::RetryBlocked { instructions } => (
+            RESUME_RETRY_BLOCKED,
+            serde_json::json!({ "instructions": instructions }),
+        ),
     };
 
     // All resume templates need the stage name for the marker

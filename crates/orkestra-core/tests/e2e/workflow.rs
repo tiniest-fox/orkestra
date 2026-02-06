@@ -1498,7 +1498,10 @@ fn test_session_reset_on_cross_stage_rejection() {
 
     let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
     let work_sessions: Vec<_> = all_sessions.iter().filter(|s| s.stage == "work").collect();
-    let review_sessions: Vec<_> = all_sessions.iter().filter(|s| s.stage == "review").collect();
+    let review_sessions: Vec<_> = all_sessions
+        .iter()
+        .filter(|s| s.stage == "review")
+        .collect();
 
     assert_eq!(
         work_sessions.len(),
@@ -1520,7 +1523,8 @@ fn test_session_reset_on_cross_stage_rejection() {
         "Original work session should be superseded. Sessions: {work_sessions:?}"
     );
     assert_eq!(
-        superseded.unwrap().id, original_session_id,
+        superseded.unwrap().id,
+        original_session_id,
         "Superseded session should be the original"
     );
 
@@ -1591,6 +1595,7 @@ fn test_session_reset_on_cross_stage_rejection() {
 /// This is the regression test: same-stage rejection (review → work) without
 /// `reset_session: true` should resume the existing session, not create a new one.
 #[test]
+#[allow(clippy::too_many_lines)]
 fn test_session_not_reset_without_flag() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
     use orkestra_core::workflow::domain::SessionState;
@@ -1708,7 +1713,10 @@ fn test_session_not_reset_without_flag() {
     // Session should NOT be superseded — same session, resumed
     let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
     let work_sessions: Vec<_> = all_sessions.iter().filter(|s| s.stage == "work").collect();
-    let review_sessions: Vec<_> = all_sessions.iter().filter(|s| s.stage == "review").collect();
+    let review_sessions: Vec<_> = all_sessions
+        .iter()
+        .filter(|s| s.stage == "review")
+        .collect();
 
     assert_eq!(
         work_sessions.len(),
@@ -1795,4 +1803,154 @@ fn test_handlebars_passthrough_for_plain_definitions() {
         prompt.contains("## Rules"),
         "Markdown headings should be preserved"
     );
+}
+
+// =============================================================================
+// Retry with Instructions
+// =============================================================================
+
+/// Test that retry instructions on a failed task reach the agent via the
+/// `RetryFailed` resume prompt.
+#[test]
+fn test_retry_failed_with_instructions_sends_resume_prompt() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test retry", "A task that will fail", None);
+    let task_id = task.id.clone();
+
+    // Agent fails
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Failed {
+            error: "Could not reach API".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes failure
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_failed(),
+        "Task should be Failed, got: {:?}",
+        task.status
+    );
+
+    // Human retries with instructions
+    ctx.api()
+        .retry(&task_id, Some("Use the v2 API instead"))
+        .unwrap();
+
+    // Agent succeeds this time
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Plan using v2 API".into(),
+        },
+    );
+    ctx.advance(); // spawns agent with retry_failed resume prompt
+
+    // Verify the resume prompt contains the retry_failed marker and instructions
+    ctx.assert_resume_prompt_contains("retry_failed", &["Use the v2 API instead"]);
+
+    ctx.advance(); // processes artifact output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+}
+
+/// Test that retry instructions on a blocked task reach the agent via the
+/// `RetryBlocked` resume prompt.
+#[test]
+fn test_retry_blocked_with_instructions_sends_resume_prompt() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test blocked retry", "A task that will block", None);
+    let task_id = task.id.clone();
+
+    // Agent reports blocked
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Blocked {
+            reason: "Waiting on CI pipeline".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes blocked output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(
+            task.status,
+            orkestra_core::workflow::runtime::Status::Blocked { .. }
+        ),
+        "Task should be Blocked, got: {:?}",
+        task.status
+    );
+
+    // Human retries with context
+    ctx.api()
+        .retry(&task_id, Some("CI pipeline is green now"))
+        .unwrap();
+
+    // Agent succeeds
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Plan with CI passing".into(),
+        },
+    );
+    ctx.advance(); // spawns agent with retry_blocked resume prompt
+
+    ctx.assert_resume_prompt_contains("retry_blocked", &["CI pipeline is green now"]);
+
+    ctx.advance(); // processes artifact output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+}
+
+/// Test that retry without instructions uses the `retry_failed` trigger
+/// (no instructions in the prompt).
+#[test]
+fn test_retry_failed_without_instructions_sends_resume_prompt() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test retry no instructions", "A task that will fail", None);
+    let task_id = task.id.clone();
+
+    // Agent fails
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Failed {
+            error: "Network timeout".into(),
+        },
+    );
+    ctx.advance(); // spawns agent
+    ctx.advance(); // processes failure
+
+    // Human retries without instructions
+    ctx.api().retry(&task_id, None).unwrap();
+
+    // Agent succeeds
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Plan v2".into(),
+        },
+    );
+    ctx.advance(); // spawns agent with retry_failed resume prompt (no instructions)
+
+    ctx.assert_resume_prompt_contains("retry_failed", &["try again"]);
 }

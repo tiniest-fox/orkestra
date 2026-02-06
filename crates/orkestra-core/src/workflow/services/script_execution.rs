@@ -149,16 +149,16 @@ impl ScriptExecutionService {
         let env = self.build_script_env(task);
 
         // Use caller-provided session ID, or look up from store as fallback
-        let stage_session_id = stage_session_id
-            .map(String::from)
-            .unwrap_or_else(|| {
+        let stage_session_id = stage_session_id.map_or_else(
+            || {
                 self.store
                     .get_stage_session(&task.id, stage)
                     .ok()
                     .flatten()
-                    .map(|s| s.id)
-                    .unwrap_or_else(|| format!("{}-{}", task.id, stage))
-            });
+                    .map_or_else(|| format!("{}-{}", task.id, stage), |s| s.id)
+            },
+            String::from,
+        );
 
         // Write initial log entry to database
         self.append_log_entry(

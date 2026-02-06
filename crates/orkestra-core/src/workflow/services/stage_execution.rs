@@ -545,7 +545,14 @@ impl StageExecutionService {
 
         // Persist provider-generated session IDs (e.g. OpenCode's ses_...) so that
         // future resume attempts use the correct value.
-        for (task_id, stage, session_id) in session_id_updates {
+        self.persist_extracted_session_ids(session_id_updates);
+
+        completed
+    }
+
+    /// Save provider-generated session IDs (e.g. `ses_...` from `OpenCode`) to their stage sessions.
+    fn persist_extracted_session_ids(&self, updates: Vec<(String, String, String)>) {
+        for (task_id, stage, session_id) in updates {
             match self.store.get_stage_session(&task_id, &stage) {
                 Ok(Some(mut session)) => {
                     session.claude_session_id = Some(session_id.clone());
@@ -586,8 +593,6 @@ impl StageExecutionService {
                 }
             }
         }
-
-        completed
     }
 
     /// Poll active script executions (via `ScriptExecutionService`).

@@ -34,6 +34,10 @@ pub enum IterationTrigger {
     Interrupted,
     /// Script stage failed and redirected to this stage.
     ScriptFailure { from_stage: String, error: String },
+    /// Human retried a failed task, optionally with instructions.
+    RetryFailed { instructions: Option<String> },
+    /// Human retried a blocked task, optionally with instructions.
+    RetryBlocked { instructions: Option<String> },
 }
 
 /// A single iteration (attempt) within a stage.

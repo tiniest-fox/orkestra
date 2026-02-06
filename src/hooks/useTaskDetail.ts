@@ -24,8 +24,8 @@ interface UseTaskDetailResult {
   reject: (feedback: string) => Promise<void>;
   /** Answer pending questions. */
   answerQuestions: (answers: WorkflowQuestionAnswer[]) => Promise<void>;
-  /** Retry a failed task. */
-  retry: () => Promise<void>;
+  /** Retry a failed task, optionally with instructions for the agent. */
+  retry: (instructions?: string) => Promise<void>;
   /** Toggle auto-advance mode. */
   setAutoMode: (taskId: string, autoMode: boolean) => Promise<void>;
 }
@@ -84,17 +84,20 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     [task.id, refetch],
   );
 
-  const retry = useCallback(async () => {
-    setIsSubmitting(true);
-    try {
-      await invoke<WorkflowTask>("workflow_retry", { taskId: task.id });
-      refetch();
-    } catch (err) {
-      console.error("Failed to retry task:", err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [task.id, refetch]);
+  const retry = useCallback(
+    async (instructions?: string) => {
+      setIsSubmitting(true);
+      try {
+        await invoke<WorkflowTask>("workflow_retry", { taskId: task.id, instructions });
+        refetch();
+      } catch (err) {
+        console.error("Failed to retry task:", err);
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [task.id, refetch],
+  );
 
   const setAutoMode = useCallback(
     async (taskId: string, autoMode: boolean) => {

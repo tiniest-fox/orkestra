@@ -136,10 +136,10 @@ export function TaskDetailSidebar({
     }
   }, [tabs, activeTab, task.id]);
 
-  const handleRetry = async () => {
+  const handleRetry = async (instructions?: string) => {
     setIsRetrying(true);
     try {
-      await retry();
+      await retry(instructions);
     } finally {
       setIsRetrying(false);
     }

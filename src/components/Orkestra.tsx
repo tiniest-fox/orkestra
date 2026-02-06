@@ -4,7 +4,7 @@
  * Navigation state is driven by DisplayContext.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useAutoTaskTemplates, useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
 import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/workflow";
@@ -28,6 +28,10 @@ export function Orkestra() {
     closeDiff,
     closeSubtaskDiff,
   } = useDisplayContext();
+
+  // Track sidebar open/close cycles to force fresh state on reopen
+  const [sidebarSessionCounter, setSidebarSessionCounter] = useState(0);
+  const [subtaskSessionCounter, setSubtaskSessionCounter] = useState(0);
 
   const config = useWorkflowConfig();
   const autoTaskTemplates = useAutoTaskTemplates();
@@ -53,11 +57,33 @@ export function Orkestra() {
     ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
     : null;
 
+  // Track visibility changes to increment session counter when reopening
+  const prevSidebarVisibleRef = useRef(false);
+  useEffect(() => {
+    const currentVisible = (focus.type === "create" || focus.type === "task") && !showSubtaskDiff;
+    // If transitioning from hidden to visible, increment counter to force fresh state
+    if (!prevSidebarVisibleRef.current && currentVisible) {
+      setSidebarSessionCounter((prev) => prev + 1);
+    }
+    prevSidebarVisibleRef.current = currentVisible;
+  }, [focus.type, showSubtaskDiff]);
+
   // Sidebar visibility and content key
   // Hide parent sidebar when subtask diff is open
   const sidebarVisible = (focus.type === "create" || focus.type === "task") && !showSubtaskDiff;
   const sidebarContentKey =
     focus.type === "create" ? "new-task" : focus.type === "task" ? focus.taskId : null;
+
+  // Track subtask visibility changes to increment session counter when reopening
+  const prevSubtaskVisibleRef = useRef(false);
+  useEffect(() => {
+    const currentVisible = !!currentSelectedSubtask;
+    // If transitioning from hidden to visible, increment counter to force fresh state
+    if (!prevSubtaskVisibleRef.current && currentVisible) {
+      setSubtaskSessionCounter((prev) => prev + 1);
+    }
+    prevSubtaskVisibleRef.current = currentVisible;
+  }, [currentSelectedSubtask]);
 
   // Subtask panel visibility
   const subtaskVisible = !!currentSelectedSubtask;
@@ -115,13 +141,21 @@ export function Orkestra() {
   };
 
   // Render sidebar content based on focus type
+  // Use sidebarSessionCounter as key to force remount on reopen (clears all state)
   const renderSidebarContent = () => {
     if (focus.type === "create") {
-      return <NewTaskPanel onClose={closeFocus} onSubmit={handleTaskCreated} />;
+      return (
+        <NewTaskPanel
+          key={sidebarSessionCounter}
+          onClose={closeFocus}
+          onSubmit={handleTaskCreated}
+        />
+      );
     }
     if (currentSelectedTask) {
       return (
         <TaskDetailSidebar
+          key={`${currentSelectedTask.id}-${sidebarSessionCounter}`}
           task={currentSelectedTask}
           onClose={closeFocus}
           onDelete={() => handleDeleteTask(currentSelectedTask.id)}
@@ -192,7 +226,11 @@ export function Orkestra() {
           plain
         >
           {currentSelectedSubtask && (
-            <TaskDetailSidebar task={currentSelectedSubtask} onClose={handleCloseSubtask} />
+            <TaskDetailSidebar
+              key={`${currentSelectedSubtask.id}-${subtaskSessionCounter}`}
+              task={currentSelectedSubtask}
+              onClose={handleCloseSubtask}
+            />
           )}
         </Slot>
 

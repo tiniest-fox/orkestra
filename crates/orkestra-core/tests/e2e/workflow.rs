@@ -1315,3 +1315,484 @@ fn test_opencode_no_pregenerated_session_id() {
         "Retry without session ID must NOT be a resume (would cause OpenCode to hang)"
     );
 }
+
+// =============================================================================
+// Session Reset on Cross-Stage Rejection Tests
+// =============================================================================
+
+/// Test that `reset_session: true` supersedes the target stage's session on
+/// cross-stage rejection, causing a fresh spawn with full prompt + feedback.
+///
+/// Also validates that Handlebars conditionals in agent definitions render
+/// correctly when feedback is present.
+///
+/// Flow:
+/// 1. Task created → work stage → produce artifact → approve → review stage
+/// 2. Review REJECTS to work with `reset_session: true`
+/// 3. Verify: old work session superseded, new session created (different UUID)
+/// 4. Verify: work agent gets a FULL prompt (not resume), with feedback included
+/// 5. Verify: Handlebars `{{#if feedback}}` conditional in agent definition renders
+#[test]
+#[allow(clippy::too_many_lines)]
+fn test_session_reset_on_cross_stage_rejection() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
+    use orkestra_core::workflow::domain::SessionState;
+    use orkestra_core::workflow::runtime::Outcome;
+
+    // Build capabilities with reset_session: true
+    // (ApprovalCapabilities isn't exported, but we can construct it through config)
+    let mut caps = StageCapabilities::with_approval(Some("work".into()));
+    caps.approval.as_mut().unwrap().reset_session = true;
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into()])
+            .with_capabilities(caps)
+            .automated(),
+    ]);
+
+    // Create test env with custom agent definition using Handlebars
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    // Overwrite the worker agent definition with a Handlebars conditional
+    let agents_dir = ctx.repo_path().join(".orkestra/agents");
+    std::fs::write(
+        agents_dir.join("worker.md"),
+        "You are a worker agent.\n\n\
+         {{#if feedback}}\n\
+         REVIEW_FEEDBACK_SECTION: Address the reviewer findings below.\n\
+         {{/if}}",
+    )
+    .unwrap();
+
+    // Reload workflow from disk so the updated agent definition is picked up
+    // (TestEnv::with_git already serialized + loaded the workflow config)
+
+    // =========================================================================
+    // Step 1: Work stage → produce artifact → approve → review
+    // =========================================================================
+    let task = ctx.create_task(
+        "Session reset test",
+        "Test that session reset works on rejection",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial implementation".to_string(),
+        },
+    );
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes work output
+
+    // Verify first spawn is a full prompt WITHOUT the Handlebars feedback section
+    ctx.assert_full_prompt("summary", false, false);
+    let first_call = ctx.last_run_config();
+    assert!(!first_call.is_resume, "First spawn should not be a resume");
+
+    let initial_prompt = ctx.last_prompt();
+    assert!(
+        !initial_prompt.contains("REVIEW_FEEDBACK_SECTION"),
+        "Initial prompt should NOT contain the {{{{#if feedback}}}} section (no feedback yet)"
+    );
+
+    // Record the work session before approval
+    let work_session_before = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .unwrap()
+        .expect("Work session should exist");
+    let original_session_id = work_session_before.id.clone();
+
+    // Verify session ID is UUID format (not old "{task_id}-{stage}" format)
+    assert_ne!(
+        original_session_id,
+        format!("{task_id}-work"),
+        "Session ID should be UUID, not hardcoded format"
+    );
+
+    // Approve work → advances to review (automated)
+    ctx.api().approve(&task_id).unwrap();
+
+    // =========================================================================
+    // Step 2: Review rejects to work with reset_session: true
+    // =========================================================================
+
+    // Queue review rejection + work output (both consumed in sequence)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Code needs refactoring — extract helper methods".to_string(),
+        },
+    );
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Refactored implementation".to_string(),
+        },
+    );
+    ctx.advance(); // spawns reviewer (completion ready)
+    ctx.advance(); // processes review rejection → supersedes work session → moves to work → spawns work agent (completion ready)
+    ctx.advance(); // processes work output
+
+    // =========================================================================
+    // Step 3: Verify iteration history (deterministic ordering)
+    // =========================================================================
+    // get_iterations returns ORDER BY stage, iteration_number, so:
+    //   [0] review#1 (Rejection → work)
+    //   [1] work#1   (Approved)
+    //   [2] work#2   (re-entry after rejection — pending or has artifact)
+
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(
+        iterations.len(),
+        3,
+        "Should have exactly 3 iterations. Got: {}",
+        iterations
+            .iter()
+            .map(|i| format!(
+                "{}#{}: {:?}",
+                i.stage,
+                i.iteration_number,
+                i.outcome.as_ref().map(|o| format!("{o}"))
+            ))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    // [0] review#1: rejection targeting work
+    assert_eq!(iterations[0].stage, "review");
+    assert_eq!(iterations[0].iteration_number, 1);
+    assert!(
+        matches!(
+            iterations[0].outcome.as_ref(),
+            Some(Outcome::Rejection { target, .. }) if target == "work"
+        ),
+        "review#1 should be Rejection targeting work, got: {:?}",
+        iterations[0].outcome
+    );
+
+    // [1] work#1: approved
+    assert_eq!(iterations[1].stage, "work");
+    assert_eq!(iterations[1].iteration_number, 1);
+    assert!(
+        matches!(iterations[1].outcome.as_ref(), Some(Outcome::Approved)),
+        "work#1 should be Approved, got: {:?}",
+        iterations[1].outcome
+    );
+
+    // [2] work#2: re-entry after rejection
+    assert_eq!(iterations[2].stage, "work");
+    assert_eq!(iterations[2].iteration_number, 2);
+
+    // =========================================================================
+    // Step 4: Verify session superseding
+    // =========================================================================
+
+    let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
+    let work_sessions: Vec<_> = all_sessions.iter().filter(|s| s.stage == "work").collect();
+    let review_sessions: Vec<_> = all_sessions.iter().filter(|s| s.stage == "review").collect();
+
+    assert_eq!(
+        work_sessions.len(),
+        2,
+        "Should have 2 work sessions (original superseded + new). Got: {work_sessions:?}"
+    );
+    assert_eq!(
+        review_sessions.len(),
+        1,
+        "Should have 1 review session. Got: {review_sessions:?}"
+    );
+
+    // Find the superseded session (the original)
+    let superseded = work_sessions
+        .iter()
+        .find(|s| s.session_state == SessionState::Superseded);
+    assert!(
+        superseded.is_some(),
+        "Original work session should be superseded. Sessions: {work_sessions:?}"
+    );
+    assert_eq!(
+        superseded.unwrap().id, original_session_id,
+        "Superseded session should be the original"
+    );
+
+    // Find the new active session
+    let new_session = work_sessions
+        .iter()
+        .find(|s| s.session_state != SessionState::Superseded)
+        .expect("Should have a new non-superseded work session");
+    assert_ne!(
+        new_session.id, original_session_id,
+        "New session should have a different UUID"
+    );
+
+    // Verify the re-entry iteration (work#2) is linked to the NEW session, not the superseded one
+    let reentry_session_id = iterations[2]
+        .stage_session_id
+        .as_ref()
+        .expect("work#2 iteration should have a stage_session_id");
+    assert_eq!(
+        reentry_session_id, &new_session.id,
+        "Re-entry iteration should be linked to the new session, not the superseded one"
+    );
+    assert_ne!(
+        reentry_session_id, &original_session_id,
+        "Re-entry iteration must NOT be linked to the superseded session"
+    );
+
+    // =========================================================================
+    // Step 5: Verify full prompt (not resume) with feedback
+    // =========================================================================
+
+    let last_config = ctx.last_run_config();
+    assert!(
+        !last_config.is_resume,
+        "Fresh spawn after session reset should NOT be a resume"
+    );
+
+    let prompt = ctx.last_prompt();
+    assert!(
+        !prompt.starts_with("<!orkestra:resume:"),
+        "Should be a full prompt, not a resume prompt. Got: {}...",
+        &prompt[..prompt.len().min(100)]
+    );
+    assert!(
+        prompt.contains("## Your Current Task"),
+        "Full prompt should contain task section"
+    );
+
+    // Feedback should be embedded in the full prompt
+    assert!(
+        prompt.contains("Code needs refactoring"),
+        "Full prompt should include rejection feedback. Prompt: {}...",
+        &prompt[..prompt.len().min(500)]
+    );
+
+    // =========================================================================
+    // Step 6: Verify Handlebars conditional rendered (absent initially, present now)
+    // =========================================================================
+
+    assert!(
+        prompt.contains("REVIEW_FEEDBACK_SECTION"),
+        "Handlebars {{{{#if feedback}}}} should have rendered the feedback section in agent def"
+    );
+}
+
+/// Test that rejection WITHOUT `reset_session` preserves existing resume behavior.
+///
+/// This is the regression test: same-stage rejection (review → work) without
+/// `reset_session: true` should resume the existing session, not create a new one.
+#[test]
+fn test_session_not_reset_without_flag() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
+    use orkestra_core::workflow::domain::SessionState;
+    use orkestra_core::workflow::runtime::Outcome;
+
+    // Default workflow: review rejects to work WITHOUT reset_session
+    // (with_approval defaults to reset_session: false)
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+            .automated(),
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "No reset test",
+        "Test that default rejection preserves session",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Work stage → produce artifact
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial implementation".to_string(),
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes output
+
+    // Record original session
+    let original_session = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .unwrap()
+        .expect("Work session should exist");
+    let original_id = original_session.id.clone();
+
+    // Approve → review (automated) → reject back to work
+    ctx.api().approve(&task_id).unwrap();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Needs more tests".to_string(),
+        },
+    );
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation with more tests".to_string(),
+        },
+    );
+    ctx.advance(); // spawns reviewer
+    ctx.advance(); // processes rejection → moves to work → spawns work agent
+    ctx.advance(); // processes work output
+
+    // Verify iteration history (ORDER BY stage, iteration_number)
+    // [0] review#1 (Rejection → work)
+    // [1] work#1   (Approved)
+    // [2] work#2   (re-entry after rejection)
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(
+        iterations.len(),
+        3,
+        "Should have 3 iterations. Got: {}",
+        iterations
+            .iter()
+            .map(|i| format!(
+                "{}#{}: {:?}",
+                i.stage,
+                i.iteration_number,
+                i.outcome.as_ref().map(|o| format!("{o}"))
+            ))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    assert_eq!(iterations[0].stage, "review");
+    assert_eq!(iterations[0].iteration_number, 1);
+    assert!(
+        matches!(
+            iterations[0].outcome.as_ref(),
+            Some(Outcome::Rejection { target, .. }) if target == "work"
+        ),
+        "review#1 should be Rejection targeting work"
+    );
+
+    assert_eq!(iterations[1].stage, "work");
+    assert_eq!(iterations[1].iteration_number, 1);
+    assert!(
+        matches!(iterations[1].outcome.as_ref(), Some(Outcome::Approved)),
+        "work#1 should be Approved"
+    );
+
+    assert_eq!(iterations[2].stage, "work");
+    assert_eq!(iterations[2].iteration_number, 2);
+
+    // Both work iterations should be linked to the SAME session (no superseding)
+    let work1_session = iterations[1].stage_session_id.as_ref();
+    let work2_session = iterations[2].stage_session_id.as_ref();
+    assert_eq!(
+        work1_session, work2_session,
+        "Both work iterations should share the same session (no reset)"
+    );
+
+    // Session should NOT be superseded — same session, resumed
+    let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
+    let work_sessions: Vec<_> = all_sessions.iter().filter(|s| s.stage == "work").collect();
+    let review_sessions: Vec<_> = all_sessions.iter().filter(|s| s.stage == "review").collect();
+
+    assert_eq!(
+        work_sessions.len(),
+        1,
+        "Should have exactly 1 work session (no reset). Got: {work_sessions:?}"
+    );
+    assert_eq!(
+        work_sessions[0].id, original_id,
+        "Should be the same session (not superseded)"
+    );
+    assert_ne!(
+        work_sessions[0].session_state,
+        SessionState::Superseded,
+        "Work session should NOT be superseded without reset_session"
+    );
+    assert_eq!(
+        review_sessions.len(),
+        1,
+        "Should have 1 review session. Got: {review_sessions:?}"
+    );
+
+    // Should be a RESUME prompt (not full)
+    ctx.assert_resume_prompt_contains("feedback", &["Needs more tests"]);
+
+    let last_config = ctx.last_run_config();
+    assert!(
+        last_config.is_resume,
+        "Without reset_session, rejection should resume existing session"
+    );
+}
+
+/// Test that agent definitions without Handlebars markers pass through unchanged.
+///
+/// Ensures the Handlebars rendering fast path works correctly — most agent
+/// definitions don't use `{{` and should be returned unchanged with no
+/// performance overhead.
+#[test]
+fn test_handlebars_passthrough_for_plain_definitions() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+            .automated(),
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    // Agent definition with NO Handlebars markers (plain markdown)
+    let agents_dir = ctx.repo_path().join(".orkestra/agents");
+    std::fs::write(
+        agents_dir.join("worker.md"),
+        "You are a worker agent.\n\nDo the work carefully.\n\n## Rules\n\n- Follow patterns\n- Write tests",
+    )
+    .unwrap();
+
+    let task = ctx.create_task("Passthrough test", "Test plain agent definitions", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Done".to_string(),
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes output
+
+    // Verify the agent definition appears in the prompt unchanged
+    let prompt = ctx.last_prompt();
+    assert!(
+        prompt.contains("You are a worker agent."),
+        "Agent definition should appear in prompt"
+    );
+    assert!(
+        prompt.contains("Do the work carefully."),
+        "Agent definition content should be preserved"
+    );
+    assert!(
+        prompt.contains("## Rules"),
+        "Markdown headings should be preserved"
+    );
+}

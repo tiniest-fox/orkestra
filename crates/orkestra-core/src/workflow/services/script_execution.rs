@@ -130,7 +130,12 @@ impl ScriptExecutionService {
     /// Spawn a script for a task.
     ///
     /// Returns the process ID of the spawned script.
-    pub fn spawn_script(&self, task: &Task, stage: &str) -> Result<u32, ScriptError> {
+    pub fn spawn_script(
+        &self,
+        task: &Task,
+        stage: &str,
+        stage_session_id: Option<&str>,
+    ) -> Result<u32, ScriptError> {
         let script_config = self
             .get_script_config(stage)
             .ok_or_else(|| ScriptError::NoConfig(stage.to_string()))?;
@@ -143,8 +148,17 @@ impl ScriptExecutionService {
         // Build environment variables for the script
         let env = self.build_script_env(task);
 
-        // Look up stage_session_id (format matches session_service.rs: "{task_id}-{stage}")
-        let stage_session_id = format!("{}-{}", task.id, stage);
+        // Use caller-provided session ID, or look up from store as fallback
+        let stage_session_id = stage_session_id
+            .map(String::from)
+            .unwrap_or_else(|| {
+                self.store
+                    .get_stage_session(&task.id, stage)
+                    .ok()
+                    .flatten()
+                    .map(|s| s.id)
+                    .unwrap_or_else(|| format!("{}-{}", task.id, stage))
+            });
 
         // Write initial log entry to database
         self.append_log_entry(

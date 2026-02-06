@@ -218,6 +218,10 @@ pub struct ApprovalCapabilities {
     /// Stage to move to on rejection. If None, defaults to the previous stage in the flow.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rejection_stage: Option<String>,
+    /// When true, rejection supersedes the target stage's session so the next
+    /// spawn starts fresh (full initial prompt) instead of resuming.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reset_session: bool,
 }
 
 /// Configuration for a stage that produces subtasks.
@@ -263,7 +267,10 @@ impl StageCapabilities {
     /// Create capabilities with approval (approve/reject decision).
     pub fn with_approval(rejection_stage: Option<String>) -> Self {
         Self {
-            approval: Some(ApprovalCapabilities { rejection_stage }),
+            approval: Some(ApprovalCapabilities {
+                rejection_stage,
+                reset_session: false,
+            }),
             ..Default::default()
         }
     }
@@ -291,6 +298,11 @@ impl StageCapabilities {
     /// The explicit rejection stage, if configured.
     pub fn rejection_stage(&self) -> Option<&str> {
         self.approval.as_ref()?.rejection_stage.as_deref()
+    }
+
+    /// Whether rejection should reset (supersede) the target stage's session.
+    pub fn rejection_resets_session(&self) -> bool {
+        self.approval.as_ref().is_some_and(|a| a.reset_session)
     }
 }
 
@@ -478,6 +490,48 @@ mod tests {
         let caps = StageCapabilities::default();
         let yaml = serde_yaml::to_string(&caps).unwrap();
         assert!(!yaml.contains("approval"));
+    }
+
+    #[test]
+    fn test_reset_session_defaults_to_false() {
+        let caps = StageCapabilities::with_approval(Some("work".into()));
+        assert!(!caps.rejection_resets_session());
+    }
+
+    #[test]
+    fn test_reset_session_true() {
+        let caps = StageCapabilities {
+            approval: Some(ApprovalCapabilities {
+                rejection_stage: Some("work".into()),
+                reset_session: true,
+            }),
+            ..Default::default()
+        };
+        assert!(caps.rejection_resets_session());
+        assert_eq!(caps.rejection_stage(), Some("work"));
+    }
+
+    #[test]
+    fn test_reset_session_serialization() {
+        let caps = StageCapabilities {
+            approval: Some(ApprovalCapabilities {
+                rejection_stage: Some("work".into()),
+                reset_session: true,
+            }),
+            ..Default::default()
+        };
+        let yaml = serde_yaml::to_string(&caps).unwrap();
+        assert!(yaml.contains("reset_session: true"));
+
+        let parsed: StageCapabilities = serde_yaml::from_str(&yaml).unwrap();
+        assert!(parsed.rejection_resets_session());
+    }
+
+    #[test]
+    fn test_reset_session_skipped_when_false() {
+        let caps = StageCapabilities::with_approval(Some("work".into()));
+        let yaml = serde_yaml::to_string(&caps).unwrap();
+        assert!(!yaml.contains("reset_session"));
     }
 
     #[test]

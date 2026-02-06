@@ -612,11 +612,48 @@ struct InitialPromptContext<'a> {
     worktree_path: Option<&'a str>,
 }
 
+/// Context available to agent definition Handlebars templates.
+#[derive(Debug, Serialize)]
+struct AgentDefinitionContext<'a> {
+    stage_name: &'a str,
+    task_id: &'a str,
+    feedback: Option<&'a str>,
+    has_artifacts: bool,
+    artifact_names: Vec<&'a str>,
+}
+
+/// Render an agent definition as a Handlebars template.
+///
+/// If the definition contains no `{{` sequences, returns it unchanged (fast path).
+/// On template errors, returns the raw definition with a warning logged.
+fn render_agent_definition(template: &str, ctx: &StagePromptContext<'_>) -> String {
+    if !template.contains("{{") {
+        return template.to_string();
+    }
+
+    let def_ctx = AgentDefinitionContext {
+        stage_name: &ctx.stage.name,
+        task_id: ctx.task_id,
+        feedback: ctx.feedback,
+        has_artifacts: !ctx.artifacts.is_empty(),
+        artifact_names: ctx.artifacts.iter().map(|a| a.name).collect(),
+    };
+
+    let mut hb = Handlebars::new();
+    hb.register_escape_fn(handlebars::no_escape);
+    hb.render_template(template, &def_ctx)
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: agent definition template error: {e}");
+            template.to_string()
+        })
+}
+
 /// Build a complete prompt by combining agent definition with context.
 pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_>) -> String {
+    let rendered_definition = render_agent_definition(agent_definition, ctx);
     let template_ctx = InitialPromptContext {
         stage_name: &ctx.stage.name,
-        agent_definition,
+        agent_definition: &rendered_definition,
         task_id: ctx.task_id,
         title: ctx.title,
         description: ctx.description,
@@ -1319,5 +1356,77 @@ mod tests {
     fn test_determine_resume_type_continue() {
         let result = determine_resume_type(None, None, &[]);
         assert!(matches!(result, ResumeType::Continue));
+    }
+
+    // ========================================================================
+    // Agent Definition Handlebars Rendering tests
+    // ========================================================================
+
+    #[test]
+    fn test_render_agent_definition_passthrough() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+        let ctx = builder
+            .build_context("planning", &task, None, None, false)
+            .unwrap();
+
+        // No {{ markers — should pass through unchanged
+        let input = "You are a planner agent. Do planning.";
+        let result = render_agent_definition(input, &ctx);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_render_agent_definition_with_feedback_conditional() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+
+        // With feedback
+        let ctx = builder
+            .build_context("planning", &task, Some("Fix this"), None, false)
+            .unwrap();
+        let template = "Base instructions.\n\n{{#if feedback}}\nFEEDBACK_SECTION\n{{/if}}";
+        let result = render_agent_definition(template, &ctx);
+        assert!(result.contains("FEEDBACK_SECTION"));
+        assert!(result.contains("Base instructions."));
+
+        // Without feedback
+        let ctx = builder
+            .build_context("planning", &task, None, None, false)
+            .unwrap();
+        let result = render_agent_definition(template, &ctx);
+        assert!(!result.contains("FEEDBACK_SECTION"));
+        assert!(result.contains("Base instructions."));
+    }
+
+    #[test]
+    fn test_render_agent_definition_template_error_fallback() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+        let ctx = builder
+            .build_context("planning", &task, None, None, false)
+            .unwrap();
+
+        // Invalid template — should return raw definition
+        let bad_template = "Start {{#if}} missing close";
+        let result = render_agent_definition(bad_template, &ctx);
+        assert_eq!(result, bad_template);
+    }
+
+    #[test]
+    fn test_render_agent_definition_context_variables() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+        let ctx = builder
+            .build_context("planning", &task, None, None, false)
+            .unwrap();
+
+        let template = "Stage: {{stage_name}}, Task: {{task_id}}";
+        let result = render_agent_definition(template, &ctx);
+        assert_eq!(result, "Stage: planning, Task: task-1");
     }
 }

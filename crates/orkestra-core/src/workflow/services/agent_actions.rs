@@ -245,6 +245,16 @@ impl WorkflowApi {
                 // Resolve rejection target: explicit config → previous stage in flow
                 let target = self.resolve_rejection_target(current_stage, task.flow.as_deref())?;
 
+                // Supersede target stage session if configured (forces fresh spawn)
+                if effective_caps.rejection_resets_session() {
+                    if let Ok(Some(mut session)) =
+                        self.store.get_stage_session(&task.id, &target)
+                    {
+                        session.supersede(now);
+                        let _ = self.store.save_stage_session(&session);
+                    }
+                }
+
                 self.end_current_iteration(
                     task,
                     Outcome::rejection(current_stage, &target, content),

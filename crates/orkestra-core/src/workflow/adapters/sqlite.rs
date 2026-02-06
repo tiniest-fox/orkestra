@@ -410,7 +410,9 @@ impl WorkflowStore for SqliteWorkflowStore {
             .query_row(
                 "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
                         session_state, created_at, updated_at
-                 FROM workflow_stage_sessions WHERE task_id = ? AND stage = ?",
+                 FROM workflow_stage_sessions
+                 WHERE task_id = ? AND stage = ? AND session_state != 'superseded'
+                 ORDER BY created_at DESC LIMIT 1",
                 params![task_id, stage],
                 row_to_stage_session,
             )
@@ -742,6 +744,7 @@ fn session_state_to_str(state: SessionState) -> &'static str {
         SessionState::Active => "active",
         SessionState::Completed => "completed",
         SessionState::Abandoned => "abandoned",
+        SessionState::Superseded => "superseded",
     }
 }
 
@@ -750,6 +753,7 @@ fn parse_session_state(s: &str) -> SessionState {
         "spawning" => SessionState::Spawning,
         "completed" => SessionState::Completed,
         "abandoned" => SessionState::Abandoned,
+        "superseded" => SessionState::Superseded,
         _ => SessionState::Active,
     }
 }

@@ -319,7 +319,7 @@ impl StageExecutionService {
 
         // 3. Execute (dispatch by stage type)
         let result = if self.is_script_stage(stage) {
-            self.spawn_script(task, stage)
+            self.spawn_script(task, stage, &spawn_context)
         } else {
             self.spawn_agent(task, stage, trigger, &spawn_context)
         };
@@ -389,9 +389,7 @@ impl StageExecutionService {
             .map_err(|e| SpawnError::AgentError(e.to_string()))?;
 
         let pid = handle.pid;
-        // Cache stage_session_id to avoid repeated lookups during polling.
-        // Format matches session_service.rs: "{task_id}-{stage}"
-        let stage_session_id = format!("{}-{}", task.id, stage);
+        let stage_session_id = spawn_context.stage_session_id.clone();
         let agent = ActiveAgent::new(handle, stage_session_id);
 
         self.active_agents
@@ -409,7 +407,12 @@ impl StageExecutionService {
     }
 
     /// Spawn a script execution (delegates to `ScriptExecutionService`).
-    fn spawn_script(&self, task: &Task, stage: &str) -> Result<SpawnResult, SpawnError> {
+    fn spawn_script(
+        &self,
+        task: &Task,
+        stage: &str,
+        spawn_context: &SessionSpawnContext,
+    ) -> Result<SpawnResult, SpawnError> {
         let command = self
             .script_service
             .get_script_config(stage)
@@ -417,7 +420,7 @@ impl StageExecutionService {
 
         let pid = self
             .script_service
-            .spawn_script(task, stage)
+            .spawn_script(task, stage, Some(&spawn_context.stage_session_id))
             .map_err(|e| SpawnError::ScriptError(e.to_string()))?;
 
         Ok(SpawnResult {
@@ -445,12 +448,13 @@ impl StageExecutionService {
     /// Persist collected log entries to the database and agent log file.
     ///
     /// Non-fatal: if a write fails, logs the error and continues.
-    fn persist_log_entries(&self, stage_session_id: &str, entries: &[LogEntry]) {
-        // Parse task_id and stage from stage_session_id (format: "{task_id}-{stage}")
-        let (task_id, stage) = stage_session_id
-            .rsplit_once('-')
-            .unwrap_or((stage_session_id, "unknown"));
-
+    fn persist_log_entries(
+        &self,
+        stage_session_id: &str,
+        task_id: &str,
+        stage: &str,
+        entries: &[LogEntry],
+    ) {
         for entry in entries {
             // Persist to database
             if let Err(e) = self.store.append_log_entry(stage_session_id, entry) {
@@ -473,8 +477,8 @@ impl StageExecutionService {
     fn poll_agents(&self) -> Vec<ExecutionComplete> {
         let mut completed = Vec::new();
         let mut to_remove = Vec::new();
-        // Collect (stage_session_id, entries) outside the lock to write after releasing it.
-        let mut log_batches: Vec<(String, Vec<LogEntry>)> = Vec::new();
+        // Collect (stage_session_id, task_id, stage, entries) outside the lock to write after releasing it.
+        let mut log_batches: Vec<(String, String, String, Vec<LogEntry>)> = Vec::new();
         // Collect extracted session IDs to persist outside the lock.
         let mut session_id_updates: Vec<(String, String, String)> = Vec::new(); // (task_id, stage, session_id)
 
@@ -483,12 +487,22 @@ impl StageExecutionService {
                 match agent.poll() {
                     AgentPoll::Running(log_entries) => {
                         if !log_entries.is_empty() {
-                            log_batches.push((agent.stage_session_id.clone(), log_entries));
+                            log_batches.push((
+                                agent.stage_session_id.clone(),
+                                task_id.clone(),
+                                agent.stage().to_string(),
+                                log_entries,
+                            ));
                         }
                     }
                     AgentPoll::Completed(result, log_entries) => {
                         if !log_entries.is_empty() {
-                            log_batches.push((agent.stage_session_id.clone(), log_entries));
+                            log_batches.push((
+                                agent.stage_session_id.clone(),
+                                task_id.clone(),
+                                agent.stage().to_string(),
+                                log_entries,
+                            ));
                         }
                         to_remove.push(task_id.clone());
                         let exec_result = match result {
@@ -525,8 +539,8 @@ impl StageExecutionService {
         }
 
         // Persist log entries outside the agents lock to avoid holding it during I/O
-        for (stage_session_id, entries) in &log_batches {
-            self.persist_log_entries(stage_session_id, entries);
+        for (stage_session_id, task_id, stage, entries) in &log_batches {
+            self.persist_log_entries(stage_session_id, task_id, stage, entries);
         }
 
         // Persist provider-generated session IDs (e.g. OpenCode's ses_...) so that

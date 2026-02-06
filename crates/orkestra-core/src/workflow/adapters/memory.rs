@@ -188,13 +188,19 @@ impl WorkflowStore for InMemoryWorkflowStore {
         task_id: &str,
         stage: &str,
     ) -> WorkflowResult<Option<StageSession>> {
+        use crate::workflow::domain::SessionState;
         let sessions = self
             .stage_sessions
             .lock()
             .map_err(|_| WorkflowError::Lock)?;
         Ok(sessions
             .iter()
-            .find(|s| s.task_id == task_id && s.stage == stage)
+            .filter(|s| {
+                s.task_id == task_id
+                    && s.stage == stage
+                    && s.session_state != SessionState::Superseded
+            })
+            .max_by(|a, b| a.created_at.cmp(&b.created_at))
             .cloned())
     }
 

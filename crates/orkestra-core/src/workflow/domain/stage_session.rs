@@ -21,6 +21,10 @@ pub enum SessionState {
 
     /// Session was abandoned (task failed, blocked, or stage rejected from).
     Abandoned,
+
+    /// Session was replaced by a newer session for the same (task_id, stage).
+    /// Preserves full audit trail — the old session's logs and history remain intact.
+    Superseded,
 }
 
 /// A session wrapper that maintains Claude session continuity across iterations within a stage.
@@ -117,6 +121,13 @@ impl StageSession {
     /// Mark the session as abandoned (task failed, blocked, or rejected).
     pub fn abandon(&mut self, updated_at: impl Into<String>) {
         self.session_state = SessionState::Abandoned;
+        self.agent_pid = None;
+        self.updated_at = updated_at.into();
+    }
+
+    /// Mark the session as superseded (replaced by a newer session for the same task+stage).
+    pub fn supersede(&mut self, updated_at: impl Into<String>) {
+        self.session_state = SessionState::Superseded;
         self.agent_pid = None;
         self.updated_at = updated_at.into();
     }
@@ -265,11 +276,27 @@ mod tests {
         let active = SessionState::Active;
         let completed = SessionState::Completed;
         let abandoned = SessionState::Abandoned;
+        let superseded = SessionState::Superseded;
 
         assert_eq!(serde_json::to_string(&spawning).unwrap(), "\"spawning\"");
         assert_eq!(serde_json::to_string(&active).unwrap(), "\"active\"");
         assert_eq!(serde_json::to_string(&completed).unwrap(), "\"completed\"");
         assert_eq!(serde_json::to_string(&abandoned).unwrap(), "\"abandoned\"");
+        assert_eq!(serde_json::to_string(&superseded).unwrap(), "\"superseded\"");
+    }
+
+    #[test]
+    fn test_session_supersede() {
+        let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
+        session.claude_session_id = Some("test-uuid".to_string());
+        session.agent_spawned(12345, "t1");
+
+        session.supersede("later");
+
+        assert_eq!(session.session_state, SessionState::Superseded);
+        assert!(session.agent_pid.is_none());
+        assert!(!session.is_active());
+        assert!(!session.can_resume());
     }
 
     #[test]

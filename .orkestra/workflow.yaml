@@ -52,7 +52,8 @@ stages:
     prompt: reviewer.md
     capabilities:
       approval:
-        rejection_stage: work
+        rejection_stage: task
+        reset_session: true
     is_automated: true
 
   # Compound: Captures learnings and updates documentation
@@ -77,6 +78,10 @@ flows:
       - check
       - review:
           inputs: [plan, summary, check_results]
+          capabilities:
+            approval:
+              rejection_stage: plan
+              reset_session: true
 
   # Hotfix flow: Straight to work, minimal overhead
   hotfix:
@@ -87,6 +92,9 @@ flows:
       - check
       - review:
           prompt: hotfix_reviewer.md
+          capabilities:
+            approval:
+              rejection_stage: work
 
   # OpenCode test flow: Single work stage using OpenCode with Kimi 2.5
   opencode-test:

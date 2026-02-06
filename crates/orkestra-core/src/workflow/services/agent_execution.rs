@@ -176,10 +176,18 @@ impl AgentExecutionService {
             };
             build_resume_prompt(stage, &resume_type).map_err(ExecutionError::from)
         } else {
+            // Extract feedback from trigger if present (fresh spawn after session reset)
+            let feedback = trigger.and_then(|t| match t {
+                IterationTrigger::Rejection { feedback, .. }
+                | IterationTrigger::Feedback { feedback } => Some(feedback.as_str()),
+                IterationTrigger::ScriptFailure { error, .. } => Some(error.as_str()),
+                _ => None,
+            });
+
             let config = self.prompt_service.resolve_config(
                 &self.workflow,
                 task,
-                None, // No feedback on first spawn
+                feedback,
                 None, // No integration error on first spawn
                 show_direct_structured_output_hint,
             )?;

@@ -42,6 +42,9 @@ pub struct SessionSpawnContext {
     /// no `stage_session_id` (never linked to this session) and no `incoming_context`
     /// (no trigger like rejection or script failure).
     pub is_stage_reentry: bool,
+    /// The `StageSession.id` for log correlation. Unlike the old `"{task_id}-{stage}"`
+    /// format, this is a UUID that uniquely identifies this session record.
+    pub stage_session_id: String,
 }
 
 // ============================================================================
@@ -95,7 +98,6 @@ impl SessionService {
         initial_session_id: Option<String>,
     ) -> WorkflowResult<SessionSpawnContext> {
         let now = chrono::Utc::now().to_rfc3339();
-        let session_id = format!("{task_id}-{stage}");
 
         // Get or create session in Spawning state
         let session = if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
@@ -104,12 +106,15 @@ impl SessionService {
             session.updated_at.clone_from(&now);
             session
         } else {
-            // New session in Spawning state — use caller-provided session ID
+            // New session with UUID-based ID
+            let session_id = uuid::Uuid::new_v4().to_string();
             let mut session = StageSession::new(&session_id, task_id, stage, &now);
             session.claude_session_id = initial_session_id;
             session.session_state = SessionState::Spawning;
             session
         };
+
+        let stage_session_id = session.id.clone();
 
         // Compute resume/reentry BEFORE saving the session or linking the iteration.
         // is_resume: true if we have a session ID AND the agent was previously spawned.
@@ -158,13 +163,14 @@ impl SessionService {
         );
 
         // Link the session to the iteration for log recovery
-        let iteration = iteration.with_stage_session_id(&session_id);
+        let iteration = iteration.with_stage_session_id(&stage_session_id);
         self.store.save_iteration(&iteration)?;
 
         Ok(SessionSpawnContext {
             session_id: session.claude_session_id,
             is_resume,
             is_stage_reentry,
+            stage_session_id,
         })
     }
 

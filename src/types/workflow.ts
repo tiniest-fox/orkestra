@@ -439,9 +439,18 @@ export type ToolInput =
  * - "feedback": Human provided feedback to address
  * - "integration": Integration failed with merge conflict
  * - "answers": Human provided answers to questions
+ * - "retry_failed": Human retried a failed task
+ * - "retry_blocked": Human retried a blocked task
  * - "initial": Initial agent prompt (first spawn)
  */
-export type ResumeType = "continue" | "feedback" | "integration" | "answers" | "initial";
+export type ResumeType =
+  | "continue"
+  | "feedback"
+  | "integration"
+  | "answers"
+  | "retry_failed"
+  | "retry_blocked"
+  | "initial";
 
 /**
  * Structured log entry for task execution (loaded from Claude's session files).

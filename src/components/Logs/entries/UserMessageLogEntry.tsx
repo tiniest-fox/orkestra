@@ -38,6 +38,18 @@ const RESUME_STYLES: Record<
     bgColor: "bg-green-900/30",
     borderColor: "border-green-500",
   },
+  retry_failed: {
+    label: "Retrying After Failure",
+    textColor: "text-orange-400",
+    bgColor: "bg-orange-900/30",
+    borderColor: "border-orange-500",
+  },
+  retry_blocked: {
+    label: "Retrying After Block",
+    textColor: "text-yellow-400",
+    bgColor: "bg-yellow-900/30",
+    borderColor: "border-yellow-500",
+  },
   initial: {
     label: "Initial Prompt",
     textColor: "text-purple-400",

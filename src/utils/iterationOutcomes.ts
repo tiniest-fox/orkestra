@@ -37,23 +37,23 @@ export function getOutcomeSemantic(outcome: WorkflowIteration["outcome"]): Outco
 }
 
 /**
- * Color classes for compact indicators (solid backgrounds).
+ * Color classes for compact indicators (light backgrounds with dark text).
  * Used by IterationIndicator component.
  */
 export function getOutcomeIndicatorColor(semantic: OutcomeSemantic): string {
   switch (semantic) {
     case "success":
-      return "bg-success-500 dark:bg-success-600";
+      return "bg-success-100 text-success-700 dark:bg-success-900 dark:text-success-300";
     case "warning":
-      return "bg-warning-500 dark:bg-warning-600";
+      return "bg-warning-100 text-warning-700 dark:bg-warning-900 dark:text-warning-300";
     case "info":
-      return "bg-info-500 dark:bg-info-600";
+      return "bg-info-100 text-info-700 dark:bg-info-900 dark:text-info-300";
     case "error":
-      return "bg-error-500 dark:bg-error-600";
+      return "bg-error-100 text-error-700 dark:bg-error-900 dark:text-error-300";
     case "rejection":
-      return "bg-purple-500 dark:bg-purple-600";
+      return "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300";
     case "neutral":
-      return "bg-stone-300 dark:bg-stone-600";
+      return "bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300";
   }
 }
 

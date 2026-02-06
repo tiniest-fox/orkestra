@@ -1,11 +1,11 @@
 import { motion } from "framer-motion";
 import { useCallback, useMemo, useState } from "react";
 import {
-  type SlotConfig,
-  type PanelLayoutProps,
-  SlotLayoutContext,
   PanelContainerContext,
+  type PanelLayoutProps,
   panelTransition,
+  type SlotConfig,
+  SlotLayoutContext,
 } from "./types";
 
 /**
@@ -28,7 +28,12 @@ import {
  * </PanelLayout>
  * ```
  */
-export function PanelLayout({ children, direction = "horizontal", gap = 8, className = "" }: PanelLayoutProps) {
+export function PanelLayout({
+  children,
+  direction = "horizontal",
+  gap = 8,
+  className = "",
+}: PanelLayoutProps) {
   // Slots register themselves here
   const [slots, setSlots] = useState<Map<string, SlotConfig>>(new Map());
 
@@ -50,7 +55,7 @@ export function PanelLayout({ children, direction = "horizontal", gap = 8, class
 
   const contextValue = useMemo(
     () => ({ direction, gap, registerSlot, unregisterSlot }),
-    [direction, gap, registerSlot, unregisterSlot]
+    [direction, gap, registerSlot, unregisterSlot],
   );
 
   // Build grid template from registered slots
@@ -73,9 +78,10 @@ export function PanelLayout({ children, direction = "horizontal", gap = 8, class
   }, [slots]);
 
   // Use columns for horizontal, rows for vertical
-  const animateStyle = direction === "horizontal"
-    ? { gridTemplateColumns: gridTemplate }
-    : { gridTemplateRows: gridTemplate };
+  const animateStyle =
+    direction === "horizontal"
+      ? { gridTemplateColumns: gridTemplate }
+      : { gridTemplateRows: gridTemplate };
 
   return (
     <SlotLayoutContext.Provider value={contextValue}>

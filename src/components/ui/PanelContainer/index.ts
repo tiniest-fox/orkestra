@@ -1,5 +1,5 @@
+export { FlexContainer } from "./FlexContainer";
 export { PanelLayout } from "./PanelLayout";
 export { Slot } from "./Slot";
-export { FlexContainer } from "./FlexContainer";
+export type { LayoutDirection, PanelLayoutProps, SlotProps, SlotType } from "./types";
 export { PanelContainerContext } from "./types";
-export type { SlotProps, PanelLayoutProps, SlotType, LayoutDirection } from "./types";

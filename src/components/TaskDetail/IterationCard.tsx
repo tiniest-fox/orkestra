@@ -4,6 +4,7 @@
 
 import type { WorkflowIteration } from "../../types/workflow";
 import { formatTimestamp, titleCase } from "../../utils/formatters";
+import { getOutcomeBadgeColor, getOutcomeSemantic } from "../../utils/iterationOutcomes";
 
 interface IterationCardProps {
   iteration: WorkflowIteration;
@@ -15,52 +16,28 @@ function formatOutcome(outcome: WorkflowIteration["outcome"]): {
 } | null {
   if (!outcome) return null;
 
+  const semantic = getOutcomeSemantic(outcome);
+  const color = getOutcomeBadgeColor(semantic);
+
   switch (outcome.type) {
     case "approved":
-      return {
-        label: "Approved",
-        color: "text-success-700 bg-success-50 dark:text-success-300 dark:bg-success-950",
-      };
+      return { label: "Approved", color };
     case "rejected":
-      return {
-        label: "Rejected",
-        color: "text-warning-700 bg-warning-50 dark:text-warning-300 dark:bg-warning-950",
-      };
+      return { label: "Rejected", color };
     case "awaiting_answers":
-      return {
-        label: "Awaiting Answers",
-        color: "text-info-700 bg-info-50 dark:text-info-300 dark:bg-info-950",
-      };
+      return { label: "Awaiting Answers", color };
     case "completed":
-      return {
-        label: "Completed",
-        color: "text-success-700 bg-success-50 dark:text-success-300 dark:bg-success-950",
-      };
+      return { label: "Completed", color };
     case "integration_failed":
-      return {
-        label: "Integration Failed",
-        color: "text-error-700 bg-error-50 dark:text-error-300 dark:bg-error-950",
-      };
+      return { label: "Integration Failed", color };
     case "agent_error":
-      return {
-        label: "Agent Error",
-        color: "text-error-700 bg-error-50 dark:text-error-300 dark:bg-error-950",
-      };
+      return { label: "Agent Error", color };
     case "blocked":
-      return {
-        label: "Blocked",
-        color: "text-warning-700 bg-warning-50 dark:text-warning-300 dark:bg-warning-950",
-      };
+      return { label: "Blocked", color };
     case "skipped":
-      return {
-        label: "Skipped",
-        color: "text-gray-700 bg-gray-50 dark:text-gray-300 dark:bg-gray-900",
-      };
+      return { label: "Skipped", color };
     case "rejection":
-      return {
-        label: `Rejected → ${outcome.target}`,
-        color: "text-purple-700 bg-purple-50 dark:text-purple-300 dark:bg-purple-950",
-      };
+      return { label: `Rejected → ${outcome.target}`, color };
   }
 }
 

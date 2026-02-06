@@ -13,7 +13,7 @@
  * nest a <button> inside a Panel <div>.
  */
 
-import { createContext, type ButtonHTMLAttributes, type ReactNode, useContext } from "react";
+import { type ButtonHTMLAttributes, createContext, type ReactNode, useContext } from "react";
 import { PanelContainerContext } from "../PanelContainer";
 import { PanelBody } from "./PanelBody";
 import { PanelCloseButton } from "./PanelCloseButton";

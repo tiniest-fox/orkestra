@@ -156,7 +156,8 @@ export function TaskDetailSidebar({
   // Determine which footer panel to show
   const showDelete = confirmingDelete && !isSubtask;
   const showQuestions = !showDelete && task.derived.has_questions;
-  const showReview = !showDelete && !showQuestions && task.derived.needs_review && task.derived.current_stage;
+  const showReview =
+    !showDelete && !showQuestions && task.derived.needs_review && task.derived.current_stage;
   const showFooter = !!(showDelete || showQuestions || showReview);
 
   return (

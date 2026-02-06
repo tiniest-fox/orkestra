@@ -111,7 +111,11 @@ export function DiffPanel({ taskId, onClose }: DiffPanelProps) {
 
         {/* Two-pane layout */}
         <FlexContainer>
-          <DiffFileList files={diff.files} selectedFile={selectedFile} onSelectFile={handleSelectFile} />
+          <DiffFileList
+            files={diff.files}
+            selectedFile={selectedFile}
+            onSelectFile={handleSelectFile}
+          />
           <Panel className="flex-1">
             <DiffContent file={selectedFile} />
           </Panel>

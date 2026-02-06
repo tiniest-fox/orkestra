@@ -18,6 +18,7 @@ import { useWorkflowConfig } from "../../providers/WorkflowConfigProvider";
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { Badge, buildStageColorMap, Panel, taskStateColors } from "../ui";
+import { IterationIndicator } from "./IterationIndicator";
 
 interface TaskCardProps {
   task: WorkflowTaskView;
@@ -276,6 +277,8 @@ export function TaskCard({
           {Object.keys(task.artifacts ?? {}).length} artifact(s)
         </div>
       )}
+
+      <IterationIndicator iterations={task.iterations} />
     </Panel>
   );
 }

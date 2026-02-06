@@ -13,17 +13,13 @@ import { DiffPanel } from "./Diff";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
-import {
-  Button,
-  Panel,
-  PanelLayout,
-  Slot,
-} from "./ui";
+import { Button, Panel, PanelLayout, Slot } from "./ui";
 
 export function Orkestra() {
   useNotificationPermission();
 
-  const { focus, focusTask, focusSubtask, closeSubtask, openCreate, closeFocus, closeDiff } = useDisplayContext();
+  const { focus, focusTask, focusSubtask, closeSubtask, openCreate, closeFocus, closeDiff } =
+    useDisplayContext();
 
   const config = useWorkflowConfig();
   const autoTaskTemplates = useAutoTaskTemplates();
@@ -50,11 +46,8 @@ export function Orkestra() {
 
   // Sidebar visibility and content key
   const sidebarVisible = focus.type === "create" || focus.type === "task";
-  const sidebarContentKey = focus.type === "create"
-    ? "new-task"
-    : focus.type === "task"
-      ? focus.taskId
-      : null;
+  const sidebarContentKey =
+    focus.type === "create" ? "new-task" : focus.type === "task" ? focus.taskId : null;
 
   // Subtask panel visibility
   const subtaskVisible = !!currentSelectedSubtask;
@@ -97,7 +90,13 @@ export function Orkestra() {
   };
 
   const handleAutoTask = async (template: AutoTaskTemplate) => {
-    await createTask("", template.description, template.auto_run, undefined, template.flow ?? undefined);
+    await createTask(
+      "",
+      template.description,
+      template.auto_run,
+      undefined,
+      template.flow ?? undefined,
+    );
   };
 
   // Render sidebar content based on focus type
@@ -126,7 +125,12 @@ export function Orkestra() {
         <Panel.Title>Orkestra</Panel.Title>
         <div className="flex items-center gap-2">
           {autoTaskTemplates.map((template) => (
-            <Button key={template.filename} variant="secondary" size="sm" onClick={() => handleAutoTask(template)}>
+            <Button
+              key={template.filename}
+              variant="secondary"
+              size="sm"
+              onClick={() => handleAutoTask(template)}
+            >
               {template.title}
             </Button>
           ))}
@@ -179,9 +183,7 @@ export function Orkestra() {
 
         {/* Diff panel (shows when diff is open, board hides) */}
         <Slot id="diff" type="grow" visible={diffVisible}>
-          {currentSelectedTask && (
-            <DiffPanel taskId={currentSelectedTask.id} onClose={closeDiff} />
-          )}
+          {currentSelectedTask && <DiffPanel taskId={currentSelectedTask.id} onClose={closeDiff} />}
         </Slot>
       </PanelLayout>
 

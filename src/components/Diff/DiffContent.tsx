@@ -29,7 +29,9 @@ export function DiffContent({ file }: DiffContentProps) {
   if (file.is_binary) {
     return (
       <div className="flex-1 p-4">
-        <div className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-2">{file.path}</div>
+        <div className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-2">
+          {file.path}
+        </div>
         <div className="text-stone-500 dark:text-stone-400">Binary file</div>
       </div>
     );
@@ -41,14 +43,19 @@ export function DiffContent({ file }: DiffContentProps) {
       <div className="sticky top-0 bg-stone-50 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700 px-4 py-2 text-sm font-medium text-stone-600 dark:text-stone-300">
         {file.path}
         {file.old_path && (
-          <span className="text-stone-400 dark:text-stone-500 ml-2">(renamed from {file.old_path})</span>
+          <span className="text-stone-400 dark:text-stone-500 ml-2">
+            (renamed from {file.old_path})
+          </span>
         )}
       </div>
 
       {/* Hunks */}
       <div>
         {file.hunks.map((hunk) => (
-          <div key={`${hunk.old_start}-${hunk.new_start}`} className="border-b border-stone-100 dark:border-stone-800">
+          <div
+            key={`${hunk.old_start}-${hunk.new_start}`}
+            className="border-b border-stone-100 dark:border-stone-800"
+          >
             {/* Hunk header */}
             <div className="bg-stone-100 dark:bg-stone-800 px-4 py-1 text-xs font-mono text-stone-500 dark:text-stone-400">
               @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@

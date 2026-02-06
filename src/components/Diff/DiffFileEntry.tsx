@@ -23,7 +23,9 @@ export function DiffFileEntry({ file, isSelected, onClick }: DiffFileEntryProps)
       type="button"
       onClick={onClick}
       className={`w-full text-left px-2 py-1.5 flex items-center gap-1.5 transition-colors rounded-tl rounded-bl ${
-        isSelected ? "bg-purple-100 dark:bg-purple-900" : "hover:bg-purple-50 dark:hover:bg-purple-950"
+        isSelected
+          ? "bg-purple-100 dark:bg-purple-900"
+          : "hover:bg-purple-50 dark:hover:bg-purple-950"
       }`}
     >
       {/* Status bubble */}

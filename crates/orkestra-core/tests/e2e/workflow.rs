@@ -1443,11 +1443,11 @@ fn test_session_reset_on_cross_stage_rejection() {
     ctx.advance(); // processes work output
 
     // =========================================================================
-    // Step 3: Verify iteration history (deterministic ordering)
+    // Step 3: Verify iteration history (chronological ordering)
     // =========================================================================
-    // get_iterations returns ORDER BY stage, iteration_number, so:
-    //   [0] review#1 (Rejection → work)
-    //   [1] work#1   (Approved)
+    // get_iterations returns ORDER BY started_at, iteration_number, so:
+    //   [0] work#1   (Approved)
+    //   [1] review#1 (Rejection → work)
     //   [2] work#2   (re-entry after rejection — pending or has artifact)
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
@@ -1467,24 +1467,24 @@ fn test_session_reset_on_cross_stage_rejection() {
             .join(", ")
     );
 
-    // [0] review#1: rejection targeting work
-    assert_eq!(iterations[0].stage, "review");
+    // [0] work#1: approved
+    assert_eq!(iterations[0].stage, "work");
     assert_eq!(iterations[0].iteration_number, 1);
     assert!(
-        matches!(
-            iterations[0].outcome.as_ref(),
-            Some(Outcome::Rejection { target, .. }) if target == "work"
-        ),
-        "review#1 should be Rejection targeting work, got: {:?}",
+        matches!(iterations[0].outcome.as_ref(), Some(Outcome::Approved)),
+        "work#1 should be Approved, got: {:?}",
         iterations[0].outcome
     );
 
-    // [1] work#1: approved
-    assert_eq!(iterations[1].stage, "work");
+    // [1] review#1: rejection targeting work
+    assert_eq!(iterations[1].stage, "review");
     assert_eq!(iterations[1].iteration_number, 1);
     assert!(
-        matches!(iterations[1].outcome.as_ref(), Some(Outcome::Approved)),
-        "work#1 should be Approved, got: {:?}",
+        matches!(
+            iterations[1].outcome.as_ref(),
+            Some(Outcome::Rejection { target, .. }) if target == "work"
+        ),
+        "review#1 should be Rejection targeting work, got: {:?}",
         iterations[1].outcome
     );
 
@@ -1661,9 +1661,9 @@ fn test_session_not_reset_without_flag() {
     ctx.advance(); // processes rejection → moves to work → spawns work agent
     ctx.advance(); // processes work output
 
-    // Verify iteration history (ORDER BY stage, iteration_number)
-    // [0] review#1 (Rejection → work)
-    // [1] work#1   (Approved)
+    // Verify iteration history (ORDER BY started_at, iteration_number)
+    // [0] work#1   (Approved)
+    // [1] review#1 (Rejection → work)
     // [2] work#2   (re-entry after rejection)
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     assert_eq!(
@@ -1682,28 +1682,28 @@ fn test_session_not_reset_without_flag() {
             .join(", ")
     );
 
-    assert_eq!(iterations[0].stage, "review");
+    assert_eq!(iterations[0].stage, "work");
     assert_eq!(iterations[0].iteration_number, 1);
     assert!(
+        matches!(iterations[0].outcome.as_ref(), Some(Outcome::Approved)),
+        "work#1 should be Approved"
+    );
+
+    assert_eq!(iterations[1].stage, "review");
+    assert_eq!(iterations[1].iteration_number, 1);
+    assert!(
         matches!(
-            iterations[0].outcome.as_ref(),
+            iterations[1].outcome.as_ref(),
             Some(Outcome::Rejection { target, .. }) if target == "work"
         ),
         "review#1 should be Rejection targeting work"
-    );
-
-    assert_eq!(iterations[1].stage, "work");
-    assert_eq!(iterations[1].iteration_number, 1);
-    assert!(
-        matches!(iterations[1].outcome.as_ref(), Some(Outcome::Approved)),
-        "work#1 should be Approved"
     );
 
     assert_eq!(iterations[2].stage, "work");
     assert_eq!(iterations[2].iteration_number, 2);
 
     // Both work iterations should be linked to the SAME session (no superseding)
-    let work1_session = iterations[1].stage_session_id.as_ref();
+    let work1_session = iterations[0].stage_session_id.as_ref();
     let work2_session = iterations[2].stage_session_id.as_ref();
     assert_eq!(
         work1_session, work2_session,

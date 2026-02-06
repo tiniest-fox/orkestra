@@ -243,7 +243,7 @@ impl WorkflowStore for SqliteWorkflowStore {
         let mut stmt = conn
             .prepare(
                 "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered
-                 FROM workflow_iterations ORDER BY task_id, stage, iteration_number",
+                 FROM workflow_iterations ORDER BY task_id, started_at, iteration_number",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
@@ -265,7 +265,7 @@ impl WorkflowStore for SqliteWorkflowStore {
         let mut stmt = conn
             .prepare(
                 "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered
-                 FROM workflow_iterations WHERE task_id = ? ORDER BY stage, iteration_number",
+                 FROM workflow_iterations WHERE task_id = ? ORDER BY started_at, iteration_number",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
 

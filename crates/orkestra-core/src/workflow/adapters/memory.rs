@@ -109,7 +109,7 @@ impl WorkflowStore for InMemoryWorkflowStore {
         result.sort_by(|a, b| {
             a.task_id
                 .cmp(&b.task_id)
-                .then(a.stage.cmp(&b.stage))
+                .then(a.started_at.cmp(&b.started_at))
                 .then(a.iteration_number.cmp(&b.iteration_number))
         });
         Ok(result)
@@ -122,7 +122,11 @@ impl WorkflowStore for InMemoryWorkflowStore {
             .filter(|i| i.task_id == task_id)
             .cloned()
             .collect();
-        result.sort_by_key(|i| (i.stage.clone(), i.iteration_number));
+        result.sort_by(|a, b| {
+            a.started_at
+                .cmp(&b.started_at)
+                .then(a.iteration_number.cmp(&b.iteration_number))
+        });
         Ok(result)
     }
 

@@ -174,8 +174,7 @@ fn extract_rejection_feedback(task: &Task, iterations: &[Iteration]) -> Option<S
     let stage = task.current_stage()?;
 
     // Find the most recent rejection outcome for this stage
-    let mut stage_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == stage).collect();
-    stage_iterations.sort_by_key(|i| i.iteration_number);
+    let stage_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == stage).collect();
 
     for iteration in stage_iterations.into_iter().rev() {
         if let Some(Outcome::Rejected { feedback, .. } | Outcome::Rejection { feedback, .. }) =

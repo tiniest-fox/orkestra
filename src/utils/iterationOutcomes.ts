@@ -39,6 +39,39 @@ export function getOutcomeSemantic(outcome: WorkflowIteration["outcome"]): Outco
 }
 
 /**
+ * Human-readable label for an outcome type.
+ * Canonical source — all UI components should use this instead of duplicating the mapping.
+ */
+export function outcomeLabel(outcome: WorkflowIteration["outcome"]): string {
+  if (!outcome) return "In Progress";
+
+  switch (outcome.type) {
+    case "approved":
+      return "Approved";
+    case "rejected":
+      return "Rejected";
+    case "awaiting_answers":
+      return "Awaiting Answers";
+    case "completed":
+      return "Completed";
+    case "integration_failed":
+      return "Integration Failed";
+    case "agent_error":
+      return "Agent Error";
+    case "spawn_failed":
+      return "Spawn Failed";
+    case "blocked":
+      return "Blocked";
+    case "skipped":
+      return "Skipped";
+    case "rejection":
+      return "Rejected";
+    case "script_failed":
+      return "Script Failed";
+  }
+}
+
+/**
  * Color classes for compact indicators (light backgrounds with dark text).
  * Used by IterationIndicator component.
  */

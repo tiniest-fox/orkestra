@@ -4,7 +4,11 @@
  */
 
 import type { WorkflowIteration } from "../../types/workflow";
-import { getOutcomeIndicatorColor, getOutcomeSemantic } from "../../utils/iterationOutcomes";
+import {
+  getOutcomeIndicatorColor,
+  getOutcomeSemantic,
+  outcomeLabel,
+} from "../../utils/iterationOutcomes";
 
 interface IterationIndicatorProps {
   iterations: WorkflowIteration[];
@@ -17,6 +21,13 @@ interface IterationIndicatorProps {
  */
 function getStageInitial(stage: string): string {
   return stage.charAt(0).toUpperCase();
+}
+
+/**
+ * Capitalize stage name for display (e.g., "work" -> "Work").
+ */
+function capitalizeStage(stage: string): string {
+  return stage.charAt(0).toUpperCase() + stage.slice(1);
 }
 
 export function IterationIndicator({ iterations, maxVisible = 9 }: IterationIndicatorProps) {
@@ -47,14 +58,21 @@ export function IterationIndicator({ iterations, maxVisible = 9 }: IterationIndi
         const semantic = getOutcomeSemantic(iteration.outcome);
         const colorClass = getOutcomeIndicatorColor(semantic);
         const initial = getStageInitial(iteration.stage);
+        const tooltipText = `${capitalizeStage(iteration.stage)} — ${outcomeLabel(iteration.outcome)}`;
 
         return (
-          <div
-            key={iteration.id}
-            className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-semibold ${colorClass}`}
-            title={`${iteration.stage} #${iteration.iteration_number}${iteration.outcome ? ` - ${iteration.outcome.type}` : " - in progress"}`}
-          >
-            {initial}
+          <div key={iteration.id} className="relative group">
+            <div
+              className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-semibold ${colorClass} cursor-default`}
+            >
+              {initial}
+            </div>
+            {/* Tooltip */}
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-stone-900 dark:bg-stone-700 text-white text-xs rounded whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-10">
+              {tooltipText}
+              {/* Arrow */}
+              <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-stone-900 dark:border-t-stone-700" />
+            </div>
           </div>
         );
       })}

@@ -4,7 +4,11 @@
 
 import type { WorkflowIteration } from "../../types/workflow";
 import { formatTimestamp, titleCase } from "../../utils/formatters";
-import { getOutcomeBadgeColor, getOutcomeSemantic } from "../../utils/iterationOutcomes";
+import {
+  getOutcomeBadgeColor,
+  getOutcomeSemantic,
+  outcomeLabel,
+} from "../../utils/iterationOutcomes";
 
 interface IterationCardProps {
   iteration: WorkflowIteration;
@@ -18,31 +22,12 @@ function formatOutcome(outcome: WorkflowIteration["outcome"]): {
 
   const semantic = getOutcomeSemantic(outcome);
   const color = getOutcomeBadgeColor(semantic);
+  const label =
+    outcome.type === "rejection"
+      ? `${outcomeLabel(outcome)} → ${outcome.target}`
+      : outcomeLabel(outcome);
 
-  switch (outcome.type) {
-    case "approved":
-      return { label: "Approved", color };
-    case "rejected":
-      return { label: "Rejected", color };
-    case "awaiting_answers":
-      return { label: "Awaiting Answers", color };
-    case "completed":
-      return { label: "Completed", color };
-    case "integration_failed":
-      return { label: "Integration Failed", color };
-    case "agent_error":
-      return { label: "Agent Error", color };
-    case "spawn_failed":
-      return { label: "Spawn Failed", color };
-    case "blocked":
-      return { label: "Blocked", color };
-    case "skipped":
-      return { label: "Skipped", color };
-    case "rejection":
-      return { label: `Rejected → ${outcome.target}`, color };
-    case "script_failed":
-      return { label: "Script Failed", color };
-  }
+  return { label, color };
 }
 
 export function IterationCard({ iteration }: IterationCardProps) {

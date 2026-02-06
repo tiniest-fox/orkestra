@@ -48,12 +48,11 @@ This is critical. Six reviewers examining the same code will naturally find over
 
 ### REJECT
 - Any HIGH severity finding from other reviewers (principles #4-9)
-- 2+ MEDIUM findings from principles #4-7 (Single Responsibility, Fail Fast, Isolate Side Effects, Push Complexity Down) — after deduplication
+- 1+ MEDIUM findings from principles #4-7 (Single Responsibility, Fail Fast, Isolate Side Effects, Push Complexity Down) — after deduplication
 - A pattern of LOWs indicating a systemic problem (see below)
 
 ### APPROVE WITH NOTES
 - Isolated MEDIUMs from principles #8-9 (Small Components, Precise Naming) — pass observations to compound agent
-- 1 MEDIUM from principles #4-7 that is borderline and doesn't indicate a pattern
 - Use this when issues exist but aren't worth a rejection cycle
 
 ### APPROVE
@@ -75,6 +74,13 @@ When reviewers disagree:
 2. If multiple reviewers agree on an issue → strengthens the finding
 3. If reviewers contradict each other → apply principle hierarchy
 4. If genuinely ambiguous → lean toward APPROVE WITH NOTES rather than REJECT
+
+## "Blocked" vs "Reject"
+
+When deciding the verdict output type:
+
+- **REJECT** is for work that needs significant rework, even if the refactoring is large. Rejections now route to the breakdown stage, which can re-decompose the work with a better approach. Use REJECT whenever the code needs to change, regardless of how much.
+- **BLOCKED** is only for genuine external blockers that no amount of coding can resolve — missing API access, unavailable dependencies, infrastructure not provisioned, waiting on another team. If the fix is "write different/better code," that's a REJECT, not BLOCKED.
 
 ## Output Format
 

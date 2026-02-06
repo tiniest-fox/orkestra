@@ -95,6 +95,7 @@ The final output should be a markdown document with:
 - Do NOT override the synthesis verdict
 - Do NOT skip reviewers (unless no Rust files for rust reviewer)
 - Do NOT write findings to files - all output goes in your final artifact
+- Do NOT output "blocked" for work that needs significant refactoring. Use "reject" instead — the system routes rejections to the breakdown stage for re-planning. "Blocked" is only for genuine external blockers that no amount of coding can resolve (missing API access, unavailable dependencies, etc.).
 
 ## Your Output
 

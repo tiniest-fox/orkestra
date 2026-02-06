@@ -8,7 +8,7 @@ import { getOutcomeIndicatorColor, getOutcomeSemantic } from "../../utils/iterat
 
 interface IterationIndicatorProps {
   iterations: WorkflowIteration[];
-  /** Maximum number of iterations to display (default: 5) */
+  /** Maximum number of iterations to display (default: 9) */
   maxVisible?: number;
 }
 
@@ -19,7 +19,7 @@ function getStageInitial(stage: string): string {
   return stage.charAt(0).toUpperCase();
 }
 
-export function IterationIndicator({ iterations, maxVisible = 5 }: IterationIndicatorProps) {
+export function IterationIndicator({ iterations, maxVisible = 9 }: IterationIndicatorProps) {
   if (iterations.length === 0) {
     return null;
   }
@@ -29,9 +29,12 @@ export function IterationIndicator({ iterations, maxVisible = 5 }: IterationIndi
     (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime(),
   );
 
+  // Special case: if we have exactly 10, show all 10 (no +X counter needed)
+  const effectiveMaxVisible = sortedIterations.length === 10 ? 10 : maxVisible;
+
   // Show most recent iterations (slice from end), with hidden count on left
-  const hiddenCount = Math.max(0, sortedIterations.length - maxVisible);
-  const visibleIterations = sortedIterations.slice(-maxVisible);
+  const hiddenCount = Math.max(0, sortedIterations.length - effectiveMaxVisible);
+  const visibleIterations = sortedIterations.slice(-effectiveMaxVisible);
 
   return (
     <div className="flex items-center gap-1 mt-2">

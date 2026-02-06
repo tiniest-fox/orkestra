@@ -211,7 +211,7 @@ Commands in `src-tauri/src/commands/` are thin wrappers around `WorkflowApi` met
 
 ### CLI Commands (`ork`)
 
-The `ork` CLI is a debug tool for viewing and managing workflow tasks. Agents output structured JSON instead of using CLI commands.
+The `ork` CLI is the primary tool for inspecting task state, investigating issues, and managing tasks outside the UI. Use it to check why a task is stuck, view iteration history, inspect artifacts, and verify git/worktree state. Agents output structured JSON instead of using CLI commands.
 
 **For comprehensive CLI documentation**, see [`docs/cli-guide.md`](docs/cli-guide.md) — a complete reference covering all commands, options, output formats, status values, phase descriptions, and usage patterns.
 
@@ -224,6 +224,8 @@ ork task create -t TITLE -d DESC        # Create a new task (creates worktree if
 ork task approve ID                     # Approve current stage artifact
 ork task reject ID --feedback MSG       # Reject with feedback (creates new iteration)
 ```
+
+When investigating task issues, `ork task show` is the starting point — it displays the current stage, phase, artifacts, and iteration history. Combine with `git -C .orkestra/.worktrees/<task-id>` commands to inspect worktree state directly.
 
 ### Key Design Patterns
 

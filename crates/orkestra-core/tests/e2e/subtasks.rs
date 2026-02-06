@@ -374,6 +374,23 @@ fn test_parent_advances_when_all_subtasks_done() {
     // Both subtasks have no deps, so both set up on first advance
     env.advance(); // setup_awaiting_tasks: sets up both (no deps)
 
+    // Write a file in each subtask's worktree (simulating agent making changes)
+    let first_task = env.api().get_task(&first_id).unwrap();
+    let first_wt = first_task.worktree_path.as_ref().unwrap();
+    std::fs::write(
+        Path::new(first_wt).join("first.txt"),
+        "from first subtask\n",
+    )
+    .expect("Should write file to first subtask worktree");
+
+    let second_task = env.api().get_task(&second_id).unwrap();
+    let second_wt = second_task.worktree_path.as_ref().unwrap();
+    std::fs::write(
+        Path::new(second_wt).join("second.txt"),
+        "from second subtask\n",
+    )
+    .expect("Should write file to second subtask worktree");
+
     // Pre-set parent's work output before completing subtasks.
     // Once subtasks are archived (integration complete), the parent advances
     // and the orchestrator spawns the work agent immediately.
@@ -402,6 +419,17 @@ fn test_parent_advances_when_all_subtasks_done() {
         Some("work"),
         "Parent should advance to 'work' stage after all subtasks are Archived. Status: {:?}",
         parent.status
+    );
+
+    // Verify both subtask files are visible in the parent worktree (no manual git reset needed)
+    let parent_wt = parent.worktree_path.as_ref().unwrap();
+    assert!(
+        Path::new(parent_wt).join("first.txt").exists(),
+        "first.txt should exist in parent worktree after subtask integration"
+    );
+    assert!(
+        Path::new(parent_wt).join("second.txt").exists(),
+        "second.txt should exist in parent worktree after subtask integration"
     );
 }
 
@@ -751,21 +779,9 @@ fn test_subtask_integration_merges_to_parent_branch() {
     );
 
     // Verify the file was merged to the parent's branch:
-    // The parent worktree should see the file (since the subtask merged to parent's branch)
+    // The merge runs inside the worktree, so the working directory updates automatically.
     let parent = env.api().get_task(&parent_id).unwrap();
     let parent_wt = parent.worktree_path.as_ref().unwrap();
-
-    // Pull the latest changes in the parent worktree (the merge was done via update-ref
-    // on the branch, so we need to reset the worktree to pick up the new commits)
-    let pull_output = std::process::Command::new("git")
-        .args(["reset", "--hard", "HEAD"])
-        .current_dir(parent_wt)
-        .output()
-        .expect("Should reset parent worktree");
-    assert!(
-        pull_output.status.success(),
-        "git reset should succeed in parent worktree"
-    );
 
     let feature_file = Path::new(parent_wt).join("feature.txt");
     assert!(

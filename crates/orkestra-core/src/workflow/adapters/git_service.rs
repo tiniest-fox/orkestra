@@ -172,10 +172,46 @@ impl Git2GitService {
             let stderr = String::from_utf8_lossy(&checkout_output.stderr);
 
             // If the target branch is checked out in a worktree (e.g., subtask merging
-            // to parent's branch), we can't checkout here. Use fast-forward via update-ref
-            // instead — after rebase, the merge is always a fast-forward.
+            // to parent's branch), merge inside that worktree so both the branch pointer
+            // AND the working directory update. After rebase, this is always a fast-forward.
             if stderr.contains("checked out at") || stderr.contains("is already used by worktree") {
-                return self.fast_forward_merge(primary, branch_name);
+                let task_id = primary.strip_prefix("task/").ok_or_else(|| {
+                    GitError::MergeError(format!(
+                        "Cannot derive worktree path for branch {primary}"
+                    ))
+                })?;
+                let worktree_path = self.worktrees_dir.join(task_id);
+
+                let merge_output = Command::new("git")
+                    .args(["merge", "--ff-only", branch_name])
+                    .current_dir(&worktree_path)
+                    .output()
+                    .map_err(|e| {
+                        GitError::MergeError(format!("Failed to merge in worktree: {e}"))
+                    })?;
+
+                if !merge_output.status.success() {
+                    let merge_stderr = String::from_utf8_lossy(&merge_output.stderr);
+                    return Err(GitError::MergeError(format!(
+                        "Failed to merge {branch_name} into {primary}: {merge_stderr}"
+                    )));
+                }
+
+                let head_output = Command::new("git")
+                    .args(["rev-parse", "HEAD"])
+                    .current_dir(&worktree_path)
+                    .output()
+                    .map_err(|e| GitError::MergeError(format!("Failed to get HEAD: {e}")))?;
+
+                let commit_sha = String::from_utf8_lossy(&head_output.stdout)
+                    .trim()
+                    .to_string();
+
+                return Ok(MergeResult {
+                    commit_sha,
+                    target_branch: primary.to_string(),
+                    merged_at: chrono::Utc::now().to_rfc3339(),
+                });
             }
 
             return Err(GitError::MergeError(format!(
@@ -220,70 +256,6 @@ impl Git2GitService {
         Ok(MergeResult {
             commit_sha,
             target_branch: primary.to_string(),
-            merged_at: chrono::Utc::now().to_rfc3339(),
-        })
-    }
-
-    /// Fast-forward merge via `update-ref` (no checkout required).
-    ///
-    /// Used when the target branch is checked out in a worktree (e.g., subtask
-    /// merging to parent's branch). After rebase, the source branch is always
-    /// ahead of the target, so this is a safe fast-forward.
-    fn fast_forward_merge(
-        &self,
-        target_branch: &str,
-        source_branch: &str,
-    ) -> Result<MergeResult, GitError> {
-        // Verify the target is an ancestor of the source (fast-forward is valid)
-        let is_ancestor = Command::new("git")
-            .args(["merge-base", "--is-ancestor", target_branch, source_branch])
-            .current_dir(&self.repo_path)
-            .output()
-            .map_err(|e| {
-                GitError::MergeError(format!("Failed to check fast-forward eligibility: {e}"))
-            })?;
-
-        if !is_ancestor.status.success() {
-            return Err(GitError::MergeConflict {
-                branch: source_branch.to_string(),
-                conflict_files: vec![],
-            });
-        }
-
-        // Get the source branch's commit SHA
-        let sha_output = Command::new("git")
-            .args(["rev-parse", source_branch])
-            .current_dir(&self.repo_path)
-            .output()
-            .map_err(|e| GitError::MergeError(format!("Failed to resolve {source_branch}: {e}")))?;
-
-        let commit_sha = String::from_utf8_lossy(&sha_output.stdout)
-            .trim()
-            .to_string();
-
-        // Fast-forward the target branch ref to the source branch's tip
-        let update_output = Command::new("git")
-            .args([
-                "update-ref",
-                &format!("refs/heads/{target_branch}"),
-                &commit_sha,
-            ])
-            .current_dir(&self.repo_path)
-            .output()
-            .map_err(|e| {
-                GitError::MergeError(format!("Failed to fast-forward {target_branch}: {e}"))
-            })?;
-
-        if !update_output.status.success() {
-            let stderr = String::from_utf8_lossy(&update_output.stderr);
-            return Err(GitError::MergeError(format!(
-                "Failed to fast-forward {target_branch}: {stderr}"
-            )));
-        }
-
-        Ok(MergeResult {
-            commit_sha,
-            target_branch: target_branch.to_string(),
             merged_at: chrono::Utc::now().to_rfc3339(),
         })
     }

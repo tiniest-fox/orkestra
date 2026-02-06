@@ -1,10 +1,5 @@
 import { useContext, useEffect, useRef, useState } from "react";
-import {
-  ANIMATION_CONFIG,
-  PanelContainerContext,
-  SlotLayoutContext,
-  type SlotProps,
-} from "./types";
+import { ANIMATION_CONFIG, PanelContainerContext, SlotLayoutContext, type SlotProps } from "./types";
 
 /**
  * Slot - A slot within PanelLayout that animates open/closed.
@@ -16,16 +11,7 @@ import {
  *
  * When contentKey changes, the slot closes then reopens with new content.
  */
-export function Slot({
-  children,
-  id,
-  type,
-  size,
-  visible,
-  contentKey,
-  plain = false,
-  className = "",
-}: SlotProps) {
+export function Slot({ children, id, type, size, visible, contentKey, plain = false, className = "" }: SlotProps) {
   const context = useContext(SlotLayoutContext);
   if (!context) {
     throw new Error("Slot must be used within a PanelLayout");
@@ -53,8 +39,7 @@ export function Slot({
     // 2. We're closing (keep old content visible during close animation)
     // 3. contentKey is changing (let the switch effect handle it)
     const isClosing = prevVisibleRef.current && !visible;
-    const keyChanging = prevContentKeyRef.current !== contentKey &&
-                        prevContentKeyRef.current && contentKey;
+    const keyChanging = prevContentKeyRef.current !== contentKey && prevContentKeyRef.current && contentKey;
 
     if (!isSwitchingRef.current && !isClosing && !keyChanging && visible) {
       setDisplayedContent(children);
@@ -129,9 +114,7 @@ export function Slot({
   }
 
   // Visual styling classes (shadow, rounded corners, background) - skip if plain
-  const visualClasses = plain
-    ? ""
-    : "shadow-panel rounded-panel bg-white dark:bg-stone-900";
+  const visualClasses = plain ? "" : "shadow-panel rounded-panel bg-white dark:bg-stone-900";
 
   // When plain, reset PanelContainerContext so Panels inside render their own shadows
   const content = (
@@ -147,14 +130,13 @@ export function Slot({
         opacity: shouldShowContent ? 1 : 0,
         pointerEvents: shouldShowContent ? "auto" : "none",
         transition: `opacity ${ANIMATION_CONFIG.duration * 0.5}s ease-out`,
+        zIndex: shouldShowContent ? 1 : 0,
       }}
     >
       {/* Visual wrapper: shadow, rounded corners, background */}
       <div className={`flex-1 min-h-0 flex flex-col ${visualClasses} ${className}`}>
         {plain ? (
-          <PanelContainerContext.Provider value={{ inContainer: false }}>
-            {content}
-          </PanelContainerContext.Provider>
+          <PanelContainerContext.Provider value={{ inContainer: false }}>{content}</PanelContainerContext.Provider>
         ) : (
           content
         )}

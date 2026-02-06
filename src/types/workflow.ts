@@ -227,9 +227,11 @@ export type WorkflowOutcome =
   | { type: "completed"; merged_at?: string; commit_sha?: string; target_branch?: string }
   | { type: "integration_failed"; error: string; conflict_files: string[] }
   | { type: "agent_error"; error: string }
+  | { type: "spawn_failed"; error: string }
   | { type: "blocked"; reason: string }
   | { type: "skipped"; stage: string; reason: string }
-  | { type: "rejection"; from_stage: string; target: string; feedback: string };
+  | { type: "rejection"; from_stage: string; target: string; feedback: string }
+  | { type: "script_failed"; stage: string; error: string; recovery_stage?: string };
 
 /**
  * A single iteration within a stage (one agent run).

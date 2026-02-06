@@ -32,12 +32,16 @@ function formatOutcome(outcome: WorkflowIteration["outcome"]): {
       return { label: "Integration Failed", color };
     case "agent_error":
       return { label: "Agent Error", color };
+    case "spawn_failed":
+      return { label: "Spawn Failed", color };
     case "blocked":
       return { label: "Blocked", color };
     case "skipped":
       return { label: "Skipped", color };
     case "rejection":
       return { label: `Rejected → ${outcome.target}`, color };
+    case "script_failed":
+      return { label: "Script Failed", color };
   }
 }
 

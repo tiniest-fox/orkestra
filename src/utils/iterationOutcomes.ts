@@ -28,6 +28,8 @@ export function getOutcomeSemantic(outcome: WorkflowIteration["outcome"]): Outco
       return "info";
     case "agent_error":
     case "integration_failed":
+    case "spawn_failed":
+    case "script_failed":
       return "error";
     case "skipped":
       return "neutral";

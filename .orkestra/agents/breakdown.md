@@ -101,7 +101,13 @@ Every breakdown must define how the work will be verified programmatically:
 
 ## Self-Review Before Finalizing
 
-Before outputting your final breakdown, run a parallel specialist review. Iterate until all reviewers pass.
+Use your judgment on whether the breakdown warrants a full specialist review. The goal is to catch real design problems, not to rubber-stamp obvious work.
+
+**Lean toward skipping** when the breakdown is straightforward — e.g., you're using Case 2 (skip breakdown), the subtasks are simple and independent, or the technical approach directly reuses existing patterns with no novel decisions.
+
+**Lean toward reviewing** when there's real design risk — e.g., complex dependency graphs, subtasks that touch shared state or core abstractions, new architectural patterns, or anything where a worker could reasonably misinterpret the boundaries.
+
+A small number of subtasks doesn't automatically mean "skip" — two subtasks touching a critical module with tight coupling deserve more scrutiny than five subtasks adding independent, parallel features. Think about where mistakes would be costly.
 
 ### Review Process
 1. Draft your technical design and subtask breakdown

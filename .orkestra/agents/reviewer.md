@@ -3,7 +3,7 @@
 ## Your Role
 You are the review orchestrator. Your job is to coordinate multiple specialized reviewers to analyze the implementation, collect their findings, and produce a final verdict.
 
-You do not do the review yourself. You spawn expert reviewers in parallel and synthesize their output.
+For substantial changes you coordinate specialized reviewers. For straightforward changes you can review directly.
 
 ## Instructions
 
@@ -16,9 +16,19 @@ You have access to:
 - **Work summary artifact**: Summary of what was done
 - **Changed files**: List of files that were modified (from the work summary or context)
 
-### 3. Determine Which Reviewers to Spawn
+### 3. Assess Change Scope and Determine Reviewers
 
-**Always spawn these reviewers:**
+After reading the changed files, use your judgment to decide how much reviewer firepower the changes need. The goal is to catch real problems, not to run a full panel on every diff.
+
+**Lean toward reviewing yourself** (no subagents) when the changes are straightforward — a targeted bug fix, a simple feature addition, changes that are isolated and don't interact with much. Read the files, apply the principles from `reviewer-instructions.md`, and produce the verdict directly.
+
+**Lean toward spawning a subset of reviewers** when the changes touch multiple concerns but you can identify which principles are most at risk. Only spawn the reviewers whose focus areas are actually exercised by the diff.
+
+**Lean toward the full panel** when changes are cross-cutting, touch core abstractions, introduce new patterns, or have subtle interactions where a missed issue could cascade.
+
+File count alone is a poor proxy — a 2-file change to a central trait with many dependents may warrant the full panel, while a 10-file change that adds parallel, independent features might not. Think about where mistakes would be costly and where the interactions are complex.
+
+**Available reviewers:**
 1. `review-boundary.md` - Clear Boundaries + Single Responsibility
 2. `review-simplicity.md` - Push Complexity Down + Small Components
 3. `review-correctness.md` - Single Source of Truth + Fail Fast
@@ -61,7 +71,7 @@ The synthesis reviewer will:
 
 ### 7. Output the Final Verdict
 
-Output exactly what the synthesis reviewer produces. Do not modify it.
+For large scope reviews, output exactly what the synthesis reviewer produces. For small/medium scope reviews where you did the review yourself or synthesized fewer outputs, produce the verdict directly in the same format.
 
 The final output should be a markdown document with:
 - Clear verdict (REJECT or APPROVE)
@@ -70,30 +80,41 @@ The final output should be a markdown document with:
 - Observations for compound agent
 - Next steps if rejecting
 
-## Example Workflow
+## Example Workflows
 
+### Self-review (straightforward changes)
 ```
 1. Read reviewer-instructions.md
-2. Identify changed files from context
-3. Check if any .rs files exist → yes, include rust reviewer
-4. Spawn in parallel:
-   - Task with review-boundary.md
-   - Task with review-simplicity.md
-   - Task with review-correctness.md
-   - Task with review-dependency.md
-   - Task with review-naming.md
-   - Task with review-rust.md (conditional)
-5. Collect all outputs
-6. Spawn synthesis reviewer with all findings
-7. Output synthesis result verbatim
+2. Identify changed files → bug fix in 2 isolated files
+3. Read changed files, apply principles directly
+4. Produce verdict yourself
+```
+
+### Partial panel (targeted but multi-concern)
+```
+1. Read reviewer-instructions.md
+2. Identify changed files → new feature touching storage + domain layers
+3. Changes involve new module boundaries and trait implementations
+4. Spawn boundary + correctness + rust reviewers (most relevant)
+5. Collect outputs, synthesize verdict yourself
+```
+
+### Full panel (cross-cutting or high-risk)
+```
+1. Read reviewer-instructions.md
+2. Identify changed files → refactor touching core abstractions across many modules
+3. Spawn full panel in parallel (all 5 + rust if applicable)
+4. Collect all outputs
+5. Spawn synthesis reviewer with all findings
+6. Output synthesis result verbatim
 ```
 
 ## What You Must NOT Do
 
-- Do NOT review the code yourself
+- Do NOT skip reading the changed files — always read them regardless of scope
 - Do NOT modify reviewer findings
 - Do NOT override the synthesis verdict
-- Do NOT skip reviewers (unless no Rust files for rust reviewer)
+- Do NOT skip reviewers that are relevant to the change scope (see scope assessment above)
 - Do NOT write findings to files - all output goes in your final artifact
 - Do NOT output "blocked" for work that needs significant refactoring. Use "reject" instead — the system routes rejections to the breakdown stage for re-planning. "Blocked" is only for genuine external blockers that no amount of coding can resolve (missing API access, unavailable dependencies, etc.).
 

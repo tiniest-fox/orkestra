@@ -70,7 +70,11 @@ Things requiring codebase analysis that the breakdown agent should resolve. Leav
 
 ## Self-Review Before Finalizing
 
-Before outputting your final plan, spawn a subagent to review it for discovery completeness. Iterate until the review passes.
+### When to Skip Self-Review
+For **small** scope tasks (bug fix, config change, single clear feature) where the plan is straightforward and the requirements are unambiguous, skip the subagent review entirely. Just output the plan directly. You don't need a reviewer to validate that a one-paragraph plan covers a simple fix.
+
+### When to Run Self-Review
+For **medium** and **large** scope tasks, spawn a subagent to review for discovery completeness. Iterate until the review passes.
 
 ### Review Process
 1. Draft your plan

@@ -81,7 +81,6 @@ flows:
           capabilities:
             approval:
               rejection_stage: plan
-              reset_session: true
 
   # Hotfix flow: Straight to work, minimal overhead
   hotfix:

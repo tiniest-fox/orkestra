@@ -213,6 +213,10 @@ Commands in `src-tauri/src/commands/` are thin wrappers around `WorkflowApi` met
 
 The `ork` CLI is a debug tool for viewing and managing workflow tasks. Agents output structured JSON instead of using CLI commands.
 
+**For comprehensive CLI documentation**, see [`docs/cli-guide.md`](docs/cli-guide.md) — a complete reference covering all commands, options, output formats, status values, phase descriptions, and usage patterns.
+
+**Quick reference**:
+
 ```bash
 ork task list [--status STATUS]         # List tasks (filter: active, done, failed, blocked)
 ork task show ID                        # Show task details, artifacts, and iterations

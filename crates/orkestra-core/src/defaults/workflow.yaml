@@ -44,7 +44,6 @@ stages:
     artifact: verdict
     inputs: [plan, summary]
     prompt: reviewer.md
-    is_automated: true
     capabilities:
       approval:
         rejection_stage: work

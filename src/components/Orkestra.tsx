@@ -18,8 +18,16 @@ import { Button, Panel, PanelLayout, Slot } from "./ui";
 export function Orkestra() {
   useNotificationPermission();
 
-  const { focus, focusTask, focusSubtask, closeSubtask, openCreate, closeFocus, closeDiff } =
-    useDisplayContext();
+  const {
+    focus,
+    focusTask,
+    focusSubtask,
+    closeSubtask,
+    openCreate,
+    closeFocus,
+    closeDiff,
+    closeSubtaskDiff,
+  } = useDisplayContext();
 
   const config = useWorkflowConfig();
   const autoTaskTemplates = useAutoTaskTemplates();
@@ -39,13 +47,15 @@ export function Orkestra() {
 
   const selectedSubtaskId = focus.type === "task" ? focus.subtaskId : undefined;
   const showDiff = focus.type === "task" && focus.showDiff === true;
+  const showSubtaskDiff = focus.type === "task" && focus.subtaskDiff === true;
 
   const currentSelectedSubtask: WorkflowTaskView | null = selectedSubtaskId
     ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
     : null;
 
   // Sidebar visibility and content key
-  const sidebarVisible = focus.type === "create" || focus.type === "task";
+  // Hide parent sidebar when subtask diff is open
+  const sidebarVisible = (focus.type === "create" || focus.type === "task") && !showSubtaskDiff;
   const sidebarContentKey =
     focus.type === "create" ? "new-task" : focus.type === "task" ? focus.taskId : null;
 
@@ -55,6 +65,7 @@ export function Orkestra() {
 
   // Diff panel visibility
   const diffVisible = showDiff && !!currentSelectedTask;
+  const subtaskDiffVisible = showSubtaskDiff && !!currentSelectedSubtask;
 
   const handleSelectTask = (task: WorkflowTask) => {
     focusTask(task.id);
@@ -67,6 +78,10 @@ export function Orkestra() {
   };
 
   const handleCloseSubtask = () => {
+    // When closing subtask, also close its diff if open
+    if (showSubtaskDiff) {
+      closeSubtaskDiff();
+    }
     closeSubtask();
   };
 
@@ -145,8 +160,8 @@ export function Orkestra() {
       )}
 
       <PanelLayout className="flex-1">
-        {/* Main content: KanbanBoard (hides when diff is shown) */}
-        <Slot id="board" type="grow" visible={!showDiff && !loading}>
+        {/* Main content: KanbanBoard (hides when diff or subtask diff is shown) */}
+        <Slot id="board" type="grow" visible={!showDiff && !showSubtaskDiff && !loading}>
           <KanbanBoard
             config={config}
             tasks={topLevelTasks}
@@ -184,6 +199,13 @@ export function Orkestra() {
         {/* Diff panel (shows when diff is open, board hides) */}
         <Slot id="diff" type="grow" visible={diffVisible}>
           {currentSelectedTask && <DiffPanel taskId={currentSelectedTask.id} onClose={closeDiff} />}
+        </Slot>
+
+        {/* Subtask diff panel (shows when subtask diff is open, board and parent sidebar hide) */}
+        <Slot id="subtask-diff" type="grow" visible={subtaskDiffVisible}>
+          {currentSelectedSubtask && (
+            <DiffPanel taskId={currentSelectedSubtask.id} onClose={closeSubtaskDiff} />
+          )}
         </Slot>
       </PanelLayout>
 

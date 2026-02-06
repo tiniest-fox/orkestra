@@ -22,7 +22,7 @@ export type View = { type: "board" };
 export type Focus =
   | { type: "none" }
   | { type: "create" }
-  | { type: "task"; taskId: string; subtaskId?: string; showDiff?: boolean };
+  | { type: "task"; taskId: string; subtaskId?: string; showDiff?: boolean; subtaskDiff?: boolean };
 
 export interface DisplayContextValue {
   view: View;
@@ -48,6 +48,12 @@ export interface DisplayContextValue {
 
   /** Close the diff viewer. */
   closeDiff: () => void;
+
+  /** Open the diff viewer for the current subtask. */
+  openSubtaskDiff: () => void;
+
+  /** Close the subtask diff viewer. */
+  closeSubtaskDiff: () => void;
 }
 
 // =============================================================================
@@ -123,6 +129,26 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
     });
   }, []);
 
+  const openSubtaskDiff = useCallback(() => {
+    setFocus((prev) => {
+      if (prev.type === "task" && prev.subtaskId) {
+        // Open subtask diff
+        return { type: "task", taskId: prev.taskId, subtaskId: prev.subtaskId, subtaskDiff: true };
+      }
+      return prev;
+    });
+  }, []);
+
+  const closeSubtaskDiff = useCallback(() => {
+    setFocus((prev) => {
+      if (prev.type === "task" && prev.subtaskId) {
+        // Close subtask diff, restore subtask view
+        return { type: "task", taskId: prev.taskId, subtaskId: prev.subtaskId, subtaskDiff: false };
+      }
+      return prev;
+    });
+  }, []);
+
   const value = useMemo<DisplayContextValue>(
     () => ({
       view,
@@ -134,6 +160,8 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeFocus,
       openDiff,
       closeDiff,
+      openSubtaskDiff,
+      closeSubtaskDiff,
     }),
     [
       view,
@@ -145,6 +173,8 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeFocus,
       openDiff,
       closeDiff,
+      openSubtaskDiff,
+      closeSubtaskDiff,
     ],
   );
 

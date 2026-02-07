@@ -45,8 +45,20 @@ pub struct DerivedTaskState {
     pub has_questions: bool,
     pub pending_questions: Vec<Question>,
     pub rejection_feedback: Option<String>,
+    pub pending_rejection: Option<PendingRejection>,
     pub stages_with_logs: Vec<String>,
     pub subtask_progress: Option<SubtaskProgress>,
+}
+
+/// A pending rejection from a reviewer agent awaiting human confirmation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingRejection {
+    /// The stage that produced the rejection (e.g., "review").
+    pub from_stage: String,
+    /// The target stage the rejection would send work to (e.g., "work").
+    pub target: String,
+    /// The agent's rejection feedback.
+    pub feedback: String,
 }
 
 /// Progress summary for a parent task's subtasks.
@@ -79,6 +91,7 @@ impl DerivedTaskState {
     ) -> Self {
         let pending_questions = extract_pending_questions(task, iterations);
         let rejection_feedback = extract_rejection_feedback(task, iterations);
+        let pending_rejection = extract_pending_rejection(task, iterations);
         let stages_with_logs = sessions.iter().map(|s| s.stage.clone()).collect();
         let subtask_progress = compute_subtask_progress(subtask_states);
 
@@ -95,6 +108,7 @@ impl DerivedTaskState {
             has_questions: !pending_questions.is_empty(),
             pending_questions,
             rejection_feedback,
+            pending_rejection,
             stages_with_logs,
             subtask_progress,
         }
@@ -181,6 +195,35 @@ fn extract_rejection_feedback(task: &Task, iterations: &[Iteration]) -> Option<S
             &iteration.outcome
         {
             return Some(feedback.clone());
+        }
+    }
+
+    None
+}
+
+/// Extract a pending rejection from the latest iteration of the current stage.
+///
+/// Returns `Some(PendingRejection)` if the latest iteration ended with `AwaitingRejectionReview`.
+fn extract_pending_rejection(task: &Task, iterations: &[Iteration]) -> Option<PendingRejection> {
+    let stage = task.current_stage()?;
+
+    let latest = iterations
+        .iter()
+        .filter(|i| i.stage == stage)
+        .max_by_key(|i| i.iteration_number);
+
+    if let Some(iter) = latest {
+        if let Some(Outcome::AwaitingRejectionReview {
+            from_stage,
+            target,
+            feedback,
+        }) = &iter.outcome
+        {
+            return Some(PendingRejection {
+                from_stage: from_stage.clone(),
+                target: target.clone(),
+                feedback: feedback.clone(),
+            });
         }
     }
 
@@ -470,6 +513,40 @@ mod tests {
         assert!(!derived.is_done);
         assert!(!derived.is_failed);
         assert!(!derived.is_blocked);
+    }
+
+    #[test]
+    fn test_derived_state_pending_rejection() {
+        let mut task = make_task("review");
+        task.phase = Phase::AwaitingReview;
+
+        let mut iter = Iteration::new("iter-1", "task-1", "review", 1, "now");
+        iter.outcome = Some(Outcome::awaiting_rejection_review(
+            "review",
+            "work",
+            "Tests are failing",
+        ));
+        iter.ended_at = Some("now".to_string());
+
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[]);
+
+        assert!(derived.needs_review);
+        let rejection = derived.pending_rejection.unwrap();
+        assert_eq!(rejection.from_stage, "review");
+        assert_eq!(rejection.target, "work");
+        assert_eq!(rejection.feedback, "Tests are failing");
+    }
+
+    #[test]
+    fn test_derived_state_no_pending_rejection_for_standard_review() {
+        let mut task = make_task("review");
+        task.phase = Phase::AwaitingReview;
+
+        // Standard approval — no pending rejection
+        let iter = Iteration::new("iter-1", "task-1", "review", 1, "now");
+        let derived = DerivedTaskState::build(&task, &[iter], &[], &[]);
+
+        assert!(derived.pending_rejection.is_none());
     }
 
     #[test]

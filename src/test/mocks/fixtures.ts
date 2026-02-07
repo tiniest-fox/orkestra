@@ -38,6 +38,7 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     has_questions: false,
     pending_questions: [],
     rejection_feedback: null,
+    pending_rejection: null,
     stages_with_logs: [],
     subtask_progress: null,
     ...overrides,

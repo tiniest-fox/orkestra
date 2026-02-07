@@ -233,6 +233,7 @@ export type WorkflowOutcome =
   | { type: "blocked"; reason: string }
   | { type: "skipped"; stage: string; reason: string }
   | { type: "rejection"; from_stage: string; target: string; feedback: string }
+  | { type: "awaiting_rejection_review"; from_stage: string; target: string; feedback: string }
   | { type: "script_failed"; stage: string; error: string; recovery_stage?: string };
 
 /**
@@ -335,6 +336,18 @@ export interface WorkflowStageSession {
 // =============================================================================
 
 /**
+ * A pending rejection from a reviewer agent awaiting human confirmation.
+ */
+export interface PendingRejection {
+  /** The stage that produced the rejection (e.g., "review"). */
+  from_stage: string;
+  /** The target stage the rejection would send work to (e.g., "work"). */
+  target: string;
+  /** The agent's rejection feedback. */
+  feedback: string;
+}
+
+/**
  * Pre-computed state derived from task + iterations + sessions.
  * Computed once in the Rust backend — the single source of truth.
  */
@@ -351,6 +364,7 @@ export interface DerivedTaskState {
   has_questions: boolean;
   pending_questions: WorkflowQuestion[];
   rejection_feedback: string | null;
+  pending_rejection: PendingRejection | null;
   stages_with_logs: string[];
   subtask_progress: SubtaskProgress | null;
 }

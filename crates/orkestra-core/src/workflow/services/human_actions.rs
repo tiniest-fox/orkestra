@@ -16,6 +16,8 @@ impl WorkflowApi {
     /// When approving a breakdown stage that produced subtasks, this creates
     /// Task records for each subtask and sets the parent to `WaitingOnChildren`.
     ///
+    /// When confirming a pending rejection, executes the rejection (moves to target stage).
+    ///
     /// # Errors
     ///
     /// Returns `InvalidTransition` if the task is not in `AwaitingReview` phase.
@@ -33,6 +35,23 @@ impl WorkflowApi {
             .current_stage()
             .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
             .to_string();
+
+        // Check for pending rejection review — "approve" means "confirm the rejection"
+        if let Some((from_stage, target, feedback)) =
+            self.pending_rejection_review(&task.id, &current_stage)?
+        {
+            orkestra_debug!(
+                "action",
+                "approve {}: confirming rejection from {} to {}",
+                task_id,
+                from_stage,
+                target
+            );
+            let now = chrono::Utc::now().to_rfc3339();
+            self.execute_rejection(&mut task, &from_stage, &target, &feedback, &now)?;
+            self.store.save_task(&task)?;
+            return Ok(task);
+        }
 
         orkestra_debug!(
             "action",
@@ -162,6 +181,9 @@ impl WorkflowApi {
 
     /// Reject the current stage's artifact with feedback. Retries current stage.
     ///
+    /// When overriding a pending rejection, stays in the same review stage and creates
+    /// a new iteration with the human's feedback so the reviewer agent runs again.
+    ///
     /// # Errors
     ///
     /// Returns `InvalidTransition` if the task is not in `AwaitingReview` phase.
@@ -179,6 +201,46 @@ impl WorkflowApi {
             .current_stage()
             .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
             .to_string();
+
+        // Check for pending rejection review — "reject" means "override, request new verdict"
+        if self
+            .pending_rejection_review(&task.id, &current_stage)?
+            .is_some()
+        {
+            orkestra_debug!(
+                "action",
+                "reject {}: overriding rejection, requesting new verdict in {}",
+                task_id,
+                current_stage
+            );
+
+            let now = chrono::Utc::now().to_rfc3339();
+
+            // Store human's feedback as artifact
+            let artifact_name = self.artifact_name_for_stage(&current_stage, "artifact");
+            task.artifacts.set(Artifact::new(
+                &artifact_name,
+                feedback,
+                &current_stage,
+                &now,
+            ));
+
+            // Don't call end_current_iteration — it was already ended with AwaitingRejectionReview
+            // Create new iteration in the same review stage with human's feedback
+            self.iteration_service.create_iteration(
+                &task.id,
+                &current_stage,
+                Some(IterationTrigger::Feedback {
+                    feedback: feedback.to_string(),
+                }),
+            )?;
+
+            task.phase = Phase::Idle;
+            task.updated_at = now;
+
+            self.store.save_task(&task)?;
+            return Ok(task);
+        }
 
         orkestra_debug!(
             "action",
@@ -421,6 +483,19 @@ impl WorkflowApi {
                     )?;
                     task.phase = Phase::Idle;
                     task.updated_at = now;
+                } else if let Some((from_stage, target, feedback)) =
+                    self.pending_rejection_review(&task.id, &current_stage)?
+                {
+                    // Auto-confirm pending rejection
+                    orkestra_debug!(
+                        "action",
+                        "set_auto_mode {}: auto-confirming rejection from {} to {}",
+                        task_id,
+                        from_stage,
+                        target
+                    );
+                    let now = chrono::Utc::now().to_rfc3339();
+                    self.execute_rejection(&mut task, &from_stage, &target, &feedback, &now)?;
                 } else {
                     self.auto_approve_stage(&mut task, &current_stage)?;
                 }
@@ -499,6 +574,30 @@ impl WorkflowApi {
         }
 
         Ok(())
+    }
+
+    /// Check if the latest iteration has a pending rejection awaiting human review.
+    ///
+    /// Returns `Some((from_stage, target, feedback))` if found.
+    fn pending_rejection_review(
+        &self,
+        task_id: &str,
+        current_stage: &str,
+    ) -> WorkflowResult<Option<(String, String, String)>> {
+        let latest = self.store.get_latest_iteration(task_id, current_stage)?;
+
+        if let Some(iter) = latest {
+            if let Some(Outcome::AwaitingRejectionReview {
+                from_stage,
+                target,
+                feedback,
+            }) = &iter.outcome
+            {
+                return Ok(Some((from_stage.clone(), target.clone(), feedback.clone())));
+            }
+        }
+
+        Ok(None)
     }
 
     /// Helper: End the current active iteration with an outcome.
@@ -833,5 +932,158 @@ mod tests {
             }
             other => panic!("Expected RetryFailed with no instructions, got {other:?}"),
         }
+    }
+
+    // ========================================================================
+    // Rejection review tests
+    // ========================================================================
+
+    /// Workflow with a non-automated review stage (rejection pauses for human review).
+    fn test_workflow_with_review() -> WorkflowConfig {
+        WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan")
+                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("review", "verdict")
+                .with_inputs(vec!["summary".into()])
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+        ])
+    }
+
+    /// Create an API with a task at review stage with a pending rejection verdict.
+    fn api_with_pending_rejection() -> (WorkflowApi, Task) {
+        use crate::workflow::execution::StageOutput;
+
+        let workflow = test_workflow_with_review();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.phase = Phase::Idle;
+        api.store.save_task(&task).unwrap();
+
+        // Advance to review stage with agent working
+        task.status = Status::active("review");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+        api.iteration_service
+            .create_iteration(&task.id, "review", None)
+            .unwrap();
+
+        // Simulate reviewer agent producing a rejection verdict
+        let output = StageOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Tests are failing, fix them".to_string(),
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        // Verify precondition: should be paused at AwaitingReview
+        assert_eq!(task.phase, Phase::AwaitingReview);
+        assert_eq!(task.current_stage(), Some("review"));
+
+        (api, task)
+    }
+
+    #[test]
+    fn test_approve_confirms_pending_rejection() {
+        let (api, task) = api_with_pending_rejection();
+
+        // Human approves → "I agree with the rejection" → move to target stage
+        let task = api.approve(&task.id).unwrap();
+
+        assert_eq!(task.current_stage(), Some("work"));
+        assert_eq!(task.phase, Phase::Idle);
+
+        // Should have created a rejection iteration in the work stage
+        let iterations = api.store.get_iterations(&task.id).unwrap();
+        let work_iter = iterations.iter().find(|i| i.stage == "work").unwrap();
+        match &work_iter.incoming_context {
+            Some(IterationTrigger::Rejection {
+                from_stage,
+                feedback,
+            }) => {
+                assert_eq!(from_stage, "review");
+                assert_eq!(feedback, "Tests are failing, fix them");
+            }
+            other => panic!("Expected Rejection trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_reject_overrides_pending_rejection() {
+        let (api, task) = api_with_pending_rejection();
+
+        // Human rejects → "I disagree, re-evaluate" → stay in review, new iteration
+        let task = api
+            .reject(
+                &task.id,
+                "The implementation looks correct, please re-evaluate",
+            )
+            .unwrap();
+
+        // Should stay in review stage with Idle phase (ready for new agent run)
+        assert_eq!(task.current_stage(), Some("review"));
+        assert_eq!(task.phase, Phase::Idle);
+
+        // A new iteration should be created in the review stage with Feedback trigger
+        let iterations = api.store.get_iterations(&task.id).unwrap();
+        let review_iters: Vec<_> = iterations.iter().filter(|i| i.stage == "review").collect();
+        assert_eq!(review_iters.len(), 2, "Should have 2 review iterations");
+
+        let new_iter = review_iters.last().unwrap();
+        match &new_iter.incoming_context {
+            Some(IterationTrigger::Feedback { feedback }) => {
+                assert_eq!(
+                    feedback,
+                    "The implementation looks correct, please re-evaluate"
+                );
+            }
+            other => panic!("Expected Feedback trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_set_auto_mode_confirms_pending_rejection() {
+        let (api, task) = api_with_pending_rejection();
+
+        // Enabling auto_mode should auto-confirm the pending rejection
+        let task = api.set_auto_mode(&task.id, true).unwrap();
+
+        assert_eq!(task.current_stage(), Some("work"));
+        assert_eq!(task.phase, Phase::Idle);
+        assert!(task.auto_mode);
+    }
+
+    #[test]
+    fn test_rejection_override_then_new_approval_verdict() {
+        use crate::workflow::execution::StageOutput;
+
+        let (api, task) = api_with_pending_rejection();
+
+        // Step 1: Human overrides the rejection
+        let task = api
+            .reject(&task.id, "Please re-evaluate, the tests actually pass")
+            .unwrap();
+        assert_eq!(task.current_stage(), Some("review"));
+        assert_eq!(task.phase, Phase::Idle);
+
+        // Step 2: Agent starts again in review stage
+        let task = api.agent_started(&task.id).unwrap();
+        assert_eq!(task.phase, Phase::AgentWorking);
+
+        // Step 3: Agent produces a new approval verdict this time
+        let output = StageOutput::Approval {
+            decision: "approve".to_string(),
+            content: "On re-evaluation, the implementation looks good".to_string(),
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        // Step 4: Should pause at AwaitingReview (standard approval review, non-automated stage)
+        assert_eq!(task.phase, Phase::AwaitingReview);
+        assert_eq!(task.current_stage(), Some("review"));
+
+        // Step 5: Human approves → task should advance past review (Done, since review is the last stage)
+        let task = api.approve(&task.id).unwrap();
+        assert!(task.is_done());
     }
 }

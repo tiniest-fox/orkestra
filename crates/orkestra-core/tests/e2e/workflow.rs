@@ -1975,3 +1975,414 @@ fn test_retry_failed_without_instructions_sends_resume_prompt() {
 
     ctx.assert_resume_prompt_contains("retry_failed", &["try again"]);
 }
+
+// =============================================================================
+// Human Review of Reviewer Rejection Verdicts
+// =============================================================================
+
+/// Test that reviewer rejection verdicts pause for human review on non-automated stages.
+///
+/// When a reviewer agent rejects work on a non-automated stage, the rejection
+/// should NOT execute immediately. Instead, the task pauses at `AwaitingReview`
+/// with an `AwaitingRejectionReview` outcome so the human can confirm or override.
+///
+/// Flow:
+/// 1. Task created → Work stage
+/// 2. Work agent produces artifact → Approve → Review stage
+/// 3. Reviewer rejects → Task pauses at `AwaitingReview` (NOT sent to work)
+/// 4. Human overrides rejection → Task stays in review, new iteration created
+/// 5. Reviewer runs again → Approves → Task pauses at `AwaitingReview` (standard approval)
+/// 6. Human approves → Task advances to Done → Integration → Archived
+#[test]
+#[allow(clippy::too_many_lines)]
+fn test_rejection_review_override_then_approval() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
+
+    // Non-automated review stage with approval capability (rejection → work)
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+        // Intentionally NOT .automated() — human review required
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    // =========================================================================
+    // Step 1: Create task → Work stage
+    // =========================================================================
+
+    let task = ctx.create_task(
+        "Rejection review test",
+        "Test that reviewer rejections pause for human review",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    assert_eq!(task.current_stage(), Some("work"));
+    assert_eq!(task.phase, Phase::Idle);
+
+    // =========================================================================
+    // Step 2: Work agent produces artifact → Approve → Review stage
+    // =========================================================================
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial implementation with tests".to_string(),
+        },
+    );
+    ctx.advance(); // spawns worker (completion ready)
+    ctx.advance(); // processes work output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // Approve work → advances to review
+    let task = ctx.api().approve(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("review"));
+    assert_eq!(task.phase, Phase::Idle);
+
+    // =========================================================================
+    // Step 3: Reviewer rejects → Task pauses at AwaitingReview
+    // =========================================================================
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Tests are incomplete — missing edge case coverage".to_string(),
+        },
+    );
+    ctx.advance(); // spawns reviewer (completion ready)
+    ctx.advance(); // processes rejection → pauses at AwaitingReview (NOT sent to work)
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("review"),
+        "Task should still be in review stage (rejection paused for human review)"
+    );
+    assert_eq!(
+        task.phase,
+        Phase::AwaitingReview,
+        "Task should be AwaitingReview for human to confirm/override rejection"
+    );
+
+    // Verify the iteration outcome is AwaitingRejectionReview
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let review_iter = iterations.iter().find(|i| {
+        i.stage == "review"
+            && matches!(
+                i.outcome.as_ref(),
+                Some(Outcome::AwaitingRejectionReview { .. })
+            )
+    });
+    assert!(
+        review_iter.is_some(),
+        "Should have an AwaitingRejectionReview iteration. Iterations: {}",
+        iterations
+            .iter()
+            .map(|i| format!(
+                "{}#{}: {:?}",
+                i.stage,
+                i.iteration_number,
+                i.outcome.as_ref().map(|o| format!("{o}"))
+            ))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    // Verify the pending rejection details are stored correctly
+    match review_iter.unwrap().outcome.as_ref().unwrap() {
+        Outcome::AwaitingRejectionReview {
+            from_stage,
+            target,
+            feedback,
+        } => {
+            assert_eq!(from_stage, "review");
+            assert_eq!(target, "work");
+            assert!(feedback.contains("Tests are incomplete"));
+        }
+        other => panic!("Expected AwaitingRejectionReview, got: {other:?}"),
+    }
+
+    // =========================================================================
+    // Step 4: Human overrides rejection → stays in review, new iteration
+    // =========================================================================
+
+    let task = ctx
+        .api()
+        .reject(
+            &task_id,
+            "The implementation looks correct — please re-evaluate the edge cases",
+        )
+        .unwrap();
+
+    assert_eq!(
+        task.current_stage(),
+        Some("review"),
+        "After override, task should stay in review stage"
+    );
+    assert_eq!(
+        task.phase,
+        Phase::Idle,
+        "After override, task should be Idle (ready for reviewer to run again)"
+    );
+
+    // Verify a new iteration was created in the review stage
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let review_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == "review").collect();
+    assert!(
+        review_iterations.len() >= 2,
+        "Should have at least 2 review iterations (original + override). Got: {}",
+        review_iterations.len()
+    );
+
+    // =========================================================================
+    // Step 5: Reviewer runs again → Approves → Standard AwaitingReview
+    // =========================================================================
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
+            content: "Re-evaluated: edge cases are actually covered by integration tests"
+                .to_string(),
+        },
+    );
+    ctx.advance(); // spawns reviewer (completion ready)
+    ctx.advance(); // processes approval → pauses at AwaitingReview (standard)
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("review"),
+        "Task should still be in review (non-automated, awaiting human approval)"
+    );
+    assert_eq!(
+        task.phase,
+        Phase::AwaitingReview,
+        "Task should be AwaitingReview for standard approval"
+    );
+
+    // This time the outcome should NOT be AwaitingRejectionReview
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let latest_review = iterations
+        .iter()
+        .filter(|i| i.stage == "review")
+        .next_back()
+        .expect("Should have review iterations");
+    assert!(
+        !matches!(
+            latest_review.outcome.as_ref(),
+            Some(Outcome::AwaitingRejectionReview { .. })
+        ),
+        "Latest review iteration should NOT be AwaitingRejectionReview (reviewer approved this time)"
+    );
+
+    // =========================================================================
+    // Step 6: Human approves → Done → Integration → Archived
+    // =========================================================================
+
+    let task = ctx.api().approve(&task_id).unwrap();
+    assert!(
+        task.is_done(),
+        "Task should be Done after approval, got status: {:?}",
+        task.status
+    );
+
+    // Advance to trigger integration
+    ctx.advance(); // integration runs (sync) → Archived
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_archived(),
+        "Task should be Archived after integration, got status: {:?}",
+        task.status
+    );
+}
+
+/// Test that confirming a reviewer rejection sends the task to the target stage.
+///
+/// When the human agrees with the reviewer's rejection (calls approve on the
+/// pending rejection), the task should move to the rejection target stage (work).
+#[test]
+fn test_rejection_review_confirm() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
+
+    // Non-automated review stage
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Confirm rejection test",
+        "Test confirming a rejection",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Work → produce artifact → approve → review
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation".to_string(),
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes output
+    ctx.api().approve(&task_id).unwrap();
+
+    // Reviewer rejects → pauses at AwaitingReview
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Code quality is poor".to_string(),
+        },
+    );
+    ctx.advance(); // spawns reviewer
+    ctx.advance(); // processes rejection
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("review"));
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // Human confirms the rejection (calls approve)
+    let task = ctx.api().approve(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Confirming rejection should send task to the rejection target (work)"
+    );
+    assert_eq!(
+        task.phase,
+        Phase::Idle,
+        "Task should be Idle, ready for work agent"
+    );
+
+    // Verify the rejection review was recorded, followed by a new work iteration
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let awaiting_review_iter = iterations.iter().find(|i| {
+        matches!(
+            i.outcome.as_ref(),
+            Some(Outcome::AwaitingRejectionReview { target, .. }) if target == "work"
+        )
+    });
+    assert!(
+        awaiting_review_iter.is_some(),
+        "Should have AwaitingRejectionReview iteration from the reviewer"
+    );
+
+    // A new iteration should exist in the work stage (created by execute_rejection)
+    let work_iters_after: Vec<_> = iterations
+        .iter()
+        .filter(|i| i.stage == "work" && i.iteration_number > 1)
+        .collect();
+    assert!(
+        !work_iters_after.is_empty(),
+        "Should have a new work iteration after confirming rejection"
+    );
+}
+
+/// Test that automated review stages still auto-execute rejections immediately.
+///
+/// When a review stage is automated, rejection verdicts should NOT pause for
+/// human review — they should execute immediately (same as before).
+#[test]
+fn test_automated_review_rejection_skips_human_review() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
+
+    // Automated review stage
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+            .automated(),
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Automated rejection test",
+        "Test that automated stages skip rejection review",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Work → produce artifact → approve → review
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation".to_string(),
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes output
+    ctx.api().approve(&task_id).unwrap();
+
+    // Queue rejection + work output (both consumed in same cycle since automated)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Needs refactoring".to_string(),
+        },
+    );
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Refactored implementation".to_string(),
+        },
+    );
+    ctx.advance(); // spawns reviewer (completion ready)
+    ctx.advance(); // processes rejection → auto-executes → moves to work → spawns worker
+    ctx.advance(); // processes work output
+
+    // Task should have moved through work, NOT paused in review
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Automated rejection should skip human review and go directly to work"
+    );
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // Verify the rejection was an immediate Rejection (not AwaitingRejectionReview)
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let rejection_iter = iterations.iter().find(|i| {
+        matches!(
+            i.outcome.as_ref(),
+            Some(Outcome::Rejection { target, .. }) if target == "work"
+        )
+    });
+    assert!(
+        rejection_iter.is_some(),
+        "Automated stage should produce immediate Rejection outcome"
+    );
+    let awaiting_review = iterations.iter().any(|i| {
+        matches!(
+            i.outcome.as_ref(),
+            Some(Outcome::AwaitingRejectionReview { .. })
+        )
+    });
+    assert!(
+        !awaiting_review,
+        "Automated stage should NOT produce AwaitingRejectionReview"
+    );
+}

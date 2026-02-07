@@ -94,6 +94,17 @@ pub enum Outcome {
         feedback: String,
     },
 
+    /// Agent rejection awaiting human review before execution.
+    /// Stores the pending rejection details so the human can confirm or override.
+    AwaitingRejectionReview {
+        /// The stage that produced the rejection.
+        from_stage: String,
+        /// The target stage the rejection would send work to.
+        target: String,
+        /// The agent's rejection feedback.
+        feedback: String,
+    },
+
     /// Script stage failed.
     /// The task will transition to the recovery stage if configured.
     ScriptFailed {
@@ -167,6 +178,19 @@ impl Outcome {
         }
     }
 
+    /// Create an awaiting rejection review outcome.
+    pub fn awaiting_rejection_review(
+        from_stage: impl Into<String>,
+        target: impl Into<String>,
+        feedback: impl Into<String>,
+    ) -> Self {
+        Self::AwaitingRejectionReview {
+            from_stage: from_stage.into(),
+            target: target.into(),
+            feedback: feedback.into(),
+        }
+    }
+
     /// Create a script failed outcome.
     pub fn script_failed(
         stage: impl Into<String>,
@@ -183,9 +207,9 @@ impl Outcome {
     /// Get the feedback from a rejection, if applicable.
     pub fn feedback(&self) -> Option<&str> {
         match self {
-            Outcome::Rejected { feedback, .. } | Outcome::Rejection { feedback, .. } => {
-                Some(feedback)
-            }
+            Outcome::Rejected { feedback, .. }
+            | Outcome::Rejection { feedback, .. }
+            | Outcome::AwaitingRejectionReview { feedback, .. } => Some(feedback),
             _ => None,
         }
     }
@@ -197,7 +221,8 @@ impl Outcome {
             | Outcome::AwaitingAnswers { stage, .. }
             | Outcome::Skipped { stage, .. }
             | Outcome::ScriptFailed { stage, .. } => Some(stage),
-            Outcome::Rejection { from_stage, .. } => Some(from_stage),
+            Outcome::Rejection { from_stage, .. }
+            | Outcome::AwaitingRejectionReview { from_stage, .. } => Some(from_stage),
             _ => None,
         }
     }
@@ -205,7 +230,9 @@ impl Outcome {
     /// Get the rejection target, if this is a rejection outcome.
     pub fn rejection_target(&self) -> Option<&str> {
         match self {
-            Outcome::Rejection { target, .. } => Some(target),
+            Outcome::Rejection { target, .. } | Outcome::AwaitingRejectionReview { target, .. } => {
+                Some(target)
+            }
             _ => None,
         }
     }
@@ -248,6 +275,9 @@ impl std::fmt::Display for Outcome {
             Outcome::Blocked { .. } => write!(f, "blocked"),
             Outcome::Skipped { stage, .. } => write!(f, "{stage} skipped"),
             Outcome::Rejection { target, .. } => write!(f, "rejected, back to {target}"),
+            Outcome::AwaitingRejectionReview { from_stage, .. } => {
+                write!(f, "{from_stage} rejection awaiting review")
+            }
             Outcome::ScriptFailed { stage, .. } => write!(f, "{stage} script failed"),
         }
     }
@@ -361,6 +391,36 @@ mod tests {
     fn test_rejection_display() {
         let outcome = Outcome::rejection("review", "work", "feedback");
         assert_eq!(outcome.to_string(), "rejected, back to work");
+    }
+
+    #[test]
+    fn test_awaiting_rejection_review_outcome() {
+        let outcome = Outcome::awaiting_rejection_review("review", "work", "Tests are failing");
+        assert_eq!(outcome.stage(), Some("review"));
+        assert_eq!(outcome.rejection_target(), Some("work"));
+        assert_eq!(outcome.feedback(), Some("Tests are failing"));
+        assert!(!outcome.is_terminal());
+        assert!(!outcome.requires_retry());
+    }
+
+    #[test]
+    fn test_awaiting_rejection_review_serialization() {
+        let outcome = Outcome::awaiting_rejection_review("review", "work", "Fix the tests");
+        let json = serde_json::to_string(&outcome).unwrap();
+
+        assert!(json.contains("\"type\":\"awaiting_rejection_review\""));
+        assert!(json.contains("\"from_stage\":\"review\""));
+        assert!(json.contains("\"target\":\"work\""));
+        assert!(json.contains("\"feedback\":\"Fix the tests\""));
+
+        let parsed: Outcome = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, outcome);
+    }
+
+    #[test]
+    fn test_awaiting_rejection_review_display() {
+        let outcome = Outcome::awaiting_rejection_review("review", "work", "feedback");
+        assert_eq!(outcome.to_string(), "review rejection awaiting review");
     }
 
     #[test]

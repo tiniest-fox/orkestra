@@ -254,6 +254,7 @@ export function TaskDetailSidebar({
             onApprove={approve}
             onReject={reject}
             isSubmitting={isSubmitting}
+            pendingRejection={task.derived.pending_rejection}
           />
         )}
       </Slot>

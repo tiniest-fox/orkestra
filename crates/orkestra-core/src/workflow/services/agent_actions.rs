@@ -245,37 +245,67 @@ impl WorkflowApi {
                 // Resolve rejection target: explicit config → previous stage in flow
                 let target = self.resolve_rejection_target(current_stage, task.flow.as_deref())?;
 
-                // Supersede target stage session if configured (forces fresh spawn)
-                if effective_caps.rejection_resets_session() {
-                    if let Ok(Some(mut session)) = self.store.get_stage_session(&task.id, &target) {
-                        session.supersede(now);
-                        let _ = self.store.save_stage_session(&session);
-                    }
+                if self.should_auto_advance(task, current_stage) {
+                    // Auto-advance: execute rejection immediately (existing behavior)
+                    self.end_current_iteration(
+                        task,
+                        Outcome::rejection(current_stage, &target, content),
+                    )?;
+                    self.execute_rejection(task, current_stage, &target, content, now)?;
+                } else {
+                    // Pause for human review before executing rejection
+                    self.end_current_iteration(
+                        task,
+                        Outcome::awaiting_rejection_review(current_stage, &target, content),
+                    )?;
+                    task.phase = Phase::AwaitingReview;
+                    task.updated_at = now.to_string();
                 }
-
-                self.end_current_iteration(
-                    task,
-                    Outcome::rejection(current_stage, &target, content),
-                )?;
-
-                task.status = Status::active(&target);
-                task.phase = Phase::Idle;
-                task.updated_at = now.to_string();
-
-                self.iteration_service.create_iteration(
-                    &task.id,
-                    &target,
-                    Some(IterationTrigger::Rejection {
-                        from_stage: current_stage.to_string(),
-                        feedback: content.to_string(),
-                    }),
-                )?;
                 Ok(())
             }
             _ => Err(WorkflowError::InvalidTransition(format!(
                 "Invalid approval decision: {decision}"
             ))),
         }
+    }
+
+    /// Execute a rejection: transition task to the target stage with rejection context.
+    ///
+    /// Called from both `agent_actions` (auto-advance) and `human_actions` (confirm rejection).
+    pub(crate) fn execute_rejection(
+        &self,
+        task: &mut Task,
+        from_stage: &str,
+        target: &str,
+        feedback: &str,
+        now: &str,
+    ) -> WorkflowResult<()> {
+        let effective_caps = self
+            .workflow
+            .effective_capabilities(from_stage, task.flow.as_deref())
+            .unwrap_or_default();
+
+        // Supersede target stage session if configured (forces fresh spawn)
+        if effective_caps.rejection_resets_session() {
+            if let Ok(Some(mut session)) = self.store.get_stage_session(&task.id, target) {
+                session.supersede(now);
+                let _ = self.store.save_stage_session(&session);
+            }
+        }
+
+        task.status = Status::active(target);
+        task.phase = Phase::Idle;
+        task.updated_at = now.to_string();
+
+        self.iteration_service.create_iteration(
+            &task.id,
+            target,
+            Some(IterationTrigger::Rejection {
+                from_stage: from_stage.to_string(),
+                feedback: feedback.to_string(),
+            }),
+        )?;
+        Ok(())
     }
 
     /// Resolve the rejection target for a stage with approval capability.
@@ -847,6 +877,93 @@ mod tests {
             task.artifacts.get("verdict").unwrap().content,
             "Tests failing"
         );
+    }
+
+    #[test]
+    fn test_rejection_pauses_for_review_on_non_automated_stage() {
+        // Non-automated review stage: rejection should pause for human review
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("review", "verdict")
+                .with_inputs(vec!["summary".into()])
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+        ]);
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.status = Status::active("review");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+        api.iteration_service
+            .create_iteration(&task.id, "review", None)
+            .unwrap();
+
+        let output = StageOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Tests failing, please fix".to_string(),
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        // Should pause at AwaitingReview, NOT move to work stage
+        assert_eq!(task.current_stage(), Some("review"));
+        assert_eq!(task.phase, Phase::AwaitingReview);
+
+        // Rejection content stored as artifact
+        assert_eq!(
+            task.artifacts.get("verdict").unwrap().content,
+            "Tests failing, please fix"
+        );
+
+        // Iteration should have AwaitingRejectionReview outcome
+        let iterations = api.store.get_iterations(&task.id).unwrap();
+        let review_iter = iterations.iter().find(|i| i.stage == "review").unwrap();
+        match &review_iter.outcome {
+            Some(Outcome::AwaitingRejectionReview {
+                from_stage,
+                target,
+                feedback,
+            }) => {
+                assert_eq!(from_stage, "review");
+                assert_eq!(target, "work");
+                assert_eq!(feedback, "Tests failing, please fix");
+            }
+            other => panic!("Expected AwaitingRejectionReview outcome, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_rejection_auto_executes_for_auto_mode_task() {
+        // Non-automated review stage but task has auto_mode — should auto-execute
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("review", "verdict")
+                .with_inputs(vec!["summary".into()])
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+        ]);
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.auto_mode = true;
+        task.status = Status::active("review");
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+        api.iteration_service
+            .create_iteration(&task.id, "review", None)
+            .unwrap();
+
+        let output = StageOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Tests failing".to_string(),
+        };
+        let task = api.process_agent_output(&task.id, output).unwrap();
+
+        // Should auto-execute rejection — move to work stage
+        assert_eq!(task.current_stage(), Some("work"));
+        assert_eq!(task.phase, Phase::Idle);
     }
 
     #[test]

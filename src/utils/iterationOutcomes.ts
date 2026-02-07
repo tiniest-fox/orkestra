@@ -34,6 +34,7 @@ export function getOutcomeSemantic(outcome: WorkflowIteration["outcome"]): Outco
     case "skipped":
       return "neutral";
     case "rejection":
+    case "awaiting_rejection_review":
       return "rejection";
   }
 }
@@ -66,6 +67,8 @@ export function outcomeLabel(outcome: WorkflowIteration["outcome"]): string {
       return "Skipped";
     case "rejection":
       return "Rejected";
+    case "awaiting_rejection_review":
+      return "Rejection Pending Review";
     case "script_failed":
       return "Script Failed";
   }

@@ -86,7 +86,7 @@ flows:
           inputs: [plan, summary, check_results]
           capabilities:
             approval:
-              rejection_stage: plan
+              rejection_stage: work
 
   # Hotfix flow: Straight to work, minimal overhead
   hotfix:

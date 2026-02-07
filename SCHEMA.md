@@ -4,12 +4,13 @@ This document describes the SQLite database schema used by Orkestra. The schema 
 
 ## Overview
 
-Orkestra stores all workflow state in a SQLite database at `.orkestra/.database/orkestra.db`. The schema consists of four tables:
+Orkestra stores all workflow state in a SQLite database at `.orkestra/.database/orkestra.db`. The schema consists of five tables:
 
 - **`workflow_tasks`** — Task definitions, status, artifacts, and configuration
 - **`workflow_iterations`** — Individual agent/script runs within stages
-- **`workflow_stage_sessions`** — Agent process session tracking
-- **`log_entries`** — Structured logs from agent sessions
+- **`workflow_stage_sessions`** — Agent process session tracking for task-specific work
+- **`assistant_sessions`** — Agent process session tracking for project-level assistant chat
+- **`log_entries`** — Structured logs from agent sessions (both stage and assistant sessions)
 
 All workflow state is accessed through the `WorkflowStore` trait. The orchestrator, agents, and UI read/write exclusively through this interface.
 
@@ -89,17 +90,43 @@ Tracks agent process continuity across iterations. Enables session recovery via 
 
 ---
 
+### `assistant_sessions`
+
+Tracks agent sessions for project-level assistant chat. Unlike stage sessions (which are tied to tasks), assistant sessions are independent and provide persistent chat at the project level.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | TEXT | PRIMARY KEY | Unique session identifier |
+| `claude_session_id` | TEXT | | Agent CLI session ID for recovery (e.g., Claude Code session token) |
+| `title` | TEXT | | Optional user-provided title for the session |
+| `agent_pid` | INTEGER | | Process ID of the running agent |
+| `spawn_count` | INTEGER | NOT NULL, DEFAULT 0 | Number of times the agent process has been spawned for this session |
+| `session_state` | TEXT | NOT NULL, DEFAULT 'active' | Session lifecycle state: `spawning`, `active`, `completed`, `abandoned` |
+| `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+| `updated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+
+**Indexes:**
+- `idx_assistant_sessions_state` on `session_state`
+- `idx_assistant_sessions_created` on `created_at`
+
+---
+
 ### `log_entries`
 
-Stores structured logs from agent sessions. Each entry is a serialized `LogEntry` containing text messages, tool uses, tool results, etc.
+Stores structured logs from agent sessions. Each entry is a serialized `LogEntry` containing text messages, tool uses, tool results, etc. Log entries can belong to either a stage session (task-specific work) or an assistant session (project-level chat), but not both.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | TEXT | PRIMARY KEY | Unique log entry identifier |
-| `stage_session_id` | TEXT | NOT NULL, FOREIGN KEY → workflow_stage_sessions(id) | Associated stage session |
-| `sequence_number` | INTEGER | NOT NULL, UNIQUE(stage_session_id, sequence_number) | Monotonically increasing sequence within the session |
+| `stage_session_id` | TEXT | FOREIGN KEY → workflow_stage_sessions(id) | Associated stage session (XOR with assistant_session_id) |
+| `assistant_session_id` | TEXT | FOREIGN KEY → assistant_sessions(id) | Associated assistant session (XOR with stage_session_id) |
+| `sequence_number` | INTEGER | NOT NULL, UNIQUE(stage_session_id, sequence_number), UNIQUE(assistant_session_id, sequence_number) | Monotonically increasing sequence within the session |
 | `content` | TEXT | NOT NULL | JSON-encoded LogEntry object (text, tool_use, tool_result, etc.) |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
+
+**Constraints:**
+- Exactly one of `stage_session_id` or `assistant_session_id` must be set (enforced by triggers)
+- `sequence_number` is unique per session (regardless of session type)
 
 ---
 
@@ -116,6 +143,9 @@ workflow_iterations
 
 workflow_stage_sessions
     └─> log_entries (stage_session_id)
+
+assistant_sessions
+    └─> log_entries (assistant_session_id)
 ```
 
 ---

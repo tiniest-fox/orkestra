@@ -9,7 +9,9 @@ use petname::Generator;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{Iteration, LogEntry, SessionState, StageSession, Task};
+use crate::workflow::domain::{
+    AssistantSession, Iteration, LogEntry, SessionState, StageSession, Task,
+};
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
 
@@ -638,6 +640,146 @@ impl WorkflowStore for SqliteWorkflowStore {
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
         Ok(())
     }
+
+    fn get_assistant_session(&self, id: &str) -> WorkflowResult<Option<AssistantSession>> {
+        let conn = self.lock_conn()?;
+
+        let result = conn
+            .query_row(
+                "SELECT id, claude_session_id, title, agent_pid, spawn_count,
+                        session_state, created_at, updated_at
+                 FROM assistant_sessions WHERE id = ?",
+                params![id],
+                row_to_assistant_session,
+            )
+            .optional()
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        Ok(result)
+    }
+
+    #[allow(clippy::cast_possible_wrap)]
+    fn save_assistant_session(&self, session: &AssistantSession) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+
+        let state_str = session_state_to_str(session.session_state);
+
+        orkestra_debug!(
+            "db",
+            "save_assistant_session {}: claude_session_id={:?}, state={}, spawn_count={}",
+            session.id,
+            session.claude_session_id,
+            state_str,
+            session.spawn_count
+        );
+
+        conn.execute(
+            "INSERT OR REPLACE INTO assistant_sessions (
+                id, claude_session_id, title, agent_pid, spawn_count,
+                session_state, created_at, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                session.id,
+                session.claude_session_id,
+                session.title,
+                session.agent_pid.map(|p| p as i32),
+                session.spawn_count as i32,
+                state_str,
+                session.created_at,
+                session.updated_at,
+            ],
+        )
+        .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn list_assistant_sessions(&self) -> WorkflowResult<Vec<AssistantSession>> {
+        let conn = self.lock_conn()?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, claude_session_id, title, agent_pid, spawn_count,
+                        session_state, created_at, updated_at
+                 FROM assistant_sessions ORDER BY created_at DESC",
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], row_to_assistant_session)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(row.map_err(|e| WorkflowError::Storage(e.to_string()))?);
+        }
+
+        Ok(sessions)
+    }
+
+    fn delete_assistant_session(&self, id: &str) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        conn.execute("DELETE FROM assistant_sessions WHERE id = ?", params![id])
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        Ok(())
+    }
+
+    fn append_assistant_log_entry(
+        &self,
+        assistant_session_id: &str,
+        entry: &LogEntry,
+    ) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+
+        let content_json =
+            serde_json::to_string(entry).map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        conn.execute(
+            "INSERT INTO log_entries (id, assistant_session_id, sequence_number, content, created_at)
+             VALUES (?, ?, (SELECT COALESCE(MAX(sequence_number), 0) + 1 FROM log_entries WHERE assistant_session_id = ?), ?, datetime('now'))",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                assistant_session_id,
+                assistant_session_id,
+                content_json,
+            ],
+        )
+        .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn get_assistant_log_entries(
+        &self,
+        assistant_session_id: &str,
+    ) -> WorkflowResult<Vec<LogEntry>> {
+        let conn = self.lock_conn()?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT content FROM log_entries
+                 WHERE assistant_session_id = ?
+                 ORDER BY sequence_number",
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(params![assistant_session_id], |row| {
+                let content_json: String = row.get(0)?;
+                Ok(content_json)
+            })
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            let json = row.map_err(|e| WorkflowError::Storage(e.to_string()))?;
+            let entry: LogEntry =
+                serde_json::from_str(&json).map_err(|e| WorkflowError::Storage(e.to_string()))?;
+            entries.push(entry);
+        }
+
+        Ok(entries)
+    }
 }
 
 // =============================================================================
@@ -758,6 +900,24 @@ fn parse_session_state(s: &str) -> SessionState {
         "superseded" => SessionState::Superseded,
         _ => SessionState::Active,
     }
+}
+
+#[allow(clippy::cast_sign_loss)]
+fn row_to_assistant_session(row: &rusqlite::Row) -> rusqlite::Result<AssistantSession> {
+    let agent_pid: Option<i32> = row.get(3)?;
+    let spawn_count: i32 = row.get(4)?;
+    let state_str: String = row.get(5)?;
+
+    Ok(AssistantSession {
+        id: row.get(0)?,
+        claude_session_id: row.get(1)?,
+        title: row.get(2)?,
+        agent_pid: agent_pid.map(|p| p as u32),
+        spawn_count: spawn_count as u32,
+        session_state: parse_session_state(&state_str),
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+    })
 }
 
 #[cfg(test)]

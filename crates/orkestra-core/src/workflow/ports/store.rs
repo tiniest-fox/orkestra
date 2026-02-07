@@ -3,7 +3,7 @@
 //! This trait abstracts over storage backends, allowing the workflow system
 //! to work with `SQLite`, in-memory stores for testing, or other backends.
 
-use crate::workflow::domain::{Iteration, LogEntry, StageSession, Task};
+use crate::workflow::domain::{AssistantSession, Iteration, LogEntry, StageSession, Task};
 
 /// Error type for workflow operations.
 #[derive(Debug, thiserror::Error)]
@@ -170,6 +170,41 @@ pub trait WorkflowStore: Send + Sync {
     fn delete_log_entries_for_task(&self, task_id: &str) -> WorkflowResult<()>;
 
     // =========================================================================
+    // Assistant Session Operations
+    // =========================================================================
+
+    /// Get an assistant session by ID.
+    fn get_assistant_session(&self, id: &str) -> WorkflowResult<Option<AssistantSession>>;
+
+    /// Save an assistant session (insert or update).
+    fn save_assistant_session(&self, session: &AssistantSession) -> WorkflowResult<()>;
+
+    /// List all assistant sessions, ordered by `created_at` descending.
+    fn list_assistant_sessions(&self) -> WorkflowResult<Vec<AssistantSession>>;
+
+    /// Delete an assistant session by ID.
+    fn delete_assistant_session(&self, id: &str) -> WorkflowResult<()>;
+
+    // =========================================================================
+    // Assistant Log Entry Operations
+    // =========================================================================
+
+    /// Append a log entry to an assistant session.
+    ///
+    /// The sequence number is auto-assigned as the next value for the session.
+    fn append_assistant_log_entry(
+        &self,
+        assistant_session_id: &str,
+        entry: &LogEntry,
+    ) -> WorkflowResult<()>;
+
+    /// Get all log entries for an assistant session, ordered by sequence number.
+    fn get_assistant_log_entries(
+        &self,
+        assistant_session_id: &str,
+    ) -> WorkflowResult<Vec<LogEntry>>;
+
+    // =========================================================================
     // Bulk Read Operations
     // =========================================================================
 
@@ -231,6 +266,7 @@ mod tests {
         tasks: Mutex<HashMap<String, Task>>,
         iterations: Mutex<Vec<Iteration>>,
         stage_sessions: Mutex<Vec<StageSession>>,
+        assistant_sessions: Mutex<Vec<AssistantSession>>,
         log_entries: Mutex<Vec<(String, i32, LogEntry)>>,
         next_id: std::sync::atomic::AtomicU32,
     }
@@ -241,6 +277,7 @@ mod tests {
                 tasks: Mutex::new(HashMap::new()),
                 iterations: Mutex::new(Vec::new()),
                 stage_sessions: Mutex::new(Vec::new()),
+                assistant_sessions: Mutex::new(Vec::new()),
                 log_entries: Mutex::new(Vec::new()),
                 next_id: std::sync::atomic::AtomicU32::new(1),
             }
@@ -450,6 +487,77 @@ mod tests {
             let mut entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
             entries.retain(|(sid, _, _)| !session_ids.contains(sid));
             Ok(())
+        }
+
+        fn get_assistant_session(&self, id: &str) -> WorkflowResult<Option<AssistantSession>> {
+            let sessions = self
+                .assistant_sessions
+                .lock()
+                .map_err(|_| WorkflowError::Lock)?;
+            Ok(sessions.iter().find(|s| s.id == id).cloned())
+        }
+
+        fn save_assistant_session(&self, session: &AssistantSession) -> WorkflowResult<()> {
+            let mut sessions = self
+                .assistant_sessions
+                .lock()
+                .map_err(|_| WorkflowError::Lock)?;
+            if let Some(existing) = sessions.iter_mut().find(|s| s.id == session.id) {
+                *existing = session.clone();
+            } else {
+                sessions.push(session.clone());
+            }
+            Ok(())
+        }
+
+        fn list_assistant_sessions(&self) -> WorkflowResult<Vec<AssistantSession>> {
+            let sessions = self
+                .assistant_sessions
+                .lock()
+                .map_err(|_| WorkflowError::Lock)?;
+            let mut result: Vec<_> = sessions.clone();
+            result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            Ok(result)
+        }
+
+        fn delete_assistant_session(&self, id: &str) -> WorkflowResult<()> {
+            let mut sessions = self
+                .assistant_sessions
+                .lock()
+                .map_err(|_| WorkflowError::Lock)?;
+            sessions.retain(|s| s.id != id);
+            Ok(())
+        }
+
+        fn append_assistant_log_entry(
+            &self,
+            assistant_session_id: &str,
+            entry: &LogEntry,
+        ) -> WorkflowResult<()> {
+            let mut entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
+            let next_seq = entries
+                .iter()
+                .filter(|(sid, _, _)| sid == assistant_session_id)
+                .map(|(_, seq, _)| *seq)
+                .max()
+                .unwrap_or(0)
+                + 1;
+            entries.push((assistant_session_id.to_string(), next_seq, entry.clone()));
+            Ok(())
+        }
+
+        fn get_assistant_log_entries(
+            &self,
+            assistant_session_id: &str,
+        ) -> WorkflowResult<Vec<LogEntry>> {
+            let entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
+            let mut result: Vec<_> = entries
+                .iter()
+                .filter(|(sid, _, _)| sid == assistant_session_id)
+                .cloned()
+                .collect();
+            result.sort_by_key(|(_, seq, _)| *seq);
+            Ok(result.into_iter().map(|(_, _, entry)| entry).collect())
         }
     }
 

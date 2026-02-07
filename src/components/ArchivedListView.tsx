@@ -21,7 +21,7 @@ interface ArchivedListViewProps {
 
 export function ArchivedListView({ tasks, selectedTaskId, onSelectTask }: ArchivedListViewProps) {
   return (
-    <Panel>
+    <Panel className="overflow-y-auto">
       <div className="p-4">
         {tasks.length === 0 ? (
           <EmptyState icon={Archive} message="No archived tasks." />

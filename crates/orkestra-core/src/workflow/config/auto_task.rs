@@ -142,9 +142,9 @@ mod tests {
     fn config_with_quick_flow() -> WorkflowConfig {
         use crate::workflow::config::stage::StageConfig;
         use crate::workflow::config::workflow::{FlowConfig, FlowStageEntry};
-        use std::collections::HashMap;
+        use indexmap::IndexMap;
 
-        let mut flows = HashMap::new();
+        let mut flows = IndexMap::new();
         flows.insert(
             "quick".to_string(),
             FlowConfig {

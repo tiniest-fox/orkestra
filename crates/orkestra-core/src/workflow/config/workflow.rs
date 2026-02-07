@@ -3,8 +3,7 @@
 //! A workflow is an ordered collection of stages that define the task lifecycle.
 //! Stages are processed in order, with optional stages being skippable.
 
-use std::collections::HashMap;
-
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use super::stage::{StageCapabilities, StageConfig};
@@ -26,8 +25,8 @@ pub struct WorkflowConfig {
     /// Named alternate flows (shortened pipelines).
     /// Each flow defines a subset of stages with optional overrides.
     /// The full pipeline is the implicit default flow.
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub flows: HashMap<String, FlowConfig>,
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
+    pub flows: IndexMap<String, FlowConfig>,
 }
 
 /// Configuration for an alternate flow (shortened pipeline).
@@ -160,7 +159,7 @@ impl WorkflowConfig {
             version: 1,
             stages,
             integration: IntegrationConfig::default(),
-            flows: HashMap::new(),
+            flows: IndexMap::new(),
         }
     }
 
@@ -173,7 +172,7 @@ impl WorkflowConfig {
 
     /// Builder: set flows.
     #[must_use]
-    pub fn with_flows(mut self, flows: HashMap<String, FlowConfig>) -> Self {
+    pub fn with_flows(mut self, flows: IndexMap<String, FlowConfig>) -> Self {
         self.flows = flows;
         self
     }

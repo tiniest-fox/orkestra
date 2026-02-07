@@ -81,7 +81,7 @@ impl AgentTestEnv {
                 .with_model(model)
                 .with_capabilities(capabilities)],
             integration: IntegrationConfig::default(),
-            flows: std::collections::HashMap::new(),
+            flows: indexmap::IndexMap::new(),
         };
 
         let workflow_path = orkestra_dir.join("workflow.yaml");

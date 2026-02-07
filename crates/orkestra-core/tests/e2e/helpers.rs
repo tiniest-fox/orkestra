@@ -588,7 +588,7 @@ pub mod workflows {
                 }),
             ],
             integration: IntegrationConfig::default(),
-            flows: std::collections::HashMap::new(),
+            flows: indexmap::IndexMap::new(),
         }
     }
 
@@ -601,7 +601,7 @@ pub mod workflows {
             FlowConfig, FlowStageEntry, FlowStageOverride, StageCapabilities,
         };
 
-        let mut flows = std::collections::HashMap::new();
+        let mut flows = indexmap::IndexMap::new();
         flows.insert(
             "subtask".to_string(),
             FlowConfig {
@@ -678,7 +678,7 @@ pub mod workflows {
                 }),
             ],
             integration: IntegrationConfig::default(),
-            flows: std::collections::HashMap::new(),
+            flows: indexmap::IndexMap::new(),
         }
     }
 }

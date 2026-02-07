@@ -28,9 +28,9 @@ pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
         FlowConfig, FlowStageEntry, StageCapabilities, StageConfig, SubtaskCapabilities,
         WorkflowConfig,
     };
-    use std::collections::HashMap;
+    use indexmap::IndexMap;
 
-    let mut flows = HashMap::new();
+    let mut flows = IndexMap::new();
     flows.insert(
         "subtask".to_string(),
         FlowConfig {

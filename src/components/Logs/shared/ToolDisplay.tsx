@@ -29,7 +29,7 @@ interface SmallToolDisplayProps {
 export function SmallToolDisplay({ tool, size = 12, className = "" }: SmallToolDisplayProps) {
   return (
     <span
-      className={`flex-shrink-0 w-4 h-4 rounded flex items-center justify-center text-white ${getToolColor(tool)} ${className}`}
+      className={`flex-shrink-0 w-4 h-4 rounded flex items-center justify-center text-white mt-1 ${getToolColor(tool)} ${className}`}
     >
       {getToolIcon(tool, size)}
     </span>

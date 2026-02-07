@@ -136,6 +136,7 @@ describe("Orkestra - View Toggle", () => {
     // Default tasks mock
     mockUseTasks.mockReturnValue({
       tasks: [],
+      archivedTasks: [],
       loading: false,
       error: null,
       createTask: vi.fn(() => Promise.resolve()),
@@ -163,6 +164,7 @@ describe("Orkestra - View Toggle", () => {
 
     mockUseTasks.mockReturnValue({
       tasks: activeTasks,
+      archivedTasks: [],
       loading: false,
       error: null,
       createTask: vi.fn(),
@@ -201,7 +203,8 @@ describe("Orkestra - View Toggle", () => {
     ];
 
     mockUseTasks.mockReturnValue({
-      tasks: archivedTasks,
+      tasks: [],
+      archivedTasks: archivedTasks,
       loading: false,
       error: null,
       createTask: vi.fn(),
@@ -243,7 +246,7 @@ describe("Orkestra - View Toggle", () => {
   });
 
   it("filters tasks correctly for each view", async () => {
-    const mixedTasks = [
+    const activeTasks = [
       createMockWorkflowTaskView({
         id: "active-1",
         title: "Active Task 1",
@@ -262,6 +265,9 @@ describe("Orkestra - View Toggle", () => {
         status: { type: "active", stage: "work" },
         derived: { is_archived: false },
       }),
+    ];
+
+    const archivedTasks = [
       createMockWorkflowTaskView({
         id: "archived-1",
         title: "Archived Task 1",
@@ -277,7 +283,8 @@ describe("Orkestra - View Toggle", () => {
     ];
 
     mockUseTasks.mockReturnValue({
-      tasks: mixedTasks,
+      tasks: activeTasks,
+      archivedTasks: archivedTasks,
       loading: false,
       error: null,
       createTask: vi.fn(),
@@ -316,6 +323,7 @@ describe("Orkestra - View Toggle", () => {
 
     mockUseTasks.mockReturnValue({
       tasks: [activeTask],
+      archivedTasks: [],
       loading: false,
       error: null,
       createTask: vi.fn(),
@@ -352,7 +360,8 @@ describe("Orkestra - View Toggle", () => {
     });
 
     mockUseTasks.mockReturnValue({
-      tasks: [archivedTask],
+      tasks: [],
+      archivedTasks: [archivedTask],
       loading: false,
       error: null,
       createTask: vi.fn(),
@@ -390,6 +399,7 @@ describe("Orkestra - View Toggle", () => {
 
     mockUseTasks.mockReturnValue({
       tasks: [activeTask],
+      archivedTasks: [],
       loading: false,
       error: null,
       createTask: vi.fn(),

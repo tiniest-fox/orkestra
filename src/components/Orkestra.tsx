@@ -41,7 +41,7 @@ export function Orkestra() {
 
   const config = useWorkflowConfig();
   const autoTaskTemplates = useAutoTaskTemplates();
-  const { tasks, loading, error, createTask, deleteTask } = useTasks();
+  const { tasks, archivedTasks, loading, error, createTask, deleteTask } = useTasks();
 
   // Filter to top-level tasks only
   const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parent_id), [tasks]);
@@ -52,23 +52,35 @@ export function Orkestra() {
     [topLevelTasks],
   );
 
-  // Filter archived tasks (archived top-level)
-  const archivedTasks = useMemo(
-    () => topLevelTasks.filter((t) => t.derived.is_archived),
-    [topLevelTasks],
+  // Archived tasks now come from the provider directly
+  const archivedTopLevelTasks = useMemo(
+    () => archivedTasks.filter((t) => !t.parent_id),
+    [archivedTasks],
   );
 
   // Select tasks based on current view
   const isArchiveView = view.type === "archive";
 
-  const currentSelectedTask: WorkflowTaskView | null =
-    focus.type === "task" ? (topLevelTasks.find((t) => t.id === focus.taskId) ?? null) : null;
+  // Look up selected task from both active and archived lists
+  const currentSelectedTask: WorkflowTaskView | null = useMemo(() => {
+    if (focus.type !== "task") return null;
+    return (
+      topLevelTasks.find((t) => t.id === focus.taskId) ??
+      archivedTopLevelTasks.find((t) => t.id === focus.taskId) ??
+      null
+    );
+  }, [focus, topLevelTasks, archivedTopLevelTasks]);
 
-  // Derive subtasks for the selected parent from the shared task list
-  const currentSubtasks = useMemo(
-    () => (currentSelectedTask ? tasks.filter((t) => t.parent_id === currentSelectedTask.id) : []),
-    [tasks, currentSelectedTask],
-  );
+  // Derive subtasks for the selected parent from active or archived lists
+  const currentSubtasks = useMemo(() => {
+    if (!currentSelectedTask) return [];
+    // If parent is archived, look in archived tasks for subtasks
+    if (currentSelectedTask.derived.is_archived) {
+      return archivedTasks.filter((t) => t.parent_id === currentSelectedTask.id);
+    }
+    // Otherwise look in active tasks
+    return tasks.filter((t) => t.parent_id === currentSelectedTask.id);
+  }, [currentSelectedTask, tasks, archivedTasks]);
 
   const selectedSubtaskId = focus.type === "task" ? focus.subtaskId : undefined;
   const showDiff = focus.type === "task" && focus.showDiff === true;
@@ -268,7 +280,7 @@ export function Orkestra() {
             />
           ) : (
             <ArchivedListView
-              tasks={archivedTasks}
+              tasks={archivedTopLevelTasks}
               selectedTaskId={currentSelectedTask?.id}
               onSelectTask={handleSelectTask}
             />

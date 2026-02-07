@@ -20,6 +20,7 @@ import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 
 interface TasksContextValue {
   tasks: WorkflowTaskView[];
+  archivedTasks: WorkflowTaskView[];
   loading: boolean;
   error: string | null;
   createTask: (
@@ -53,6 +54,7 @@ interface TasksProviderProps {
 
 export function TasksProvider({ children }: TasksProviderProps) {
   const [tasks, setTasks] = useState<WorkflowTaskView[]>([]);
+  const [archivedTasks, setArchivedTasks] = useState<WorkflowTaskView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,21 +84,32 @@ export function TasksProvider({ children }: TasksProviderProps) {
     }
   }, []);
 
+  const fetchArchivedTasks = useCallback(async () => {
+    try {
+      const result = await invoke<WorkflowTaskView[]>("workflow_get_archived_tasks");
+      setArchivedTasks(result);
+    } catch (err) {
+      console.error("[fetchArchivedTasks] Error:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTasks();
+    fetchArchivedTasks();
 
     const interval = setInterval(fetchTasks, 2000);
 
     // Fix event name: backend emits "task-updated"
     const unlistenPromise = listen<string>("task-updated", () => {
       fetchTasks();
+      fetchArchivedTasks();
     });
 
     return () => {
       clearInterval(interval);
       unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [fetchTasks]);
+  }, [fetchTasks, fetchArchivedTasks]);
 
   const createTask = useCallback(
     async (
@@ -147,6 +160,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
 
   const value: TasksContextValue = {
     tasks,
+    archivedTasks,
     loading,
     error,
     createTask,

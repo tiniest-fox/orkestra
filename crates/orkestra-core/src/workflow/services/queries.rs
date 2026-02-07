@@ -326,6 +326,91 @@ impl WorkflowApi {
         Ok(views)
     }
 
+    /// List all archived top-level tasks with pre-joined data and derived state.
+    ///
+    /// Mirrors `list_task_views` but for archived tasks. Loads only top-level
+    /// archived tasks (those without a `parent_id`) plus their archived subtasks
+    /// for progress display. Uses batch loading for iterations and sessions.
+    pub fn list_archived_task_views(&self) -> WorkflowResult<Vec<TaskView>> {
+        // Load all archived tasks (parents + subtasks) in one query
+        let all_archived = self.store.list_archived_tasks()?;
+
+        // Separate top-level tasks from subtasks
+        let mut top_level = Vec::new();
+        let mut parent_ids = Vec::new();
+        let mut subtasks_by_parent: HashMap<String, Vec<Task>> = HashMap::new();
+
+        for task in all_archived {
+            if let Some(ref parent_id) = task.parent_id {
+                subtasks_by_parent
+                    .entry(parent_id.clone())
+                    .or_default()
+                    .push(task);
+            } else {
+                parent_ids.push(task.id.clone());
+                top_level.push(task);
+            }
+        }
+
+        // Batch-load all iterations and sessions in 2 queries (not 2N)
+        let iterations_by_task = group_by_task_id(self.store.list_all_iterations()?);
+        let sessions_by_task = group_by_task_id(self.store.list_all_stage_sessions()?);
+
+        // Build subtask views (sorted topologically per parent) and collect
+        // derived states for parent aggregate flags.
+        let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
+        let mut subtask_views: Vec<TaskView> = Vec::new();
+
+        for (parent_id, subtasks) in &subtasks_by_parent {
+            let sorted = topological_sort(subtasks.clone());
+            let mut derived_states = Vec::with_capacity(sorted.len());
+
+            for task in sorted {
+                let iterations = iterations_by_task
+                    .get(&task.id)
+                    .cloned()
+                    .unwrap_or_default();
+                let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
+                let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[]);
+                derived_states.push(derived.clone());
+                subtask_views.push(TaskView {
+                    task,
+                    iterations,
+                    stage_sessions,
+                    derived,
+                });
+            }
+            subtask_derived_by_parent.insert(parent_id.clone(), derived_states);
+        }
+
+        // Build top-level task views with subtask aggregate flags
+        let mut views = Vec::with_capacity(top_level.len() + subtask_views.len());
+        for task in top_level {
+            let iterations = iterations_by_task
+                .get(&task.id)
+                .cloned()
+                .unwrap_or_default();
+            let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
+            let subtask_states = subtask_derived_by_parent
+                .get(&task.id)
+                .map_or(&[][..], Vec::as_slice);
+            let derived =
+                DerivedTaskState::build(&task, &iterations, &stage_sessions, subtask_states);
+
+            views.push(TaskView {
+                task,
+                iterations,
+                stage_sessions,
+                derived,
+            });
+        }
+
+        // Append subtask views after parents
+        views.extend(subtask_views);
+
+        Ok(views)
+    }
+
     /// Get a specific stage session for a task.
     pub fn get_stage_session(
         &self,
@@ -718,5 +803,27 @@ mod tests {
         let sorted = topological_sort(vec![c, b, a]);
         let ids: Vec<&str> = sorted.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(ids, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_list_archived_task_views() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        // Create a task and archive it
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.status = Status::Archived;
+        api.store.save_task(&task).unwrap();
+
+        // Verify it appears in archived views
+        let archived_views = api.list_archived_task_views().unwrap();
+        assert_eq!(archived_views.len(), 1);
+        assert_eq!(archived_views[0].task.id, task.id);
+        assert!(archived_views[0].derived.is_archived);
+
+        // Verify it does NOT appear in active views
+        let active_views = api.list_task_views().unwrap();
+        assert_eq!(active_views.len(), 0);
     }
 }

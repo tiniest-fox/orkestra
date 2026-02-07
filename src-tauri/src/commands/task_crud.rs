@@ -108,15 +108,15 @@ pub fn workflow_list_subtasks(
     })
 }
 
-/// Get all archived tasks.
+/// Get all archived tasks (rich view with iterations, sessions, derived state).
 ///
 /// Archived tasks are completed tasks that have been integrated (branch merged).
 #[tauri::command]
 pub fn workflow_get_archived_tasks(
     registry: State<ProjectRegistry>,
     window: Window,
-) -> Result<Vec<Task>, TauriError> {
+) -> Result<Vec<TaskView>, TauriError> {
     registry.with_project(window.label(), |state| {
-        state.api()?.list_archived_tasks().map_err(Into::into)
+        state.api()?.list_archived_task_views().map_err(Into::into)
     })
 }

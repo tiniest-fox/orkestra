@@ -19,6 +19,7 @@ export function Orkestra() {
   useNotificationPermission();
 
   const {
+    view,
     focus,
     focusTask,
     focusSubtask,
@@ -27,6 +28,8 @@ export function Orkestra() {
     closeFocus,
     closeDiff,
     closeSubtaskDiff,
+    switchToActive,
+    switchToArchived,
   } = useDisplayContext();
 
   // Track sidebar open/close cycles to force fresh state on reopen
@@ -171,7 +174,25 @@ export function Orkestra() {
   return (
     <div className="w-screen h-screen bg-stone-100 dark:bg-stone-950 flex flex-col items-stretch p-4 gap-4 overflow-hidden">
       <div className="flex items-center justify-between px-2 flex-shrink-0 overflow-hidden">
-        <Panel.Title>Orkestra</Panel.Title>
+        <div className="flex items-center gap-4">
+          <Panel.Title>Orkestra</Panel.Title>
+          <div className="flex items-center gap-1 bg-stone-200 dark:bg-stone-800 rounded-panel p-0.5">
+            <Button
+              variant={view.type === "board" ? "primary" : "secondary"}
+              size="sm"
+              onClick={switchToActive}
+            >
+              Active
+            </Button>
+            <Button
+              variant={view.type === "archive" ? "primary" : "secondary"}
+              size="sm"
+              onClick={switchToArchived}
+            >
+              Archived
+            </Button>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           {autoTaskTemplates.map((template) => (
             <Button

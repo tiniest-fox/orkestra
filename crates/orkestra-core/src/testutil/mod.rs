@@ -32,6 +32,7 @@ pub mod fixtures;
 mod git_helpers;
 
 pub use git_helpers::{
-    create_and_commit_file, create_orkestra_dirs, create_temp_git_repo,
-    create_worktree_setup_script, get_current_branch, is_git_repo, make_commit,
+    create_and_commit_file, create_and_commit_file_on_branch, create_orkestra_dirs,
+    create_temp_git_repo, create_worktree_setup_script, get_current_branch, is_git_repo,
+    make_commit,
 };

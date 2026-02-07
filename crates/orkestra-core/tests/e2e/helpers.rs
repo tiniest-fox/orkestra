@@ -433,6 +433,18 @@ impl TestEnv {
             .clone()
     }
 
+    /// Get the last prompt sent to a specific task's agent.
+    pub fn last_prompt_for(&self, task_id: &str) -> String {
+        let calls = self.runner.calls();
+        calls
+            .iter()
+            .rev()
+            .find(|c| c.task_id.as_deref() == Some(task_id))
+            .unwrap_or_else(|| panic!("No agent calls recorded for task {task_id}"))
+            .prompt
+            .clone()
+    }
+
     /// Assert that the last prompt has a specific resume marker type and contains expected strings.
     ///
     /// Marker format: `<!orkestra:resume:STAGE:TYPE>`

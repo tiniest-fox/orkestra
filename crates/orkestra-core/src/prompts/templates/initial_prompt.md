@@ -49,7 +49,7 @@ A: {{this.answer}}
 {{/each}}
 {{/if}}
 
-Run `git rebase main` and resolve the conflicts, then continue your work.
+Run `git rebase {{integration_error.base_branch}}` and resolve the conflicts, then continue your work.
 
 {{/if}}
 ---

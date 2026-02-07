@@ -166,6 +166,8 @@ pub struct IntegrationErrorContext<'a> {
     pub message: &'a str,
     /// Files with conflicts.
     pub conflict_files: Vec<&'a str>,
+    /// Base branch to rebase onto.
+    pub base_branch: &'a str,
 }
 
 /// Flow-specific overrides for agent configuration.
@@ -1139,6 +1141,7 @@ mod tests {
         let error = IntegrationErrorContext {
             message: "Merge conflict in src/main.rs",
             conflict_files: vec!["src/main.rs", "src/lib.rs"],
+            base_branch: "feature/parent-branch",
         };
 
         let ctx = builder
@@ -1152,6 +1155,7 @@ mod tests {
         assert!(prompt.contains("Merge conflict in src/main.rs"));
         assert!(prompt.contains("src/main.rs"));
         assert!(prompt.contains("src/lib.rs"));
+        assert!(prompt.contains("git rebase feature/parent-branch"));
     }
 
     #[test]
@@ -1333,6 +1337,7 @@ mod tests {
         let error = IntegrationErrorContext {
             message: "conflict",
             conflict_files: vec!["file.rs"],
+            base_branch: "main",
         };
         let answers = vec![QuestionAnswer::new("What?", "Something", "now")];
         let result = determine_resume_type(Some("feedback"), Some(&error), &answers);

@@ -136,7 +136,7 @@ echo "Setup complete for $WORKTREE_PATH"
     Ok(())
 }
 
-/// Create a file and commit it in one step.
+/// Create a file and commit it on the current branch.
 pub fn create_and_commit_file(
     repo_path: &Path,
     filename: &str,
@@ -152,6 +152,31 @@ pub fn create_and_commit_file(
 
     Command::new("git")
         .args(["commit", "-m", commit_message])
+        .current_dir(repo_path)
+        .output()?;
+
+    Ok(())
+}
+
+/// Create a file and commit it on a specific branch, then switch back.
+pub fn create_and_commit_file_on_branch(
+    repo_path: &Path,
+    branch: &str,
+    filename: &str,
+    content: &str,
+    commit_message: &str,
+) -> std::io::Result<()> {
+    let original = get_current_branch(repo_path)?;
+
+    Command::new("git")
+        .args(["checkout", branch])
+        .current_dir(repo_path)
+        .output()?;
+
+    create_and_commit_file(repo_path, filename, content, commit_message)?;
+
+    Command::new("git")
+        .args(["checkout", &original])
         .current_dir(repo_path)
         .output()?;
 

@@ -26,8 +26,9 @@ use super::helpers::{workflows, MockAgentOutput, TestEnv};
 fn setup_parent_with_subtasks(
     env: &TestEnv,
     subtask_outputs: Vec<SubtaskOutput>,
+    base_branch: Option<&str>,
 ) -> (String, Vec<(String, String)>) {
-    let parent = env.create_task("Feature", "Build it", None);
+    let parent = env.create_task("Feature", "Build it", base_branch);
 
     // Planning
     env.set_output(
@@ -279,6 +280,7 @@ fn test_dependency_aware_orchestration() {
                 depends_on: vec![0],
             },
         ],
+        None,
     );
 
     let first_id = id_map.iter().find(|(t, _)| t == "First").unwrap().1.clone();
@@ -361,6 +363,7 @@ fn test_parent_advances_when_all_subtasks_done() {
                 depends_on: vec![],
             },
         ],
+        None,
     );
 
     let first_id = id_map.iter().find(|(t, _)| t == "First").unwrap().1.clone();
@@ -471,6 +474,7 @@ fn test_diamond_dependency_orchestration() {
                 depends_on: vec![1, 2],
             },
         ],
+        None,
     );
 
     let id_a = id_map
@@ -637,6 +641,7 @@ fn test_subtask_failure_parent_stays_waiting() {
             detailed_instructions: "Implementation brief for failing task".into(),
             depends_on: vec![],
         }],
+        None,
     );
 
     let subtask_id = id_map[0].1.clone();
@@ -697,6 +702,7 @@ fn test_subtask_worktrees_are_isolated() {
                 depends_on: vec![],
             },
         ],
+        None,
     );
 
     let alpha_id = id_map.iter().find(|(t, _)| t == "Alpha").unwrap().1.clone();
@@ -754,6 +760,7 @@ fn test_subtask_integration_merges_to_parent_branch() {
             detailed_instructions: "Implementation brief for worker".into(),
             depends_on: vec![],
         }],
+        None,
     );
 
     let subtask_id = id_map[0].1.clone();
@@ -800,6 +807,14 @@ fn test_subtask_integration_conflict() {
     let workflow = workflows::with_subtasks();
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
+    // Use a random base branch so hardcoded "main" can never pass the assertion.
+    let base_branch = format!("feature/{}", uuid::Uuid::new_v4().as_simple());
+    std::process::Command::new("git")
+        .args(["branch", &base_branch])
+        .current_dir(env.repo_path())
+        .output()
+        .unwrap();
+
     let (_parent_id, id_map) = setup_parent_with_subtasks(
         &env,
         vec![
@@ -816,6 +831,7 @@ fn test_subtask_integration_conflict() {
                 depends_on: vec![],
             },
         ],
+        Some(&base_branch),
     );
 
     let id_a = id_map.iter().find(|(t, _)| t == "Sub A").unwrap().1.clone();
@@ -925,6 +941,23 @@ fn test_subtask_integration_conflict() {
         "Conflicting subtask should be active after recovery, got: {:?}",
         conflict_task.status
     );
+
+    // VERIFY: The recovery prompt must tell the agent to rebase on the parent's branch,
+    // not a hardcoded "main". The parent was created from our random base_branch, so
+    // subtasks get base_branch = parent's branch_name (e.g. "task/TASK-001").
+    // We check against the task's base_branch (which derives from the parent's branch_name).
+    let expected_rebase = format!("git rebase {}", conflict_task.base_branch);
+    let recovery_prompt = env.last_prompt_for(conflict_id);
+    assert!(
+        recovery_prompt.contains(&expected_rebase),
+        "Recovery prompt should contain '{expected_rebase}', got prompt:\n{}",
+        &recovery_prompt[..recovery_prompt.len().min(300)]
+    );
+    // Sanity: base_branch must NOT be "main" — subtasks rebase onto parent's branch
+    assert_ne!(
+        conflict_task.base_branch, "main",
+        "Subtask base_branch should be the parent's branch, not main"
+    );
 }
 
 /// Test that archived subtasks appear in `list_subtask_views` and count in progress.
@@ -958,6 +991,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
                 depends_on: vec![],
             },
         ],
+        None,
     );
 
     let id_a = &subtask_ids[0].1;

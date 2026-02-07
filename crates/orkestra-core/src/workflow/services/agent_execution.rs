@@ -174,7 +174,8 @@ impl AgentExecutionService {
             } else {
                 trigger_to_resume_type(trigger)
             };
-            build_resume_prompt(stage, &resume_type, &task.base_branch).map_err(ExecutionError::from)
+            build_resume_prompt(stage, &resume_type, &task.base_branch)
+                .map_err(ExecutionError::from)
         } else {
             // Extract feedback from trigger if present (fresh spawn after session reset)
             let feedback = trigger.and_then(|t| match t {

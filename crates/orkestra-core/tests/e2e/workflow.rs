@@ -58,13 +58,24 @@ fn test_exhaustive_workflow_flow() {
     );
 
     // =========================================================================
-    // Step 1: Task created → Planning
+    // Step 1: Task created → Planning (from random non-main branch)
     // =========================================================================
+
+    // Use a random branch name so a hardcoded "main" (or any other literal)
+    // can never accidentally satisfy the assertions.
+    let base_branch = format!("feature/{}", uuid::Uuid::new_v4().as_simple());
+    std::process::Command::new("git")
+        .args(["branch", &base_branch])
+        .current_dir(ctx.repo_path())
+        .output()
+        .unwrap();
+
     let task = ctx.create_task(
         "Implement feature X",
         "Add the new feature X with full test coverage",
-        None,
+        Some(&base_branch),
     );
+    assert_eq!(task.base_branch, base_branch);
 
     let task_id = task.id.clone();
 
@@ -437,12 +448,13 @@ fn test_exhaustive_workflow_flow() {
         .output()
         .unwrap();
 
-    // 2. Create the same file on main with different content
-    orkestra_core::testutil::create_and_commit_file(
+    // 2. Create the same file on the base branch with different content
+    orkestra_core::testutil::create_and_commit_file_on_branch(
         ctx.repo_path(),
+        &base_branch,
         "conflict.txt",
-        "Main's conflicting version of the file",
-        "Add conflicting file on main",
+        "Base branch's conflicting version of the file",
+        "Add conflicting file on base branch",
     )
     .unwrap();
 
@@ -504,23 +516,32 @@ fn test_exhaustive_workflow_flow() {
     // Step 12: Work → Review → Done → Integration succeeds (auto) → Complete
     // =========================================================================
 
-    // Resolve the conflict on main by reverting the conflicting commit
-    // This simulates someone resolving the conflict so the task can be integrated
-    std::process::Command::new("git")
-        .args(["reset", "--hard", "HEAD~1"])
-        .current_dir(ctx.repo_path())
-        .output()
-        .unwrap();
+    // Resolve the conflict on the base branch by reverting the conflicting commit.
+    // This simulates someone resolving the conflict so the task can be integrated.
+    for args in [
+        vec!["checkout", base_branch.as_str()],
+        vec!["reset", "--hard", "HEAD~1"],
+        vec!["checkout", "main"],
+    ] {
+        std::process::Command::new("git")
+            .args(&args)
+            .current_dir(ctx.repo_path())
+            .output()
+            .unwrap();
+    }
 
     // The work agent already ran (output consumed in the previous advance cycle).
     // No additional advance needed — the work output was already processed.
 
     // VERIFY: Work agent after integration failure → resume with integration marker
-    // containing error details (same session as previous work iterations)
+    // containing error details and correct rebase target (same session as previous work iterations).
+    // The branch name is random, so this can only pass if base_branch flows through correctly.
+    let expected_rebase = format!("git rebase {base_branch}");
     ctx.assert_resume_prompt_contains(
         "integration",
         &[
-            "conflict", // Should mention conflict
+            "conflict",       // Should mention conflict
+            &expected_rebase, // Must use task's base_branch, not hardcoded "main"
         ],
     );
 

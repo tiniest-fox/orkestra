@@ -11,6 +11,7 @@ import { useAutoTaskTemplates, useDisplayContext, useTasks, useWorkflowConfig } 
 import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { ArchivedListView } from "./ArchivedListView";
 import { ArchiveTaskDetailView } from "./ArchiveTaskDetailView";
+import { AssistantPanel } from "./Assistant";
 import { CommandPalette } from "./CommandPalette";
 import { DiffPanel } from "./Diff";
 import { KanbanBoard } from "./Kanban";
@@ -286,12 +287,7 @@ export function Orkestra() {
       <PanelLayout className="flex-1">
         {/* Assistant panel (LEFT side) */}
         <Slot id="assistant" type="fixed" size={480} visible={assistantVisible} plain>
-          {assistantVisible && (
-            <div className="w-full h-full flex items-center justify-center text-stone-500">
-              {/* Placeholder — Subtask 4 replaces this with AssistantPanel */}
-              Assistant Panel
-            </div>
-          )}
+          {assistantVisible && <AssistantPanel onClose={closeAssistant} />}
         </Slot>
 
         {/* Main content: KanbanBoard or ArchivedListView (hides when diff or subtask diff is shown) */}

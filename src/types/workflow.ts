@@ -520,6 +520,32 @@ export interface BranchList {
 }
 
 // =============================================================================
+// Assistant Sessions
+// =============================================================================
+
+/**
+ * An assistant chat session.
+ */
+export interface AssistantSession {
+  /** Unique session ID. */
+  id: string;
+  /** Claude session ID (for Claude Code --resume). */
+  claude_session_id: string | null;
+  /** Session title (generated from first message). */
+  title: string | null;
+  /** Current agent process PID (null if not running). */
+  agent_pid: number | null;
+  /** Number of times the agent has been spawned for this session. */
+  spawn_count: number;
+  /** Session state (spawning, active, completed, abandoned). */
+  session_state: string;
+  /** When the session was created. */
+  created_at: string;
+  /** When the session was last updated. */
+  updated_at: string;
+}
+
+// =============================================================================
 // Auto-Task Templates
 // =============================================================================
 

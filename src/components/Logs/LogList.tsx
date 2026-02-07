@@ -6,6 +6,8 @@ import { Terminal } from "lucide-react";
 import type { LogEntry } from "../../types/workflow";
 import { EmptyState } from "../ui";
 import { LogEntryView } from "./LogEntryView";
+import { SubagentGroup } from "./SubagentGroup";
+import { type GroupedLogEntry, useGroupedLogs } from "./useGroupedLogs";
 
 interface LogListProps {
   logs: LogEntry[];
@@ -13,7 +15,24 @@ interface LogListProps {
   error?: string | null;
 }
 
+function renderLogEntry(entry: GroupedLogEntry, index: number) {
+  if (entry.type === "subagent_group") {
+    return (
+      <SubagentGroup
+        key={index}
+        taskEntry={entry.taskEntry}
+        subagentEntries={entry.subagentEntries}
+        isComplete={entry.isComplete}
+      />
+    );
+  }
+  return <LogEntryView key={index} entry={entry} />;
+}
+
 export function LogList({ logs, isLoading, error }: LogListProps) {
+  // Call hooks unconditionally at the top
+  const groupedLogs = useGroupedLogs(logs);
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-full text-red-400 text-sm">
@@ -57,12 +76,5 @@ export function LogList({ logs, isLoading, error }: LogListProps) {
     );
   }
 
-  return (
-    <div className="space-y-0.5">
-      {logs.map((entry, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: logs are append-only without stable IDs
-        <LogEntryView key={i} entry={entry} />
-      ))}
-    </div>
-  );
+  return <div className="space-y-0.5">{groupedLogs.map(renderLogEntry)}</div>;
 }

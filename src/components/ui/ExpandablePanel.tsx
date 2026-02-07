@@ -20,7 +20,11 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { type AnimationPhase, ContentAnimationContext, useContentAnimation } from "./ContentAnimation";
+import {
+  type AnimationPhase,
+  ContentAnimationContext,
+  useContentAnimation,
+} from "./ContentAnimation";
 import { useOverlayContainer } from "./OverlayContainer";
 
 interface ExpandablePanelContextValue {
@@ -89,7 +93,9 @@ export function ExpandablePanel({ children, className = "" }: ExpandablePanelPro
   // Wrap children with shared providers so context is available in both modes
   const wrappedChildren = (
     <ExpandablePanelContext.Provider value={contextValue}>
-      <ContentAnimationContext.Provider value={mergedState}>{children}</ContentAnimationContext.Provider>
+      <ContentAnimationContext.Provider value={mergedState}>
+        {children}
+      </ContentAnimationContext.Provider>
     </ExpandablePanelContext.Provider>
   );
 
@@ -120,7 +126,9 @@ export function ExpandablePanel({ children, className = "" }: ExpandablePanelPro
   }
 
   return (
-    <div className={`grow shrink basis-0 flex flex-col overflow-y-auto overflow-x-hidden ${className}`}>
+    <div
+      className={`grow shrink basis-0 flex flex-col overflow-y-auto overflow-x-hidden ${className}`}
+    >
       {wrappedChildren}
     </div>
   );

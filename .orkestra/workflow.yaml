@@ -51,7 +51,7 @@ stages:
   # Review: Automated review that can send back to work if needed
   - name: review
     display_name: Review
-    icon: eye
+    icon: code
     artifact: verdict
     inputs: [breakdown, summary, check_results]
     prompt: reviewer.md

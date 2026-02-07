@@ -7,6 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   BookOpen,
   CircleCheckBig,
+  Code,
   Eye,
   FileText,
   FlaskConical,
@@ -14,6 +15,7 @@ import {
   Hammer,
   Layers,
   ListTree,
+  NotebookTabs,
   Rocket,
   ShieldCheck,
   Zap,
@@ -32,6 +34,8 @@ export const ICON_MAP: Record<string, LucideIcon> = {
   "circle-check-big": CircleCheckBig,
   eye: Eye,
   "book-open": BookOpen,
+  "notebook-tabs": NotebookTabs,
+  code: Code,
 
   // Flow icons
   zap: Zap,

@@ -2386,3 +2386,364 @@ fn test_automated_review_rejection_skips_human_review() {
         "Automated stage should NOT produce AwaitingRejectionReview"
     );
 }
+
+// =============================================================================
+// Artifact Generation for All LLM Output Types
+// =============================================================================
+
+/// Test that artifacts are created for all LLM output types and NOT overwritten by human actions.
+///
+/// Rule: Any structured response from an LLM creates an artifact. Human actions (approve/reject/answer)
+/// do NOT create artifacts — they record feedback through iteration triggers only.
+///
+/// Output types tested:
+/// 1. Agent questions → artifact with formatted questions
+/// 2. Agent artifact → artifact with content
+/// 3. Agent approval (reject) → artifact with rejection content
+/// 4. Agent approval (approve) → artifact with approval content
+/// 5. Script success → artifact with output (already covered in script recovery test)
+/// 6. Script failure → artifact with error text
+/// 7. Human rejection → artifact unchanged (still agent's content)
+/// 8. Human approval → artifact unchanged (still agent's content)
+#[test]
+#[allow(clippy::too_many_lines)]
+fn test_artifact_generation_for_all_output_types() {
+    use orkestra_core::workflow::config::{ScriptStageConfig, StageCapabilities, StageConfig};
+
+    // Multi-stage workflow covering all output types:
+    // planning (questions) → work → checks (script with on_failure) → review (approval, non-automated)
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_inputs(vec!["plan".into()]),
+        StageConfig::new("checks", "check_results")
+            .with_inputs(vec!["summary".into()])
+            .with_script(ScriptStageConfig {
+                command: "echo 'all checks passed'".to_string(),
+                timeout_seconds: 10,
+                on_failure: Some("work".into()),
+            }),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into(), "check_results".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+        // Intentionally NOT .automated() — human review required
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Artifact generation test",
+        "Test that all LLM outputs create artifacts",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // =========================================================================
+    // Step 1: Agent asks questions → artifact created with formatted questions
+    // =========================================================================
+
+    let questions = vec![
+        Question::new("Which framework?")
+            .with_context("We need a web framework")
+            .with_options(vec![
+                QuestionOption::new("React").with_description("Popular and flexible"),
+                QuestionOption::new("Vue").with_description("Easy to learn"),
+            ]),
+        Question::new("Include caching?"),
+    ];
+    ctx.set_output(&task_id, MockAgentOutput::Questions(questions));
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes questions output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // ASSERT: Questions output creates an artifact
+    let plan_artifact = task.artifact("plan");
+    assert!(
+        plan_artifact.is_some(),
+        "Agent questions output should create an artifact"
+    );
+    let plan_content = plan_artifact.unwrap();
+    assert!(
+        plan_content.contains("Which framework?"),
+        "Questions artifact should contain question text. Got: {plan_content}"
+    );
+    assert!(
+        plan_content.contains("We need a web framework"),
+        "Questions artifact should contain context. Got: {plan_content}"
+    );
+    assert!(
+        plan_content.contains("React"),
+        "Questions artifact should contain option labels. Got: {plan_content}"
+    );
+    assert!(
+        plan_content.contains("Include caching?"),
+        "Questions artifact should contain all questions. Got: {plan_content}"
+    );
+
+    // Human answers questions (should NOT change the artifact)
+    let answers = vec![
+        QuestionAnswer::new("Which framework?", "React", chrono::Utc::now().to_rfc3339()),
+        QuestionAnswer::new("Include caching?", "Yes", chrono::Utc::now().to_rfc3339()),
+    ];
+    ctx.api().answer_questions(&task_id, answers).unwrap();
+
+    // ASSERT: Human answering does NOT overwrite the artifact
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.artifact("plan").unwrap(),
+        plan_content,
+        "Human answering questions should not change the artifact"
+    );
+
+    // =========================================================================
+    // Step 2: Agent produces plan artifact → human rejects → artifact preserved
+    // =========================================================================
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Detailed implementation plan v1".to_string(),
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert_eq!(
+        task.artifact("plan"),
+        Some("Detailed implementation plan v1"),
+        "Agent artifact output should create artifact"
+    );
+
+    // Human rejects (should NOT overwrite the agent's artifact)
+    ctx.api()
+        .reject(&task_id, "Need more detail on error handling")
+        .unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.artifact("plan"),
+        Some("Detailed implementation plan v1"),
+        "Human rejection should NOT overwrite agent's artifact"
+    );
+
+    // =========================================================================
+    // Step 3: Agent produces improved plan → human approves → artifact preserved
+    // =========================================================================
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Detailed plan v2 with error handling".to_string(),
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.artifact("plan"),
+        Some("Detailed plan v2 with error handling"),
+        "New agent artifact should overwrite previous agent artifact"
+    );
+
+    // Human approves (should NOT change the artifact)
+    ctx.api().approve(&task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.artifact("plan"),
+        Some("Detailed plan v2 with error handling"),
+        "Human approval should not change the artifact"
+    );
+    assert_eq!(task.current_stage(), Some("work"));
+
+    // =========================================================================
+    // Step 4: Work stage → produce artifact → approve to script stage
+    // =========================================================================
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation complete with tests".to_string(),
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes work output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.artifact("summary"),
+        Some("Implementation complete with tests")
+    );
+
+    ctx.api().approve(&task_id).unwrap();
+
+    // =========================================================================
+    // Step 5: Script stage succeeds → artifact created with output
+    // =========================================================================
+
+    // Queue review output before advancing (script auto-advances to review)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Missing integration tests".to_string(),
+        },
+    );
+    ctx.advance(); // spawns script → passes → auto-advances to review → spawns reviewer
+    ctx.advance(); // processes review output (rejection, pauses for human review)
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+
+    // ASSERT: Script success creates artifact
+    assert!(
+        task.artifact("check_results").is_some(),
+        "Script success should create an artifact"
+    );
+    assert!(
+        task.artifact("check_results")
+            .unwrap()
+            .contains("all checks passed"),
+        "Script artifact should contain script output"
+    );
+
+    // =========================================================================
+    // Step 6: Agent rejection verdict → artifact created with rejection content
+    // =========================================================================
+
+    // The reviewer's rejection content should be stored as artifact
+    assert_eq!(
+        task.artifact("verdict"),
+        Some("Missing integration tests"),
+        "Agent rejection verdict should create an artifact with the rejection content"
+    );
+
+    // Task should be paused at AwaitingReview (non-automated stage)
+    assert_eq!(task.current_stage(), Some("review"));
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // Human overrides rejection (should NOT change the artifact)
+    ctx.api()
+        .reject(&task_id, "Actually the tests are fine, re-evaluate")
+        .unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.artifact("verdict"),
+        Some("Missing integration tests"),
+        "Human rejection override should NOT overwrite agent's verdict artifact"
+    );
+
+    // =========================================================================
+    // Step 7: Agent approval verdict → artifact created with approval content
+    // =========================================================================
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Re-evaluated: all tests adequate, implementation is solid".to_string(),
+        },
+    );
+    ctx.advance(); // spawns reviewer
+    ctx.advance(); // processes approval output → pauses at AwaitingReview
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.artifact("verdict"),
+        Some("Re-evaluated: all tests adequate, implementation is solid"),
+        "Agent approval verdict should create an artifact with approval content"
+    );
+
+    // Human approves (should NOT change the artifact)
+    let task = ctx.api().approve(&task_id).unwrap();
+    assert_eq!(
+        task.artifact("verdict"),
+        Some("Re-evaluated: all tests adequate, implementation is solid"),
+        "Human approval should not change the verdict artifact"
+    );
+    assert!(task.is_done(), "Task should be done after final approval");
+}
+
+/// Test that script failure creates an artifact with the error text.
+///
+/// Separate test because script failure needs a different workflow setup
+/// (a script that actually fails).
+#[test]
+fn test_script_failure_creates_artifact() {
+    use orkestra_core::workflow::config::{ScriptStageConfig, StageConfig};
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("checks", "check_results")
+            .with_inputs(vec!["summary".into()])
+            .with_script(ScriptStageConfig {
+                command: "echo 'Error: tests failed with 3 failures'; exit 1".to_string(),
+                timeout_seconds: 10,
+                on_failure: Some("work".into()),
+            }),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["check_results".into()])
+            .automated(),
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Script failure artifact test",
+        "Test that script failure creates an artifact",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Work stage → produce artifact → approve to script stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial work".to_string(),
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes work output
+    ctx.api().approve(&task_id).unwrap();
+
+    // Queue work output for after script failure recovery
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Fixed work".to_string(),
+        },
+    );
+
+    ctx.advance(); // spawns script → fails → recovers to work → spawns worker
+    ctx.advance(); // processes work output
+
+    // ASSERT: Script failure should have created an artifact
+    let task = ctx.api().get_task(&task_id).unwrap();
+    let check_results = task.artifact("check_results");
+    assert!(
+        check_results.is_some(),
+        "Script failure should create an artifact with error text"
+    );
+    assert!(
+        check_results
+            .unwrap()
+            .contains("tests failed with 3 failures"),
+        "Script failure artifact should contain the error output. Got: {}",
+        check_results.unwrap()
+    );
+}

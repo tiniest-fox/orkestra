@@ -3,7 +3,7 @@
 use crate::orkestra_debug;
 use crate::workflow::domain::{IterationTrigger, QuestionAnswer, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
-use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
+use crate::workflow::runtime::{Outcome, Phase, Status};
 
 use super::agent_actions::AUTO_ANSWER_TEXT;
 use super::SubtaskService;
@@ -216,15 +216,6 @@ impl WorkflowApi {
 
             let now = chrono::Utc::now().to_rfc3339();
 
-            // Store human's feedback as artifact
-            let artifact_name = self.artifact_name_for_stage(&current_stage, "artifact");
-            task.artifacts.set(Artifact::new(
-                &artifact_name,
-                feedback,
-                &current_stage,
-                &now,
-            ));
-
             // Don't call end_current_iteration — it was already ended with AwaitingRejectionReview
             // Create new iteration in the same review stage with human's feedback
             self.iteration_service.create_iteration(
@@ -251,15 +242,6 @@ impl WorkflowApi {
         );
 
         let now = chrono::Utc::now().to_rfc3339();
-
-        // Store rejection feedback as artifact (same name as approvals, overwrite semantics)
-        let artifact_name = self.artifact_name_for_stage(&current_stage, "artifact");
-        task.artifacts.set(Artifact::new(
-            &artifact_name,
-            feedback,
-            &current_stage,
-            &now,
-        ));
 
         // End current iteration with rejection
         self.end_current_iteration(&task, Outcome::rejected(&current_stage, feedback))?;
@@ -717,12 +699,9 @@ mod tests {
         assert_eq!(task.current_stage(), Some("planning"));
         assert_eq!(task.phase, Phase::Idle);
 
-        // Rejection should create an artifact with the feedback
+        // Rejection should preserve the original agent artifact, not overwrite with feedback
         assert!(task.artifacts.get("plan").is_some());
-        assert_eq!(
-            task.artifacts.get("plan").unwrap().content,
-            "Please add more detail"
-        );
+        assert_eq!(task.artifacts.get("plan").unwrap().content, "The plan");
     }
 
     #[test]

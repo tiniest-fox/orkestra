@@ -141,7 +141,7 @@ impl WorkflowApi {
         task.auto_mode || self.is_stage_automated(stage)
     }
 
-    /// Handle questions output: end iteration with questions, auto-answer if `auto_mode`.
+    /// Handle questions output: store artifact, end iteration with questions, auto-answer if `auto_mode`.
     fn handle_questions_output(
         &self,
         task: &mut Task,
@@ -149,6 +149,12 @@ impl WorkflowApi {
         stage: &str,
         now: &str,
     ) -> WorkflowResult<()> {
+        // Store questions as a markdown artifact for reference
+        let artifact_name = self.artifact_name_for_stage(stage, "artifact");
+        let content = format_questions_as_markdown(questions);
+        task.artifacts
+            .set(Artifact::new(&artifact_name, &content, stage, now));
+
         self.end_current_iteration(task, Outcome::awaiting_answers(stage, questions.to_owned()))?;
 
         if task.auto_mode {
@@ -695,6 +701,15 @@ impl WorkflowApi {
         // Strip ANSI codes from error message for clean LLM consumption
         let clean_error = strip_ansi_codes(error);
 
+        // Store error as artifact (mirrors process_script_success pattern)
+        let artifact_name = self.artifact_name_for_stage(&current_stage, "script_output");
+        task.artifacts.set(Artifact::new(
+            &artifact_name,
+            &clean_error,
+            &current_stage,
+            &now,
+        ));
+
         // End current iteration with script failure outcome
         self.end_current_iteration(
             &task,
@@ -738,6 +753,30 @@ impl WorkflowApi {
         self.store.save_task(&task)?;
         Ok(task)
     }
+}
+
+/// Format questions as a human-readable markdown artifact.
+fn format_questions_as_markdown(questions: &[crate::workflow::domain::Question]) -> String {
+    use std::fmt::Write;
+
+    let mut md = String::from("# Questions\n");
+    for (i, q) in questions.iter().enumerate() {
+        write!(md, "\n## Question {}\n\n{}\n", i + 1, q.question).unwrap();
+        if let Some(ctx) = &q.context {
+            write!(md, "\n**Context:** {ctx}\n").unwrap();
+        }
+        if !q.options.is_empty() {
+            md.push_str("\n**Options:**\n");
+            for opt in &q.options {
+                write!(md, "- {}", opt.label).unwrap();
+                if let Some(desc) = &opt.description {
+                    write!(md, " — {desc}").unwrap();
+                }
+                md.push('\n');
+            }
+        }
+    }
+    md
 }
 
 /// Generate auto-answers for all questions using a standard response.

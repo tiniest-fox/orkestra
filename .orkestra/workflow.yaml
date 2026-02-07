@@ -30,7 +30,7 @@ stages:
   # Work: Implements the breakdown
   - name: work
     display_name: Work
-    icon: hammer
+    icon: code
     artifact: summary
     inputs: [breakdown]
     prompt: worker.md
@@ -51,7 +51,7 @@ stages:
   # Review: Automated review that can send back to work if needed
   - name: review
     display_name: Review
-    icon: code
+    icon: eye
     artifact: verdict
     inputs: [breakdown, summary, check_results]
     prompt: reviewer.md

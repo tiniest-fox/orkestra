@@ -3,7 +3,7 @@
  *
  * In collapsed mode, renders children in normal document flow.
  * In expanded mode, portals children into the OverlayContainer as an
- * absolutely-positioned overlay with `inset-2`, escaping any intermediate
+ * absolutely-positioned overlay with `inset-0`, escaping any intermediate
  * overflow:hidden boundaries.
  *
  * Toggling between modes remounts children (different DOM locations). State
@@ -20,11 +20,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  type AnimationPhase,
-  ContentAnimationContext,
-  useContentAnimation,
-} from "./ContentAnimation";
+import { type AnimationPhase, ContentAnimationContext, useContentAnimation } from "./ContentAnimation";
 import { useOverlayContainer } from "./OverlayContainer";
 
 interface ExpandablePanelContextValue {
@@ -59,7 +55,7 @@ const overlayTransition = {
  *
  * In collapsed mode: renders children as a normal flex child.
  * In expanded mode: portals children into the nearest OverlayContainer
- * as an absolute overlay with inset-2.
+ * as an absolute overlay with inset-0.
  *
  * Place an ExpandButton inside to give users a toggle control.
  */
@@ -93,9 +89,7 @@ export function ExpandablePanel({ children, className = "" }: ExpandablePanelPro
   // Wrap children with shared providers so context is available in both modes
   const wrappedChildren = (
     <ExpandablePanelContext.Provider value={contextValue}>
-      <ContentAnimationContext.Provider value={mergedState}>
-        {children}
-      </ContentAnimationContext.Provider>
+      <ContentAnimationContext.Provider value={mergedState}>{children}</ContentAnimationContext.Provider>
     </ExpandablePanelContext.Provider>
   );
 
@@ -112,7 +106,7 @@ export function ExpandablePanel({ children, className = "" }: ExpandablePanelPro
               transition={overlayTransition}
               onAnimationStart={() => setPhase("entering")}
               onAnimationComplete={() => setPhase("settled")}
-              className={`absolute inset-2 z-30 flex flex-col rounded-panel shadow-panel bg-white dark:bg-stone-900 overflow-y-auto overflow-x-hidden ${className}`}
+              className={`absolute inset-0 z-30 flex flex-col rounded-panel shadow-panel bg-white dark:bg-stone-900 overflow-y-auto overflow-x-hidden ${className}`}
             >
               {wrappedChildren}
             </motion.div>
@@ -126,9 +120,7 @@ export function ExpandablePanel({ children, className = "" }: ExpandablePanelPro
   }
 
   return (
-    <div
-      className={`grow shrink basis-0 flex flex-col overflow-y-auto overflow-x-hidden ${className}`}
-    >
+    <div className={`grow shrink basis-0 flex flex-col overflow-y-auto overflow-x-hidden ${className}`}>
       {wrappedChildren}
     </div>
   );

@@ -5,13 +5,7 @@
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
 use orkestra_core::workflow::{
-    adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner},
     domain::AssistantSession,
-    execution::{
-        claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-        ProviderRegistry,
-    },
-    ports::ProcessSpawner,
     services::AssistantService,
     LogEntry,
 };
@@ -28,27 +22,9 @@ fn create_assistant_service(
     registry.with_project(window.label(), |state| {
         let store = state.create_store();
         let project_root = state.project_root().to_path_buf();
+        let provider_registry = Arc::clone(state.provider_registry());
 
-        // Create provider registry with both claudecode and opencode
-        let mut provider_registry = ProviderRegistry::new("claudecode");
-        provider_registry.register(
-            "claudecode",
-            Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
-            claudecode_capabilities(),
-            claudecode_aliases(),
-        );
-        provider_registry.register(
-            "opencode",
-            Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
-            opencode_capabilities(),
-            opencode_aliases(),
-        );
-
-        Ok(AssistantService::new(
-            store,
-            Arc::new(provider_registry),
-            project_root,
-        ))
+        Ok(AssistantService::new(store, provider_registry, project_root))
     })
 }
 

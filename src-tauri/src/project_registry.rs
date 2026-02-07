@@ -13,6 +13,12 @@ use orkestra_core::workflow::{
     AutoTaskTemplate, Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi, WorkflowConfig,
     WorkflowStore,
 };
+use orkestra_core::workflow::execution::{
+    claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
+    ProviderRegistry,
+};
+use orkestra_core::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
+use orkestra_core::workflow::ports::ProcessSpawner;
 use serde::{Deserialize, Serialize};
 
 use orkestra_core::orkestra_debug;
@@ -32,6 +38,8 @@ pub struct ProjectState {
     db_conn: DatabaseConnection,
     /// Whether git service is available for worktree isolation.
     has_git: bool,
+    /// Shared provider registry for agent spawning.
+    provider_registry: Arc<ProviderRegistry>,
     /// Stop flag for the orchestrator loop.
     pub(crate) stop_flag: Arc<AtomicBool>,
 }
@@ -87,6 +95,21 @@ impl ProjectState {
             WorkflowApi::new(workflow.clone(), store)
         };
 
+        // Construct shared provider registry
+        let mut provider_registry = ProviderRegistry::new("claudecode");
+        provider_registry.register(
+            "claudecode",
+            Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+            claudecode_capabilities(),
+            claudecode_aliases(),
+        );
+        provider_registry.register(
+            "opencode",
+            Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+            opencode_capabilities(),
+            opencode_aliases(),
+        );
+
         let stop_flag = Arc::new(AtomicBool::new(false));
 
         Ok(Self {
@@ -96,6 +119,7 @@ impl ProjectState {
             project_root,
             db_conn: conn,
             has_git,
+            provider_registry: Arc::new(provider_registry),
             stop_flag,
         })
     }
@@ -137,6 +161,11 @@ impl ProjectState {
     /// Check if git service is available.
     pub fn has_git_service(&self) -> bool {
         self.has_git
+    }
+
+    /// Get the shared provider registry.
+    pub fn provider_registry(&self) -> &Arc<ProviderRegistry> {
+        &self.provider_registry
     }
 
     /// Flush the WAL to the main database file.

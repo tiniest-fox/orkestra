@@ -65,6 +65,12 @@ impl AssistantService {
     ) -> WorkflowResult<AssistantSession> {
         let now = chrono::Utc::now().to_rfc3339();
 
+        if message.trim().is_empty() {
+            return Err(crate::workflow::ports::WorkflowError::InvalidState(
+                "Message cannot be empty".to_string(),
+            ));
+        }
+
         // Load or create session
         let mut session = if let Some(id) = session_id {
             self.store.get_assistant_session(id)?.ok_or_else(|| {
@@ -208,10 +214,8 @@ impl AssistantService {
     }
 
     /// Load the assistant system prompt template.
-    ///
-    /// TODO: This is a placeholder. Subtask 5 will define the actual template.
     fn load_system_prompt() -> String {
-        "You are a helpful AI assistant for this project.".to_string()
+        crate::prompts::ASSISTANT_SYSTEM_PROMPT.to_string()
     }
 
     /// Spawn a background thread to read agent output and write log entries.
@@ -314,7 +318,9 @@ fn read_assistant_output(
     // Finalize the parser (flush any buffered entries)
     let finalized = parser.finalize();
     for entry in finalized {
-        let _ = store.append_assistant_log_entry(session_id, &entry);
+        if let Err(e) = store.append_assistant_log_entry(session_id, &entry) {
+            orkestra_debug!("assistant", "Failed to append finalized log entry: {}", e);
+        }
     }
 
     // Mark agent as finished

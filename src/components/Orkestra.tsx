@@ -20,6 +20,7 @@ import { Button, Panel, PanelLayout, Slot } from "./ui";
 export function Orkestra() {
   useNotificationPermission();
 
+  const displayContext = useDisplayContext();
   const {
     view,
     focus,
@@ -32,7 +33,7 @@ export function Orkestra() {
     closeSubtaskDiff,
     switchToActive,
     switchToArchived,
-  } = useDisplayContext();
+  } = displayContext;
 
   // Track sidebar open/close cycles to force fresh state on reopen
   const [sidebarSessionCounter, setSidebarSessionCounter] = useState(0);
@@ -42,7 +43,7 @@ export function Orkestra() {
   const autoTaskTemplates = useAutoTaskTemplates();
   const { tasks, loading, error, createTask, deleteTask } = useTasks();
 
-  // Filter to top-level tasks only for the kanban board
+  // Filter to top-level tasks only
   const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parent_id), [tasks]);
 
   // Filter active tasks (non-archived top-level)
@@ -105,6 +106,15 @@ export function Orkestra() {
     prevSubtaskVisibleRef.current = currentVisible;
   }, [currentSelectedSubtask]);
 
+  // Close detail panel when switching views
+  const prevViewTypeRef = useRef(view.type);
+  useEffect(() => {
+    if (prevViewTypeRef.current !== view.type && focus.type === "task") {
+      closeFocus();
+    }
+    prevViewTypeRef.current = view.type;
+  }, [view.type, focus.type, closeFocus]);
+
   // Subtask panel visibility
   const subtaskVisible = !!currentSelectedSubtask;
   const subtaskContentKey = currentSelectedSubtask?.id ?? null;
@@ -160,7 +170,7 @@ export function Orkestra() {
     );
   };
 
-  // Render sidebar content based on focus type
+  // Render sidebar content based on focus type and view
   // Use sidebarSessionCounter as key to force remount on reopen (clears all state)
   const renderSidebarContent = () => {
     if (focus.type === "create") {

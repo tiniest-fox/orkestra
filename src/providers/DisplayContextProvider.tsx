@@ -16,7 +16,7 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo, useSta
 // =============================================================================
 
 /** What occupies the main content area. */
-export type View = { type: "board" };
+export type View = { type: "board" } | { type: "archive" };
 
 /** What's open in the side panel. */
 export type Focus =
@@ -54,6 +54,12 @@ export interface DisplayContextValue {
 
   /** Close the subtask diff viewer. */
   closeSubtaskDiff: () => void;
+
+  /** Switch to active tasks view (Kanban). */
+  switchToActive: () => void;
+
+  /** Switch to archived tasks view (list). */
+  switchToArchived: () => void;
 }
 
 // =============================================================================
@@ -82,7 +88,7 @@ interface DisplayContextProviderProps {
 }
 
 export function DisplayContextProvider({ children }: DisplayContextProviderProps) {
-  const [view] = useState<View>({ type: "board" });
+  const [view, setView] = useState<View>({ type: "board" });
   const [focus, setFocus] = useState<Focus>({ type: "none" });
 
   const focusTask = useCallback((taskId: string) => {
@@ -149,6 +155,14 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
     });
   }, []);
 
+  const switchToActive = useCallback(() => {
+    setView({ type: "board" });
+  }, []);
+
+  const switchToArchived = useCallback(() => {
+    setView({ type: "archive" });
+  }, []);
+
   const value = useMemo<DisplayContextValue>(
     () => ({
       view,
@@ -162,6 +176,8 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeDiff,
       openSubtaskDiff,
       closeSubtaskDiff,
+      switchToActive,
+      switchToArchived,
     }),
     [
       view,
@@ -175,6 +191,8 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeDiff,
       openSubtaskDiff,
       closeSubtaskDiff,
+      switchToActive,
+      switchToArchived,
     ],
   );
 

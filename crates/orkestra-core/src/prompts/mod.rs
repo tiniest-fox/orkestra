@@ -32,6 +32,13 @@ const APPROVAL_COMPONENT: &str = include_str!("schemas/components/approval.json"
 const TERMINAL_COMPONENT: &str = include_str!("schemas/components/terminal.json");
 
 // =============================================================================
+// Assistant Prompt Templates
+// =============================================================================
+
+/// System prompt for the assistant chat panel.
+pub const ASSISTANT_SYSTEM_PROMPT: &str = include_str!("templates/assistant/system_prompt.md");
+
+// =============================================================================
 // Dynamic Schema Generation
 // =============================================================================
 

@@ -96,12 +96,13 @@ flows:
               rejection_stage: work
 
   # OpenCode test flow: Single work stage using OpenCode with Kimi 2.5
-  opencode-test:
-    description: Test flow for OpenCode with Kimi 2.5 — work stage only
+  doc-change:
+    description: Simple work without any need for review
     icon: flask
     stages:
       - work:
           model: sonnet
+      - check
 
 integration:
   on_failure: work

@@ -5,9 +5,10 @@
  * No progress bar (archived tasks don't need progress tracking).
  */
 
+import { Archive } from "lucide-react";
 import type { WorkflowTaskView } from "../types/workflow";
 import { TaskCard } from "./Kanban/TaskCard";
-import { Panel } from "./ui";
+import { EmptyState, Panel } from "./ui";
 
 interface ArchivedListViewProps {
   /** Filtered archived tasks (top-level only). */
@@ -23,7 +24,7 @@ export function ArchivedListView({ tasks, selectedTaskId, onSelectTask }: Archiv
     <Panel>
       <div className="p-4">
         {tasks.length === 0 ? (
-          <div className="text-stone-500 dark:text-stone-400 text-sm">No archived tasks.</div>
+          <EmptyState icon={Archive} message="No archived tasks." />
         ) : (
           <div className="space-y-2 flex flex-col items-stretch">
             {tasks.map((task) => (

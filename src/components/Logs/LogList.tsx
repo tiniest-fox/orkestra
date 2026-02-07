@@ -2,7 +2,9 @@
  * Log list - container component for displaying a list of log entries.
  */
 
+import { Terminal } from "lucide-react";
 import type { LogEntry } from "../../types/workflow";
+import { EmptyState } from "../ui";
 import { LogEntryView } from "./LogEntryView";
 
 interface LogListProps {
@@ -38,14 +40,18 @@ export function LogList({ logs, isLoading, error }: LogListProps) {
 
   if (logs.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500 text-sm">
+      <div className="flex items-center justify-center h-full">
         {isLoading ? (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
             <span className="w-3 h-3 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
             Loading logs...
           </div>
         ) : (
-          "No log entries yet. Agent activity will appear here."
+          <EmptyState
+            icon={Terminal}
+            message="No log entries yet."
+            description="Agent activity will appear here."
+          />
         )}
       </div>
     );

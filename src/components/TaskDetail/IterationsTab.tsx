@@ -2,7 +2,9 @@
  * Iterations tab - displays activity history.
  */
 
+import { Repeat } from "lucide-react";
 import type { WorkflowIteration } from "../../types/workflow";
+import { EmptyState } from "../ui";
 import { IterationCard } from "./IterationCard";
 
 interface IterationsTabProps {
@@ -14,9 +16,7 @@ export function IterationsTab({ iterations }: IterationsTabProps) {
     <div className="p-4">
       <div className="text-sm font-medium text-stone-700 dark:text-stone-200 mb-4">Activity</div>
       {iterations.length === 0 ? (
-        <div className="text-stone-500 dark:text-stone-400 text-sm">
-          No iterations recorded yet.
-        </div>
+        <EmptyState icon={Repeat} message="No iterations recorded yet." />
       ) : (
         <div className="space-y-4">
           {[...iterations]

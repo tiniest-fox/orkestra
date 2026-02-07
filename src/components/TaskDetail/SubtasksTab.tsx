@@ -5,9 +5,10 @@
  * Reuses TaskCard with "subtask" variant for consistent display.
  */
 
+import { Layers } from "lucide-react";
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
 import { TaskCard } from "../Kanban/TaskCard";
-import { taskStateColors } from "../ui";
+import { EmptyState, taskStateColors } from "../ui";
 
 interface SubtasksTabProps {
   subtasks: WorkflowTaskView[];
@@ -79,7 +80,7 @@ export function SubtasksTab({
       <ProgressBar progress={progress} />
 
       {subtasks.length === 0 ? (
-        <div className="text-stone-500 dark:text-stone-400 text-sm">No subtasks.</div>
+        <EmptyState icon={Layers} message="No subtasks." />
       ) : (
         <div className="space-y-2 flex flex-col items-stretch">
           {sorted.map((subtask) => (

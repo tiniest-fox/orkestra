@@ -12,6 +12,7 @@
 
 import { Search } from "lucide-react";
 import { useTasks } from "../../providers";
+import { EmptyState } from "../ui";
 import { ModalPanel } from "../ui/ModalPanel";
 import { CommandPaletteAction, CommandPaletteResult } from "./CommandPaletteResult";
 import { useCommandPalette } from "./useCommandPalette";
@@ -60,9 +61,11 @@ export function CommandPalette() {
         {/* Results */}
         <div className="max-h-80 overflow-y-auto">
           {items.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-stone-400 dark:text-stone-500">
-              {hasQuery ? "No results found" : "No tasks yet"}
-            </div>
+            <EmptyState
+              icon={Search}
+              message={hasQuery ? "No results found" : "No tasks yet"}
+              className="px-4"
+            />
           ) : (
             <>
               {!hasQuery && (

@@ -2,10 +2,11 @@
  * Artifacts tab - displays artifacts with stage switching via TabbedPanel.
  */
 
+import { FileOutput } from "lucide-react";
 import { useSmartDefault } from "../../hooks/useSmartDefault";
 import type { WorkflowArtifact, WorkflowConfig } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
-import { ArtifactTabs, ExpandablePanel, FlexContainer, TabbedPanel } from "../ui";
+import { ArtifactTabs, EmptyState, ExpandablePanel, FlexContainer, TabbedPanel } from "../ui";
 import { ArtifactView } from "./ArtifactView";
 
 function ExpandableArtifactView({ artifact }: { artifact: WorkflowArtifact }) {
@@ -47,7 +48,7 @@ export function ArtifactsTab({ taskId, currentStage, artifacts, config }: Artifa
   }));
 
   if (tabs.length === 0) {
-    return <div className="p-4 text-stone-500 dark:text-stone-400 text-sm">No artifacts yet.</div>;
+    return <EmptyState icon={FileOutput} message="No artifacts yet." className="p-4" />;
   }
 
   return (

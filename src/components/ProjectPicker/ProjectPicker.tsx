@@ -3,6 +3,7 @@ import { ChevronRight, FolderOpen, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { RecentProject } from "../../types/project";
 import { Button } from "../ui/Button";
+import { EmptyState } from "../ui/EmptyState";
 import { Panel } from "../ui/Panel";
 
 interface ProjectPickerProps {
@@ -95,9 +96,11 @@ export function ProjectPicker({ errorMessage: initialError }: ProjectPickerProps
           )}
 
           {!loading && recents.length === 0 && (
-            <div className="py-8 text-center text-sm text-stone-500 dark:text-stone-400">
-              No recent projects. Open a folder to get started.
-            </div>
+            <EmptyState
+              icon={FolderOpen}
+              message="No recent projects."
+              description="Open a folder to get started."
+            />
           )}
 
           {!loading && recents.length > 0 && (

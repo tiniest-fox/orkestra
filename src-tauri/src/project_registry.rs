@@ -9,16 +9,16 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
-use orkestra_core::workflow::{
-    AutoTaskTemplate, Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi, WorkflowConfig,
-    WorkflowStore,
-};
+use orkestra_core::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
 use orkestra_core::workflow::execution::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
     ProviderRegistry,
 };
-use orkestra_core::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
 use orkestra_core::workflow::ports::ProcessSpawner;
+use orkestra_core::workflow::{
+    AutoTaskTemplate, Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi, WorkflowConfig,
+    WorkflowStore,
+};
 use serde::{Deserialize, Serialize};
 
 use orkestra_core::orkestra_debug;

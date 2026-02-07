@@ -4,11 +4,7 @@
 //! stopping processes, listing sessions, and retrieving logs.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
-use orkestra_core::workflow::{
-    domain::AssistantSession,
-    services::AssistantService,
-    LogEntry,
-};
+use orkestra_core::workflow::{domain::AssistantSession, services::AssistantService, LogEntry};
 use std::sync::Arc;
 use tauri::{State, Window};
 
@@ -24,7 +20,11 @@ fn create_assistant_service(
         let project_root = state.project_root().to_path_buf();
         let provider_registry = Arc::clone(state.provider_registry());
 
-        Ok(AssistantService::new(store, provider_registry, project_root))
+        Ok(AssistantService::new(
+            store,
+            provider_registry,
+            project_root,
+        ))
     })
 }
 

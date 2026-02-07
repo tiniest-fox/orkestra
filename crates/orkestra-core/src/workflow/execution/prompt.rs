@@ -722,6 +722,7 @@ const RESUME_RETRY_BLOCKED: &str = include_str!("../../prompts/templates/resume/
 pub fn build_resume_prompt(
     stage: &str,
     resume_type: &ResumeType,
+    base_branch: &str,
 ) -> Result<String, AgentConfigError> {
     let (template, mut context) = match &resume_type {
         ResumeType::Continue => (RESUME_CONTINUE, serde_json::json!({})),
@@ -735,7 +736,8 @@ pub fn build_resume_prompt(
             RESUME_INTEGRATION,
             serde_json::json!({
                 "error_message": message,
-                "conflict_files": conflict_files
+                "conflict_files": conflict_files,
+                "base_branch": base_branch,
             }),
         ),
         ResumeType::Answers { answers } => {
@@ -1251,7 +1253,7 @@ mod tests {
 
     #[test]
     fn test_build_resume_prompt_continue() {
-        let prompt = build_resume_prompt("work", &ResumeType::Continue).unwrap();
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main").unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -1264,6 +1266,7 @@ mod tests {
             &ResumeType::Feedback {
                 feedback: "Add more error handling".to_string(),
             },
+            "main",
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:feedback>"));
@@ -1279,13 +1282,14 @@ mod tests {
                 message: "Merge conflict detected".to_string(),
                 conflict_files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
             },
+            "feature/parent-branch",
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:integration>"));
         assert!(prompt.contains("Merge conflict detected"));
         assert!(prompt.contains("src/main.rs"));
         assert!(prompt.contains("src/lib.rs"));
-        assert!(prompt.contains("git rebase main"));
+        assert!(prompt.contains("git rebase feature/parent-branch"));
     }
 
     #[test]
@@ -1304,6 +1308,7 @@ mod tests {
                     },
                 ],
             },
+            "main",
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:planning:answers>"));
@@ -1315,7 +1320,7 @@ mod tests {
 
     #[test]
     fn test_build_resume_prompt_recheck() {
-        let prompt = build_resume_prompt("review", &ResumeType::Recheck).unwrap();
+        let prompt = build_resume_prompt("review", &ResumeType::Recheck, "main").unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
         assert!(prompt.contains("re-run"));
         assert!(prompt.contains("re-examine"));

@@ -9,4 +9,4 @@ Conflicting files:
 {{/each}}
 {{/if}}
 
-Please run `git rebase main` to resolve conflicts, then continue and output your result.
+Please run `git rebase {{base_branch}}` to resolve conflicts, then continue and output your result.

@@ -9,6 +9,7 @@ mod project_init;
 mod project_registry;
 
 use orkestra_core::orkestra_debug;
+use orkestra_core::workflow::ports::WorkflowStore;
 use project_registry::{ProjectRegistry, RecentProject};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -53,14 +54,17 @@ fn cleanup_all_agents(app_handle: &AppHandle) {
         else {
             continue;
         };
-        let store = orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared());
-        let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::new(store));
+        let store: Arc<dyn WorkflowStore> = Arc::new(
+            orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared()),
+        );
+        let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::clone(&store));
 
+        // Kill task agents
         match api.kill_running_agents() {
             Ok(killed) if killed > 0 => {
                 orkestra_debug!(
                     "cleanup",
-                    "Killed {} agent(s) for {}",
+                    "Killed {} task agent(s) for {}",
                     killed,
                     project_root.display()
                 );
@@ -69,9 +73,30 @@ fn cleanup_all_agents(app_handle: &AppHandle) {
             Err(e) => {
                 orkestra_debug!(
                     "cleanup",
-                    "Failed to kill agents for {}: {}",
+                    "Failed to kill task agents for {}: {}",
                     project_root.display(),
                     e
+                );
+            }
+        }
+
+        // Kill assistant agents
+        if let Ok(sessions) = store.list_assistant_sessions() {
+            let mut killed_assistants = 0;
+            for session in sessions {
+                if let Some(pid) = session.agent_pid {
+                    if orkestra_core::process::is_process_running(pid) {
+                        let _ = orkestra_core::process::kill_process_tree(pid);
+                        killed_assistants += 1;
+                    }
+                }
+            }
+            if killed_assistants > 0 {
+                orkestra_debug!(
+                    "cleanup",
+                    "Killed {} assistant agent(s) for {}",
+                    killed_assistants,
+                    project_root.display()
                 );
             }
         }
@@ -114,10 +139,24 @@ fn cleanup_agents_standalone() {
         else {
             continue;
         };
-        let store = orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared());
-        let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::new(store));
+        let store: Arc<dyn WorkflowStore> = Arc::new(
+            orkestra_core::workflow::SqliteWorkflowStore::new(conn.shared()),
+        );
+        let api = orkestra_core::workflow::WorkflowApi::new(workflow_config, Arc::clone(&store));
 
+        // Kill task agents
         let _ = api.kill_running_agents();
+
+        // Kill assistant agents
+        if let Ok(sessions) = store.list_assistant_sessions() {
+            for session in sessions {
+                if let Some(pid) = session.agent_pid {
+                    if orkestra_core::process::is_process_running(pid) {
+                        let _ = orkestra_core::process::kill_process_tree(pid);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -169,21 +208,44 @@ fn handle_window_close(app_handle: &AppHandle, window_label: &str) {
         // Stop orchestrator
         state.stop_flag.store(true, Ordering::Relaxed);
 
-        // Kill running agents
+        // Kill running task agents
         if let Ok(api) = state.api() {
             match api.kill_running_agents() {
                 Ok(killed) if killed > 0 => {
                     orkestra_debug!(
                         "cleanup",
-                        "Killed {} agent(s) for '{}'",
+                        "Killed {} task agent(s) for '{}'",
                         killed,
                         window_label
                     );
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    orkestra_debug!("cleanup", "Failed to kill agents: {}", e);
+                    orkestra_debug!("cleanup", "Failed to kill task agents: {}", e);
                 }
+            }
+        }
+
+        // Kill running assistant processes
+        let store = state.create_store();
+        if let Ok(sessions) = store.list_assistant_sessions() {
+            let mut killed_assistants = 0;
+            for session in sessions {
+                if let Some(pid) = session.agent_pid {
+                    if orkestra_core::process::is_process_running(pid) {
+                        orkestra_debug!("cleanup", "Killing assistant agent (pid={})", pid);
+                        let _ = orkestra_core::process::kill_process_tree(pid);
+                        killed_assistants += 1;
+                    }
+                }
+            }
+            if killed_assistants > 0 {
+                orkestra_debug!(
+                    "cleanup",
+                    "Killed {} assistant agent(s) for '{}'",
+                    killed_assistants,
+                    window_label
+                );
             }
         }
 
@@ -393,6 +455,11 @@ pub fn run() {
             commands::open_in_terminal,
             commands::open_in_editor,
             commands::detect_external_tools,
+            // Assistant commands
+            commands::assistant_send_message,
+            commands::assistant_stop,
+            commands::assistant_list_sessions,
+            commands::assistant_get_logs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

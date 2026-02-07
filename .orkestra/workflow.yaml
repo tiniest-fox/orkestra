@@ -96,7 +96,7 @@ flows:
               rejection_stage: work
 
   # OpenCode test flow: Single work stage using OpenCode with Kimi 2.5
-  doc-change:
+  quick-change:
     description: Simple work without any need for review
     icon: flask
     stages:

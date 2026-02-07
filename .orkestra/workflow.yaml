@@ -59,7 +59,6 @@ stages:
       approval:
         rejection_stage: task
         reset_session: true
-    is_automated: true
 
   # Compound: Captures learnings and updates documentation
   # Reviews worker notes and reviewer observations, documents anything useful

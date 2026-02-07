@@ -12,6 +12,7 @@ import {
   FileText,
   FlaskConical,
   GitBranch,
+  GitPullRequestArrow,
   Hammer,
   Layers,
   ListTree,
@@ -36,6 +37,7 @@ export const ICON_MAP: Record<string, LucideIcon> = {
   "book-open": BookOpen,
   "notebook-tabs": NotebookTabs,
   code: Code,
+  "git-pull-request-arrow": GitPullRequestArrow,
 
   // Flow icons
   zap: Zap,

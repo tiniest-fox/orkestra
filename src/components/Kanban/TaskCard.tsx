@@ -97,6 +97,9 @@ export function TaskCard({
       stageIcons[stage.name] = stage.icon;
     }
   }
+  // Integration is a hidden stage not in workflow.yaml, so we hardcode its icon
+  stageIcons["integration"] = "git-pull-request-arrow";
+
   const isFailed = derived.is_failed;
   const isBlocked = derived.is_blocked;
   const isDone = derived.is_done;

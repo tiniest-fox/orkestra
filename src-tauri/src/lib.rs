@@ -301,9 +301,21 @@ pub fn run() {
             request_notification_permission(app.handle());
 
             // Create menu bar
+            let new_window = MenuItemBuilder::with_id("new_window", "New Window")
+                .accelerator("CmdOrCtrl+Shift+N")
+                .build(app)?;
+
             let open_project = MenuItemBuilder::with_id("open_project", "Open Project...")
                 .accelerator("CmdOrCtrl+O")
                 .build(app)?;
+
+            // Create File submenu with project and window management
+            let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&new_window)
+                .item(&open_project)
+                .separator()
+                .close_window()
+                .build()?;
 
             // Create Edit submenu with standard clipboard shortcuts
             let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -318,7 +330,7 @@ pub fn run() {
                 .build()?;
 
             let menu = MenuBuilder::new(app)
-                .item(&open_project)
+                .item(&file_menu)
                 .item(&edit_menu)
                 .build()?;
 
@@ -327,19 +339,22 @@ pub fn run() {
             // Handle menu events
             let app_handle = app.handle().clone();
             app.on_menu_event(move |_app, event| {
-                if event.id() == "open_project" {
-                    // Create or focus picker window
-                    if let Some(picker) = app_handle.get_webview_window("picker") {
-                        let _ = picker.set_focus();
-                    } else {
-                        let _ = WebviewWindowBuilder::new(
-                            &app_handle,
-                            "picker",
-                            WebviewUrl::App("index.html".into()),
-                        )
-                        .title("Open Project")
-                        .build();
+                match event.id().as_ref() {
+                    "new_window" | "open_project" => {
+                        // Create or focus picker window
+                        if let Some(picker) = app_handle.get_webview_window("picker") {
+                            let _ = picker.set_focus();
+                        } else {
+                            let _ = WebviewWindowBuilder::new(
+                                &app_handle,
+                                "picker",
+                                WebviewUrl::App("index.html".into()),
+                            )
+                            .title("Open Project")
+                            .build();
+                        }
                     }
+                    _ => {}
                 }
             });
 

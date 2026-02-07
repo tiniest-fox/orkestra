@@ -8,16 +8,18 @@ import { Button } from "../ui";
 
 interface DetailsTabProps {
   task: WorkflowTask;
-  onRetry: (instructions?: string) => void;
-  isRetrying: boolean;
+  onRetry?: (instructions?: string) => void;
+  isRetrying?: boolean;
 }
 
 export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
   const [instructions, setInstructions] = useState("");
 
   const handleRetry = () => {
-    onRetry(instructions.trim() || undefined);
-    setInstructions("");
+    if (onRetry) {
+      onRetry(instructions.trim() || undefined);
+      setInstructions("");
+    }
   };
 
   return (
@@ -38,21 +40,25 @@ export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
               <p className="text-sm text-error-800 dark:text-error-200">{task.status.error}</p>
             </div>
           )}
-          <textarea
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Instructions for the agent on how to resolve this..."
-            className="w-full h-20 px-3 py-2 text-sm border border-stone-300 dark:bg-stone-800 dark:border-stone-600 dark:text-stone-100 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none text-stone-800"
-          />
-          <Button
-            variant="destructive"
-            fullWidth
-            onClick={handleRetry}
-            disabled={isRetrying}
-            loading={isRetrying}
-          >
-            Retry Task
-          </Button>
+          {onRetry && (
+            <>
+              <textarea
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+                placeholder="Instructions for the agent on how to resolve this..."
+                className="w-full h-20 px-3 py-2 text-sm border border-stone-300 dark:bg-stone-800 dark:border-stone-600 dark:text-stone-100 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none text-stone-800"
+              />
+              <Button
+                variant="destructive"
+                fullWidth
+                onClick={handleRetry}
+                disabled={isRetrying}
+                loading={isRetrying}
+              >
+                Retry Task
+              </Button>
+            </>
+          )}
         </div>
       )}
 
@@ -66,21 +72,25 @@ export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
               <p className="text-sm text-warning-800 dark:text-warning-200">{task.status.reason}</p>
             </div>
           )}
-          <textarea
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Instructions for the agent on how to resolve this..."
-            className="w-full h-20 px-3 py-2 text-sm border border-stone-300 dark:bg-stone-800 dark:border-stone-600 dark:text-stone-100 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none text-stone-800"
-          />
-          <Button
-            variant="destructive"
-            fullWidth
-            onClick={handleRetry}
-            disabled={isRetrying}
-            loading={isRetrying}
-          >
-            Retry Task
-          </Button>
+          {onRetry && (
+            <>
+              <textarea
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+                placeholder="Instructions for the agent on how to resolve this..."
+                className="w-full h-20 px-3 py-2 text-sm border border-stone-300 dark:bg-stone-800 dark:border-stone-600 dark:text-stone-100 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none text-stone-800"
+              />
+              <Button
+                variant="destructive"
+                fullWidth
+                onClick={handleRetry}
+                disabled={isRetrying}
+                loading={isRetrying}
+              >
+                Retry Task
+              </Button>
+            </>
+          )}
         </div>
       )}
     </div>

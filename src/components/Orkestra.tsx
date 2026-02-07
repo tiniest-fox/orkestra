@@ -8,6 +8,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useAutoTaskTemplates, useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
 import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/workflow";
+import { ArchivedListView } from "./ArchivedListView";
+import { ArchiveTaskDetailView } from "./ArchiveTaskDetailView";
 import { CommandPalette } from "./CommandPalette";
 import { DiffPanel } from "./Diff";
 import { KanbanBoard } from "./Kanban";
@@ -42,6 +44,21 @@ export function Orkestra() {
 
   // Filter to top-level tasks only for the kanban board
   const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parent_id), [tasks]);
+
+  // Filter active tasks (non-archived top-level)
+  const activeTasks = useMemo(
+    () => topLevelTasks.filter((t) => !t.derived.is_archived),
+    [topLevelTasks],
+  );
+
+  // Filter archived tasks (archived top-level)
+  const archivedTasks = useMemo(
+    () => topLevelTasks.filter((t) => t.derived.is_archived),
+    [topLevelTasks],
+  );
+
+  // Select tasks based on current view
+  const isArchiveView = view.type === "archive";
 
   const currentSelectedTask: WorkflowTaskView | null =
     focus.type === "task" ? (topLevelTasks.find((t) => t.id === focus.taskId) ?? null) : null;
@@ -156,17 +173,32 @@ export function Orkestra() {
       );
     }
     if (currentSelectedTask) {
-      return (
-        <TaskDetailSidebar
-          key={`${currentSelectedTask.id}-${sidebarSessionCounter}`}
-          task={currentSelectedTask}
-          onClose={closeFocus}
-          onDelete={() => handleDeleteTask(currentSelectedTask.id)}
-          subtasks={currentSubtasks}
-          selectedSubtaskId={selectedSubtaskId}
-          onSelectSubtask={handleSelectSubtask}
-        />
-      );
+      if (isArchiveView) {
+        // Read-only archive view
+        return (
+          <ArchiveTaskDetailView
+            key={`${currentSelectedTask.id}-${sidebarSessionCounter}`}
+            task={currentSelectedTask}
+            onClose={closeFocus}
+            subtasks={currentSubtasks}
+            selectedSubtaskId={selectedSubtaskId}
+            onSelectSubtask={handleSelectSubtask}
+          />
+        );
+      } else {
+        // Active task view with actions
+        return (
+          <TaskDetailSidebar
+            key={`${currentSelectedTask.id}-${sidebarSessionCounter}`}
+            task={currentSelectedTask}
+            onClose={closeFocus}
+            onDelete={() => handleDeleteTask(currentSelectedTask.id)}
+            subtasks={currentSubtasks}
+            selectedSubtaskId={selectedSubtaskId}
+            onSelectSubtask={handleSelectSubtask}
+          />
+        );
+      }
     }
     return null;
   };
@@ -215,14 +247,22 @@ export function Orkestra() {
       )}
 
       <PanelLayout className="flex-1">
-        {/* Main content: KanbanBoard (hides when diff or subtask diff is shown) */}
+        {/* Main content: KanbanBoard or ArchivedListView (hides when diff or subtask diff is shown) */}
         <Slot id="board" type="grow" visible={!showDiff && !showSubtaskDiff && !loading}>
-          <KanbanBoard
-            config={config}
-            tasks={topLevelTasks}
-            selectedTaskId={currentSelectedTask?.id}
-            onSelectTask={handleSelectTask}
-          />
+          {view.type === "board" ? (
+            <KanbanBoard
+              config={config}
+              tasks={activeTasks}
+              selectedTaskId={currentSelectedTask?.id}
+              onSelectTask={handleSelectTask}
+            />
+          ) : (
+            <ArchivedListView
+              tasks={archivedTasks}
+              selectedTaskId={currentSelectedTask?.id}
+              onSelectTask={handleSelectTask}
+            />
+          )}
         </Slot>
 
         {/* Sidebar: NewTaskPanel or TaskDetailSidebar */}

@@ -18,11 +18,7 @@ interface ArchivedListViewProps {
   onSelectTask: (task: WorkflowTaskView) => void;
 }
 
-export function ArchivedListView({
-  tasks,
-  selectedTaskId,
-  onSelectTask,
-}: ArchivedListViewProps) {
+export function ArchivedListView({ tasks, selectedTaskId, onSelectTask }: ArchivedListViewProps) {
   return (
     <Panel>
       <div className="p-4">

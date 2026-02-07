@@ -347,9 +347,15 @@ impl GitService for Git2GitService {
 
         // If worktree already exists, return its info
         if self.worktree_exists(task_id) {
+            // Get the current commit of the task branch as the base commit
+            let base_commit = self
+                .get_commit_oid(Some(&branch_name))
+                .map(|oid| oid.to_string())
+                .unwrap_or_default();
             return Ok(WorktreeCreated {
                 branch_name,
                 worktree_path,
+                base_commit,
             });
         }
 
@@ -368,6 +374,7 @@ impl GitService for Git2GitService {
         Ok(WorktreeCreated {
             branch_name,
             worktree_path,
+            base_commit: commit_oid.to_string(),
         })
     }
 

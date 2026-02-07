@@ -67,6 +67,8 @@ pub struct WorktreeCreated {
     pub branch_name: String,
     /// Absolute path to the worktree directory.
     pub worktree_path: PathBuf,
+    /// Git commit SHA of the base branch at worktree creation time.
+    pub base_commit: String,
 }
 
 /// Result of a successful merge operation.
@@ -354,6 +356,7 @@ pub mod mock {
             Ok(WorktreeCreated {
                 branch_name,
                 worktree_path,
+                base_commit: "mock-base-commit-sha".to_string(),
             })
         }
 
@@ -369,6 +372,7 @@ pub mod mock {
                 return Ok(WorktreeCreated {
                     branch_name,
                     worktree_path,
+                    base_commit: "mock-base-commit-sha".to_string(),
                 });
             }
 

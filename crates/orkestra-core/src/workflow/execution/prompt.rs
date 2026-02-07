@@ -137,6 +137,12 @@ pub struct StagePromptContext<'a> {
     /// Worktree path (for git worktree isolation).
     pub worktree_path: Option<&'a str>,
 
+    /// Base branch this task was created from.
+    pub base_branch: &'a str,
+
+    /// Git commit SHA of the base branch at worktree creation time.
+    pub base_commit: &'a str,
+
     /// Whether to show instructions for direct `StructuredOutput` usage (Claude Code specific).
     pub show_direct_structured_output_hint: bool,
 }
@@ -239,6 +245,8 @@ impl<'a> PromptBuilder<'a> {
             feedback,
             integration_error,
             worktree_path: task.worktree_path.as_deref(),
+            base_branch: task.base_branch.as_str(),
+            base_commit: task.base_commit.as_str(),
             show_direct_structured_output_hint,
         })
     }
@@ -280,6 +288,8 @@ impl<'a> PromptBuilder<'a> {
             feedback,
             integration_error,
             worktree_path: task.worktree_path.as_deref(),
+            base_branch: task.base_branch.as_str(),
+            base_commit: task.base_commit.as_str(),
             show_direct_structured_output_hint,
         })
     }
@@ -612,6 +622,8 @@ struct InitialPromptContext<'a> {
     integration_error: Option<&'a IntegrationErrorContext<'a>>,
     output_format: String,
     worktree_path: Option<&'a str>,
+    base_branch: &'a str,
+    base_commit: &'a str,
 }
 
 /// Context available to agent definition Handlebars templates.
@@ -664,6 +676,8 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
         integration_error: ctx.integration_error.as_ref(),
         output_format: render_output_format(ctx),
         worktree_path: ctx.worktree_path,
+        base_branch: ctx.base_branch,
+        base_commit: ctx.base_commit,
     };
 
     TEMPLATES
@@ -1205,7 +1219,9 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now")
-            .with_worktree("/path/to/worktree/task-1");
+            .with_worktree("/path/to/worktree/task-1")
+            .with_base_branch("main")
+            .with_base_commit("abc123def456");
 
         let ctx = builder
             .build_context("planning", &task, None, None, false)
@@ -1214,9 +1230,12 @@ mod tests {
         let agent_def = "Planner agent";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Should contain worktree note
+        // Should contain worktree note with base branch and commit
         assert!(prompt.contains("Worktree Context"));
         assert!(prompt.contains("/path/to/worktree/task-1"));
+        assert!(prompt.contains("branched from `main`"));
+        assert!(prompt.contains("at commit `abc123def456`"));
+        assert!(prompt.contains("git diff main...HEAD"));
         assert!(prompt.contains("subagents"));
     }
 

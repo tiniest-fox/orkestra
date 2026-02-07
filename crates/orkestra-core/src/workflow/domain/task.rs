@@ -66,6 +66,10 @@ pub struct Task {
     #[serde(default)]
     pub base_branch: String,
 
+    /// Git commit SHA of the base branch at the time the worktree was created.
+    #[serde(default)]
+    pub base_commit: String,
+
     // === Configuration ===
     /// Whether the task runs autonomously through all stages without pausing for review.
     #[serde(default)]
@@ -110,6 +114,7 @@ impl Task {
             branch_name: None,
             worktree_path: None,
             base_branch: String::new(),
+            base_commit: String::new(),
             auto_mode: false,
             flow: None,
             created_at: created.clone(),
@@ -157,6 +162,13 @@ impl Task {
     #[must_use]
     pub fn with_base_branch(mut self, base_branch: impl Into<String>) -> Self {
         self.base_branch = base_branch.into();
+        self
+    }
+
+    /// Builder: set base commit (the commit SHA of the base branch at worktree creation).
+    #[must_use]
+    pub fn with_base_commit(mut self, base_commit: impl Into<String>) -> Self {
+        self.base_commit = base_commit.into();
         self
     }
 

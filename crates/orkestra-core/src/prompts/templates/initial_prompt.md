@@ -62,6 +62,12 @@ Run `git rebase {{integration_error.base_branch}}` and resolve the conflicts, th
 ## Important: Worktree Context
 
 You are working in a git worktree at: `{{worktree_path}}`
+{{#if base_branch}}
+You branched from `{{base_branch}}`{{#if base_commit}} at commit `{{base_commit}}`{{/if}}. To see changes made in this worktree, run:
+```
+git diff {{base_branch}}...HEAD
+```
+{{/if}}
 
 If you spawn any subagents (via the Task tool), you MUST explicitly tell them this worktree path. Subagents do not automatically inherit your working directory and may otherwise operate on the wrong codebase.
 {{/if}}

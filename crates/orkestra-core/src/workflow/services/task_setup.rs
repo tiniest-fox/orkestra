@@ -121,6 +121,7 @@ fn run_parallel_setup(
             if let Ok(Some(mut task)) = store.get_task(task_id) {
                 task.branch_name = Some(wt.branch_name.clone());
                 task.worktree_path = Some(wt.worktree_path.to_string_lossy().to_string());
+                task.base_commit.clone_from(&wt.base_commit);
                 if let Err(e) = store.save_task(&task) {
                     crate::orkestra_debug!(
                         "setup",

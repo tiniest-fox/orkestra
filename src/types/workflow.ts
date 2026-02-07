@@ -292,6 +292,8 @@ export interface WorkflowTask {
   worktree_path?: string;
   /** The branch this task was created from (merge/rebase target). Always set at creation. */
   base_branch: string;
+  /** Git commit SHA of the base branch at the time the worktree was created. */
+  base_commit: string;
   /** Whether the task runs autonomously through all stages. */
   auto_mode: boolean;
   /** Named flow for this task (e.g., "quick_fix"). Null/undefined = default flow. */

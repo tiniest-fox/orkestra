@@ -72,7 +72,8 @@ flows:
     description: Skip planning breakdown for simple, well-defined tasks
     icon: zap
     stages:
-      - plan
+      - plan:
+          prompt: quick_planner.md
       - work:
           inputs: [plan]
       - check
@@ -95,8 +96,8 @@ flows:
             approval:
               rejection_stage: work
 
-  # OpenCode test flow: Single work stage using OpenCode with Kimi 2.5
-  quick-change:
+  # Micro flow: Single work stage using lightweight model for extremely targeted changes
+  micro:
     description: Simple work without any need for review
     icon: flask
     stages:

@@ -1,6 +1,7 @@
 //! Project management commands.
 
 use crate::error::TauriError;
+use crate::notifications::TaskNotifier;
 use crate::project_init::{initialize_project, validate_project_path};
 use crate::project_registry::{ProjectRegistry, RecentProject};
 use orkestra_core::orkestra_debug;
@@ -308,11 +309,22 @@ fn handle_orchestrator_event(
                 task_id
             );
             let _ = window.emit("task-updated", task_id);
+
+            let registry: tauri::State<ProjectRegistry> = app_handle.state();
+            if let Ok(task) = registry.with_project(window_label, |state| {
+                state.api()?.get_task(task_id).map_err(Into::into)
+            }) {
+                if task.phase.needs_human_action() {
+                    let notifier = TaskNotifier::new(app_handle, window_label);
+                    notifier.stage_review_needed(task_id, &task.title, stage, output_type);
+                }
+            }
         }
         OrchestratorEvent::Error { task_id, error } => {
             orkestra_debug!("orchestrator", "[{}] Error: {}", window_label, error);
             if let Some(id) = task_id {
                 let _ = window.emit("task-updated", id);
+                TaskNotifier::new(app_handle, window_label).task_error(id, error);
             }
         }
         OrchestratorEvent::IntegrationStarted { task_id, branch } => {
@@ -334,7 +346,11 @@ fn handle_orchestrator_event(
             );
             let _ = window.emit("task-updated", task_id);
         }
-        OrchestratorEvent::IntegrationFailed { task_id, error, .. } => {
+        OrchestratorEvent::IntegrationFailed {
+            task_id,
+            error,
+            conflict_files,
+        } => {
             orkestra_debug!(
                 "orchestrator",
                 "[{}] Integration failed for {}: {}",
@@ -343,6 +359,12 @@ fn handle_orchestrator_event(
                 error
             );
             let _ = window.emit("task-updated", task_id);
+            let notifier = TaskNotifier::new(app_handle, window_label);
+            if conflict_files.is_empty() {
+                notifier.task_error(task_id, error);
+            } else {
+                notifier.merge_conflict(task_id, conflict_files.len());
+            }
         }
         OrchestratorEvent::ScriptSpawned {
             task_id,

@@ -4,6 +4,7 @@
 mod commands;
 mod error;
 mod highlight;
+mod notifications;
 mod project_init;
 mod project_registry;
 
@@ -17,61 +18,7 @@ use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_store::StoreExt;
-
-// =============================================================================
-// Desktop Notifications
-// =============================================================================
-
-/// Request notification permission from the OS on startup.
-fn request_notification_permission(app_handle: &AppHandle) {
-    let notification = app_handle.notification();
-
-    match notification.permission_state() {
-        Ok(tauri::plugin::PermissionState::Granted) => {
-            orkestra_debug!("notification", "Notification permission: granted");
-        }
-        Ok(state) => {
-            orkestra_debug!(
-                "notification",
-                "Notification permission state: {state:?}, requesting permission"
-            );
-            match notification.request_permission() {
-                Ok(tauri::plugin::PermissionState::Granted) => {
-                    orkestra_debug!("notification", "Notification permission granted");
-                }
-                Ok(state) => {
-                    orkestra_debug!(
-                        "notification",
-                        "Notification permission not granted: {state:?}. \
-                         Enable notifications in System Settings to receive task alerts."
-                    );
-                }
-                Err(e) => {
-                    orkestra_debug!(
-                        "notification",
-                        "Failed to request notification permission: {e}"
-                    );
-                }
-            }
-        }
-        Err(e) => {
-            orkestra_debug!(
-                "notification",
-                "Failed to check notification permission: {e}"
-            );
-        }
-    }
-
-    if tauri::is_dev() {
-        orkestra_debug!(
-            "notification",
-            "Dev mode: notifications appear under Terminal in System Settings. \
-             Ensure Terminal notifications are enabled in System Settings > Notifications."
-        );
-    }
-}
 
 // =============================================================================
 // Cleanup and Signal Handling
@@ -298,7 +245,7 @@ pub fn run() {
             app.manage(highlight::SyntaxHighlighter::new());
 
             // Request notification permission
-            request_notification_permission(app.handle());
+            notifications::request_permission(app.handle());
 
             // Create menu bar
             let new_window = MenuItemBuilder::with_id("new_window", "New Window")

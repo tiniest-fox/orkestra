@@ -41,7 +41,8 @@ export function ReviewPanel({
           {titleCase(stageName)} — Rejection Verdict
         </div>
         <div className="text-xs text-stone-500 dark:text-stone-400 mb-2">
-          Agent wants to send back to <span className="font-medium">{titleCase(pendingRejection.target)}</span>
+          Agent wants to send back to{" "}
+          <span className="font-medium">{titleCase(pendingRejection.target)}</span>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto text-sm text-stone-700 dark:text-stone-300 bg-stone-100 dark:bg-stone-800 rounded-panel-sm px-3 py-2 mb-3 border border-stone-200 dark:border-stone-700">
           {pendingRejection.feedback}

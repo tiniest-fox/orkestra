@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useFocusTaskListener } from "../hooks/useFocusTaskListener";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useAutoTaskTemplates, useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
 import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/workflow";
@@ -19,6 +20,7 @@ import { Button, Panel, PanelLayout, Slot } from "./ui";
 
 export function Orkestra() {
   useNotificationPermission();
+  useFocusTaskListener();
 
   const displayContext = useDisplayContext();
   const {

@@ -3,22 +3,14 @@
  * Includes a flow picker when alternate flows are defined in the workflow config.
  */
 
-import { CircleDot, FileText, GitBranch, Layers, type LucideIcon, Rocket, Zap } from "lucide-react";
+import { CircleDot, Layers, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { useWorkflowConfig } from "../providers";
 import type { FlowConfig, StageConfig } from "../types/workflow";
 import { titleCase } from "../utils/formatters";
+import { ICON_MAP } from "../utils/iconMap";
 import { BranchSelector } from "./BranchSelector";
 import { Button, Panel } from "./ui";
-
-/** Map of known lucide icon names to components. */
-const ICON_MAP: Record<string, LucideIcon> = {
-  zap: Zap,
-  "file-text": FileText,
-  rocket: Rocket,
-  layers: Layers,
-  "git-branch": GitBranch,
-};
 
 /** Default icon for the standard (full pipeline) flow. */
 const DEFAULT_FLOW_ICON: LucideIcon = Layers;

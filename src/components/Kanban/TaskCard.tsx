@@ -89,6 +89,14 @@ export function TaskCard({
   const config = useWorkflowConfig();
   const stageColors = buildStageColorMap(config);
   const { derived } = task;
+
+  // Build stage icons map from config
+  const stageIcons: Record<string, string> = {};
+  for (const stage of config.stages) {
+    if (stage.icon) {
+      stageIcons[stage.name] = stage.icon;
+    }
+  }
   const isFailed = derived.is_failed;
   const isBlocked = derived.is_blocked;
   const isDone = derived.is_done;
@@ -278,7 +286,7 @@ export function TaskCard({
         </div>
       )}
 
-      <IterationIndicator iterations={task.iterations} />
+      <IterationIndicator iterations={task.iterations} stageIcons={stageIcons} />
     </Panel>
   );
 }

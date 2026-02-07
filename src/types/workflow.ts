@@ -45,6 +45,8 @@ export interface StageConfig {
   name: string;
   /** Optional display name for the UI (defaults to capitalized name). */
   display_name?: string;
+  /** Optional lucide-react icon name (e.g., "pencil-ruler", "hammer"). */
+  icon?: string;
   /** Name of the artifact this stage produces (e.g., "plan", "summary"). */
   artifact: string;
   /** Artifacts required as inputs from previous stages. */

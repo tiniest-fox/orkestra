@@ -20,6 +20,11 @@ pub struct StageConfig {
     #[serde(default)]
     pub display_name: Option<String>,
 
+    /// Optional lucide-react icon name (e.g., "pencil-ruler", "hammer").
+    /// Used by the frontend to render stage indicators.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+
     /// Name of the artifact this stage produces (e.g., "plan", "summary").
     /// The artifact content is stored with this key.
     pub artifact: String,
@@ -67,6 +72,7 @@ impl StageConfig {
         Self {
             name: name.into(),
             display_name: None,
+            icon: None,
             artifact: artifact.into(),
             inputs: Vec::new(),
             capabilities: StageCapabilities::default(),
@@ -87,6 +93,7 @@ impl StageConfig {
         Self {
             name: name.into(),
             display_name: None,
+            icon: None,
             artifact: artifact.into(),
             inputs: Vec::new(),
             capabilities: StageCapabilities::default(),
@@ -102,6 +109,13 @@ impl StageConfig {
     #[must_use]
     pub fn with_display_name(mut self, name: impl Into<String>) -> Self {
         self.display_name = Some(name.into());
+        self
+    }
+
+    /// Builder: set icon.
+    #[must_use]
+    pub fn with_icon(mut self, icon: impl Into<String>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
 
@@ -654,5 +668,22 @@ mod tests {
         let stage = StageConfig::new("custom", "output").with_schema_file("custom_schema.json");
 
         assert_eq!(stage.schema_file, Some("custom_schema.json".to_string()));
+    }
+
+    #[test]
+    fn test_icon_field_serialization() {
+        // Test with icon present
+        let stage_with_icon = StageConfig::new("planning", "plan").with_icon("pencil-ruler");
+
+        let yaml = serde_yaml::to_string(&stage_with_icon).unwrap();
+        assert!(yaml.contains("icon: pencil-ruler"));
+
+        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.icon, Some("pencil-ruler".to_string()));
+
+        // Test without icon (should be omitted from YAML)
+        let stage_no_icon = StageConfig::new("work", "summary");
+        let yaml_no_icon = serde_yaml::to_string(&stage_no_icon).unwrap();
+        assert!(!yaml_no_icon.contains("icon:"));
     }
 }

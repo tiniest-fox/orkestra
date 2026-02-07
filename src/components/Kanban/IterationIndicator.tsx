@@ -4,6 +4,7 @@
  */
 
 import type { WorkflowIteration } from "../../types/workflow";
+import { resolveIcon } from "../../utils/iconMap";
 import {
   getOutcomeIndicatorColor,
   getOutcomeSemantic,
@@ -12,6 +13,8 @@ import {
 
 interface IterationIndicatorProps {
   iterations: WorkflowIteration[];
+  /** Map of stage name to icon name (from workflow config). */
+  stageIcons: Record<string, string>;
   /** Maximum number of iterations to display (default: 9) */
   maxVisible?: number;
 }
@@ -30,7 +33,11 @@ function capitalizeStage(stage: string): string {
   return stage.charAt(0).toUpperCase() + stage.slice(1);
 }
 
-export function IterationIndicator({ iterations, maxVisible = 9 }: IterationIndicatorProps) {
+export function IterationIndicator({
+  iterations,
+  stageIcons,
+  maxVisible = 9,
+}: IterationIndicatorProps) {
   if (iterations.length === 0) {
     return null;
   }
@@ -60,12 +67,16 @@ export function IterationIndicator({ iterations, maxVisible = 9 }: IterationIndi
         const initial = getStageInitial(iteration.stage);
         const tooltipText = `${capitalizeStage(iteration.stage)} — ${outcomeLabel(iteration.outcome)}`;
 
+        // Resolve icon for this stage
+        const iconName = stageIcons[iteration.stage];
+        const Icon = resolveIcon(iconName);
+
         return (
           <div key={iteration.id} className="relative group">
             <div
               className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-semibold ${colorClass} cursor-default`}
             >
-              {initial}
+              {Icon ? <Icon size={10} className="flex-shrink-0" /> : initial}
             </div>
             {/* Tooltip */}
             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-stone-900 dark:bg-stone-700 text-white text-xs rounded whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-10">

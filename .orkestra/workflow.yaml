@@ -9,6 +9,7 @@ stages:
   # Planning: Creates implementation plan, can ask clarifying questions
   - name: plan
     display_name: Plan
+    icon: pencil-ruler
     artifact: plan
     prompt: planner.md
     capabilities:
@@ -17,6 +18,7 @@ stages:
   # Breakdown: Decomposes complex tasks into subtasks with dependencies
   - name: task
     display_name: Task
+    icon: list-tree
     artifact: breakdown
     inputs: [plan]
     prompt: breakdown.md
@@ -28,6 +30,7 @@ stages:
   # Work: Implements the breakdown
   - name: work
     display_name: Work
+    icon: hammer
     artifact: summary
     inputs: [breakdown]
     prompt: worker.md
@@ -37,6 +40,7 @@ stages:
   # Runs in the task's worktree, detects what changed, runs relevant checks
   - name: check
     display_name: Check
+    icon: circle-check-big
     artifact: check_results
     inputs: [summary]
     script:
@@ -47,6 +51,7 @@ stages:
   # Review: Automated review that can send back to work if needed
   - name: review
     display_name: Review
+    icon: eye
     artifact: verdict
     inputs: [breakdown, summary, check_results]
     prompt: reviewer.md
@@ -60,6 +65,7 @@ stages:
   # Reviews worker notes and reviewer observations, documents anything useful
   - name: compound
     display_name: Compound
+    icon: book-open
     artifact: learnings
     inputs: [summary, verdict]
     prompt: compound.md

@@ -33,6 +33,8 @@ export function Orkestra() {
     closeFocus,
     closeDiff,
     closeSubtaskDiff,
+    openAssistant,
+    closeAssistant,
     switchToActive,
     switchToArchived,
   } = displayContext;
@@ -90,6 +92,7 @@ export function Orkestra() {
   const selectedSubtaskId = focus.type === "task" ? focus.subtaskId : undefined;
   const showDiff = focus.type === "task" && focus.showDiff === true;
   const showSubtaskDiff = focus.type === "task" && focus.subtaskDiff === true;
+  const assistantVisible = focus.type === "assistant";
 
   const currentSelectedSubtask: WorkflowTaskView | null = selectedSubtaskId
     ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
@@ -235,6 +238,13 @@ export function Orkestra() {
       <div className="flex items-center justify-between px-2 flex-shrink-0 overflow-hidden">
         <div className="flex items-center gap-4">
           <Panel.Title>Orkestra</Panel.Title>
+          <Button
+            variant={assistantVisible ? "primary" : "secondary"}
+            size="sm"
+            onClick={assistantVisible ? closeAssistant : openAssistant}
+          >
+            Assistant
+          </Button>
           <div className="flex items-center gap-1 bg-stone-200 dark:bg-stone-800 rounded-panel p-0.5">
             <Button
               variant={view.type === "board" ? "primary" : "secondary"}
@@ -274,6 +284,16 @@ export function Orkestra() {
       )}
 
       <PanelLayout className="flex-1">
+        {/* Assistant panel (LEFT side) */}
+        <Slot id="assistant" type="fixed" size={480} visible={assistantVisible} plain>
+          {assistantVisible && (
+            <div className="w-full h-full flex items-center justify-center text-stone-500">
+              {/* Placeholder — Subtask 4 replaces this with AssistantPanel */}
+              Assistant Panel
+            </div>
+          )}
+        </Slot>
+
         {/* Main content: KanbanBoard or ArchivedListView (hides when diff or subtask diff is shown) */}
         <Slot id="board" type="grow" visible={!showDiff && !showSubtaskDiff && !loading}>
           {view.type === "board" ? (

@@ -22,7 +22,8 @@ export type View = { type: "board" } | { type: "archive" };
 export type Focus =
   | { type: "none" }
   | { type: "create" }
-  | { type: "task"; taskId: string; subtaskId?: string; showDiff?: boolean; subtaskDiff?: boolean };
+  | { type: "task"; taskId: string; subtaskId?: string; showDiff?: boolean; subtaskDiff?: boolean }
+  | { type: "assistant" };
 
 export interface DisplayContextValue {
   view: View;
@@ -54,6 +55,12 @@ export interface DisplayContextValue {
 
   /** Close the subtask diff viewer. */
   closeSubtaskDiff: () => void;
+
+  /** Open the assistant panel. */
+  openAssistant: () => void;
+
+  /** Close the assistant panel. */
+  closeAssistant: () => void;
 
   /** Switch to active tasks view (Kanban). */
   switchToActive: () => void;
@@ -163,6 +170,14 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
     setView({ type: "archive" });
   }, []);
 
+  const openAssistant = useCallback(() => {
+    setFocus({ type: "assistant" });
+  }, []);
+
+  const closeAssistant = useCallback(() => {
+    setFocus({ type: "none" });
+  }, []);
+
   const value = useMemo<DisplayContextValue>(
     () => ({
       view,
@@ -176,6 +191,8 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeDiff,
       openSubtaskDiff,
       closeSubtaskDiff,
+      openAssistant,
+      closeAssistant,
       switchToActive,
       switchToArchived,
     }),
@@ -191,6 +208,8 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeDiff,
       openSubtaskDiff,
       closeSubtaskDiff,
+      openAssistant,
+      closeAssistant,
       switchToActive,
       switchToArchived,
     ],

@@ -14,7 +14,6 @@ import {
   Hammer,
   Layers,
   ListTree,
-  PencilRuler,
   Rocket,
   ShieldCheck,
   Zap,
@@ -26,7 +25,7 @@ import {
  */
 export const ICON_MAP: Record<string, LucideIcon> = {
   // Stage icons
-  "pencil-ruler": PencilRuler,
+  "file-text": FileText,
   "list-tree": ListTree,
   hammer: Hammer,
   "shield-check": ShieldCheck,
@@ -38,7 +37,6 @@ export const ICON_MAP: Record<string, LucideIcon> = {
   zap: Zap,
   rocket: Rocket,
   layers: Layers,
-  "file-text": FileText,
   "git-branch": GitBranch,
   flask: FlaskConical,
 };

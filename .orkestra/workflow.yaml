@@ -9,7 +9,7 @@ stages:
   # Planning: Creates implementation plan, can ask clarifying questions
   - name: plan
     display_name: Plan
-    icon: pencil-ruler
+    icon: file-text
     artifact: plan
     prompt: planner.md
     capabilities:

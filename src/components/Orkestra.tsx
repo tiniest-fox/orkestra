@@ -54,7 +54,10 @@ export function Orkestra() {
 
   // Archived tasks now come from the provider directly
   const archivedTopLevelTasks = useMemo(
-    () => archivedTasks.filter((t) => !t.parent_id),
+    () =>
+      archivedTasks
+        .filter((t) => !t.parent_id)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [archivedTasks],
   );
 

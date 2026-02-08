@@ -468,7 +468,7 @@ impl StageExecutionService {
 
             // Write to agents.log file
             if let Ok(json) = serde_json::to_string(entry) {
-                crate::debug_log::agent_log(task_id, stage, &json);
+                crate::orkestra_debug!(&format!("{task_id}/{stage}"), target: agents, "{json}");
             }
         }
     }

@@ -526,7 +526,6 @@ fn stream_stdout_lines(
                     continue;
                 }
                 line_count += 1;
-                orkestra_debug!("runner", "stdout line {}: {}", line_count, line);
 
                 if let Some(error_msg) = extract_stream_error(&line) {
                     orkestra_debug!("runner", "Agent error detected: {}", error_msg);
@@ -570,7 +569,6 @@ fn flush_finalized_entries(parser: &mut dyn AgentParser, tx: &Sender<RunEvent>) 
     let finalized = parser.finalize();
     orkestra_debug!("runner", "finalize produced {} entries", finalized.len());
     for entry in finalized {
-        orkestra_debug!("runner", "  finalized entry: {:?}", entry);
         if tx.send(RunEvent::LogLine(entry)).is_err() {
             return;
         }

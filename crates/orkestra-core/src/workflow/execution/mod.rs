@@ -19,11 +19,11 @@ mod script_runner;
 pub use output::{StageOutput, StageOutputError, SubtaskOutput};
 pub use parser::{AgentParser, ClaudeAgentParser, OpenCodeAgentParser};
 pub use prompt::{
-    build_complete_prompt, build_resume_prompt, determine_resume_type, get_agent_schema,
-    load_agent_definition, resolve_stage_agent_config, resolve_stage_agent_config_for,
-    AgentConfigError, ArtifactContext, FlowOverrides, IntegrationErrorContext, PromptBuilder,
-    QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
-    StagePromptContext,
+    build_complete_prompt, build_resume_prompt, build_system_prompt, build_user_message,
+    determine_resume_type, get_agent_schema, load_agent_definition, resolve_stage_agent_config,
+    resolve_stage_agent_config_for, AgentConfigError, ArtifactContext, FlowOverrides,
+    IntegrationErrorContext, PromptBuilder, QuestionAnswerContext, ResolvedAgentConfig,
+    ResumeQuestionAnswer, ResumeType, StagePromptContext,
 };
 pub use provider_registry::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,

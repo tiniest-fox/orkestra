@@ -209,7 +209,9 @@ impl AgentExecutionService {
                 None, // No integration error on first spawn
                 show_direct_structured_output_hint,
             )?;
-            Ok(config.prompt)
+            // Combine system prompt and user message for backward compatibility
+            // In the future, these may be passed separately to agents that support it
+            Ok(format!("{}\n\n{}", config.system_prompt, config.prompt))
         }
     }
 

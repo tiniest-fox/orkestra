@@ -1,7 +1,5 @@
 <!orkestra:spawn:{{stage_name}}>
 
-{{agent_definition}}
-
 ---
 
 ## Your Current Task
@@ -52,9 +50,6 @@ A: {{this.answer}}
 Run `git rebase {{integration_error.base_branch}}` and resolve the conflicts, then continue your work.
 
 {{/if}}
----
-
-{{output_format}}
 {{#if worktree_path}}
 
 ---

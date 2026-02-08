@@ -23,6 +23,7 @@ use crate::workflow::domain::{QuestionAnswer, Task};
 
 const OUTPUT_FORMAT_TEMPLATE: &str = include_str!("../../prompts/templates/output_format.md");
 const INITIAL_PROMPT_TEMPLATE: &str = include_str!("../../prompts/templates/initial_prompt.md");
+const SYSTEM_PROMPT_TEMPLATE: &str = include_str!("../../prompts/templates/system_prompt.md");
 
 static TEMPLATES: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
     let mut hb = Handlebars::new();
@@ -31,6 +32,8 @@ static TEMPLATES: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
         .expect("output_format template should be valid");
     hb.register_template_string("initial_prompt", INITIAL_PROMPT_TEMPLATE)
         .expect("initial_prompt template should be valid");
+    hb.register_template_string("system_prompt", SYSTEM_PROMPT_TEMPLATE)
+        .expect("system_prompt template should be valid");
     hb
 });
 
@@ -109,6 +112,27 @@ fn render_output_format(ctx: &StagePromptContext<'_>) -> String {
     TEMPLATES
         .render("output_format", &format_ctx)
         .expect("output_format template should render")
+}
+
+/// Build the system prompt from agent definition and output format.
+///
+/// This renders the `system_prompt.md` template with agent definition and output format.
+/// The system prompt contains instructions that survive session compaction.
+pub fn build_system_prompt(agent_definition: &str, output_format: &str) -> String {
+    #[derive(Serialize)]
+    struct SystemPromptContext<'a> {
+        agent_definition: &'a str,
+        output_format: &'a str,
+    }
+
+    let ctx = SystemPromptContext {
+        agent_definition,
+        output_format,
+    };
+
+    TEMPLATES
+        .render("system_prompt", &ctx)
+        .expect("system_prompt template should render")
 }
 
 /// Context for building a stage prompt.
@@ -382,7 +406,9 @@ impl<'a> From<&'a QuestionAnswer> for QuestionAnswerContext<'a> {
 /// Resolved configuration for spawning an agent.
 #[derive(Debug, Clone)]
 pub struct ResolvedAgentConfig {
-    /// The complete prompt to send to the agent.
+    /// The system prompt (agent definition + output format).
+    pub system_prompt: String,
+    /// The user message prompt (task context).
     pub prompt: String,
     /// JSON schema for structured output (required).
     pub json_schema: String,
@@ -595,24 +621,34 @@ pub fn resolve_stage_agent_config_for(
         )
         .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;
 
-    let prompt = build_complete_prompt(&agent_def, &ctx);
+    // Render agent definition (may contain Handlebars templates)
+    let rendered_definition = render_agent_definition(&agent_def, &ctx);
+
+    // Render output format
+    let output_format = render_output_format(&ctx);
+
+    // Build system prompt (agent definition + output format)
+    let system_prompt = build_system_prompt(&rendered_definition, &output_format);
+
+    // Build user message (task context only - no agent def or output format)
+    let user_message = build_user_message(&ctx);
 
     // Get JSON schema
     let json_schema =
         get_agent_schema(effective_stage, project_root).expect("Agent stage should have schema");
 
     Ok(ResolvedAgentConfig {
-        prompt,
+        system_prompt,
+        prompt: user_message,
         json_schema,
         session_type: stage_name.to_string(),
     })
 }
 
-/// Context for rendering the initial prompt template.
+/// Context for rendering the user message template (`initial_prompt.md`).
 #[derive(Debug, Serialize)]
-struct InitialPromptContext<'a> {
+struct UserMessageContext<'a> {
     stage_name: &'a str,
-    agent_definition: &'a str,
     task_id: &'a str,
     title: &'a str,
     description: &'a str,
@@ -620,7 +656,6 @@ struct InitialPromptContext<'a> {
     question_history: &'a [QuestionAnswerContext<'a>],
     feedback: Option<&'a str>,
     integration_error: Option<&'a IntegrationErrorContext<'a>>,
-    output_format: String,
     worktree_path: Option<&'a str>,
     base_branch: &'a str,
     base_commit: &'a str,
@@ -661,12 +696,13 @@ fn render_agent_definition(template: &str, ctx: &StagePromptContext<'_>) -> Stri
     })
 }
 
-/// Build a complete prompt by combining agent definition with context.
-pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_>) -> String {
-    let rendered_definition = render_agent_definition(agent_definition, ctx);
-    let template_ctx = InitialPromptContext {
+/// Build a user message from task context.
+///
+/// This renders the `initial_prompt.md` template with only task context
+/// (no agent definition or output format - those go in the system prompt).
+pub fn build_user_message(ctx: &StagePromptContext<'_>) -> String {
+    let template_ctx = UserMessageContext {
         stage_name: &ctx.stage.name,
-        agent_definition: &rendered_definition,
         task_id: ctx.task_id,
         title: ctx.title,
         description: ctx.description,
@@ -674,7 +710,6 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
         question_history: &ctx.question_history,
         feedback: ctx.feedback,
         integration_error: ctx.integration_error.as_ref(),
-        output_format: render_output_format(ctx),
         worktree_path: ctx.worktree_path,
         base_branch: ctx.base_branch,
         base_commit: ctx.base_commit,
@@ -683,6 +718,20 @@ pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_
     TEMPLATES
         .render("initial_prompt", &template_ctx)
         .expect("initial_prompt template should render")
+}
+
+/// Build a complete prompt by combining agent definition with context.
+///
+/// DEPRECATED: This function is kept for backward compatibility with existing tests.
+/// New code should use `build_system_prompt()` and `build_user_message()` separately.
+pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_>) -> String {
+    let rendered_definition = render_agent_definition(agent_definition, ctx);
+    let output_format = render_output_format(ctx);
+    let system_prompt = build_system_prompt(&rendered_definition, &output_format);
+    let user_message = build_user_message(ctx);
+
+    // Combine them in the old format for backward compatibility
+    format!("{system_prompt}\n\n{user_message}")
 }
 
 // ============================================================================
@@ -1116,24 +1165,24 @@ mod tests {
         let agent_def = "You are a worker agent. Implement the plan.";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Should contain spawn marker with stage name
-        assert!(prompt.starts_with("<!orkestra:spawn:work>"));
+        // Combined prompt should contain agent definition at the start (system prompt)
+        assert!(prompt.starts_with("You are a worker agent"));
 
-        // Should contain agent definition
-        assert!(prompt.contains("You are a worker agent"));
+        // Should contain output format (system prompt section)
+        assert!(prompt.contains("Output Format"));
+        assert!(prompt.contains("summary")); // The stage artifact
 
-        // Should contain task info
+        // Should contain spawn marker (user message section)
+        assert!(prompt.contains("<!orkestra:spawn:work>"));
+
+        // Should contain task info (user message section)
         assert!(prompt.contains("Task ID"));
         assert!(prompt.contains("task-1"));
         assert!(prompt.contains("Implement login"));
 
-        // Should contain artifacts
+        // Should contain artifacts (user message section)
         assert!(prompt.contains("Input Artifacts"));
         assert!(prompt.contains("The implementation plan"));
-
-        // Should contain output format
-        assert!(prompt.contains("Output Format"));
-        assert!(prompt.contains("summary")); // The stage artifact
     }
 
     #[test]

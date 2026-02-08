@@ -11,7 +11,7 @@ use orkestra_core::{
     utility::UtilityRunner,
     workflow::{
         load_workflow_for_project, Git2GitService, GitService, Phase, SqliteWorkflowStore, Status,
-        Task, WorkflowApi,
+        Task, TaskView, WorkflowApi,
     },
 };
 
@@ -48,6 +48,12 @@ enum TaskAction {
         /// Filter by status (active, done, failed, blocked)
         #[arg(long)]
         status: Option<String>,
+        /// List subtasks of a parent task
+        #[arg(long)]
+        parent: Option<String>,
+        /// List tasks that depend on this task
+        #[arg(long)]
+        depends_on: Option<String>,
     },
     /// Show details for a specific task
     Show {
@@ -119,7 +125,11 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
     };
 
     match action {
-        TaskAction::List { status } => handle_list_tasks(&api, status.as_deref(), pretty),
+        TaskAction::List {
+            status,
+            parent,
+            depends_on,
+        } => handle_list_tasks(&api, status.as_deref(), parent, depends_on, pretty),
         TaskAction::Show { id } => handle_show_task(&api, &id, pretty),
         TaskAction::Create {
             title,
@@ -202,7 +212,92 @@ fn handle_reject_task(api: &WorkflowApi, id: &str, feedback: &str, pretty: bool)
     }
 }
 
-fn handle_list_tasks(api: &WorkflowApi, status_filter: Option<&str>, pretty: bool) {
+fn handle_list_tasks(
+    api: &WorkflowApi,
+    status_filter: Option<&str>,
+    parent: Option<String>,
+    depends_on: Option<String>,
+    pretty: bool,
+) {
+    // Validate flag combinations
+    if parent.is_some() && depends_on.is_some() {
+        eprintln!("Error: --parent and --depends-on cannot be used together");
+        std::process::exit(1);
+    }
+
+    if let Some(parent_id) = parent {
+        handle_list_subtasks(api, &parent_id, status_filter, pretty);
+    } else if let Some(depends_on_id) = depends_on {
+        handle_list_dependents(api, &depends_on_id, status_filter, pretty);
+    } else {
+        handle_list_all_tasks(api, status_filter, pretty);
+    }
+}
+
+fn handle_list_subtasks(
+    api: &WorkflowApi,
+    parent_id: &str,
+    status_filter: Option<&str>,
+    pretty: bool,
+) {
+    let subtasks = match api.list_subtask_views(parent_id) {
+        Ok(views) => views,
+        Err(e) => {
+            eprintln!("Error listing subtasks: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let subtasks: Vec<_> = match status_filter {
+        Some(filter) => subtasks
+            .into_iter()
+            .filter(|v| matches_status_filter_view(v, filter))
+            .collect(),
+        None => subtasks,
+    };
+
+    if pretty {
+        print_subtasks_table(&subtasks);
+    } else {
+        output_json(&subtasks);
+    }
+}
+
+fn handle_list_dependents(
+    api: &WorkflowApi,
+    depends_on_id: &str,
+    status_filter: Option<&str>,
+    pretty: bool,
+) {
+    let all_tasks = match api.list_tasks() {
+        Ok(tasks) => tasks,
+        Err(e) => {
+            eprintln!("Error listing tasks: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let dependents: Vec<_> = all_tasks
+        .into_iter()
+        .filter(|t| t.depends_on.contains(&depends_on_id.to_string()))
+        .collect();
+
+    let dependents: Vec<_> = match status_filter {
+        Some(filter) => dependents
+            .into_iter()
+            .filter(|t| matches_status_filter(t, filter))
+            .collect(),
+        None => dependents,
+    };
+
+    if pretty {
+        print_tasks_table(&dependents, "No dependent tasks found.");
+    } else {
+        output_json(&dependents);
+    }
+}
+
+fn handle_list_all_tasks(api: &WorkflowApi, status_filter: Option<&str>, pretty: bool) {
     let tasks = match api.list_tasks() {
         Ok(tasks) => tasks,
         Err(e) => {
@@ -220,33 +315,71 @@ fn handle_list_tasks(api: &WorkflowApi, status_filter: Option<&str>, pretty: boo
     };
 
     if pretty {
-        if tasks.is_empty() {
-            println!("No tasks found.");
-            return;
-        }
-
-        println!(
-            "{:<36} {:<30} {:<20} {:<10}",
-            "ID", "Title", "Status", "Phase"
-        );
-        println!("{}", "-".repeat(96));
-
-        for task in tasks {
-            let title = if task.title.len() > 28 {
-                format!("{}...", &task.title[..25])
-            } else {
-                task.title.clone()
-            };
-            println!(
-                "{:<36} {:<30} {:<20} {:<10}",
-                task.id,
-                title,
-                format_status(&task.status),
-                format_phase(task.phase)
-            );
-        }
+        print_tasks_table(&tasks, "No tasks found.");
     } else {
         output_json(&tasks);
+    }
+}
+
+fn print_subtasks_table(subtasks: &[TaskView]) {
+    if subtasks.is_empty() {
+        println!("No subtasks found.");
+        return;
+    }
+
+    println!(
+        "{:<36} {:<30} {:<20} {:<10} {:<20}",
+        "ID", "Title", "Status", "Phase", "Dependencies"
+    );
+    println!("{}", "-".repeat(116));
+
+    for view in subtasks {
+        let title = truncate_title(&view.task.title);
+        let deps = if view.task.depends_on.is_empty() {
+            "-".to_string()
+        } else {
+            view.task.depends_on.join(", ")
+        };
+        println!(
+            "{:<36} {:<30} {:<20} {:<10} {:<20}",
+            view.task.id,
+            title,
+            format_status(&view.task.status),
+            format_phase(view.task.phase),
+            deps
+        );
+    }
+}
+
+fn print_tasks_table(tasks: &[Task], empty_message: &str) {
+    if tasks.is_empty() {
+        println!("{empty_message}");
+        return;
+    }
+
+    println!(
+        "{:<36} {:<30} {:<20} {:<10}",
+        "ID", "Title", "Status", "Phase"
+    );
+    println!("{}", "-".repeat(96));
+
+    for task in tasks {
+        let title = truncate_title(&task.title);
+        println!(
+            "{:<36} {:<30} {:<20} {:<10}",
+            task.id,
+            title,
+            format_status(&task.status),
+            format_phase(task.phase)
+        );
+    }
+}
+
+fn truncate_title(title: &str) -> String {
+    if title.len() > 28 {
+        format!("{}...", &title[..25])
+    } else {
+        title.to_string()
     }
 }
 
@@ -398,6 +531,17 @@ fn matches_status_filter(task: &Task, filter: &str) -> bool {
         "archived" => task.is_archived(),
         "failed" => task.is_failed(),
         "blocked" => task.is_blocked(),
+        _ => true,
+    }
+}
+
+fn matches_status_filter_view(view: &TaskView, filter: &str) -> bool {
+    match filter.to_lowercase().as_str() {
+        "active" => view.task.status.is_active(),
+        "done" => view.task.is_done(),
+        "archived" => view.task.is_archived(),
+        "failed" => view.task.is_failed(),
+        "blocked" => view.task.is_blocked(),
         _ => true,
     }
 }

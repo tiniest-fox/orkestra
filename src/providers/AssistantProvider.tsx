@@ -1,15 +1,23 @@
 /**
- * Hook for managing assistant chat state and commands.
+ * Provider for assistant chat state and commands.
  *
  * Handles message sending, agent stopping, session creation, session selection,
  * and log polling while the agent is working.
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { AssistantSession, LogEntry } from "../types/workflow";
 
-interface UseAssistantResult {
+interface AssistantContextValue {
   /** Currently active session (or null if none). */
   activeSession: AssistantSession | null;
   /** All sessions (ordered by creation time, most recent first). */
@@ -30,7 +38,24 @@ interface UseAssistantResult {
   selectSession: (session: AssistantSession) => Promise<void>;
 }
 
-export function useAssistant(): UseAssistantResult {
+const AssistantContext = createContext<AssistantContextValue | null>(null);
+
+/**
+ * Access assistant state and operations. Must be used within AssistantProvider.
+ */
+export function useAssistant(): AssistantContextValue {
+  const ctx = useContext(AssistantContext);
+  if (!ctx) {
+    throw new Error("useAssistant must be used within AssistantProvider");
+  }
+  return ctx;
+}
+
+interface AssistantProviderProps {
+  children: ReactNode;
+}
+
+export function AssistantProvider({ children }: AssistantProviderProps) {
   const [activeSession, setActiveSession] = useState<AssistantSession | null>(null);
   const [sessions, setSessions] = useState<AssistantSession[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -167,7 +192,7 @@ export function useAssistant(): UseAssistantResult {
     [isAgentWorking, stopAgent, fetchLogs],
   );
 
-  return {
+  const value: AssistantContextValue = {
     activeSession,
     sessions,
     logs,
@@ -178,4 +203,6 @@ export function useAssistant(): UseAssistantResult {
     newSession,
     selectSession,
   };
+
+  return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;
 }

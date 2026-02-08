@@ -1,3 +1,4 @@
+export { AssistantProvider, useAssistant } from "./AssistantProvider";
 export { AutoTaskTemplatesProvider, useAutoTaskTemplates } from "./AutoTaskTemplatesProvider";
 export type { DisplayContextValue, Focus, View } from "./DisplayContextProvider";
 export { DisplayContextProvider, useDisplayContext } from "./DisplayContextProvider";

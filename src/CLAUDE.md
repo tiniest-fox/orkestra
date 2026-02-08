@@ -13,6 +13,7 @@
 - Component-specific hooks live alongside the component they serve, in the same directory.
 - Shared hooks (used by multiple components) go in `hooks/`.
 - Name hooks `useXxx.ts` — the hook name should describe what it provides, not what it wraps.
+- **If a hook needs shared state across components** (multiple components calling the hook must see the same data), convert it to a context provider in `providers/`. Regular hooks create isolated state per call—providers create shared state. See `TasksProvider` and `AssistantProvider` for the pattern.
 
 ## State Management
 

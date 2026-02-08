@@ -1,5 +1,6 @@
 import { Orkestra } from "./components/Orkestra";
 import {
+  AssistantProvider,
   AutoTaskTemplatesProvider,
   DisplayContextProvider,
   TasksProvider,
@@ -15,9 +16,11 @@ function App() {
     <WorkflowConfigProvider>
       <AutoTaskTemplatesProvider>
         <TasksProvider>
-          <DisplayContextProvider>
-            <Orkestra />
-          </DisplayContextProvider>
+          <AssistantProvider>
+            <DisplayContextProvider>
+              <Orkestra />
+            </DisplayContextProvider>
+          </AssistantProvider>
         </TasksProvider>
       </AutoTaskTemplatesProvider>
     </WorkflowConfigProvider>

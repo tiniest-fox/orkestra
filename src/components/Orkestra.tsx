@@ -5,10 +5,15 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAssistant } from "../hooks/useAssistant";
 import { useFocusTaskListener } from "../hooks/useFocusTaskListener";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
-import { useAutoTaskTemplates, useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
+import {
+  useAssistant,
+  useAutoTaskTemplates,
+  useDisplayContext,
+  useTasks,
+  useWorkflowConfig,
+} from "../providers";
 import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { ArchivedListView } from "./ArchivedListView";
 import { ArchiveTaskDetailView } from "./ArchiveTaskDetailView";

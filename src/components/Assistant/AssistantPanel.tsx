@@ -10,7 +10,7 @@
 
 import { History, Plus, Send, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useAssistant } from "../../hooks/useAssistant";
+import { useAssistant } from "../../providers";
 import { LogList } from "../Logs/LogList";
 import { Button, EmptyState, FlexContainer, Panel } from "../ui";
 

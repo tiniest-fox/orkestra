@@ -95,18 +95,6 @@ vi.mock("../providers", () => ({
   useAutoTaskTemplates: vi.fn(() => []),
   useDisplayContext: vi.fn(),
   useTasks: vi.fn(),
-}));
-
-// Mock hooks
-vi.mock("../hooks/useNotificationPermission", () => ({
-  useNotificationPermission: () => {},
-}));
-
-vi.mock("../hooks/useFocusTaskListener", () => ({
-  useFocusTaskListener: () => {},
-}));
-
-vi.mock("../hooks/useAssistant", () => ({
   useAssistant: vi.fn(() => ({
     sessions: [],
     activeSession: null,
@@ -118,6 +106,15 @@ vi.mock("../hooks/useAssistant", () => ({
     stopAgent: vi.fn(),
     newSession: vi.fn(),
   })),
+}));
+
+// Mock hooks
+vi.mock("../hooks/useNotificationPermission", () => ({
+  useNotificationPermission: () => {},
+}));
+
+vi.mock("../hooks/useFocusTaskListener", () => ({
+  useFocusTaskListener: () => {},
 }));
 
 // Import after mocking to get the mocked versions

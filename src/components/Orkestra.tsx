@@ -5,13 +5,14 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAssistant } from "../hooks/useAssistant";
 import { useFocusTaskListener } from "../hooks/useFocusTaskListener";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useAutoTaskTemplates, useDisplayContext, useTasks, useWorkflowConfig } from "../providers";
 import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { ArchivedListView } from "./ArchivedListView";
 import { ArchiveTaskDetailView } from "./ArchiveTaskDetailView";
-import { AssistantPanel } from "./Assistant";
+import { AssistantPanel, SessionHistory } from "./Assistant";
 import { CommandPalette } from "./CommandPalette";
 import { DiffPanel } from "./Diff";
 import { KanbanBoard } from "./Kanban";
@@ -36,6 +37,8 @@ export function Orkestra() {
     closeSubtaskDiff,
     openAssistant,
     closeAssistant,
+    toggleAssistantHistory,
+    closeAssistantHistory,
     switchToActive,
     switchToArchived,
   } = displayContext;
@@ -47,6 +50,7 @@ export function Orkestra() {
   const config = useWorkflowConfig();
   const autoTaskTemplates = useAutoTaskTemplates();
   const { tasks, archivedTasks, loading, error, createTask, deleteTask } = useTasks();
+  const { sessions, activeSession, selectSession } = useAssistant();
 
   // Filter to top-level tasks only
   const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parent_id), [tasks]);
@@ -94,6 +98,7 @@ export function Orkestra() {
   const showDiff = focus.type === "task" && focus.showDiff === true;
   const showSubtaskDiff = focus.type === "task" && focus.subtaskDiff === true;
   const assistantVisible = focus.type === "assistant";
+  const assistantHistoryVisible = focus.type === "assistant" && focus.showHistory === true;
 
   const currentSelectedSubtask: WorkflowTaskView | null = selectedSubtaskId
     ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
@@ -288,9 +293,28 @@ export function Orkestra() {
       )}
 
       <PanelLayout className="flex-1">
+        {/* Assistant session history (LEFT side, leftmost) */}
+        <Slot
+          id="assistant-history"
+          type="fixed"
+          size={320}
+          visible={assistantHistoryVisible}
+          plain
+        >
+          <SessionHistory
+            sessions={sessions}
+            activeSessionId={activeSession?.id ?? null}
+            onSelectSession={(session) => {
+              selectSession(session);
+              closeAssistantHistory();
+            }}
+            onClose={closeAssistantHistory}
+          />
+        </Slot>
+
         {/* Assistant panel (LEFT side) */}
         <Slot id="assistant" type="fixed" size={480} visible={assistantVisible} plain>
-          {assistantVisible && <AssistantPanel onClose={closeAssistant} />}
+          <AssistantPanel onClose={closeAssistant} onToggleHistory={toggleAssistantHistory} />
         </Slot>
 
         {/* Main content: KanbanBoard or ArchivedListView (hides when diff or subtask diff is shown) */}

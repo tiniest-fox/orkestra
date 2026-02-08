@@ -23,7 +23,7 @@ export type Focus =
   | { type: "none" }
   | { type: "create" }
   | { type: "task"; taskId: string; subtaskId?: string; showDiff?: boolean; subtaskDiff?: boolean }
-  | { type: "assistant" };
+  | { type: "assistant"; showHistory?: boolean };
 
 export interface DisplayContextValue {
   view: View;
@@ -61,6 +61,12 @@ export interface DisplayContextValue {
 
   /** Close the assistant panel. */
   closeAssistant: () => void;
+
+  /** Toggle the assistant session history panel. */
+  toggleAssistantHistory: () => void;
+
+  /** Close the assistant session history panel. */
+  closeAssistantHistory: () => void;
 
   /** Switch to active tasks view (Kanban). */
   switchToActive: () => void;
@@ -181,6 +187,24 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
     setFocus({ type: "none" });
   }, []);
 
+  const toggleAssistantHistory = useCallback(() => {
+    setFocus((prev) => {
+      if (prev.type === "assistant") {
+        return { type: "assistant", showHistory: !prev.showHistory };
+      }
+      return prev;
+    });
+  }, []);
+
+  const closeAssistantHistory = useCallback(() => {
+    setFocus((prev) => {
+      if (prev.type === "assistant") {
+        return { type: "assistant", showHistory: false };
+      }
+      return prev;
+    });
+  }, []);
+
   const navigateToTask = useCallback((taskId: string, parentId?: string) => {
     setFocus((prev) => {
       if (parentId) {
@@ -218,6 +242,8 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeSubtaskDiff,
       openAssistant,
       closeAssistant,
+      toggleAssistantHistory,
+      closeAssistantHistory,
       switchToActive,
       switchToArchived,
       navigateToTask,
@@ -236,6 +262,8 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeSubtaskDiff,
       openAssistant,
       closeAssistant,
+      toggleAssistantHistory,
+      closeAssistantHistory,
       switchToActive,
       switchToArchived,
       navigateToTask,

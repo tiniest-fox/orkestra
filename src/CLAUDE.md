@@ -34,6 +34,47 @@
 - For modal/overlay UI (dialogs, palettes, popovers anchored to the viewport), use `ModalPanel`. It renders via `createPortal` to `document.body` with backdrop, animations, and escape-to-close built in. Don't introduce competing portal or overlay patterns.
 - Icons come from `lucide-react`. Animations use `framer-motion`.
 
+## Panel Layout System
+
+**The canonical pattern for all slide-in panels**: `PanelLayout` + `Slot` components control layout and animation for every panel that slides in and out (task detail, create form, assistant, session history, diff viewer).
+
+### What it is
+
+- **`PanelLayout`** — Container that manages a CSS grid for all panels. Lives in `Orkestra.tsx`.
+- **`Slot`** — Animated grid slot that registers itself and handles transitions via grid template changes. Each panel content goes inside a `Slot`.
+- **Visibility state** — Controlled by `DisplayContext` focus state flowing to the `visible` prop on each `Slot`. The `Slot` manages opacity, pointer-events, and grid sizing. Content inside always renders; the `Slot` handles show/hide.
+
+### The rule
+
+Every panel that slides in/out MUST be a `Slot` inside the `PanelLayout` in `Orkestra.tsx`. No exceptions.
+
+### Anti-patterns (banned)
+
+- **No `absolute`/`fixed` positioning for slide-in panels** — this bypasses the layout system and breaks animation consistency.
+- **No `framer-motion` `AnimatePresence` or manual transitions** for panel visibility — `Slot` handles all animations.
+- **No conditional rendering** (`{visible && <Panel>}`) to control panel appearance — use the `visible` prop on `Slot` instead. Content should always render inside the Slot.
+
+### How visibility works
+
+1. User action triggers `DisplayContext` method (e.g., `openAssistant`, `focusTask`, `toggleAssistantHistory`)
+2. Context updates focus state (e.g., `{ type: "assistant", showHistory: true }`)
+3. Parent derives boolean: `const historyVisible = focus.type === "assistant" && focus.showHistory === true`
+4. Boolean flows to `Slot` via `visible` prop: `<Slot visible={historyVisible}>...</Slot>`
+5. `Slot` animates grid sizing and opacity; content inside remains mounted
+
+### The three panel primitives
+
+- **`Panel`** — Visual container (rounded corners, borders, padding). Use for content structure.
+- **`Slot`** — Animated layout slot in the grid. Use for positioning and show/hide animation.
+- **`ModalPanel`** — Viewport overlay (dialogs, command palette). Use for content that anchors to the viewport, not the grid.
+
+When building a slide-in panel: wrap `Panel` inside `Slot`. For viewport overlays: use `ModalPanel` directly.
+
+### Reference
+
+- **Canonical example**: `Orkestra.tsx` — shows all Slots (assistant-history, assistant, sidebar, subtask, diff, subtask-diff, board)
+- **Implementation**: `components/ui/PanelContainer/` — `PanelLayout.tsx` and `Slot.tsx`
+
 ## Types
 
 - Use `import type` for type-only imports.
@@ -44,3 +85,4 @@
 
 - Tests use Vitest + React Testing Library.
 - Test files sit alongside the component: `Component.test.tsx`.
+- **jsdom limitations**: The test environment doesn't implement all DOM APIs. If a component uses `scrollIntoView()`, `IntersectionObserver`, or other browser-specific APIs, mock the component in parent component tests to prevent runtime errors. See `Orkestra.test.tsx` for the pattern.

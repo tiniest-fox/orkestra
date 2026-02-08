@@ -40,7 +40,7 @@ export function SessionHistory({
   onClose,
 }: SessionHistoryProps) {
   return (
-    <Panel autoFill className="absolute left-0 top-0 bottom-0 w-80 z-10 shadow-panel-elevated">
+    <Panel autoFill>
       <Panel.Header className="flex items-center justify-between">
         <Panel.Title>Session History</Panel.Title>
         <Button variant="ghost" size="sm" onClick={onClose}>

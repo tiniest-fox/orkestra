@@ -84,6 +84,11 @@ vi.mock("./Diff", () => ({
   DiffPanel: () => <div data-testid="diff-panel">Diff</div>,
 }));
 
+vi.mock("./Assistant", () => ({
+  AssistantPanel: () => <div data-testid="assistant-panel">Assistant</div>,
+  SessionHistory: () => <div data-testid="session-history">History</div>,
+}));
+
 // Mock the providers
 vi.mock("../providers", () => ({
   useWorkflowConfig: vi.fn(() => mockConfig),
@@ -95,6 +100,24 @@ vi.mock("../providers", () => ({
 // Mock hooks
 vi.mock("../hooks/useNotificationPermission", () => ({
   useNotificationPermission: () => {},
+}));
+
+vi.mock("../hooks/useFocusTaskListener", () => ({
+  useFocusTaskListener: () => {},
+}));
+
+vi.mock("../hooks/useAssistant", () => ({
+  useAssistant: vi.fn(() => ({
+    sessions: [],
+    activeSession: null,
+    selectSession: vi.fn(),
+    logs: [],
+    isLoading: false,
+    isAgentWorking: false,
+    sendMessage: vi.fn(),
+    stopAgent: vi.fn(),
+    newSession: vi.fn(),
+  })),
 }));
 
 // Import after mocking to get the mocked versions
@@ -125,6 +148,8 @@ describe("Orkestra - View Toggle", () => {
       closeSubtaskDiff: vi.fn(),
       openAssistant: vi.fn(),
       closeAssistant: vi.fn(),
+      toggleAssistantHistory: vi.fn(),
+      closeAssistantHistory: vi.fn(),
       navigateToTask: vi.fn(),
       switchToActive: vi.fn(() => {
         displayContextValue.view = { type: "board" };

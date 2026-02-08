@@ -13,27 +13,17 @@ import { useEffect, useRef, useState } from "react";
 import { useAssistant } from "../../hooks/useAssistant";
 import { LogList } from "../Logs/LogList";
 import { Button, EmptyState, FlexContainer, Panel } from "../ui";
-import { SessionHistory } from "./SessionHistory";
 
 interface AssistantPanelProps {
   onClose: () => void;
+  onToggleHistory: () => void;
 }
 
-export function AssistantPanel({ onClose }: AssistantPanelProps) {
-  const {
-    activeSession,
-    sessions,
-    logs,
-    isLoading,
-    isAgentWorking,
-    sendMessage,
-    stopAgent,
-    newSession,
-    selectSession,
-  } = useAssistant();
+export function AssistantPanel({ onClose, onToggleHistory }: AssistantPanelProps) {
+  const { activeSession, logs, isLoading, isAgentWorking, sendMessage, stopAgent, newSession } =
+    useAssistant();
 
   const [messageInput, setMessageInput] = useState("");
-  const [showHistory, setShowHistory] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -86,12 +76,7 @@ export function AssistantPanel({ onClose }: AssistantPanelProps) {
             <Panel.Title>{sessionTitle}</Panel.Title>
           </div>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowHistory(!showHistory)}
-              title="Session history"
-            >
+            <Button variant="ghost" size="sm" onClick={onToggleHistory} title="Session history">
               <History className="w-4 h-4" />
             </Button>
             <Button variant="ghost" size="sm" onClick={handleNewSession} title="New session">
@@ -148,19 +133,6 @@ export function AssistantPanel({ onClose }: AssistantPanelProps) {
           </div>
         </Panel.Footer>
       </FlexContainer>
-
-      {/* Session history overlay */}
-      {showHistory && (
-        <SessionHistory
-          sessions={sessions}
-          activeSessionId={activeSession?.id ?? null}
-          onSelectSession={(session) => {
-            selectSession(session);
-            setShowHistory(false);
-          }}
-          onClose={() => setShowHistory(false)}
-        />
-      )}
     </Panel>
   );
 }

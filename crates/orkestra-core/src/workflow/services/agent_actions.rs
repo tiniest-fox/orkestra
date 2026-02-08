@@ -190,9 +190,16 @@ impl WorkflowApi {
     ) -> WorkflowResult<()> {
         let artifact_name = self.artifact_name_for_stage(stage, "breakdown");
 
-        // Store the agent-provided content directly as the artifact
+        // Build artifact content with subtask summary appended if present
+        let mut artifact_content = content.to_string();
+        if !subtasks.is_empty() {
+            artifact_content.push_str("\n\n");
+            artifact_content.push_str(&format_subtasks_as_markdown(subtasks));
+        }
+
+        // Store the artifact with appended subtask details
         task.artifacts
-            .set(Artifact::new(&artifact_name, content, stage, now));
+            .set(Artifact::new(&artifact_name, &artifact_content, stage, now));
 
         // Store structured subtask data as JSON for later Task creation on approval
         if !subtasks.is_empty() {
@@ -779,6 +786,36 @@ fn format_questions_as_markdown(questions: &[crate::workflow::domain::Question])
     md
 }
 
+/// Format subtasks as a human-readable markdown artifact.
+fn format_subtasks_as_markdown(subtasks: &[crate::workflow::execution::SubtaskOutput]) -> String {
+    use std::fmt::Write;
+
+    let mut md = String::from("---\n\n## Proposed Subtasks\n");
+    for (i, subtask) in subtasks.iter().enumerate() {
+        write!(
+            md,
+            "\n### {}. {}\n\n{}\n",
+            i + 1,
+            subtask.title,
+            subtask.description
+        )
+        .unwrap();
+
+        if subtask.depends_on.is_empty() {
+            md.push_str("\n**Depends on:** none\n");
+        } else {
+            md.push_str("\n**Depends on:** ");
+            let deps: Vec<String> = subtask
+                .depends_on
+                .iter()
+                .map(|idx| format!("subtask {}", idx + 1))
+                .collect();
+            writeln!(md, "{}", deps.join(", ")).unwrap();
+        }
+    }
+    md
+}
+
 /// Generate auto-answers for all questions using a standard response.
 fn auto_answer_questions(questions: &[crate::workflow::domain::Question]) -> Vec<QuestionAnswer> {
     let now = chrono::Utc::now().to_rfc3339();
@@ -886,6 +923,53 @@ mod tests {
         // Questions are now stored in iteration outcome, not on task
         let questions = api.get_pending_questions(&task.id).unwrap();
         assert_eq!(questions.len(), 1);
+    }
+
+    #[test]
+    fn test_format_subtasks_as_markdown() {
+        use crate::workflow::execution::SubtaskOutput;
+
+        let subtasks = vec![
+            SubtaskOutput {
+                title: "First subtask".to_string(),
+                description: "Do the first thing".to_string(),
+                detailed_instructions: "Detailed instructions here".to_string(),
+                depends_on: vec![],
+            },
+            SubtaskOutput {
+                title: "Second subtask".to_string(),
+                description: "Do the second thing".to_string(),
+                detailed_instructions: "More details".to_string(),
+                depends_on: vec![0],
+            },
+            SubtaskOutput {
+                title: "Third subtask".to_string(),
+                description: "Do the third thing".to_string(),
+                detailed_instructions: "Even more details".to_string(),
+                depends_on: vec![0, 1],
+            },
+        ];
+
+        let result = super::format_subtasks_as_markdown(&subtasks);
+
+        // Check structure
+        assert!(result.contains("## Proposed Subtasks"));
+        assert!(result.contains("### 1. First subtask"));
+        assert!(result.contains("### 2. Second subtask"));
+        assert!(result.contains("### 3. Third subtask"));
+
+        // Check descriptions
+        assert!(result.contains("Do the first thing"));
+        assert!(result.contains("Do the second thing"));
+        assert!(result.contains("Do the third thing"));
+
+        // Check dependencies (1-indexed, human-readable)
+        assert!(result.contains("**Depends on:** none"));
+        assert!(result.contains("**Depends on:** subtask 1"));
+        assert!(result.contains("**Depends on:** subtask 1, subtask 2"));
+
+        // Detailed instructions should NOT be in the summary
+        assert!(!result.contains("Detailed instructions here"));
     }
 
     #[test]

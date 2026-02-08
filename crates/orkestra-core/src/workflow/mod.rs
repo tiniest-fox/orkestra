@@ -45,8 +45,8 @@ pub use config::{
     StageConfig, WorkflowConfig,
 };
 pub use domain::{
-    DerivedTaskState, Iteration, LogEntry, OrkAction, Question, QuestionAnswer, QuestionOption,
-    Task, TaskView, TodoItem, ToolInput,
+    AssistantSession, DerivedTaskState, Iteration, LogEntry, OrkAction, Question, QuestionAnswer,
+    QuestionOption, SessionState, StageSession, Task, TaskView, TodoItem, ToolInput,
 };
 pub use execution::{PromptBuilder, StageOutput, StageOutputError, StagePromptContext};
 pub use ports::{
@@ -58,7 +58,8 @@ pub use runtime::{
     TransitionTrigger, TransitionValidator,
 };
 pub use services::{
-    OrchestratorError, OrchestratorEvent, OrchestratorLoop, StageExecutionService, WorkflowApi,
+    AssistantService, OrchestratorError, OrchestratorEvent, OrchestratorLoop,
+    StageExecutionService, WorkflowApi,
 };
 
 // Export execution types for testing

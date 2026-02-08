@@ -60,6 +60,73 @@ The project uses two caching mechanisms for faster builds:
 - **sccache** - Caches Rust compilation artifacts. Configured in `.cargo/config.toml`. Clean builds with warm cache: ~24s (vs ~64s without).
 - **pnpm** - Uses a global content-addressable store with hard links. Fresh `node_modules` install with warm cache: ~1.2s.
 
+## Testing
+
+### Philosophy
+
+Unit tests live alongside the code they test (in `#[cfg(test)]` modules). Any meaningful logic, core behavior, or cross-module flow must also be represented in an e2e test. The goal is: unit tests validate individual components in isolation, e2e tests validate that the system works as a whole.
+
+### Core Library (`crates/orkestra-core/`)
+
+The core has ~60 files with unit tests and ~150 e2e tests. This is the most thoroughly tested part of the codebase.
+
+**Unit tests** — inline `#[cfg(test)]` modules throughout `src/`. Cover parsing, config validation, state transitions, domain logic, etc.
+
+**E2e tests** — located at `crates/orkestra-core/tests/e2e/`. These use a `TestEnv` that wires up real SQLite, a real orchestrator loop, and a `MockAgentRunner` (no actual CLI agents). Each test creates tasks, sets mock agent outputs, advances the orchestrator, and asserts on resulting state.
+
+```bash
+# Run all core tests (unit + e2e)
+cargo test -p orkestra-core
+
+# Run only e2e tests
+cargo test -p orkestra-core --test e2e
+```
+
+**E2e test files:**
+
+| File | Covers |
+|------|--------|
+| `workflow.rs` | Full stage pipelines, approval/rejection loops, questions, flows, script stages |
+| `subtasks.rs` | Subtask creation, dependencies, parent advancement, integration |
+| `task_creation.rs` | Task setup, worktree creation, title generation, base branch handling |
+| `startup.rs` | Startup recovery (stale PIDs, orphaned worktrees, stuck integrations) |
+| `cleanup.rs` | Process killing, zombie cleanup |
+| `multi_project.rs` | Multiple projects sharing a database |
+| `assistant.rs` | Assistant chat sessions |
+
+**Test helpers** (`tests/e2e/helpers.rs`):
+
+- `TestEnv` — unified test environment. Two constructors: `with_workflow(wf)` for script-only tests (no git), `with_git(wf, agents)` for agent tests with real git repos and prompt files.
+- `MockAgentOutput` — ergonomic builder for simulated agent responses (questions, artifacts, approvals, subtasks, failures, blocked).
+- `workflows` module — pre-built workflow configs for common test scenarios (`sleep_script`, `with_subtasks`, `instant_script`).
+- Helper methods for advancing the orchestrator, setting mock outputs, asserting on prompts, and querying state.
+
+**Agent-specific tests** (`tests/e2e/agents/`):
+
+These are `#[ignore]` tests that spawn **real CLI agents** (Claude Code, OpenCode) against real APIs. They require the CLI tools installed and API keys configured. Run them manually:
+
+```bash
+# Run Claude Code agent tests (requires claude CLI + API key)
+cargo test -p orkestra-core --test e2e agents::claudecode -- --ignored
+
+# Run OpenCode agent tests (requires opencode CLI + API key)
+cargo test -p orkestra-core --test e2e agents::opencode -- --ignored
+```
+
+These have their own `AgentTestEnv` (in `tests/e2e/agents/helpers.rs`) that uses real process spawners instead of mocks.
+
+### Frontend (`src/`)
+
+Has basic test infrastructure. TODO: integration/e2e tests.
+
+### Tauri Backend (`src-tauri/`)
+
+Inline unit tests where appropriate. Commands are thin wrappers around `WorkflowApi` — core logic is tested via orkestra-core. TODO: integration tests.
+
+### CLI (`cli/`)
+
+Inline unit tests where appropriate. TODO: e2e tests.
+
 ## Schema Evolution
 
 **When adding or modifying database migrations:**

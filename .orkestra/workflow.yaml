@@ -87,6 +87,7 @@ flows:
           capabilities:
             approval:
               rejection_stage: work
+      - compound
 
   # Hotfix flow: Straight to work, minimal overhead
   hotfix:

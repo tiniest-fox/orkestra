@@ -34,6 +34,8 @@ pub struct ProviderCapabilities {
     /// to be passed directly as input fields (not as a JSON string in `content` field).
     /// True for Claude Code, false for `OpenCode`.
     pub requires_direct_structured_output: bool,
+    /// Whether the provider supports system prompts (e.g., `--system` flag).
+    pub supports_system_prompt: bool,
 }
 
 // ============================================================================
@@ -323,6 +325,7 @@ pub fn claudecode_capabilities() -> ProviderCapabilities {
         supports_sessions: true,
         generates_own_session_id: false,
         requires_direct_structured_output: true,
+        supports_system_prompt: true,
     }
 }
 
@@ -333,6 +336,7 @@ pub fn opencode_capabilities() -> ProviderCapabilities {
         supports_sessions: true,
         generates_own_session_id: true,
         requires_direct_structured_output: false,
+        supports_system_prompt: false,
     }
 }
 

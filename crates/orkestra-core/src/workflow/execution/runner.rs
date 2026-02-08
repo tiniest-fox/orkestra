@@ -257,6 +257,7 @@ impl AgentRunnerTrait for AgentRunner {
             is_resume: config.is_resume,
             json_schema: config.json_schema,
             model: resolved.model_id,
+            system_prompt: None,
         };
 
         // Spawn the process via the resolved provider's spawner
@@ -371,6 +372,7 @@ impl AgentRunnerTrait for AgentRunner {
             is_resume: config.is_resume,
             json_schema: config.json_schema.clone(),
             model: resolved.model_id,
+            system_prompt: None,
         };
 
         // Spawn the process via the resolved provider's spawner

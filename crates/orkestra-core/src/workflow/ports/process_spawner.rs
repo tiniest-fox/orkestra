@@ -25,6 +25,9 @@ pub struct ProcessConfig {
     /// Model identifier to pass via `--model` flag.
     /// If None, uses the provider's default model.
     pub model: Option<String>,
+    /// System prompt to pass via `--system` flag.
+    /// If None, no system prompt is provided.
+    pub system_prompt: Option<String>,
 }
 
 impl ProcessConfig {
@@ -35,6 +38,7 @@ impl ProcessConfig {
             is_resume: false,
             json_schema: json_schema.into(),
             model: None,
+            system_prompt: None,
         }
     }
 
@@ -50,6 +54,13 @@ impl ProcessConfig {
     #[must_use]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
+        self
+    }
+
+    /// Set the system prompt.
+    #[must_use]
+    pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.system_prompt = Some(prompt.into());
         self
     }
 }

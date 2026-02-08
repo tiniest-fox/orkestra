@@ -155,11 +155,34 @@ impl AgentExecutionService {
         }
     }
 
-    /// Build the prompt for a stage execution.
+    /// Build the system prompt for a stage.
+    ///
+    /// The system prompt is needed for BOTH fresh spawns and resume (it's not stored).
+    /// This method always calls into `PromptService` to build it fresh.
+    ///
+    /// The system prompt may contain Handlebars conditionals (e.g., `{{#if feedback}}`)
+    /// that need the feedback context to render properly.
+    fn build_system_prompt(
+        &self,
+        task: &Task,
+        feedback: Option<&str>,
+        show_direct_structured_output_hint: bool,
+    ) -> Result<String, ExecutionError> {
+        let config = self.prompt_service.resolve_config(
+            &self.workflow,
+            task,
+            feedback,
+            None, // No integration error for system prompt
+            show_direct_structured_output_hint,
+        )?;
+        Ok(config.system_prompt)
+    }
+
+    /// Build the user message prompt for a stage execution.
     ///
     /// If resuming, returns a short resume prompt. Otherwise returns the full
-    /// prompt with agent definition and task context.
-    fn build_stage_prompt(
+    /// user message with task context.
+    fn build_user_prompt(
         &self,
         task: &Task,
         stage: &str,
@@ -209,9 +232,7 @@ impl AgentExecutionService {
                 None, // No integration error on first spawn
                 show_direct_structured_output_hint,
             )?;
-            // Combine system prompt and user message for backward compatibility
-            // In the future, these may be passed separately to agents that support it
-            Ok(format!("{}\n\n{}", config.system_prompt, config.prompt))
+            Ok(config.prompt)
         }
     }
 
@@ -221,6 +242,116 @@ impl AgentExecutionService {
             || self.prompt_service.project_root().to_path_buf(),
             PathBuf::from,
         )
+    }
+
+    /// Get JSON schema for the stage, applying flow overrides if applicable.
+    fn get_stage_schema(&self, task: &Task, stage: &str) -> Result<String, ExecutionError> {
+        let stage_config = self
+            .workflow
+            .stage(stage)
+            .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
+
+        // This method is for agent stages only - script stages are handled separately
+        if stage_config.is_script_stage() {
+            return Err(ExecutionError::ConfigError(format!(
+                "Stage '{stage}' is a script stage, not an agent stage"
+            )));
+        }
+
+        // Use effective capabilities from flow override if applicable
+        let effective_config = if task.flow.is_some() {
+            if let Some(caps) = self
+                .workflow
+                .effective_capabilities(stage, task.flow.as_deref())
+            {
+                let mut overridden = stage_config.clone();
+                overridden.capabilities = caps;
+                Some(overridden)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let schema_stage = effective_config.as_ref().unwrap_or(stage_config);
+
+        Ok(crate::workflow::execution::get_agent_schema(
+            schema_stage,
+            Some(self.prompt_service.project_root()),
+        )
+        .expect("Agent stage should have schema"))
+    }
+
+    /// Apply provider-specific fallbacks for system prompt and schema enforcement.
+    ///
+    /// Returns `(final_user_prompt, optional_system_prompt_for_config)`.
+    fn apply_provider_fallbacks(
+        task_id: &str,
+        stage: &str,
+        mut user_prompt: String,
+        system_prompt: String,
+        json_schema: &str,
+        capabilities: &super::super::execution::ProviderCapabilities,
+    ) -> (String, Option<String>) {
+        // System prompt fallback (prepend to user message if provider doesn't support CLI flag)
+        let system_prompt_for_config = if capabilities.supports_system_prompt {
+            Some(system_prompt)
+        } else {
+            orkestra_debug!(
+                "exec",
+                "execute_stage {}/{}: provider lacks system prompt support, prepending to user message",
+                task_id,
+                stage
+            );
+            user_prompt = format!("{system_prompt}\n\n{user_prompt}");
+            None
+        };
+
+        // Schema enforcement fallback (append to user message if provider doesn't support native JSON schema)
+        if !capabilities.supports_json_schema {
+            orkestra_debug!(
+                "exec",
+                "execute_stage {}/{}: provider lacks native schema support, embedding in prompt",
+                task_id,
+                stage
+            );
+            user_prompt = append_schema_enforcement(&user_prompt, json_schema);
+        }
+
+        (user_prompt, system_prompt_for_config)
+    }
+
+    /// Build `RunConfig` with session info, model spec, and system prompt.
+    fn build_run_config(
+        &self,
+        task: &Task,
+        user_prompt: String,
+        json_schema: String,
+        system_prompt_for_config: Option<String>,
+        spawn_context: &SessionSpawnContext,
+        model_spec: Option<String>,
+    ) -> RunConfig {
+        let working_dir = self.get_working_dir(task);
+        let mut run_config =
+            RunConfig::new(working_dir, user_prompt, json_schema).with_task_id(&task.id);
+
+        // Only set session when we have a caller-provided session ID.
+        // Providers that generate their own IDs (OpenCode) start without one.
+        if let Some(ref sid) = spawn_context.session_id {
+            run_config = run_config.with_session(sid.clone(), spawn_context.is_resume);
+        }
+
+        // Thread model spec from stage config (respects flow overrides)
+        if let Some(model) = model_spec {
+            run_config = run_config.with_model(model);
+        }
+
+        // Thread system prompt if provider supports it
+        if let Some(sp) = system_prompt_for_config {
+            run_config = run_config.with_system_prompt(sp);
+        }
+
+        run_config
     }
 
     /// Execute a stage for a task (async with events).
@@ -255,47 +386,32 @@ impl AgentExecutionService {
         );
 
         // 1. Get JSON schema (needed for BOTH first spawn and resume)
-        let stage_config = self
-            .workflow
-            .stage(stage)
-            .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
-
-        // This method is for agent stages only - script stages are handled separately
-        if stage_config.is_script_stage() {
-            return Err(ExecutionError::ConfigError(format!(
-                "Stage '{stage}' is a script stage, not an agent stage"
-            )));
-        }
-
-        // Use effective capabilities from flow override if applicable
-        let effective_config = if task.flow.is_some() {
-            if let Some(caps) = self
-                .workflow
-                .effective_capabilities(stage, task.flow.as_deref())
-            {
-                let mut overridden = stage_config.clone();
-                overridden.capabilities = caps;
-                Some(overridden)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        let schema_stage = effective_config.as_ref().unwrap_or(stage_config);
-
-        let json_schema = crate::workflow::execution::get_agent_schema(
-            schema_stage,
-            Some(self.prompt_service.project_root()),
-        )
-        .expect("Agent stage should have schema");
+        let json_schema = self.get_stage_schema(task, stage)?;
 
         // 2. Resolve the provider to check capabilities
         let model_spec = self.workflow.effective_model(stage, task.flow.as_deref());
         let resolved = self.registry.resolve(model_spec.as_deref())?;
 
-        // 3. Build prompt based on whether this is a resume
-        let mut prompt = self.build_stage_prompt(
+        // 3. Extract feedback from trigger (used by both system prompt and user message)
+        let feedback = trigger.and_then(|t| match t {
+            IterationTrigger::Rejection { feedback, .. }
+            | IterationTrigger::Feedback { feedback } => Some(feedback.as_str()),
+            IterationTrigger::ScriptFailure { error, .. } => Some(error.as_str()),
+            IterationTrigger::RetryFailed { instructions }
+            | IterationTrigger::RetryBlocked { instructions } => instructions.as_deref(),
+            _ => None,
+        });
+
+        // 4. Build system prompt (needed for BOTH fresh and resume)
+        // System prompt may contain Handlebars conditionals that need feedback context
+        let system_prompt = self.build_system_prompt(
+            task,
+            feedback,
+            resolved.capabilities.requires_direct_structured_output,
+        )?;
+
+        // 5. Build user message prompt based on whether this is a resume
+        let user_prompt = self.build_user_prompt(
             task,
             stage,
             spawn_context.is_resume,
@@ -304,44 +420,37 @@ impl AgentExecutionService {
             resolved.capabilities.requires_direct_structured_output,
         )?;
 
-        // 4. If the provider doesn't support native JSON schema, embed it in the prompt
-        if !resolved.capabilities.supports_json_schema {
-            orkestra_debug!(
-                "exec",
-                "execute_stage {}/{}: provider lacks native schema support, embedding in prompt",
-                task.id,
-                stage
-            );
-            prompt = append_schema_enforcement(&prompt, &json_schema);
-        }
+        // 6. Apply provider fallbacks for system prompt and schema enforcement
+        let (user_prompt, system_prompt_for_config) = Self::apply_provider_fallbacks(
+            &task.id,
+            stage,
+            user_prompt,
+            system_prompt,
+            &json_schema,
+            &resolved.capabilities,
+        );
 
         orkestra_debug!(
             "exec",
-            "execute_stage {}/{}: prompt len={}, is_resume={}",
+            "execute_stage {}/{}: user_prompt len={}, system_prompt={}, is_resume={}",
             task.id,
             stage,
-            prompt.len(),
+            user_prompt.len(),
+            system_prompt_for_config.is_some(),
             spawn_context.is_resume
         );
 
-        // 5. Build run config with session info and model spec
-        let working_dir = self.get_working_dir(task);
+        // 7. Build run config with session info, model spec, and system prompt
+        let run_config = self.build_run_config(
+            task,
+            user_prompt,
+            json_schema,
+            system_prompt_for_config,
+            spawn_context,
+            model_spec,
+        );
 
-        let mut run_config =
-            RunConfig::new(working_dir, prompt, json_schema).with_task_id(&task.id);
-
-        // Only set session when we have a caller-provided session ID.
-        // Providers that generate their own IDs (OpenCode) start without one.
-        if let Some(ref sid) = spawn_context.session_id {
-            run_config = run_config.with_session(sid.clone(), spawn_context.is_resume);
-        }
-
-        // Thread model spec from stage config (respects flow overrides)
-        if let Some(model) = model_spec {
-            run_config = run_config.with_model(model);
-        }
-
-        // 6. Run the agent
+        // 8. Run the agent
         let (pid, events) = self.runner.run_async(run_config)?;
 
         orkestra_debug!(

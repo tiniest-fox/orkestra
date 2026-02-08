@@ -21,6 +21,25 @@ use orkestra_core::workflow::{
 };
 use orkestra_core::MockTitleGenerator;
 
+// =============================================================================
+// Prompt Helpers
+// =============================================================================
+
+/// Combine system prompt and user message for test assertions.
+///
+/// Since system prompts are now passed separately via CLI flags (when supported),
+/// tests need to combine them to verify the full agent context.
+fn combine_prompts(system_prompt: Option<&String>, user_message: &str) -> String {
+    match system_prompt {
+        Some(sp) => format!("{sp}\n\n{user_message}"),
+        None => user_message.to_string(),
+    }
+}
+
+// =============================================================================
+// Provider Registry
+// =============================================================================
+
 /// Create a default provider registry for tests.
 ///
 /// Registers both claudecode and opencode (with stub spawners) since tests use
@@ -423,44 +442,47 @@ impl TestEnv {
     // Prompt Verification
     // =========================================================================
 
-    /// Get the last prompt sent to the agent.
+    /// Get the last prompt sent to the agent (combines `system_prompt` + user message).
     pub fn last_prompt(&self) -> String {
         let calls = self.runner.calls();
-        calls
-            .last()
-            .expect("No agent calls recorded")
-            .prompt
-            .clone()
+        let call = calls.last().expect("No agent calls recorded");
+        combine_prompts(call.system_prompt.as_ref(), &call.prompt)
     }
 
-    /// Get the last prompt sent to a specific task's agent.
+    /// Get the last prompt sent to a specific task's agent (combines `system_prompt` + user message).
     pub fn last_prompt_for(&self, task_id: &str) -> String {
         let calls = self.runner.calls();
-        calls
+        let call = calls
             .iter()
             .rev()
             .find(|c| c.task_id.as_deref() == Some(task_id))
-            .unwrap_or_else(|| panic!("No agent calls recorded for task {task_id}"))
-            .prompt
-            .clone()
+            .unwrap_or_else(|| panic!("No agent calls recorded for task {task_id}"));
+        combine_prompts(call.system_prompt.as_ref(), &call.prompt)
     }
 
     /// Assert that the last prompt has a specific resume marker type and contains expected strings.
     ///
     /// Marker format: `<!orkestra:resume:STAGE:TYPE>`
+    ///
+    /// Note: Checks only the user message (not system prompt). Resume prompts are short
+    /// user messages that reference an existing session, while the system prompt is still
+    /// passed separately.
     pub fn assert_resume_prompt_contains(&self, expected_type: &str, expected_content: &[&str]) {
-        let prompt = self.last_prompt();
+        let calls = self.runner.calls();
+        let call = calls.last().expect("No agent calls recorded");
+        let user_message = &call.prompt; // Just the user message, not combined with system
+
         let type_tag = format!(":{expected_type}>");
         assert!(
-            prompt.starts_with("<!orkestra:resume:") && prompt.contains(&type_tag),
+            user_message.starts_with("<!orkestra:resume:") && user_message.contains(&type_tag),
             "Expected resume marker with type '{expected_type}', got prompt starting with: {}...",
-            &prompt[..prompt.len().min(100)]
+            &user_message[..user_message.len().min(100)]
         );
 
         for content in expected_content {
             assert!(
-                prompt.contains(content),
-                "Resume prompt should contain '{content}'. Full prompt:\n{prompt}"
+                user_message.contains(content),
+                "Resume prompt should contain '{content}'. Full prompt:\n{user_message}"
             );
         }
     }

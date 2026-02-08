@@ -135,6 +135,7 @@ pub fn prepare_path_env() -> String {
 /// * `is_resume` - Whether this is resuming an existing session
 /// * `json_schema` - JSON schema for structured output (required)
 /// * `model` - Model identifier to pass via `--model` flag. If None, omits the flag.
+/// * `system_prompt` - System prompt to append via `--append-system-prompt` flag. If None, omits the flag.
 pub fn spawn_claude_process(
     project_root: &Path,
     path_env: &str,
@@ -142,6 +143,7 @@ pub fn spawn_claude_process(
     is_resume: bool,
     json_schema: &str,
     model: Option<&str>,
+    system_prompt: Option<&str>,
 ) -> std::io::Result<Child> {
     let mut cmd = Command::new("claude");
 
@@ -168,6 +170,11 @@ pub fn spawn_claude_process(
         "--json-schema",
         json_schema,
     ]);
+
+    // Append system prompt if provided (appends to Claude Code's built-in system prompt)
+    if let Some(sp) = system_prompt {
+        cmd.args(["--append-system-prompt", sp]);
+    }
 
     cmd.args(["--dangerously-skip-permissions"])
         .env("PATH", path_env)

@@ -49,6 +49,8 @@ pub struct RunConfig {
     /// Model identifier to pass to the process spawner (e.g., "claudecode/sonnet").
     /// If None, uses the provider's default model.
     pub model: Option<String>,
+    /// System prompt to pass via CLI flag (if provider supports it).
+    pub system_prompt: Option<String>,
 }
 
 impl RunConfig {
@@ -68,6 +70,7 @@ impl RunConfig {
             is_resume: false,
             task_id: None,
             model: None,
+            system_prompt: None,
         }
     }
 
@@ -90,6 +93,13 @@ impl RunConfig {
     #[must_use]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
+        self
+    }
+
+    /// Set the system prompt.
+    #[must_use]
+    pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
+        self.system_prompt = Some(prompt.into());
         self
     }
 }
@@ -252,12 +262,21 @@ impl AgentRunnerTrait for AgentRunner {
         let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
         // Build process config with resolved model ID
-        let process_config = ProcessConfig {
-            session_id: config.session_id,
-            is_resume: config.is_resume,
-            json_schema: config.json_schema,
-            model: resolved.model_id,
-            system_prompt: None,
+        let process_config = ProcessConfig::new(config.json_schema).with_session(
+            config.session_id.clone().unwrap_or_default(),
+            config.is_resume,
+        );
+
+        let process_config = if let Some(model) = resolved.model_id {
+            process_config.with_model(model)
+        } else {
+            process_config
+        };
+
+        let process_config = if let Some(system_prompt) = config.system_prompt.clone() {
+            process_config.with_system_prompt(system_prompt)
+        } else {
+            process_config
         };
 
         // Spawn the process via the resolved provider's spawner
@@ -367,13 +386,19 @@ impl AgentRunnerTrait for AgentRunner {
             .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
         // Build process config with resolved model ID
-        let process_config = ProcessConfig {
-            session_id: config.session_id.clone(),
-            is_resume: config.is_resume,
-            json_schema: config.json_schema.clone(),
-            model: resolved.model_id,
-            system_prompt: None,
-        };
+        let mut process_config = ProcessConfig::new(config.json_schema.clone());
+
+        if let Some(ref sid) = config.session_id {
+            process_config = process_config.with_session(sid.clone(), config.is_resume);
+        }
+
+        if let Some(model) = resolved.model_id {
+            process_config = process_config.with_model(model);
+        }
+
+        if let Some(system_prompt) = config.system_prompt.clone() {
+            process_config = process_config.with_system_prompt(system_prompt);
+        }
 
         // Spawn the process via the resolved provider's spawner
         let mut handle = resolved

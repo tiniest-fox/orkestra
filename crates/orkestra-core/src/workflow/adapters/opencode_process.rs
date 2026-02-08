@@ -47,6 +47,15 @@ impl ProcessSpawner for OpenCodeProcessSpawner {
         working_dir: &Path,
         config: ProcessConfig,
     ) -> Result<ProcessHandle, ProcessError> {
+        // Note: OpenCode does NOT support system prompts via CLI flags.
+        // The fallback concatenation (prepending system prompt to user message)
+        // already happened in agent_execution.rs, so config.system_prompt will be None.
+        // We simply ignore the field here as per the design.
+        debug_assert!(
+            config.system_prompt.is_none(),
+            "OpenCode does not support system prompts; should be None after fallback"
+        );
+
         let mut cmd = Command::new("opencode");
 
         // Non-interactive run mode

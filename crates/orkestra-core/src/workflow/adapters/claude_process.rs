@@ -48,6 +48,7 @@ impl ProcessSpawner for ClaudeProcessSpawner {
             config.is_resume,
             &config.json_schema,
             config.model.as_deref(),
+            config.system_prompt.as_deref(),
         )
         .map_err(|e| ProcessError::SpawnFailed(e.to_string()))?;
 

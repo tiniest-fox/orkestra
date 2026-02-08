@@ -684,6 +684,34 @@ pub mod workflows {
 }
 
 // =============================================================================
+// Assistant Test Helpers
+// =============================================================================
+
+/// Create an `AssistantService` with real `SQLite` storage and mock process spawner.
+///
+/// Returns (service, store, `temp_dir`). The `temp_dir` must be kept alive for the
+/// duration of the test to prevent database deletion.
+pub fn create_assistant_service() -> (
+    orkestra_core::workflow::services::AssistantService,
+    Arc<dyn orkestra_core::workflow::WorkflowStore>,
+    TempDir,
+) {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let db_path = temp_dir.path().join("test.db");
+    let conn = DatabaseConnection::open(&db_path).expect("open db");
+    let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
+        Arc::new(SqliteWorkflowStore::new(conn.shared()));
+
+    let service = orkestra_core::workflow::services::AssistantService::new(
+        Arc::clone(&store),
+        test_provider_registry(),
+        temp_dir.path().to_path_buf(),
+    );
+
+    (service, store, temp_dir)
+}
+
+// =============================================================================
 // Process Helpers
 // =============================================================================
 

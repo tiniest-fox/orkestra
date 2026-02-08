@@ -11,6 +11,8 @@
 #[path = "e2e/helpers.rs"]
 mod helpers;
 
+#[path = "e2e/assistant.rs"]
+mod assistant;
 #[path = "e2e/cleanup.rs"]
 mod cleanup;
 #[path = "e2e/multi_project.rs"]

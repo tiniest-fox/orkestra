@@ -19,6 +19,10 @@ use orkestra_core::{
 #[command(name = "ork")]
 #[command(about = "CLI for Orkestra task management (debug)", long_about = None)]
 struct Cli {
+    /// Output human-readable formatting instead of JSON
+    #[arg(long, global = true)]
+    pretty: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -95,12 +99,17 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Task { action } => handle_task_action(action),
+        Commands::Task { action } => handle_task_action(action, cli.pretty),
         Commands::Utility { action } => handle_utility_action(action),
     }
 }
 
-fn handle_task_action(action: TaskAction) {
+fn output_json<T: serde::Serialize>(value: &T) {
+    let json = serde_json::to_string(value).expect("JSON serialization failed");
+    println!("{json}");
+}
+
+fn handle_task_action(action: TaskAction, pretty: bool) {
     let api = match init_workflow_api() {
         Ok(api) => api,
         Err(e) => {
@@ -110,15 +119,15 @@ fn handle_task_action(action: TaskAction) {
     };
 
     match action {
-        TaskAction::List { status } => handle_list_tasks(&api, status.as_deref()),
-        TaskAction::Show { id } => handle_show_task(&api, &id),
+        TaskAction::List { status } => handle_list_tasks(&api, status.as_deref(), pretty),
+        TaskAction::Show { id } => handle_show_task(&api, &id, pretty),
         TaskAction::Create {
             title,
             description,
             base_branch,
-        } => handle_create_task(&api, &title, &description, base_branch.as_deref()),
-        TaskAction::Approve { id } => handle_approve_task(&api, &id),
-        TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback),
+        } => handle_create_task(&api, &title, &description, base_branch.as_deref(), pretty),
+        TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
+        TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback, pretty),
     }
 }
 
@@ -127,6 +136,7 @@ fn handle_create_task(
     title: &str,
     description: &str,
     base_branch: Option<&str>,
+    pretty: bool,
 ) {
     let task = match api.create_task(title, description, base_branch) {
         Ok(task) => task,
@@ -136,18 +146,22 @@ fn handle_create_task(
         }
     };
 
-    println!("Created task: {}", task.id);
-    println!("Title: {}", task.title);
-    println!("Stage: {}", task.current_stage().unwrap_or("-"));
-    if let Some(branch) = &task.branch_name {
-        println!("Branch: {branch}");
-    }
-    if let Some(worktree) = &task.worktree_path {
-        println!("Worktree: {worktree}");
+    if pretty {
+        println!("Created task: {}", task.id);
+        println!("Title: {}", task.title);
+        println!("Stage: {}", task.current_stage().unwrap_or("-"));
+        if let Some(branch) = &task.branch_name {
+            println!("Branch: {branch}");
+        }
+        if let Some(worktree) = &task.worktree_path {
+            println!("Worktree: {worktree}");
+        }
+    } else {
+        output_json(&task);
     }
 }
 
-fn handle_approve_task(api: &WorkflowApi, id: &str) {
+fn handle_approve_task(api: &WorkflowApi, id: &str, pretty: bool) {
     let task = match api.approve(id) {
         Ok(task) => task,
         Err(e) => {
@@ -156,15 +170,19 @@ fn handle_approve_task(api: &WorkflowApi, id: &str) {
         }
     };
 
-    println!("Approved task: {}", task.id);
-    if task.is_done() {
-        println!("Status: Done");
+    if pretty {
+        println!("Approved task: {}", task.id);
+        if task.is_done() {
+            println!("Status: Done");
+        } else {
+            println!("New stage: {}", task.current_stage().unwrap_or("-"));
+        }
     } else {
-        println!("New stage: {}", task.current_stage().unwrap_or("-"));
+        output_json(&task);
     }
 }
 
-fn handle_reject_task(api: &WorkflowApi, id: &str, feedback: &str) {
+fn handle_reject_task(api: &WorkflowApi, id: &str, feedback: &str, pretty: bool) {
     let task = match api.reject(id, feedback) {
         Ok(task) => task,
         Err(e) => {
@@ -173,14 +191,18 @@ fn handle_reject_task(api: &WorkflowApi, id: &str, feedback: &str) {
         }
     };
 
-    println!("Rejected task: {}", task.id);
-    println!(
-        "Stage: {} (new iteration)",
-        task.current_stage().unwrap_or("-")
-    );
+    if pretty {
+        println!("Rejected task: {}", task.id);
+        println!(
+            "Stage: {} (new iteration)",
+            task.current_stage().unwrap_or("-")
+        );
+    } else {
+        output_json(&task);
+    }
 }
 
-fn handle_list_tasks(api: &WorkflowApi, status_filter: Option<&str>) {
+fn handle_list_tasks(api: &WorkflowApi, status_filter: Option<&str>, pretty: bool) {
     let tasks = match api.list_tasks() {
         Ok(tasks) => tasks,
         Err(e) => {
@@ -197,34 +219,38 @@ fn handle_list_tasks(api: &WorkflowApi, status_filter: Option<&str>) {
         None => tasks,
     };
 
-    if tasks.is_empty() {
-        println!("No tasks found.");
-        return;
-    }
+    if pretty {
+        if tasks.is_empty() {
+            println!("No tasks found.");
+            return;
+        }
 
-    println!(
-        "{:<36} {:<30} {:<20} {:<10}",
-        "ID", "Title", "Status", "Phase"
-    );
-    println!("{}", "-".repeat(96));
-
-    for task in tasks {
-        let title = if task.title.len() > 28 {
-            format!("{}...", &task.title[..25])
-        } else {
-            task.title.clone()
-        };
         println!(
             "{:<36} {:<30} {:<20} {:<10}",
-            task.id,
-            title,
-            format_status(&task.status),
-            format_phase(task.phase)
+            "ID", "Title", "Status", "Phase"
         );
+        println!("{}", "-".repeat(96));
+
+        for task in tasks {
+            let title = if task.title.len() > 28 {
+                format!("{}...", &task.title[..25])
+            } else {
+                task.title.clone()
+            };
+            println!(
+                "{:<36} {:<30} {:<20} {:<10}",
+                task.id,
+                title,
+                format_status(&task.status),
+                format_phase(task.phase)
+            );
+        }
+    } else {
+        output_json(&tasks);
     }
 }
 
-fn handle_show_task(api: &WorkflowApi, id: &str) {
+fn handle_show_task(api: &WorkflowApi, id: &str, pretty: bool) {
     let task = match api.get_task(id) {
         Ok(task) => task,
         Err(e) => {
@@ -233,51 +259,55 @@ fn handle_show_task(api: &WorkflowApi, id: &str) {
         }
     };
 
-    println!("Task: {}", task.id);
-    println!("Title: {}", task.title);
-    println!("Description: {}", task.description);
-    println!("Status: {}", format_status(&task.status));
-    println!("Phase: {}", format_phase(task.phase));
+    if pretty {
+        println!("Task: {}", task.id);
+        println!("Title: {}", task.title);
+        println!("Description: {}", task.description);
+        println!("Status: {}", format_status(&task.status));
+        println!("Phase: {}", format_phase(task.phase));
 
-    if let Some(stage) = task.current_stage() {
-        println!("Current Stage: {stage}");
-    }
+        if let Some(stage) = task.current_stage() {
+            println!("Current Stage: {stage}");
+        }
 
-    if let Some(branch) = &task.branch_name {
-        println!("Branch: {branch}");
-    }
+        if let Some(branch) = &task.branch_name {
+            println!("Branch: {branch}");
+        }
 
-    if let Some(worktree) = &task.worktree_path {
-        println!("Worktree: {worktree}");
-    }
+        if let Some(worktree) = &task.worktree_path {
+            println!("Worktree: {worktree}");
+        }
 
-    if let Some(parent) = &task.parent_id {
-        println!("Parent: {parent}");
-    }
+        if let Some(parent) = &task.parent_id {
+            println!("Parent: {parent}");
+        }
 
-    if !task.depends_on.is_empty() {
-        println!("Dependencies: {}", task.depends_on.join(", "));
-    }
+        if !task.depends_on.is_empty() {
+            println!("Dependencies: {}", task.depends_on.join(", "));
+        }
 
-    println!("Created: {}", task.created_at);
-    println!("Updated: {}", task.updated_at);
+        println!("Created: {}", task.created_at);
+        println!("Updated: {}", task.updated_at);
 
-    if let Some(completed) = &task.completed_at {
-        println!("Completed: {completed}");
-    }
+        if let Some(completed) = &task.completed_at {
+            println!("Completed: {completed}");
+        }
 
-    // Show artifacts
-    let artifact_names: Vec<String> = task.artifacts.names().map(String::from).collect();
-    if !artifact_names.is_empty() {
-        println!("\nArtifacts:");
-        for name in &artifact_names {
-            if let Some(artifact) = task.artifacts.get(name) {
-                println!(
-                    "  [{name}] (stage: {}, created: {})",
-                    artifact.stage, artifact.created_at
-                );
+        // Show artifacts
+        let artifact_names: Vec<String> = task.artifacts.names().map(String::from).collect();
+        if !artifact_names.is_empty() {
+            println!("\nArtifacts:");
+            for name in &artifact_names {
+                if let Some(artifact) = task.artifacts.get(name) {
+                    println!(
+                        "  [{name}] (stage: {}, created: {})",
+                        artifact.stage, artifact.created_at
+                    );
+                }
             }
         }
+    } else {
+        output_json(&task);
     }
 }
 

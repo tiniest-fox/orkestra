@@ -215,9 +215,9 @@ pub fn spawn_claude_assistant_process(
 
     cmd.args(["--print", "--verbose"]);
     cmd.args(["--output-format", "stream-json"]);
+    cmd.args(["--dangerously-skip-permissions"]);
 
     // No --json-schema (free-form conversation)
-    // No --dangerously-skip-permissions (assistant should ask for permission)
 
     // System prompt only on first spawn (not resume)
     if !is_resume {

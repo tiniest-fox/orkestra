@@ -323,6 +323,11 @@ fn read_assistant_output(
         }
     }
 
+    // Append ProcessExit log entry so frontend knows agent is done
+    if let Err(e) = store.append_assistant_log_entry(session_id, &LogEntry::ProcessExit { code: None }) {
+        orkestra_debug!("assistant", "Failed to append ProcessExit log entry: {}", e);
+    }
+
     // Mark agent as finished
     let now = chrono::Utc::now().to_rfc3339();
     if let Ok(Some(mut session)) = store.get_assistant_session(session_id) {

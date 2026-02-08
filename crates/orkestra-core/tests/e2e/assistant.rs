@@ -82,3 +82,48 @@ fn test_assistant_session_lifecycle() {
     // No new sessions should have been created
     assert_eq!(service.list_sessions().unwrap().len(), 2);
 }
+
+// =============================================================================
+// ProcessExit Log Entry
+// =============================================================================
+
+#[test]
+fn test_process_exit_log_entry_round_trips() {
+    let (service, store, _temp_dir) = create_assistant_service();
+
+    // Step 1: Create a session (spawn will fail, but we get a session with logs)
+    let session = service
+        .send_message(None, "test message")
+        .expect("should create session");
+
+    // Step 2: Append ProcessExit log entry with code: None
+    store
+        .append_assistant_log_entry(&session.id, &LogEntry::ProcessExit { code: None })
+        .expect("should append ProcessExit entry");
+
+    // Step 3: Verify it round-trips as the last entry
+    let logs = service
+        .get_session_logs(&session.id)
+        .expect("should retrieve logs");
+    assert!(!logs.is_empty(), "Should have log entries");
+
+    let last_entry = logs.last().expect("Should have at least one log entry");
+    assert!(
+        matches!(last_entry, LogEntry::ProcessExit { code: None }),
+        "Last entry should be ProcessExit with code: None, got: {last_entry:?}"
+    );
+
+    // Step 4: Also test with code: Some(0)
+    store
+        .append_assistant_log_entry(&session.id, &LogEntry::ProcessExit { code: Some(0) })
+        .expect("should append ProcessExit entry with exit code");
+
+    let logs = service
+        .get_session_logs(&session.id)
+        .expect("should retrieve logs");
+    let last_entry = logs.last().expect("Should have at least one log entry");
+    assert!(
+        matches!(last_entry, LogEntry::ProcessExit { code: Some(0) }),
+        "Last entry should be ProcessExit with code: Some(0), got: {last_entry:?}"
+    );
+}

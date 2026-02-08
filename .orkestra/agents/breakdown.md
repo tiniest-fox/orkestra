@@ -46,7 +46,7 @@ When the task is complex enough to decompose (the common case):
 
 **`content` field**: Write a task summary (2-3 sentences: what the task is, why it matters, key constraints) followed by the full technical design. This becomes the `breakdown` artifact on the parent task.
 
-**`subtasks` array**: Break the work into 3-7 subtasks. Each subtask's `detailed_instructions` is a **self-contained implementation brief** that becomes the worker's primary context. Include:
+**`subtasks` array**: Break the work into 3-7 subtasks, including at least one dedicated verification subtask (see Verification Strategy). Each subtask's `detailed_instructions` is a **self-contained implementation brief** that becomes the worker's primary context. Include:
 
 1. **Task Summary** (2-3 sentences) — What the overarching task is, so the worker can make design decisions in context
 2. **What this subtask accomplishes** — The specific goal and acceptance criteria
@@ -77,11 +77,29 @@ When the task is simple enough to complete directly (single-focus work):
 
 ## Verification Strategy
 
-Every breakdown must define how the work will be verified programmatically:
+Every breakdown must include verification as concrete subtasks — not just prose in the content field. Verification is planned, scoped, and assigned like any other work.
 
-- **End-to-end test preferred**: Define an integration or end-to-end test that exercises the feature as realistically as possible. This is the primary verification mechanism — not "user manually tests."
-- **One-off test scripts for external dependencies**: For features that depend on external processes (spawning agents, CLI tools, etc.), design a standalone test script that can verify the behavior — e.g., spawn the process, confirm output format, verify cleanup. Something that can be run non-interactively.
-- **Each subtask gets verification steps**: Include specific verification instructions in each subtask's `detailed_instructions` — what test to write or script to run, what output confirms it works. Workers need to know how to prove their subtask is complete.
+### Verification Subtasks Are Required
+
+Create one or more dedicated verification subtasks that depend on the implementation subtasks they verify. These are real subtasks with titles, descriptions, detailed instructions, and dependencies — not bullet points in the technical design.
+
+**What a verification subtask looks like:**
+- **Title**: Specific and testable (e.g., "Add integration test for rate limiting middleware", "Create E2E test for task creation flow")
+- **Dependencies**: Depends on the implementation subtask(s) it verifies
+- **Detailed instructions**: Specifies exactly what to test, what test framework/patterns to use (referencing existing test patterns in the codebase), expected inputs and outputs, and what a passing result looks like
+- **Scope**: Tests the behavior end-to-end where possible, not just unit-level
+
+### Choosing Verification Approach
+
+Pick the right verification type for the work:
+
+- **Integration/E2E tests** (preferred): For features that connect multiple components, write tests that exercise the full path. Reference existing integration test patterns in the codebase.
+- **Standalone test scripts**: For features involving external processes (spawning agents, CLI tools, etc.), create a script that can run non-interactively — spawn the process, confirm output, verify cleanup.
+- **Targeted unit tests**: For pure logic (parsers, validators, transformations), unit tests are sufficient. But don't substitute unit tests when the real risk is in integration.
+
+### Each Implementation Subtask Still Gets Verification Criteria
+
+In addition to dedicated verification subtasks, each implementation subtask's `detailed_instructions` should include an "Acceptance Criteria" section stating what the worker must confirm before marking it complete. This is lightweight self-verification (e.g., "existing tests still pass", "new function handles edge case X") — the dedicated verification subtask handles the thorough testing.
 
 ## Guidelines
 

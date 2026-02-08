@@ -125,6 +125,7 @@ describe("Orkestra - View Toggle", () => {
       closeSubtaskDiff: vi.fn(),
       openAssistant: vi.fn(),
       closeAssistant: vi.fn(),
+      navigateToTask: vi.fn(),
       switchToActive: vi.fn(() => {
         displayContextValue.view = { type: "board" };
       }),

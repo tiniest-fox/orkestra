@@ -1,24 +1,23 @@
 //! Notification service for task state changes.
 //!
-//! Sends OS notifications and window-targeted frontend events when tasks need
-//! human attention (review, questions, merge conflicts, errors).
+//! Sends OS notifications when tasks need human attention
+//! (review, questions, merge conflicts, errors).
 
 use orkestra_core::orkestra_debug;
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
 use tauri_plugin_notification::NotificationExt;
 
-/// Sends OS notifications and window-targeted frontend events for task state changes.
+/// Sends OS notifications for task state changes.
 ///
 /// Wraps `AppHandle` to provide typed methods for each notification scenario.
 /// All methods are best-effort — failures are logged, never propagated.
 pub struct TaskNotifier<'a> {
     app: &'a AppHandle,
-    window_label: &'a str,
 }
 
 impl<'a> TaskNotifier<'a> {
-    pub fn new(app: &'a AppHandle, window_label: &'a str) -> Self {
-        Self { app, window_label }
+    pub fn new(app: &'a AppHandle, _window_label: &'a str) -> Self {
+        Self { app }
     }
 
     /// Notify that a stage output is ready for human review.
@@ -63,7 +62,7 @@ impl<'a> TaskNotifier<'a> {
         self.send(task_id, "Merge conflict", &body);
     }
 
-    /// Send an OS notification and emit a window-targeted "focus-task" event.
+    /// Send an OS notification (alert only, no focus event).
     fn send(&self, task_id: &str, title: &str, body: &str) {
         // OS notification (app-wide, just an alert)
         if let Err(e) = self
@@ -75,10 +74,14 @@ impl<'a> TaskNotifier<'a> {
             .show()
         {
             orkestra_debug!("notification", "Failed to send: {e}");
+        } else {
+            orkestra_debug!(
+                "notification",
+                "Sent notification for {}: {}",
+                task_id,
+                title
+            );
         }
-
-        // Window-targeted event so only the correct project frontend reacts
-        let _ = self.app.emit_to(self.window_label, "focus-task", task_id);
     }
 }
 

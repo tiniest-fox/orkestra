@@ -3,23 +3,33 @@ import { useEffect } from "react";
 import { useDisplayContext } from "../providers";
 
 /**
- * Listens for "focus-task" events emitted by the backend (when a
- * notification fires for a task needing review) and opens the task
- * in the side panel via DisplayContext.
+ * Listens for "review-ready" events emitted by the backend when tasks need
+ * human review and intelligently navigates to the task.
  *
- * Events are window-targeted via emit_to(), so only the project
- * window that owns the task receives the event.
+ * Only auto-navigates when the window is backgrounded (not focused). This way,
+ * when the user clicks the OS notification and switches back to the app, the
+ * right task is already focused. If they're actively working in the window,
+ * we don't disrupt them.
  */
 export function useFocusTaskListener() {
-  const { focusTask } = useDisplayContext();
+  const { navigateToTask } = useDisplayContext();
 
   useEffect(() => {
-    const unlistenPromise = listen<string>("focus-task", (event) => {
-      focusTask(event.payload);
-    });
+    const unlistenPromise = listen<{ task_id: string; parent_id: string | null }>(
+      "review-ready",
+      (event) => {
+        // Only auto-navigate when the window is backgrounded.
+        // This way, when the user clicks the OS notification and switches
+        // back to the app, the right task is already focused.
+        // If they're actively working in the window, we don't disrupt them.
+        if (!document.hasFocus()) {
+          navigateToTask(event.payload.task_id, event.payload.parent_id ?? undefined);
+        }
+      },
+    );
 
     return () => {
       unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [focusTask]);
+  }, [navigateToTask]);
 }

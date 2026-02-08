@@ -67,6 +67,9 @@ export interface DisplayContextValue {
 
   /** Switch to archived tasks view (list). */
   switchToArchived: () => void;
+
+  /** Smart navigation — resolves parent/subtask and merges into current focus. */
+  navigateToTask: (taskId: string, parentId?: string) => void;
 }
 
 // =============================================================================
@@ -178,6 +181,28 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
     setFocus({ type: "none" });
   }, []);
 
+  const navigateToTask = useCallback((taskId: string, parentId?: string) => {
+    setFocus((prev) => {
+      if (parentId) {
+        // It's a subtask — focus on parent + select subtask
+        if (prev.type === "task" && prev.taskId === parentId) {
+          // Parent already focused — just add subtask selection (preserve other state)
+          return { ...prev, subtaskId: taskId };
+        }
+        // Different parent or no focus — open parent + subtask
+        return { type: "task", taskId: parentId, subtaskId: taskId };
+      }
+
+      // It's a top-level task
+      if (prev.type === "task" && prev.taskId === taskId) {
+        // Already focused on this task — no-op (preserve subtask, diff state)
+        return prev;
+      }
+      // Different task — clean focus switch
+      return { type: "task", taskId };
+    });
+  }, []);
+
   const value = useMemo<DisplayContextValue>(
     () => ({
       view,
@@ -195,6 +220,7 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeAssistant,
       switchToActive,
       switchToArchived,
+      navigateToTask,
     }),
     [
       view,
@@ -212,6 +238,7 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       closeAssistant,
       switchToActive,
       switchToArchived,
+      navigateToTask,
     ],
   );
 

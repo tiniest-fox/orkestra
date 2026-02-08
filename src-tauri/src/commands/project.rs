@@ -28,6 +28,13 @@ pub struct ProjectInfo {
     pub has_git: bool,
 }
 
+/// Payload for review-ready events.
+#[derive(Debug, Clone, Serialize)]
+struct ReviewReadyPayload {
+    task_id: String,
+    parent_id: Option<String>,
+}
+
 /// Open a project folder.
 ///
 /// Creates a new window for the project if it's not already open.
@@ -317,6 +324,15 @@ fn handle_orchestrator_event(
                 if task.phase.needs_human_action() {
                     let notifier = TaskNotifier::new(app_handle, window_label);
                     notifier.stage_review_needed(task_id, &task.title, stage, output_type);
+
+                    // Emit review-ready event for smart frontend navigation
+                    let _ = window.emit(
+                        "review-ready",
+                        ReviewReadyPayload {
+                            task_id: task_id.to_string(),
+                            parent_id: task.parent_id.clone(),
+                        },
+                    );
                 }
             }
         }

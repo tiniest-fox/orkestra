@@ -112,7 +112,10 @@ export function Orkestra() {
 
   // Sidebar visibility and content key
   // Hide parent sidebar when subtask diff is open
-  const sidebarVisible = (focus.type === "create" || focus.type === "task") && !showSubtaskDiff;
+  // Also guard against null task (shouldn't happen, but prevents empty sidebar)
+  const sidebarVisible =
+    (focus.type === "create" || (focus.type === "task" && currentSelectedTask !== null)) &&
+    !showSubtaskDiff;
   const sidebarContentKey =
     focus.type === "create" ? "new-task" : focus.type === "task" ? focus.taskId : null;
 

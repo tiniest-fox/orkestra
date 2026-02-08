@@ -369,3 +369,238 @@ fn generate_and_set_title(
     session.set_title(title, &now);
     let _ = store.save_assistant_session(&session);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workflow::adapters::InMemoryWorkflowStore;
+    use crate::workflow::execution::{
+        claudecode_aliases, claudecode_capabilities, ProviderRegistry,
+    };
+    use crate::workflow::ports::MockProcessSpawner;
+
+    fn create_test_service() -> (AssistantService, Arc<InMemoryWorkflowStore>) {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+
+        // Create minimal registry with mock spawner (spawn calls will fail
+        // but AssistantService gracefully handles spawn failures by writing
+        // LogEntry::Error to the session logs)
+        let mut registry = ProviderRegistry::new("claudecode");
+        registry.register(
+            "claudecode",
+            Arc::new(MockProcessSpawner::new()) as Arc<dyn crate::workflow::ports::ProcessSpawner>,
+            claudecode_capabilities(),
+            claudecode_aliases(),
+        );
+
+        let service = AssistantService::new(
+            Arc::clone(&store) as Arc<dyn crate::workflow::ports::WorkflowStore>,
+            Arc::new(registry),
+            std::env::temp_dir(), // project_root (not used in pure logic tests)
+        );
+        (service, store)
+    }
+
+    #[test]
+    fn test_send_message_creates_new_session() {
+        let (service, store) = create_test_service();
+
+        // Call send_message with no session ID
+        let session = service.send_message(None, "hello").unwrap();
+
+        // Assert the returned session has a non-empty id
+        assert!(!session.id.is_empty());
+
+        // Assert claude_session_id is Some(...)
+        assert!(session.claude_session_id.is_some());
+
+        // Assert the session is saved in the store
+        let loaded_session = store.get_assistant_session(&session.id).unwrap();
+        assert!(loaded_session.is_some());
+        assert_eq!(loaded_session.unwrap().id, session.id);
+    }
+
+    #[test]
+    fn test_send_message_loads_existing_session() {
+        let (service, store) = create_test_service();
+
+        // Pre-create a session with a known ID
+        let known_id = "known-session-id";
+        let claude_session_id = "claude-session-123";
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut session = AssistantSession::new(known_id, &now);
+        session.claude_session_id = Some(claude_session_id.to_string());
+        store.save_assistant_session(&session).unwrap();
+
+        // Call send_message with the known ID
+        let returned_session = service.send_message(Some(known_id), "hello").unwrap();
+
+        // Assert the returned session has the same ID as the pre-created one
+        assert_eq!(returned_session.id, known_id);
+        assert_eq!(
+            returned_session.claude_session_id.as_deref(),
+            Some(claude_session_id)
+        );
+    }
+
+    #[test]
+    fn test_send_message_session_not_found() {
+        let (service, _store) = create_test_service();
+
+        // Call send_message with a nonexistent session ID
+        let result = service.send_message(Some("nonexistent"), "hello");
+
+        // Assert it returns an error
+        assert!(result.is_err());
+
+        // Assert the error message contains "not found"
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.to_lowercase().contains("not found"),
+            "Expected error message to contain 'not found', got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_send_message_stores_user_message() {
+        let (service, store) = create_test_service();
+
+        // Call send_message
+        let session = service.send_message(None, "test message").unwrap();
+
+        // Query logs from store
+        let logs = store.get_assistant_log_entries(&session.id).unwrap();
+
+        // Assert the first log entry is UserMessage
+        assert!(!logs.is_empty(), "Expected at least one log entry");
+        match &logs[0] {
+            LogEntry::UserMessage { content, .. } => {
+                assert_eq!(content, "test message");
+            }
+            _ => panic!(
+                "Expected first log entry to be UserMessage, got: {:?}",
+                logs[0]
+            ),
+        }
+    }
+
+    #[test]
+    fn test_send_message_empty_message_rejected() {
+        let (service, store) = create_test_service();
+
+        // Test empty string
+        let result1 = service.send_message(None, "");
+        assert!(result1.is_err(), "Expected empty string to be rejected");
+
+        // Test whitespace only
+        let result2 = service.send_message(None, "   ");
+        assert!(
+            result2.is_err(),
+            "Expected whitespace string to be rejected"
+        );
+
+        // Test newlines and tabs
+        let result3 = service.send_message(None, "\n\t");
+        assert!(
+            result3.is_err(),
+            "Expected newline/tab string to be rejected"
+        );
+
+        // Verify no sessions were created
+        let sessions = store.list_assistant_sessions().unwrap();
+        assert!(
+            sessions.is_empty(),
+            "Expected no sessions to be created, found: {}",
+            sessions.len()
+        );
+    }
+
+    #[test]
+    fn test_stop_process_nonexistent_session() {
+        let (service, _store) = create_test_service();
+
+        // Call stop_process with a nonexistent session ID
+        let result = service.stop_process("nonexistent");
+
+        // Assert it returns an error
+        assert!(result.is_err());
+
+        // Assert the error message contains "not found"
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.to_lowercase().contains("not found"),
+            "Expected error message to contain 'not found', got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_list_sessions_delegates_to_store() {
+        let (service, store) = create_test_service();
+
+        // Pre-create 2 sessions with different timestamps
+        let now = chrono::Utc::now();
+        let session1_time = (now - chrono::Duration::seconds(10)).to_rfc3339();
+        let session2_time = now.to_rfc3339();
+
+        let session1 = AssistantSession::new("session-1", &session1_time);
+        let session2 = AssistantSession::new("session-2", &session2_time);
+
+        store.save_assistant_session(&session1).unwrap();
+        store.save_assistant_session(&session2).unwrap();
+
+        // Call list_sessions
+        let result = service.list_sessions().unwrap();
+
+        // Assert returns 2 sessions
+        assert_eq!(result.len(), 2);
+
+        // Assert ordered by created_at DESC (most recent first)
+        assert_eq!(result[0].id, "session-2");
+        assert_eq!(result[1].id, "session-1");
+    }
+
+    #[test]
+    fn test_get_session_logs_delegates_to_store() {
+        let (service, store) = create_test_service();
+
+        // Pre-create a session
+        let session_id = "test-session";
+        let now = chrono::Utc::now().to_rfc3339();
+        let session = AssistantSession::new(session_id, &now);
+        store.save_assistant_session(&session).unwrap();
+
+        // Append 2 log entries
+        let user_msg = LogEntry::UserMessage {
+            resume_type: "message".to_string(),
+            content: "first message".to_string(),
+        };
+        let text_msg = LogEntry::Text {
+            content: "response".to_string(),
+        };
+
+        store
+            .append_assistant_log_entry(session_id, &user_msg)
+            .unwrap();
+        store
+            .append_assistant_log_entry(session_id, &text_msg)
+            .unwrap();
+
+        // Call get_session_logs
+        let entries = service.get_session_logs(session_id).unwrap();
+
+        // Assert returns exactly 2 entries in order
+        assert_eq!(entries.len(), 2);
+        match &entries[0] {
+            LogEntry::UserMessage { content, .. } => {
+                assert_eq!(content, "first message");
+            }
+            _ => panic!("Expected first log to be UserMessage"),
+        }
+        match &entries[1] {
+            LogEntry::Text { content } => {
+                assert_eq!(content, "response");
+            }
+            _ => panic!("Expected second log to be Text"),
+        }
+    }
+}

@@ -44,6 +44,14 @@ pub mod tasks {
         pub const SCHEMA: &str =
             include_str!("../prompts/templates/utilities/generate_title/schema.json");
     }
+
+    /// Commit message generation task.
+    pub mod generate_commit_message {
+        pub const PROMPT: &str =
+            include_str!("../prompts/templates/utilities/generate_commit_message/prompt.md");
+        pub const SCHEMA: &str =
+            include_str!("../prompts/templates/utilities/generate_commit_message/schema.json");
+    }
 }
 
 /// Error type for utility task execution.
@@ -222,6 +230,10 @@ fn load_task_definition(task_name: &str) -> Result<(String, String), UtilityErro
         "generate_title" => Ok((
             tasks::generate_title::PROMPT.to_string(),
             tasks::generate_title::SCHEMA.to_string(),
+        )),
+        "generate_commit_message" => Ok((
+            tasks::generate_commit_message::PROMPT.to_string(),
+            tasks::generate_commit_message::SCHEMA.to_string(),
         )),
         _ => Err(UtilityError::TaskNotFound(task_name.to_string())),
     }

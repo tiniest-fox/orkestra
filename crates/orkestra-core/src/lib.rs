@@ -4,6 +4,7 @@
 
 // Core modules - new workflow system
 pub mod adapters;
+pub mod commit_message;
 pub mod debug_log;
 pub mod error;
 pub mod init;
@@ -25,6 +26,11 @@ pub use error::{OrkestraError, Result};
 #[cfg(any(test, feature = "testutil"))]
 pub use title::mock::MockTitleGenerator;
 pub use title::{generate_title_sync, ClaudeTitleGenerator, TitleGenerator};
+
+// Commit message generation
+#[cfg(any(test, feature = "testutil"))]
+pub use commit_message::mock::MockCommitMessageGenerator;
+pub use commit_message::{ClaudeCommitMessageGenerator, CommitMessageGenerator};
 
 // Process infrastructure re-exports
 pub use process::{

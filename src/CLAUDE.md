@@ -53,15 +53,14 @@ Every panel that slides in/out MUST be a `Slot` inside the `PanelLayout` in `Ork
 
 - **No `absolute`/`fixed` positioning for slide-in panels** — this bypasses the layout system and breaks animation consistency.
 - **No `framer-motion` `AnimatePresence` or manual transitions** for panel visibility — `Slot` handles all animations.
-- **No conditional rendering** (`{visible && <Panel>}`) to control panel appearance — use the `visible` prop on `Slot` instead. Content should always render inside the Slot.
 
 ### How visibility works
 
 1. User action triggers `DisplayContext` method (e.g., `openAssistant`, `focusTask`, `toggleAssistantHistory`)
 2. Context updates focus state (e.g., `{ type: "assistant", showHistory: true }`)
 3. Parent derives boolean: `const historyVisible = focus.type === "assistant" && focus.showHistory === true`
-4. Boolean flows to `Slot` via `visible` prop: `<Slot visible={historyVisible}>...</Slot>`
-5. `Slot` animates grid sizing and opacity; content inside remains mounted
+4. **Conditionally render children**: `<Slot visible={historyVisible}>{historyVisible && <Component />}</Slot>`
+5. `Slot` animates grid sizing and opacity. When closing, content stays visible during fade-out animation via `displayedContent`, then unmounts via `onTransitionEnd` callback. This ensures cleanup effects run and panels reset state on reopen.
 
 ### The three panel primitives
 
@@ -75,6 +74,7 @@ When building a slide-in panel: wrap `Panel` inside `Slot`. For viewport overlay
 
 - **Canonical example**: `Orkestra.tsx` — shows all Slots (assistant-history, assistant, sidebar, subtask, diff, subtask-diff, board)
 - **Implementation**: `components/ui/PanelContainer/` — `PanelLayout.tsx` and `Slot.tsx`
+- **Event-driven cleanup pattern**: `Slot` uses `onTransitionEnd` to detect when fade-out completes, then calls `setDisplayedContent(null)` to unmount the child tree. This is more reliable than `setTimeout` since it responds to actual transition completion, not hardcoded durations.
 
 ## Types
 

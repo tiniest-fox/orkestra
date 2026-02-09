@@ -66,6 +66,14 @@ export function Slot({
     prevVisibleRef.current = visible;
   }, [visible]);
 
+  // Cleanup content when fade-out transition completes
+  const handleTransitionEnd = (e: React.TransitionEvent<HTMLDivElement>) => {
+    // Only handle opacity transitions on the direct target (not bubbled events)
+    if (e.propertyName === "opacity" && e.target === e.currentTarget && !visible) {
+      setDisplayedContent(null);
+    }
+  };
+
   // Register/update slot config on prop changes
   // Map.set preserves insertion order for existing keys, so order stays stable
   useEffect(() => {
@@ -147,6 +155,7 @@ export function Slot({
         transition: `opacity ${ANIMATION_CONFIG.duration * 0.5}s ease-out`,
         zIndex: shouldShowContent ? 1 : 0,
       }}
+      onTransitionEnd={handleTransitionEnd}
     >
       {/* Visual wrapper: shadow, rounded corners, background */}
       <div className={`flex-1 min-h-0 flex flex-col ${visualClasses} ${className}`}>

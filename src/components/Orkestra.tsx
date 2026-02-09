@@ -4,7 +4,7 @@
  * Navigation state is driven by DisplayContext.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFocusTaskListener } from "../hooks/useFocusTaskListener";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import {
@@ -47,10 +47,6 @@ export function Orkestra() {
     switchToActive,
     switchToArchived,
   } = displayContext;
-
-  // Track sidebar open/close cycles to force fresh state on reopen
-  const [sidebarSessionCounter, setSidebarSessionCounter] = useState(0);
-  const [subtaskSessionCounter, setSubtaskSessionCounter] = useState(0);
 
   const config = useWorkflowConfig();
   const autoTaskTemplates = useAutoTaskTemplates();
@@ -109,17 +105,6 @@ export function Orkestra() {
     ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
     : null;
 
-  // Track visibility changes to increment session counter when reopening
-  const prevSidebarVisibleRef = useRef(false);
-  useEffect(() => {
-    const currentVisible = (focus.type === "create" || focus.type === "task") && !showSubtaskDiff;
-    // If transitioning from hidden to visible, increment counter to force fresh state
-    if (!prevSidebarVisibleRef.current && currentVisible) {
-      setSidebarSessionCounter((prev) => prev + 1);
-    }
-    prevSidebarVisibleRef.current = currentVisible;
-  }, [focus.type, showSubtaskDiff]);
-
   // Sidebar visibility and content key
   // Hide parent sidebar when subtask diff is open
   // Also guard against null task (shouldn't happen, but prevents empty sidebar)
@@ -128,17 +113,6 @@ export function Orkestra() {
     !showSubtaskDiff;
   const sidebarContentKey =
     focus.type === "create" ? "new-task" : focus.type === "task" ? focus.taskId : null;
-
-  // Track subtask visibility changes to increment session counter when reopening
-  const prevSubtaskVisibleRef = useRef(false);
-  useEffect(() => {
-    const currentVisible = !!currentSelectedSubtask;
-    // If transitioning from hidden to visible, increment counter to force fresh state
-    if (!prevSubtaskVisibleRef.current && currentVisible) {
-      setSubtaskSessionCounter((prev) => prev + 1);
-    }
-    prevSubtaskVisibleRef.current = currentVisible;
-  }, [currentSelectedSubtask]);
 
   // Close detail panel when switching views
   const prevViewTypeRef = useRef(view.type);
@@ -205,23 +179,16 @@ export function Orkestra() {
   };
 
   // Render sidebar content based on focus type and view
-  // Use sidebarSessionCounter as key to force remount on reopen (clears all state)
   const renderSidebarContent = () => {
     if (focus.type === "create") {
-      return (
-        <NewTaskPanel
-          key={sidebarSessionCounter}
-          onClose={closeFocus}
-          onSubmit={handleTaskCreated}
-        />
-      );
+      return <NewTaskPanel onClose={closeFocus} onSubmit={handleTaskCreated} />;
     }
     if (currentSelectedTask) {
       if (isArchiveView) {
         // Read-only archive view
         return (
           <ArchiveTaskDetailView
-            key={`${currentSelectedTask.id}-${sidebarSessionCounter}`}
+            key={currentSelectedTask.id}
             task={currentSelectedTask}
             onClose={closeFocus}
             subtasks={currentSubtasks}
@@ -233,7 +200,7 @@ export function Orkestra() {
         // Active task view with actions
         return (
           <TaskDetailSidebar
-            key={`${currentSelectedTask.id}-${sidebarSessionCounter}`}
+            key={currentSelectedTask.id}
             task={currentSelectedTask}
             onClose={closeFocus}
             onDelete={() => handleDeleteTask(currentSelectedTask.id)}
@@ -306,20 +273,24 @@ export function Orkestra() {
           visible={assistantHistoryVisible}
           plain
         >
-          <SessionHistory
-            sessions={sessions}
-            activeSessionId={activeSession?.id ?? null}
-            onSelectSession={(session) => {
-              selectSession(session);
-              closeAssistantHistory();
-            }}
-            onClose={closeAssistantHistory}
-          />
+          {assistantHistoryVisible && (
+            <SessionHistory
+              sessions={sessions}
+              activeSessionId={activeSession?.id ?? null}
+              onSelectSession={(session) => {
+                selectSession(session);
+                closeAssistantHistory();
+              }}
+              onClose={closeAssistantHistory}
+            />
+          )}
         </Slot>
 
         {/* Assistant panel (LEFT side) */}
         <Slot id="assistant" type="fixed" size={480} visible={assistantVisible} plain>
-          <AssistantPanel onClose={closeAssistant} onToggleHistory={toggleAssistantHistory} />
+          {assistantVisible && (
+            <AssistantPanel onClose={closeAssistant} onToggleHistory={toggleAssistantHistory} />
+          )}
         </Slot>
 
         {/* Main content: KanbanBoard or ArchivedListView (hides when diff or subtask diff is shown) */}
@@ -349,7 +320,7 @@ export function Orkestra() {
           contentKey={sidebarContentKey}
           plain
         >
-          {renderSidebarContent()}
+          {sidebarVisible && renderSidebarContent()}
         </Slot>
 
         {/* Subtask detail panel */}
@@ -361,9 +332,9 @@ export function Orkestra() {
           contentKey={subtaskContentKey}
           plain
         >
-          {currentSelectedSubtask && (
+          {subtaskVisible && currentSelectedSubtask && (
             <TaskDetailSidebar
-              key={`${currentSelectedSubtask.id}-${subtaskSessionCounter}`}
+              key={currentSelectedSubtask.id}
               task={currentSelectedSubtask}
               onClose={handleCloseSubtask}
             />
@@ -372,12 +343,14 @@ export function Orkestra() {
 
         {/* Diff panel (shows when diff is open, board hides) */}
         <Slot id="diff" type="grow" visible={diffVisible}>
-          {currentSelectedTask && <DiffPanel taskId={currentSelectedTask.id} onClose={closeDiff} />}
+          {diffVisible && currentSelectedTask && (
+            <DiffPanel taskId={currentSelectedTask.id} onClose={closeDiff} />
+          )}
         </Slot>
 
         {/* Subtask diff panel (shows when subtask diff is open, board and parent sidebar hide) */}
         <Slot id="subtask-diff" type="grow" visible={subtaskDiffVisible}>
-          {currentSelectedSubtask && (
+          {subtaskDiffVisible && currentSelectedSubtask && (
             <DiffPanel taskId={currentSelectedSubtask.id} onClose={closeSubtaskDiff} />
           )}
         </Slot>

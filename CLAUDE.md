@@ -282,7 +282,11 @@ Agent prompt templates (in `.orkestra/agents/`):
 
 The prompt builder injects task context (description, artifacts, questions, feedback) into these templates.
 
-Note: Title generation uses a separate internal template (`prompts/templates/title_generator.md`) since it's a utility function, not a configurable stage agent.
+Note: Title generation and commit message generation use separate internal templates (in `crates/orkestra-core/src/prompts/templates/` and `crates/orkestra-core/src/utilities/`) since they're utility functions, not configurable stage agents.
+
+**Querying workflow configuration for flow-aware logic:**
+
+When you need to iterate agent stages while respecting flow overrides, use `WorkflowConfig::agent_model_specs(task_flow)` rather than directly accessing `.stages`. This method encapsulates the flow-aware traversal logic (checking flow overrides, filtering scripts, falling back to global config). Example use case: collecting model names for commit attribution — see `commit_message.rs::collect_model_names()`.
 
 ### Tauri Commands
 
@@ -315,6 +319,7 @@ When investigating task issues, `ork task show ID --iterations --sessions --git`
 - **Git worktrees**: Each task gets an isolated worktree at `.orkestra/.worktrees/{task-id}`, allowing parallel work without conflicts
 - **Iteration tracking**: Each agent run within a stage creates an iteration. Rejections create new iterations, allowing for feedback loops
 - **Project root detection**: Finds workspace root by looking for `Cargo.toml` with `[workspace]` or `.orkestra/` directory
+- **Narrow mutex scopes**: When spawning background work that might call back into the API, gather all inputs while holding the lock, then explicitly `drop(lock)` before spawning. This prevents deadlocks. See `orchestrator.rs::start_integrations()` for an example where commit message generation happens in a background thread without holding the API mutex
 
 ### Process Management
 

@@ -22,7 +22,7 @@ All paths relative to `crates/orkestra-core/src/`.
 
 2. **Mark integrating** — `api.mark_integrating(task_id)` sets phase to `Integrating`, preventing double-integration on subsequent ticks.
 
-3. **Commit pending changes** — `integration.rs::integrate_task()` commits any uncommitted work in the worktree using the task title as commit message. If commit fails, integration fails immediately (routes to recovery).
+3. **Commit pending changes** — `integration.rs::integrate_task()` commits any uncommitted work in the worktree. The commit message is generated via `CommitMessageGenerator` (AI-powered with fallback to task title). If commit fails, integration fails immediately (routes to recovery).
 
 4. **Determine target branch** — Uses `task.base_branch` (always set at task creation from UI branch selection or parent's branch for subtasks). Errors if not set.
 
@@ -65,5 +65,5 @@ If the app crashes during integration (task stuck in `Phase::Integrating`):
 - **Subtasks are integrated too**: Subtasks get their own worktrees and branches. When a subtask reaches Done, it goes through the same integration flow — but merges to the parent's branch (stored in `base_branch`) instead of primary. After all subtasks are Archived, the parent advances (see subtask-lifecycle.md).
 - **Nondeterministic integration order**: When multiple tasks are eligible for integration in the same tick, `start_integrations()` processes them in whatever order `get_tasks_needing_integration()` returns them (store iteration order, which is not guaranteed). This means if two independent subtasks both reach Done and modify the same files, whichever integrates first succeeds cleanly, and the other hits a rebase conflict and routes to recovery. Tests must not assume a specific integration order.
 - **One-tick delay rationale**: Without it, a task could become Done and start integrating in the same tick. If another operation in that tick also touches the task, you get a race condition.
-- **Commit uses task title**: The commit message for pending changes is the task title (or "Task {id}" if title is empty). This is not configurable.
+- **Commit message generation**: The system attempts to generate a commit message using Claude Haiku (via `CommitMessageGenerator`), passing task title, description, diff summary, and model names used in the workflow. The generated message includes model attribution in the footer. Falls back to task title (or "Task {id}") only if generation fails. Generation happens in a background thread without holding the API mutex.
 - **Rebase guarantees clean merge**: The integration does rebase first, then merge. After a successful rebase, the merge is always a fast-forward — a merge conflict at step 6 should be impossible in theory but is handled defensively.

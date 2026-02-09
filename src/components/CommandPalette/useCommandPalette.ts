@@ -31,7 +31,7 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const { focusTask, focusSubtask, openCreate, openAssistant } = useDisplayContext();
+  const { showTask, showSubtask, showNewTask, toggleAssistant } = useDisplayContext();
   const actions = useActionSearch(query);
   const results = useTaskSearch(tasks, query);
 
@@ -67,28 +67,28 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
     (action: PaletteAction) => {
       switch (action.id) {
         case "create-task":
-          openCreate();
+          showNewTask();
           break;
         case "open-assistant":
-          openAssistant();
+          toggleAssistant();
           break;
       }
       close();
     },
-    [openCreate, openAssistant, close],
+    [showNewTask, toggleAssistant, close],
   );
 
   // Navigate to a search result
   const selectResult = useCallback(
     (result: SearchResult) => {
       if (result.task.parent_id && result.parent) {
-        focusSubtask(result.parent.id, result.task.id);
+        showSubtask(result.parent.id, result.task.id);
       } else {
-        focusTask(result.task.id);
+        showTask(result.task.id);
       }
       close();
     },
-    [focusTask, focusSubtask, close],
+    [showTask, showSubtask, close],
   );
 
   // Select any palette item (action or result)

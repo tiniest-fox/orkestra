@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { DisplayContextProvider, useDisplayContext } from "./DisplayContextProvider";
 
 function TestComponent() {
-  const { view, switchToArchived, switchToActive } = useDisplayContext();
+  const { layout, switchToArchive, switchToActive } = useDisplayContext();
   return (
     <div>
-      <div data-testid="view-type">{view.type}</div>
-      <button type="button" onClick={switchToArchived}>
+      <div data-testid="is-archive">{layout.isArchive ? "archive" : "board"}</div>
+      <button type="button" onClick={switchToArchive}>
         Switch to Archived
       </button>
       <button type="button" onClick={switchToActive}>
@@ -25,23 +25,23 @@ describe("DisplayContextProvider", () => {
       </DisplayContextProvider>,
     );
 
-    expect(screen.getByTestId("view-type")).toHaveTextContent("board");
+    expect(screen.getByTestId("is-archive")).toHaveTextContent("board");
   });
 
-  it("switchToArchived() changes view to archive", async () => {
+  it("switchToArchive() changes view to archive", async () => {
     render(
       <DisplayContextProvider>
         <TestComponent />
       </DisplayContextProvider>,
     );
 
-    expect(screen.getByTestId("view-type")).toHaveTextContent("board");
+    expect(screen.getByTestId("is-archive")).toHaveTextContent("board");
 
     await act(async () => {
       screen.getByText("Switch to Archived").click();
     });
 
-    expect(screen.getByTestId("view-type")).toHaveTextContent("archive");
+    expect(screen.getByTestId("is-archive")).toHaveTextContent("archive");
   });
 
   it("switchToActive() changes view back to board", async () => {
@@ -56,13 +56,13 @@ describe("DisplayContextProvider", () => {
       screen.getByText("Switch to Archived").click();
     });
 
-    expect(screen.getByTestId("view-type")).toHaveTextContent("archive");
+    expect(screen.getByTestId("is-archive")).toHaveTextContent("archive");
 
     // Switch back to active
     await act(async () => {
       screen.getByText("Switch to Active").click();
     });
 
-    expect(screen.getByTestId("view-type")).toHaveTextContent("board");
+    expect(screen.getByTestId("is-archive")).toHaveTextContent("board");
   });
 });

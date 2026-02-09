@@ -1,96 +1,46 @@
 /**
  * DisplayContext - Single source of truth for app navigation state.
  *
- * Two dimensions:
- * - View: What occupies the main content area (Board, future: Archive, Git, etc.)
- * - Focus: What's open in the side panel (nothing, a task, a task+subtask, create form)
- *
- * All navigation (clicking task cards, command palette results, close buttons)
- * routes through DisplayContext transitions.
+ * Uses a preset-based layout system where every user action maps to a named
+ * preset that specifies which component fills each layout slot.
  */
 
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
+import { type LayoutPreset, type LayoutState, PRESETS } from "./presets";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-/** What occupies the main content area. */
-export type View =
-  | { type: "board" }
-  | { type: "archive" }
-  | { type: "commits"; selectedCommit?: string };
-
-/** What's open in the side panel. */
-export type Focus =
-  | { type: "none" }
-  | { type: "create" }
-  | { type: "task"; taskId: string; subtaskId?: string; showDiff?: boolean; subtaskDiff?: boolean }
-  | { type: "assistant"; showHistory?: boolean };
-
 export interface DisplayContextValue {
-  view: View;
-  focus: Focus;
+  layout: LayoutState;
+  activePreset: LayoutPreset;
 
-  /** Open a task in the side panel. */
-  focusTask: (taskId: string) => void;
+  // Forward navigation (stateless)
+  showBoard(): void;
+  showTask(taskId: string): void;
+  showSubtask(taskId: string, subtaskId: string): void;
+  showNewTask(): void;
+  showTaskDiff(taskId: string): void;
+  showSubtaskDiff(taskId: string, subtaskId: string): void;
+  toggleGitHistory(): void;
+  selectCommit(hash: string): void;
+  deselectCommit(): void;
+  toggleAssistant(): void;
+  toggleAssistantHistory(): void;
 
-  /** Open a subtask alongside its parent task. */
-  focusSubtask: (taskId: string, subtaskId: string) => void;
+  // Close/undo operations
+  closeFocus(): void;
+  closeSubtask(): void;
+  closeDiff(): void;
+  closeAssistantHistory(): void;
 
-  /** Close the subtask panel, keeping the parent task open. */
-  closeSubtask: () => void;
+  // Archive modifier
+  switchToArchive(): void;
+  switchToActive(): void;
 
-  /** Open the create-task panel. */
-  openCreate: () => void;
-
-  /** Close whatever is in the side panel. */
-  closeFocus: () => void;
-
-  /** Open the diff viewer for the current task. */
-  openDiff: () => void;
-
-  /** Close the diff viewer. */
-  closeDiff: () => void;
-
-  /** Open the diff viewer for the current subtask. */
-  openSubtaskDiff: () => void;
-
-  /** Close the subtask diff viewer. */
-  closeSubtaskDiff: () => void;
-
-  /** Open the assistant panel. */
-  openAssistant: () => void;
-
-  /** Close the assistant panel. */
-  closeAssistant: () => void;
-
-  /** Toggle the assistant session history panel. */
-  toggleAssistantHistory: () => void;
-
-  /** Close the assistant session history panel. */
-  closeAssistantHistory: () => void;
-
-  /** Switch to active tasks view (Kanban). */
-  switchToActive: () => void;
-
-  /** Switch to archived tasks view (list). */
-  switchToArchived: () => void;
-
-  /** Smart navigation — resolves parent/subtask and merges into current focus. */
-  navigateToTask: (taskId: string, parentId?: string) => void;
-
-  /** Switch to commit history view. */
-  switchToCommits: () => void;
-
-  /** Select a commit to view its diff. */
-  selectCommit: (hash: string) => void;
-
-  /** Deselect the current commit (back to commit list only). */
-  deselectCommit: () => void;
-
-  /** Exit commit history, return to board. */
-  exitCommits: () => void;
+  // Smart navigation
+  navigateToTask(taskId: string, parentId?: string): void;
 }
 
 // =============================================================================
@@ -119,193 +69,278 @@ interface DisplayContextProviderProps {
 }
 
 export function DisplayContextProvider({ children }: DisplayContextProviderProps) {
-  const [view, setView] = useState<View>({ type: "board" });
-  const [focus, setFocus] = useState<Focus>({ type: "none" });
+  const [layout, setLayout] = useState<LayoutState>({
+    preset: "Board",
+    isArchive: false,
+    taskId: null,
+    subtaskId: null,
+    commitHash: null,
+  });
 
-  const focusTask = useCallback((taskId: string) => {
-    setFocus({ type: "task", taskId });
+  const activePreset = useMemo(() => PRESETS[layout.preset], [layout.preset]);
+
+  // Forward navigation
+  const showBoard = useCallback(() => {
+    setLayout((prev) => ({
+      preset: "Board",
+      isArchive: prev.isArchive,
+      taskId: null,
+      subtaskId: null,
+      commitHash: null,
+    }));
   }, []);
 
-  const focusSubtask = useCallback((taskId: string, subtaskId: string) => {
-    setFocus({ type: "task", taskId, subtaskId });
+  const showTask = useCallback((taskId: string) => {
+    setLayout((prev) => ({
+      preset: "Task",
+      isArchive: prev.isArchive,
+      taskId,
+      subtaskId: null,
+      commitHash: null,
+    }));
   }, []);
 
-  const closeSubtask = useCallback(() => {
-    setFocus((prev) => {
-      if (prev.type === "task") {
-        return { type: "task", taskId: prev.taskId };
+  const showSubtask = useCallback((taskId: string, subtaskId: string) => {
+    setLayout((prev) => ({
+      preset: "Subtask",
+      isArchive: prev.isArchive,
+      taskId,
+      subtaskId,
+      commitHash: null,
+    }));
+  }, []);
+
+  const showNewTask = useCallback(() => {
+    setLayout((prev) => ({
+      preset: "NewTask",
+      isArchive: prev.isArchive,
+      taskId: null,
+      subtaskId: null,
+      commitHash: null,
+    }));
+  }, []);
+
+  const showTaskDiff = useCallback((taskId: string) => {
+    setLayout((prev) => ({
+      preset: "TaskDiff",
+      isArchive: prev.isArchive,
+      taskId,
+      subtaskId: null,
+      commitHash: null,
+    }));
+  }, []);
+
+  const showSubtaskDiff = useCallback((taskId: string, subtaskId: string) => {
+    setLayout((prev) => ({
+      preset: "SubtaskDiff",
+      isArchive: prev.isArchive,
+      taskId,
+      subtaskId,
+      commitHash: null,
+    }));
+  }, []);
+
+  const toggleGitHistory = useCallback(() => {
+    setLayout((prev) => {
+      if (prev.preset === "GitHistory" || prev.preset === "GitCommit") {
+        return {
+          preset: "Board",
+          isArchive: prev.isArchive,
+          taskId: null,
+          subtaskId: null,
+          commitHash: null,
+        };
+      }
+      return {
+        preset: "GitHistory",
+        isArchive: prev.isArchive,
+        taskId: null,
+        subtaskId: null,
+        commitHash: null,
+      };
+    });
+  }, []);
+
+  const selectCommit = useCallback((hash: string) => {
+    setLayout((prev) => ({
+      preset: "GitCommit",
+      isArchive: prev.isArchive,
+      taskId: null,
+      subtaskId: null,
+      commitHash: hash,
+    }));
+  }, []);
+
+  const deselectCommit = useCallback(() => {
+    setLayout((prev) => ({
+      ...prev,
+      preset: "GitHistory",
+      commitHash: null,
+    }));
+  }, []);
+
+  const toggleAssistant = useCallback(() => {
+    setLayout((prev) => {
+      if (prev.preset === "Assistant" || prev.preset === "AssistantHistory") {
+        return {
+          preset: "Board",
+          isArchive: prev.isArchive,
+          taskId: null,
+          subtaskId: null,
+          commitHash: null,
+        };
+      }
+      return {
+        preset: "Assistant",
+        isArchive: prev.isArchive,
+        taskId: null,
+        subtaskId: null,
+        commitHash: null,
+      };
+    });
+  }, []);
+
+  const toggleAssistantHistory = useCallback(() => {
+    setLayout((prev) => {
+      if (prev.preset === "AssistantHistory") {
+        return { ...prev, preset: "Assistant" };
+      }
+      if (prev.preset === "Assistant") {
+        return { ...prev, preset: "AssistantHistory" };
       }
       return prev;
     });
   }, []);
 
-  const openCreate = useCallback(() => {
-    setFocus({ type: "create" });
-  }, []);
-
-  const closeFocus = useCallback(() => {
-    setFocus({ type: "none" });
-  }, []);
-
-  const openDiff = useCallback(() => {
-    setFocus((prev) => {
-      if (prev.type === "task") {
-        // Close subtask if open, open diff
-        return { type: "task", taskId: prev.taskId, showDiff: true };
+  // Close/undo operations
+  const closeSubtask = useCallback(() => {
+    setLayout((prev) => {
+      if (prev.preset === "Subtask") {
+        return { ...prev, preset: "Task", subtaskId: null };
       }
       return prev;
     });
   }, []);
 
   const closeDiff = useCallback(() => {
-    setFocus((prev) => {
-      if (prev.type === "task") {
-        return { type: "task", taskId: prev.taskId, showDiff: false };
+    setLayout((prev) => {
+      if (prev.preset === "TaskDiff") {
+        return { ...prev, preset: "Task" };
       }
-      return prev;
-    });
-  }, []);
-
-  const openSubtaskDiff = useCallback(() => {
-    setFocus((prev) => {
-      if (prev.type === "task" && prev.subtaskId) {
-        // Open subtask diff
-        return { type: "task", taskId: prev.taskId, subtaskId: prev.subtaskId, subtaskDiff: true };
-      }
-      return prev;
-    });
-  }, []);
-
-  const closeSubtaskDiff = useCallback(() => {
-    setFocus((prev) => {
-      if (prev.type === "task" && prev.subtaskId) {
-        // Close subtask diff, restore subtask view
-        return { type: "task", taskId: prev.taskId, subtaskId: prev.subtaskId, subtaskDiff: false };
-      }
-      return prev;
-    });
-  }, []);
-
-  const switchToActive = useCallback(() => {
-    setView({ type: "board" });
-  }, []);
-
-  const switchToArchived = useCallback(() => {
-    setView({ type: "archive" });
-  }, []);
-
-  const openAssistant = useCallback(() => {
-    setFocus({ type: "assistant" });
-  }, []);
-
-  const closeAssistant = useCallback(() => {
-    setFocus({ type: "none" });
-  }, []);
-
-  const toggleAssistantHistory = useCallback(() => {
-    setFocus((prev) => {
-      if (prev.type === "assistant") {
-        return { type: "assistant", showHistory: !prev.showHistory };
+      if (prev.preset === "SubtaskDiff") {
+        return { ...prev, preset: "Subtask" };
       }
       return prev;
     });
   }, []);
 
   const closeAssistantHistory = useCallback(() => {
-    setFocus((prev) => {
-      if (prev.type === "assistant") {
-        return { type: "assistant", showHistory: false };
+    setLayout((prev) => {
+      if (prev.preset === "AssistantHistory") {
+        return { ...prev, preset: "Assistant" };
       }
       return prev;
     });
   }, []);
 
+  const closeFocus = useCallback(() => {
+    setLayout((prev) => ({
+      preset: "Board",
+      isArchive: prev.isArchive,
+      taskId: null,
+      subtaskId: null,
+      commitHash: null,
+    }));
+  }, []);
+
+  // Archive modifier
+  const switchToArchive = useCallback(() => {
+    setLayout((prev) => ({ ...prev, isArchive: true }));
+  }, []);
+
+  const switchToActive = useCallback(() => {
+    setLayout((prev) => ({ ...prev, isArchive: false }));
+  }, []);
+
+  // Smart navigation
   const navigateToTask = useCallback((taskId: string, parentId?: string) => {
-    setFocus((prev) => {
+    setLayout((prev) => {
       if (parentId) {
         // It's a subtask — focus on parent + select subtask
-        if (prev.type === "task" && prev.taskId === parentId) {
+        if (prev.taskId === parentId) {
           // Parent already focused — just add subtask selection (preserve other state)
-          return { ...prev, subtaskId: taskId };
+          return { ...prev, preset: "Subtask", subtaskId: taskId };
         }
         // Different parent or no focus — open parent + subtask
-        return { type: "task", taskId: parentId, subtaskId: taskId };
+        return {
+          preset: "Subtask",
+          isArchive: prev.isArchive,
+          taskId: parentId,
+          subtaskId: taskId,
+          commitHash: null,
+        };
       }
 
       // It's a top-level task
-      if (prev.type === "task" && prev.taskId === taskId) {
-        // Already focused on this task — no-op (preserve subtask, diff state)
+      if (prev.taskId === taskId) {
+        // Already focused on this task — no-op (preserve other state)
         return prev;
       }
       // Different task — clean focus switch
-      return { type: "task", taskId };
+      return {
+        preset: "Task",
+        isArchive: prev.isArchive,
+        taskId,
+        subtaskId: null,
+        commitHash: null,
+      };
     });
-  }, []);
-
-  const switchToCommits = useCallback(() => {
-    setView({ type: "commits" });
-  }, []);
-
-  const selectCommit = useCallback((hash: string) => {
-    setView({ type: "commits", selectedCommit: hash });
-  }, []);
-
-  const deselectCommit = useCallback(() => {
-    setView({ type: "commits" });
-  }, []);
-
-  const exitCommits = useCallback(() => {
-    setView({ type: "board" });
   }, []);
 
   const value = useMemo<DisplayContextValue>(
     () => ({
-      view,
-      focus,
-      focusTask,
-      focusSubtask,
-      closeSubtask,
-      openCreate,
-      closeFocus,
-      openDiff,
-      closeDiff,
-      openSubtaskDiff,
-      closeSubtaskDiff,
-      openAssistant,
-      closeAssistant,
-      toggleAssistantHistory,
-      closeAssistantHistory,
-      switchToActive,
-      switchToArchived,
-      navigateToTask,
-      switchToCommits,
+      layout,
+      activePreset,
+      showBoard,
+      showTask,
+      showSubtask,
+      showNewTask,
+      showTaskDiff,
+      showSubtaskDiff,
+      toggleGitHistory,
       selectCommit,
       deselectCommit,
-      exitCommits,
+      toggleAssistant,
+      toggleAssistantHistory,
+      closeFocus,
+      closeSubtask,
+      closeDiff,
+      closeAssistantHistory,
+      switchToArchive,
+      switchToActive,
+      navigateToTask,
     }),
     [
-      view,
-      focus,
-      focusTask,
-      focusSubtask,
-      closeSubtask,
-      openCreate,
-      closeFocus,
-      openDiff,
-      closeDiff,
-      openSubtaskDiff,
-      closeSubtaskDiff,
-      openAssistant,
-      closeAssistant,
-      toggleAssistantHistory,
-      closeAssistantHistory,
-      switchToActive,
-      switchToArchived,
-      navigateToTask,
-      switchToCommits,
+      layout,
+      activePreset,
+      showBoard,
+      showTask,
+      showSubtask,
+      showNewTask,
+      showTaskDiff,
+      showSubtaskDiff,
+      toggleGitHistory,
       selectCommit,
       deselectCommit,
-      exitCommits,
+      toggleAssistant,
+      toggleAssistantHistory,
+      closeFocus,
+      closeSubtask,
+      closeDiff,
+      closeAssistantHistory,
+      switchToArchive,
+      switchToActive,
+      navigateToTask,
     ],
   );
 

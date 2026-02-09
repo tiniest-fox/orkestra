@@ -3,18 +3,14 @@ import { useDisplayContext } from "../providers";
 
 export function BranchIndicator() {
   const branch = useCurrentBranch();
-  const { view, switchToCommits, exitCommits } = useDisplayContext();
+  const { layout, toggleGitHistory } = useDisplayContext();
 
   if (!branch) return null;
 
-  const isActive = view.type === "commits";
+  const isActive = layout.preset === "GitHistory" || layout.preset === "GitCommit";
 
   const handleClick = () => {
-    if (isActive) {
-      exitCommits();
-    } else {
-      switchToCommits();
-    }
+    toggleGitHistory();
   };
 
   return (

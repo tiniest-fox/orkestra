@@ -129,7 +129,7 @@ export function TaskDetailHeader({
   onToggleAutoMode,
 }: TaskDetailHeaderProps) {
   const [toolsInfo, setToolsInfo] = useState<ExternalToolsInfo | null>(cachedToolsInfo);
-  const { focus, openDiff, closeDiff, openSubtaskDiff, closeSubtaskDiff } = useDisplayContext();
+  const { layout, showTaskDiff, showSubtaskDiff, closeDiff } = useDisplayContext();
 
   useEffect(() => {
     detectTools()
@@ -142,9 +142,7 @@ export function TaskDetailHeader({
   const showTerminalButton = !isSubtask && hasWorktree && toolsInfo?.terminal != null;
   const showEditorButton = !isSubtask && hasWorktree && toolsInfo?.editor != null;
   const showDiffButton = hasWorktree; // Show for both parent and subtasks
-  const isDiffOpen = isSubtask
-    ? focus.type === "task" && focus.subtaskDiff === true
-    : focus.type === "task" && focus.showDiff === true;
+  const isDiffOpen = isSubtask ? layout.preset === "SubtaskDiff" : layout.preset === "TaskDiff";
 
   const handleOpenTerminal = () => {
     if (!task.worktree_path) return;
@@ -161,17 +159,13 @@ export function TaskDetailHeader({
   };
 
   const handleToggleDiff = () => {
-    if (isSubtask) {
-      if (isDiffOpen) {
-        closeSubtaskDiff();
-      } else {
-        openSubtaskDiff();
-      }
+    if (isDiffOpen) {
+      closeDiff();
     } else {
-      if (isDiffOpen) {
-        closeDiff();
+      if (isSubtask) {
+        showSubtaskDiff(task.parent_id!, task.id);
       } else {
-        openDiff();
+        showTaskDiff(task.id);
       }
     }
   };

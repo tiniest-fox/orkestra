@@ -33,24 +33,21 @@ export function Orkestra() {
 
   const displayContext = useDisplayContext();
   const {
-    view,
-    focus,
-    focusTask,
-    focusSubtask,
+    layout,
+    showTask,
+    showSubtask,
     closeSubtask,
-    openCreate,
+    showNewTask,
     closeFocus,
     closeDiff,
-    closeSubtaskDiff,
-    openAssistant,
-    closeAssistant,
+    toggleAssistant,
     toggleAssistantHistory,
     closeAssistantHistory,
     switchToActive,
-    switchToArchived,
+    switchToArchive,
     selectCommit,
     deselectCommit,
-    exitCommits,
+    toggleGitHistory,
   } = displayContext;
 
   const config = useWorkflowConfig();
@@ -77,17 +74,17 @@ export function Orkestra() {
   );
 
   // Select tasks based on current view
-  const isArchiveView = view.type === "archive";
+  const isArchiveView = layout.isArchive;
 
   // Look up selected task from both active and archived lists
   const currentSelectedTask: WorkflowTaskView | null = useMemo(() => {
-    if (focus.type !== "task") return null;
+    if (!layout.taskId) return null;
     return (
-      topLevelTasks.find((t) => t.id === focus.taskId) ??
-      archivedTopLevelTasks.find((t) => t.id === focus.taskId) ??
+      topLevelTasks.find((t) => t.id === layout.taskId) ??
+      archivedTopLevelTasks.find((t) => t.id === layout.taskId) ??
       null
     );
-  }, [focus, topLevelTasks, archivedTopLevelTasks]);
+  }, [layout.taskId, topLevelTasks, archivedTopLevelTasks]);
 
   // Derive subtasks for the selected parent from active or archived lists
   const currentSubtasks = useMemo(() => {
@@ -100,13 +97,13 @@ export function Orkestra() {
     return tasks.filter((t) => t.parent_id === currentSelectedTask.id);
   }, [currentSelectedTask, tasks, archivedTasks]);
 
-  const selectedSubtaskId = focus.type === "task" ? focus.subtaskId : undefined;
-  const showDiff = focus.type === "task" && focus.showDiff === true;
-  const showSubtaskDiff = focus.type === "task" && focus.subtaskDiff === true;
-  const assistantVisible = focus.type === "assistant";
-  const assistantHistoryVisible = focus.type === "assistant" && focus.showHistory === true;
-  const isCommitView = view.type === "commits";
-  const selectedCommitHash = view.type === "commits" ? view.selectedCommit : undefined;
+  const selectedSubtaskId = layout.subtaskId;
+  const showDiff = layout.preset === "TaskDiff";
+  const showSubtaskDiff = layout.preset === "SubtaskDiff";
+  const assistantVisible = layout.preset === "Assistant" || layout.preset === "AssistantHistory";
+  const assistantHistoryVisible = layout.preset === "AssistantHistory";
+  const isCommitView = layout.preset === "GitHistory" || layout.preset === "GitCommit";
+  const selectedCommitHash = layout.commitHash;
 
   const currentSelectedSubtask: WorkflowTaskView | null = selectedSubtaskId
     ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
@@ -116,19 +113,25 @@ export function Orkestra() {
   // Hide parent sidebar when subtask diff is open
   // Also guard against null task (shouldn't happen, but prevents empty sidebar)
   const sidebarVisible =
-    (focus.type === "create" || (focus.type === "task" && currentSelectedTask !== null)) &&
+    (layout.preset === "NewTask" ||
+      ((layout.preset === "Task" || layout.preset === "Subtask") &&
+        currentSelectedTask !== null)) &&
     !showSubtaskDiff;
   const sidebarContentKey =
-    focus.type === "create" ? "new-task" : focus.type === "task" ? focus.taskId : null;
+    layout.preset === "NewTask"
+      ? "new-task"
+      : layout.preset === "Task" || layout.preset === "Subtask"
+        ? layout.taskId
+        : null;
 
-  // Close detail panel when switching views
-  const prevViewTypeRef = useRef(view.type);
+  // Close detail panel when switching archive state
+  const prevIsArchiveRef = useRef(layout.isArchive);
   useEffect(() => {
-    if (prevViewTypeRef.current !== view.type && focus.type === "task") {
+    if (prevIsArchiveRef.current !== layout.isArchive && layout.taskId) {
       closeFocus();
     }
-    prevViewTypeRef.current = view.type;
-  }, [view.type, focus.type, closeFocus]);
+    prevIsArchiveRef.current = layout.isArchive;
+  }, [layout.isArchive, layout.taskId, closeFocus]);
 
   // Subtask panel visibility
   const subtaskVisible = !!currentSelectedSubtask;
@@ -139,19 +142,19 @@ export function Orkestra() {
   const subtaskDiffVisible = showSubtaskDiff && !!currentSelectedSubtask;
 
   const handleSelectTask = (task: WorkflowTask) => {
-    focusTask(task.id);
+    showTask(task.id);
   };
 
   const handleSelectSubtask = (subtask: WorkflowTaskView) => {
-    if (focus.type === "task") {
-      focusSubtask(focus.taskId, subtask.id);
+    if (layout.taskId) {
+      showSubtask(layout.taskId, subtask.id);
     }
   };
 
   const handleCloseSubtask = () => {
     // When closing subtask, also close its diff if open
     if (showSubtaskDiff) {
-      closeSubtaskDiff();
+      closeDiff();
     }
     closeSubtask();
   };
@@ -185,9 +188,9 @@ export function Orkestra() {
     );
   };
 
-  // Render sidebar content based on focus type and view
+  // Render sidebar content based on preset
   const renderSidebarContent = () => {
-    if (focus.type === "create") {
+    if (layout.preset === "NewTask") {
       return <NewTaskPanel onClose={closeFocus} onSubmit={handleTaskCreated} />;
     }
     if (currentSelectedTask) {
@@ -199,7 +202,7 @@ export function Orkestra() {
             task={currentSelectedTask}
             onClose={closeFocus}
             subtasks={currentSubtasks}
-            selectedSubtaskId={selectedSubtaskId}
+            selectedSubtaskId={selectedSubtaskId ?? undefined}
             onSelectSubtask={handleSelectSubtask}
           />
         );
@@ -212,7 +215,7 @@ export function Orkestra() {
             onClose={closeFocus}
             onDelete={() => handleDeleteTask(currentSelectedTask.id)}
             subtasks={currentSubtasks}
-            selectedSubtaskId={selectedSubtaskId}
+            selectedSubtaskId={selectedSubtaskId ?? undefined}
             onSelectSubtask={handleSelectSubtask}
           />
         );
@@ -229,22 +232,22 @@ export function Orkestra() {
           <Button
             variant={assistantVisible ? "primary" : "secondary"}
             size="sm"
-            onClick={assistantVisible ? closeAssistant : openAssistant}
+            onClick={toggleAssistant}
           >
             Assistant
           </Button>
           <div className="flex items-center gap-1 bg-stone-200 dark:bg-stone-800 rounded-panel p-0.5">
             <Button
-              variant={view.type === "board" ? "primary" : "secondary"}
+              variant={!layout.isArchive ? "primary" : "secondary"}
               size="sm"
               onClick={switchToActive}
             >
               Active
             </Button>
             <Button
-              variant={view.type === "archive" ? "primary" : "secondary"}
+              variant={layout.isArchive ? "primary" : "secondary"}
               size="sm"
-              onClick={switchToArchived}
+              onClick={switchToArchive}
             >
               Archived
             </Button>
@@ -262,7 +265,7 @@ export function Orkestra() {
               {template.title}
             </Button>
           ))}
-          <Button onClick={openCreate}>+ New Task</Button>
+          <Button onClick={showNewTask}>+ New Task</Button>
         </div>
       </div>
 
@@ -297,16 +300,16 @@ export function Orkestra() {
         {/* Assistant panel (LEFT side) */}
         <Slot id="assistant" type="fixed" size={480} visible={assistantVisible} plain>
           {assistantVisible && (
-            <AssistantPanel onClose={closeAssistant} onToggleHistory={toggleAssistantHistory} />
+            <AssistantPanel onClose={toggleAssistant} onToggleHistory={toggleAssistantHistory} />
           )}
         </Slot>
 
         {/* Commit history list (fixed width, visible in commit view) */}
         <Slot id="commit-list" type="fixed" size={360} visible={isCommitView}>
           <CommitHistoryPanel
-            selectedCommit={selectedCommitHash}
+            selectedCommit={selectedCommitHash ?? undefined}
             onSelectCommit={selectCommit}
-            onClose={exitCommits}
+            onClose={toggleGitHistory}
           />
         </Slot>
 
@@ -327,7 +330,7 @@ export function Orkestra() {
           type="grow"
           visible={!showDiff && !showSubtaskDiff && !loading && !isCommitView}
         >
-          {view.type === "archive" ? (
+          {layout.isArchive ? (
             <ArchivedListView
               tasks={archivedTopLevelTasks}
               selectedTaskId={currentSelectedTask?.id}
@@ -383,7 +386,7 @@ export function Orkestra() {
         {/* Subtask diff panel (shows when subtask diff is open, board and parent sidebar hide) */}
         <Slot id="subtask-diff" type="grow" visible={subtaskDiffVisible}>
           {subtaskDiffVisible && currentSelectedSubtask && (
-            <DiffPanel taskId={currentSelectedSubtask.id} onClose={closeSubtaskDiff} />
+            <DiffPanel taskId={currentSelectedSubtask.id} onClose={closeDiff} />
           )}
         </Slot>
       </PanelLayout>

@@ -132,36 +132,36 @@ describe("Orkestra - View Toggle", () => {
 
     // Create a fresh display context for each test
     displayContextValue = {
-      view: { type: "board" },
-      focus: { type: "none" },
-      focusTask: vi.fn(),
-      focusSubtask: vi.fn(),
-      closeSubtask: vi.fn(),
-      openCreate: vi.fn(),
-      closeFocus: vi.fn(),
-      openDiff: vi.fn(),
-      closeDiff: vi.fn(),
-      openSubtaskDiff: vi.fn(),
-      closeSubtaskDiff: vi.fn(),
-      openAssistant: vi.fn(),
-      closeAssistant: vi.fn(),
-      toggleAssistantHistory: vi.fn(),
-      closeAssistantHistory: vi.fn(),
-      navigateToTask: vi.fn(),
-      switchToActive: vi.fn(() => {
-        displayContextValue.view = { type: "board" };
-      }),
-      switchToArchived: vi.fn(() => {
-        displayContextValue.view = { type: "archive" };
-      }),
-      switchToCommits: vi.fn(() => {
-        displayContextValue.view = { type: "commits" };
-      }),
+      layout: {
+        preset: "Board",
+        isArchive: false,
+        taskId: null,
+        subtaskId: null,
+        commitHash: null,
+      },
+      activePreset: { content: "KanbanBoard", panel: null, secondaryPanel: null },
+      showBoard: vi.fn(),
+      showTask: vi.fn(),
+      showSubtask: vi.fn(),
+      showNewTask: vi.fn(),
+      showTaskDiff: vi.fn(),
+      showSubtaskDiff: vi.fn(),
+      toggleGitHistory: vi.fn(),
       selectCommit: vi.fn(),
       deselectCommit: vi.fn(),
-      exitCommits: vi.fn(() => {
-        displayContextValue.view = { type: "board" };
+      toggleAssistant: vi.fn(),
+      toggleAssistantHistory: vi.fn(),
+      closeFocus: vi.fn(),
+      closeSubtask: vi.fn(),
+      closeDiff: vi.fn(),
+      closeAssistantHistory: vi.fn(),
+      switchToArchive: vi.fn(() => {
+        displayContextValue.layout.isArchive = true;
       }),
+      switchToActive: vi.fn(() => {
+        displayContextValue.layout.isArchive = false;
+      }),
+      navigateToTask: vi.fn(),
     };
 
     mockUseDisplayContext.mockImplementation(() => displayContextValue);
@@ -247,7 +247,7 @@ describe("Orkestra - View Toggle", () => {
     });
 
     // Set view to archive
-    displayContextValue.view = { type: "archive" };
+    displayContextValue.layout.isArchive = true;
 
     await act(async () => {
       render(<Orkestra />);
@@ -275,7 +275,7 @@ describe("Orkestra - View Toggle", () => {
       archivedButton.click();
     });
 
-    expect(displayContextValue.switchToArchived).toHaveBeenCalled();
+    expect(displayContextValue.switchToArchive).toHaveBeenCalled();
   });
 
   it("filters tasks correctly for each view", async () => {
@@ -366,7 +366,8 @@ describe("Orkestra - View Toggle", () => {
     });
 
     // Set focus to the task
-    displayContextValue.focus = { type: "task", taskId: "active-1" };
+    displayContextValue.layout.preset = "Task";
+    displayContextValue.layout.taskId = "active-1";
 
     await act(async () => {
       render(<Orkestra />);
@@ -404,8 +405,9 @@ describe("Orkestra - View Toggle", () => {
     });
 
     // Set view to archive and focus to the archived task
-    displayContextValue.view = { type: "archive" };
-    displayContextValue.focus = { type: "task", taskId: "archived-1" };
+    displayContextValue.layout.isArchive = true;
+    displayContextValue.layout.preset = "Task";
+    displayContextValue.layout.taskId = "archived-1";
 
     await act(async () => {
       render(<Orkestra />);
@@ -442,7 +444,8 @@ describe("Orkestra - View Toggle", () => {
     });
 
     // Start with a task selected in board view
-    displayContextValue.focus = { type: "task", taskId: "active-1" };
+    displayContextValue.layout.preset = "Task";
+    displayContextValue.layout.taskId = "active-1";
 
     await act(async () => {
       render(<Orkestra />);
@@ -460,6 +463,6 @@ describe("Orkestra - View Toggle", () => {
     });
 
     // Verify switchToArchived was called (actual closeFocus happens in effect in real component)
-    expect(displayContextValue.switchToArchived).toHaveBeenCalled();
+    expect(displayContextValue.switchToArchive).toHaveBeenCalled();
   });
 });

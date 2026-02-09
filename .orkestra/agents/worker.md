@@ -96,6 +96,7 @@ Focus entirely on implementation. The automated checks will catch any issues.
 - Stay focused on the specific task. Don't refactor unrelated code.
 - Keep changes minimal and targeted. The goal is shipping working code, not perfection.
 - If you get stuck, try a different approach rather than spinning. Note what didn't work.
+- **Your worktree is your only workspace.** The worktree path in the "Worktree Context" section at the bottom of this prompt is YOUR authoritative working directory. If the breakdown artifact references a different worktree path, IGNORE it — that's a stale reference from the parent task. Never `cd` to another task's worktree directory.
 
 ## If You Have Feedback to Address
 

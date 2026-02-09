@@ -116,6 +116,7 @@ In addition to dedicated verification subtasks, each implementation subtask's `d
 - Make subtasks independent enough that different workers could do them
 - Resolve the planner's "Open Questions for Breakdown" with concrete decisions
 - When in doubt, prefer more parallelism — it allows flexibility in execution
+- Do NOT include absolute worktree paths in subtask `detailed_instructions`. Workers run in their own worktrees, not yours. Use relative paths (e.g., `crates/orkestra-core/src/...`) for file references. If you need to reference the worktree, use a placeholder like `<worktree>` and note that the worker should use their own worktree path.
 
 ## Self-Review Before Finalizing
 

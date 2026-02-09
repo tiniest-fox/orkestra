@@ -1,11 +1,19 @@
 /**
- * Text log entry - plain text output from the assistant.
+ * Text log entry - markdown-formatted output from the assistant.
  */
+
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { PROSE_CLASSES_DARK } from "../../../utils";
 
 interface TextLogEntryProps {
   content: string;
 }
 
 export function TextLogEntry({ content }: TextLogEntryProps) {
-  return <div className="py-1 text-gray-100 text-sm whitespace-pre-wrap">{content}</div>;
+  return (
+    <div className={`py-1 text-sm ${PROSE_CLASSES_DARK}`}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  );
 }

@@ -53,7 +53,7 @@ When the task is complex enough to decompose (the common case):
 3. **Files to create/modify** — With specific changes needed
 4. **Patterns to follow** — With codebase references (file paths, function names)
 5. **Interfaces with sibling subtasks** — What they produce that this depends on, and what this produces that others depend on
-6. **Acceptance criteria** — How to know the subtask is complete
+6. **Acceptance criteria** — How to know the subtask is complete (focus on implementation correctness, not on passing automated checks — those run automatically)
 
 **Subtask structure**:
 - **Title**: Clear, specific action (e.g., "Add rate limiting middleware to API layer")
@@ -70,7 +70,7 @@ When the task is simple enough to complete directly (single-focus work):
 1. **Task Summary** (2-3 sentences) — What the task is, why it matters, key constraints
 2. **Files to create/modify** — With specific changes needed
 3. **Patterns to follow** — With codebase references
-4. **Acceptance criteria** — How to know the task is complete
+4. **Acceptance criteria** — How to know the task is complete (implementation correctness only — automated checks run separately)
 
 **`subtasks` array**: Empty array.
 **`skip_reason`**: Why breakdown was skipped.
@@ -107,7 +107,12 @@ The `content` field should describe the overall testing strategy: what existing 
 
 ### Acceptance Criteria on Every Subtask
 
-Each implementation subtask's `detailed_instructions` should include an "Acceptance Criteria" section stating what the worker must confirm before marking it complete (e.g., "existing tests still pass", "new function handles edge case X"). This is lightweight self-verification — not a separate subtask.
+Each implementation subtask's `detailed_instructions` should include an "Acceptance Criteria" section stating what the worker must confirm before marking it complete. Focus on **implementation completeness** — what code exists, what behavior it produces, what edge cases it handles.
+
+**Do NOT include criteria about passing tests, linting, formatting, or builds.** A separate automated checks stage runs after every worker — tests, clippy, fmt, and builds are all verified automatically. Acceptance criteria like "existing tests still pass" or "cargo test succeeds" are redundant and confuse workers into running checks themselves.
+
+Good examples: "new function handles empty input by returning None", "migration adds index on `task_id` column", "error messages include the failing file path"
+Bad examples: "all tests pass", "cargo clippy has no warnings", "cargo fmt produces no changes"
 
 ## Guidelines
 

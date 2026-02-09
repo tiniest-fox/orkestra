@@ -63,18 +63,21 @@ The core section. Gives the worker a roadmap grounded in actual codebase researc
 - **Reusable code** — Existing utilities the worker should use instead of reinventing
 
 ### 4. Success Criteria
-Testable conditions that define "done." Be concrete — reference specific tests, functions, and commands:
-- "Test X passes" over "Users can X"
-- "Function Y handles edge case Z" over "Error handling works"
-- "`cargo test -p crate_name` passes" over "Tests pass"
+Testable conditions that define "done." Focus on **implementation correctness** — what code exists, what behavior it produces, what edge cases it handles:
+- "Function Y handles edge case Z by returning `Err(InvalidInput)`"
+- "New migration adds `status` column with `NOT NULL` constraint and default value"
+- "Trait implementation delegates to existing `GitService` methods, no new git logic"
+
+**Do NOT include criteria about passing tests, linting, formatting, or builds.** A separate automated checks stage runs after every worker — tests, clippy, fmt, and builds are all verified automatically. Criteria like "all tests pass" or "cargo test succeeds" are redundant.
 
 ### 5. Verification Strategy
-Every plan must define how the work will be verified programmatically. The worker needs to know exactly how to prove their work is correct.
+Describe what **new tests need to be written** (if any) and where they should live. The worker needs to know what test code to author, not what commands to run.
 
-- **End-to-end test preferred**: Define an integration or end-to-end test that exercises the feature as realistically as possible. Specify which test file to add it to (or create), what it should assert, and what existing test helpers/fixtures to use. This is the primary verification mechanism — not "user manually tests."
-- **One-off test scripts for external dependencies**: For features that depend on external processes (spawning agents, CLI tools, etc.), design a standalone test script that can verify the behavior — e.g., spawn the process, confirm output format, verify cleanup. Something that can be run non-interactively.
-- **Specific commands to run**: List the exact commands (`cargo test`, `pnpm check`, etc.) and what passing looks like.
-- **Behavioral checks**: Observable behavior to verify manually only when automated testing isn't feasible. Describe the exact steps and expected output.
+- **New tests needed**: Specify which test file to add to (or create), what to assert, and what existing test helpers/fixtures to use. Reference analogous tests in the codebase.
+- **Existing test coverage**: Note which existing tests already cover the change (so the worker knows not to duplicate them).
+- **Edge cases to test**: Specific scenarios the tests should exercise.
+
+**Do NOT list commands to run** (`cargo test`, `pnpm check`, etc.) — the automated checks stage handles all of that. Focus on what test *code* the worker should write.
 
 ## Self-Review
 

@@ -3,5 +3,6 @@ export { AutoTaskTemplatesProvider, useAutoTaskTemplates } from "./AutoTaskTempl
 export type { DisplayContextValue } from "./DisplayContextProvider";
 export { DisplayContextProvider, useDisplayContext } from "./DisplayContextProvider";
 export type { LayoutPreset, LayoutState, PresetName } from "./presets";
+export { PRESETS } from "./presets";
 export { TasksProvider, useTasks } from "./TasksProvider";
 export { useWorkflowConfig, WorkflowConfigProvider } from "./WorkflowConfigProvider";

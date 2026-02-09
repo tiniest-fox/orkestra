@@ -763,6 +763,8 @@ pub enum ResumeType {
     RetryFailed { instructions: Option<String> },
     /// Human retried a blocked task, optionally with instructions.
     RetryBlocked { instructions: Option<String> },
+    /// User interrupted and resumed with optional guidance.
+    ManualResume { message: Option<String> },
 }
 
 /// Owned question-answer pair for use in resume prompts.
@@ -780,6 +782,7 @@ const RESUME_ANSWERS: &str = include_str!("../../prompts/templates/resume/answer
 const RESUME_RECHECK: &str = include_str!("../../prompts/templates/resume/recheck.md");
 const RESUME_RETRY_FAILED: &str = include_str!("../../prompts/templates/resume/retry_failed.md");
 const RESUME_RETRY_BLOCKED: &str = include_str!("../../prompts/templates/resume/retry_blocked.md");
+const RESUME_MANUAL_RESUME: &str = include_str!("../../prompts/templates/resume/manual_resume.md");
 
 /// Load and render a resume prompt template.
 ///
@@ -818,6 +821,10 @@ pub fn build_resume_prompt(
         ResumeType::RetryBlocked { instructions } => (
             RESUME_RETRY_BLOCKED,
             serde_json::json!({ "instructions": instructions }),
+        ),
+        ResumeType::ManualResume { message } => (
+            RESUME_MANUAL_RESUME,
+            serde_json::json!({ "message": message }),
         ),
     };
 
@@ -1446,6 +1453,43 @@ mod tests {
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
         assert!(!prompt.contains("Updated Input Artifacts"));
+    }
+
+    #[test]
+    fn test_build_resume_prompt_manual_resume_with_message() {
+        let artifacts = vec![("plan".to_string(), "Implementation plan".to_string())];
+        let prompt = build_resume_prompt(
+            "work",
+            &ResumeType::ManualResume {
+                message: Some("Fix the validation logic".to_string()),
+            },
+            "main",
+            &artifacts,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:manual_resume>"));
+        assert!(prompt.contains("interrupted by the user"));
+        assert!(prompt.contains("Message from the user"));
+        assert!(prompt.contains("Fix the validation logic"));
+        assert!(prompt.contains("JSON"));
+        assert!(!prompt.contains("Updated Input Artifacts"));
+    }
+
+    #[test]
+    fn test_build_resume_prompt_manual_resume_no_message() {
+        let artifacts = vec![];
+        let prompt = build_resume_prompt(
+            "review",
+            &ResumeType::ManualResume { message: None },
+            "main",
+            &artifacts,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:review:manual_resume>"));
+        assert!(prompt.contains("interrupted by the user"));
+        assert!(prompt.contains("JSON"));
+        // Should not contain the message section when None
+        assert!(!prompt.contains("Message from the user"));
     }
 
     #[test]

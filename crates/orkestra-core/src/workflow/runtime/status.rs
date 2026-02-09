@@ -156,6 +156,7 @@ impl std::fmt::Display for Phase {
             Phase::Idle => write!(f, "idle"),
             Phase::AgentWorking => write!(f, "agent_working"),
             Phase::AwaitingReview => write!(f, "awaiting_review"),
+            Phase::Interrupted => write!(f, "interrupted"),
             Phase::Integrating => write!(f, "integrating"),
         }
     }
@@ -185,6 +186,9 @@ pub enum Phase {
     /// Output is ready for human review.
     AwaitingReview,
 
+    /// Agent was interrupted by the user. Awaiting resume.
+    Interrupted,
+
     /// Integration (merge) is in progress.
     Integrating,
 }
@@ -192,7 +196,7 @@ pub enum Phase {
 impl Phase {
     /// Check if a human action is needed.
     pub fn needs_human_action(&self) -> bool {
-        matches!(self, Phase::AwaitingReview)
+        matches!(self, Phase::AwaitingReview | Phase::Interrupted)
     }
 
     /// Check if an agent is currently working.
@@ -295,6 +299,24 @@ mod tests {
         let phase = Phase::AwaitingReview;
         let json = serde_json::to_string(&phase).unwrap();
         assert_eq!(json, "\"awaiting_review\"");
+
+        let parsed: Phase = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, phase);
+    }
+
+    #[test]
+    fn test_phase_interrupted() {
+        let phase = Phase::Interrupted;
+        assert!(phase.needs_human_action());
+        assert!(!phase.has_active_agent());
+        assert_eq!(phase.to_string(), "interrupted");
+    }
+
+    #[test]
+    fn test_phase_interrupted_serialization() {
+        let phase = Phase::Interrupted;
+        let json = serde_json::to_string(&phase).unwrap();
+        assert_eq!(json, "\"interrupted\"");
 
         let parsed: Phase = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, phase);

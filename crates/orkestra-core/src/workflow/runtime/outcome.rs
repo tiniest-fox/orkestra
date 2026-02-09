@@ -116,6 +116,9 @@ pub enum Outcome {
         #[serde(skip_serializing_if = "Option::is_none")]
         recovery_stage: Option<String>,
     },
+
+    /// Agent execution was interrupted by the user.
+    Interrupted,
 }
 
 impl Outcome {
@@ -279,6 +282,7 @@ impl std::fmt::Display for Outcome {
                 write!(f, "{from_stage} rejection awaiting review")
             }
             Outcome::ScriptFailed { stage, .. } => write!(f, "{stage} script failed"),
+            Outcome::Interrupted => write!(f, "interrupted"),
         }
     }
 }
@@ -493,6 +497,24 @@ mod tests {
 
         // recovery_stage should be omitted when None
         assert!(!json.contains("recovery_stage"));
+
+        let parsed: Outcome = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, outcome);
+    }
+
+    #[test]
+    fn test_interrupted_outcome() {
+        let outcome = Outcome::Interrupted;
+        assert!(!outcome.is_terminal());
+        assert!(!outcome.requires_retry());
+        assert_eq!(outcome.to_string(), "interrupted");
+    }
+
+    #[test]
+    fn test_interrupted_serialization() {
+        let outcome = Outcome::Interrupted;
+        let json = serde_json::to_string(&outcome).unwrap();
+        assert!(json.contains("\"type\":\"interrupted\""));
 
         let parsed: Outcome = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, outcome);

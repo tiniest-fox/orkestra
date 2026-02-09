@@ -47,6 +47,7 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
         IterationTrigger::ScriptFailure { error, .. } => Some(error.as_str()),
         IterationTrigger::RetryFailed { instructions }
         | IterationTrigger::RetryBlocked { instructions } => instructions.as_deref(),
+        IterationTrigger::ManualResume { message } => message.as_deref(),
         _ => None,
     })
 }
@@ -516,6 +517,9 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
         },
         Some(IterationTrigger::RetryBlocked { instructions }) => ResumeType::RetryBlocked {
             instructions: instructions.clone(),
+        },
+        Some(IterationTrigger::ManualResume { message }) => ResumeType::ManualResume {
+            message: message.clone(),
         },
     }
 }

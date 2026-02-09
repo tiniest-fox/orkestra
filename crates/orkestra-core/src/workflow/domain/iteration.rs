@@ -38,6 +38,8 @@ pub enum IterationTrigger {
     RetryFailed { instructions: Option<String> },
     /// Human retried a blocked task, optionally with instructions.
     RetryBlocked { instructions: Option<String> },
+    /// User interrupted and then resumed, optionally with a message.
+    ManualResume { message: Option<String> },
 }
 
 /// A single iteration (attempt) within a stage.
@@ -371,6 +373,48 @@ mod tests {
                 assert!(error.contains("eslint"));
             }
             _ => panic!("Expected ScriptFailure trigger"),
+        }
+    }
+
+    #[test]
+    fn test_iteration_trigger_manual_resume() {
+        let trigger = IterationTrigger::ManualResume {
+            message: Some("Fix the validation logic".to_string()),
+        };
+        let json = serde_json::to_string(&trigger).unwrap();
+        assert!(json.contains("\"type\":\"manual_resume\""));
+        assert!(json.contains("Fix the validation logic"));
+
+        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, trigger);
+    }
+
+    #[test]
+    fn test_iteration_trigger_manual_resume_no_message() {
+        let trigger = IterationTrigger::ManualResume { message: None };
+        let json = serde_json::to_string(&trigger).unwrap();
+        assert!(json.contains("\"type\":\"manual_resume\""));
+        // message should be omitted or null when None
+        assert!(json.contains("\"message\":null") || !json.contains("message"));
+
+        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, trigger);
+    }
+
+    #[test]
+    fn test_iteration_with_manual_resume_context() {
+        let iter = Iteration::new("iter-1", "task-1", "work", 2, "now").with_context(
+            IterationTrigger::ManualResume {
+                message: Some("Continue with tests".to_string()),
+            },
+        );
+
+        assert!(iter.incoming_context.is_some());
+        match &iter.incoming_context {
+            Some(IterationTrigger::ManualResume { message }) => {
+                assert_eq!(message.as_deref(), Some("Continue with tests"));
+            }
+            _ => panic!("Expected ManualResume trigger"),
         }
     }
 }

@@ -858,6 +858,7 @@ fn format_phase(phase: Phase) -> String {
         Phase::Idle => "Idle".to_string(),
         Phase::AgentWorking => "Working".to_string(),
         Phase::AwaitingReview => "Review".to_string(),
+        Phase::Interrupted => "Interrupted".to_string(),
         Phase::Integrating => "Integrating".to_string(),
     }
 }
@@ -888,6 +889,7 @@ fn format_outcome(outcome: &Outcome) -> String {
             format!("awaiting rejection review (to {target})\n    Feedback: {feedback}")
         }
         Outcome::ScriptFailed { error, .. } => format!("script failed\n    Error: {error}"),
+        Outcome::Interrupted => "interrupted".to_string(),
     }
 }
 
@@ -926,6 +928,13 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
             let mut s = "retry blocked".to_string();
             if let Some(inst) = instructions {
                 write!(s, "\n    Instructions: {inst}").unwrap();
+            }
+            s
+        }
+        IterationTrigger::ManualResume { message } => {
+            let mut s = "manual resume".to_string();
+            if let Some(msg) = message {
+                write!(s, "\n    Message: {msg}").unwrap();
             }
             s
         }

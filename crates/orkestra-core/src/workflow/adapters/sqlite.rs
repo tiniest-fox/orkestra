@@ -849,6 +849,7 @@ fn phase_to_str(phase: Phase) -> &'static str {
         Phase::Idle => "idle",
         Phase::AgentWorking => "agent_working",
         Phase::AwaitingReview => "awaiting_review",
+        Phase::Interrupted => "interrupted",
         Phase::Integrating => "integrating",
     }
 }
@@ -859,6 +860,7 @@ fn parse_phase(s: &str) -> Phase {
         "setting_up" => Phase::SettingUp,
         "agent_working" => Phase::AgentWorking,
         "awaiting_review" => Phase::AwaitingReview,
+        "interrupted" => Phase::Interrupted,
         "integrating" => Phase::Integrating,
         _ => Phase::Idle,
     }

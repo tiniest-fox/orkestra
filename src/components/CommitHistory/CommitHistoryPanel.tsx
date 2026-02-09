@@ -1,7 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
 import { GitCommit } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { CommitInfo } from "../../types/workflow";
+import { useGitHistory } from "../../providers";
 import { EmptyState, Panel } from "../ui";
 import { CommitEntry } from "./CommitEntry";
 
@@ -16,26 +14,7 @@ export function CommitHistoryPanel({
   onSelectCommit,
   onClose,
 }: CommitHistoryPanelProps) {
-  const [commits, setCommits] = useState<CommitInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    invoke<CommitInfo[]>("workflow_get_commit_log")
-      .then((result) => {
-        if (!cancelled) setCommits(result);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { commits, loading, error } = useGitHistory();
 
   return (
     <Panel className="flex flex-col">
@@ -45,7 +24,21 @@ export function CommitHistoryPanel({
       </Panel.Header>
       <Panel.Body className="flex-1 overflow-y-auto pt-0">
         {loading && (
-          <div className="flex items-center justify-center h-32 text-stone-400">Loading...</div>
+          <>
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="px-3 py-2.5 border-b border-stone-100 dark:border-stone-800">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <div className="h-3.5 w-14 bg-stone-200 dark:bg-stone-700 rounded animate-pulse" />
+                  <div className="h-3.5 w-10 bg-stone-200 dark:bg-stone-700 rounded animate-pulse" />
+                </div>
+                <div className="h-4 w-48 bg-stone-200 dark:bg-stone-700 rounded animate-pulse mt-1" />
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="h-3 w-20 bg-stone-200 dark:bg-stone-700 rounded animate-pulse" />
+                  <div className="h-3 w-12 bg-stone-200 dark:bg-stone-700 rounded animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </>
         )}
         {error && (
           <div className="flex items-center justify-center h-32 text-error-600 dark:text-error-400">

@@ -33,6 +33,7 @@ export function Orkestra() {
 
   const {
     layout,
+    activePreset,
     showTask,
     showSubtask,
     closeSubtask,
@@ -71,29 +72,6 @@ export function Orkestra() {
         .sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [archivedTasks],
   );
-
-  // Derive preset slot assignments from current layout.preset
-  // This ensures consistency even if the context's activePreset is out of sync
-  const activePreset = useMemo(() => {
-    // Import PRESETS dynamically to avoid circular dependency issues in tests
-    const presets = {
-      Board: { content: "KanbanBoard", panel: null, secondaryPanel: null },
-      Task: { content: "KanbanBoard", panel: "TaskDetail", secondaryPanel: null },
-      Subtask: { content: "KanbanBoard", panel: "TaskDetail", secondaryPanel: "SubtaskDetail" },
-      NewTask: { content: "KanbanBoard", panel: "NewTaskPanel", secondaryPanel: null },
-      TaskDiff: { content: "DiffPanel", panel: "TaskDetail", secondaryPanel: null },
-      SubtaskDiff: { content: "DiffPanel", panel: "SubtaskDetail", secondaryPanel: null },
-      GitHistory: { content: "KanbanBoard", panel: "GitHistoryPanel", secondaryPanel: null },
-      GitCommit: { content: "CommitDiffPanel", panel: "GitHistoryPanel", secondaryPanel: null },
-      Assistant: { content: "KanbanBoard", panel: "AssistantPanel", secondaryPanel: null },
-      AssistantHistory: {
-        content: "KanbanBoard",
-        panel: "AssistantPanel",
-        secondaryPanel: "SessionHistory",
-      },
-    } as const;
-    return presets[layout.preset];
-  }, [layout.preset]);
 
   const { content, panel, secondaryPanel } = activePreset;
 

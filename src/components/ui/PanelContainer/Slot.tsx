@@ -31,7 +31,7 @@ export function Slot({
     throw new Error("Slot must be used within a PanelLayout");
   }
 
-  const { direction, registerSlot, unregisterSlot } = context;
+  const { registerSlot, unregisterSlot } = context;
 
   // Track content switching state - use ref for synchronous checks in effects
   const prevContentKeyRef = useRef(contentKey);
@@ -126,25 +126,11 @@ export function Slot({
   // Determine if content should be shown
   const shouldShowContent = visible && !isContentSwitching;
 
-  // For fixed slots, render content at full size (prevents squishing during animation)
-  const contentStyle: React.CSSProperties = {};
-  if (type === "fixed" && size) {
-    if (direction === "horizontal") {
-      contentStyle.width = size;
-    } else {
-      contentStyle.height = size;
-    }
-  }
-
   // Visual styling classes (shadow, rounded corners, background) - skip if plain
   const visualClasses = plain ? "" : "shadow-panel rounded-panel bg-white dark:bg-stone-900";
 
   // When plain, reset PanelContainerContext so Panels inside render their own shadows
-  const content = (
-    <div className="flex-1 min-h-0 flex flex-col" style={contentStyle}>
-      {displayedContent}
-    </div>
-  );
+  const content = <div className="flex-1 min-h-0 flex flex-col">{displayedContent}</div>;
 
   return (
     <div

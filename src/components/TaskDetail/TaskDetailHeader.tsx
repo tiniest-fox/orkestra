@@ -162,8 +162,8 @@ export function TaskDetailHeader({
     if (isDiffOpen) {
       closeDiff();
     } else {
-      if (isSubtask) {
-        showSubtaskDiff(task.parent_id!, task.id);
+      if (isSubtask && task.parent_id) {
+        showSubtaskDiff(task.parent_id, task.id);
       } else {
         showTaskDiff(task.id);
       }

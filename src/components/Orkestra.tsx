@@ -144,7 +144,7 @@ export function Orkestra() {
   };
 
   return (
-    <div className="w-screen h-screen bg-stone-100 dark:bg-stone-950 flex flex-col items-stretch p-4 gap-4 overflow-hidden">
+    <div className="w-screen h-screen bg-stone-100 dark:bg-stone-950 flex flex-col items-stretch p-4 gap-4 overflow-clip">
       <div className="flex items-center justify-between px-2 flex-shrink-0 overflow-hidden">
         <div className="flex items-center gap-4">
           <Panel.Title>Orkestra</Panel.Title>

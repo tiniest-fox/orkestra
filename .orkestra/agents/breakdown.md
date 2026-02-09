@@ -77,29 +77,37 @@ When the task is simple enough to complete directly (single-focus work):
 
 ## Verification Strategy
 
-Every breakdown must include verification as concrete subtasks — not just prose in the content field. Verification is planned, scoped, and assigned like any other work.
+Every breakdown must have a clear testing plan. Think hard about how the work will be validated — what tests need to be written, what existing tests cover the change, and where the gaps are.
 
-### Verification Subtasks Are Required
+### When to Create a Verification Subtask
 
-Create one or more dedicated verification subtasks that depend on the implementation subtasks they verify. These are real subtasks with titles, descriptions, detailed instructions, and dependencies — not bullet points in the technical design.
+Create a dedicated verification subtask **only when new tests need to be written or existing tests need to be modified**. A subtask whose only job is "run the existing test suite" is redundant — the system already runs tests. Verification subtasks are for actual test authoring work.
 
-**What a verification subtask looks like:**
-- **Title**: Specific and testable (e.g., "Add integration test for rate limiting middleware", "Create E2E test for task creation flow")
-- **Dependencies**: Depends on the implementation subtask(s) it verifies
-- **Detailed instructions**: Specifies exactly what to test, what test framework/patterns to use (referencing existing test patterns in the codebase), expected inputs and outputs, and what a passing result looks like
-- **Scope**: Tests the behavior end-to-end where possible, not just unit-level
+**Good verification subtasks** (create these):
+- "Add E2E test for rate limiting middleware" — new test code needs to be written
+- "Update integration tests to cover new error handling paths" — existing tests need modification
+- "Create regression test for the race condition in task setup" — specific new test
+
+**Bad verification subtasks** (don't create these):
+- "Run all tests and verify they pass" — the system does this already
+- "Verify the feature works" — too vague, not a coding task
+- "Check that existing tests still pass" — belongs in acceptance criteria, not a subtask
 
 ### Choosing Verification Approach
 
-Pick the right verification type for the work:
+When new tests are needed, pick the right type:
 
 - **Integration/E2E tests** (preferred): For features that connect multiple components, write tests that exercise the full path. Reference existing integration test patterns in the codebase.
 - **Standalone test scripts**: For features involving external processes (spawning agents, CLI tools, etc.), create a script that can run non-interactively — spawn the process, confirm output, verify cleanup.
 - **Targeted unit tests**: For pure logic (parsers, validators, transformations), unit tests are sufficient. But don't substitute unit tests when the real risk is in integration.
 
-### Each Implementation Subtask Still Gets Verification Criteria
+### Testing Plan in the Content Field
 
-In addition to dedicated verification subtasks, each implementation subtask's `detailed_instructions` should include an "Acceptance Criteria" section stating what the worker must confirm before marking it complete. This is lightweight self-verification (e.g., "existing tests still pass", "new function handles edge case X") — the dedicated verification subtask handles the thorough testing.
+The `content` field should describe the overall testing strategy: what existing tests cover the change, what new tests are needed and why, and what edge cases the tests should exercise. This gives workers context even if the test writing is part of an implementation subtask rather than a separate verification subtask.
+
+### Acceptance Criteria on Every Subtask
+
+Each implementation subtask's `detailed_instructions` should include an "Acceptance Criteria" section stating what the worker must confirm before marking it complete (e.g., "existing tests still pass", "new function handles edge case X"). This is lightweight self-verification — not a separate subtask.
 
 ## Guidelines
 

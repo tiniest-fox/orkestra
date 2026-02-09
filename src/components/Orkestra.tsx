@@ -4,7 +4,7 @@
  * Navigation state is driven by DisplayContext.
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { useFocusTaskListener } from "../hooks/useFocusTaskListener";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import {
@@ -31,7 +31,6 @@ export function Orkestra() {
   useNotificationPermission();
   useFocusTaskListener();
 
-  const displayContext = useDisplayContext();
   const {
     layout,
     showTask,
@@ -48,7 +47,7 @@ export function Orkestra() {
     selectCommit,
     deselectCommit,
     toggleGitHistory,
-  } = displayContext;
+  } = useDisplayContext();
 
   const config = useWorkflowConfig();
   const autoTaskTemplates = useAutoTaskTemplates();
@@ -73,8 +72,30 @@ export function Orkestra() {
     [archivedTasks],
   );
 
-  // Select tasks based on current view
-  const isArchiveView = layout.isArchive;
+  // Derive preset slot assignments from current layout.preset
+  // This ensures consistency even if the context's activePreset is out of sync
+  const activePreset = useMemo(() => {
+    // Import PRESETS dynamically to avoid circular dependency issues in tests
+    const presets = {
+      Board: { content: "KanbanBoard", panel: null, secondaryPanel: null },
+      Task: { content: "KanbanBoard", panel: "TaskDetail", secondaryPanel: null },
+      Subtask: { content: "KanbanBoard", panel: "TaskDetail", secondaryPanel: "SubtaskDetail" },
+      NewTask: { content: "KanbanBoard", panel: "NewTaskPanel", secondaryPanel: null },
+      TaskDiff: { content: "DiffPanel", panel: "TaskDetail", secondaryPanel: null },
+      SubtaskDiff: { content: "DiffPanel", panel: "SubtaskDetail", secondaryPanel: null },
+      GitHistory: { content: "KanbanBoard", panel: "GitHistoryPanel", secondaryPanel: null },
+      GitCommit: { content: "CommitDiffPanel", panel: "GitHistoryPanel", secondaryPanel: null },
+      Assistant: { content: "KanbanBoard", panel: "AssistantPanel", secondaryPanel: null },
+      AssistantHistory: {
+        content: "KanbanBoard",
+        panel: "AssistantPanel",
+        secondaryPanel: "SessionHistory",
+      },
+    } as const;
+    return presets[layout.preset];
+  }, [layout.preset]);
+
+  const { content, panel, secondaryPanel } = activePreset;
 
   // Look up selected task from both active and archived lists
   const currentSelectedTask: WorkflowTaskView | null = useMemo(() => {
@@ -97,49 +118,9 @@ export function Orkestra() {
     return tasks.filter((t) => t.parent_id === currentSelectedTask.id);
   }, [currentSelectedTask, tasks, archivedTasks]);
 
-  const selectedSubtaskId = layout.subtaskId;
-  const showDiff = layout.preset === "TaskDiff";
-  const showSubtaskDiff = layout.preset === "SubtaskDiff";
-  const assistantVisible = layout.preset === "Assistant" || layout.preset === "AssistantHistory";
-  const assistantHistoryVisible = layout.preset === "AssistantHistory";
-  const isCommitView = layout.preset === "GitHistory" || layout.preset === "GitCommit";
-  const selectedCommitHash = layout.commitHash;
-
-  const currentSelectedSubtask: WorkflowTaskView | null = selectedSubtaskId
-    ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
+  const currentSelectedSubtask: WorkflowTaskView | null = layout.subtaskId
+    ? (currentSubtasks.find((t) => t.id === layout.subtaskId) ?? null)
     : null;
-
-  // Sidebar visibility and content key
-  // Hide parent sidebar when subtask diff is open
-  // Also guard against null task (shouldn't happen, but prevents empty sidebar)
-  const sidebarVisible =
-    (layout.preset === "NewTask" ||
-      ((layout.preset === "Task" || layout.preset === "Subtask") &&
-        currentSelectedTask !== null)) &&
-    !showSubtaskDiff;
-  const sidebarContentKey =
-    layout.preset === "NewTask"
-      ? "new-task"
-      : layout.preset === "Task" || layout.preset === "Subtask"
-        ? layout.taskId
-        : null;
-
-  // Close detail panel when switching archive state
-  const prevIsArchiveRef = useRef(layout.isArchive);
-  useEffect(() => {
-    if (prevIsArchiveRef.current !== layout.isArchive && layout.taskId) {
-      closeFocus();
-    }
-    prevIsArchiveRef.current = layout.isArchive;
-  }, [layout.isArchive, layout.taskId, closeFocus]);
-
-  // Subtask panel visibility
-  const subtaskVisible = !!currentSelectedSubtask;
-  const subtaskContentKey = currentSelectedSubtask?.id ?? null;
-
-  // Diff panel visibility
-  const diffVisible = showDiff && !!currentSelectedTask;
-  const subtaskDiffVisible = showSubtaskDiff && !!currentSelectedSubtask;
 
   const handleSelectTask = (task: WorkflowTask) => {
     showTask(task.id);
@@ -153,7 +134,7 @@ export function Orkestra() {
 
   const handleCloseSubtask = () => {
     // When closing subtask, also close its diff if open
-    if (showSubtaskDiff) {
+    if (layout.preset === "SubtaskDiff") {
       closeDiff();
     }
     closeSubtask();
@@ -188,49 +169,17 @@ export function Orkestra() {
     );
   };
 
-  // Render sidebar content based on preset
-  const renderSidebarContent = () => {
-    if (layout.preset === "NewTask") {
-      return <NewTaskPanel onClose={closeFocus} onSubmit={handleTaskCreated} />;
-    }
-    if (currentSelectedTask) {
-      if (isArchiveView) {
-        // Read-only archive view
-        return (
-          <ArchiveTaskDetailView
-            key={currentSelectedTask.id}
-            task={currentSelectedTask}
-            onClose={closeFocus}
-            subtasks={currentSubtasks}
-            selectedSubtaskId={selectedSubtaskId ?? undefined}
-            onSelectSubtask={handleSelectSubtask}
-          />
-        );
-      } else {
-        // Active task view with actions
-        return (
-          <TaskDetailSidebar
-            key={currentSelectedTask.id}
-            task={currentSelectedTask}
-            onClose={closeFocus}
-            onDelete={() => handleDeleteTask(currentSelectedTask.id)}
-            subtasks={currentSubtasks}
-            selectedSubtaskId={selectedSubtaskId ?? undefined}
-            onSelectSubtask={handleSelectSubtask}
-          />
-        );
-      }
-    }
-    return null;
-  };
-
   return (
     <div className="w-screen h-screen bg-stone-100 dark:bg-stone-950 flex flex-col items-stretch p-4 gap-4 overflow-hidden">
       <div className="flex items-center justify-between px-2 flex-shrink-0 overflow-hidden">
         <div className="flex items-center gap-4">
           <Panel.Title>Orkestra</Panel.Title>
           <Button
-            variant={assistantVisible ? "primary" : "secondary"}
+            variant={
+              layout.preset === "Assistant" || layout.preset === "AssistantHistory"
+                ? "primary"
+                : "secondary"
+            }
             size="sm"
             onClick={toggleAssistant}
           >
@@ -276,15 +225,15 @@ export function Orkestra() {
       )}
 
       <PanelLayout className="flex-1">
-        {/* Assistant session history (LEFT side, leftmost) */}
+        {/* LEFT secondaryPanel slot — only SessionHistory goes here */}
         <Slot
-          id="assistant-history"
+          id="left-secondary"
           type="fixed"
           size={320}
-          visible={assistantHistoryVisible}
+          visible={secondaryPanel === "SessionHistory"}
           plain
         >
-          {assistantHistoryVisible && (
+          {secondaryPanel === "SessionHistory" && (
             <SessionHistory
               sessions={sessions}
               activeSessionId={activeSession?.id ?? null}
@@ -297,77 +246,101 @@ export function Orkestra() {
           )}
         </Slot>
 
-        {/* Assistant panel (LEFT side) */}
-        <Slot id="assistant" type="fixed" size={480} visible={assistantVisible} plain>
-          {assistantVisible && (
+        {/* LEFT panel slot — AssistantPanel, GitHistoryPanel */}
+        <Slot
+          id="left-panel"
+          type="fixed"
+          size={panel === "GitHistoryPanel" ? 360 : 480}
+          visible={panel === "AssistantPanel" || panel === "GitHistoryPanel"}
+          plain
+        >
+          {panel === "AssistantPanel" && (
             <AssistantPanel onClose={toggleAssistant} onToggleHistory={toggleAssistantHistory} />
           )}
-        </Slot>
-
-        {/* Commit history list (fixed width, visible in commit view) */}
-        <Slot id="commit-list" type="fixed" size={360} visible={isCommitView}>
-          <CommitHistoryPanel
-            selectedCommit={selectedCommitHash ?? undefined}
-            onSelectCommit={selectCommit}
-            onClose={toggleGitHistory}
-          />
-        </Slot>
-
-        {/* Commit diff (grow, visible when a commit is selected) */}
-        <Slot id="commit-diff" type="grow" visible={isCommitView && !!selectedCommitHash}>
-          {selectedCommitHash && (
-            <CommitDiffPanel commitHash={selectedCommitHash} onClose={deselectCommit} />
-          )}
-        </Slot>
-
-        {/* Main content: KanbanBoard or ArchivedListView (hides when diff or subtask diff is shown) */}
-        {/* Note: When visible=false, the ternary content below is not rendered. The logic must ensure
-             the board is completely hidden when it shouldn't be shown, not just when specific conditions
-             are met. Partial visibility conditions (like "hide only when X is selected") can cause the
-             wrong content to render when the slot becomes visible again. */}
-        <Slot
-          id="board"
-          type="grow"
-          visible={!showDiff && !showSubtaskDiff && !loading && !isCommitView}
-        >
-          {layout.isArchive ? (
-            <ArchivedListView
-              tasks={archivedTopLevelTasks}
-              selectedTaskId={currentSelectedTask?.id}
-              onSelectTask={handleSelectTask}
-            />
-          ) : (
-            <KanbanBoard
-              config={config}
-              tasks={activeTasks}
-              selectedTaskId={currentSelectedTask?.id}
-              onSelectTask={handleSelectTask}
+          {panel === "GitHistoryPanel" && (
+            <CommitHistoryPanel
+              selectedCommit={layout.commitHash ?? undefined}
+              onSelectCommit={selectCommit}
+              onClose={toggleGitHistory}
             />
           )}
         </Slot>
 
-        {/* Sidebar: NewTaskPanel or TaskDetailSidebar */}
-        <Slot
-          id="sidebar"
-          type="fixed"
-          size={480}
-          visible={sidebarVisible}
-          contentKey={sidebarContentKey}
-          plain
-        >
-          {sidebarVisible && renderSidebarContent()}
+        {/* CONTENT slot — main grow area */}
+        <Slot id="content" type="grow" visible={!loading}>
+          {content === "KanbanBoard" &&
+            (layout.isArchive ? (
+              <ArchivedListView
+                tasks={archivedTopLevelTasks}
+                selectedTaskId={currentSelectedTask?.id}
+                onSelectTask={handleSelectTask}
+              />
+            ) : (
+              <KanbanBoard
+                config={config}
+                tasks={activeTasks}
+                selectedTaskId={currentSelectedTask?.id}
+                onSelectTask={handleSelectTask}
+              />
+            ))}
+          {content === "DiffPanel" && layout.taskId && (
+            <DiffPanel
+              taskId={
+                layout.subtaskId && layout.preset === "SubtaskDiff"
+                  ? layout.subtaskId
+                  : layout.taskId
+              }
+              onClose={closeDiff}
+            />
+          )}
+          {content === "CommitDiffPanel" && layout.commitHash && (
+            <CommitDiffPanel commitHash={layout.commitHash} onClose={deselectCommit} />
+          )}
         </Slot>
 
-        {/* Subtask detail panel */}
+        {/* RIGHT panel slot — TaskDetail, SubtaskDetail, NewTaskPanel */}
         <Slot
-          id="subtask"
+          id="right-panel"
           type="fixed"
           size={480}
-          visible={subtaskVisible}
-          contentKey={subtaskContentKey}
+          visible={panel === "TaskDetail" || panel === "NewTaskPanel" || panel === "SubtaskDetail"}
+          contentKey={
+            panel === "NewTaskPanel"
+              ? "new-task"
+              : panel === "TaskDetail"
+                ? layout.taskId
+                : panel === "SubtaskDetail"
+                  ? layout.subtaskId
+                  : null
+          }
           plain
         >
-          {subtaskVisible && currentSelectedSubtask && (
+          {panel === "NewTaskPanel" && (
+            <NewTaskPanel onClose={closeFocus} onSubmit={handleTaskCreated} />
+          )}
+          {panel === "TaskDetail" &&
+            currentSelectedTask &&
+            (layout.isArchive ? (
+              <ArchiveTaskDetailView
+                key={currentSelectedTask.id}
+                task={currentSelectedTask}
+                onClose={closeFocus}
+                subtasks={currentSubtasks}
+                selectedSubtaskId={layout.subtaskId ?? undefined}
+                onSelectSubtask={handleSelectSubtask}
+              />
+            ) : (
+              <TaskDetailSidebar
+                key={currentSelectedTask.id}
+                task={currentSelectedTask}
+                onClose={closeFocus}
+                onDelete={() => handleDeleteTask(currentSelectedTask.id)}
+                subtasks={currentSubtasks}
+                selectedSubtaskId={layout.subtaskId ?? undefined}
+                onSelectSubtask={handleSelectSubtask}
+              />
+            ))}
+          {panel === "SubtaskDetail" && currentSelectedSubtask && (
             <TaskDetailSidebar
               key={currentSelectedSubtask.id}
               task={currentSelectedSubtask}
@@ -376,17 +349,21 @@ export function Orkestra() {
           )}
         </Slot>
 
-        {/* Diff panel (shows when diff is open, board hides) */}
-        <Slot id="diff" type="grow" visible={diffVisible}>
-          {diffVisible && currentSelectedTask && (
-            <DiffPanel taskId={currentSelectedTask.id} onClose={closeDiff} />
-          )}
-        </Slot>
-
-        {/* Subtask diff panel (shows when subtask diff is open, board and parent sidebar hide) */}
-        <Slot id="subtask-diff" type="grow" visible={subtaskDiffVisible}>
-          {subtaskDiffVisible && currentSelectedSubtask && (
-            <DiffPanel taskId={currentSelectedSubtask.id} onClose={closeDiff} />
+        {/* RIGHT secondaryPanel slot — SubtaskDetail (when shown as secondary) */}
+        <Slot
+          id="right-secondary"
+          type="fixed"
+          size={480}
+          visible={secondaryPanel === "SubtaskDetail"}
+          contentKey={layout.subtaskId}
+          plain
+        >
+          {secondaryPanel === "SubtaskDetail" && currentSelectedSubtask && (
+            <TaskDetailSidebar
+              key={currentSelectedSubtask.id}
+              task={currentSelectedSubtask}
+              onClose={handleCloseSubtask}
+            />
           )}
         </Slot>
       </PanelLayout>

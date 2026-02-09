@@ -239,17 +239,35 @@ fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
             }
         };
 
+    // Create StageExecutionService externally so we can share it with ProjectState
+    let iteration_service = {
+        let api_lock = api.lock().unwrap();
+        api_lock.iteration_service().clone()
+    };
+
+    let stage_executor = std::sync::Arc::new(orkestra_core::workflow::StageExecutionService::new(
+        config.clone(),
+        project_root.clone(),
+        store.clone(),
+        iteration_service,
+    ));
+
+    // Store in ProjectState for interrupt/resume commands
+    if let Err(e) = registry.with_project_mut(window_label, |state| {
+        state.set_stage_executor(std::sync::Arc::clone(&stage_executor));
+        Ok(())
+    }) {
+        orkestra_debug!("orchestrator", "Failed to set stage executor: {}", e);
+        return;
+    }
+
     let app_handle = app_handle.clone();
     let window_label_owned = window_label.to_string();
     let window_label_for_log = window_label.to_string();
 
     std::thread::spawn(move || {
-        let orchestrator = orkestra_core::workflow::OrchestratorLoop::for_project(
-            api,
-            config,
-            project_root,
-            store,
-        );
+        // Create orchestrator with the shared executor
+        let orchestrator = orkestra_core::workflow::OrchestratorLoop::new(api, stage_executor);
 
         // Share stop flag with orchestrator
         let orch_stop = orchestrator.stop_flag();

@@ -439,6 +439,8 @@ pub fn run() {
             commands::workflow_integrate_task,
             commands::workflow_retry,
             commands::workflow_set_auto_mode,
+            commands::workflow_interrupt,
+            commands::workflow_resume,
             commands::workflow_get_config,
             commands::workflow_get_auto_task_templates,
             commands::workflow_get_iterations,

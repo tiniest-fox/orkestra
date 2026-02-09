@@ -102,3 +102,37 @@ pub fn workflow_set_auto_mode(
             .map_err(Into::into)
     })
 }
+
+/// Interrupt a running agent execution.
+///
+/// Kills the agent process immediately and transitions to Interrupted phase.
+#[tauri::command]
+pub fn workflow_interrupt(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Task, TauriError> {
+    registry.with_project(window.label(), |state| {
+        // Kill the agent process first (before state transition)
+        let stage_executor = state.stage_executor()?;
+        stage_executor.kill_active_execution(&task_id);
+
+        // Then transition state
+        state.api()?.interrupt(&task_id).map_err(Into::into)
+    })
+}
+
+/// Resume an interrupted task with an optional message.
+///
+/// Creates a new iteration and sets the task to Idle for the orchestrator.
+#[tauri::command]
+pub fn workflow_resume(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    message: Option<String>,
+) -> Result<Task, TauriError> {
+    registry.with_project(window.label(), |state| {
+        state.api()?.resume(&task_id, message).map_err(Into::into)
+    })
+}

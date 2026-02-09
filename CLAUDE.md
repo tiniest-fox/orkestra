@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Development Philosophy
 
-This project is in early development. Prioritize getting things working over backwards compatibility or data consistency. Feel free to make breaking changes to data formats, APIs, or schemas as needed.
+This project has no external users yet. Don't add backwards-compatibility shims or deprecation paths — just make the breaking change directly. Database schema changes still go through migrations (so local databases don't break), but don't worry about migrating existing data gracefully. Code quality and architectural rigor still matter; it's only the external compatibility burden that doesn't.
 
 ## Architectural Principles
 

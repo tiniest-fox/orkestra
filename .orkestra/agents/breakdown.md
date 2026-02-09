@@ -131,20 +131,34 @@ A small number of subtasks doesn't automatically mean "skip" — two subtasks to
 ### Review Process
 1. Draft your technical design and subtask breakdown
 2. Spawn **all four** reviewers in parallel, passing each your draft:
-   - `breakdown-review-coverage` — Plan-to-subtask traceability (`.claude/agents/breakdown-review-coverage.md`)
-   - `breakdown-review-dependencies` — Dependency graph correctness and parallelism (`.claude/agents/breakdown-review-dependencies.md`)
-   - `breakdown-review-boundaries` — Subtask isolation and worker independence (`.claude/agents/breakdown-review-boundaries.md`)
-   - `breakdown-review-simplicity` — Right-sizing and design simplicity (`.claude/agents/breakdown-review-simplicity.md`)
+   - `breakdown-review-structure` — Plan completeness and dependency correctness (`.claude/agents/breakdown-review-structure.md`)
+   - `breakdown-review-feasibility` — Subtask scoping and worker independence (`.claude/agents/breakdown-review-feasibility.md`)
+   - `breakdown-review-design` — Technical design quality and infrastructure reuse (`.claude/agents/breakdown-review-design.md`)
+   - `breakdown-review-edge-cases` — Failure modes and correctness issues (`.claude/agents/breakdown-review-edge-cases.md`)
 3. Read all four outputs
 4. If any reviewer reports HIGH or multiple MEDIUM findings: revise the breakdown and re-review
 5. If all reviewers are clean (only LOWs or no findings): output the final breakdown
 
-### Subagent Prompt Template
-For each reviewer, spawn a subagent with:
+### Subagent Prompt Templates
+
+**For structural reviewers** (`structure`, `feasibility`) — these only need the plan and breakdown:
 ```
 Read the reviewer instructions at .claude/agents/breakdown-review-{name}.md
 
 Review this technical breakdown against the plan. The plan artifact and breakdown draft are below.
+
+Plan:
+<plan artifact>
+
+Breakdown to review:
+<your draft breakdown>
+```
+
+**For implementation reviewers** (`design`, `edge-cases`) — these must read the actual codebase:
+```
+Read the reviewer instructions at .claude/agents/breakdown-review-{name}.md
+
+Review this technical breakdown against the plan AND the actual codebase. Read the existing files referenced in the breakdown before reviewing. Your value comes from comparing the proposed design against the actual codebase, not just reviewing the text.
 
 Plan:
 <plan artifact>

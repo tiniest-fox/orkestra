@@ -302,6 +302,10 @@ pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
     // The PID is the process group ID since we spawn with process_group(0)
     let pgid = pid as i32;
 
+    // Continue stopped processes first — SIGTERM is queued but not delivered to
+    // stopped processes (SIGTTIN/SIGTSTP). Without SIGCONT, kill is silently ignored.
+    unsafe { libc::kill(-pgid, libc::SIGCONT) };
+
     // First try SIGTERM for graceful shutdown of the main process group
     let result = unsafe { libc::kill(-pgid, libc::SIGTERM) };
 
@@ -317,8 +321,11 @@ pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
     // Now kill any descendants that were in different process groups
     for desc_pid in descendants {
         let desc_pgid = desc_pid as i32;
+        // Continue stopped descendants before terminating
+        unsafe { libc::kill(-desc_pgid, libc::SIGCONT) };
         let result = unsafe { libc::kill(-desc_pgid, libc::SIGTERM) };
         if result != 0 {
+            unsafe { libc::kill(desc_pgid, libc::SIGCONT) };
             unsafe { libc::kill(desc_pgid, libc::SIGTERM) };
         }
     }

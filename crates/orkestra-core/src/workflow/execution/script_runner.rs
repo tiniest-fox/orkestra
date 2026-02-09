@@ -133,6 +133,7 @@ impl ScriptHandle {
         let mut cmd = Command::new("sh");
         cmd.args(["-c", command])
             .current_dir(working_dir)
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 

@@ -109,6 +109,7 @@ export function TaskCard({
   const hasUnresolvedDeps = isSubtask && !!dependencyNames && dependencyNames.length > 0;
   const collapseDone = isSubtask && (isDone || derived.is_archived);
 
+  const isAwaitingSetup = task.phase === "awaiting_setup";
   const isSettingUp = task.phase === "setting_up";
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 
@@ -157,6 +158,11 @@ export function TaskCard({
           {getDisplayTitle(task)}
         </h3>
         <div className="flex items-center gap-1.5">
+          {isAwaitingSetup && (
+            <span className="flex-shrink-0 p-1.5">
+              <GitBranch className="w-4 h-4 text-stone-400 dark:text-stone-500" />
+            </span>
+          )}
           {isSettingUp && (
             <span className="flex-shrink-0 p-1.5">
               <GitBranch className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />

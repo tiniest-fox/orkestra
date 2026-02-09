@@ -146,6 +146,7 @@ export type WorkflowTaskStatus =
  * Uses snake_case to match Rust's serde serialization.
  */
 export type WorkflowTaskPhase =
+  | "awaiting_setup"
   | "setting_up"
   | "idle"
   | "agent_working"

@@ -105,7 +105,9 @@ impl StageSession {
 
     /// Check if this session has a Claude session ID (can be resumed).
     pub fn can_resume(&self) -> bool {
-        self.claude_session_id.is_some() && self.session_state == SessionState::Active
+        self.claude_session_id.is_some()
+            && self.has_activity
+            && self.session_state == SessionState::Active
     }
 
     /// Check if an agent is currently running.
@@ -196,7 +198,8 @@ mod tests {
         // has_activity is still false — spawning alone doesn't set it
         assert!(!session.has_activity);
         assert!(session.has_agent());
-        assert!(session.can_resume());
+        // can_resume requires has_activity now
+        assert!(!session.can_resume());
     }
 
     #[test]

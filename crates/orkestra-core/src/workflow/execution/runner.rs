@@ -791,6 +791,11 @@ pub mod mock {
 
             // Send completion immediately — no thread, no delay.
             // Tests care about the flow through the system, not simulated latency.
+            // IMPORTANT: Send at least one log event first so has_activity is set to true.
+            let _ = tx.send(RunEvent::LogLine(crate::workflow::domain::LogEntry::Text {
+                content: "Mock agent output".to_string(),
+            }));
+
             if let Some(output) = output {
                 let _ = tx.send(RunEvent::Completed(Ok(output)));
             } else {

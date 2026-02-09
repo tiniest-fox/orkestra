@@ -55,6 +55,8 @@ struct ActiveAgent {
     spawned_at: Instant,
     /// Whether the agent has ever produced any output.
     has_activity: bool,
+    /// Gates database write for activity to once per lifecycle.
+    activity_persisted: bool,
     /// Session ID extracted from the stream (for providers like `OpenCode` that
     /// generate their own session IDs). Set once, consumed by `take_extracted_session_id`.
     extracted_session_id: Option<String>,
@@ -67,6 +69,7 @@ impl ActiveAgent {
             stage_session_id,
             spawned_at: Instant::now(),
             has_activity: false,
+            activity_persisted: false,
             extracted_session_id: None,
         }
     }
@@ -481,6 +484,8 @@ impl StageExecutionService {
         let mut log_batches: Vec<(String, String, String, Vec<LogEntry>)> = Vec::new();
         // Collect extracted session IDs to persist outside the lock.
         let mut session_id_updates: Vec<(String, String, String)> = Vec::new(); // (task_id, stage, session_id)
+                                                                                // Collect activity flags to persist outside the lock.
+        let mut activity_flags: Vec<(String, String)> = Vec::new(); // (task_id, stage)
 
         if let Ok(mut agents) = self.active_agents.lock() {
             for (task_id, agent) in agents.iter_mut() {
@@ -531,6 +536,12 @@ impl StageExecutionService {
                 if let Some(sid) = agent.take_extracted_session_id() {
                     session_id_updates.push((task_id.clone(), agent.stage().to_string(), sid));
                 }
+
+                // Collect agents that have new activity to persist
+                if agent.has_activity && !agent.activity_persisted {
+                    activity_flags.push((task_id.clone(), agent.stage().to_string()));
+                    agent.activity_persisted = true;
+                }
             }
 
             for task_id in to_remove {
@@ -546,6 +557,9 @@ impl StageExecutionService {
         // Persist provider-generated session IDs (e.g. OpenCode's ses_...) so that
         // future resume attempts use the correct value.
         self.persist_extracted_session_ids(session_id_updates);
+
+        // Persist activity flags for agents that produced output
+        self.persist_activity_flags(activity_flags);
 
         completed
     }
@@ -578,6 +592,53 @@ impl StageExecutionService {
                     crate::orkestra_debug!(
                         "stage_execution",
                         "No stage session found for {}/{} to save extracted session ID",
+                        task_id,
+                        stage
+                    );
+                }
+                Err(e) => {
+                    crate::orkestra_debug!(
+                        "stage_execution",
+                        "Failed to load stage session for {}/{}: {}",
+                        task_id,
+                        stage,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    /// Persist activity flags for agents that have produced output.
+    ///
+    /// Only persists once per agent lifecycle (gated by `activity_persisted`).
+    /// Uses the same load-modify-save pattern as `persist_extracted_session_ids`.
+    fn persist_activity_flags(&self, flags: Vec<(String, String)>) {
+        for (task_id, stage) in flags {
+            match self.store.get_stage_session(&task_id, &stage) {
+                Ok(Some(mut session)) => {
+                    session.has_activity = true;
+                    if let Err(e) = self.store.save_stage_session(&session) {
+                        crate::orkestra_debug!(
+                            "stage_execution",
+                            "Failed to persist activity flag for {}/{}: {}",
+                            task_id,
+                            stage,
+                            e
+                        );
+                    } else {
+                        crate::orkestra_debug!(
+                            "stage_execution",
+                            "Persisted activity flag for {}/{}",
+                            task_id,
+                            stage
+                        );
+                    }
+                }
+                Ok(None) => {
+                    crate::orkestra_debug!(
+                        "stage_execution",
+                        "No stage session found for {}/{} to persist activity flag",
                         task_id,
                         stage
                     );

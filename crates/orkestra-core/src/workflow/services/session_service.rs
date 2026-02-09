@@ -34,8 +34,8 @@ pub struct SessionSpawnContext {
     /// The session ID, if available. `None` for providers that generate their own.
     pub session_id: Option<String>,
     /// Whether this is a resume (use `--resume`) or first spawn (use `--session-id`).
-    /// Based on `spawn_count > 0` — but forced to `false` when `session_id` is `None`
-    /// (can't resume without a session ID).
+    /// Based on `has_activity` — only resume if the agent produced output in a prior spawn.
+    /// Forced to `false` when `session_id` is `None` (can't resume without a session ID).
     pub is_resume: bool,
     /// Whether this is an untriggered stage re-entry (e.g., review running again after
     /// work→checks→review cycle). Detected when resuming but the active iteration has
@@ -117,17 +117,18 @@ impl SessionService {
         let stage_session_id = session.id.clone();
 
         // Compute resume/reentry BEFORE saving the session or linking the iteration.
-        // is_resume: true if we have a session ID AND the agent was previously spawned.
-        let is_resume = session.claude_session_id.is_some() && session.spawn_count > 0;
+        // is_resume: true if we have a session ID AND the agent produced output.
+        let is_resume = session.claude_session_id.is_some() && session.has_activity;
 
         orkestra_debug!(
             "session",
-            "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}",
+            "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}, has_activity={}",
             task_id,
             stage,
             session.claude_session_id,
             session.session_state,
-            session.spawn_count
+            session.spawn_count,
+            session.has_activity
         );
 
         self.store.save_stage_session(&session)?;
@@ -371,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_spawn_context_with_resume() {
-        let (service, _store) = create_service();
+        let (service, store) = create_service();
 
         // Start agent
         let first_ctx = service
@@ -384,12 +385,20 @@ mod tests {
         // Agent exits (spawn_count was already incremented in on_agent_spawned)
         service.on_agent_exited("task-1", "planning").unwrap();
 
+        // Simulate agent activity (normally done by persist_activity_flags in poll_agents)
+        let mut session = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
+        session.has_activity = true;
+        store.save_stage_session(&session).unwrap();
+
         // Next spawn — existing session keeps its ID (initial_session_id ignored)
         let ctx = service
             .on_spawn_starting("task-1", "planning", Some("ignored-uuid".into()))
             .unwrap();
         assert_eq!(ctx.session_id, first_ctx.session_id); // Same session ID from first creation
-        assert!(ctx.is_resume); // spawn_count > 0
+        assert!(ctx.is_resume); // has_activity is now true
     }
 
     #[test]
@@ -645,6 +654,14 @@ mod tests {
         service.on_agent_spawned("task-1", "review", 12345).unwrap();
         service.on_agent_exited("task-1", "review").unwrap();
 
+        // Simulate agent activity (normally done by persist_activity_flags in poll_agents)
+        let mut session = store
+            .get_stage_session("task-1", "review")
+            .unwrap()
+            .unwrap();
+        session.has_activity = true;
+        store.save_stage_session(&session).unwrap();
+
         // End the first iteration (simulating stage completion)
         let mut iter = store
             .get_active_iteration("task-1", "review")
@@ -668,7 +685,7 @@ mod tests {
             .unwrap();
         assert!(
             ctx.is_resume,
-            "Should be a resume (session has prior spawns)"
+            "Should be a resume (session has prior spawns and activity)"
         );
         assert!(
             ctx.is_stage_reentry,
@@ -688,6 +705,14 @@ mod tests {
             .unwrap();
         service.on_agent_spawned("task-1", "review", 12345).unwrap();
         service.on_agent_exited("task-1", "review").unwrap();
+
+        // Simulate agent activity (normally done by persist_activity_flags in poll_agents)
+        let mut session = store
+            .get_stage_session("task-1", "review")
+            .unwrap()
+            .unwrap();
+        session.has_activity = true;
+        store.save_stage_session(&session).unwrap();
 
         // End the first iteration
         let mut iter = store
@@ -726,13 +751,21 @@ mod tests {
     fn test_reentry_not_detected_on_crash_resume() {
         // Agent was spawned but crashed — iteration still linked to session.
         // Should NOT detect re-entry (it's a crash resume).
-        let (service, _store) = create_service();
+        let (service, store) = create_service();
 
         service
             .on_spawn_starting("task-1", "review", Some("test-uuid".into()))
             .unwrap();
         service.on_agent_spawned("task-1", "review", 12345).unwrap();
         service.on_agent_exited("task-1", "review").unwrap();
+
+        // Simulate agent activity (normally done by persist_activity_flags in poll_agents)
+        let mut session = store
+            .get_stage_session("task-1", "review")
+            .unwrap()
+            .unwrap();
+        session.has_activity = true;
+        store.save_stage_session(&session).unwrap();
 
         // DON'T end iteration — it's still active and linked to the session
         // (on_spawn_starting linked it via with_stage_session_id)

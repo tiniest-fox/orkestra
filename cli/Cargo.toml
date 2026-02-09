@@ -6,6 +6,10 @@ edition = "2021"
 [lints]
 workspace = true
 
+[lib]
+name = "orkestra_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "ork"
 path = "src/main.rs"

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::fmt::Write as _;
 
 use clap::{Parser, Subcommand};
+use orkestra_cli::{get_git_state, GitState};
 use orkestra_core::{
     adapters::sqlite::DatabaseConnection,
     find_project_root,
@@ -990,73 +991,6 @@ fn print_sessions_pretty(sessions: &[StageSession]) {
     }
 }
 
-#[derive(serde::Serialize)]
-struct GitState {
-    branch_name: Option<String>,
-    worktree_path: Option<String>,
-    base_branch: String,
-    base_commit: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    head_commit: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    is_dirty: Option<bool>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    dirty_files: Vec<String>,
-}
-
-fn get_git_state(api: &WorkflowApi, id: &str) -> Result<GitState, String> {
-    let task = api
-        .get_task(id)
-        .map_err(|e| format!("Failed to get task: {e}"))?;
-
-    let mut state = GitState {
-        branch_name: task.branch_name.clone(),
-        worktree_path: task.worktree_path.clone(),
-        base_branch: task.base_branch.clone(),
-        base_commit: task.base_commit.clone(),
-        head_commit: None,
-        is_dirty: None,
-        dirty_files: Vec::new(),
-    };
-
-    // If worktree exists, get live git state
-    if let Some(ref worktree_path) = task.worktree_path {
-        if std::path::Path::new(worktree_path).exists() {
-            // Get HEAD commit
-            if let Ok(output) = std::process::Command::new("git")
-                .args(["-C", worktree_path, "rev-parse", "HEAD"])
-                .output()
-            {
-                if output.status.success() {
-                    let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    state.head_commit = Some(commit);
-                }
-            }
-
-            // Get dirty status
-            if let Ok(output) = std::process::Command::new("git")
-                .args(["-C", worktree_path, "status", "--porcelain"])
-                .output()
-            {
-                if output.status.success() {
-                    let status_output = String::from_utf8_lossy(&output.stdout);
-                    let is_clean = status_output.trim().is_empty();
-                    state.is_dirty = Some(!is_clean);
-
-                    if !is_clean {
-                        state.dirty_files = status_output
-                            .lines()
-                            .map(|line| line.trim().to_string())
-                            .collect();
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(state)
-}
-
 fn print_git_state_pretty(state: &GitState) {
     println!("Git State:");
     if let Some(branch) = &state.branch_name {
@@ -1078,6 +1012,10 @@ fn print_git_state_pretty(state: &GitState) {
         println!("  HEAD commit: {head}");
     } else {
         println!("  HEAD commit: (worktree not available)");
+    }
+
+    if let Some(error) = &state.error {
+        println!("  Error: {error}");
     }
 
     match state.is_dirty {

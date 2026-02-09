@@ -36,7 +36,7 @@ export function ReviewPanel({
 
   if (pendingRejection) {
     return (
-      <Panel accent="error" autoFill={false} padded={true} className="h-[320px] flex flex-col">
+      <Panel accent="error" autoFill={false} padded={true} className="h-[200px] flex flex-col">
         <div className="text-sm font-medium text-error-600 dark:text-error-400 mb-2">
           {titleCase(stageName)} — Rejection Verdict
         </div>
@@ -79,7 +79,7 @@ export function ReviewPanel({
   }
 
   return (
-    <Panel accent="warning" autoFill={false} padded={true} className="h-[320px] flex flex-col">
+    <Panel accent="warning" autoFill={false} padded={true} className="h-[200px] flex flex-col">
       <div className="text-sm font-medium text-warning-600 dark:text-warning-400 mb-3">
         {titleCase(stageName)} Review
       </div>

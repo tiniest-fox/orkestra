@@ -158,7 +158,7 @@ export function TaskDetailSidebar({
   const showQuestions = !showDelete && task.derived.has_questions;
   const showReview =
     !showDelete && !showQuestions && task.derived.needs_review && task.derived.current_stage;
-  const showFooter = !!(showDelete || showQuestions || showReview);
+  const showCompactFooter = !!(showDelete || showReview);
 
   return (
     <PanelLayout direction="vertical">
@@ -228,8 +228,17 @@ export function TaskDetailSidebar({
         </Panel>
       </Slot>
 
-      {/* Footer panel - fixed size for smooth animation (auto can't animate) */}
-      <Slot id="details-footer" type="fixed" size={320} visible={showFooter} plain>
+      {/* Footer panel for questions - tall slot for complex UI */}
+      <Slot id="details-footer-questions" type="fixed" size={480} visible={showQuestions} plain>
+        <QuestionFormPanel
+          questions={task.derived.pending_questions}
+          onSubmit={answerQuestions}
+          isSubmitting={isSubmitting}
+        />
+      </Slot>
+
+      {/* Footer panel for compact actions - smaller slot for review/delete */}
+      <Slot id="details-footer-compact" type="fixed" size={200} visible={showCompactFooter} plain>
         {showDelete && (
           <DeleteConfirmPanel
             onConfirm={() => {
@@ -237,14 +246,6 @@ export function TaskDetailSidebar({
               onDelete?.();
             }}
             onCancel={() => setConfirmingDelete(false)}
-          />
-        )}
-
-        {showQuestions && (
-          <QuestionFormPanel
-            questions={task.derived.pending_questions}
-            onSubmit={answerQuestions}
-            isSubmitting={isSubmitting}
           />
         )}
 

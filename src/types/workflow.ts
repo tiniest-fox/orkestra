@@ -517,6 +517,8 @@ export interface BranchList {
   branches: string[];
   /** Currently checked-out branch. */
   current: string | null;
+  /** Latest commit message (first line). */
+  latest_commit_message: string | null;
 }
 
 /**

@@ -2,7 +2,7 @@ import { useCurrentBranch } from "../hooks/useCurrentBranch";
 import { useDisplayContext } from "../providers";
 
 export function BranchIndicator() {
-  const branch = useCurrentBranch();
+  const { branch, latestCommitMessage } = useCurrentBranch();
   const { layout, toggleGitHistory } = useDisplayContext();
 
   if (!branch) return null;
@@ -17,14 +17,20 @@ export function BranchIndicator() {
     <button
       type="button"
       onClick={handleClick}
-      className={`inline-flex items-center gap-1.5 text-xs rounded px-2 py-1 transition-colors ${
+      className={`inline-flex items-center gap-1.5 text-xs rounded px-2 py-1 transition-colors overflow-hidden min-w-0 ${
         isActive
           ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
           : "text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800"
       }`}
     >
       <BranchIcon />
-      <span>{branch}</span>
+      <span className="flex-shrink-0">{branch}</span>
+      {latestCommitMessage && (
+        <>
+          <span className="text-stone-400 dark:text-stone-500 flex-shrink-0">/</span>
+          <span className="truncate min-w-0">{latestCommitMessage}</span>
+        </>
+      )}
     </button>
   );
 }

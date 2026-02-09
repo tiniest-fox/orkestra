@@ -4,8 +4,16 @@ import type { BranchList } from "../types/workflow";
 
 const POLL_INTERVAL_MS = 10_000;
 
-export function useCurrentBranch(): string | null {
-  const [branch, setBranch] = useState<string | null>(null);
+export interface BranchInfo {
+  branch: string | null;
+  latestCommitMessage: string | null;
+}
+
+export function useCurrentBranch(): BranchInfo {
+  const [branchInfo, setBranchInfo] = useState<BranchInfo>({
+    branch: null,
+    latestCommitMessage: null,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -13,7 +21,12 @@ export function useCurrentBranch(): string | null {
     const fetch = async () => {
       try {
         const result = await invoke<BranchList>("workflow_list_branches");
-        if (!cancelled) setBranch(result.current);
+        if (!cancelled) {
+          setBranchInfo({
+            branch: result.current,
+            latestCommitMessage: result.latest_commit_message,
+          });
+        }
       } catch {
         // Git not available
       }
@@ -27,5 +40,5 @@ export function useCurrentBranch(): string | null {
     };
   }, []);
 
-  return branch;
+  return branchInfo;
 }

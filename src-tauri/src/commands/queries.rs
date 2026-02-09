@@ -113,6 +113,8 @@ pub struct BranchList {
     pub branches: Vec<String>,
     /// Currently checked-out branch.
     pub current: Option<String>,
+    /// Latest commit message (first line).
+    pub latest_commit_message: Option<String>,
 }
 
 /// List available git branches.
@@ -130,12 +132,19 @@ pub fn workflow_list_branches(
             return Ok(BranchList {
                 branches: vec![],
                 current: None,
+                latest_commit_message: None,
             });
         };
+
+        let latest_commit_message = git
+            .commit_log(1)
+            .ok()
+            .and_then(|commits| commits.first().map(|c| c.message.clone()));
 
         Ok(BranchList {
             branches: git.list_branches().unwrap_or_default(),
             current: git.current_branch().ok(),
+            latest_commit_message,
         })
     })
 }

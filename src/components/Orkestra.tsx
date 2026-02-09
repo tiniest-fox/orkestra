@@ -18,7 +18,9 @@ import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/
 import { ArchivedListView } from "./ArchivedListView";
 import { ArchiveTaskDetailView } from "./ArchiveTaskDetailView";
 import { AssistantPanel, SessionHistory } from "./Assistant";
+import { BranchIndicator } from "./BranchIndicator";
 import { CommandPalette } from "./CommandPalette";
+import { CommitDiffPanel, CommitHistoryPanel } from "./CommitHistory";
 import { DiffPanel } from "./Diff";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
@@ -46,6 +48,9 @@ export function Orkestra() {
     closeAssistantHistory,
     switchToActive,
     switchToArchived,
+    selectCommit,
+    deselectCommit,
+    exitCommits,
   } = displayContext;
 
   const config = useWorkflowConfig();
@@ -100,6 +105,8 @@ export function Orkestra() {
   const showSubtaskDiff = focus.type === "task" && focus.subtaskDiff === true;
   const assistantVisible = focus.type === "assistant";
   const assistantHistoryVisible = focus.type === "assistant" && focus.showHistory === true;
+  const isCommitView = view.type === "commits";
+  const selectedCommitHash = view.type === "commits" ? view.selectedCommit : undefined;
 
   const currentSelectedSubtask: WorkflowTaskView | null = selectedSubtaskId
     ? (currentSubtasks.find((t) => t.id === selectedSubtaskId) ?? null)
@@ -242,6 +249,7 @@ export function Orkestra() {
               Archived
             </Button>
           </div>
+          <BranchIndicator />
         </div>
         <div className="flex items-center gap-2">
           {autoTaskTemplates.map((template) => (
@@ -294,7 +302,11 @@ export function Orkestra() {
         </Slot>
 
         {/* Main content: KanbanBoard or ArchivedListView (hides when diff or subtask diff is shown) */}
-        <Slot id="board" type="grow" visible={!showDiff && !showSubtaskDiff && !loading}>
+        <Slot
+          id="board"
+          type="grow"
+          visible={!showDiff && !showSubtaskDiff && !loading && !isCommitView}
+        >
           {view.type === "board" ? (
             <KanbanBoard
               config={config}
@@ -308,6 +320,22 @@ export function Orkestra() {
               selectedTaskId={currentSelectedTask?.id}
               onSelectTask={handleSelectTask}
             />
+          )}
+        </Slot>
+
+        {/* Commit history list (fixed width, visible in commit view) */}
+        <Slot id="commit-list" type="fixed" size={360} visible={isCommitView}>
+          <CommitHistoryPanel
+            selectedCommit={selectedCommitHash}
+            onSelectCommit={selectCommit}
+            onClose={exitCommits}
+          />
+        </Slot>
+
+        {/* Commit diff (grow, visible when a commit is selected) */}
+        <Slot id="commit-diff" type="grow" visible={isCommitView && !!selectedCommitHash}>
+          {selectedCommitHash && (
+            <CommitDiffPanel commitHash={selectedCommitHash} onClose={deselectCommit} />
           )}
         </Slot>
 

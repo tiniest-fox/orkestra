@@ -519,6 +519,22 @@ export interface BranchList {
   current: string | null;
 }
 
+/**
+ * Commit metadata returned by workflow_get_commit_log.
+ */
+export interface CommitInfo {
+  /** Short commit hash (7 chars). */
+  hash: string;
+  /** First line of commit message. */
+  message: string;
+  /** Author name. */
+  author: string;
+  /** ISO 8601 timestamp. */
+  timestamp: string;
+  /** Number of files changed in this commit. */
+  file_count: number;
+}
+
 // =============================================================================
 // Assistant Sessions
 // =============================================================================

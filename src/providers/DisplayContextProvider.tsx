@@ -16,7 +16,10 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo, useSta
 // =============================================================================
 
 /** What occupies the main content area. */
-export type View = { type: "board" } | { type: "archive" };
+export type View =
+  | { type: "board" }
+  | { type: "archive" }
+  | { type: "commits"; selectedCommit?: string };
 
 /** What's open in the side panel. */
 export type Focus =
@@ -76,6 +79,18 @@ export interface DisplayContextValue {
 
   /** Smart navigation — resolves parent/subtask and merges into current focus. */
   navigateToTask: (taskId: string, parentId?: string) => void;
+
+  /** Switch to commit history view. */
+  switchToCommits: () => void;
+
+  /** Select a commit to view its diff. */
+  selectCommit: (hash: string) => void;
+
+  /** Deselect the current commit (back to commit list only). */
+  deselectCommit: () => void;
+
+  /** Exit commit history, return to board. */
+  exitCommits: () => void;
 }
 
 // =============================================================================
@@ -227,6 +242,22 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
     });
   }, []);
 
+  const switchToCommits = useCallback(() => {
+    setView({ type: "commits" });
+  }, []);
+
+  const selectCommit = useCallback((hash: string) => {
+    setView({ type: "commits", selectedCommit: hash });
+  }, []);
+
+  const deselectCommit = useCallback(() => {
+    setView({ type: "commits" });
+  }, []);
+
+  const exitCommits = useCallback(() => {
+    setView({ type: "board" });
+  }, []);
+
   const value = useMemo<DisplayContextValue>(
     () => ({
       view,
@@ -247,6 +278,10 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       switchToActive,
       switchToArchived,
       navigateToTask,
+      switchToCommits,
+      selectCommit,
+      deselectCommit,
+      exitCommits,
     }),
     [
       view,
@@ -267,6 +302,10 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       switchToActive,
       switchToArchived,
       navigateToTask,
+      switchToCommits,
+      selectCommit,
+      deselectCommit,
+      exitCommits,
     ],
   );
 

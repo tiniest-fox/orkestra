@@ -154,6 +154,14 @@ describe("Orkestra - View Toggle", () => {
       switchToArchived: vi.fn(() => {
         displayContextValue.view = { type: "archive" };
       }),
+      switchToCommits: vi.fn(() => {
+        displayContextValue.view = { type: "commits" };
+      }),
+      selectCommit: vi.fn(),
+      deselectCommit: vi.fn(),
+      exitCommits: vi.fn(() => {
+        displayContextValue.view = { type: "board" };
+      }),
     };
 
     mockUseDisplayContext.mockImplementation(() => displayContextValue);

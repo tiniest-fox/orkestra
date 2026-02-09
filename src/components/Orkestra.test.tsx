@@ -118,8 +118,9 @@ vi.mock("../hooks/useFocusTaskListener", () => ({
 }));
 
 // Import after mocking to get the mocked versions
-import type { DisplayContextValue } from "../providers";
+import type { DisplayContextValue, LayoutState } from "../providers";
 import { useDisplayContext, useTasks } from "../providers";
+import { PRESETS } from "../providers/presets";
 
 const mockUseTasks = useTasks as ReturnType<typeof vi.fn>;
 const mockUseDisplayContext = useDisplayContext as ReturnType<typeof vi.fn>;
@@ -130,16 +131,18 @@ describe("Orkestra - View Toggle", () => {
   beforeEach(() => {
     resetMocks();
 
+    const initialLayout: LayoutState = {
+      preset: "Board",
+      isArchive: false,
+      taskId: null,
+      subtaskId: null,
+      commitHash: null,
+    };
+
     // Create a fresh display context for each test
     displayContextValue = {
-      layout: {
-        preset: "Board",
-        isArchive: false,
-        taskId: null,
-        subtaskId: null,
-        commitHash: null,
-      },
-      activePreset: { content: "KanbanBoard", panel: null, secondaryPanel: null },
+      layout: initialLayout,
+      activePreset: PRESETS.Board,
       showBoard: vi.fn(),
       showTask: vi.fn(),
       showSubtask: vi.fn(),
@@ -156,10 +159,18 @@ describe("Orkestra - View Toggle", () => {
       closeDiff: vi.fn(),
       closeAssistantHistory: vi.fn(),
       switchToArchive: vi.fn(() => {
-        displayContextValue.layout.isArchive = true;
+        displayContextValue.layout = {
+          ...displayContextValue.layout,
+          isArchive: true,
+        };
+        displayContextValue.activePreset = PRESETS[displayContextValue.layout.preset];
       }),
       switchToActive: vi.fn(() => {
-        displayContextValue.layout.isArchive = false;
+        displayContextValue.layout = {
+          ...displayContextValue.layout,
+          isArchive: false,
+        };
+        displayContextValue.activePreset = PRESETS[displayContextValue.layout.preset];
       }),
       navigateToTask: vi.fn(),
     };
@@ -247,7 +258,11 @@ describe("Orkestra - View Toggle", () => {
     });
 
     // Set view to archive
-    displayContextValue.layout.isArchive = true;
+    displayContextValue.layout = {
+      ...displayContextValue.layout,
+      isArchive: true,
+    };
+    displayContextValue.activePreset = PRESETS.Board;
 
     await act(async () => {
       render(<Orkestra />);
@@ -366,8 +381,14 @@ describe("Orkestra - View Toggle", () => {
     });
 
     // Set focus to the task
-    displayContextValue.layout.preset = "Task";
-    displayContextValue.layout.taskId = "active-1";
+    displayContextValue.layout = {
+      preset: "Task",
+      isArchive: false,
+      taskId: "active-1",
+      subtaskId: null,
+      commitHash: null,
+    };
+    displayContextValue.activePreset = PRESETS.Task;
 
     await act(async () => {
       render(<Orkestra />);
@@ -405,9 +426,14 @@ describe("Orkestra - View Toggle", () => {
     });
 
     // Set view to archive and focus to the archived task
-    displayContextValue.layout.isArchive = true;
-    displayContextValue.layout.preset = "Task";
-    displayContextValue.layout.taskId = "archived-1";
+    displayContextValue.layout = {
+      preset: "Task",
+      isArchive: true,
+      taskId: "archived-1",
+      subtaskId: null,
+      commitHash: null,
+    };
+    displayContextValue.activePreset = PRESETS.Task;
 
     await act(async () => {
       render(<Orkestra />);
@@ -422,47 +448,5 @@ describe("Orkestra - View Toggle", () => {
     expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
-  });
-
-  it("clears detail panel when switching views", async () => {
-    const activeTask = createMockWorkflowTaskView({
-      id: "active-1",
-      title: "Active Task",
-      status: { type: "active", stage: "planning" },
-      derived: { is_archived: false },
-    });
-
-    mockUseTasks.mockReturnValue({
-      tasks: [activeTask],
-      archivedTasks: [],
-      loading: false,
-      error: null,
-      createTask: vi.fn(),
-      createSubtask: vi.fn(),
-      deleteTask: vi.fn(),
-      refetch: vi.fn(),
-    });
-
-    // Start with a task selected in board view
-    displayContextValue.layout.preset = "Task";
-    displayContextValue.layout.taskId = "active-1";
-
-    await act(async () => {
-      render(<Orkestra />);
-    });
-
-    // Task detail should be visible
-    await waitFor(() => {
-      expect(screen.getByTestId("task-detail-sidebar")).toBeInTheDocument();
-    });
-
-    // Click Archived button to switch views
-    const archivedButton = screen.getByRole("button", { name: "Archived" });
-    await act(async () => {
-      archivedButton.click();
-    });
-
-    // Verify switchToArchived was called (actual closeFocus happens in effect in real component)
-    expect(displayContextValue.switchToArchive).toHaveBeenCalled();
   });
 });

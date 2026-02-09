@@ -174,7 +174,22 @@ impl AgentExecutionService {
             } else {
                 trigger_to_resume_type(trigger)
             };
-            build_resume_prompt(stage, &resume_type, &task.base_branch)
+
+            // Gather artifacts for this stage (respecting flow overrides)
+            let input_names = self
+                .workflow
+                .effective_inputs(stage, task.flow.as_deref())
+                .unwrap_or_default();
+            let artifacts: Vec<(String, String)> = input_names
+                .iter()
+                .filter_map(|name| {
+                    task.artifacts
+                        .get(name)
+                        .map(|a| (a.name.clone(), a.content.clone()))
+                })
+                .collect();
+
+            build_resume_prompt(stage, &resume_type, &task.base_branch, &artifacts)
                 .map_err(ExecutionError::from)
         } else {
             // Extract feedback from trigger if present (fresh spawn after session reset)

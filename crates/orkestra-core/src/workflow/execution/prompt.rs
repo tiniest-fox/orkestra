@@ -739,6 +739,7 @@ pub fn build_resume_prompt(
     stage: &str,
     resume_type: &ResumeType,
     base_branch: &str,
+    artifacts: &[(String, String)],
 ) -> Result<String, AgentConfigError> {
     let (template, mut context) = match &resume_type {
         ResumeType::Continue => (RESUME_CONTINUE, serde_json::json!({})),
@@ -772,6 +773,15 @@ pub fn build_resume_prompt(
 
     // All resume templates need the stage name for the marker
     context["stage_name"] = serde_json::json!(stage);
+
+    // Inject artifacts if present
+    if !artifacts.is_empty() {
+        let artifact_values: Vec<serde_json::Value> = artifacts
+            .iter()
+            .map(|(name, content)| serde_json::json!({"name": name, "content": content}))
+            .collect();
+        context["artifacts"] = serde_json::json!(artifact_values);
+    }
 
     render_template(template, &context)
 }
@@ -1276,29 +1286,42 @@ mod tests {
 
     #[test]
     fn test_build_resume_prompt_continue() {
-        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main").unwrap();
+        let artifacts = vec![(
+            "plan".to_string(),
+            "The implementation plan content".to_string(),
+        )];
+        let prompt =
+            build_resume_prompt("work", &ResumeType::Continue, "main", &artifacts).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
+        assert!(!prompt.contains("Updated Input Artifacts"));
     }
 
     #[test]
     fn test_build_resume_prompt_feedback() {
+        let artifacts = vec![("summary".to_string(), "Work completion summary".to_string())];
         let prompt = build_resume_prompt(
             "review",
             &ResumeType::Feedback {
                 feedback: "Add more error handling".to_string(),
             },
             "main",
+            &artifacts,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:feedback>"));
         assert!(prompt.contains("Add more error handling"));
         assert!(prompt.contains("revision"));
+        assert!(!prompt.contains("Updated Input Artifacts"));
     }
 
     #[test]
     fn test_build_resume_prompt_integration() {
+        let artifacts = vec![(
+            "breakdown".to_string(),
+            "Task breakdown details".to_string(),
+        )];
         let prompt = build_resume_prompt(
             "work",
             &ResumeType::Integration {
@@ -1306,6 +1329,7 @@ mod tests {
                 conflict_files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
             },
             "feature/parent-branch",
+            &artifacts,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:integration>"));
@@ -1313,10 +1337,15 @@ mod tests {
         assert!(prompt.contains("src/main.rs"));
         assert!(prompt.contains("src/lib.rs"));
         assert!(prompt.contains("git rebase feature/parent-branch"));
+        assert!(!prompt.contains("Updated Input Artifacts"));
     }
 
     #[test]
     fn test_build_resume_prompt_answers() {
+        let artifacts = vec![(
+            "requirements".to_string(),
+            "User requirements specification".to_string(),
+        )];
         let prompt = build_resume_prompt(
             "planning",
             &ResumeType::Answers {
@@ -1332,6 +1361,7 @@ mod tests {
                 ],
             },
             "main",
+            &artifacts,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:planning:answers>"));
@@ -1339,15 +1369,38 @@ mod tests {
         assert!(prompt.contains("PostgreSQL"));
         assert!(prompt.contains("Add caching?"));
         assert!(prompt.contains("Yes, use Redis"));
+        assert!(!prompt.contains("Updated Input Artifacts"));
     }
 
     #[test]
     fn test_build_resume_prompt_recheck() {
-        let prompt = build_resume_prompt("review", &ResumeType::Recheck, "main").unwrap();
+        let artifacts = vec![
+            ("summary".to_string(), "Updated work summary".to_string()),
+            (
+                "check_results".to_string(),
+                "Check results output".to_string(),
+            ),
+        ];
+        let prompt =
+            build_resume_prompt("review", &ResumeType::Recheck, "main", &artifacts).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
         assert!(prompt.contains("re-run"));
         assert!(prompt.contains("re-examine"));
         assert!(prompt.contains("JSON"));
+        assert!(prompt.contains("Updated Input Artifacts"));
+        assert!(prompt.contains("### summary"));
+        assert!(prompt.contains("Updated work summary"));
+        assert!(prompt.contains("### check_results"));
+        assert!(prompt.contains("Check results output"));
+    }
+
+    #[test]
+    fn test_build_resume_prompt_no_artifacts() {
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[]).unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
+        assert!(prompt.contains("interrupted"));
+        assert!(prompt.contains("JSON"));
+        assert!(!prompt.contains("Updated Input Artifacts"));
     }
 
     #[test]

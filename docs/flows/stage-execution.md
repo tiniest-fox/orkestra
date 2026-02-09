@@ -52,7 +52,8 @@ Idle ──[orchestrator]──> AgentWorking ──[output]──> AwaitingRevi
 | Aspect | First Spawn | Resume |
 |--------|-------------|--------|
 | `spawn_context.is_resume` | `false` | `true` |
-| Prompt | Full (agent def + task context + artifacts) | Short (feedback/answers/continue) |
+| Prompt | Full (agent def + task context + artifacts) | Short (feedback/answers/continue/recheck) |
+| Artifact injection | Always included | Only in `Recheck` resume type |
 | JSON Schema | Generated from stage config | Same — regenerated each time |
 | Claude Code flag | `--session-id {id}` | `--resume {id}` |
 | OpenCode flag | `--session {id}` | `--continue {id}` |
@@ -69,6 +70,7 @@ Idle ──[orchestrator]──> AgentWorking ──[output]──> AwaitingRevi
 | `Integration { message, files }` | Merge conflict (`integration.rs::integration_failed`) | `Integration` |
 | `ScriptFailure { from_stage, error }` | Script stage failed (`agent_actions.rs::process_script_failure`) | `Feedback` (formatted) |
 | `Rejection { from_stage, feedback }` | Agent rejected via approval (`agent_actions.rs::handle_approval_output`) | `Feedback` |
+| Stage re-entry after upstream re-run | Set by `is_stage_reentry` flag in `build_stage_prompt()` | `Recheck` |
 
 ## Non-Obvious Behaviors
 
@@ -78,5 +80,6 @@ Idle ──[orchestrator]──> AgentWorking ──[output]──> AwaitingRevi
 - **Script failures route to recovery stage**: A failed script with `on_failure: "work"` creates a new iteration in the work stage with a `ScriptFailure` trigger. The agent receives this as feedback.
 - **ANSI stripping**: Script output is stripped of ANSI escape codes before storage as artifacts, so downstream agents don't waste tokens on terminal formatting.
 - **Auto-mode**: Tasks with `auto_mode: true` automatically answer questions and auto-advance through approval gates. The auto-answer text is a constant: "Make a decision based on your best understanding and highest recommendation."
+- **Artifact injection in resume prompts**: When resuming with `Recheck` (cross-session re-entry after upstream stages re-run), `build_resume_prompt()` injects the stage's input artifacts into the prompt. This ensures agents see updated artifacts when upstream stages produce new outputs between sessions. Other resume types (`Continue`, `Feedback`, `Answers`, `Integration`) don't need artifacts because they operate within a single session where artifacts are already in memory. `RetryFailed` and `RetryBlocked` could theoretically benefit if upstream stages change between retries — monitor for this pattern.
 - **Schema composition**: `generate_stage_schema()` in `prompts/mod.rs` builds a discriminated union from component JSON files in `prompts/schemas/components/`. The `type` field enum and properties are assembled conditionally based on `StageCapabilities` flags. To add a new capability, add a component file and a conditional block in `generate_stage_schema()`.
 - **Adding a new output type**: Add a flag to `StageCapabilities` in `config/stage.rs`, a variant to `StageOutput` in `execution/output.rs` with a parsing branch, and a handler in `agent_actions.rs::process_agent_output()`. Optionally add validation in `config/workflow.rs` (e.g., script stages cannot have agent-only capabilities).

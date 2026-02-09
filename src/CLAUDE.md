@@ -15,6 +15,40 @@
 - Name hooks `useXxx.ts` — the hook name should describe what it provides, not what it wraps.
 - **If a hook needs shared state across components** (multiple components calling the hook must see the same data), convert it to a context provider in `providers/`. Regular hooks create isolated state per call—providers create shared state. See `TasksProvider` and `AssistantProvider` for the pattern.
 
+### Lazy Loading Pattern (Avoiding Reactive Loops)
+
+When implementing on-demand data fetching triggered by state changes, use a `useRef<Set<T>>` to track requested items **outside the dependency array**. This prevents infinite loops where fetching updates state, which triggers the effect, which fetches again.
+
+```tsx
+const [items, setItems] = useState<Item[]>([]);
+const [details, setDetails] = useState<Map<string, Detail>>(new Map());
+const requestedIdsRef = useRef<Set<string>>(new Set());
+
+useEffect(() => {
+  const missing = items
+    .map(item => item.id)
+    .filter(id => !requestedIdsRef.current.has(id));
+
+  if (missing.length === 0) return;
+
+  // Mark as in-flight BEFORE async call
+  for (const id of missing) requestedIdsRef.current.add(id);
+
+  fetchDetails(missing)
+    .then(result => setDetails(prev => new Map([...prev, ...result])))
+    .catch(err => {
+      // Remove failed IDs so they can be retried
+      for (const id of missing) requestedIdsRef.current.delete(id);
+    });
+}, [items]); // Only items in deps, NOT requestedIdsRef or details
+```
+
+**Key points:**
+- Dependency array includes only the trigger state (`items`), not the ref or result state
+- Mark items as requested BEFORE the async call to prevent duplicate requests
+- Remove failed items from the ref so they retry on next trigger
+- See `GitHistoryProvider.tsx` for the canonical example
+
 ## State Management
 
 - Use the existing Context + hooks pattern (`TasksProvider`, `WorkflowConfigProvider`, `DisplayContextProvider`). No Redux, Zustand, or other state libraries.

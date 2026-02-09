@@ -305,7 +305,9 @@ export function Orkestra() {
         <Slot
           id="board"
           type="grow"
-          visible={!showDiff && !showSubtaskDiff && !loading && !isCommitView}
+          visible={
+            !showDiff && !showSubtaskDiff && !loading && !(isCommitView && !!selectedCommitHash)
+          }
         >
           {view.type === "board" ? (
             <KanbanBoard

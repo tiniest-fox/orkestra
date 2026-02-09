@@ -55,20 +55,15 @@ cargo test -p orkestra-core
 
 ## CLI Usage During Development
 
-Three ways to run `ork` commands without building a release binary:
+Run `ork` commands during development using the wrapper script:
 
 ```bash
-# Option 1: Add bin/ to PATH (recommended — one-time setup)
-export PATH="$PWD/bin:$PATH"    # add to .bashrc/.zshrc for permanence
-ork task list
-
-# Option 2: Use the Cargo alias
-cargo ork task list
-
-# Option 3: Install globally (rebuilds on each install)
-cargo install --path cli
-ork task list
+bin/ork task list
+bin/ork task show <task-id>
+bin/ork task create -t "Title" -d "Description"
 ```
+
+The `bin/ork` wrapper handles building and running the CLI automatically.
 
 ## Build Performance
 

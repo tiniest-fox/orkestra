@@ -27,34 +27,34 @@ The `ork` CLI is the primary tool for inspecting task state and managing tasks. 
 
 ```bash
 # List tasks (filter: active, done, failed, blocked)
-ork task list
-ork task list --status active
-ork task list --status done
-ork task list --status failed
-ork task list --status blocked
+bin/ork task list
+bin/ork task list --status active
+bin/ork task list --status done
+bin/ork task list --status failed
+bin/ork task list --status blocked
 
 # Show full task details, artifacts, and iteration history
-ork task show <task-id>
+bin/ork task show <task-id>
 
 # Create a new task
-ork task create -t "Task title" -d "Task description"
+bin/ork task create -t "Task title" -d "Task description"
 
 # Approve current stage (advances to next stage or marks done)
-ork task approve <task-id>
+bin/ork task approve <task-id>
 
 # Reject with feedback (creates new iteration)
-ork task reject <task-id> --feedback "Reason for rejection"
+bin/ork task reject <task-id> --feedback "Reason for rejection"
 ```
 
 ## Common Investigation Patterns
 
 **"Why is task X stuck?"**
-1. Run `ork task show <task-id>` to see current phase and stage
+1. Run `bin/ork task show <task-id>` to see current phase and stage
 2. Check the latest iteration for output or error messages
 3. Look at the worktree git state if needed
 
 **"What did the planner decide?"**
-1. Run `ork task show <task-id>`
+1. Run `bin/ork task show <task-id>`
 2. Look at the `plan` artifact in the output
 
 **"Why did the build/tests fail?"**
@@ -84,10 +84,10 @@ ork task reject <task-id> --feedback "Reason for rejection"
 - Any work that modifies source files
 
 ### How to create tasks:
-When a user requests implementation work, use `ork task create`:
+When a user requests implementation work, use `bin/ork task create`:
 
 ```bash
-ork task create -t "Clear, specific task title" -d "Detailed description with:
+bin/ork task create -t "Clear, specific task title" -d "Detailed description with:
 - What needs to change
 - Why it's needed
 - Any relevant context or constraints"
@@ -102,7 +102,7 @@ ork task create -t "Clear, specific task title" -d "Detailed description with:
 ### You CAN do directly:
 - Read files and search code
 - Answer questions about the codebase
-- Investigate task issues (`ork task show`, reading logs)
+- Investigate task issues (`bin/ork task show`, reading logs)
 - Run diagnostic commands (git status, grep, etc.)
 - Explain how things work
 - Help users understand task state or workflow

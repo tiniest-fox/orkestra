@@ -95,6 +95,14 @@ vi.mock("../providers", () => ({
   useAutoTaskTemplates: vi.fn(() => []),
   useDisplayContext: vi.fn(),
   useTasks: vi.fn(),
+  useGitHistory: vi.fn(() => ({
+    commits: [],
+    fileCounts: new Map(),
+    currentBranch: null,
+    branches: [],
+    loading: false,
+    error: null,
+  })),
   useAssistant: vi.fn(() => ({
     sessions: [],
     activeSession: null,

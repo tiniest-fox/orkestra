@@ -1,11 +1,12 @@
-import { useCurrentBranch } from "../hooks/useCurrentBranch";
-import { useDisplayContext } from "../providers";
+import { useDisplayContext, useGitHistory } from "../providers";
 
 export function BranchIndicator() {
-  const { branch, latestCommitMessage } = useCurrentBranch();
+  const { commits, currentBranch } = useGitHistory();
   const { layout, toggleGitHistory } = useDisplayContext();
 
-  if (!branch) return null;
+  if (!currentBranch) return null;
+
+  const latestCommitMessage = commits[0]?.message ?? null;
 
   const isActive = layout.preset === "GitHistory" || layout.preset === "GitCommit";
 
@@ -24,7 +25,7 @@ export function BranchIndicator() {
       }`}
     >
       <BranchIcon />
-      <span>{branch}</span>
+      <span>{currentBranch}</span>
       {latestCommitMessage && (
         <>
           <span className="text-stone-400 dark:text-stone-500 flex-shrink-0">/</span>

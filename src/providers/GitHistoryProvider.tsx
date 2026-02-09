@@ -1,7 +1,7 @@
 /**
- * Provider for git commit history.
+ * Provider for git commit history and branch info.
  *
- * Fetches commit log with 2-second polling. File counts are lazy-loaded separately via batch endpoint.
+ * Fetches commit log and branch data with 2-second polling. File counts are lazy-loaded separately via batch endpoint.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -14,11 +14,13 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CommitInfo } from "../types/workflow";
+import type { BranchList, CommitInfo } from "../types/workflow";
 
 interface GitHistoryContextValue {
   commits: CommitInfo[];
   fileCounts: Map<string, number>;
+  currentBranch: string | null;
+  branches: string[];
   loading: boolean;
   error: string | null;
 }
@@ -43,14 +45,21 @@ interface GitHistoryProviderProps {
 export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [fileCounts, setFileCounts] = useState<Map<string, number>>(new Map());
+  const [currentBranch, setCurrentBranch] = useState<string | null>(null);
+  const [branches, setBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestedHashesRef = useRef<Set<string>>(new Set());
 
   const fetchCommits = useCallback(async () => {
     try {
-      const result = await invoke<CommitInfo[]>("workflow_get_commit_log");
-      setCommits(result);
+      const [commitResult, branchResult] = await Promise.all([
+        invoke<CommitInfo[]>("workflow_get_commit_log"),
+        invoke<BranchList>("workflow_list_branches"),
+      ]);
+      setCommits(commitResult);
+      setCurrentBranch(branchResult.current);
+      setBranches(branchResult.branches);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -97,6 +106,8 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const value: GitHistoryContextValue = {
     commits,
     fileCounts,
+    currentBranch,
+    branches,
     loading,
     error,
   };

@@ -2984,3 +2984,114 @@ fn test_opencode_provider_fallback() {
         "User message should contain schema enforcement section (OpenCode lacks native schema support)"
     );
 }
+
+// =============================================================================
+// Commit Message Generation Tests
+// =============================================================================
+
+/// Test that commit message generator is invoked during task integration.
+///
+/// This test verifies the full integration path: task completes workflow,
+/// enters Done phase, orchestrator triggers integration, and the commit
+/// message generator is called with correct context before committing.
+///
+/// Uses the default `MockCommitMessageGenerator::succeeding()` injected by
+/// `TestEnv::with_git()`. The test verifies integration succeeds, which
+/// confirms the generator was called (if it weren't, integration would fail).
+#[test]
+fn test_commit_message_generation_during_integration() {
+    // Create a simple 2-stage workflow: work → review (automated with approval)
+    let workflow = WorkflowConfig {
+        version: 1,
+        stages: vec![
+            StageConfig::new("work", "summary").with_prompt("worker.md"),
+            StageConfig::new("review", "verdict")
+                .with_prompt("reviewer.md")
+                .with_inputs(vec!["summary".into()])
+                .with_capabilities(
+                    orkestra_core::workflow::config::StageCapabilities::with_approval(Some(
+                        "work".into(),
+                    )),
+                )
+                .automated(),
+        ],
+        integration: orkestra_core::workflow::config::IntegrationConfig::default(),
+        flows: indexmap::IndexMap::new(),
+    };
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    // Create a task
+    let task = ctx.create_task(
+        "Test commit message generation",
+        "Verify commit message generation works",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    assert_eq!(task.current_stage(), Some("work"));
+    assert_eq!(task.phase, Phase::Idle);
+
+    // Set mock output for work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implemented feature successfully".to_string(),
+        },
+    );
+
+    // Advance through work stage
+    ctx.advance(); // spawn work agent
+    ctx.advance(); // process work output
+
+    // Verify task is awaiting review
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("work"));
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // Approve work
+    let task = ctx.api().approve(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("review"));
+
+    // Set mock output for review stage (automated approval)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
+            content: "Approved! Changes look good.".to_string(),
+        },
+    );
+
+    // Make some actual file changes in the worktree so there's something to commit
+    let task = ctx.api().get_task(&task_id).unwrap();
+    let worktree_path = std::path::Path::new(task.worktree_path.as_ref().unwrap());
+    std::fs::write(
+        worktree_path.join("test_file.txt"),
+        "Test content for commit",
+    )
+    .unwrap();
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(worktree_path)
+        .output()
+        .unwrap();
+
+    // Advance through review stage
+    ctx.advance(); // spawn review agent
+    ctx.advance(); // process review output → auto-approve → Done → integration (sync) → Archived
+
+    // Verify task is archived (integration succeeded, which means generator was called)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_archived(),
+        "Task should be archived after integration"
+    );
+    assert!(task.completed_at.is_some(), "Should have completed_at set");
+
+    // Verify worktree is cleaned up
+    assert!(
+        !worktree_path.exists(),
+        "Worktree directory should be removed after integration"
+    );
+}

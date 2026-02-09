@@ -19,7 +19,7 @@ use orkestra_core::workflow::{
     runtime::Phase,
     MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService, WorkflowApi,
 };
-use orkestra_core::MockTitleGenerator;
+use orkestra_core::{MockCommitMessageGenerator, MockTitleGenerator};
 
 // =============================================================================
 // Prompt Helpers
@@ -98,10 +98,13 @@ impl TestEnv {
         let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
             Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
 
-        let api = Arc::new(Mutex::new(WorkflowApi::new(
-            workflow.clone(),
-            Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
-        )));
+        let api = Arc::new(Mutex::new(
+            WorkflowApi::new(
+                workflow.clone(),
+                Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
+            )
+            .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding())),
+        ));
 
         let project_root = temp_dir.path().to_path_buf();
         let iteration_service = api.lock().unwrap().iteration_service().clone();
@@ -180,7 +183,8 @@ impl TestEnv {
                 Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
                 git_service,
             )
-            .with_title_generator(Arc::new(MockTitleGenerator::succeeding())),
+            .with_title_generator(Arc::new(MockTitleGenerator::succeeding()))
+            .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding())),
         ));
         let project_root = PathBuf::from(temp_dir.path());
 
@@ -257,7 +261,8 @@ impl TestEnv {
                 Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
                 git_service,
             )
-            .with_title_generator(Arc::new(MockTitleGenerator::failing())),
+            .with_title_generator(Arc::new(MockTitleGenerator::failing()))
+            .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding())),
         ));
         let project_root = PathBuf::from(temp_dir.path());
 

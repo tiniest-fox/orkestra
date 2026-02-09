@@ -664,6 +664,8 @@ pub mod mock {
     pub struct MockAgentRunner {
         /// Queue of outputs per `task_id`. Each spawn consumes the next output.
         outputs: Mutex<HashMap<String, Vec<StageOutput>>>,
+        /// Queue of outputs that should include `LogLine` events before Completed.
+        activity_outputs: Mutex<HashMap<String, Vec<StageOutput>>>,
         /// Next PID to assign.
         next_pid: AtomicU32,
         /// Recorded calls.
@@ -681,6 +683,7 @@ pub mod mock {
         pub fn new() -> Self {
             Self {
                 outputs: Mutex::new(HashMap::new()),
+                activity_outputs: Mutex::new(HashMap::new()),
                 next_pid: AtomicU32::new(10000),
                 calls: Mutex::new(Vec::new()),
             }
@@ -690,6 +693,17 @@ pub mod mock {
         /// Can be called multiple times to queue multiple outputs.
         pub fn set_output(&self, task_id: &str, output: StageOutput) {
             self.outputs
+                .lock()
+                .unwrap()
+                .entry(task_id.to_string())
+                .or_default()
+                .push(output);
+        }
+
+        /// Set the output for the next agent spawn, with simulated activity (`LogLine` events).
+        /// The mock will send a `LogLine` before the Completed event, triggering `has_activity`.
+        pub fn set_output_with_activity(&self, task_id: &str, output: StageOutput) {
+            self.activity_outputs
                 .lock()
                 .unwrap()
                 .entry(task_id.to_string())
@@ -778,32 +792,55 @@ pub mod mock {
                 .clone()
                 .or_else(|| Self::extract_task_id(&config.prompt));
 
-            // Get and remove the next configured output (consume from queue)
-            let output = task_id.as_ref().and_then(|id| {
-                self.outputs.lock().unwrap().get_mut(id).and_then(|queue| {
-                    if queue.is_empty() {
-                        None
-                    } else {
-                        Some(queue.remove(0))
-                    }
-                })
+            // Check activity_outputs first (these send LogLine before Completed)
+            let activity_output = task_id.as_ref().and_then(|id| {
+                self.activity_outputs
+                    .lock()
+                    .unwrap()
+                    .get_mut(id)
+                    .and_then(|queue| {
+                        if queue.is_empty() {
+                            None
+                        } else {
+                            Some(queue.remove(0))
+                        }
+                    })
             });
 
-            // Send completion immediately — no thread, no delay.
-            // Tests care about the flow through the system, not simulated latency.
-            // IMPORTANT: Send at least one log event first so has_activity is set to true.
-            let _ = tx.send(RunEvent::LogLine(crate::workflow::domain::LogEntry::Text {
-                content: "Mock agent output".to_string(),
-            }));
-
-            if let Some(output) = output {
+            if let Some(output) = activity_output {
+                // Send a LogLine first to trigger has_activity
+                let _ = tx.send(RunEvent::LogLine(crate::workflow::domain::LogEntry::Text {
+                    content: "Mock agent activity".to_string(),
+                }));
                 let _ = tx.send(RunEvent::Completed(Ok(output)));
             } else {
-                let err_msg = match task_id {
-                    Some(id) => format!("No output configured for task {id}"),
-                    None => "No output configured (task_id unknown)".to_string(),
-                };
-                let _ = tx.send(RunEvent::Completed(Err(err_msg)));
+                // Fall through to existing behavior (non-activity outputs)
+                let output = task_id.as_ref().and_then(|id| {
+                    self.outputs.lock().unwrap().get_mut(id).and_then(|queue| {
+                        if queue.is_empty() {
+                            None
+                        } else {
+                            Some(queue.remove(0))
+                        }
+                    })
+                });
+
+                if let Some(output) = output {
+                    // Send LogLine before success to maintain backward compatibility
+                    // (existing tests rely on has_activity being set)
+                    let _ = tx.send(RunEvent::LogLine(crate::workflow::domain::LogEntry::Text {
+                        content: "Mock agent output".to_string(),
+                    }));
+                    let _ = tx.send(RunEvent::Completed(Ok(output)));
+                } else {
+                    // No output configured — send error WITHOUT LogLine
+                    // This simulates an agent killed before producing output
+                    let err_msg = match task_id {
+                        Some(id) => format!("No output configured for task {id}"),
+                        None => "No output configured (task_id unknown)".to_string(),
+                    };
+                    let _ = tx.send(RunEvent::Completed(Err(err_msg)));
+                }
             }
 
             Ok((pid, rx))

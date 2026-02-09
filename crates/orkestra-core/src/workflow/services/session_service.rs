@@ -882,4 +882,38 @@ mod tests {
             .unwrap();
         assert!(!iter.trigger_delivered);
     }
+
+    #[test]
+    fn test_no_resume_when_no_activity_despite_spawn_count() {
+        // Regression test: session with spawn_count > 0 but has_activity = false
+        // should NOT trigger resume. This is the core bug this fix addresses.
+        let (service, store) = create_service();
+
+        // Create session and spawn agent
+        service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
+        service
+            .on_agent_spawned("task-1", "planning", 12345)
+            .unwrap();
+        // Agent exits but has_activity was never set (agent killed before output)
+        service.on_agent_exited("task-1", "planning").unwrap();
+
+        // Verify: spawn_count > 0 but has_activity is false
+        let session = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
+        assert!(session.spawn_count > 0, "spawn_count should be > 0");
+        assert!(!session.has_activity, "has_activity should be false");
+
+        // Next spawn should NOT be resume (has_activity is false)
+        let ctx = service
+            .on_spawn_starting("task-1", "planning", Some("test-uuid".into()))
+            .unwrap();
+        assert!(
+            !ctx.is_resume,
+            "Should NOT resume when has_activity is false, even with spawn_count > 0"
+        );
+    }
 }

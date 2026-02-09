@@ -409,6 +409,12 @@ impl TestEnv {
         self.runner.set_output(task_id, output.into());
     }
 
+    /// Set the output for the next agent spawn WITH simulated activity.
+    /// The mock sends a `LogLine` event before Completed, triggering `has_activity`.
+    pub fn set_output_with_activity(&self, task_id: &str, output: impl Into<StageOutput>) {
+        self.runner.set_output_with_activity(task_id, output.into());
+    }
+
     /// Get the number of calls made to the mock runner.
     pub fn call_count(&self) -> usize {
         self.runner.calls().len()

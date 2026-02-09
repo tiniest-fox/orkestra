@@ -1977,6 +1977,109 @@ fn test_retry_failed_without_instructions_sends_resume_prompt() {
 }
 
 // =============================================================================
+// Activity-Based Resume (Kill Before Output)
+// =============================================================================
+
+/// Test that an agent killed before producing output retries WITHOUT resume.
+///
+/// This is the core regression test for the race condition fix: if an agent
+/// is killed before it produces any output (`has_activity=false`), the next
+/// spawn should use a fresh session, not resume.
+#[test]
+fn test_kill_before_output_retries_without_resume() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test kill before output", "A task to test", None);
+    let task_id = task.id.clone();
+
+    // DON'T set any output — the mock channel will send an error
+    // ("No output configured"), simulating a killed agent that never produced output
+    ctx.advance(); // spawns agent, agent "fails" immediately
+    ctx.advance(); // processes the error
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.is_failed(), "Task should be Failed after agent error");
+
+    // Retry the task
+    ctx.api().retry(&task_id, None).unwrap();
+
+    // Set output for the retry
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Retry plan".into(),
+        },
+    );
+    ctx.advance(); // spawns agent for retry
+
+    // Verify the retry used a FULL prompt (not resume)
+    // The key assertion: since the first agent never produced output,
+    // has_activity should be false, so the retry should NOT use --resume
+    let last_config = ctx.last_run_config();
+    assert!(
+        !last_config.is_resume,
+        "Retry after kill-before-output should NOT use resume"
+    );
+
+    ctx.advance(); // processes artifact
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+}
+
+/// Test that an agent with activity retries WITH resume.
+///
+/// When an agent produces output (triggering `has_activity=true`), and the
+/// stage is rejected, the next spawn should use resume to preserve context.
+#[test]
+fn test_agent_with_activity_retries_with_resume() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test activity resume", "A task to test", None);
+    let task_id = task.id.clone();
+
+    // Set output WITH activity (sends LogLine before Completed)
+    ctx.set_output_with_activity(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "First plan".into(),
+        },
+    );
+    ctx.advance(); // spawns agent (with activity LogLine)
+    ctx.advance(); // processes artifact output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // Reject to trigger another spawn on the same stage
+    ctx.api().reject(&task_id, "Needs more detail").unwrap();
+
+    // Set output for the resume
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "Improved plan".into(),
+        },
+    );
+    ctx.advance(); // spawns agent for retry (should be resume)
+
+    // Verify resume was used (session had activity)
+    let last_config = ctx.last_run_config();
+    assert!(
+        last_config.is_resume,
+        "Retry after agent with activity should use resume"
+    );
+}
+
+// =============================================================================
 // Human Review of Reviewer Rejection Verdicts
 // =============================================================================
 

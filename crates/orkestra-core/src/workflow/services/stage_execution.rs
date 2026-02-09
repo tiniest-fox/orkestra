@@ -270,6 +270,29 @@ impl StageExecutionService {
         agent_count + self.script_service.active_count()
     }
 
+    /// Kill the active execution for a task and remove it from tracking.
+    ///
+    /// Returns the PID that was killed, or None if no active execution was found.
+    /// This is used by the interrupt flow — kill the process first, then transition state.
+    pub fn kill_active_execution(&self, task_id: &str) -> Option<u32> {
+        // First check active agents
+        let pid = self
+            .active_agents
+            .lock()
+            .ok()
+            .and_then(|mut agents| agents.remove(task_id).map(|agent| agent.handle.pid));
+
+        if let Some(pid) = pid {
+            if let Err(e) = crate::process::kill_process_tree(pid) {
+                crate::orkestra_debug!("interrupt", "Failed to kill process tree {}: {}", pid, e);
+            }
+            return Some(pid);
+        }
+
+        // No agent found — could be already dead (race condition). That's fine.
+        None
+    }
+
     /// Block until all active executions (agents + scripts) complete, returning results.
     ///
     /// Used in test mode (`sync_background`) so script stages complete within

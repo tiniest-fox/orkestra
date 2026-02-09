@@ -582,6 +582,83 @@ impl WorkflowApi {
         Ok(None)
     }
 
+    /// Interrupt a running agent execution.
+    ///
+    /// Ends the current iteration with `Outcome::Interrupted` and transitions
+    /// the task to `Phase::Interrupted`. The caller must kill the agent process
+    /// BEFORE calling this method (via `StageExecutionService::kill_active_execution()`).
+    ///
+    /// # Errors
+    /// Returns `InvalidTransition` if the task is not in `AgentWorking` phase.
+    pub fn interrupt(&self, task_id: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        if task.phase != Phase::AgentWorking {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot interrupt task in phase {:?}",
+                task.phase
+            )));
+        }
+
+        orkestra_debug!("action", "interrupt {}: killing agent", task_id);
+
+        // End current iteration with Interrupted outcome
+        self.end_current_iteration(&task, Outcome::Interrupted)?;
+
+        // Transition to Interrupted phase
+        let now = chrono::Utc::now().to_rfc3339();
+        task.phase = Phase::Interrupted;
+        task.updated_at = now;
+
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    /// Resume an interrupted task, optionally with a message for the agent.
+    ///
+    /// Creates a new iteration with `ManualResume` trigger and sets the task
+    /// back to `Idle` so the orchestrator picks it up and spawns the agent
+    /// with session resume.
+    ///
+    /// # Errors
+    /// Returns `InvalidTransition` if the task is not in `Interrupted` phase.
+    pub fn resume(&self, task_id: &str, message: Option<String>) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        if task.phase != Phase::Interrupted {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot resume task in phase {:?}",
+                task.phase
+            )));
+        }
+
+        let current_stage = task
+            .current_stage()
+            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
+            .to_string();
+
+        orkestra_debug!(
+            "action",
+            "resume {}: stage {} with message: {:?}",
+            task_id,
+            current_stage,
+            message.as_deref()
+        );
+
+        // Create new iteration with ManualResume trigger
+        let trigger = IterationTrigger::ManualResume { message };
+        self.iteration_service
+            .create_iteration(&task.id, &current_stage, Some(trigger))?;
+
+        // Transition to Idle so orchestrator picks it up
+        let now = chrono::Utc::now().to_rfc3339();
+        task.phase = Phase::Idle;
+        task.updated_at = now;
+
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
     /// Helper: End the current active iteration with an outcome.
     pub(crate) fn end_current_iteration(
         &self,
@@ -1064,5 +1141,146 @@ mod tests {
         // Step 5: Human approves → task should advance past review (Done, since review is the last stage)
         let task = api.approve(&task.id).unwrap();
         assert!(task.is_done());
+    }
+
+    // ========================================================================
+    // Interrupt and Resume tests
+    // ========================================================================
+
+    /// Create an API with a task in `AgentWorking` phase
+    fn api_with_agent_working() -> (WorkflowApi, Task) {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+
+        // Simulate agent started
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        (api, task)
+    }
+
+    #[test]
+    fn test_interrupt_from_agent_working() {
+        let (api, task) = api_with_agent_working();
+
+        let task = api.interrupt(&task.id).unwrap();
+
+        assert_eq!(task.phase, Phase::Interrupted);
+
+        // Verify iteration was ended with Interrupted outcome
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let latest = iterations.last().unwrap();
+        assert!(matches!(latest.outcome, Some(Outcome::Interrupted)));
+        assert!(latest.ended_at.is_some());
+    }
+
+    #[test]
+    fn test_interrupt_wrong_phase() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+
+        // Set task to AwaitingReview instead of AgentWorking
+        task.phase = Phase::AwaitingReview;
+        api.store.save_task(&task).unwrap();
+
+        let result = api.interrupt(&task.id);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    /// Create an API with a task in Interrupted phase
+    fn api_with_interrupted_task() -> (WorkflowApi, Task) {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+
+        // Simulate interrupted state
+        task.phase = Phase::Interrupted;
+        api.store.save_task(&task).unwrap();
+
+        // End the current iteration with Interrupted outcome
+        let iter = api
+            .store
+            .get_latest_iteration(&task.id, "planning")
+            .unwrap()
+            .unwrap();
+        let mut iter = iter;
+        iter.outcome = Some(Outcome::Interrupted);
+        iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
+        api.store.save_iteration(&iter).unwrap();
+
+        (api, task)
+    }
+
+    #[test]
+    fn test_resume_from_interrupted() {
+        let (api, task) = api_with_interrupted_task();
+
+        let task = api
+            .resume(
+                &task.id,
+                Some("Please continue with the implementation".to_string()),
+            )
+            .unwrap();
+
+        assert_eq!(task.phase, Phase::Idle);
+        assert_eq!(task.current_stage(), Some("planning"));
+
+        // Verify new iteration was created with ManualResume trigger
+        let iterations = api.get_iterations(&task.id).unwrap();
+        assert_eq!(iterations.len(), 2);
+
+        let new_iter = iterations.last().unwrap();
+        match &new_iter.incoming_context {
+            Some(IterationTrigger::ManualResume { message }) => {
+                assert_eq!(
+                    message.as_deref(),
+                    Some("Please continue with the implementation")
+                );
+            }
+            other => panic!("Expected ManualResume trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_resume_without_message() {
+        let (api, task) = api_with_interrupted_task();
+
+        let task = api.resume(&task.id, None).unwrap();
+
+        assert_eq!(task.phase, Phase::Idle);
+
+        // Verify new iteration has ManualResume with None message
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let new_iter = iterations.last().unwrap();
+        match &new_iter.incoming_context {
+            Some(IterationTrigger::ManualResume { message }) => {
+                assert!(message.is_none());
+            }
+            other => panic!("Expected ManualResume trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_resume_wrong_phase() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+
+        // Set task to AgentWorking instead of Interrupted
+        task.phase = Phase::AgentWorking;
+        api.store.save_task(&task).unwrap();
+
+        let result = api.resume(&task.id, None);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 }

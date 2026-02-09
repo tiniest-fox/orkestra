@@ -416,11 +416,8 @@ impl GitService for Git2GitService {
         // Delete the branch if requested
         if delete_branch {
             if let Err(e) = self.delete_branch(&branch_name) {
-                // Branch may not exist or may be checked out elsewhere - log but don't fail
-                crate::orkestra_debug!(
-                    "git",
-                    "WARNING: Failed to delete branch {branch_name}: {e}"
-                );
+                // Branch may not exist - log but don't fail cleanup
+                eprintln!("[git] WARNING: Failed to delete branch {branch_name}: {e}");
             }
         }
 
@@ -622,20 +619,22 @@ impl GitService for Git2GitService {
     }
 
     fn delete_branch(&self, branch_name: &str) -> Result<(), GitError> {
-        // Use -D to force delete (branch may not be fully merged from git's perspective
-        // if it was a fast-forward merge)
-        let output = Command::new("git")
-            .args(["branch", "-D", branch_name])
-            .current_dir(&self.repo_path)
-            .output()
+        let repo = self
+            .repo
+            .lock()
+            .map_err(|_| GitError::IoError("Repository mutex poisoned".into()))?;
+
+        // Find and delete the branch using git2 API
+        // Using the same in-process repository handle avoids metadata inconsistency
+        // that can occur when mixing git2 worktree operations with CLI branch deletion
+        let mut branch = repo
+            .find_branch(branch_name, git2::BranchType::Local)
+            .map_err(|e| GitError::BranchError(format!("Failed to find branch: {e}")))?;
+
+        branch
+            .delete()
             .map_err(|e| GitError::BranchError(format!("Failed to delete branch: {e}")))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GitError::BranchError(format!(
-                "Failed to delete branch {branch_name}: {stderr}"
-            )));
-        }
         Ok(())
     }
 
@@ -922,9 +921,18 @@ mod tests {
             .expect("Failed to remove worktree");
         assert!(!git.worktree_exists("TASK-002"));
 
-        // Branch should be deleted
-        let branches = git.list_branches().expect("Failed to list branches");
-        assert!(!branches.iter().any(|b| b == "task/TASK-002"));
+        // Branch should be deleted (task/* branches are filtered from list_branches,
+        // so we check directly with git)
+        let output = Command::new("git")
+            .args(["branch", "--list", "task/TASK-002"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to list branches");
+        let branch_list = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            !branch_list.contains("task/TASK-002"),
+            "Branch should be deleted after cleanup"
+        );
     }
 
     #[test]
@@ -1070,6 +1078,61 @@ mod tests {
                 .expect("Should check merge status"),
             "Missing branch should be treated as already merged"
         );
+    }
+
+    #[test]
+    fn test_full_workflow_cleanup_deletes_branch() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create worktree and add a commit
+        let worktree = git
+            .create_worktree("TASK-INTEGRATION", None)
+            .expect("Failed to create worktree");
+
+        std::fs::write(worktree.worktree_path.join("feature.txt"), "new feature")
+            .expect("Failed to write file");
+
+        git.commit_pending_changes(&worktree.worktree_path, "Add feature")
+            .expect("Failed to commit");
+
+        // Merge to main
+        git.merge_to_branch("task/TASK-INTEGRATION", "main")
+            .expect("Failed to merge");
+
+        // Verify branch exists before cleanup
+        let output = Command::new("git")
+            .args(["branch", "--list", "task/TASK-INTEGRATION"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to list branches");
+        let branch_list = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            branch_list.contains("task/TASK-INTEGRATION"),
+            "Branch should exist before cleanup"
+        );
+
+        // Remove worktree with branch deletion
+        git.remove_worktree("TASK-INTEGRATION", true)
+            .expect("Failed to remove worktree");
+
+        // Verify worktree is gone
+        assert!(!git.worktree_exists("TASK-INTEGRATION"));
+
+        // Verify branch is deleted
+        let output = Command::new("git")
+            .args(["branch", "--list", "task/TASK-INTEGRATION"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to list branches");
+        let branch_list = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            !branch_list.contains("task/TASK-INTEGRATION"),
+            "Branch should be deleted after cleanup"
+        );
+
+        // Verify the merged file still exists in main
+        assert!(repo_path.join("feature.txt").exists());
     }
 
     #[test]

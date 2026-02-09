@@ -30,7 +30,7 @@ All paths relative to `crates/orkestra-core/src/`.
 
 6. **Merge to target** — `git.merge_to_branch(branch, target)`. On success: updates DB *first* (Done -> Archived), *then* removes worktree. On conflict: aborts merge, routes to recovery.
 
-7. **Cleanup** — `git.remove_worktree(task_id)` removes the physical worktree. This is non-critical — if it fails or the app crashes after step 6, `cleanup_orphaned_worktrees()` handles it on next startup.
+7. **Cleanup** — `git.remove_worktree(task_id, delete_branch: true)` removes the physical worktree and deletes the associated branch. Both operations use git2 API consistently (see `docs/solutions/2026-02-09-git2-cli-mixing.md`). This is non-critical — if it fails or the app crashes after step 6, `cleanup_orphaned_worktrees()` handles it on next startup.
 
 ## State Transitions
 

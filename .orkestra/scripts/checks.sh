@@ -121,14 +121,14 @@ acquire_lock() {
     # Safety net: release lock on exit if we didn't release it explicitly
     trap 'if $LOCK_HELD; then rm -rf "$LOCK_DIR"; fi' EXIT
 
-    $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Lock acquired, running cargo checks..."
+    $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Lock acquired, running cargo checks..." || true
 }
 
 release_lock() {
     if $LOCK_HELD; then
         rm -rf "$LOCK_DIR"
         LOCK_HELD=false
-        $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Lock released"
+        $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Lock released" || true
     fi
 }
 

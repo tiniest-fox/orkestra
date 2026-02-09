@@ -3,6 +3,7 @@ import {
   AssistantProvider,
   AutoTaskTemplatesProvider,
   DisplayContextProvider,
+  GitHistoryProvider,
   TasksProvider,
   WorkflowConfigProvider,
 } from "./providers";
@@ -17,9 +18,11 @@ function App() {
       <AutoTaskTemplatesProvider>
         <TasksProvider>
           <AssistantProvider>
-            <DisplayContextProvider>
-              <Orkestra />
-            </DisplayContextProvider>
+            <GitHistoryProvider>
+              <DisplayContextProvider>
+                <Orkestra />
+              </DisplayContextProvider>
+            </GitHistoryProvider>
           </AssistantProvider>
         </TasksProvider>
       </AutoTaskTemplatesProvider>

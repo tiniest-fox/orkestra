@@ -2,6 +2,7 @@ export { AssistantProvider, useAssistant } from "./AssistantProvider";
 export { AutoTaskTemplatesProvider, useAutoTaskTemplates } from "./AutoTaskTemplatesProvider";
 export type { DisplayContextValue } from "./DisplayContextProvider";
 export { DisplayContextProvider, useDisplayContext } from "./DisplayContextProvider";
+export { GitHistoryProvider, useGitHistory } from "./GitHistoryProvider";
 export type { LayoutPreset, LayoutState, PresetName } from "./presets";
 export { PRESETS } from "./presets";
 export { TasksProvider, useTasks } from "./TasksProvider";

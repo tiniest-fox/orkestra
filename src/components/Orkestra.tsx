@@ -141,11 +141,11 @@ export function Orkestra() {
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    closeFocus();
     try {
       await deleteTask(taskId);
+      closeFocus();
     } catch (err) {
-      console.error("[handleDeleteTask] Delete failed, task will reappear:", err);
+      console.error("[handleDeleteTask] Delete failed:", err);
     }
   };
 

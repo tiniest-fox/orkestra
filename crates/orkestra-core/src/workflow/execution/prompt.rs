@@ -1713,7 +1713,7 @@ mod tests {
 
     #[test]
     fn test_resume_prompt_has_no_system_prompt() {
-        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main").unwrap();
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[]).unwrap();
 
         // Resume prompts are just short user messages
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));

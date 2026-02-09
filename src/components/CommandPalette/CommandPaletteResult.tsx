@@ -72,6 +72,35 @@ function deriveVisualState(result: SearchResult): {
     };
   }
   if (derived.is_waiting_on_children) {
+    const sp = derived.subtask_progress;
+    if ((sp?.failed ?? 0) > 0) {
+      return {
+        state: "failed",
+        label: "Failed",
+        icon: <XCircle className="w-3.5 h-3.5" />,
+      };
+    }
+    if ((sp?.blocked ?? 0) > 0) {
+      return {
+        state: "blocked",
+        label: "Blocked",
+        icon: <AlertCircle className="w-3.5 h-3.5" />,
+      };
+    }
+    if ((sp?.has_questions ?? 0) > 0) {
+      return {
+        state: "questions",
+        label: "Questions",
+        icon: <MessageCircle className="w-3.5 h-3.5" />,
+      };
+    }
+    if ((sp?.needs_review ?? 0) > 0) {
+      return {
+        state: "review",
+        label: "Review",
+        icon: <Eye className="w-3.5 h-3.5" />,
+      };
+    }
     return {
       state: "waiting",
       label: "Subtasks",

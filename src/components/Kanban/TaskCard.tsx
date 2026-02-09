@@ -113,12 +113,14 @@ export function TaskCard({
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 
   // Include subtask aggregate state in border highlights
+  const effectiveFailed = isFailed || (derived.subtask_progress?.failed ?? 0) > 0;
+  const effectiveBlocked = isBlocked || (derived.subtask_progress?.blocked ?? 0) > 0;
   const effectiveQuestions = hasQuestions || (derived.subtask_progress?.has_questions ?? 0) > 0;
   const effectiveReview = taskNeedsReview || (derived.subtask_progress?.needs_review ?? 0) > 0;
 
-  const borderClass = isFailed
+  const borderClass = effectiveFailed
     ? "border-error-300 bg-error-50 dark:border-error-700 dark:bg-error-950"
-    : isBlocked
+    : effectiveBlocked
       ? "border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-950"
       : effectiveQuestions
         ? "border-info-400 bg-info-50 dark:border-info-600 dark:bg-info-950"
@@ -203,7 +205,15 @@ export function TaskCard({
             </span>
           )}
           {derived.is_waiting_on_children &&
-            ((derived.subtask_progress?.has_questions ?? 0) > 0 ? (
+            ((derived.subtask_progress?.failed ?? 0) > 0 ? (
+              <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.failed.icon}`}>
+                <XCircle className="w-4 h-4" />
+              </span>
+            ) : (derived.subtask_progress?.blocked ?? 0) > 0 ? (
+              <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.blocked.icon}`}>
+                <AlertCircle className="w-4 h-4" />
+              </span>
+            ) : (derived.subtask_progress?.has_questions ?? 0) > 0 ? (
               <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.questions.icon}`}>
                 <MessageCircle className="w-4 h-4" />
               </span>

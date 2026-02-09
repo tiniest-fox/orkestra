@@ -5,3 +5,6 @@ rustc-wrapper = "sccache"
 # Incremental builds are per-target-directory and can't be cached by sccache.
 [env]
 CARGO_INCREMENTAL = "0"
+
+[alias]
+ork = "run -p orkestra-cli --"

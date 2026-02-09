@@ -53,6 +53,23 @@ cargo test
 cargo test -p orkestra-core
 ```
 
+## CLI Usage During Development
+
+Three ways to run `ork` commands without building a release binary:
+
+```bash
+# Option 1: Add bin/ to PATH (recommended — one-time setup)
+export PATH="$PWD/bin:$PATH"    # add to .bashrc/.zshrc for permanence
+ork task list
+
+# Option 2: Use the Cargo alias
+cargo ork task list
+
+# Option 3: Install globally (rebuilds on each install)
+cargo install --path cli
+ork task list
+```
+
 ## Build Performance
 
 The project uses two caching mechanisms for faster builds:

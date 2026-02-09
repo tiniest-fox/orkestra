@@ -19,9 +19,12 @@
 #   1 - One or more checks failed
 #
 # Locking:
-#   Uses mkdir-based locking to serialize check runs across worktrees. Multiple
-#   worktrees share the same target/ directory, and concurrent test runs can
-#   cause spurious failures. The lock is released automatically on exit via trap.
+#   Uses mkdir-based locking to serialize cargo commands across worktrees.
+#   Multiple worktrees share the same target/ directory, and concurrent
+#   cargo runs can cause spurious failures. The lock is acquired only for
+#   cargo commands (clippy, test, build) — frontend checks and cargo fmt
+#   run without it. The lock is released explicitly after the last cargo
+#   command, with an EXIT trap as a safety net.
 
 set -e
 
@@ -67,19 +70,25 @@ if ! $VERBOSE; then
 fi
 
 # =============================================================================
-# Acquire exclusive lock on shared target directory
+# Lock management for shared target directory
 # =============================================================================
 # Multiple worktrees share the same target/ directory. Without locking, concurrent
-# test runs can pick up stale test binaries from other worktrees, causing spurious
-# failures. This lock serializes check runs to prevent this.
+# cargo runs can pick up stale binaries from other worktrees, causing spurious
+# failures. The lock is acquired only around cargo clippy/test/build commands —
+# frontend checks and cargo fmt don't need it.
 #
 # Uses mkdir-based locking (atomic on POSIX) with PID tracking for stale lock detection.
 # Works on both Linux and macOS without requiring flock.
 
 LOCK_DIR="${ORKESTRA_PROJECT_ROOT:-.}/.orkestra/target.lock.d"
 LOCK_PID_FILE="$LOCK_DIR/pid"
+LOCK_HELD=false
 
 acquire_lock() {
+    if $LOCK_HELD; then
+        return
+    fi
+
     local max_wait=300  # 5 minutes max wait
     local waited=0
 
@@ -107,16 +116,21 @@ acquire_lock() {
 
     # Write our PID to the lock
     echo $$ > "$LOCK_PID_FILE"
+    LOCK_HELD=true
 
-    # Release lock on exit (normal, error, or signal)
-    trap 'rm -rf "$LOCK_DIR"' EXIT
+    # Safety net: release lock on exit if we didn't release it explicitly
+    trap 'if $LOCK_HELD; then rm -rf "$LOCK_DIR"; fi' EXIT
+
+    $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Lock acquired, running cargo checks..."
 }
 
-if [ -z "$CHECKS_LOCKED" ]; then
-    export CHECKS_LOCKED=1
-    acquire_lock
-    $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Lock acquired, running checks..."
-fi
+release_lock() {
+    if $LOCK_HELD; then
+        rm -rf "$LOCK_DIR"
+        LOCK_HELD=false
+        $VERBOSE && echo -e "${BLUE:-}[INFO]${NC:-} Lock released"
+    fi
+}
 
 # Colors for output
 RED='\033[0;31m'
@@ -380,9 +394,12 @@ if $HAS_RUST; then
         run_check "Frontend build" "pnpm build"
     fi
 
-    # Auto-format Rust code, then verify nothing changed
+    # Auto-format Rust code (no compilation, no lock needed)
     run_check "Cargo fmt fix" "cargo fmt --all"
     run_check "Cargo fmt verify" "cargo fmt --all --check"
+
+    # Acquire lock for cargo commands that use the shared target/ directory
+    acquire_lock
 
     # Run clippy with auto-fix, then verify no remaining warnings
     # --fix applies automatic fixes, --allow-dirty/--allow-staged permit uncommitted changes
@@ -404,6 +421,9 @@ if $HAS_RUST; then
 
     # Build check (ensures everything compiles)
     run_check "Cargo build (all)" "cargo build --workspace"
+
+    # Release lock — done with shared target/ directory
+    release_lock
 fi
 
 # =============================================================================

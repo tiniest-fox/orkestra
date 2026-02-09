@@ -3,6 +3,9 @@
 //! Provides cleanup methods on `WorkflowApi` for:
 //! - Killing running agents (shutdown, deletion, orphan recovery)
 //! - Deleting tasks with full cleanup (kill agents + delete DB records)
+//! - Stale lock cleanup on startup
+
+use std::path::Path;
 
 use crate::process::{is_process_running, kill_process_tree};
 use crate::workflow::ports::WorkflowResult;
@@ -107,5 +110,39 @@ impl WorkflowApi {
 
         // Delete all DB records in a transaction
         self.store.delete_task_tree(&task_ids)
+    }
+}
+
+/// Remove stale target lock directory left behind by killed check scripts.
+///
+/// Called on startup as a safety net. If the lock directory exists and the
+/// PID file references a dead process (or is missing), the lock is removed.
+/// If the lock holder is still alive, the lock is left in place.
+pub fn cleanup_stale_target_lock(project_root: &Path) {
+    let lock_dir = project_root.join(".orkestra/target.lock.d");
+    if !lock_dir.exists() {
+        return;
+    }
+
+    let pid_file = lock_dir.join("pid");
+    let should_remove = if pid_file.exists() {
+        match std::fs::read_to_string(&pid_file) {
+            Ok(contents) => match contents.trim().parse::<u32>() {
+                Ok(pid) => !is_process_running(pid),
+                Err(_) => true, // Can't parse PID — stale
+            },
+            Err(_) => true, // Can't read PID file — stale
+        }
+    } else {
+        true // No PID file — stale
+    };
+
+    if should_remove {
+        crate::orkestra_debug!(
+            "cleanup",
+            "Removing stale target lock at {}",
+            lock_dir.display()
+        );
+        let _ = std::fs::remove_dir_all(&lock_dir);
     }
 }

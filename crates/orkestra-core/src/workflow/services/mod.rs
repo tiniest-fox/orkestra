@@ -66,6 +66,7 @@ pub(crate) use workflow_warn;
 
 pub use api::WorkflowApi;
 pub use assistant::AssistantService;
+pub use cleanup::cleanup_stale_target_lock;
 pub use integration::{perform_git_integration, IntegrationGitResult, IntegrationParams};
 pub use iteration_service::IterationService;
 pub use log_service::LogService;

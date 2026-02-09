@@ -245,6 +245,11 @@ impl ScriptHandle {
     }
 
     /// Kill the script process tree.
+    ///
+    /// Sends SIGTERM to the process group via `kill_process_tree`, which gives
+    /// the shell's EXIT trap a chance to fire and clean up locks/resources.
+    /// We intentionally avoid `child.kill()` (SIGKILL) here — SIGKILL is
+    /// uncatchable and would prevent trap handlers from running.
     pub fn kill(&mut self) {
         if !self.killed {
             self.killed = true;
@@ -252,8 +257,6 @@ impl ScriptHandle {
             if let Err(e) = kill_process_tree(pid) {
                 crate::orkestra_debug!("script", "Warning: failed to kill process tree {pid}: {e}");
             }
-            // Also try regular kill in case process tree kill failed
-            let _ = self.child.kill();
         }
     }
 

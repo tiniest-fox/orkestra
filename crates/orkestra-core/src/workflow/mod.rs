@@ -58,8 +58,8 @@ pub use runtime::{
     TransitionTrigger, TransitionValidator,
 };
 pub use services::{
-    AssistantService, OrchestratorError, OrchestratorEvent, OrchestratorLoop,
-    StageExecutionService, WorkflowApi,
+    cleanup_stale_target_lock, AssistantService, OrchestratorError, OrchestratorEvent,
+    OrchestratorLoop, StageExecutionService, WorkflowApi,
 };
 
 // Export execution types for testing

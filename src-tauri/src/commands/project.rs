@@ -91,6 +91,9 @@ pub async fn open_project(
         }
     }
 
+    // Clean up stale target lock from killed check scripts
+    orkestra_core::workflow::cleanup_stale_target_lock(&project_path);
+
     // Generate window label
     let window_label = ProjectRegistry::label_for_path(&project_path);
 

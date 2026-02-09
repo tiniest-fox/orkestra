@@ -138,7 +138,7 @@ fn create_untracked_file_diff(worktree_path: &Path, path: &str) -> Option<FileDi
 /// -deleted line
 /// +added line
 /// ```
-fn parse_diff_output(output: &str) -> TaskDiff {
+pub(crate) fn parse_diff_output(output: &str) -> TaskDiff {
     let mut files = Vec::new();
     let mut lines = output.lines().peekable();
 

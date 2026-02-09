@@ -50,7 +50,7 @@ pub use domain::{
 };
 pub use execution::{PromptBuilder, StageOutput, StageOutputError, StagePromptContext};
 pub use ports::{
-    GitError, GitService, MergeResult, WorkflowError, WorkflowResult, WorkflowStore,
+    CommitInfo, GitError, GitService, MergeResult, WorkflowError, WorkflowResult, WorkflowStore,
     WorktreeCreated,
 };
 pub use runtime::{

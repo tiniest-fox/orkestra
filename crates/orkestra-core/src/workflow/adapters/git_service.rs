@@ -725,6 +725,120 @@ impl GitService for Git2GitService {
     ) -> Result<Option<String>, GitError> {
         super::diff::read_file_at_head(worktree_path, file_path)
     }
+
+    fn commit_log(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<crate::workflow::ports::CommitInfo>, GitError> {
+        // Step 1: Get commit metadata using null-byte separator for reliable parsing
+        let output = Command::new("git")
+            .args([
+                "log",
+                &format!("-{limit}"),
+                "--format=%h%x00%s%x00%an%x00%aI",
+            ])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GitError::IoError(format!("Failed to run git log: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::IoError(format!("git log failed: {stderr}")));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut commits = Vec::new();
+
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.splitn(4, '\0').collect();
+            if parts.len() == 4 {
+                commits.push(crate::workflow::ports::CommitInfo {
+                    hash: parts[0].to_string(),
+                    message: parts[1].to_string(),
+                    author: parts[2].to_string(),
+                    timestamp: parts[3].to_string(),
+                    file_count: 0, // Filled in below
+                });
+            }
+        }
+
+        // Step 2: Get file counts per commit using --stat
+        // Use a separate command for reliability (--shortstat with --format can be tricky)
+        for commit in &mut commits {
+            let stat_output = Command::new("git")
+                .args([
+                    "diff-tree",
+                    "--no-commit-id",
+                    "--name-only",
+                    "-r",
+                    &commit.hash,
+                ])
+                .current_dir(&self.repo_path)
+                .output();
+
+            if let Ok(stat) = stat_output {
+                if stat.status.success() {
+                    let stat_stdout = String::from_utf8_lossy(&stat.stdout);
+                    commit.file_count = stat_stdout.lines().filter(|l| !l.is_empty()).count();
+                }
+            }
+        }
+
+        Ok(commits)
+    }
+
+    fn commit_diff(&self, commit_hash: &str) -> Result<crate::workflow::ports::TaskDiff, GitError> {
+        // First, try the normal case (commit with parent)
+        let output = Command::new("git")
+            .args([
+                "diff",
+                &format!("{commit_hash}^..{commit_hash}"),
+                "--unified=3",
+                "--no-color",
+                "--numstat",
+                "--no-renames",
+                "-p",
+            ])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GitError::IoError(format!("Failed to run git diff for commit: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Handle initial commit (no parent) — use git show instead
+            if stderr.contains("unknown revision") || stderr.contains("bad revision") {
+                let fallback = Command::new("git")
+                    .args([
+                        "show",
+                        "--unified=3",
+                        "--no-color",
+                        "--numstat",
+                        "--no-renames",
+                        "-p",
+                        "--format=", // Empty format to suppress commit metadata
+                        commit_hash,
+                    ])
+                    .current_dir(&self.repo_path)
+                    .output()
+                    .map_err(|e| {
+                        GitError::IoError(format!("Failed to run git show for initial commit: {e}"))
+                    })?;
+
+                if !fallback.status.success() {
+                    let fallback_stderr = String::from_utf8_lossy(&fallback.stderr);
+                    return Err(GitError::IoError(format!(
+                        "git show failed for initial commit: {fallback_stderr}"
+                    )));
+                }
+                let stdout = String::from_utf8_lossy(&fallback.stdout);
+                return Ok(super::diff::parse_diff_output(&stdout));
+            }
+            return Err(GitError::IoError(format!("git diff failed: {stderr}")));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(super::diff::parse_diff_output(&stdout))
+    }
 }
 
 #[cfg(test)]
@@ -956,5 +1070,196 @@ mod tests {
                 .expect("Should check merge status"),
             "Missing branch should be treated as already merged"
         );
+    }
+
+    #[test]
+    fn test_commit_log_returns_recent_commits() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create two additional commits (we already have initial commit)
+        std::fs::write(repo_path.join("file2.txt"), "second commit").expect("Failed to write file");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to add");
+        Command::new("git")
+            .args(["commit", "-m", "Second commit"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to commit");
+
+        std::fs::write(repo_path.join("file3.txt"), "third commit").expect("Failed to write file");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to add");
+        Command::new("git")
+            .args(["commit", "-m", "Third commit"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to commit");
+
+        // Get commit log
+        let commits = git.commit_log(20).expect("Failed to get commit log");
+
+        // Should have 3 commits (initial + 2 new ones)
+        assert_eq!(commits.len(), 3, "Expected 3 commits");
+
+        // Commits should be in newest-first order
+        assert_eq!(commits[0].message, "Third commit");
+        assert_eq!(commits[1].message, "Second commit");
+        assert_eq!(commits[2].message, "Initial commit");
+
+        // Check metadata
+        assert_eq!(commits[0].author, "Test User");
+        assert!(!commits[0].hash.is_empty());
+        assert!(!commits[0].timestamp.is_empty());
+        assert!(commits[0].file_count > 0, "File count should be set");
+    }
+
+    #[test]
+    fn test_commit_log_respects_limit() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create 4 additional commits
+        for i in 2..=5 {
+            std::fs::write(
+                repo_path.join(format!("file{i}.txt")),
+                format!("commit {i}"),
+            )
+            .expect("Failed to write file");
+            Command::new("git")
+                .args(["add", "."])
+                .current_dir(&repo_path)
+                .output()
+                .expect("Failed to add");
+            Command::new("git")
+                .args(["commit", "-m", &format!("Commit {i}")])
+                .current_dir(&repo_path)
+                .output()
+                .expect("Failed to commit");
+        }
+
+        // Request only 2 commits
+        let commits = git.commit_log(2).expect("Failed to get commit log");
+
+        assert_eq!(commits.len(), 2, "Should only return 2 commits");
+        assert_eq!(commits[0].message, "Commit 5");
+        assert_eq!(commits[1].message, "Commit 4");
+    }
+
+    #[test]
+    fn test_commit_diff_shows_changes() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create a commit that adds a file
+        std::fs::write(repo_path.join("new_file.rs"), "fn main() {}\n")
+            .expect("Failed to write file");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to add");
+        Command::new("git")
+            .args(["commit", "-m", "Add new_file.rs"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to commit");
+
+        // Get the commit hash
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to get HEAD");
+        let commit_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        // Get the diff for this commit
+        let diff = git
+            .commit_diff(&commit_hash)
+            .expect("Failed to get commit diff");
+
+        // Should have one file
+        assert_eq!(diff.files.len(), 1, "Expected 1 file in diff");
+
+        let file = &diff.files[0];
+        assert_eq!(file.path, "new_file.rs");
+        assert!(matches!(
+            file.change_type,
+            crate::workflow::ports::FileChangeType::Added
+        ));
+        assert_eq!(file.additions, 1);
+        assert!(!file.is_binary);
+        assert!(file.diff_content.is_some());
+    }
+
+    #[test]
+    fn test_commit_diff_initial_commit() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let repo_path = temp_dir.path().to_path_buf();
+
+        // Initialize repo
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to init");
+
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to configure email");
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to configure name");
+
+        // Create initial commit
+        std::fs::write(repo_path.join("initial.txt"), "Hello\n").expect("Failed to write file");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to add");
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to commit");
+
+        // Get the commit hash
+        let output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to get HEAD");
+        let commit_hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Get diff for initial commit (should use empty tree comparison)
+        let diff = git
+            .commit_diff(&commit_hash)
+            .expect("Failed to get initial commit diff");
+
+        assert_eq!(
+            diff.files.len(),
+            1,
+            "Expected 1 file in initial commit diff"
+        );
+        let file = &diff.files[0];
+        assert_eq!(file.path, "initial.txt");
+        assert!(matches!(
+            file.change_type,
+            crate::workflow::ports::FileChangeType::Added
+        ));
     }
 }

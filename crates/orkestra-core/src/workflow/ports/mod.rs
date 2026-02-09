@@ -8,7 +8,8 @@ mod process_spawner;
 mod store;
 
 pub use git_service::{
-    FileChangeType, FileDiff, GitError, GitService, MergeResult, TaskDiff, WorktreeCreated,
+    CommitInfo, FileChangeType, FileDiff, GitError, GitService, MergeResult, TaskDiff,
+    WorktreeCreated,
 };
 pub use process_spawner::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
 pub use store::{WorkflowError, WorkflowResult, WorkflowStore};

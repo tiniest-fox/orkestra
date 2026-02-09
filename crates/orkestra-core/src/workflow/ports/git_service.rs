@@ -122,6 +122,21 @@ pub struct TaskDiff {
     pub files: Vec<FileDiff>,
 }
 
+/// Metadata for a single git commit.
+#[derive(Debug, Clone, Serialize)]
+pub struct CommitInfo {
+    /// Short commit hash (7 chars).
+    pub hash: String,
+    /// First line of the commit message.
+    pub message: String,
+    /// Author name.
+    pub author: String,
+    /// ISO 8601 timestamp.
+    pub timestamp: String,
+    /// Number of files changed in this commit.
+    pub file_count: usize,
+}
+
 /// Port for git worktree and branch operations.
 ///
 /// This trait abstracts over git operations, allowing:
@@ -248,6 +263,17 @@ pub trait GitService: Send + Sync {
         worktree_path: &Path,
         file_path: &str,
     ) -> Result<Option<String>, GitError>;
+
+    /// Get the N most recent commits on the current branch.
+    ///
+    /// Returns commit metadata including file change counts.
+    fn commit_log(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
+
+    /// Get the diff for a specific commit.
+    ///
+    /// Returns the same `TaskDiff` format as `diff_against_base`,
+    /// showing all changes introduced by the given commit.
+    fn commit_diff(&self, commit_hash: &str) -> Result<TaskDiff, GitError>;
 }
 
 // =============================================================================
@@ -488,6 +514,14 @@ pub mod mock {
         ) -> Result<Option<String>, GitError> {
             // Mock: file doesn't exist
             Ok(None)
+        }
+
+        fn commit_log(&self, _limit: usize) -> Result<Vec<super::CommitInfo>, GitError> {
+            Ok(vec![])
+        }
+
+        fn commit_diff(&self, _commit_hash: &str) -> Result<TaskDiff, GitError> {
+            Ok(TaskDiff { files: vec![] })
         }
     }
 

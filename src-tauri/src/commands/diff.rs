@@ -1,7 +1,8 @@
 //! Tauri commands for git diff operations.
 
-use orkestra_core::workflow::ports::{FileChangeType, FileDiff};
+use orkestra_core::workflow::ports::{CommitInfo, FileChangeType, FileDiff};
 use serde::Serialize;
+use tauri::State;
 
 use crate::error::TauriError;
 use crate::highlight::SyntaxHighlighter;
@@ -317,4 +318,54 @@ fn parse_range(range: &str) -> Option<(u32, u32)> {
         let start = range.parse().ok()?;
         Some((start, 1))
     }
+}
+
+// =============================================================================
+// Commit History Commands
+// =============================================================================
+
+/// Get recent commit history for the main repository.
+///
+/// Returns the 20 most recent commits on the current branch.
+#[tauri::command]
+pub fn workflow_get_commit_log(
+    registry: State<ProjectRegistry>,
+    window: tauri::Window,
+) -> Result<Vec<CommitInfo>, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let api = state.api()?;
+        let Some(git) = api.git_service() else {
+            return Ok(vec![]);
+        };
+        git.commit_log(20).map_err(|e| {
+            orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()).into()
+        })
+    })
+}
+
+/// Get the syntax-highlighted diff for a specific commit.
+#[tauri::command]
+pub fn workflow_get_commit_diff(
+    registry: State<ProjectRegistry>,
+    window: tauri::Window,
+    commit_hash: String,
+    highlighter: State<SyntaxHighlighter>,
+) -> Result<HighlightedTaskDiff, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let api = state.api()?;
+        let Some(git) = api.git_service() else {
+            return Ok(HighlightedTaskDiff { files: vec![] });
+        };
+        let task_diff = git
+            .commit_diff(&commit_hash)
+            .map_err(|e| orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()))?;
+
+        let files = task_diff
+            .files
+            .iter()
+            .map(|f| highlight_file_diff(f.clone(), &highlighter))
+            .collect();
+
+        Ok(HighlightedTaskDiff { files })
+    })
 }

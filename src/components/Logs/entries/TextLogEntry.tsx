@@ -4,7 +4,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { PROSE_CLASSES_DARK } from "../../../utils";
+import { PROSE_CLASSES_LIGHT } from "../../../utils";
 
 interface TextLogEntryProps {
   content: string;
@@ -12,7 +12,7 @@ interface TextLogEntryProps {
 
 export function TextLogEntry({ content }: TextLogEntryProps) {
   return (
-    <div className={`py-1 text-sm ${PROSE_CLASSES_DARK}`}>
+    <div className={`py-1 text-sm ${PROSE_CLASSES_LIGHT}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
     </div>
   );

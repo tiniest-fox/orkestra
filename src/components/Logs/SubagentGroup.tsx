@@ -25,7 +25,9 @@ export function SubagentGroup({ taskEntry, subagentEntries, isComplete }: Subage
     <div>
       <ToolUseLogEntry tool={taskEntry.tool} input={taskEntry.input} isComplete={isComplete} />
       {hiddenCount > 0 && (
-        <div className="ml-6 py-1 text-xs text-gray-500">+{hiddenCount} more tool calls</div>
+        <div className="ml-6 py-1 text-xs text-stone-500 dark:text-stone-400">
+          +{hiddenCount} more tool calls
+        </div>
       )}
       {last3Entries.map((entry, i) => {
         if (entry.type !== "subagent_tool_use") return null;

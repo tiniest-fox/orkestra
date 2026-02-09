@@ -26,7 +26,12 @@
 
 - Tailwind classes only. No CSS modules, styled-components, or inline style objects.
 - Use the project's custom design tokens: `stone-*` (neutrals), `orange-*` (accent), semantic colors (`info`, `warning`, `error`, `success`), `panel` border radius and shadows.
-- Dark mode is via `darkMode: 'media'` (system preference). Use `dark:` variants where needed.
+- **Dark mode pattern**: Always use `light-value dark:dark-value` for all color classes. Never hardcode only light or only dark colors. Dark mode is via `darkMode: 'media'` (system preference).
+  - Text: `text-stone-700 dark:text-stone-300` (600-700 for light, 200-300 for dark)
+  - Backgrounds: `bg-stone-50 dark:bg-stone-900` (50-100 for light, 800-900 for dark)
+  - Borders: `border-stone-300 dark:border-stone-700` (200-300 for light, 600-700 for dark)
+  - Accents: `text-orange-600 dark:text-orange-400` (600 for light, 400 for dark)
+- Use `PROSE_CLASSES_LIGHT` from `utils/prose.ts` for markdown rendering - it includes dual-mode variants. Don't use `PROSE_CLASSES_DARK`.
 
 ## UI Components
 

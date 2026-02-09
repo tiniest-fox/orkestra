@@ -58,7 +58,7 @@ export function LogsTab({
           <div
             ref={containerRef}
             onScroll={handleScroll}
-            className="h-full p-4 overflow-auto bg-stone-900 font-mono text-sm"
+            className="h-full p-4 overflow-auto bg-stone-50 dark:bg-stone-900 text-stone-800 dark:text-stone-200 font-mono text-sm"
           >
             <LogList logs={logs} isLoading={isLoading} error={error} />
           </div>
@@ -66,7 +66,7 @@ export function LogsTab({
       )}
 
       {(tabs.length === 0 || !activeLogStage) && (
-        <div className="p-4 bg-stone-900 font-mono text-sm flex-1">
+        <div className="p-4 bg-stone-50 dark:bg-stone-900 text-stone-800 dark:text-stone-200 font-mono text-sm flex-1">
           <LogList logs={logs} isLoading={isLoading} error={error} />
         </div>
       )}

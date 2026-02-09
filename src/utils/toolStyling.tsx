@@ -88,7 +88,7 @@ const TOOL_STYLES: Record<string, ToolStyle> = {
 
 const DEFAULT_TOOL_STYLE: ToolStyle = {
   icon: (size) => <HelpCircle size={size} {...ICON_PROPS} />,
-  color: "bg-gray-600",
+  color: "bg-stone-600",
 };
 
 /**
@@ -129,21 +129,21 @@ export function getStructuredOutputStyle(outputType: string): StructuredOutputSt
       return {
         icon: <FileOutput size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
         color: "bg-indigo-600",
-        textColor: "text-indigo-300",
+        textColor: "text-indigo-600 dark:text-indigo-300",
         label: "Generating plan",
       };
     case "summary":
       return {
         icon: <FileOutput size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
         color: "bg-indigo-600",
-        textColor: "text-indigo-300",
+        textColor: "text-indigo-600 dark:text-indigo-300",
         label: "Generating summary",
       };
     case "verdict":
       return {
         icon: <FileOutput size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
         color: "bg-indigo-600",
-        textColor: "text-indigo-300",
+        textColor: "text-indigo-600 dark:text-indigo-300",
         label: "Generating verdict",
       };
 
@@ -152,7 +152,7 @@ export function getStructuredOutputStyle(outputType: string): StructuredOutputSt
       return {
         icon: <MessageCircle size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
         color: "bg-amber-600",
-        textColor: "text-amber-300",
+        textColor: "text-amber-600 dark:text-amber-300",
         label: "Asking questions",
       };
 
@@ -162,7 +162,7 @@ export function getStructuredOutputStyle(outputType: string): StructuredOutputSt
       return {
         icon: <Network size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
         color: "bg-teal-600",
-        textColor: "text-teal-300",
+        textColor: "text-teal-600 dark:text-teal-300",
         label: "Presenting task breakdown",
       };
 
@@ -171,14 +171,14 @@ export function getStructuredOutputStyle(outputType: string): StructuredOutputSt
       return {
         icon: <XCircle size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
         color: "bg-red-600",
-        textColor: "text-red-300",
+        textColor: "text-red-600 dark:text-red-300",
         label: "Task failed",
       };
     case "blocked":
       return {
         icon: <AlertCircle size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
         color: "bg-amber-600",
-        textColor: "text-amber-300",
+        textColor: "text-amber-600 dark:text-amber-300",
         label: "Task blocked",
       };
 
@@ -187,7 +187,7 @@ export function getStructuredOutputStyle(outputType: string): StructuredOutputSt
       return {
         icon: <RotateCcw size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
         color: "bg-blue-600",
-        textColor: "text-blue-300",
+        textColor: "text-blue-600 dark:text-blue-300",
         label: "Submitting review decision",
       };
 
@@ -196,7 +196,7 @@ export function getStructuredOutputStyle(outputType: string): StructuredOutputSt
       return {
         icon: <Send size={STRUCTURED_OUTPUT_ICON_SIZE} {...ICON_PROPS} />,
         color: "bg-indigo-600",
-        textColor: "text-indigo-300",
+        textColor: "text-indigo-600 dark:text-indigo-300",
         label: `Generating ${outputType}`,
       };
   }

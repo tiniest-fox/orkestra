@@ -61,8 +61,8 @@ export function LogList({ logs, isLoading, error }: LogListProps) {
     return (
       <div className="flex items-center justify-center h-full">
         {isLoading ? (
-          <div className="flex items-center gap-2 text-gray-500 text-sm">
-            <span className="w-3 h-3 border-2 border-gray-500 border-t-transparent rounded-full animate-spin" />
+          <div className="flex items-center gap-2 text-stone-500 dark:text-stone-400 text-sm">
+            <span className="w-3 h-3 border-2 border-stone-400 dark:border-stone-500 border-t-transparent rounded-full animate-spin" />
             Loading logs...
           </div>
         ) : (

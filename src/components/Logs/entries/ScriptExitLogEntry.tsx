@@ -11,8 +11,10 @@ interface ScriptExitLogEntryProps {
 }
 
 export function ScriptExitLogEntry({ code, success, timedOut }: ScriptExitLogEntryProps) {
-  const exitColor = success ? "text-green-400" : "text-red-400";
-  const exitBg = success ? "bg-green-900/30" : "bg-red-900/30";
+  const exitColor = success
+    ? "text-green-600 dark:text-green-400"
+    : "text-red-600 dark:text-red-400";
+  const exitBg = success ? "bg-green-100 dark:bg-green-900/30" : "bg-red-100 dark:bg-red-900/30";
   const exitBorder = success ? "border-green-500" : "border-red-500";
   const exitLabel = timedOut
     ? "Script timed out"

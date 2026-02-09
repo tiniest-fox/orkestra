@@ -10,8 +10,9 @@ use orkestra_core::{
     find_project_root,
     utility::UtilityRunner,
     workflow::{
-        domain::IterationTrigger, load_workflow_for_project, Git2GitService, GitService, Iteration,
-        Phase, SqliteWorkflowStore, StageSession, Status, Task, TaskView, WorkflowApi,
+        domain::{IterationTrigger, LogEntry},
+        load_workflow_for_project, Git2GitService, GitService, Iteration, Phase,
+        SqliteWorkflowStore, StageSession, Status, Task, TaskView, WorkflowApi,
     },
 };
 
@@ -33,6 +34,23 @@ enum Commands {
     Task {
         #[command(subcommand)]
         action: TaskAction,
+    },
+    /// View agent and script logs
+    Logs {
+        /// Task ID
+        task_id: String,
+        /// Stage name (required for viewing logs)
+        #[arg(long)]
+        stage: Option<String>,
+        /// Filter by log entry type (text, error, `tool_use`, `tool_result`, `script_output`, etc.)
+        #[arg(long, name = "type")]
+        type_filter: Option<String>,
+        /// Maximum number of log entries to return (default: 100)
+        #[arg(long, default_value = "100")]
+        limit: usize,
+        /// Number of log entries to skip
+        #[arg(long, default_value = "0")]
+        offset: usize,
     },
     /// Utility task commands
     Utility {
@@ -118,6 +136,20 @@ fn main() {
 
     match cli.command {
         Commands::Task { action } => handle_task_action(action, cli.pretty),
+        Commands::Logs {
+            task_id,
+            stage,
+            type_filter,
+            limit,
+            offset,
+        } => handle_logs(
+            &task_id,
+            stage,
+            type_filter.as_ref(),
+            limit,
+            offset,
+            cli.pretty,
+        ),
         Commands::Utility { action } => handle_utility_action(action),
     }
 }
@@ -163,6 +195,132 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         ),
         TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
         TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback, pretty),
+    }
+}
+
+fn handle_logs(
+    task_id: &str,
+    stage: Option<String>,
+    type_filter: Option<&String>,
+    limit: usize,
+    offset: usize,
+    pretty: bool,
+) {
+    let api = match init_workflow_api() {
+        Ok(api) => api,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // If no --stage provided, list available stages and exit with error
+    let Some(stage_name) = stage else {
+        let stages = match api.get_stages_with_logs(task_id) {
+            Ok(stages) => stages,
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        };
+        if stages.is_empty() {
+            eprintln!("No stages with logs found for task {task_id}");
+        } else {
+            eprintln!("Error: --stage is required. Available stages with logs:");
+            for s in &stages {
+                eprintln!("  {s}");
+            }
+        }
+        std::process::exit(1);
+    };
+
+    // Get logs for the specified stage
+    let mut logs = match api.get_task_logs(task_id, Some(&stage_name)) {
+        Ok(logs) => logs,
+        Err(e) => {
+            eprintln!("Error getting logs: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // Apply type filter if specified
+    if let Some(type_name) = type_filter {
+        logs.retain(|entry| {
+            // Serialize to JSON to extract the "type" tag
+            if let Ok(json) = serde_json::to_value(entry) {
+                json.get("type").and_then(|t| t.as_str()) == Some(type_name.as_str())
+            } else {
+                false
+            }
+        });
+    }
+
+    // Apply pagination (offset then limit)
+    let total = logs.len();
+    let logs: Vec<_> = logs.into_iter().skip(offset).take(limit).collect();
+
+    // Output
+    if pretty {
+        println!(
+            "Logs for task {} stage {} ({} of {} entries)",
+            task_id,
+            stage_name,
+            logs.len(),
+            total
+        );
+        println!("{}", "-".repeat(60));
+        for entry in &logs {
+            print_log_entry_pretty(entry);
+        }
+    } else {
+        // Wrap in metadata object for agent consumption
+        let output = serde_json::json!({
+            "task_id": task_id,
+            "stage": stage_name,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "entries": logs,
+        });
+        output_json(&output);
+    }
+}
+
+fn print_log_entry_pretty(entry: &LogEntry) {
+    match entry {
+        LogEntry::Text { content } => println!("[text] {content}"),
+        LogEntry::Error { message } => println!("[error] {message}"),
+        LogEntry::ToolUse { tool, id, .. } => println!("[tool_use] {tool} ({id})"),
+        LogEntry::ToolResult { tool, content, .. } => {
+            let preview = content.chars().take(100).collect::<String>();
+            println!("[tool_result] {tool}: {preview}");
+        }
+        LogEntry::ScriptStart { command, stage } => println!("[script_start] {stage}: {command}"),
+        LogEntry::ScriptOutput { content } => println!("[script_output] {content}"),
+        LogEntry::ScriptExit {
+            code,
+            success,
+            timed_out,
+        } => {
+            println!("[script_exit] code={code} success={success} timed_out={timed_out}");
+        }
+        LogEntry::ProcessExit { code } => println!("[process_exit] code={code:?}"),
+        LogEntry::UserMessage {
+            resume_type,
+            content,
+        } => {
+            println!("[user_message] ({resume_type}) {content}");
+        }
+        _ => {
+            // SubagentToolUse, SubagentToolResult — show type name
+            if let Ok(json) = serde_json::to_value(entry) {
+                let type_name = json
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("unknown");
+                println!("[{type_name}] ...");
+            }
+        }
     }
 }
 

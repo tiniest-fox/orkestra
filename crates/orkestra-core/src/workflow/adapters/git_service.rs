@@ -729,7 +729,7 @@ impl GitService for Git2GitService {
         &self,
         limit: usize,
     ) -> Result<Vec<crate::workflow::ports::CommitInfo>, GitError> {
-        // Step 1: Get commit metadata using null-byte separator for reliable parsing
+        // Get commit metadata using null-byte separator for reliable parsing
         let output = Command::new("git")
             .args([
                 "log",
@@ -756,34 +756,41 @@ impl GitService for Git2GitService {
                     message: parts[1].to_string(),
                     author: parts[2].to_string(),
                     timestamp: parts[3].to_string(),
-                    file_count: 0, // Filled in below
+                    file_count: None,
                 });
             }
         }
 
-        // Step 2: Get file counts per commit using --stat
-        // Use a separate command for reliability (--shortstat with --format can be tricky)
-        for commit in &mut commits {
-            let stat_output = Command::new("git")
+        Ok(commits)
+    }
+
+    fn batch_file_counts(
+        &self,
+        hashes: &[String],
+    ) -> Result<std::collections::HashMap<String, usize>, GitError> {
+        let mut counts = std::collections::HashMap::new();
+        for hash in hashes {
+            let output = Command::new("git")
                 .args([
                     "diff-tree",
+                    "--root",
                     "--no-commit-id",
                     "--name-only",
                     "-r",
-                    &commit.hash,
+                    hash,
                 ])
                 .current_dir(&self.repo_path)
                 .output();
 
-            if let Ok(stat) = stat_output {
+            if let Ok(stat) = output {
                 if stat.status.success() {
-                    let stat_stdout = String::from_utf8_lossy(&stat.stdout);
-                    commit.file_count = stat_stdout.lines().filter(|l| !l.is_empty()).count();
+                    let stdout = String::from_utf8_lossy(&stat.stdout);
+                    let count = stdout.lines().filter(|l| !l.is_empty()).count();
+                    counts.insert(hash.clone(), count);
                 }
             }
         }
-
-        Ok(commits)
+        Ok(counts)
     }
 
     fn commit_diff(&self, commit_hash: &str) -> Result<crate::workflow::ports::TaskDiff, GitError> {
@@ -1180,7 +1187,10 @@ mod tests {
         assert_eq!(commits[0].author, "Test User");
         assert!(!commits[0].hash.is_empty());
         assert!(!commits[0].timestamp.is_empty());
-        assert!(commits[0].file_count > 0, "File count should be set");
+        assert_eq!(
+            commits[0].file_count, None,
+            "File count should be None from commit_log"
+        );
     }
 
     #[test]
@@ -1213,6 +1223,95 @@ mod tests {
         assert_eq!(commits.len(), 2, "Should only return 2 commits");
         assert_eq!(commits[0].message, "Commit 5");
         assert_eq!(commits[1].message, "Commit 4");
+    }
+
+    #[test]
+    fn test_batch_file_counts() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create commits with different file counts
+        // Commit with 1 file
+        std::fs::write(repo_path.join("file2.txt"), "second commit").expect("Failed to write file");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to add");
+        Command::new("git")
+            .args(["commit", "-m", "Second commit"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to commit");
+
+        // Commit with 2 files
+        std::fs::write(repo_path.join("file3.txt"), "third commit").expect("Failed to write file");
+        std::fs::write(repo_path.join("file4.txt"), "third commit also")
+            .expect("Failed to write file");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to add");
+        Command::new("git")
+            .args(["commit", "-m", "Third commit"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to commit");
+
+        // Get all commits to extract hashes
+        let commits = git.commit_log(10).expect("Failed to get commit log");
+        let hashes: Vec<String> = commits.iter().map(|c| c.hash.clone()).collect();
+
+        // Get file counts for all commits
+        let counts = git
+            .batch_file_counts(&hashes)
+            .expect("Failed to get batch file counts");
+
+        // Should have counts for all commits
+        assert_eq!(counts.len(), 3, "Should have counts for 3 commits");
+
+        // Verify counts (note: commits[0] is newest, commits[2] is oldest)
+        assert_eq!(
+            counts.get(&commits[0].hash),
+            Some(&2),
+            "Third commit should have 2 files"
+        );
+        assert_eq!(
+            counts.get(&commits[1].hash),
+            Some(&1),
+            "Second commit should have 1 file"
+        );
+        assert_eq!(
+            counts.get(&commits[2].hash),
+            Some(&1),
+            "Initial commit should have 1 file (--root flag handles root commits)"
+        );
+    }
+
+    #[test]
+    fn test_batch_file_counts_with_invalid_hash() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        let commits = git.commit_log(1).expect("Failed to get commit log");
+        let mut hashes: Vec<String> = commits.iter().map(|c| c.hash.clone()).collect();
+        hashes.push("invalid-hash-12345".to_string());
+
+        let counts = git
+            .batch_file_counts(&hashes)
+            .expect("Failed to get batch file counts");
+
+        // Should only have count for valid commit
+        assert_eq!(counts.len(), 1, "Should only count valid commits");
+        assert!(
+            counts.contains_key(&commits[0].hash),
+            "Should have count for valid commit"
+        );
+        assert!(
+            !counts.contains_key("invalid-hash-12345"),
+            "Should not have count for invalid hash"
+        );
     }
 
     #[test]

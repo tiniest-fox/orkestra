@@ -7,6 +7,7 @@
 //! - Testability via mock implementations
 
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -134,7 +135,7 @@ pub struct CommitInfo {
     /// ISO 8601 timestamp.
     pub timestamp: String,
     /// Number of files changed in this commit.
-    pub file_count: usize,
+    pub file_count: Option<usize>,
 }
 
 /// Port for git worktree and branch operations.
@@ -268,6 +269,12 @@ pub trait GitService: Send + Sync {
     ///
     /// Returns commit metadata including file change counts.
     fn commit_log(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
+
+    /// Get file change counts for a batch of commit hashes.
+    ///
+    /// Returns a map from commit hash to the number of files changed.
+    /// Hashes that can't be resolved are silently omitted.
+    fn batch_file_counts(&self, hashes: &[String]) -> Result<HashMap<String, usize>, GitError>;
 
     /// Get the diff for a specific commit.
     ///
@@ -518,6 +525,13 @@ pub mod mock {
 
         fn commit_log(&self, _limit: usize) -> Result<Vec<super::CommitInfo>, GitError> {
             Ok(vec![])
+        }
+
+        fn batch_file_counts(
+            &self,
+            _hashes: &[String],
+        ) -> Result<HashMap<String, usize>, GitError> {
+            Ok(HashMap::new())
         }
 
         fn commit_diff(&self, _commit_hash: &str) -> Result<TaskDiff, GitError> {

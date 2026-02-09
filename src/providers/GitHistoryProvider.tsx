@@ -1,7 +1,7 @@
 /**
  * Provider for git commit history.
  *
- * Eagerly fetches commit log on app startup and polls every 2s.
+ * Fetches commit log on app startup. Polling is disabled until we add caching.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -51,11 +51,10 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   useEffect(() => {
     fetchCommits();
 
-    const interval = setInterval(fetchCommits, 2000);
-
-    return () => {
-      clearInterval(interval);
-    };
+    // TODO: Bring back once we add caching/change detection to avoid
+    // recomputing full git diffs on every poll tick.
+    // const interval = setInterval(fetchCommits, 2000);
+    // return () => clearInterval(interval);
   }, [fetchCommits]);
 
   const value: GitHistoryContextValue = {

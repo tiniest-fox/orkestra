@@ -534,8 +534,8 @@ export interface CommitInfo {
   author: string;
   /** ISO 8601 timestamp. */
   timestamp: string;
-  /** Number of files changed in this commit. */
-  file_count: number;
+  /** Number of files changed in this commit (null when not yet loaded). */
+  file_count: number | null;
 }
 
 // =============================================================================

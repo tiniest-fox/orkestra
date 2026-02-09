@@ -2,7 +2,7 @@
  * Hook for fetching task diff data.
  *
  * Returns highlighted diff hunks and file metadata.
- * Fetches once when the task ID changes. Polling is disabled until we add caching.
+ * Fetches when the task ID changes and polls every 2 seconds while active.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -82,13 +82,11 @@ export function useDiff(taskId: string | null): UseDiffResult {
 
     fetchDiff();
 
-    // TODO: Bring back once we add caching/change detection to avoid
-    // recomputing full git diffs on every poll tick.
-    // const intervalId = setInterval(fetchDiff, 2000);
+    const intervalId = setInterval(fetchDiff, 2000);
 
     return () => {
       cancelled = true;
-      // clearInterval(intervalId);
+      clearInterval(intervalId);
     };
   }, [taskId]);
 

@@ -1,7 +1,7 @@
 /**
  * Provider for git commit history.
  *
- * Fetches commit log on app startup. Polling is disabled until we add caching.
+ * Fetches commit log with 2-second polling. File counts are lazy-loaded separately via batch endpoint.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -10,6 +10,7 @@ import type { CommitInfo } from "../types/workflow";
 
 interface GitHistoryContextValue {
   commits: CommitInfo[];
+  fileCounts: Map<string, number>;
   loading: boolean;
   error: string | null;
 }
@@ -33,6 +34,7 @@ interface GitHistoryProviderProps {
 
 export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const [commits, setCommits] = useState<CommitInfo[]>([]);
+  const [fileCounts, setFileCounts] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,15 +52,45 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
 
   useEffect(() => {
     fetchCommits();
-
-    // TODO: Bring back once we add caching/change detection to avoid
-    // recomputing full git diffs on every poll tick.
-    // const interval = setInterval(fetchCommits, 2000);
-    // return () => clearInterval(interval);
+    const interval = setInterval(fetchCommits, 2000);
+    return () => clearInterval(interval);
   }, [fetchCommits]);
+
+  useEffect(() => {
+    if (commits.length === 0) return;
+
+    // Find hashes we don't have counts for yet
+    const missing = commits.map((c) => c.hash).filter((hash) => !fileCounts.has(hash));
+
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+
+    invoke<Record<string, number>>("workflow_get_batch_file_counts", { hashes: missing })
+      .then((result) => {
+        if (cancelled) return;
+        setFileCounts((prev) => {
+          const next = new Map(prev);
+          for (const [hash, count] of Object.entries(result)) {
+            next.set(hash, count);
+          }
+          return next;
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to fetch file counts:", err);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [commits, fileCounts]);
 
   const value: GitHistoryContextValue = {
     commits,
+    fileCounts,
     loading,
     error,
   };

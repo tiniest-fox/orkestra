@@ -2,6 +2,7 @@ import type { CommitInfo } from "../../types/workflow";
 
 interface CommitEntryProps {
   commit: CommitInfo;
+  fileCount: number | null;
   isSelected: boolean;
   onSelect: (hash: string) => void;
 }
@@ -45,7 +46,7 @@ function formatRelativeTime(timestamp: string): string {
   return `${years}y ago`;
 }
 
-export function CommitEntry({ commit, isSelected, onSelect }: CommitEntryProps) {
+export function CommitEntry({ commit, fileCount, isSelected, onSelect }: CommitEntryProps) {
   return (
     <button
       type="button"
@@ -68,9 +69,13 @@ export function CommitEntry({ commit, isSelected, onSelect }: CommitEntryProps) 
       <div className="flex items-center gap-2 mt-0.5 text-xs text-stone-400 dark:text-stone-500">
         <span>{commit.author}</span>
         <span>&middot;</span>
-        <span>
-          {commit.file_count} {commit.file_count === 1 ? "file" : "files"}
-        </span>
+        {fileCount !== null ? (
+          <span>
+            {fileCount} {fileCount === 1 ? "file" : "files"}
+          </span>
+        ) : (
+          <span className="inline-block h-3 w-12 bg-stone-200 dark:bg-stone-700 rounded animate-pulse" />
+        )}
       </div>
     </button>
   );

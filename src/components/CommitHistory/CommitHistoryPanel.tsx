@@ -15,7 +15,7 @@ export function CommitHistoryPanel({
   onSelectCommit,
   onClose,
 }: CommitHistoryPanelProps) {
-  const { commits, loading, error } = useGitHistory();
+  const { commits, fileCounts, loading, error } = useGitHistory();
 
   return (
     <Panel className="flex flex-col">
@@ -39,6 +39,7 @@ export function CommitHistoryPanel({
             <CommitEntry
               key={commit.hash}
               commit={commit}
+              fileCount={fileCounts.get(commit.hash) ?? null}
               isSelected={commit.hash === selectedCommit}
               onSelect={onSelectCommit}
             />

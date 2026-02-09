@@ -182,22 +182,20 @@ pub fn format_commit_message(title: &str, body: &str, model_names: &[String]) ->
 pub fn friendly_model_name(model_spec: Option<&str>) -> &str {
     match model_spec {
         None => "Claude Sonnet 4.5",
-        Some(spec) => {
-            // Check kimi-k2.5 before kimi-k2 (substring match)
-            if spec == "kimi-k2.5" || spec == "opencode/kimi-k2.5" || spec.contains("kimi-k2.5") {
-                "Kimi K2.5"
-            } else if spec == "kimi-k2" || spec == "opencode/kimi-k2" || spec.contains("kimi-k2") {
-                "Kimi K2"
-            } else if spec == "opus" || spec == "claudecode/opus" || spec.contains("opus") {
-                "Claude Opus 4.5"
-            } else if spec == "haiku" || spec == "claudecode/haiku" || spec.contains("haiku") {
-                "Claude Haiku 4.5"
-            } else if spec == "sonnet" || spec == "claudecode/sonnet" || spec.contains("sonnet") {
-                "Claude Sonnet 4.5"
-            } else {
-                spec
-            }
-        }
+        Some(spec) => match spec {
+            // Claude Sonnet — alias, provider-prefixed, and raw model ID
+            "sonnet" | "claudecode/sonnet" | "claude-sonnet-4-5-20250929" => "Claude Sonnet 4.5",
+            // Claude Opus
+            "opus" | "claudecode/opus" | "claude-opus-4-5-20251101" => "Claude Opus 4.5",
+            // Claude Haiku
+            "haiku" | "claudecode/haiku" | "claude-haiku-4-5-20251001" => "Claude Haiku 4.5",
+            // Kimi K2.5
+            "kimi-k2.5" | "opencode/kimi-k2.5" | "opencode/kimi-k2.5-free" => "Kimi K2.5",
+            // Kimi K2
+            "kimi-k2" | "opencode/kimi-k2" | "moonshot/kimi-k2-0711-preview" => "Kimi K2",
+            // Unknown — return raw spec
+            _ => spec,
+        },
     }
 }
 
@@ -282,14 +280,26 @@ mod tests {
     }
 
     #[test]
-    fn test_friendly_model_name_contains() {
+    fn test_friendly_model_name_raw_model_ids() {
         assert_eq!(
-            friendly_model_name(Some("claude-sonnet-4-20250514")),
+            friendly_model_name(Some("claude-sonnet-4-5-20250929")),
             "Claude Sonnet 4.5"
         );
         assert_eq!(
-            friendly_model_name(Some("claude-opus-4-20250514")),
+            friendly_model_name(Some("claude-opus-4-5-20251101")),
             "Claude Opus 4.5"
+        );
+        assert_eq!(
+            friendly_model_name(Some("claude-haiku-4-5-20251001")),
+            "Claude Haiku 4.5"
+        );
+        assert_eq!(
+            friendly_model_name(Some("moonshot/kimi-k2-0711-preview")),
+            "Kimi K2"
+        );
+        assert_eq!(
+            friendly_model_name(Some("opencode/kimi-k2.5-free")),
+            "Kimi K2.5"
         );
     }
 
@@ -304,6 +314,19 @@ mod tests {
     #[test]
     fn test_friendly_model_name_unknown() {
         assert_eq!(friendly_model_name(Some("unknown-model")), "unknown-model");
+    }
+
+    #[test]
+    fn test_friendly_model_name_unknown_passes_through() {
+        assert_eq!(
+            friendly_model_name(Some("some-new-model")),
+            "some-new-model"
+        );
+        // Verify old contains-based false positives no longer match
+        assert_eq!(
+            friendly_model_name(Some("my-custom-opus-variant")),
+            "my-custom-opus-variant"
+        );
     }
 
     #[test]

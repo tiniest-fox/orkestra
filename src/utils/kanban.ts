@@ -69,19 +69,31 @@ export function getTasksForColumn(tasks: WorkflowTaskView[], columnId: string): 
     return false;
   });
 
-  // Sort: needs review/questions first, then active (agent_working phase), then by creation date
+  // Sort by priority tier (failed > blocked > questions > review > working > waiting), then by created_at
   return columnTasks.sort((a, b) => {
-    // Needs review/questions items at top
-    const aReview = a.derived.needs_review || a.derived.has_questions ? 0 : 1;
-    const bReview = b.derived.needs_review || b.derived.has_questions ? 0 : 1;
-    if (aReview !== bReview) return aReview - bReview;
+    const getPriority = (task: WorkflowTaskView): number => {
+      const d = task.derived;
+      const sp = d.subtask_progress;
 
-    // Active items (with agent running) above idle items
-    const aActive = a.derived.is_working ? 0 : 1;
-    const bActive = b.derived.is_working ? 0 : 1;
-    if (aActive !== bActive) return aActive - bActive;
+      // Failed (or parent with failed subtasks)
+      if (d.is_failed || (sp && sp.failed > 0)) return 0;
+      // Blocked (or parent with blocked subtasks)
+      if (d.is_blocked || (sp && sp.blocked > 0)) return 1;
+      // Needs questions answered (or parent with subtask questions)
+      if (d.has_questions || (sp && sp.has_questions > 0)) return 2;
+      // Needs review (or parent with subtask needing review)
+      if (d.needs_review || (sp && sp.needs_review > 0)) return 3;
+      // Working (agent currently running)
+      if (d.is_working) return 4;
+      // Idle/waiting (everything else)
+      return 5;
+    };
 
-    // Sort by created_at (oldest first)
+    const aPriority = getPriority(a);
+    const bPriority = getPriority(b);
+    if (aPriority !== bPriority) return aPriority - bPriority;
+
+    // Within the same tier, sort by created_at (oldest first)
     return a.created_at.localeCompare(b.created_at);
   });
 }

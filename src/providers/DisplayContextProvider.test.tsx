@@ -13,6 +13,7 @@ function TestComponent() {
     selectCommit,
     toggleAssistant,
     closeDiff,
+    closeSubtask,
     showTaskDiff,
     showSubtaskDiff,
     navigateToTask,
@@ -54,6 +55,9 @@ function TestComponent() {
       </button>
       <button type="button" onClick={closeDiff}>
         Close Diff
+      </button>
+      <button type="button" onClick={closeSubtask}>
+        Close Subtask
       </button>
       <button type="button" onClick={() => navigateToTask("task-2")}>
         Navigate to Task (no parent)
@@ -315,5 +319,31 @@ describe("DisplayContextProvider", () => {
     // Archive flag should be preserved
     expect(screen.getByTestId("is-archive")).toHaveTextContent("true");
     expect(screen.getByTestId("preset")).toHaveTextContent("Task");
+  });
+
+  it("closeSubtask from SubtaskDiff returns to Task", async () => {
+    render(
+      <DisplayContextProvider>
+        <TestComponent />
+      </DisplayContextProvider>,
+    );
+
+    // Set up SubtaskDiff state
+    await act(async () => {
+      screen.getByText("Show Subtask Diff").click();
+    });
+
+    expect(screen.getByTestId("preset")).toHaveTextContent("SubtaskDiff");
+    expect(screen.getByTestId("task-id")).toHaveTextContent("parent-1");
+    expect(screen.getByTestId("subtask-id")).toHaveTextContent("sub-1");
+
+    // Close subtask
+    await act(async () => {
+      screen.getByText("Close Subtask").click();
+    });
+
+    expect(screen.getByTestId("preset")).toHaveTextContent("Task");
+    expect(screen.getByTestId("task-id")).toHaveTextContent("parent-1");
+    expect(screen.getByTestId("subtask-id")).toHaveTextContent("null");
   });
 });

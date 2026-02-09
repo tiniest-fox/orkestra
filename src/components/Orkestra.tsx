@@ -111,10 +111,6 @@ export function Orkestra() {
   };
 
   const handleCloseSubtask = () => {
-    // When closing subtask, also close its diff if open
-    if (layout.preset === "SubtaskDiff") {
-      closeDiff();
-    }
     closeSubtask();
   };
 

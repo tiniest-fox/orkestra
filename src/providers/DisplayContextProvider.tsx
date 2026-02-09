@@ -215,7 +215,7 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
   // Close/undo operations
   const closeSubtask = useCallback(() => {
     setLayout((prev) => {
-      if (prev.preset === "Subtask") {
+      if (prev.preset === "Subtask" || prev.preset === "SubtaskDiff") {
         return { ...prev, preset: "Task", subtaskId: null };
       }
       return prev;

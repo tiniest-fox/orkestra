@@ -301,30 +301,6 @@ export function Orkestra() {
           )}
         </Slot>
 
-        {/* Main content: KanbanBoard or ArchivedListView (hides when diff or subtask diff is shown) */}
-        <Slot
-          id="board"
-          type="grow"
-          visible={
-            !showDiff && !showSubtaskDiff && !loading && !(isCommitView && !!selectedCommitHash)
-          }
-        >
-          {view.type === "board" ? (
-            <KanbanBoard
-              config={config}
-              tasks={activeTasks}
-              selectedTaskId={currentSelectedTask?.id}
-              onSelectTask={handleSelectTask}
-            />
-          ) : (
-            <ArchivedListView
-              tasks={archivedTopLevelTasks}
-              selectedTaskId={currentSelectedTask?.id}
-              onSelectTask={handleSelectTask}
-            />
-          )}
-        </Slot>
-
         {/* Commit history list (fixed width, visible in commit view) */}
         <Slot id="commit-list" type="fixed" size={360} visible={isCommitView}>
           <CommitHistoryPanel
@@ -338,6 +314,32 @@ export function Orkestra() {
         <Slot id="commit-diff" type="grow" visible={isCommitView && !!selectedCommitHash}>
           {selectedCommitHash && (
             <CommitDiffPanel commitHash={selectedCommitHash} onClose={deselectCommit} />
+          )}
+        </Slot>
+
+        {/* Main content: KanbanBoard or ArchivedListView (hides when diff or subtask diff is shown) */}
+        {/* Note: When visible=false, the ternary content below is not rendered. The logic must ensure
+             the board is completely hidden when it shouldn't be shown, not just when specific conditions
+             are met. Partial visibility conditions (like "hide only when X is selected") can cause the
+             wrong content to render when the slot becomes visible again. */}
+        <Slot
+          id="board"
+          type="grow"
+          visible={!showDiff && !showSubtaskDiff && !loading && !isCommitView}
+        >
+          {view.type === "archive" ? (
+            <ArchivedListView
+              tasks={archivedTopLevelTasks}
+              selectedTaskId={currentSelectedTask?.id}
+              onSelectTask={handleSelectTask}
+            />
+          ) : (
+            <KanbanBoard
+              config={config}
+              tasks={activeTasks}
+              selectedTaskId={currentSelectedTask?.id}
+              onSelectTask={handleSelectTask}
+            />
           )}
         </Slot>
 

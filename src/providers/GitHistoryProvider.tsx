@@ -5,7 +5,15 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { CommitInfo } from "../types/workflow";
 
 interface GitHistoryContextValue {
@@ -37,6 +45,7 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const [fileCounts, setFileCounts] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestedHashesRef = useRef<Set<string>>(new Set());
 
   const fetchCommits = useCallback(async () => {
     try {
@@ -59,16 +68,17 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   useEffect(() => {
     if (commits.length === 0) return;
 
-    // Find hashes we don't have counts for yet
-    const missing = commits.map((c) => c.hash).filter((hash) => !fileCounts.has(hash));
+    const missing = commits
+      .map((c) => c.hash)
+      .filter((hash) => !requestedHashesRef.current.has(hash));
 
     if (missing.length === 0) return;
 
-    let cancelled = false;
+    // Mark as in-flight before async call
+    for (const h of missing) requestedHashesRef.current.add(h);
 
     invoke<Record<string, number>>("workflow_get_batch_file_counts", { hashes: missing })
       .then((result) => {
-        if (cancelled) return;
         setFileCounts((prev) => {
           const next = new Map(prev);
           for (const [hash, count] of Object.entries(result)) {
@@ -78,15 +88,11 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
         });
       })
       .catch((err) => {
-        if (!cancelled) {
-          console.error("Failed to fetch file counts:", err);
-        }
+        console.error("Failed to fetch file counts:", err);
+        // Remove failed hashes so they can be retried on next poll
+        for (const h of missing) requestedHashesRef.current.delete(h);
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [commits, fileCounts]);
+  }, [commits]);
 
   const value: GitHistoryContextValue = {
     commits,

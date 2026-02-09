@@ -267,7 +267,8 @@ pub trait GitService: Send + Sync {
 
     /// Get the N most recent commits on the current branch.
     ///
-    /// Returns commit metadata including file change counts.
+    /// Returns commit metadata without file counts. Use `batch_file_counts`
+    /// to fetch file change counts separately.
     fn commit_log(&self, limit: usize) -> Result<Vec<CommitInfo>, GitError>;
 
     /// Get file change counts for a batch of commit hashes.

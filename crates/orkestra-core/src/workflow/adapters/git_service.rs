@@ -782,12 +782,11 @@ impl GitService for Git2GitService {
                 .current_dir(&self.repo_path)
                 .output();
 
-            if let Ok(stat) = output {
-                if stat.status.success() {
-                    let stdout = String::from_utf8_lossy(&stat.stdout);
-                    let count = stdout.lines().filter(|l| !l.is_empty()).count();
-                    counts.insert(hash.clone(), count);
-                }
+            let output = output.map_err(|e| GitError::IoError(format!("git diff-tree: {e}")))?;
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let count = stdout.lines().filter(|l| !l.is_empty()).count();
+                counts.insert(hash.clone(), count);
             }
         }
         Ok(counts)

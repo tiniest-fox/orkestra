@@ -51,10 +51,12 @@ impl ProcessSpawner for OpenCodeProcessSpawner {
         // The fallback concatenation (prepending system prompt to user message)
         // already happened in agent_execution.rs, so config.system_prompt will be None.
         // We simply ignore the field here as per the design.
-        debug_assert!(
-            config.system_prompt.is_none(),
-            "OpenCode does not support system prompts; should be None after fallback"
-        );
+        if config.system_prompt.is_some() {
+            crate::orkestra_debug!(
+                "opencode",
+                "WARNING: system_prompt is Some but OpenCode does not support it; ignoring"
+            );
+        }
 
         let mut cmd = Command::new("opencode");
 

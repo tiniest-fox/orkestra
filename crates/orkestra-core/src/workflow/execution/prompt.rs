@@ -634,8 +634,9 @@ pub fn resolve_stage_agent_config_for(
     let user_message = build_user_message(&ctx);
 
     // Get JSON schema
-    let json_schema =
-        get_agent_schema(effective_stage, project_root).expect("Agent stage should have schema");
+    let json_schema = get_agent_schema(effective_stage, project_root).ok_or_else(|| {
+        AgentConfigError::PromptBuildError(format!("No schema for agent stage '{stage_name}'"))
+    })?;
 
     Ok(ResolvedAgentConfig {
         system_prompt,

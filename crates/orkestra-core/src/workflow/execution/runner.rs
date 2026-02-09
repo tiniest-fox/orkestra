@@ -261,23 +261,23 @@ impl AgentRunnerTrait for AgentRunner {
         // Parse the schema for validation
         let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
+        // Extract prompt before moving config fields
+        let prompt = config.prompt;
+
         // Build process config with resolved model ID
-        let process_config = ProcessConfig::new(config.json_schema).with_session(
-            config.session_id.clone().unwrap_or_default(),
-            config.is_resume,
-        );
+        let mut process_config = ProcessConfig::new(config.json_schema);
 
-        let process_config = if let Some(model) = resolved.model_id {
-            process_config.with_model(model)
-        } else {
-            process_config
-        };
+        if let Some(ref sid) = config.session_id {
+            process_config = process_config.with_session(sid.clone(), config.is_resume);
+        }
 
-        let process_config = if let Some(system_prompt) = config.system_prompt.clone() {
-            process_config.with_system_prompt(system_prompt)
-        } else {
-            process_config
-        };
+        if let Some(model) = resolved.model_id {
+            process_config = process_config.with_model(model);
+        }
+
+        if let Some(system_prompt) = config.system_prompt {
+            process_config = process_config.with_system_prompt(system_prompt);
+        }
 
         // Spawn the process via the resolved provider's spawner
         let mut handle = resolved
@@ -303,7 +303,7 @@ impl AgentRunnerTrait for AgentRunner {
 
         // Write prompt to stdin
         handle
-            .write_prompt(&config.prompt)
+            .write_prompt(&prompt)
             .map_err(|e| RunError::PromptWriteFailed(e.to_string()))?;
 
         // Read all output, parsing through the AgentParser
@@ -385,8 +385,12 @@ impl AgentRunnerTrait for AgentRunner {
             .create_parser(&resolved.provider_name)
             .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
+        // Extract fields before moving config
+        let prompt = config.prompt;
+        let json_schema_str = config.json_schema.clone();
+
         // Build process config with resolved model ID
-        let mut process_config = ProcessConfig::new(config.json_schema.clone());
+        let mut process_config = ProcessConfig::new(config.json_schema);
 
         if let Some(ref sid) = config.session_id {
             process_config = process_config.with_session(sid.clone(), config.is_resume);
@@ -396,7 +400,7 @@ impl AgentRunnerTrait for AgentRunner {
             process_config = process_config.with_model(model);
         }
 
-        if let Some(system_prompt) = config.system_prompt.clone() {
+        if let Some(system_prompt) = config.system_prompt {
             process_config = process_config.with_system_prompt(system_prompt);
         }
 
@@ -412,7 +416,7 @@ impl AgentRunnerTrait for AgentRunner {
 
         // Write prompt to stdin
         handle
-            .write_prompt(&config.prompt)
+            .write_prompt(&prompt)
             .map_err(|e| RunError::PromptWriteFailed(e.to_string()))?;
 
         // Create event channel
@@ -420,7 +424,7 @@ impl AgentRunnerTrait for AgentRunner {
 
         // Emit the prompt as a UserMessage log entry (before streaming starts).
         // This is provider-agnostic — every provider gets the user message logged.
-        if let Some(marker) = parse_resume_marker(&config.prompt) {
+        if let Some(marker) = parse_resume_marker(&prompt) {
             let _ = tx.send(RunEvent::LogLine(LogEntry::UserMessage {
                 resume_type: marker.marker_type.as_str().to_string(),
                 content: marker.content,
@@ -428,7 +432,7 @@ impl AgentRunnerTrait for AgentRunner {
         }
 
         // Parse the schema for validation
-        let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
+        let schema: Option<serde_json::Value> = serde_json::from_str(&json_schema_str).ok();
 
         // Spawn background thread to read output and emit log events
         thread::spawn(move || {

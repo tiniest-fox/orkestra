@@ -31,6 +31,27 @@ use super::prompt_service::PromptService;
 use super::session_service::SessionSpawnContext;
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Extract feedback text from an iteration trigger.
+///
+/// Used by both `build_user_prompt` (for fresh spawns) and `execute_stage`
+/// (for system prompt building). Centralizes the mapping from trigger variants
+/// to their feedback/error text.
+fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
+    trigger.and_then(|t| match t {
+        IterationTrigger::Rejection { feedback, .. } | IterationTrigger::Feedback { feedback } => {
+            Some(feedback.as_str())
+        }
+        IterationTrigger::ScriptFailure { error, .. } => Some(error.as_str()),
+        IterationTrigger::RetryFailed { instructions }
+        | IterationTrigger::RetryBlocked { instructions } => instructions.as_deref(),
+        _ => None,
+    })
+}
+
+// ============================================================================
 // Execution Handle
 // ============================================================================
 
@@ -216,14 +237,7 @@ impl AgentExecutionService {
                 .map_err(ExecutionError::from)
         } else {
             // Extract feedback from trigger if present (fresh spawn after session reset)
-            let feedback = trigger.and_then(|t| match t {
-                IterationTrigger::Rejection { feedback, .. }
-                | IterationTrigger::Feedback { feedback } => Some(feedback.as_str()),
-                IterationTrigger::ScriptFailure { error, .. } => Some(error.as_str()),
-                IterationTrigger::RetryFailed { instructions }
-                | IterationTrigger::RetryBlocked { instructions } => instructions.as_deref(),
-                _ => None,
-            });
+            let feedback = extract_feedback_text(trigger);
 
             let config = self.prompt_service.resolve_config(
                 &self.workflow,
@@ -393,14 +407,7 @@ impl AgentExecutionService {
         let resolved = self.registry.resolve(model_spec.as_deref())?;
 
         // 3. Extract feedback from trigger (used by both system prompt and user message)
-        let feedback = trigger.and_then(|t| match t {
-            IterationTrigger::Rejection { feedback, .. }
-            | IterationTrigger::Feedback { feedback } => Some(feedback.as_str()),
-            IterationTrigger::ScriptFailure { error, .. } => Some(error.as_str()),
-            IterationTrigger::RetryFailed { instructions }
-            | IterationTrigger::RetryBlocked { instructions } => instructions.as_deref(),
-            _ => None,
-        });
+        let feedback = extract_feedback_text(trigger);
 
         // 4. Build system prompt (needed for BOTH fresh and resume)
         // System prompt may contain Handlebars conditionals that need feedback context

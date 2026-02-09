@@ -2747,3 +2747,137 @@ fn test_script_failure_creates_artifact() {
         check_results.unwrap()
     );
 }
+
+/// Test that verifies system prompt and user message are correctly split.
+///
+/// This test explicitly checks that:
+/// - System prompt contains agent definition and output format
+/// - User message contains only task context (no agent definition or output format)
+#[test]
+fn test_system_prompt_split() {
+    let workflow = test_default_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["planner"]);
+
+    // Create task
+    let task = ctx.create_task("Test task", "Test description", None);
+    let task_id = task.id.clone();
+
+    // Queue planning output
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Implementation plan here".to_string(),
+        },
+    );
+
+    ctx.advance(); // spawns planner
+
+    // Get the last call to the agent via last_run_config
+    let call = ctx.last_run_config();
+
+    // ASSERT: System prompt should contain agent definition and output format
+    let system_prompt = call
+        .system_prompt
+        .as_ref()
+        .expect("Should have system prompt");
+    assert!(
+        system_prompt.contains("Output Format") || system_prompt.contains("output format"),
+        "System prompt should contain output format instructions"
+    );
+    assert!(
+        system_prompt.contains("plan"),
+        "System prompt should reference the artifact name 'plan'"
+    );
+
+    // ASSERT: User message should contain task context only
+    let user_message = &call.prompt;
+    assert!(
+        user_message.contains("Test task") || user_message.contains("Test description"),
+        "User message should contain task context"
+    );
+    assert!(
+        user_message.contains("<!orkestra:spawn:planning>"),
+        "User message should have spawn marker"
+    );
+
+    // ASSERT: User message should NOT contain agent definition or output format
+    assert!(
+        !user_message.contains("Output Format"),
+        "User message should NOT contain output format (that's in system prompt)"
+    );
+}
+
+/// Test `OpenCode` provider fallback behavior.
+///
+/// When a stage uses `OpenCode` (which doesn't support system prompts),
+/// the system prompt should be prepended to the user message.
+#[test]
+fn test_opencode_provider_fallback() {
+    use orkestra_core::workflow::config::StageConfig;
+
+    // Create workflow with a stage that uses OpenCode
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_model("opencode/kimi-k2")]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    // Create task
+    let task = ctx.create_task("OpenCode test", "Test fallback behavior", None);
+    let task_id = task.id.clone();
+
+    // Queue work output
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+        },
+    );
+
+    ctx.advance(); // spawns worker with OpenCode
+
+    // Get the last call to the agent
+    let call = ctx.last_run_config();
+
+    // ASSERT: system_prompt should be None (OpenCode doesn't support it)
+    assert!(
+        call.system_prompt.is_none(),
+        "OpenCode doesn't support system prompts, so RunConfig.system_prompt should be None"
+    );
+
+    // ASSERT: User message should contain BOTH system prompt content AND task context
+    let user_message = &call.prompt;
+
+    // Should contain output format (from system prompt)
+    assert!(
+        user_message.contains("Output Format") || user_message.contains("output format"),
+        "User message should contain output format (prepended from system prompt)"
+    );
+
+    // Should contain artifact name (from system prompt)
+    assert!(
+        user_message.contains("summary"),
+        "User message should contain artifact name (from system prompt)"
+    );
+
+    // Should contain task context
+    assert!(
+        user_message.contains("OpenCode test") || user_message.contains("Test fallback behavior"),
+        "User message should contain task context"
+    );
+
+    // Should contain spawn marker
+    assert!(
+        user_message.contains("<!orkestra:spawn:work>"),
+        "User message should have spawn marker"
+    );
+
+    // ASSERT: Schema enforcement should also be in the user message
+    // (OpenCode doesn't support native JSON schema either)
+    assert!(
+        user_message.contains("Required Output Format") || user_message.contains("JSON object"),
+        "User message should contain schema enforcement section (OpenCode lacks native schema support)"
+    );
+}

@@ -858,6 +858,20 @@ mod tests {
         assert_eq!(config.json_schema, r#"{"type":"object"}"#);
         assert_eq!(config.session_id, Some("session-123".to_string()));
         assert!(config.is_resume);
+        assert_eq!(config.system_prompt, None);
+    }
+
+    #[test]
+    fn test_system_prompt_threaded_to_process_config() {
+        // This test verifies that system_prompt flows through to ProcessConfig.
+        // The actual threading happens in run_sync/run_async via process_config.with_system_prompt()
+        let config = RunConfig::new("/tmp/work", "User message", r#"{"type":"object"}"#)
+            .with_system_prompt("System instructions here");
+
+        assert_eq!(
+            config.system_prompt,
+            Some("System instructions here".to_string())
+        );
     }
 
     #[test]

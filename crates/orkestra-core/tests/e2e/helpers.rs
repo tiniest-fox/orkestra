@@ -460,6 +460,24 @@ impl TestEnv {
         combine_prompts(call.system_prompt.as_ref(), &call.prompt)
     }
 
+    /// Get the last system prompt sent to the agent.
+    #[allow(dead_code)]
+    pub fn last_system_prompt(&self) -> Option<String> {
+        let calls = self.runner.calls();
+        calls.last().and_then(|call| call.system_prompt.clone())
+    }
+
+    /// Get the last system prompt sent to a specific task's agent.
+    #[allow(dead_code)]
+    pub fn last_system_prompt_for(&self, task_id: &str) -> Option<String> {
+        let calls = self.runner.calls();
+        calls
+            .iter()
+            .rev()
+            .find(|c| c.task_id.as_deref() == Some(task_id))
+            .and_then(|call| call.system_prompt.clone())
+    }
+
     /// Assert that the last prompt has a specific resume marker type and contains expected strings.
     ///
     /// Marker format: `<!orkestra:resume:STAGE:TYPE>`
@@ -494,43 +512,61 @@ impl TestEnv {
     /// * `can_ask_questions` - Whether the stage has `ask_questions` capability
     /// * `has_approval` - Whether the stage has approval capability
     pub fn assert_full_prompt(&self, artifact: &str, can_ask_questions: bool, has_approval: bool) {
-        let prompt = self.last_prompt();
+        let calls = self.runner.calls();
+        let call = calls.last().expect("No agent calls recorded");
 
-        // Should NOT be a resume prompt (full prompts use <!orkestra:spawn:STAGE>)
+        // Get both system and user parts
+        let system_prompt = call.system_prompt.as_ref();
+        let user_message = &call.prompt;
+
+        // User message should NOT be a resume prompt (full prompts use <!orkestra:spawn:STAGE>)
         assert!(
-            !prompt.starts_with("<!orkestra:resume:"),
+            !user_message.starts_with("<!orkestra:resume:"),
             "Expected full prompt (not resume), but got resume prompt starting with: {}...",
-            &prompt[..prompt.len().min(100)]
+            &user_message[..user_message.len().min(100)]
         );
 
-        // Full prompts should contain the task section
+        // User message should contain the task section
         assert!(
-            prompt.contains("## Your Current Task"),
-            "Full prompt should contain '## Your Current Task' section"
+            user_message.contains("## Your Current Task"),
+            "User message should contain '## Your Current Task' section"
         );
 
-        // Should contain the expected artifact name in output format
-        // (may appear in quotes for artifact types, or in bold for subtask stages)
-        assert!(
-            prompt.contains(artifact),
-            "Full prompt should reference artifact '{}'. Got prompt: {}...",
-            artifact,
-            &prompt[..prompt.len().min(500)]
-        );
-
-        // Check questions capability
-        if can_ask_questions {
+        // System prompt should contain output format sections
+        if let Some(sys) = system_prompt {
             assert!(
-                prompt.contains("\"questions\""),
-                "Prompt for stage with ask_questions should mention questions output type"
+                sys.contains("Output Format") || sys.contains("output format"),
+                "System prompt should contain output format instructions"
             );
-        }
 
-        // Check approval capability
-        if has_approval {
+            // Output format should reference the artifact name
             assert!(
-                prompt.contains("approval") || prompt.contains("approve"),
-                "Prompt for stage with approval capability should mention approval"
+                sys.contains(artifact),
+                "System prompt should reference artifact '{}'. Got system prompt: {}...",
+                artifact,
+                &sys[..sys.len().min(500)]
+            );
+
+            // Check questions capability in system prompt
+            if can_ask_questions {
+                assert!(
+                    sys.contains("\"questions\"") || sys.contains("questions"),
+                    "System prompt for stage with ask_questions should mention questions output type"
+                );
+            }
+
+            // Check approval capability in system prompt
+            if has_approval {
+                assert!(
+                    sys.contains("approval") || sys.contains("approve"),
+                    "System prompt for stage with approval capability should mention approval"
+                );
+            }
+        } else {
+            // If no system prompt, these should be in the user message (fallback mode)
+            assert!(
+                user_message.contains("Output Format") || user_message.contains(artifact),
+                "User message should contain output format when system prompt is absent"
             );
         }
     }

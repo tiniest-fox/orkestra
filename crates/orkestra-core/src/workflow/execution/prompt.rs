@@ -1165,22 +1165,17 @@ mod tests {
         let agent_def = "You are a worker agent. Implement the plan.";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Combined prompt should contain agent definition at the start (system prompt)
-        assert!(prompt.starts_with("You are a worker agent"));
-
-        // Should contain output format (system prompt section)
+        // Combined prompt (for backward compat) contains both system and user sections
+        // System prompt section:
+        assert!(prompt.contains("You are a worker agent"));
         assert!(prompt.contains("Output Format"));
         assert!(prompt.contains("summary")); // The stage artifact
 
-        // Should contain spawn marker (user message section)
+        // User message section:
         assert!(prompt.contains("<!orkestra:spawn:work>"));
-
-        // Should contain task info (user message section)
         assert!(prompt.contains("Task ID"));
         assert!(prompt.contains("task-1"));
         assert!(prompt.contains("Implement login"));
-
-        // Should contain artifacts (user message section)
         assert!(prompt.contains("Input Artifacts"));
         assert!(prompt.contains("The implementation plan"));
     }
@@ -1572,5 +1567,158 @@ mod tests {
         let template = "Stage: {{stage_name}}, Task: {{task_id}}";
         let result = render_agent_definition(template, &ctx);
         assert_eq!(result, "Stage: planning, Task: task-1");
+    }
+
+    // ========================================================================
+    // System Prompt Split tests
+    // ========================================================================
+
+    #[test]
+    fn test_build_system_prompt() {
+        let agent_def = "You are a planner agent. Create implementation plans.";
+        let output_format = "## Output Format\n\nProduce JSON with a `plan` field.";
+
+        let system_prompt = build_system_prompt(agent_def, output_format);
+
+        assert!(system_prompt.contains(agent_def));
+        assert!(system_prompt.contains(output_format));
+    }
+
+    #[test]
+    fn test_resolved_agent_config_has_system_prompt() {
+        use tempfile::TempDir;
+
+        let workflow = test_workflow();
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a minimal agent definition file
+        let agents_dir = temp_dir.path().join(".orkestra/agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        std::fs::write(
+            agents_dir.join("planning.md"),
+            "You are a planning agent. Create implementation plans.",
+        )
+        .unwrap();
+
+        let mut task = Task::new("task-1", "Test", "Description", "planning", "now");
+        task.worktree_path = Some(temp_dir.path().to_string_lossy().to_string());
+
+        // Resolve agent config
+        let config = resolve_stage_agent_config_for(
+            &workflow,
+            &task,
+            "planning",
+            Some(temp_dir.path()),
+            None,
+            None,
+            FlowOverrides::default(),
+            false,
+        )
+        .unwrap();
+
+        // ASSERT: system_prompt field is populated
+        assert!(
+            !config.system_prompt.is_empty(),
+            "system_prompt should not be empty"
+        );
+
+        // ASSERT: system_prompt contains agent definition
+        assert!(
+            config.system_prompt.contains("planning agent"),
+            "system_prompt should contain agent definition"
+        );
+
+        // ASSERT: system_prompt contains output format
+        assert!(
+            config.system_prompt.contains("Output Format")
+                || config.system_prompt.contains("output format"),
+            "system_prompt should contain output format instructions"
+        );
+
+        // ASSERT: system_prompt contains artifact name
+        assert!(
+            config.system_prompt.contains("plan"),
+            "system_prompt should reference the artifact name 'plan'"
+        );
+    }
+
+    #[test]
+    fn test_system_prompt_not_in_user_message() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new(
+            "task-1",
+            "Implement login",
+            "Add login feature",
+            "work",
+            "now",
+        );
+        task.artifacts.set(Artifact::new(
+            "plan",
+            "The implementation plan",
+            "planning",
+            "now",
+        ));
+
+        let ctx = builder
+            .build_context("work", &task, None, None, false)
+            .unwrap();
+
+        let user_message = build_user_message(&ctx);
+
+        // User message should NOT contain output format or agent definition
+        assert!(!user_message.contains("Output Format"));
+        assert!(!user_message.contains("worker agent"));
+
+        // But it should contain task context
+        assert!(user_message.contains("Task ID"));
+        assert!(user_message.contains("task-1"));
+        assert!(user_message.contains("Implement login"));
+    }
+
+    #[test]
+    fn test_build_user_message_contains_task_context() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new(
+            "task-1",
+            "Implement feature",
+            "Add new feature",
+            "work",
+            "now",
+        );
+        task.artifacts.set(Artifact::new(
+            "plan",
+            "Step 1: Do this\nStep 2: Do that",
+            "planning",
+            "now",
+        ));
+
+        let ctx = builder
+            .build_context("work", &task, None, None, false)
+            .unwrap();
+
+        let user_message = build_user_message(&ctx);
+
+        // Should contain all task context elements
+        assert!(user_message.contains("task-1"));
+        assert!(user_message.contains("Implement feature"));
+        assert!(user_message.contains("Add new feature"));
+        assert!(user_message.contains("Step 1: Do this"));
+        assert!(user_message.contains("Input Artifacts"));
+    }
+
+    #[test]
+    fn test_resume_prompt_has_no_system_prompt() {
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main").unwrap();
+
+        // Resume prompts are just short user messages
+        assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
+
+        // Should NOT contain system prompt elements
+        assert!(!prompt.contains("Output Format"));
+        assert!(!prompt.contains("agent definition"));
     }
 }

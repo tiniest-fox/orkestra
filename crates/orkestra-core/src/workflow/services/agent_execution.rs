@@ -285,7 +285,7 @@ impl AgentExecutionService {
     /// Apply provider-specific fallbacks for system prompt and schema enforcement.
     ///
     /// Returns `(final_user_prompt, optional_system_prompt_for_config)`.
-    fn apply_provider_fallbacks(
+    pub(crate) fn apply_provider_fallbacks(
         task_id: &str,
         stage: &str,
         mut user_prompt: String,
@@ -559,5 +559,70 @@ mod tests {
         let result = append_schema_enforcement(prompt, schema);
 
         assert!(result.starts_with("Line 1\nLine 2\nLine 3\n"));
+    }
+
+    #[test]
+    fn test_system_prompt_fallback_logic() {
+        use crate::workflow::execution::ProviderCapabilities;
+
+        let task_id = "test-task";
+        let stage = "work";
+        let user_prompt = "Do the work".to_string();
+        let system_prompt =
+            "You are a worker agent.\n\n## Output Format\nProduce JSON.".to_string();
+        let json_schema = r#"{"type":"object"}"#;
+
+        // Case 1: Provider supports system prompts (Claude Code)
+        let claude_caps = ProviderCapabilities {
+            supports_json_schema: true,
+            supports_sessions: true,
+            generates_own_session_id: false,
+            requires_direct_structured_output: true,
+            supports_system_prompt: true,
+        };
+
+        let (final_user, sys_for_config) = AgentExecutionService::apply_provider_fallbacks(
+            task_id,
+            stage,
+            user_prompt.clone(),
+            system_prompt.clone(),
+            json_schema,
+            &claude_caps,
+        );
+
+        // User message should remain unchanged
+        assert_eq!(final_user, "Do the work");
+        // System prompt should be in config
+        assert_eq!(sys_for_config, Some(system_prompt.clone()));
+
+        // Case 2: Provider does NOT support system prompts (OpenCode)
+        let opencode_caps = ProviderCapabilities {
+            supports_json_schema: false,
+            supports_sessions: true,
+            generates_own_session_id: true,
+            requires_direct_structured_output: false,
+            supports_system_prompt: false,
+        };
+
+        let (final_user, sys_for_config) = AgentExecutionService::apply_provider_fallbacks(
+            task_id,
+            stage,
+            user_prompt.clone(),
+            system_prompt.clone(),
+            json_schema,
+            &opencode_caps,
+        );
+
+        // System prompt should be prepended to user message with "\n\n" separator
+        assert!(final_user.starts_with("You are a worker agent"));
+        assert!(final_user.contains("\n\nDo the work"));
+        // System prompt should NOT be in config
+        assert!(sys_for_config.is_none());
+
+        // Verify the exact separator used
+        assert!(
+            final_user.contains(&format!("{system_prompt}\n\n{user_prompt}")),
+            "Expected system prompt and user message joined with '\\n\\n' separator"
+        );
     }
 }

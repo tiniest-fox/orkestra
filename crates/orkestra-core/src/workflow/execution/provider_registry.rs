@@ -456,6 +456,7 @@ mod tests {
         );
         assert!(resolved.capabilities.supports_json_schema);
         assert!(resolved.capabilities.supports_sessions);
+        assert!(resolved.capabilities.supports_system_prompt);
     }
 
     #[test]
@@ -500,6 +501,7 @@ mod tests {
         );
         assert!(!resolved.capabilities.supports_json_schema);
         assert!(resolved.capabilities.supports_sessions);
+        assert!(!resolved.capabilities.supports_system_prompt);
     }
 
     #[test]
@@ -610,10 +612,12 @@ mod tests {
         let claude_caps = registry.provider_capabilities("claudecode").unwrap();
         assert!(claude_caps.supports_json_schema);
         assert!(claude_caps.supports_sessions);
+        assert!(claude_caps.supports_system_prompt);
 
         let open_caps = registry.provider_capabilities("opencode").unwrap();
         assert!(!open_caps.supports_json_schema);
         assert!(open_caps.supports_sessions);
+        assert!(!open_caps.supports_system_prompt);
     }
 
     #[test]

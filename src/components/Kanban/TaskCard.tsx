@@ -11,6 +11,7 @@ import {
   Hand,
   Layers,
   MessageCircle,
+  Pause,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -33,6 +34,7 @@ interface TaskCardProps {
 const progressSegments: { key: keyof SubtaskProgress; color: string }[] = [
   { key: "done", color: taskStateColors.done.bg },
   { key: "working", color: taskStateColors.working.bg },
+  { key: "interrupted", color: taskStateColors.interrupted.bg },
   { key: "has_questions", color: taskStateColors.questions.bg },
   { key: "needs_review", color: taskStateColors.review.bg },
   { key: "blocked", color: taskStateColors.blocked.bg },
@@ -101,6 +103,7 @@ export function TaskCard({
   const isFailed = derived.is_failed;
   const isBlocked = derived.is_blocked;
   const isDone = derived.is_done;
+  const isInterrupted = derived.is_interrupted;
   const hasActiveProcess = derived.is_working;
   const taskNeedsReview = derived.needs_review;
   const hasQuestions = derived.has_questions;
@@ -116,6 +119,7 @@ export function TaskCard({
   // Include subtask aggregate state in border highlights
   const effectiveFailed = isFailed || (derived.subtask_progress?.failed ?? 0) > 0;
   const effectiveBlocked = isBlocked || (derived.subtask_progress?.blocked ?? 0) > 0;
+  const effectiveInterrupted = isInterrupted || (derived.subtask_progress?.interrupted ?? 0) > 0;
   const effectiveQuestions = hasQuestions || (derived.subtask_progress?.has_questions ?? 0) > 0;
   const effectiveReview = taskNeedsReview || (derived.subtask_progress?.needs_review ?? 0) > 0;
 
@@ -123,13 +127,15 @@ export function TaskCard({
     ? "border-error-300 bg-error-50 dark:border-error-700 dark:bg-error-950"
     : effectiveBlocked
       ? "border-warning-300 bg-warning-50 dark:border-warning-700 dark:bg-warning-950"
-      : effectiveQuestions
-        ? "border-info-400 bg-info-50 dark:border-info-600 dark:bg-info-950"
-        : effectiveReview
-          ? "border-warning-400 bg-warning-50 dark:border-warning-600 dark:bg-warning-950"
-          : isSelected
-            ? "border-orange-500 ring-2 ring-orange-200 dark:ring-orange-800"
-            : "";
+      : effectiveInterrupted
+        ? "border-amber-400 bg-amber-50 dark:border-amber-600 dark:bg-amber-950"
+        : effectiveQuestions
+          ? "border-info-400 bg-info-50 dark:border-info-600 dark:bg-info-950"
+          : effectiveReview
+            ? "border-warning-400 bg-warning-50 dark:border-warning-600 dark:bg-warning-950"
+            : isSelected
+              ? "border-orange-500 ring-2 ring-orange-200 dark:ring-orange-800"
+              : "";
 
   const errorText =
     task.status.type === "failed"
@@ -200,6 +206,11 @@ export function TaskCard({
               <AlertCircle className="w-4 h-4" />
             </span>
           )}
+          {isInterrupted && (
+            <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.interrupted.icon}`}>
+              <Pause className="w-4 h-4" />
+            </span>
+          )}
           {hasUnresolvedDeps && (
             <span className="flex-shrink-0 p-1.5 rounded-md bg-stone-100 dark:bg-stone-800">
               <Hand className="w-4 h-4 text-stone-500 dark:text-stone-400" />
@@ -218,6 +229,12 @@ export function TaskCard({
             ) : (derived.subtask_progress?.blocked ?? 0) > 0 ? (
               <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.blocked.icon}`}>
                 <AlertCircle className="w-4 h-4" />
+              </span>
+            ) : (derived.subtask_progress?.interrupted ?? 0) > 0 ? (
+              <span
+                className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.interrupted.icon}`}
+              >
+                <Pause className="w-4 h-4" />
               </span>
             ) : (derived.subtask_progress?.has_questions ?? 0) > 0 ? (
               <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.questions.icon}`}>

@@ -28,6 +28,10 @@ interface UseTaskDetailResult {
   retry: (instructions?: string) => Promise<void>;
   /** Toggle auto-advance mode. */
   setAutoMode: (taskId: string, autoMode: boolean) => Promise<void>;
+  /** Interrupt a working task. */
+  interrupt: () => Promise<void>;
+  /** Resume an interrupted task, optionally with a message for the agent. */
+  resume: (message?: string) => Promise<void>;
 }
 
 export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
@@ -107,6 +111,36 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     [refetch],
   );
 
+  const interrupt = useCallback(async () => {
+    setIsSubmitting(true);
+    try {
+      await invoke<WorkflowTask>("workflow_interrupt", { taskId: task.id });
+      refetch();
+    } catch (err) {
+      console.error("Failed to interrupt:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [task.id, refetch]);
+
+  const resume = useCallback(
+    async (message?: string) => {
+      setIsSubmitting(true);
+      try {
+        await invoke<WorkflowTask>("workflow_resume", {
+          taskId: task.id,
+          message: message || null,
+        });
+        refetch();
+      } catch (err) {
+        console.error("Failed to resume:", err);
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [task.id, refetch],
+  );
+
   return {
     task,
     currentStageDisplayName,
@@ -116,5 +150,7 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     answerQuestions,
     retry,
     setAutoMode,
+    interrupt,
+    resume,
   };
 }

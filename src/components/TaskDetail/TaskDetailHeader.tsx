@@ -5,17 +5,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { useDisplayContext } from "../../providers";
-import type { WorkflowTask } from "../../types/workflow";
+import type { WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { Badge, IconButton, Panel } from "../ui";
 
 interface TaskDetailHeaderProps {
-  task: WorkflowTask;
+  task: WorkflowTaskView;
   hasQuestions: boolean;
   needsReview: boolean;
   onClose: () => void;
   onRequestDelete: () => void;
   onToggleAutoMode: (autoMode: boolean) => void;
+  onInterrupt: () => void;
 }
 
 interface DetectedApp {
@@ -99,6 +100,25 @@ function DiffIcon() {
   );
 }
 
+function PauseIcon() {
+  return (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"
+      />
+    </svg>
+  );
+}
+
 /** Cache external tools detection result across renders. */
 let cachedToolsInfo: ExternalToolsInfo | null = null;
 let toolsDetectionPromise: Promise<ExternalToolsInfo> | null = null;
@@ -127,6 +147,7 @@ export function TaskDetailHeader({
   onClose,
   onRequestDelete,
   onToggleAutoMode,
+  onInterrupt,
 }: TaskDetailHeaderProps) {
   const [toolsInfo, setToolsInfo] = useState<ExternalToolsInfo | null>(cachedToolsInfo);
   const { layout, showTaskDiff, showSubtaskDiff, closeDiff } = useDisplayContext();
@@ -143,6 +164,7 @@ export function TaskDetailHeader({
   const showEditorButton = !isSubtask && hasWorktree && toolsInfo?.editor != null;
   const showDiffButton = hasWorktree; // Show for both parent and subtasks
   const isDiffOpen = isSubtask ? layout.preset === "SubtaskDiff" : layout.preset === "TaskDiff";
+  const showInterruptButton = task.derived.is_working;
 
   const handleOpenTerminal = () => {
     if (!task.worktree_path) return;
@@ -195,6 +217,16 @@ export function TaskDetailHeader({
           {task.title || task.description}
         </h2>
         <div className="flex items-center gap-1 flex-shrink-0">
+          {showInterruptButton && (
+            <IconButton
+              icon={<PauseIcon />}
+              aria-label="Interrupt task"
+              variant="ghost"
+              size="sm"
+              onClick={onInterrupt}
+              title="Interrupt task"
+            />
+          )}
           {showDiffButton && (
             <IconButton
               icon={<DiffIcon />}
@@ -243,6 +275,7 @@ export function TaskDetailHeader({
         <Badge variant={statusBadgeVariant}>{statusLabel}</Badge>
         {hasQuestions && <Badge variant="questions">Questions</Badge>}
         {needsReview && <Badge variant="review">Review</Badge>}
+        {task.derived.is_interrupted && <Badge variant="interrupted">Interrupted</Badge>}
 
         <label className="flex items-center gap-1.5 ml-auto cursor-pointer select-none">
           <button

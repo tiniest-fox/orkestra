@@ -52,6 +52,11 @@ export const taskStateColors = {
     badge: "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300",
     icon: "bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400",
   },
+  interrupted: {
+    bg: "bg-amber-500 dark:bg-amber-600",
+    badge: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+    icon: "bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300",
+  },
 } as const;
 
 export type TaskState = keyof typeof taskStateColors;

@@ -25,6 +25,7 @@ import { DetailsTab } from "./DetailsTab";
 import { IterationsTab } from "./IterationsTab";
 import { LogsTab } from "./LogsTab";
 import { QuestionFormPanel } from "./QuestionFormPanel";
+import { ResumePanel } from "./ResumePanel";
 import { ReviewPanel } from "./ReviewPanel";
 import { SubtasksTab } from "./SubtasksTab";
 import { TaskDetailHeader } from "./TaskDetailHeader";
@@ -80,6 +81,8 @@ function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
     preferred = TaskDetailTabs.artifacts(task.id);
   } else if (derived.is_failed || derived.is_blocked) {
     preferred = TaskDetailTabs.details(task.id);
+  } else if (derived.is_interrupted) {
+    preferred = TaskDetailTabs.details(task.id);
   } else if (task.status.type === "waiting_on_children") {
     preferred = TaskDetailTabs.subtasks(task.id);
   } else if (derived.is_working || task.phase === "integrating") {
@@ -111,6 +114,8 @@ export function TaskDetailSidebar({
     answerQuestions,
     retry,
     setAutoMode,
+    interrupt,
+    resume,
   } = useTaskDetail(task);
 
   const tabs = useMemo(() => buildTabs(task), [task]);
@@ -156,9 +161,14 @@ export function TaskDetailSidebar({
   // Determine which footer panel to show
   const showDelete = confirmingDelete && !isSubtask;
   const showQuestions = !showDelete && task.derived.has_questions;
+  const showResume = !showDelete && !showQuestions && task.derived.is_interrupted;
   const showReview =
-    !showDelete && !showQuestions && task.derived.needs_review && task.derived.current_stage;
-  const showCompactFooter = !!(showDelete || showReview);
+    !showDelete &&
+    !showQuestions &&
+    !showResume &&
+    task.derived.needs_review &&
+    task.derived.current_stage;
+  const showCompactFooter = !!(showDelete || showReview || showResume);
 
   return (
     <PanelLayout direction="vertical">
@@ -175,6 +185,7 @@ export function TaskDetailSidebar({
                   onClose={onClose}
                   onRequestDelete={() => setConfirmingDelete(true)}
                   onToggleAutoMode={handleToggleAutoMode}
+                  onInterrupt={interrupt}
                 />
 
                 <TabbedPanel
@@ -237,7 +248,7 @@ export function TaskDetailSidebar({
         />
       </Slot>
 
-      {/* Footer panel for compact actions - smaller slot for review/delete */}
+      {/* Footer panel for compact actions - smaller slot for review/delete/resume */}
       <Slot id="details-footer-compact" type="fixed" size={200} visible={showCompactFooter} plain>
         {showDelete && (
           <DeleteConfirmPanel
@@ -248,6 +259,8 @@ export function TaskDetailSidebar({
             onCancel={() => setConfirmingDelete(false)}
           />
         )}
+
+        {showResume && <ResumePanel onResume={resume} isSubmitting={isSubmitting} />}
 
         {showReview && (
           <ReviewPanel

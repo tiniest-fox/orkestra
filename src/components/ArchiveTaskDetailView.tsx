@@ -75,6 +75,8 @@ function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
     preferred = TaskDetailTabs.artifacts(task.id);
   } else if (derived.is_failed || derived.is_blocked) {
     preferred = TaskDetailTabs.details(task.id);
+  } else if (derived.is_interrupted) {
+    preferred = TaskDetailTabs.details(task.id);
   } else if (task.status.type === "waiting_on_children") {
     preferred = TaskDetailTabs.subtasks(task.id);
   } else if (derived.is_working || task.phase === "integrating") {

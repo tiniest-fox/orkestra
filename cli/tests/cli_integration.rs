@@ -3,6 +3,7 @@
 //! These tests exercise the `WorkflowApi` methods that power the CLI commands,
 //! using real git repos and `SQLite` (matching core e2e test patterns).
 
+use orkestra_cli::get_git_state;
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::testutil::create_temp_git_repo;
 use orkestra_core::testutil::fixtures::{iterations, sessions};
@@ -13,19 +14,6 @@ use orkestra_core::workflow::runtime::{Outcome, Phase, Status};
 use orkestra_core::workflow::{Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi};
 use std::sync::Arc;
 use tempfile::TempDir;
-
-/// Git state returned by `get_git_state` (matches CLI's `GitState` struct).
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct GitState {
-    branch_name: Option<String>,
-    worktree_path: Option<String>,
-    base_branch: String,
-    base_commit: String,
-    head_commit: Option<String>,
-    is_dirty: Option<bool>,
-    #[serde(default)]
-    dirty_files: Vec<String>,
-}
 
 /// Create a test workflow with a flow.
 fn test_workflow_with_flow() -> WorkflowConfig {
@@ -85,62 +73,8 @@ fn setup_test_env(workflow: &WorkflowConfig) -> (WorkflowApi, Arc<dyn WorkflowSt
     let git_service: Arc<dyn GitService> =
         Arc::new(Git2GitService::new(temp_dir.path()).expect("Git service should init"));
 
-    let api = WorkflowApi::with_git(
-        loaded_workflow,
-        Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
-        git_service,
-    );
+    let api = WorkflowApi::with_git(loaded_workflow, Arc::clone(&store), git_service);
     (api, store, temp_dir)
-}
-
-/// Simulate `get_git_state` from CLI (reads task fields + shells out to git).
-fn get_git_state(api: &WorkflowApi, task_id: &str) -> Result<GitState, String> {
-    let task = api
-        .get_task(task_id)
-        .map_err(|e| format!("Failed to get task: {e}"))?;
-
-    let mut state = GitState {
-        branch_name: task.branch_name.clone(),
-        worktree_path: task.worktree_path.clone(),
-        base_branch: task.base_branch.clone(),
-        base_commit: task.base_commit.clone(),
-        head_commit: None,
-        is_dirty: None,
-        dirty_files: Vec::new(),
-    };
-
-    // If worktree exists, get live git state
-    if let Some(ref worktree_path) = task.worktree_path {
-        if std::path::Path::new(worktree_path).exists() {
-            // Get HEAD commit
-            if let Ok(output) = std::process::Command::new("git")
-                .args(["-C", worktree_path, "rev-parse", "HEAD"])
-                .output()
-            {
-                if output.status.success() {
-                    state.head_commit =
-                        Some(String::from_utf8_lossy(&output.stdout).trim().to_string());
-                }
-            }
-
-            // Get dirty status
-            if let Ok(output) = std::process::Command::new("git")
-                .args(["-C", worktree_path, "status", "--porcelain"])
-                .output()
-            {
-                if output.status.success() {
-                    let status_output = String::from_utf8_lossy(&output.stdout);
-                    state.is_dirty = Some(!status_output.trim().is_empty());
-                    state.dirty_files = status_output
-                        .lines()
-                        .map(|line| line[3..].to_string())
-                        .collect();
-                }
-            }
-        }
-    }
-
-    Ok(state)
 }
 
 #[test]
@@ -378,7 +312,7 @@ fn test_log_viewing_with_pagination() {
     let session =
         sessions::save_session(&*store, "session-1", &task.id, "planning").expect("save session");
 
-    // Append multiple log entries
+    // Append 10 log entries with identifiable content
     for i in 0..10 {
         store
             .append_log_entry(
@@ -390,13 +324,36 @@ fn test_log_viewing_with_pagination() {
             .expect("append log");
     }
 
-    // Get all logs
+    // Get all logs (baseline)
     let all_logs = api
         .get_task_logs(&task.id, Some("planning"))
         .expect("get all logs");
     assert_eq!(all_logs.len(), 10);
 
-    // Verify JSON includes type discriminators
+    // Test limit: fetch first 3 entries
+    let limited: Vec<_> = all_logs.iter().take(3).collect();
+    assert_eq!(limited.len(), 3);
+
+    // Test offset: skip first 5, take 3
+    let paginated: Vec<_> = all_logs.iter().skip(5).take(3).collect();
+    assert_eq!(paginated.len(), 3);
+    // Verify we got entries 5, 6, 7 (not 0, 1, 2)
+    if let LogEntry::Text { content } = &paginated[0] {
+        assert_eq!(content, "Log entry 5");
+    } else {
+        panic!("Expected Text log entry");
+    }
+    if let LogEntry::Text { content } = &paginated[2] {
+        assert_eq!(content, "Log entry 7");
+    } else {
+        panic!("Expected Text log entry");
+    }
+
+    // Test offset beyond end: should return empty
+    let empty: Vec<_> = all_logs.iter().skip(100).take(10).collect();
+    assert!(empty.is_empty());
+
+    // Verify JSON serialization includes type discriminators
     let json = serde_json::to_string(&all_logs).expect("serialize logs");
     assert!(json.contains("\"type\":\"text\""));
 }

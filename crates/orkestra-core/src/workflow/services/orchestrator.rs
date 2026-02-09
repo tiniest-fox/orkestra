@@ -671,11 +671,7 @@ impl OrchestratorLoop {
             }]);
         }
 
-        let commit_message = if task.title.trim().is_empty() {
-            format!("Task {task_id}")
-        } else {
-            task.title.clone()
-        };
+        let commit_message = api.generate_integration_commit_message(task);
 
         let params = IntegrationParams {
             task_id: task_id.clone(),

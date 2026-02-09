@@ -4,6 +4,10 @@ use std::sync::Arc;
 
 use super::task_setup::TaskSetupService;
 use super::IterationService;
+use crate::commit_message::{
+    collect_model_names, fallback_commit_message, ClaudeCommitMessageGenerator,
+    CommitMessageGenerator,
+};
 use crate::title::{ClaudeTitleGenerator, TitleGenerator};
 use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::Task;
@@ -27,6 +31,7 @@ pub struct WorkflowApi {
     pub(crate) git_service: Option<Arc<dyn GitService>>,
     pub(crate) iteration_service: Arc<IterationService>,
     pub(crate) title_generator: Arc<dyn TitleGenerator>,
+    pub(crate) commit_message_generator: Arc<dyn CommitMessageGenerator>,
     pub(crate) setup_service: Arc<TaskSetupService>,
 }
 
@@ -37,6 +42,8 @@ impl WorkflowApi {
     pub fn new(workflow: WorkflowConfig, store: Arc<dyn WorkflowStore>) -> Self {
         let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
         let title_generator: Arc<dyn TitleGenerator> = Arc::new(ClaudeTitleGenerator);
+        let commit_message_generator: Arc<dyn CommitMessageGenerator> =
+            Arc::new(ClaudeCommitMessageGenerator);
         let setup_service = Arc::new(TaskSetupService::new(
             Arc::clone(&store),
             None,
@@ -48,6 +55,7 @@ impl WorkflowApi {
             git_service: None,
             iteration_service,
             title_generator,
+            commit_message_generator,
             setup_service,
         }
     }
@@ -63,6 +71,8 @@ impl WorkflowApi {
     ) -> Self {
         let iteration_service = Arc::new(IterationService::new(Arc::clone(&store)));
         let title_generator: Arc<dyn TitleGenerator> = Arc::new(ClaudeTitleGenerator);
+        let commit_message_generator: Arc<dyn CommitMessageGenerator> =
+            Arc::new(ClaudeCommitMessageGenerator);
         let setup_service = Arc::new(TaskSetupService::new(
             Arc::clone(&store),
             Some(Arc::clone(&git_service)),
@@ -74,6 +84,7 @@ impl WorkflowApi {
             git_service: Some(git_service),
             iteration_service,
             title_generator,
+            commit_message_generator,
             setup_service,
         }
     }
@@ -87,6 +98,13 @@ impl WorkflowApi {
             Arc::clone(&gen),
         ));
         self.title_generator = gen;
+        self
+    }
+
+    /// Replace the commit message generator (for testing).
+    #[must_use]
+    pub fn with_commit_message_generator(mut self, gen: Arc<dyn CommitMessageGenerator>) -> Self {
+        self.commit_message_generator = gen;
         self
     }
 
@@ -292,6 +310,84 @@ impl WorkflowApi {
         git.read_file_at_head(std::path::Path::new(worktree_path), file_path)
             .map_err(|e| WorkflowError::GitError(e.to_string()))
     }
+
+    /// Generate a commit message for task integration.
+    ///
+    /// Collects model attribution from the workflow config, gets the diff summary
+    /// from the git service, and invokes the commit message generator.
+    /// Falls back to the task title if generation fails.
+    pub fn generate_integration_commit_message(&self, task: &Task) -> String {
+        // Collect model names from workflow config
+        let model_names = collect_model_names(&self.workflow, task.flow.as_deref());
+
+        // Get diff summary from git service
+        let diff_summary = self.get_diff_summary(task);
+
+        // Try AI generation, fall back to task title
+        match self.commit_message_generator.generate_commit_message(
+            &task.title,
+            &task.description,
+            &diff_summary,
+            &model_names,
+        ) {
+            Ok(message) => message,
+            Err(e) => {
+                crate::orkestra_debug!(
+                    "integration",
+                    "Commit message generation failed for {}: {e}, using fallback",
+                    task.id
+                );
+                fallback_commit_message(&task.title, &task.id)
+            }
+        }
+    }
+
+    /// Build a diff summary string for the commit message prompt.
+    fn get_diff_summary(&self, task: &Task) -> String {
+        use std::fmt::Write;
+
+        let Some(git) = &self.git_service else {
+            return String::from("No git diff available");
+        };
+        let Some(branch_name) = &task.branch_name else {
+            return String::from("No branch");
+        };
+        let Some(worktree_path) = &task.worktree_path else {
+            return String::from("No worktree");
+        };
+
+        match git.diff_against_base(
+            std::path::Path::new(worktree_path),
+            branch_name,
+            &task.base_branch,
+        ) {
+            Ok(diff) => {
+                let mut summary = String::new();
+                for file in &diff.files {
+                    let change = match file.change_type {
+                        crate::workflow::ports::FileChangeType::Added => "added",
+                        crate::workflow::ports::FileChangeType::Modified => "modified",
+                        crate::workflow::ports::FileChangeType::Deleted => "deleted",
+                        crate::workflow::ports::FileChangeType::Renamed => "renamed",
+                    };
+                    let _ = writeln!(
+                        summary,
+                        "- {} ({}, +{} -{})",
+                        file.path, change, file.additions, file.deletions
+                    );
+                }
+                if summary.is_empty() {
+                    "No file changes detected".to_string()
+                } else {
+                    summary
+                }
+            }
+            Err(e) => {
+                crate::orkestra_debug!("integration", "Failed to get diff for commit message: {e}");
+                String::from("Diff unavailable")
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -382,5 +478,76 @@ mod tests {
             api.integration_failure_stage(None),
             Some("work".to_string())
         );
+    }
+
+    #[test]
+    fn test_with_commit_message_generator() {
+        use crate::commit_message::mock::MockCommitMessageGenerator;
+
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let mock_gen = Arc::new(MockCommitMessageGenerator::succeeding());
+
+        let api = WorkflowApi::new(workflow, store).with_commit_message_generator(mock_gen);
+
+        // Verify the generator can be overridden (by creating a task and calling generate)
+        let task = Task::new(
+            "task-1",
+            "Test Task",
+            "Test description",
+            "planning",
+            chrono::Utc::now().to_rfc3339(),
+        );
+        let message = api.generate_integration_commit_message(&task);
+
+        // Mock generator returns the task title followed by "Automated changes."
+        assert!(message.contains("Test Task"));
+        assert!(message.contains("Automated changes."));
+    }
+
+    #[test]
+    fn test_generate_commit_message_fallback_on_failure() {
+        use crate::commit_message::mock::MockCommitMessageGenerator;
+
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let failing_gen = Arc::new(MockCommitMessageGenerator::failing());
+
+        let api = WorkflowApi::new(workflow, store).with_commit_message_generator(failing_gen);
+
+        let task = Task::new(
+            "task-123",
+            "Test Task",
+            "Test description",
+            "planning",
+            chrono::Utc::now().to_rfc3339(),
+        );
+        let message = api.generate_integration_commit_message(&task);
+
+        // On failure, should fall back to task title
+        assert_eq!(message, "Test Task");
+    }
+
+    #[test]
+    fn test_generate_commit_message_fallback_on_empty_title() {
+        use crate::commit_message::mock::MockCommitMessageGenerator;
+
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let failing_gen = Arc::new(MockCommitMessageGenerator::failing());
+
+        let api = WorkflowApi::new(workflow, store).with_commit_message_generator(failing_gen);
+
+        let task = Task::new(
+            "task-456",
+            "",
+            "Test description",
+            "planning",
+            chrono::Utc::now().to_rfc3339(),
+        );
+        let message = api.generate_integration_commit_message(&task);
+
+        // On failure with empty title, should fall back to "Task {id}"
+        assert_eq!(message, "Task task-456");
     }
 }

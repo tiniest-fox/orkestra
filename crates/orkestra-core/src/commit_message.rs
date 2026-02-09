@@ -12,6 +12,10 @@ use serde_json::json;
 use crate::utility::UtilityRunner;
 use crate::workflow::config::WorkflowConfig;
 
+/// Display name for the utility model used by commit message generation.
+/// Must match the model used by `UtilityRunner::new()` (currently haiku).
+const UTILITY_MODEL_DISPLAY_NAME: &str = "Claude Haiku 4.5";
+
 // =============================================================================
 // CommitMessageGenerator Trait
 // =============================================================================
@@ -114,7 +118,7 @@ pub mod mock {
 /// Uses structured JSON output with schema validation for reliable results.
 ///
 /// Returns the formatted commit message string with trailers, or an error if generation fails.
-pub fn generate_commit_message_sync(
+pub(crate) fn generate_commit_message_sync(
     task_title: &str,
     task_description: &str,
     diff_summary: &str,
@@ -157,7 +161,7 @@ pub fn generate_commit_message_sync(
 /// ```
 ///
 /// If `model_names` is empty, skip the Co-authored-by lines but keep the Orkestra line.
-pub fn format_commit_message(title: &str, body: &str, model_names: &[String]) -> String {
+pub(crate) fn format_commit_message(title: &str, body: &str, model_names: &[String]) -> String {
     let mut msg = format!("{title}\n\n{body}\n");
 
     if !model_names.is_empty() {
@@ -211,25 +215,17 @@ pub fn collect_model_names(workflow: &WorkflowConfig, task_flow: Option<&str>) -
     let mut seen = HashSet::new();
     let mut names = Vec::new();
 
-    // Collect from workflow stages
-    for stage in &workflow.stages {
-        // Skip script stages (they have no model)
-        if stage.script.is_some() {
-            continue;
-        }
-
-        let model_spec = workflow.effective_model(&stage.name, task_flow);
+    for model_spec in workflow.agent_model_specs(task_flow) {
         let name = friendly_model_name(model_spec.as_deref()).to_string();
-
         if seen.insert(name.clone()) {
             names.push(name);
         }
     }
 
     // Add the commit message generator model if not already present
-    let haiku = "Claude Haiku 4.5".to_string();
-    if seen.insert(haiku.clone()) {
-        names.push(haiku);
+    let utility_model = UTILITY_MODEL_DISPLAY_NAME.to_string();
+    if seen.insert(utility_model.clone()) {
+        names.push(utility_model);
     }
 
     names
@@ -405,5 +401,63 @@ mod tests {
     fn test_fallback_commit_message_whitespace_only() {
         let msg = fallback_commit_message("   ", "task-123");
         assert_eq!(msg, "Task task-123");
+    }
+
+    #[test]
+    fn test_collect_model_names_flow_aware() {
+        use crate::workflow::config::FlowConfig;
+        use crate::workflow::config::FlowStageEntry;
+
+        let mut planning = StageConfig::new("planning", "plan");
+        planning.model = Some("sonnet".to_string());
+
+        let mut breakdown = StageConfig::new("breakdown", "breakdown");
+        breakdown.model = Some("sonnet".to_string()); // also sonnet
+
+        let mut work = StageConfig::new("work", "summary");
+        work.model = Some("opus".to_string());
+
+        let mut review = StageConfig::new("review", "verdict");
+        review.model = Some("haiku".to_string()); // explicitly haiku (not default)
+
+        let mut flows = indexmap::IndexMap::new();
+        flows.insert(
+            "hotfix".to_string(),
+            FlowConfig {
+                description: "Hotfix flow".to_string(),
+                icon: None,
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "work".to_string(),
+                        overrides: None,
+                    },
+                    FlowStageEntry {
+                        stage_name: "review".to_string(),
+                        overrides: None,
+                    },
+                ],
+            },
+        );
+
+        let workflow = WorkflowConfig {
+            version: 1,
+            stages: vec![planning, breakdown, work, review],
+            integration: crate::workflow::config::IntegrationConfig::default(),
+            flows,
+        };
+
+        // Default flow includes all stages
+        let names_default = collect_model_names(&workflow, None);
+        assert!(names_default.contains(&"Claude Sonnet 4.5".to_string())); // planning + breakdown
+        assert!(names_default.contains(&"Claude Opus 4.5".to_string())); // work
+        assert!(names_default.contains(&"Claude Haiku 4.5".to_string())); // review + utility
+        assert_eq!(names_default.len(), 3); // sonnet + opus + haiku (deduplicated)
+
+        // Hotfix flow only includes work and review (excludes planning and breakdown)
+        let names_hotfix = collect_model_names(&workflow, Some("hotfix"));
+        assert!(!names_hotfix.contains(&"Claude Sonnet 4.5".to_string())); // planning/breakdown excluded
+        assert!(names_hotfix.contains(&"Claude Opus 4.5".to_string())); // work included
+        assert!(names_hotfix.contains(&"Claude Haiku 4.5".to_string())); // review + utility (deduplicated)
+        assert_eq!(names_hotfix.len(), 2); // opus + haiku only
     }
 }

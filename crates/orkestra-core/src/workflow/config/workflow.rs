@@ -377,6 +377,46 @@ impl WorkflowConfig {
         self.stage(stage_name).map(|s| s.inputs.clone())
     }
 
+    /// Get the effective model specs for all agent (non-script) stages in the given flow.
+    ///
+    /// For default flow (None), iterates all global stages.
+    /// For named flows, iterates only the stages listed in that flow.
+    /// Returns model specs in stage order (None means "use provider default").
+    pub fn agent_model_specs(&self, flow: Option<&str>) -> Vec<Option<String>> {
+        match flow {
+            None => {
+                // Default flow: iterate all global stages
+                self.stages
+                    .iter()
+                    .filter(|s| s.script.is_none())
+                    .map(|s| s.model.clone())
+                    .collect()
+            }
+            Some(flow_name) => {
+                let Some(flow_config) = self.flows.get(flow_name) else {
+                    return Vec::new();
+                };
+                flow_config
+                    .stages
+                    .iter()
+                    .filter_map(|entry| {
+                        let stage = self.stage(&entry.stage_name)?;
+                        if stage.script.is_some() {
+                            return None;
+                        }
+                        // Check flow model override, fall back to global stage model
+                        let model = entry
+                            .overrides
+                            .as_ref()
+                            .and_then(|o| o.model.clone())
+                            .or_else(|| stage.model.clone());
+                        Some(model)
+                    })
+                    .collect()
+            }
+        }
+    }
+
     /// Check whether a given stage is in the specified flow.
     pub fn stage_in_flow(&self, stage_name: &str, flow: Option<&str>) -> bool {
         match flow {
@@ -1296,5 +1336,98 @@ integration:
         let breakdown = workflow.stage("breakdown").unwrap();
         assert_eq!(breakdown.capabilities.subtask_flow(), Some("subtask"));
         assert!(workflow.flow("subtask").is_some());
+    }
+
+    #[test]
+    fn test_agent_model_specs_default_flow() {
+        let planning = StageConfig::new("planning", "plan").with_model("sonnet");
+        let checks = StageConfig::new_script("checks", "check_results", "./run.sh");
+        let work = StageConfig::new("work", "summary").with_model("opus");
+
+        let workflow = WorkflowConfig::new(vec![planning, checks, work]);
+
+        let specs = workflow.agent_model_specs(None);
+        assert_eq!(specs.len(), 2); // script stage excluded
+        assert_eq!(specs[0], Some("sonnet".to_string()));
+        assert_eq!(specs[1], Some("opus".to_string()));
+    }
+
+    #[test]
+    fn test_agent_model_specs_named_flow() {
+        let planning = StageConfig::new("planning", "plan").with_model("sonnet");
+        let checks = StageConfig::new_script("checks", "check_results", "./run.sh");
+        let work = StageConfig::new("work", "summary").with_model("opus");
+
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".to_string(),
+            FlowConfig {
+                description: "Quick flow".to_string(),
+                icon: None,
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "planning".to_string(),
+                        overrides: None,
+                    },
+                    FlowStageEntry {
+                        stage_name: "work".to_string(),
+                        overrides: None,
+                    },
+                ],
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![planning, checks, work]).with_flows(flows);
+
+        let specs = workflow.agent_model_specs(Some("quick"));
+        assert_eq!(specs.len(), 2); // only planning and work from flow
+        assert_eq!(specs[0], Some("sonnet".to_string()));
+        assert_eq!(specs[1], Some("opus".to_string()));
+    }
+
+    #[test]
+    fn test_agent_model_specs_with_flow_override() {
+        let planning = StageConfig::new("planning", "plan").with_model("sonnet");
+        let work = StageConfig::new("work", "summary").with_model("opus");
+
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "cheap".to_string(),
+            FlowConfig {
+                description: "Cheap flow".to_string(),
+                icon: None,
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "planning".to_string(),
+                        overrides: Some(FlowStageOverride {
+                            prompt: None,
+                            capabilities: None,
+                            model: Some("haiku".to_string()),
+                            inputs: None,
+                        }),
+                    },
+                    FlowStageEntry {
+                        stage_name: "work".to_string(),
+                        overrides: None,
+                    },
+                ],
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![planning, work]).with_flows(flows);
+
+        let specs = workflow.agent_model_specs(Some("cheap"));
+        assert_eq!(specs.len(), 2);
+        assert_eq!(specs[0], Some("haiku".to_string())); // overridden
+        assert_eq!(specs[1], Some("opus".to_string())); // not overridden
+    }
+
+    #[test]
+    fn test_agent_model_specs_nonexistent_flow() {
+        let planning = StageConfig::new("planning", "plan").with_model("sonnet");
+        let workflow = WorkflowConfig::new(vec![planning]);
+
+        let specs = workflow.agent_model_specs(Some("nonexistent"));
+        assert!(specs.is_empty());
     }
 }

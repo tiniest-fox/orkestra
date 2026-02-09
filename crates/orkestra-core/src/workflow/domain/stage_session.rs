@@ -54,10 +54,16 @@ pub struct StageSession {
     pub agent_pid: Option<u32>,
 
     /// Number of times an agent has been spawned for this session.
-    /// Used to determine if the next spawn should use `--resume` (count > 0) or `--session-id` (count == 0).
-    /// Incremented at spawn time (not exit time) so crashes still result in correct resume behavior.
+    /// Incremented at spawn time (not exit time) so crashes are tracked.
+    /// No longer used for resume decisions — see `has_activity` instead.
     #[serde(default)]
     pub spawn_count: u32,
+
+    /// Whether the agent has produced any output during this session.
+    /// Set to `true` when log polling detects agent output. Used to determine if resume is safe:
+    /// if spawned but `has_activity` is still false, the agent never started and resume will hang.
+    #[serde(default)]
+    pub has_activity: bool,
 
     /// Current state of the session.
     #[serde(default)]
@@ -90,6 +96,7 @@ impl StageSession {
             claude_session_id: None,
             agent_pid: None,
             spawn_count: 0,
+            has_activity: false,
             session_state: SessionState::Active,
             created_at: created.clone(),
             updated_at: created,
@@ -167,6 +174,7 @@ mod tests {
         assert!(session.claude_session_id.is_none());
         assert!(session.agent_pid.is_none());
         assert_eq!(session.spawn_count, 0);
+        assert!(!session.has_activity);
         assert!(session.is_active());
         assert!(!session.can_resume()); // Can't resume without session ID
     }
@@ -185,6 +193,8 @@ mod tests {
         assert_eq!(session.claude_session_id, original_session_id);
         // spawn_count incremented on spawn so crashes still result in --resume
         assert_eq!(session.spawn_count, 1);
+        // has_activity is still false — spawning alone doesn't set it
+        assert!(!session.has_activity);
         assert!(session.has_agent());
         assert!(session.can_resume());
     }
@@ -218,7 +228,7 @@ mod tests {
     #[test]
     fn test_crash_recovery_uses_resume() {
         // Verifies that if an agent crashes (no agent_finished call),
-        // the next spawn still sees spawn_count > 0 and uses --resume
+        // spawn_count is still tracked. Resume decision now uses has_activity (changed by next subtask).
         let mut session = StageSession::new("ss-1", "task-1", "planning", "now");
 
         // First spawn
@@ -228,8 +238,11 @@ mod tests {
         // Simulate crash: just clear PID without calling agent_finished
         session.agent_pid = None;
 
-        // Next spawn should see spawn_count > 0
-        assert!(session.spawn_count > 0, "Should use --resume after crash");
+        // spawn_count is still incremented (still tracked)
+        assert!(
+            session.spawn_count > 0,
+            "spawn_count still tracks spawns after crash"
+        );
     }
 
     #[test]
@@ -260,11 +273,13 @@ mod tests {
         let mut session = StageSession::new("ss-1", "task-1", "work", "2025-01-24T10:00:00Z");
         session.claude_session_id = Some("test-uuid".to_string());
         session.spawn_count = 2;
+        session.has_activity = true;
 
         let json = serde_json::to_string(&session).unwrap();
         assert!(json.contains("\"id\":\"ss-1\""));
         assert!(json.contains("\"claude_session_id\":\"test-uuid\""));
         assert!(json.contains("\"spawn_count\":2"));
+        assert!(json.contains("\"has_activity\":true"));
 
         let parsed: StageSession = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, session);

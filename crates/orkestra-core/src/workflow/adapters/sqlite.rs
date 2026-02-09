@@ -412,7 +412,7 @@ impl WorkflowStore for SqliteWorkflowStore {
         let result = conn
             .query_row(
                 "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
-                        session_state, created_at, updated_at
+                        session_state, created_at, updated_at, has_activity
                  FROM workflow_stage_sessions
                  WHERE task_id = ? AND stage = ? AND session_state != 'superseded'
                  ORDER BY created_at DESC LIMIT 1",
@@ -431,7 +431,7 @@ impl WorkflowStore for SqliteWorkflowStore {
         let mut stmt = conn
             .prepare(
                 "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
-                        session_state, created_at, updated_at
+                        session_state, created_at, updated_at, has_activity
                  FROM workflow_stage_sessions ORDER BY task_id, created_at",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -454,7 +454,7 @@ impl WorkflowStore for SqliteWorkflowStore {
         let mut stmt = conn
             .prepare(
                 "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
-                        session_state, created_at, updated_at
+                        session_state, created_at, updated_at, has_activity
                  FROM workflow_stage_sessions WHERE task_id = ? ORDER BY created_at",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -477,7 +477,7 @@ impl WorkflowStore for SqliteWorkflowStore {
         let mut stmt = conn
             .prepare(
                 "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
-                        session_state, created_at, updated_at
+                        session_state, created_at, updated_at, has_activity
                  FROM workflow_stage_sessions WHERE agent_pid IS NOT NULL",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -512,8 +512,8 @@ impl WorkflowStore for SqliteWorkflowStore {
         conn.execute(
             "INSERT OR REPLACE INTO workflow_stage_sessions (
                 id, task_id, stage, claude_session_id, agent_pid, spawn_count,
-                session_state, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                session_state, created_at, updated_at, has_activity
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 session.id,
                 session.task_id,
@@ -524,6 +524,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 state_str,
                 session.created_at,
                 session.updated_at,
+                i32::from(session.has_activity),
             ],
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -868,6 +869,7 @@ fn row_to_stage_session(row: &rusqlite::Row) -> rusqlite::Result<StageSession> {
     let agent_pid: Option<i32> = row.get(4)?;
     let spawn_count: i32 = row.get(5)?;
     let state_str: String = row.get(6)?;
+    let has_activity: i32 = row.get(9)?;
 
     Ok(StageSession {
         id: row.get(0)?,
@@ -876,6 +878,7 @@ fn row_to_stage_session(row: &rusqlite::Row) -> rusqlite::Result<StageSession> {
         claude_session_id: row.get(3)?,
         agent_pid: agent_pid.map(|p| p as u32),
         spawn_count: spawn_count as u32,
+        has_activity: has_activity != 0,
         session_state: parse_session_state(&state_str),
         created_at: row.get(7)?,
         updated_at: row.get(8)?,

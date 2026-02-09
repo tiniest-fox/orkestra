@@ -84,6 +84,7 @@ Tracks agent process continuity across iterations. Enables session recovery via 
 | `claude_session_id` | TEXT | | Agent CLI session ID for recovery (e.g., Claude Code session token) |
 | `agent_pid` | INTEGER | | Process ID of the running agent |
 | `spawn_count` | INTEGER | NOT NULL, DEFAULT 0 | Number of times the agent process has been spawned for this session |
+| `has_activity` | INTEGER | NOT NULL, DEFAULT 0 | Whether the agent produced any output during this session (1 = yes, 0 = no). Used to determine if resume is safe. |
 | `session_state` | TEXT | NOT NULL, DEFAULT 'active' | Session lifecycle state: `spawning`, `active`, `completed`, `abandoned` |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 | `updated_at` | TEXT | NOT NULL | ISO 8601 timestamp |

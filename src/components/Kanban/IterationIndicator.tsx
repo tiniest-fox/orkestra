@@ -42,7 +42,6 @@ function capitalizeStage(stage: string): string {
 function getTooltipAlignment(
   index: number,
   total: number,
-  hasHiddenCounter: boolean,
 ): { tooltipClasses: string; arrowClasses: string } {
   // For very small lists (≤3), only apply edge positioning to actual first/last
   if (total <= 3) {
@@ -65,16 +64,15 @@ function getTooltipAlignment(
   }
 
   // For larger lists, apply edge positioning to first/last 2 indicators
-  // If there's a +N counter, it provides buffer on the left, so only first 1 needs left-align
-  const leftEdgeCount = hasHiddenCounter ? 1 : 2;
-
-  if (index < leftEdgeCount) {
+  // First two visible indicators (indices 0, 1) should be left-aligned
+  if (index < 2) {
     return {
       tooltipClasses: "left-0",
       arrowClasses: "left-2",
     };
   }
 
+  // Last two visible indicators should be right-aligned
   if (index >= total - 2) {
     return {
       tooltipClasses: "right-0",
@@ -134,7 +132,6 @@ export function IterationIndicator({
         const { tooltipClasses, arrowClasses } = getTooltipAlignment(
           index,
           visibleIterations.length,
-          hiddenCount > 0,
         );
 
         return (

@@ -10,7 +10,7 @@ use super::question::Question;
 use super::stage_session::StageSession;
 use super::task::Task;
 use crate::workflow::domain::Iteration;
-use crate::workflow::runtime::Outcome;
+use crate::workflow::runtime::{Outcome, Phase};
 
 /// A task with pre-joined data and derived state for the frontend.
 ///
@@ -35,6 +35,7 @@ pub struct TaskView {
 pub struct DerivedTaskState {
     pub current_stage: Option<String>,
     pub is_working: bool,
+    pub is_interrupted: bool,
     pub is_failed: bool,
     pub is_blocked: bool,
     pub is_done: bool,
@@ -71,6 +72,7 @@ pub struct SubtaskProgress {
     pub done: usize,
     pub failed: usize,
     pub blocked: usize,
+    pub interrupted: usize,
     pub has_questions: usize,
     pub needs_review: usize,
     pub working: usize,
@@ -98,6 +100,7 @@ impl DerivedTaskState {
         Self {
             current_stage: task.current_stage().map(str::to_string),
             is_working: task.phase.has_active_agent(),
+            is_interrupted: task.phase == Phase::Interrupted,
             is_failed: task.is_failed(),
             is_blocked: task.is_blocked(),
             is_done: task.is_done(),
@@ -129,6 +132,7 @@ fn compute_subtask_progress(subtask_states: &[DerivedTaskState]) -> Option<Subta
         done: 0,
         failed: 0,
         blocked: 0,
+        interrupted: 0,
         has_questions: 0,
         needs_review: 0,
         working: 0,
@@ -143,6 +147,8 @@ fn compute_subtask_progress(subtask_states: &[DerivedTaskState]) -> Option<Subta
             progress.failed += 1;
         } else if s.is_blocked {
             progress.blocked += 1;
+        } else if s.is_interrupted {
+            progress.interrupted += 1;
         } else if s.has_questions {
             progress.has_questions += 1;
         } else if s.needs_review {
@@ -566,5 +572,58 @@ mod tests {
         // Derived state should be nested
         assert!(json.contains("\"derived\""));
         assert!(json.contains("\"current_stage\":\"planning\""));
+    }
+
+    #[test]
+    fn test_derived_state_interrupted() {
+        let mut task = make_task("work");
+        task.phase = Phase::Interrupted;
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert!(derived.is_interrupted);
+        assert!(!derived.is_working);
+        assert!(!derived.is_failed);
+        assert!(!derived.is_blocked);
+        assert!(!derived.is_done);
+        assert!(!derived.needs_review);
+    }
+
+    #[test]
+    fn test_subtask_progress_interrupted() {
+        let mut parent = make_task("breakdown");
+        parent.status = Status::waiting_on_children("work");
+
+        // One interrupted subtask
+        let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
+        sub1.phase = Phase::Interrupted;
+        let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[]);
+
+        // One working subtask
+        let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
+        sub2.phase = Phase::AgentWorking;
+        let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[]);
+
+        // One blocked subtask
+        let mut sub3 = Task::new("sub-3", "Sub 3", "Desc", "work", "now");
+        sub3.status = Status::blocked("waiting");
+        let sub3_derived = DerivedTaskState::build(&sub3, &[], &[], &[]);
+
+        let derived = DerivedTaskState::build(
+            &parent,
+            &[],
+            &[],
+            &[sub1_derived, sub2_derived, sub3_derived],
+        );
+
+        let progress = derived.subtask_progress.unwrap();
+        assert_eq!(progress.total, 3);
+        assert_eq!(progress.interrupted, 1);
+        assert_eq!(progress.working, 1);
+        assert_eq!(progress.blocked, 1);
+        assert_eq!(progress.done, 0);
+        assert_eq!(progress.failed, 0);
+        assert_eq!(progress.has_questions, 0);
+        assert_eq!(progress.needs_review, 0);
+        assert_eq!(progress.waiting, 0);
     }
 }

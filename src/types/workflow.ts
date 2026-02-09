@@ -151,7 +151,8 @@ export type WorkflowTaskPhase =
   | "idle"
   | "agent_working"
   | "awaiting_review"
-  | "integrating";
+  | "integrating"
+  | "interrupted";
 
 // =============================================================================
 // Artifacts
@@ -355,6 +356,7 @@ export interface PendingRejection {
 export interface DerivedTaskState {
   current_stage: string | null;
   is_working: boolean;
+  is_interrupted: boolean;
   is_failed: boolean;
   is_blocked: boolean;
   is_done: boolean;
@@ -378,6 +380,7 @@ export interface SubtaskProgress {
   done: number;
   failed: number;
   blocked: number;
+  interrupted: number;
   has_questions: number;
   needs_review: number;
   working: number;

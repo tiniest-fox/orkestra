@@ -11,6 +11,8 @@ import {
   outcomeLabel,
 } from "../../utils/iterationOutcomes";
 
+const MAX_ITEMS = 9;
+
 interface IterationIndicatorProps {
   iterations: WorkflowIteration[];
   /** Map of stage name to icon name (from workflow config). */
@@ -39,31 +41,7 @@ function capitalizeStage(stage: string): string {
  * Get tooltip alignment classes based on position in the iteration list.
  * Returns classes for the tooltip body and arrow to prevent clipping at edges.
  */
-function getTooltipAlignment(
-  index: number,
-  total: number,
-): { tooltipClasses: string; arrowClasses: string } {
-  // For very small lists (≤3), only apply edge positioning to actual first/last
-  if (total <= 3) {
-    if (index === 0) {
-      return {
-        tooltipClasses: "left-0",
-        arrowClasses: "left-2",
-      };
-    }
-    if (index === total - 1) {
-      return {
-        tooltipClasses: "right-0",
-        arrowClasses: "right-2",
-      };
-    }
-    return {
-      tooltipClasses: "left-1/2 -translate-x-1/2",
-      arrowClasses: "left-1/2 -translate-x-1/2",
-    };
-  }
-
-  // For larger lists, apply edge positioning to first/last 2 indicators
+function getTooltipAlignment(index: number): { tooltipClasses: string; arrowClasses: string } {
   // First two visible indicators (indices 0, 1) should be left-aligned
   if (index < 2) {
     return {
@@ -73,7 +51,7 @@ function getTooltipAlignment(
   }
 
   // Last two visible indicators should be right-aligned
-  if (index >= total - 2) {
+  if (index >= MAX_ITEMS - 2) {
     return {
       tooltipClasses: "right-0",
       arrowClasses: "right-2",
@@ -90,7 +68,7 @@ function getTooltipAlignment(
 export function IterationIndicator({
   iterations,
   stageIcons,
-  maxVisible = 9,
+  maxVisible = MAX_ITEMS,
   isActive = false,
 }: IterationIndicatorProps) {
   if (iterations.length === 0) {
@@ -129,10 +107,7 @@ export function IterationIndicator({
         const Icon = resolveIcon(iconName);
 
         // Get tooltip positioning based on index to prevent clipping at edges
-        const { tooltipClasses, arrowClasses } = getTooltipAlignment(
-          index,
-          visibleIterations.length,
-        );
+        const { tooltipClasses, arrowClasses } = getTooltipAlignment(index);
 
         return (
           <div key={iteration.id} className="relative group">

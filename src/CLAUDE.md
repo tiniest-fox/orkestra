@@ -19,7 +19,7 @@
 
 - Use the existing Context + hooks pattern (`TasksProvider`, `WorkflowConfigProvider`, `DisplayContextProvider`). No Redux, Zustand, or other state libraries.
 - Access shared state via the provider hooks (`useTasks()`, `useWorkflowConfig()`, `useDisplayContext()`). Don't prop-drill shared data.
-- **Navigation state** goes through `DisplayContextProvider`. It manages two dimensions: `View` (main content area — board, future archive/git views) and `Focus` (side panel — task, subtask, create form, or nothing). All UI transitions (clicking task cards, command palette results, close buttons) route through its methods (`focusTask`, `focusSubtask`, `closeFocus`, etc.). Don't manage navigation with local state.
+- **Navigation state** goes through `DisplayContextProvider` via a preset-based system. Each user action (clicking a task, opening git history, toggling assistant) maps to a named preset that defines which components occupy the three layout slots: `content` (main area), `panel` (primary sidebar), and `secondaryPanel` (nested sidebar). All presets are defined in `providers/presets.ts` as the single source of truth. All UI transitions route through the provider's methods (`showTask`, `showSubtask`, `toggleGitHistory`, `closeFocus`, etc.). Don't manage navigation with local state.
 - Local UI state (open/closed, selected tab, form inputs) stays in the component via `useState`.
 
 ## Styling

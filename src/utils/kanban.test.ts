@@ -118,31 +118,37 @@ describe("getTasksForColumn", () => {
       expect(sorted[1].id).toBe("idle-task");
     });
 
-    it("should sort all 5 tiers correctly", () => {
+    it("should sort all 6 tiers correctly", () => {
       const tasks = [
         createMockWorkflowTaskView({
           id: "idle-task",
           status: { type: "active", stage: "planning" },
-          created_at: "2025-01-05T00:00:00Z",
+          created_at: "2025-01-06T00:00:00Z",
           derived: {},
         }),
         createMockWorkflowTaskView({
           id: "working-task",
           status: { type: "active", stage: "planning" },
-          created_at: "2025-01-04T00:00:00Z",
+          created_at: "2025-01-05T00:00:00Z",
           derived: { is_working: true },
         }),
         createMockWorkflowTaskView({
           id: "review-task",
           status: { type: "active", stage: "planning" },
-          created_at: "2025-01-03T00:00:00Z",
+          created_at: "2025-01-04T00:00:00Z",
           derived: { needs_review: true },
         }),
         createMockWorkflowTaskView({
           id: "questions-task",
           status: { type: "active", stage: "planning" },
-          created_at: "2025-01-02T00:00:00Z",
+          created_at: "2025-01-03T00:00:00Z",
           derived: { has_questions: true },
+        }),
+        createMockWorkflowTaskView({
+          id: "interrupted-task",
+          status: { type: "active", stage: "planning" },
+          created_at: "2025-01-02T00:00:00Z",
+          derived: { is_interrupted: true },
         }),
         createMockWorkflowTaskView({
           id: "blocked-task",
@@ -153,7 +159,7 @@ describe("getTasksForColumn", () => {
         createMockWorkflowTaskView({
           id: "failed-task",
           status: { type: "active", stage: "planning" },
-          created_at: "2025-01-06T00:00:00Z", // Newest, but should still be first
+          created_at: "2025-01-07T00:00:00Z", // Newest, but should still be first
           derived: { is_failed: true },
         }),
       ];
@@ -163,10 +169,11 @@ describe("getTasksForColumn", () => {
       expect(sorted.map((t) => t.id)).toEqual([
         "failed-task", // Priority 0
         "blocked-task", // Priority 1
-        "questions-task", // Priority 2
-        "review-task", // Priority 3
-        "working-task", // Priority 4
-        "idle-task", // Priority 5
+        "interrupted-task", // Priority 2
+        "questions-task", // Priority 3
+        "review-task", // Priority 4
+        "working-task", // Priority 5
+        "idle-task", // Priority 6
       ]);
     });
   });
@@ -221,10 +228,10 @@ describe("getTasksForColumn", () => {
 
       const tasks = [
         createMockWorkflowTaskView({
-          id: "questions-task",
+          id: "interrupted-task",
           status: { type: "active", stage: "planning" },
           created_at: "2025-01-01T00:00:00Z",
-          derived: { has_questions: true },
+          derived: { is_interrupted: true },
         }),
         createMockWorkflowTaskView({
           id: "parent-with-blocked-subtask",
@@ -237,6 +244,40 @@ describe("getTasksForColumn", () => {
       const sorted = getTasksForColumn(tasks, "planning");
 
       expect(sorted[0].id).toBe("parent-with-blocked-subtask");
+      expect(sorted[1].id).toBe("interrupted-task");
+    });
+
+    it("should sort parent with interrupted subtasks as interrupted", () => {
+      const subtaskProgress: SubtaskProgress = {
+        total: 2,
+        done: 0,
+        failed: 0,
+        blocked: 0,
+        interrupted: 1,
+        has_questions: 0,
+        needs_review: 0,
+        working: 0,
+        waiting: 1,
+      };
+
+      const tasks = [
+        createMockWorkflowTaskView({
+          id: "questions-task",
+          status: { type: "active", stage: "planning" },
+          created_at: "2025-01-01T00:00:00Z",
+          derived: { has_questions: true },
+        }),
+        createMockWorkflowTaskView({
+          id: "parent-with-interrupted-subtask",
+          status: { type: "active", stage: "planning" },
+          created_at: "2025-01-02T00:00:00Z",
+          derived: { subtask_progress: subtaskProgress },
+        }),
+      ];
+
+      const sorted = getTasksForColumn(tasks, "planning");
+
+      expect(sorted[0].id).toBe("parent-with-interrupted-subtask");
       expect(sorted[1].id).toBe("questions-task");
     });
 
@@ -333,17 +374,35 @@ describe("getTasksForColumn", () => {
         waiting: 0,
       };
 
+      const interruptedSubtask: SubtaskProgress = {
+        total: 1,
+        done: 0,
+        failed: 0,
+        blocked: 0,
+        interrupted: 1,
+        has_questions: 0,
+        needs_review: 0,
+        working: 0,
+        waiting: 0,
+      };
+
       const tasks = [
+        createMockWorkflowTaskView({
+          id: "parent-interrupted",
+          status: { type: "active", stage: "planning" },
+          created_at: "2025-01-01T00:00:00Z",
+          derived: { subtask_progress: interruptedSubtask },
+        }),
         createMockWorkflowTaskView({
           id: "parent-blocked",
           status: { type: "active", stage: "planning" },
-          created_at: "2025-01-01T00:00:00Z",
+          created_at: "2025-01-02T00:00:00Z",
           derived: { subtask_progress: blockedSubtask },
         }),
         createMockWorkflowTaskView({
           id: "parent-failed",
           status: { type: "active", stage: "planning" },
-          created_at: "2025-01-02T00:00:00Z",
+          created_at: "2025-01-03T00:00:00Z",
           derived: { subtask_progress: failedSubtask },
         }),
       ];
@@ -352,6 +411,7 @@ describe("getTasksForColumn", () => {
 
       expect(sorted[0].id).toBe("parent-failed");
       expect(sorted[1].id).toBe("parent-blocked");
+      expect(sorted[2].id).toBe("parent-interrupted");
     });
   });
 

@@ -69,7 +69,7 @@ export function getTasksForColumn(tasks: WorkflowTaskView[], columnId: string): 
     return false;
   });
 
-  // Sort by priority tier (failed > blocked > questions > review > working > waiting), then by created_at
+  // Sort by priority tier (failed > blocked > interrupted > questions > review > working > waiting), then by created_at
   return columnTasks.sort((a, b) => {
     const getPriority = (task: WorkflowTaskView): number => {
       const d = task.derived;
@@ -79,14 +79,16 @@ export function getTasksForColumn(tasks: WorkflowTaskView[], columnId: string): 
       if (d.is_failed || (sp && sp.failed > 0)) return 0;
       // Blocked (or parent with blocked subtasks)
       if (d.is_blocked || (sp && sp.blocked > 0)) return 1;
+      // Interrupted (or parent with interrupted subtasks)
+      if (d.is_interrupted || (sp && sp.interrupted > 0)) return 2;
       // Needs questions answered (or parent with subtask questions)
-      if (d.has_questions || (sp && sp.has_questions > 0)) return 2;
+      if (d.has_questions || (sp && sp.has_questions > 0)) return 3;
       // Needs review (or parent with subtask needing review)
-      if (d.needs_review || (sp && sp.needs_review > 0)) return 3;
+      if (d.needs_review || (sp && sp.needs_review > 0)) return 4;
       // Working (agent currently running)
-      if (d.is_working) return 4;
+      if (d.is_working) return 5;
       // Idle/waiting (everything else)
-      return 5;
+      return 6;
     };
 
     const aPriority = getPriority(a);

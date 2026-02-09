@@ -3,6 +3,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { Pause } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useDisplayContext } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
@@ -96,25 +97,6 @@ function DiffIcon() {
       aria-hidden="true"
     >
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-    </svg>
-  );
-}
-
-function PauseIcon() {
-  return (
-    <svg
-      className="w-5 h-5"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-    >
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"
-      />
     </svg>
   );
 }
@@ -219,7 +201,7 @@ export function TaskDetailHeader({
         <div className="flex items-center gap-1 flex-shrink-0">
           {showInterruptButton && (
             <IconButton
-              icon={<PauseIcon />}
+              icon={<Pause className="w-5 h-5" />}
               aria-label="Interrupt task"
               variant="ghost"
               size="sm"

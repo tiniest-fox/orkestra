@@ -453,6 +453,7 @@ pub fn run() {
             commands::workflow_get_file_content,
             commands::workflow_get_syntax_css,
             commands::workflow_get_commit_log,
+            commands::workflow_get_batch_file_counts,
             commands::workflow_get_commit_diff,
             commands::open_in_terminal,
             commands::open_in_editor,

@@ -343,6 +343,27 @@ pub fn workflow_get_commit_log(
     })
 }
 
+/// Get file change counts for a batch of commit hashes.
+///
+/// Returns a map from commit hash to the number of files changed.
+/// Used for lazy-loading file counts after the commit list populates.
+#[tauri::command]
+pub fn workflow_get_batch_file_counts(
+    registry: State<ProjectRegistry>,
+    window: tauri::Window,
+    hashes: Vec<String>,
+) -> Result<std::collections::HashMap<String, usize>, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let api = state.api()?;
+        let Some(git) = api.git_service() else {
+            return Ok(std::collections::HashMap::new());
+        };
+        git.batch_file_counts(&hashes).map_err(|e| {
+            orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()).into()
+        })
+    })
+}
+
 /// Get the syntax-highlighted diff for a specific commit.
 #[tauri::command]
 pub fn workflow_get_commit_diff(

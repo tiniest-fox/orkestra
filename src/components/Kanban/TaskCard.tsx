@@ -136,7 +136,13 @@ export function TaskCard({
         : undefined;
 
   return (
-    <Panel as="button" autoFill={false} padded onClick={onClick} className={borderClass}>
+    <Panel
+      as="button"
+      autoFill={false}
+      padded
+      onClick={onClick}
+      className={`${borderClass} shrink-0`}
+    >
       <div className="flex items-start justify-between gap-2">
         <h3
           className={`font-medium text-sm line-clamp-2 ${collapseDone ? "text-stone-500 dark:text-stone-400" : hasTitle ? "text-stone-800 dark:text-stone-100" : "text-stone-400 dark:text-stone-500"}`}

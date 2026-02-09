@@ -31,7 +31,7 @@ All paths relative to `crates/orkestra-core/src/`.
 
 2. **StageExecutionService creates session and dispatches** — `stage_execution.rs::spawn()` creates a `StageSession` via `SessionService`, gets spawn context (`session_id` + `is_resume` flag), then delegates to `spawn_agent()` or `spawn_script()`. Records PID after successful spawn.
 
-3. **AgentExecutionService builds prompt and spawns** — `agent_execution.rs::execute_stage()` generates the JSON schema from `StageCapabilities` (via `prompts/mod.rs`), builds the prompt (full on first spawn, short resume prompt on subsequent spawns), and spawns the agent via `AgentRunner`. The runner resolves the stage's `model` spec through `ProviderRegistry` to select a provider and model. If the provider lacks `supports_json_schema` (e.g., OpenCode), the schema is embedded in the prompt text instead of passed as a CLI flag.
+3. **AgentExecutionService builds prompt and spawns** — `agent_execution.rs::execute_stage()` generates the JSON schema from `StageCapabilities` (via `prompts/mod.rs`), builds a system prompt (agent definition + output format) and user message (task context — full on first spawn, short resume prompt on subsequent spawns), and spawns the agent via `AgentRunner`. The runner resolves the stage's `model` spec through `ProviderRegistry` to select a provider and model. If the provider lacks `supports_json_schema` (e.g., OpenCode), the schema is embedded in the prompt text. If the provider lacks `supports_system_prompt` (e.g., OpenCode), the system prompt and user message are concatenated into a single prompt.
 
 4. **Agent runs and produces JSON output** — The agent CLI executes with provider-appropriate flags (Claude Code uses `--json-schema`; OpenCode uses `--format json` with schema in prompt). Output is one of: `Artifact`, `Questions`, `Subtasks`, `Approval`, `Failed`, `Blocked`. During execution, stdout lines are parsed in real-time by a `StreamParser` (provider-specific: `ClaudeStreamParser` or `OpenCodeStreamParser`) into `LogEntry` values and emitted as `RunEvent::LogLine` events from `runner.rs`.
 
@@ -52,12 +52,15 @@ Idle ──[orchestrator]──> AgentWorking ──[output]──> AwaitingRevi
 | Aspect | First Spawn | Resume |
 |--------|-------------|--------|
 | `spawn_context.is_resume` | `false` | `true` |
-| Prompt | Full (agent def + task context + artifacts) | Short (feedback/answers/continue/recheck) |
-| Artifact injection | Always included | Only in `Recheck` resume type |
+| System prompt | Agent definition + output format | Same (re-sent) |
+| User message | Full (task context + artifacts) | Short (feedback/answers/continue/recheck) |
+| Artifact injection | Always included in user message | Only in `Recheck` resume type |
 | JSON Schema | Generated from stage config | Same — regenerated each time |
-| Claude Code flag | `--session-id {id}` | `--resume {id}` |
-| OpenCode flag | `--session {id}` | `--continue {id}` |
+| Claude Code flag | `--session-id {id}` + `--append-system-prompt` | `--resume {id}` + `--append-system-prompt` |
+| OpenCode flag | `--session {id}` (system+user concatenated) | `--continue {id}` (system+user concatenated) |
 | Session `spawn_count` | 0 before, 1 after | N before, N+1 after |
+
+**Compaction resilience:** The prompt is split into two parts. The system prompt (agent definition + output format) is sent via `--append-system-prompt` on both first spawn and resume. This content survives Claude Code's auto-compaction, ensuring agents retain their core identity and output rules throughout long sessions. The user message (task context) is sent via stdin and can be safely compacted — summaries preserve the task "gist" well enough. For providers that don't support `--append-system-prompt` (e.g., OpenCode), the two parts are concatenated into a single prompt.
 
 ## Trigger Types and Their Sources
 

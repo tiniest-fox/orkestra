@@ -31,7 +31,7 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  const { focusTask, focusSubtask, openCreate } = useDisplayContext();
+  const { focusTask, focusSubtask, openCreate, openAssistant } = useDisplayContext();
   const actions = useActionSearch(query);
   const results = useTaskSearch(tasks, query);
 
@@ -69,10 +69,13 @@ export function useCommandPalette(tasks: WorkflowTaskView[]) {
         case "create-task":
           openCreate();
           break;
+        case "open-assistant":
+          openAssistant();
+          break;
       }
       close();
     },
-    [openCreate, close],
+    [openCreate, openAssistant, close],
   );
 
   // Navigate to a search result

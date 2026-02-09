@@ -20,6 +20,11 @@ const ACTIONS: PaletteAction[] = [
     label: "New Task",
     keywords: ["new", "create", "add", "task"],
   },
+  {
+    id: "open-assistant",
+    label: "Open Assistant",
+    keywords: ["assistant", "chat", "ai"],
+  },
 ];
 
 export function useActionSearch(query: string): PaletteAction[] {

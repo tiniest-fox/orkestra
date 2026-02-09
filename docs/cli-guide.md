@@ -6,22 +6,34 @@ Command-line tool for managing Orkestra workflow tasks. Agents don't use this di
 
 Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkestra/` directory. Auto-creates database and loads config on first run.
 
+## Global Flags
+
+**`--pretty`**
+- Output human-readable formatting instead of JSON
+- Available on all commands
+
 ## Commands
 
 ### Task Management
 
-**`ork task list [--status <FILTER>]`**
+**`ork task list [OPTIONS]`**
 - Lists all tasks
-- `--status`: Filter by `active`, `done`, `archived`, `failed`, or `blocked`
+- `--status <FILTER>`: Filter by `active`, `done`, `archived`, `failed`, or `blocked`
+- `--parent <ID>`: List subtasks of a parent task
+- `--depends-on <ID>`: List tasks that depend on this task
 
-**`ork task show <ID>`**
+**`ork task show <ID> [OPTIONS]`**
 - Shows full task details, artifacts, and metadata
+- `--iterations`: Show iteration history (stages, outcomes, feedback)
+- `--sessions`: Show stage session history (spawning, PIDs, state)
+- `--git`: Show git state (branch, HEAD, dirty status)
 
-**`ork task create -t <TITLE> -d <DESCRIPTION> [-b <BASE_BRANCH>]`**
+**`ork task create -t <TITLE> -d <DESCRIPTION> [OPTIONS]`**
 - Creates new task
 - `-t, --title`: Task title (required)
 - `-d, --description`: Task description (required)
 - `-b, --base-branch`: Base branch for worktree (optional)
+- `--flow <NAME>`: Assign task to a named flow (e.g., "quick", "hotfix")
 - Creates worktree at `.orkestra/.worktrees/<task-id>` and branch `task/<task-id>` if git available
 
 **`ork task approve <ID>`**
@@ -32,6 +44,15 @@ Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkest
 - Rejects current stage with feedback
 - `-f, --feedback`: Reason for rejection (required)
 - Creates new iteration, returns to `Idle` phase
+
+### Logs
+
+**`ork logs <TASK_ID> --stage <STAGE> [OPTIONS]`**
+- View agent and script logs for a specific stage
+- `--stage <NAME>`: Stage name (required)
+- `--type <TYPE>`: Filter by log entry type (`text`, `error`, `tool_use`, `tool_result`, `script_output`, etc.)
+- `--limit <N>`: Maximum number of log entries to return (default: 100)
+- `--offset <N>`: Number of log entries to skip (default: 0)
 
 ### Utilities
 

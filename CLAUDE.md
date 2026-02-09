@@ -297,14 +297,17 @@ The `ork` CLI is the primary tool for inspecting task state, investigating issue
 **Quick reference**:
 
 ```bash
-ork task list [--status STATUS]         # List tasks (filter: active, done, failed, blocked)
-ork task show ID                        # Show task details, artifacts, and iterations
-ork task create -t TITLE -d DESC        # Create a new task (creates worktree if git available)
-ork task approve ID                     # Approve current stage artifact
-ork task reject ID --feedback MSG       # Reject with feedback (creates new iteration)
+ork task list [--status STATUS] [--parent ID] [--depends-on ID]  # List tasks with filters
+ork task show ID [--iterations] [--sessions] [--git]             # Show task details with optional deep inspection
+ork task create -t TITLE -d DESC [-b BASE_BRANCH] [--flow NAME]  # Create a new task
+ork logs TASK_ID --stage STAGE [--type TYPE] [--limit N]         # View agent/script logs
+ork task approve ID                                              # Approve current stage artifact
+ork task reject ID --feedback MSG                                # Reject with feedback (creates new iteration)
 ```
 
-When investigating task issues, `ork task show` is the starting point — it displays the current stage, phase, artifacts, and iteration history. Combine with `git -C .orkestra/.worktrees/<task-id>` commands to inspect worktree state directly.
+Add `--pretty` to any command for human-readable output instead of JSON.
+
+When investigating task issues, `ork task show ID --iterations --sessions --git` gives complete diagnostic information. Use `ork logs TASK_ID --stage STAGE` to view detailed agent session output and tool use.
 
 ### Key Design Patterns
 

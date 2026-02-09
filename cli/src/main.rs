@@ -10,8 +10,8 @@ use orkestra_core::{
     find_project_root,
     utility::UtilityRunner,
     workflow::{
-        load_workflow_for_project, Git2GitService, GitService, Phase, SqliteWorkflowStore, Status,
-        Task, TaskView, WorkflowApi,
+        domain::IterationTrigger, load_workflow_for_project, Git2GitService, GitService, Iteration,
+        Phase, SqliteWorkflowStore, StageSession, Status, Task, TaskView, WorkflowApi,
     },
 };
 
@@ -59,6 +59,15 @@ enum TaskAction {
     Show {
         /// Task ID
         id: String,
+        /// Show iteration history (stages, outcomes, feedback)
+        #[arg(long)]
+        iterations: bool,
+        /// Show stage session history (spawning, PIDs, state)
+        #[arg(long)]
+        sessions: bool,
+        /// Show git state (branch, HEAD, dirty status)
+        #[arg(long)]
+        git: bool,
     },
     /// Create a new task
     Create {
@@ -130,7 +139,12 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
             parent,
             depends_on,
         } => handle_list_tasks(&api, status.as_deref(), parent, depends_on, pretty),
-        TaskAction::Show { id } => handle_show_task(&api, &id, pretty),
+        TaskAction::Show {
+            id,
+            iterations,
+            sessions,
+            git,
+        } => handle_show_task(&api, &id, iterations, sessions, git, pretty),
         TaskAction::Create {
             title,
             description,
@@ -383,7 +397,27 @@ fn truncate_title(title: &str) -> String {
     }
 }
 
-fn handle_show_task(api: &WorkflowApi, id: &str, pretty: bool) {
+#[allow(clippy::fn_params_excessive_bools)]
+fn handle_show_task(
+    api: &WorkflowApi,
+    id: &str,
+    show_iterations: bool,
+    show_sessions: bool,
+    show_git: bool,
+    pretty: bool,
+) {
+    // If any flag is set, output only that specific data
+    let any_flag_set = show_iterations || show_sessions || show_git;
+
+    if any_flag_set {
+        handle_show_task_filtered(api, id, show_iterations, show_sessions, show_git, pretty);
+    } else {
+        // No flags: show full task as before
+        handle_show_task_full(api, id, pretty);
+    }
+}
+
+fn handle_show_task_full(api: &WorkflowApi, id: &str, pretty: bool) {
     let task = match api.get_task(id) {
         Ok(task) => task,
         Err(e) => {
@@ -441,6 +475,84 @@ fn handle_show_task(api: &WorkflowApi, id: &str, pretty: bool) {
         }
     } else {
         output_json(&task);
+    }
+}
+
+#[allow(clippy::fn_params_excessive_bools)]
+fn handle_show_task_filtered(
+    api: &WorkflowApi,
+    id: &str,
+    show_iterations: bool,
+    show_sessions: bool,
+    show_git: bool,
+    pretty: bool,
+) {
+    let mut output = serde_json::Map::new();
+
+    if show_iterations {
+        let iterations = match api.get_iterations(id) {
+            Ok(iters) => iters,
+            Err(e) => {
+                eprintln!("Error getting iterations: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        if pretty {
+            print_iterations_pretty(&iterations);
+        } else {
+            output.insert(
+                "iterations".to_string(),
+                serde_json::to_value(&iterations).unwrap(),
+            );
+        }
+    }
+
+    if show_sessions {
+        let sessions = match api.get_stage_sessions(id) {
+            Ok(sess) => sess,
+            Err(e) => {
+                eprintln!("Error getting stage sessions: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        if pretty {
+            print_sessions_pretty(&sessions);
+        } else {
+            output.insert(
+                "sessions".to_string(),
+                serde_json::to_value(&sessions).unwrap(),
+            );
+        }
+    }
+
+    if show_git {
+        let git_state = match get_git_state(api, id) {
+            Ok(state) => state,
+            Err(e) => {
+                eprintln!("Error getting git state: {e}");
+                std::process::exit(1);
+            }
+        };
+
+        if pretty {
+            print_git_state_pretty(&git_state);
+        } else {
+            output.insert("git".to_string(), serde_json::to_value(&git_state).unwrap());
+        }
+    }
+
+    if !pretty {
+        // Multiple flags: output combined JSON
+        if output.len() == 1 {
+            // Single flag: output just that array/object
+            let (_key, value) = output.into_iter().next().unwrap();
+            println!("{}", serde_json::to_string(&value).unwrap());
+        } else {
+            // Multiple flags: output combined object
+            println!("{}", serde_json::to_string(&output).unwrap());
+        }
     }
 }
 
@@ -571,5 +683,270 @@ fn format_phase(phase: Phase) -> String {
         Phase::AgentWorking => "Working".to_string(),
         Phase::AwaitingReview => "Review".to_string(),
         Phase::Integrating => "Integrating".to_string(),
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn print_iterations_pretty(iterations: &[Iteration]) {
+    if iterations.is_empty() {
+        println!("No iterations found.");
+        return;
+    }
+
+    for iteration in iterations {
+        println!(
+            "Iteration #{} [{}]",
+            iteration.iteration_number, iteration.stage
+        );
+        println!("  Started: {}", iteration.started_at);
+
+        if let Some(ended) = &iteration.ended_at {
+            println!("  Ended: {ended}");
+        } else {
+            println!("  Ended: (still active)");
+        }
+
+        if let Some(outcome) = &iteration.outcome {
+            print!("  Outcome: ");
+            match outcome {
+                orkestra_core::workflow::runtime::Outcome::Approved => {
+                    println!("approved");
+                }
+                orkestra_core::workflow::runtime::Outcome::Rejected { feedback, .. } => {
+                    println!("rejected");
+                    println!("    Feedback: {feedback}");
+                }
+                orkestra_core::workflow::runtime::Outcome::AwaitingAnswers {
+                    questions, ..
+                } => {
+                    println!("awaiting answers ({} questions)", questions.len());
+                }
+                orkestra_core::workflow::runtime::Outcome::Completed { .. } => {
+                    println!("completed");
+                }
+                orkestra_core::workflow::runtime::Outcome::IntegrationFailed { error, .. } => {
+                    println!("integration failed");
+                    println!("    Error: {error}");
+                }
+                orkestra_core::workflow::runtime::Outcome::AgentError { error } => {
+                    println!("agent error");
+                    println!("    Error: {error}");
+                }
+                orkestra_core::workflow::runtime::Outcome::SpawnFailed { error } => {
+                    println!("spawn failed");
+                    println!("    Error: {error}");
+                }
+                orkestra_core::workflow::runtime::Outcome::Blocked { reason } => {
+                    println!("blocked");
+                    println!("    Reason: {reason}");
+                }
+                orkestra_core::workflow::runtime::Outcome::Skipped { reason, .. } => {
+                    println!("skipped");
+                    println!("    Reason: {reason}");
+                }
+                orkestra_core::workflow::runtime::Outcome::Rejection {
+                    target, feedback, ..
+                } => {
+                    println!("rejection (to {target})");
+                    println!("    Feedback: {feedback}");
+                }
+                orkestra_core::workflow::runtime::Outcome::AwaitingRejectionReview {
+                    target,
+                    feedback,
+                    ..
+                } => {
+                    println!("awaiting rejection review (to {target})");
+                    println!("    Feedback: {feedback}");
+                }
+                orkestra_core::workflow::runtime::Outcome::ScriptFailed { error, .. } => {
+                    println!("script failed");
+                    println!("    Error: {error}");
+                }
+            }
+        } else {
+            println!("  Outcome: (none)");
+        }
+
+        if let Some(context) = &iteration.incoming_context {
+            print!("  Context: ");
+            match context {
+                IterationTrigger::Feedback { feedback } => {
+                    println!("feedback");
+                    println!("    \"{feedback}\"");
+                }
+                IterationTrigger::Rejection {
+                    from_stage,
+                    feedback,
+                } => {
+                    println!("rejection from {from_stage}");
+                    println!("    \"{feedback}\"");
+                }
+                IterationTrigger::Integration {
+                    message,
+                    conflict_files,
+                } => {
+                    println!("integration failure");
+                    println!("    {message}");
+                    if !conflict_files.is_empty() {
+                        println!("    Conflicts: {}", conflict_files.join(", "));
+                    }
+                }
+                IterationTrigger::Answers { answers } => {
+                    println!("{} answers provided", answers.len());
+                }
+                IterationTrigger::Interrupted => {
+                    println!("interrupted (crash recovery)");
+                }
+                IterationTrigger::ScriptFailure { from_stage, error } => {
+                    println!("script failure from {from_stage}");
+                    println!("    {error}");
+                }
+                IterationTrigger::RetryFailed { instructions } => {
+                    println!("retry failed");
+                    if let Some(inst) = instructions {
+                        println!("    Instructions: {inst}");
+                    }
+                }
+                IterationTrigger::RetryBlocked { instructions } => {
+                    println!("retry blocked");
+                    if let Some(inst) = instructions {
+                        println!("    Instructions: {inst}");
+                    }
+                }
+            }
+        }
+
+        println!();
+    }
+}
+
+fn print_sessions_pretty(sessions: &[StageSession]) {
+    if sessions.is_empty() {
+        println!("No stage sessions found.");
+        return;
+    }
+
+    for session in sessions {
+        println!("Session [{}]", session.stage);
+        println!("  ID: {}", session.id);
+        println!("  State: {:?}", session.session_state);
+        println!("  Spawn count: {}", session.spawn_count);
+
+        if let Some(session_id) = &session.claude_session_id {
+            println!("  Claude session ID: {session_id}");
+        }
+
+        if let Some(pid) = session.agent_pid {
+            println!("  Agent PID: {pid}");
+        }
+
+        println!("  Created: {}", session.created_at);
+        println!("  Updated: {}", session.updated_at);
+        println!();
+    }
+}
+
+#[derive(serde::Serialize)]
+struct GitState {
+    branch_name: Option<String>,
+    worktree_path: Option<String>,
+    base_branch: String,
+    base_commit: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    head_commit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    is_dirty: Option<bool>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    dirty_files: Vec<String>,
+}
+
+fn get_git_state(api: &WorkflowApi, id: &str) -> Result<GitState, String> {
+    let task = api
+        .get_task(id)
+        .map_err(|e| format!("Failed to get task: {e}"))?;
+
+    let mut state = GitState {
+        branch_name: task.branch_name.clone(),
+        worktree_path: task.worktree_path.clone(),
+        base_branch: task.base_branch.clone(),
+        base_commit: task.base_commit.clone(),
+        head_commit: None,
+        is_dirty: None,
+        dirty_files: Vec::new(),
+    };
+
+    // If worktree exists, get live git state
+    if let Some(ref worktree_path) = task.worktree_path {
+        if std::path::Path::new(worktree_path).exists() {
+            // Get HEAD commit
+            if let Ok(output) = std::process::Command::new("git")
+                .args(["-C", worktree_path, "rev-parse", "HEAD"])
+                .output()
+            {
+                if output.status.success() {
+                    let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    state.head_commit = Some(commit);
+                }
+            }
+
+            // Get dirty status
+            if let Ok(output) = std::process::Command::new("git")
+                .args(["-C", worktree_path, "status", "--porcelain"])
+                .output()
+            {
+                if output.status.success() {
+                    let status_output = String::from_utf8_lossy(&output.stdout);
+                    let is_clean = status_output.trim().is_empty();
+                    state.is_dirty = Some(!is_clean);
+
+                    if !is_clean {
+                        state.dirty_files = status_output
+                            .lines()
+                            .map(|line| line.trim().to_string())
+                            .collect();
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(state)
+}
+
+fn print_git_state_pretty(state: &GitState) {
+    println!("Git State:");
+    if let Some(branch) = &state.branch_name {
+        println!("  Branch: {branch}");
+    } else {
+        println!("  Branch: (not set)");
+    }
+
+    if let Some(worktree) = &state.worktree_path {
+        println!("  Worktree: {worktree}");
+    } else {
+        println!("  Worktree: (not set)");
+    }
+
+    println!("  Base branch: {}", state.base_branch);
+    println!("  Base commit: {}", state.base_commit);
+
+    if let Some(head) = &state.head_commit {
+        println!("  HEAD commit: {head}");
+    } else {
+        println!("  HEAD commit: (worktree not available)");
+    }
+
+    match state.is_dirty {
+        Some(true) => {
+            println!("  Status: dirty ({} files)", state.dirty_files.len());
+            if !state.dirty_files.is_empty() {
+                println!("  Dirty files:");
+                for file in &state.dirty_files {
+                    println!("    {file}");
+                }
+            }
+        }
+        Some(false) => println!("  Status: clean"),
+        None => println!("  Status: (worktree not available)"),
     }
 }

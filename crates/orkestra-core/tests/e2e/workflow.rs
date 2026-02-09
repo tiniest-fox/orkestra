@@ -3095,3 +3095,329 @@ fn test_commit_message_generation_during_integration() {
         "Worktree directory should be removed after integration"
     );
 }
+
+// =============================================================================
+// Interrupt and Resume Tests
+// =============================================================================
+//
+// Note: These tests verify interrupt/resume state transitions using direct API
+// calls rather than trying to catch AgentWorking phase with the mock runner
+// (which completes immediately). The mock runner sends completion events
+// immediately, so we can't reliably interrupt mid-execution in tests.
+
+/// Test interrupt and resume creates correct iteration triggers.
+///
+/// This test verifies the core state machine without trying to catch the
+/// `AgentWorking` phase (which is impossible with the mock since it completes
+/// immediately). Instead, we verify that `resume()` creates the right iteration
+/// trigger and the full flow works end-to-end.
+#[test]
+fn test_interrupt_and_resume() {
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .automated(),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task("Test interrupt", "Testing interrupt functionality", None);
+    let task_id = task.id.clone();
+
+    // Manually transition task to AgentWorking (simulating agent spawn)
+    ctx.api().agent_started(&task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AgentWorking);
+
+    // Interrupt the task
+    let task = ctx.api().interrupt(&task_id).unwrap();
+    assert_eq!(
+        task.phase,
+        Phase::Interrupted,
+        "Task should be in Interrupted phase after interrupt"
+    );
+
+    // Verify the iteration outcome is Interrupted
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(iterations.len(), 1, "Should have one iteration");
+    assert_eq!(
+        iterations[0].outcome,
+        Some(Outcome::Interrupted),
+        "Iteration should have Interrupted outcome"
+    );
+
+    // Resume with a message
+    let task = ctx
+        .api()
+        .resume(&task_id, Some("please focus on error handling".to_string()))
+        .unwrap();
+    assert_eq!(task.phase, Phase::Idle, "Task should be Idle after resume");
+
+    // Verify a new iteration was created with ManualResume trigger
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(
+        iterations.len(),
+        2,
+        "Should have two iterations after resume"
+    );
+    assert_eq!(
+        iterations[1].incoming_context,
+        Some(IterationTrigger::ManualResume {
+            message: Some("please focus on error handling".to_string())
+        }),
+        "Second iteration should have ManualResume trigger with message"
+    );
+
+    // Set output for the resumed agent
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Completed work with error handling".to_string(),
+        },
+    );
+
+    // Advance to spawn and complete the resumed agent
+    ctx.advance();
+    ctx.advance();
+
+    // Task should now be awaiting review
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.phase,
+        Phase::AwaitingReview,
+        "Task should be awaiting review after completion"
+    );
+}
+
+/// Test interrupt and resume without a message.
+#[test]
+fn test_interrupt_and_resume_without_message() {
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task("Test resume without message", "Testing resume", None);
+    let task_id = task.id.clone();
+
+    // Manually transition to AgentWorking
+    ctx.api().agent_started(&task_id).unwrap();
+
+    // Interrupt
+    ctx.api().interrupt(&task_id).unwrap();
+
+    // Resume without message
+    let task = ctx.api().resume(&task_id, None).unwrap();
+    assert_eq!(task.phase, Phase::Idle);
+
+    // Verify ManualResume trigger with None message
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    assert_eq!(iterations.len(), 2);
+    assert_eq!(
+        iterations[1].incoming_context,
+        Some(IterationTrigger::ManualResume { message: None }),
+        "Second iteration should have ManualResume trigger with no message"
+    );
+}
+
+/// Test multiple interrupt/resume cycles on the same task.
+#[test]
+fn test_interrupt_resume_multiple_cycles() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task("Test multiple cycles", "Testing multiple cycles", None);
+    let task_id = task.id.clone();
+
+    // Cycle 1: AgentWorking → Interrupt → Resume
+    ctx.api().agent_started(&task_id).unwrap();
+    assert_eq!(
+        ctx.api().get_task(&task_id).unwrap().phase,
+        Phase::AgentWorking
+    );
+
+    ctx.api().interrupt(&task_id).unwrap();
+    assert_eq!(
+        ctx.api().get_task(&task_id).unwrap().phase,
+        Phase::Interrupted
+    );
+
+    ctx.api()
+        .resume(&task_id, Some("message 1".to_string()))
+        .unwrap();
+    assert_eq!(ctx.api().get_task(&task_id).unwrap().phase, Phase::Idle);
+
+    // Cycle 2: AgentWorking → Interrupt → Resume
+    ctx.api().agent_started(&task_id).unwrap();
+    assert_eq!(
+        ctx.api().get_task(&task_id).unwrap().phase,
+        Phase::AgentWorking
+    );
+
+    ctx.api().interrupt(&task_id).unwrap();
+    assert_eq!(
+        ctx.api().get_task(&task_id).unwrap().phase,
+        Phase::Interrupted
+    );
+
+    ctx.api()
+        .resume(&task_id, Some("message 2".to_string()))
+        .unwrap();
+    assert_eq!(ctx.api().get_task(&task_id).unwrap().phase, Phase::Idle);
+
+    // Cycle 3: Complete normally via orchestrator
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Final work".to_string(),
+        },
+    );
+    ctx.advance(); // Spawn
+    ctx.advance(); // Process completion
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.phase,
+        Phase::AwaitingReview,
+        "Task should complete normally after multiple interrupt/resume cycles"
+    );
+
+    // Verify we have the expected number of iterations
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    // iter1 (interrupted), iter2 (resumed/interrupted), iter3 (resumed/completed)
+    assert_eq!(
+        iterations.len(),
+        3,
+        "Should have 3 iterations after 2 interrupt cycles and completion"
+    );
+}
+
+/// Test that interrupting a task in the wrong phase returns an error.
+#[test]
+fn test_interrupt_wrong_phase() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task("Test wrong phase", "Testing error case", None);
+    let task_id = task.id.clone();
+
+    // Set up mock output
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work done".to_string(),
+        },
+    );
+
+    // Advance to spawn and process completion
+    ctx.advance();
+    ctx.advance();
+
+    // Task should now be in AwaitingReview
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // Try to interrupt (should fail)
+    let result = ctx.api().interrupt(&task_id);
+    assert!(
+        result.is_err(),
+        "Should not be able to interrupt task in AwaitingReview phase"
+    );
+    match result {
+        Err(e) => assert!(
+            matches!(
+                e,
+                orkestra_core::workflow::WorkflowError::InvalidTransition(_)
+            ),
+            "Error should be InvalidTransition, got: {e:?}"
+        ),
+        Ok(_) => panic!("Should have returned an error"),
+    }
+}
+
+/// Test that resuming a task in the wrong phase returns an error.
+#[test]
+fn test_resume_wrong_phase() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task("Test resume wrong phase", "Testing error case", None);
+    let task_id = task.id.clone();
+
+    // Manually transition to AgentWorking
+    ctx.api().agent_started(&task_id).unwrap();
+
+    // Task should be in AgentWorking
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AgentWorking);
+
+    // Try to resume (should fail - not in Interrupted phase)
+    let result = ctx.api().resume(&task_id, None);
+    assert!(
+        result.is_err(),
+        "Should not be able to resume task in AgentWorking phase"
+    );
+    match result {
+        Err(e) => assert!(
+            matches!(
+                e,
+                orkestra_core::workflow::WorkflowError::InvalidTransition(_)
+            ),
+            "Error should be InvalidTransition, got: {e:?}"
+        ),
+        Ok(_) => panic!("Should have returned an error"),
+    }
+}
+
+/// Test that interrupted tasks are not automatically advanced by the orchestrator.
+#[test]
+fn test_interrupted_task_not_auto_advanced() {
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Test no auto advance",
+        "Testing interrupted stays put",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Manually transition to AgentWorking
+    ctx.api().agent_started(&task_id).unwrap();
+
+    // Interrupt
+    ctx.api().interrupt(&task_id).unwrap();
+    assert_eq!(
+        ctx.api().get_task(&task_id).unwrap().phase,
+        Phase::Interrupted
+    );
+
+    // Advance several ticks
+    ctx.advance();
+    ctx.advance();
+    ctx.advance();
+
+    // Verify task is still in Interrupted phase (not auto-advanced)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.phase,
+        Phase::Interrupted,
+        "Interrupted task should not be auto-advanced by orchestrator"
+    );
+}

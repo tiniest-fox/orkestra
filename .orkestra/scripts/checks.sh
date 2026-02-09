@@ -375,7 +375,7 @@ if $HAS_FRONTEND; then
     fi
 
     run_check "Frontend lint+format fix (biome)" "pnpm check:fix"
-    run_check "Frontend lint+format verify (biome)" "pnpm check"
+    run_check "Frontend lint+format verify (biome)" "pnpm check --error-on-warnings"
     run_check "Frontend type check" "pnpm exec tsc --noEmit"
     run_check "Frontend tests" "pnpm test:run"
 fi

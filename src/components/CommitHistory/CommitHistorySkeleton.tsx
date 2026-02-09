@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noArrayIndexKey: static skeleton placeholders
 export function CommitHistorySkeleton() {
   return (
     <>

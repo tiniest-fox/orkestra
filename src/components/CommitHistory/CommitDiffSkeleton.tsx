@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noArrayIndexKey: static skeleton placeholders
 import { FlexContainer, Panel } from "../ui";
 
 interface CommitDiffSkeletonProps {

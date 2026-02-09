@@ -21,10 +21,13 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 use handlebars::Handlebars;
 use serde_json::Value;
 
-use crate::process::spawn_stderr_reader;
+use crate::process::{spawn_stderr_reader, ProcessGuard};
 
 /// Shared output format template for all utility tasks.
 const OUTPUT_FORMAT_TEMPLATE: &str =
@@ -153,21 +156,30 @@ impl UtilityRunner {
     /// Execute a task with the given prompt and schema.
     fn execute(&self, prompt: &str, schema: &str) -> Result<Value, UtilityError> {
         // Spawn Claude with lightweight options
-        let mut child = Command::new("claude")
-            .args([
-                "--model",
-                &self.model,
-                "--print",
-                "--output-format",
-                "json",
-                "--json-schema",
-                schema,
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+        let mut cmd = Command::new("claude");
+        cmd.args([
+            "--model",
+            &self.model,
+            "--print",
+            "--output-format",
+            "json",
+            "--json-schema",
+            schema,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+        // Create new process group so kill_process_tree can clean up descendants
+        #[cfg(unix)]
+        cmd.process_group(0);
+
+        let mut child = cmd
             .spawn()
             .map_err(|e| UtilityError::SpawnFailed(e.to_string()))?;
+
+        // Guard ensures the process is killed if we return early (timeout, error, panic)
+        let guard = ProcessGuard::new(child.id());
 
         // Write prompt to stdin
         if let Some(mut stdin) = child.stdin.take() {
@@ -197,6 +209,7 @@ impl UtilityRunner {
 
         // Wait for process to finish
         let _ = child.wait();
+        guard.disarm();
 
         // Parse output as JSON
         serde_json::from_str(&output).map_err(|e| UtilityError::ParseError(e.to_string()))

@@ -4,6 +4,8 @@
 
 use std::sync::Arc;
 
+use std::fmt::Write as _;
+
 use clap::{Parser, Subcommand};
 use orkestra_core::{
     adapters::sqlite::DatabaseConnection,
@@ -11,10 +13,21 @@ use orkestra_core::{
     utility::UtilityRunner,
     workflow::{
         domain::{IterationTrigger, LogEntry},
-        load_workflow_for_project, Git2GitService, GitService, Iteration, Phase,
-        SqliteWorkflowStore, StageSession, Status, Task, TaskView, WorkflowApi,
+        load_workflow_for_project,
+        runtime::Outcome,
+        Git2GitService, GitService, Iteration, Phase, SqliteWorkflowStore, StageSession, Status,
+        Task, TaskView, WorkflowApi,
     },
 };
+
+#[derive(Clone, clap::ValueEnum)]
+enum StatusFilter {
+    Active,
+    Done,
+    Failed,
+    Blocked,
+    Archived,
+}
 
 #[derive(Parser)]
 #[command(name = "ork")]
@@ -65,7 +78,7 @@ enum TaskAction {
     List {
         /// Filter by status (active, done, failed, blocked)
         #[arg(long)]
-        status: Option<String>,
+        status: Option<StatusFilter>,
         /// List subtasks of a parent task
         #[arg(long)]
         parent: Option<String>,
@@ -145,7 +158,7 @@ fn main() {
         } => handle_logs(
             &task_id,
             stage,
-            type_filter.as_ref(),
+            type_filter.as_deref(),
             limit,
             offset,
             cli.pretty,
@@ -173,7 +186,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
             status,
             parent,
             depends_on,
-        } => handle_list_tasks(&api, status.as_deref(), parent, depends_on, pretty),
+        } => handle_list_tasks(&api, status.as_ref(), parent, depends_on, pretty),
         TaskAction::Show {
             id,
             iterations,
@@ -201,7 +214,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
 fn handle_logs(
     task_id: &str,
     stage: Option<String>,
-    type_filter: Option<&String>,
+    type_filter: Option<&str>,
     limit: usize,
     offset: usize,
     pretty: bool,
@@ -245,14 +258,13 @@ fn handle_logs(
 
     // Apply type filter if specified
     if let Some(type_name) = type_filter {
-        logs.retain(|entry| {
-            // Serialize to JSON to extract the "type" tag
-            if let Ok(json) = serde_json::to_value(entry) {
-                json.get("type").and_then(|t| t.as_str()) == Some(type_name.as_str())
-            } else {
-                false
-            }
-        });
+        let pre_filter_count = logs.len();
+        logs.retain(|entry| entry.type_name() == type_name);
+        if logs.is_empty() && pre_filter_count > 0 {
+            eprintln!(
+                "Warning: --type \"{type_name}\" matched no entries. Valid types: text, user_message, tool_use, tool_result, subagent_tool_use, subagent_tool_result, process_exit, error, script_start, script_output, script_exit"
+            );
+        }
     }
 
     // Apply pagination (offset then limit)
@@ -312,14 +324,7 @@ fn print_log_entry_pretty(entry: &LogEntry) {
             println!("[user_message] ({resume_type}) {content}");
         }
         _ => {
-            // SubagentToolUse, SubagentToolResult — show type name
-            if let Ok(json) = serde_json::to_value(entry) {
-                let type_name = json
-                    .get("type")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("unknown");
-                println!("[{type_name}] ...");
-            }
+            println!("[{}] ...", entry.type_name());
         }
     }
 }
@@ -398,7 +403,7 @@ fn handle_reject_task(api: &WorkflowApi, id: &str, feedback: &str, pretty: bool)
 
 fn handle_list_tasks(
     api: &WorkflowApi,
-    status_filter: Option<&str>,
+    status_filter: Option<&StatusFilter>,
     parent: Option<String>,
     depends_on: Option<String>,
     pretty: bool,
@@ -421,7 +426,7 @@ fn handle_list_tasks(
 fn handle_list_subtasks(
     api: &WorkflowApi,
     parent_id: &str,
-    status_filter: Option<&str>,
+    status_filter: Option<&StatusFilter>,
     pretty: bool,
 ) {
     let subtasks = match api.list_subtask_views(parent_id) {
@@ -435,7 +440,7 @@ fn handle_list_subtasks(
     let subtasks: Vec<_> = match status_filter {
         Some(filter) => subtasks
             .into_iter()
-            .filter(|v| matches_status_filter_view(v, filter))
+            .filter(|v| matches_status_filter(&v.task, filter))
             .collect(),
         None => subtasks,
     };
@@ -450,7 +455,7 @@ fn handle_list_subtasks(
 fn handle_list_dependents(
     api: &WorkflowApi,
     depends_on_id: &str,
-    status_filter: Option<&str>,
+    status_filter: Option<&StatusFilter>,
     pretty: bool,
 ) {
     let all_tasks = match api.list_tasks() {
@@ -481,7 +486,7 @@ fn handle_list_dependents(
     }
 }
 
-fn handle_list_all_tasks(api: &WorkflowApi, status_filter: Option<&str>, pretty: bool) {
+fn handle_list_all_tasks(api: &WorkflowApi, status_filter: Option<&StatusFilter>, pretty: bool) {
     let tasks = match api.list_tasks() {
         Ok(tasks) => tasks,
         Err(e) => {
@@ -560,8 +565,8 @@ fn print_tasks_table(tasks: &[Task], empty_message: &str) {
 }
 
 fn truncate_title(title: &str) -> String {
-    if title.len() > 28 {
-        format!("{}...", &title[..25])
+    if title.chars().count() > 28 {
+        format!("{}...", title.chars().take(25).collect::<String>())
     } else {
         title.to_string()
     }
@@ -673,7 +678,7 @@ fn handle_show_task_filtered(
         } else {
             output.insert(
                 "iterations".to_string(),
-                serde_json::to_value(&iterations).unwrap(),
+                serde_json::to_value(&iterations).expect("domain type serialization"),
             );
         }
     }
@@ -692,7 +697,7 @@ fn handle_show_task_filtered(
         } else {
             output.insert(
                 "sessions".to_string(),
-                serde_json::to_value(&sessions).unwrap(),
+                serde_json::to_value(&sessions).expect("domain type serialization"),
             );
         }
     }
@@ -709,7 +714,10 @@ fn handle_show_task_filtered(
         if pretty {
             print_git_state_pretty(&git_state);
         } else {
-            output.insert("git".to_string(), serde_json::to_value(&git_state).unwrap());
+            output.insert(
+                "git".to_string(),
+                serde_json::to_value(&git_state).expect("domain type serialization"),
+            );
         }
     }
 
@@ -717,11 +725,20 @@ fn handle_show_task_filtered(
         // Multiple flags: output combined JSON
         if output.len() == 1 {
             // Single flag: output just that array/object
-            let (_key, value) = output.into_iter().next().unwrap();
-            println!("{}", serde_json::to_string(&value).unwrap());
+            let (_key, value) = output
+                .into_iter()
+                .next()
+                .expect("domain type serialization");
+            println!(
+                "{}",
+                serde_json::to_string(&value).expect("domain type serialization")
+            );
         } else {
             // Multiple flags: output combined object
-            println!("{}", serde_json::to_string(&output).unwrap());
+            println!(
+                "{}",
+                serde_json::to_string(&output).expect("domain type serialization")
+            );
         }
     }
 }
@@ -806,25 +823,13 @@ fn init_workflow_api() -> Result<WorkflowApi, String> {
     Ok(api)
 }
 
-fn matches_status_filter(task: &Task, filter: &str) -> bool {
-    match filter.to_lowercase().as_str() {
-        "active" => task.status.is_active(),
-        "done" => task.is_done(),
-        "archived" => task.is_archived(),
-        "failed" => task.is_failed(),
-        "blocked" => task.is_blocked(),
-        _ => true,
-    }
-}
-
-fn matches_status_filter_view(view: &TaskView, filter: &str) -> bool {
-    match filter.to_lowercase().as_str() {
-        "active" => view.task.status.is_active(),
-        "done" => view.task.is_done(),
-        "archived" => view.task.is_archived(),
-        "failed" => view.task.is_failed(),
-        "blocked" => view.task.is_blocked(),
-        _ => true,
+fn matches_status_filter(task: &Task, filter: &StatusFilter) -> bool {
+    match filter {
+        StatusFilter::Active => task.status.is_active(),
+        StatusFilter::Done => task.is_done(),
+        StatusFilter::Archived => task.is_archived(),
+        StatusFilter::Failed => task.is_failed(),
+        StatusFilter::Blocked => task.is_blocked(),
     }
 }
 
@@ -856,7 +861,76 @@ fn format_phase(phase: Phase) -> String {
     }
 }
 
-#[allow(clippy::too_many_lines)]
+fn format_outcome(outcome: &Outcome) -> String {
+    match outcome {
+        Outcome::Approved => "approved".to_string(),
+        Outcome::Rejected { feedback, .. } => format!("rejected\n    Feedback: {feedback}"),
+        Outcome::AwaitingAnswers { questions, .. } => {
+            format!("awaiting answers ({} questions)", questions.len())
+        }
+        Outcome::Completed { .. } => "completed".to_string(),
+        Outcome::IntegrationFailed { error, .. } => {
+            format!("integration failed\n    Error: {error}")
+        }
+        Outcome::AgentError { error } => format!("agent error\n    Error: {error}"),
+        Outcome::SpawnFailed { error } => format!("spawn failed\n    Error: {error}"),
+        Outcome::Blocked { reason } => format!("blocked\n    Reason: {reason}"),
+        Outcome::Skipped { reason, .. } => format!("skipped\n    Reason: {reason}"),
+        Outcome::Rejection {
+            target, feedback, ..
+        } => {
+            format!("rejection (to {target})\n    Feedback: {feedback}")
+        }
+        Outcome::AwaitingRejectionReview {
+            target, feedback, ..
+        } => {
+            format!("awaiting rejection review (to {target})\n    Feedback: {feedback}")
+        }
+        Outcome::ScriptFailed { error, .. } => format!("script failed\n    Error: {error}"),
+    }
+}
+
+fn format_trigger(trigger: &IterationTrigger) -> String {
+    match trigger {
+        IterationTrigger::Feedback { feedback } => format!("feedback\n    \"{feedback}\""),
+        IterationTrigger::Rejection {
+            from_stage,
+            feedback,
+        } => {
+            format!("rejection from {from_stage}\n    \"{feedback}\"")
+        }
+        IterationTrigger::Integration {
+            message,
+            conflict_files,
+        } => {
+            let mut s = format!("integration failure\n    {message}");
+            if !conflict_files.is_empty() {
+                write!(s, "\n    Conflicts: {}", conflict_files.join(", ")).unwrap();
+            }
+            s
+        }
+        IterationTrigger::Answers { answers } => format!("{} answers provided", answers.len()),
+        IterationTrigger::Interrupted => "interrupted (crash recovery)".to_string(),
+        IterationTrigger::ScriptFailure { from_stage, error } => {
+            format!("script failure from {from_stage}\n    {error}")
+        }
+        IterationTrigger::RetryFailed { instructions } => {
+            let mut s = "retry failed".to_string();
+            if let Some(inst) = instructions {
+                write!(s, "\n    Instructions: {inst}").unwrap();
+            }
+            s
+        }
+        IterationTrigger::RetryBlocked { instructions } => {
+            let mut s = "retry blocked".to_string();
+            if let Some(inst) = instructions {
+                write!(s, "\n    Instructions: {inst}").unwrap();
+            }
+            s
+        }
+    }
+}
+
 fn print_iterations_pretty(iterations: &[Iteration]) {
     if iterations.is_empty() {
         println!("No iterations found.");
@@ -877,113 +951,13 @@ fn print_iterations_pretty(iterations: &[Iteration]) {
         }
 
         if let Some(outcome) = &iteration.outcome {
-            print!("  Outcome: ");
-            match outcome {
-                orkestra_core::workflow::runtime::Outcome::Approved => {
-                    println!("approved");
-                }
-                orkestra_core::workflow::runtime::Outcome::Rejected { feedback, .. } => {
-                    println!("rejected");
-                    println!("    Feedback: {feedback}");
-                }
-                orkestra_core::workflow::runtime::Outcome::AwaitingAnswers {
-                    questions, ..
-                } => {
-                    println!("awaiting answers ({} questions)", questions.len());
-                }
-                orkestra_core::workflow::runtime::Outcome::Completed { .. } => {
-                    println!("completed");
-                }
-                orkestra_core::workflow::runtime::Outcome::IntegrationFailed { error, .. } => {
-                    println!("integration failed");
-                    println!("    Error: {error}");
-                }
-                orkestra_core::workflow::runtime::Outcome::AgentError { error } => {
-                    println!("agent error");
-                    println!("    Error: {error}");
-                }
-                orkestra_core::workflow::runtime::Outcome::SpawnFailed { error } => {
-                    println!("spawn failed");
-                    println!("    Error: {error}");
-                }
-                orkestra_core::workflow::runtime::Outcome::Blocked { reason } => {
-                    println!("blocked");
-                    println!("    Reason: {reason}");
-                }
-                orkestra_core::workflow::runtime::Outcome::Skipped { reason, .. } => {
-                    println!("skipped");
-                    println!("    Reason: {reason}");
-                }
-                orkestra_core::workflow::runtime::Outcome::Rejection {
-                    target, feedback, ..
-                } => {
-                    println!("rejection (to {target})");
-                    println!("    Feedback: {feedback}");
-                }
-                orkestra_core::workflow::runtime::Outcome::AwaitingRejectionReview {
-                    target,
-                    feedback,
-                    ..
-                } => {
-                    println!("awaiting rejection review (to {target})");
-                    println!("    Feedback: {feedback}");
-                }
-                orkestra_core::workflow::runtime::Outcome::ScriptFailed { error, .. } => {
-                    println!("script failed");
-                    println!("    Error: {error}");
-                }
-            }
+            println!("  Outcome: {}", format_outcome(outcome));
         } else {
             println!("  Outcome: (none)");
         }
 
         if let Some(context) = &iteration.incoming_context {
-            print!("  Context: ");
-            match context {
-                IterationTrigger::Feedback { feedback } => {
-                    println!("feedback");
-                    println!("    \"{feedback}\"");
-                }
-                IterationTrigger::Rejection {
-                    from_stage,
-                    feedback,
-                } => {
-                    println!("rejection from {from_stage}");
-                    println!("    \"{feedback}\"");
-                }
-                IterationTrigger::Integration {
-                    message,
-                    conflict_files,
-                } => {
-                    println!("integration failure");
-                    println!("    {message}");
-                    if !conflict_files.is_empty() {
-                        println!("    Conflicts: {}", conflict_files.join(", "));
-                    }
-                }
-                IterationTrigger::Answers { answers } => {
-                    println!("{} answers provided", answers.len());
-                }
-                IterationTrigger::Interrupted => {
-                    println!("interrupted (crash recovery)");
-                }
-                IterationTrigger::ScriptFailure { from_stage, error } => {
-                    println!("script failure from {from_stage}");
-                    println!("    {error}");
-                }
-                IterationTrigger::RetryFailed { instructions } => {
-                    println!("retry failed");
-                    if let Some(inst) = instructions {
-                        println!("    Instructions: {inst}");
-                    }
-                }
-                IterationTrigger::RetryBlocked { instructions } => {
-                    println!("retry blocked");
-                    if let Some(inst) = instructions {
-                        println!("    Instructions: {inst}");
-                    }
-                }
-            }
+            println!("  Context: {}", format_trigger(context));
         }
 
         println!();

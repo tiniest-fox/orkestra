@@ -190,6 +190,27 @@ pub enum LogEntry {
     },
 }
 
+impl LogEntry {
+    /// Return the serde type discriminant for this log entry variant.
+    ///
+    /// Matches the `#[serde(tag = "type", rename_all = "snake_case")]` tag values.
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            LogEntry::Text { .. } => "text",
+            LogEntry::UserMessage { .. } => "user_message",
+            LogEntry::ToolUse { .. } => "tool_use",
+            LogEntry::ToolResult { .. } => "tool_result",
+            LogEntry::SubagentToolUse { .. } => "subagent_tool_use",
+            LogEntry::SubagentToolResult { .. } => "subagent_tool_result",
+            LogEntry::ProcessExit { .. } => "process_exit",
+            LogEntry::Error { .. } => "error",
+            LogEntry::ScriptStart { .. } => "script_start",
+            LogEntry::ScriptOutput { .. } => "script_output",
+            LogEntry::ScriptExit { .. } => "script_exit",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +255,27 @@ mod tests {
         };
         let json = serde_json::to_string(&item).unwrap();
         assert!(json.contains("\"activeForm\":\"Fixing bug\""));
+    }
+
+    #[test]
+    fn test_type_name_matches_serde_tag() {
+        let entry = LogEntry::Text {
+            content: "hello".to_string(),
+        };
+        assert_eq!(entry.type_name(), "text");
+        let entry = LogEntry::ToolUse {
+            tool: "bash".to_string(),
+            id: "1".to_string(),
+            input: ToolInput::Bash {
+                command: "ls".to_string(),
+            },
+        };
+        assert_eq!(entry.type_name(), "tool_use");
+        let entry = LogEntry::ScriptExit {
+            code: 0,
+            success: true,
+            timed_out: false,
+        };
+        assert_eq!(entry.type_name(), "script_exit");
     }
 }

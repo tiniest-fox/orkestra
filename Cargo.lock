@@ -2929,10 +2929,14 @@ dependencies = [
 name = "orkestra-cli"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
+ "indexmap 2.13.0",
  "orkestra-core",
  "serde",
  "serde_json",
+ "serde_yaml",
+ "tempfile",
 ]
 
 [[package]]

@@ -15,3 +15,10 @@ orkestra-core = { path = "../crates/orkestra-core" }
 clap = { version = "4", features = ["derive"] }
 serde = "1"
 serde_json = "1"
+
+[dev-dependencies]
+orkestra-core = { path = "../crates/orkestra-core", features = ["testutil"] }
+indexmap = "2"
+tempfile = "3"
+serde_yaml = "0.9"
+chrono = "0.4"

@@ -600,6 +600,94 @@ impl OrchestratorLoop {
         Ok(events)
     }
 
+    /// Helper to generate commit message with fallback on error.
+    /// Runs in the background thread to avoid blocking the orchestrator.
+    fn generate_commit_message_with_fallback(
+        commit_gen: &Arc<dyn crate::commit_message::CommitMessageGenerator>,
+        task_title: &str,
+        task_description: &str,
+        diff_summary: &str,
+        model_names: &[String],
+        task_id: &str,
+    ) -> String {
+        match commit_gen.generate_commit_message(
+            task_title,
+            task_description,
+            diff_summary,
+            model_names,
+        ) {
+            Ok(message) => message,
+            Err(e) => {
+                orkestra_debug!(
+                    "integration",
+                    "Commit message generation failed for {}: {e}, using fallback",
+                    task_id
+                );
+                crate::commit_message::fallback_commit_message(task_title, task_id)
+            }
+        }
+    }
+
+    /// Background integration logic. Generates commit message, performs git operations,
+    /// and records the result. Runs off the orchestrator's main thread.
+    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    fn run_background_integration(
+        git: Arc<dyn GitService>,
+        api: Arc<Mutex<WorkflowApi>>,
+        commit_gen: Arc<dyn crate::commit_message::CommitMessageGenerator>,
+        task_id: String,
+        task_title: String,
+        task_description: String,
+        diff_summary: String,
+        model_names: Vec<String>,
+        branch: String,
+        target_branch: String,
+        worktree_path: Option<PathBuf>,
+        has_worktree: bool,
+    ) {
+        // Generate commit message (may spawn subprocess with timeout)
+        let commit_message = Self::generate_commit_message_with_fallback(
+            &commit_gen,
+            &task_title,
+            &task_description,
+            &diff_summary,
+            &model_names,
+            &task_id,
+        );
+
+        let params = IntegrationParams {
+            task_id: task_id.clone(),
+            branch_name: branch,
+            target_branch,
+            worktree_path,
+            commit_message,
+        };
+
+        let git_result = perform_git_integration(git.as_ref(), &params);
+
+        match api.lock() {
+            Ok(api) => {
+                if let Err(e) =
+                    api.apply_integration_result(&params.task_id, git_result, has_worktree)
+                {
+                    orkestra_debug!(
+                        "integration",
+                        "integration failed for {}: {}",
+                        params.task_id,
+                        e
+                    );
+                }
+            }
+            Err(_) => {
+                orkestra_debug!(
+                    "integration",
+                    "failed to acquire API lock after git work for {} — will be recovered on restart",
+                    params.task_id
+                );
+            }
+        }
+    }
+
     /// Start integrations for Done tasks that need merging.
     ///
     /// Only one integration runs at a time — if any task is already in
@@ -671,15 +759,17 @@ impl OrchestratorLoop {
             }]);
         }
 
-        let commit_message = api.generate_integration_commit_message(task);
+        // Gather inputs for commit message generation (will be done in background thread)
+        let task_title = task.title.clone();
+        let task_description = task.description.clone();
+        let task_flow = task.flow.clone();
+        let diff_summary = api.build_diff_summary(task);
+        let model_names =
+            crate::commit_message::collect_model_names(&api.workflow, task_flow.as_deref());
+        let commit_gen = Arc::clone(&api.commit_message_generator);
 
-        let params = IntegrationParams {
-            task_id: task_id.clone(),
-            branch_name: branch.clone(),
-            target_branch: task.base_branch.clone(),
-            worktree_path: task.worktree_path.as_ref().map(PathBuf::from),
-            commit_message,
-        };
+        let target_branch = task.base_branch.clone();
+        let worktree_path = task.worktree_path.as_ref().map(PathBuf::from);
         let has_worktree = task.worktree_path.is_some();
 
         // Release the API lock before spawning the background thread
@@ -694,29 +784,20 @@ impl OrchestratorLoop {
         let api_clone = Arc::clone(&self.api);
 
         let run_integration = move || {
-            let git_result = perform_git_integration(git.as_ref(), &params);
-
-            match api_clone.lock() {
-                Ok(api) => {
-                    if let Err(e) =
-                        api.apply_integration_result(&params.task_id, git_result, has_worktree)
-                    {
-                        orkestra_debug!(
-                            "integration",
-                            "integration failed for {}: {}",
-                            params.task_id,
-                            e
-                        );
-                    }
-                }
-                Err(_) => {
-                    orkestra_debug!(
-                        "integration",
-                        "failed to acquire API lock after git work for {} — will be recovered on restart",
-                        params.task_id
-                    );
-                }
-            }
+            Self::run_background_integration(
+                git,
+                api_clone,
+                commit_gen,
+                task_id,
+                task_title,
+                task_description,
+                diff_summary,
+                model_names,
+                branch,
+                target_branch,
+                worktree_path,
+                has_worktree,
+            );
         };
 
         if self.sync_background {

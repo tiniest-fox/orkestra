@@ -321,7 +321,7 @@ impl WorkflowApi {
         let model_names = collect_model_names(&self.workflow, task.flow.as_deref());
 
         // Get diff summary from git service
-        let diff_summary = self.get_diff_summary(task);
+        let diff_summary = self.build_diff_summary(task);
 
         // Try AI generation, fall back to task title
         match self.commit_message_generator.generate_commit_message(
@@ -343,7 +343,7 @@ impl WorkflowApi {
     }
 
     /// Build a diff summary string for the commit message prompt.
-    fn get_diff_summary(&self, task: &Task) -> String {
+    pub(crate) fn build_diff_summary(&self, task: &Task) -> String {
         use std::fmt::Write;
 
         let Some(git) = &self.git_service else {

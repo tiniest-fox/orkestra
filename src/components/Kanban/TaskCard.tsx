@@ -16,8 +16,7 @@ import {
 } from "lucide-react";
 import { useWorkflowConfig } from "../../providers/WorkflowConfigProvider";
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
-import { titleCase } from "../../utils/formatters";
-import { Badge, buildStageColorMap, Panel, taskStateColors } from "../ui";
+import { Badge, Panel, taskStateColors } from "../ui";
 import { IterationIndicator } from "./IterationIndicator";
 
 interface TaskCardProps {
@@ -87,7 +86,6 @@ export function TaskCard({
   dependencyNames,
 }: TaskCardProps) {
   const config = useWorkflowConfig();
-  const stageColors = buildStageColorMap(config);
   const { derived } = task;
 
   // Build stage icons map from config
@@ -239,24 +237,22 @@ export function TaskCard({
                 {task.description}
               </p>
             )}
-            <div className="mt-1.5 flex items-center justify-between gap-2">
-              <div>
-                {isFailed ? (
-                  <Badge variant="failed">Failed</Badge>
-                ) : isBlocked ? (
-                  <Badge variant="blocked">Blocked</Badge>
-                ) : derived.current_stage ? (
-                  <Badge colorClass={stageColors[derived.current_stage]?.badge}>
-                    {titleCase(derived.current_stage)}
-                  </Badge>
-                ) : null}
+            {(isFailed || isBlocked || (dependencyNames && dependencyNames.length > 0)) && (
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <div>
+                  {isFailed ? (
+                    <Badge variant="failed">Failed</Badge>
+                  ) : isBlocked ? (
+                    <Badge variant="blocked">Blocked</Badge>
+                  ) : null}
+                </div>
+                {dependencyNames && dependencyNames.length > 0 && (
+                  <span className="text-stone-400 dark:text-stone-500 text-xs font-mono truncate">
+                    Depends on {dependencyNames.join(", ")}
+                  </span>
+                )}
               </div>
-              {dependencyNames && dependencyNames.length > 0 && (
-                <span className="text-stone-400 dark:text-stone-500 text-xs font-mono truncate">
-                  Depends on {dependencyNames.join(", ")}
-                </span>
-              )}
-            </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -289,7 +285,11 @@ export function TaskCard({
         </div>
       )}
 
-      <IterationIndicator iterations={task.iterations} stageIcons={stageIcons} />
+      <IterationIndicator
+        iterations={task.iterations}
+        stageIcons={stageIcons}
+        isActive={hasActiveProcess}
+      />
     </Panel>
   );
 }

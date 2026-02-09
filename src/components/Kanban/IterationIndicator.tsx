@@ -17,6 +17,8 @@ interface IterationIndicatorProps {
   stageIcons: Record<string, string>;
   /** Maximum number of iterations to display (default: 9) */
   maxVisible?: number;
+  /** Whether the task has an active agent process (animates the last iteration). */
+  isActive?: boolean;
 }
 
 /**
@@ -91,6 +93,7 @@ export function IterationIndicator({
   iterations,
   stageIcons,
   maxVisible = 9,
+  isActive = false,
 }: IterationIndicatorProps) {
   if (iterations.length === 0) {
     return null;
@@ -120,6 +123,8 @@ export function IterationIndicator({
         const colorClass = getOutcomeIndicatorColor(semantic);
         const initial = getStageInitial(iteration.stage);
         const tooltipText = `${capitalizeStage(iteration.stage)} — ${outcomeLabel(iteration.outcome)}`;
+        const isLastIteration = index === visibleIterations.length - 1;
+        const shouldAnimate = isActive && isLastIteration;
 
         // Resolve icon for this stage
         const iconName = stageIcons[iteration.stage];
@@ -137,7 +142,14 @@ export function IterationIndicator({
             <div
               className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-semibold ${colorClass} cursor-default`}
             >
-              {Icon ? <Icon size={10} className="flex-shrink-0" /> : initial}
+              {Icon ? (
+                <Icon
+                  size={10}
+                  className={`flex-shrink-0 ${shouldAnimate ? "animate-spin-bounce" : ""}`}
+                />
+              ) : (
+                <span className={shouldAnimate ? "animate-spin-bounce" : ""}>{initial}</span>
+              )}
             </div>
             {/* Tooltip */}
             <div

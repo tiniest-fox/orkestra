@@ -326,6 +326,12 @@ Agent processes are managed with multiple cleanup mechanisms:
 - **Recursive tree killing**: Kills entire process trees including child shells
 - **Session-based recovery**: Session IDs are stored in the database before agent spawn. Resume behavior is provider-specific (Claude Code uses `--resume`, OpenCode uses `--continue`).
 
+**Process spawning rules** — when spawning child processes, always:
+
+1. **Pipe all three stdio streams** (`stdin`, `stdout`, `stderr`). Use `Stdio::null()` for stdin if you don't need it, `Stdio::piped()` for stdout/stderr if you're reading output. An inherited stdin on a background process group causes `SIGTTIN` on any read attempt, which **stops the entire process group** silently. An inherited stdout/stderr can block if the parent's pipe buffer fills.
+2. **Send `SIGCONT` before `SIGTERM`** when killing processes. Stopped processes (from `SIGTTIN`, `SIGTSTP`, etc.) queue but don't deliver `SIGTERM` — they stay stopped forever. Always continue them first.
+3. **Use `process_group(0)`** so child processes form their own group, enabling clean tree kills via `kill(-pgid, signal)`.
+
 ### Worktree Setup
 
 When a new worktree is created for a task, `.orkestra/scripts/worktree_setup.sh` runs automatically. Use this for project-specific setup:

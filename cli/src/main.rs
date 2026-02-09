@@ -80,6 +80,9 @@ enum TaskAction {
         /// Base branch for the task worktree
         #[arg(short, long)]
         base_branch: Option<String>,
+        /// Assign task to a named flow (e.g., "quick", "hotfix")
+        #[arg(long)]
+        flow: Option<String>,
     },
     /// Approve the current stage artifact
     Approve {
@@ -149,7 +152,15 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
             title,
             description,
             base_branch,
-        } => handle_create_task(&api, &title, &description, base_branch.as_deref(), pretty),
+            flow,
+        } => handle_create_task(
+            &api,
+            &title,
+            &description,
+            base_branch.as_deref(),
+            flow.as_deref(),
+            pretty,
+        ),
         TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
         TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback, pretty),
     }
@@ -160,9 +171,10 @@ fn handle_create_task(
     title: &str,
     description: &str,
     base_branch: Option<&str>,
+    flow: Option<&str>,
     pretty: bool,
 ) {
-    let task = match api.create_task(title, description, base_branch) {
+    let task = match api.create_task_with_options(title, description, base_branch, false, flow) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error creating task: {e}");

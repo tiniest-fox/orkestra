@@ -224,6 +224,10 @@ pub fn spawn_claude_assistant_process(
     cmd.args(["--output-format", "stream-json"]);
     cmd.args(["--dangerously-skip-permissions"]);
 
+    // Restrict to read-only tools — the assistant investigates and creates
+    // Orkestra tasks but never modifies files directly
+    cmd.args(["--disallowedTools", "Edit,Write,NotebookEdit"]);
+
     // No --json-schema (free-form conversation)
 
     // System prompt only on first spawn (not resume)

@@ -4,7 +4,7 @@
  * Navigation state is driven by DisplayContext.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useFocusTaskListener } from "../hooks/useFocusTaskListener";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import {
@@ -53,7 +53,21 @@ export function Orkestra() {
   const config = useWorkflowConfig();
   const autoTaskTemplates = useAutoTaskTemplates();
   const { tasks, archivedTasks, loading, error, createTask, deleteTask } = useTasks();
-  const { sessions, activeSession, selectSession } = useAssistant();
+  const {
+    sessions,
+    activeSession,
+    selectSession,
+    isAgentWorking,
+    hasUnreadResponse,
+    markPanelVisible,
+  } = useAssistant();
+
+  const { content, panel, secondaryPanel } = activePreset;
+  const isPanelOpen = panel === "AssistantPanel";
+
+  useEffect(() => {
+    markPanelVisible(isPanelOpen);
+  }, [isPanelOpen, markPanelVisible]);
 
   // Filter to top-level tasks only
   const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parent_id), [tasks]);
@@ -72,8 +86,6 @@ export function Orkestra() {
         .sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [archivedTasks],
   );
-
-  const { content, panel, secondaryPanel } = activePreset;
 
   // Look up selected task from both active and archived lists
   const currentSelectedTask: WorkflowTaskView | null = useMemo(() => {
@@ -148,17 +160,30 @@ export function Orkestra() {
       <div className="flex items-center justify-between px-2 flex-shrink-0 overflow-hidden">
         <div className="flex items-center gap-4 shrink overflow-hidden">
           <Panel.Title>Orkestra</Panel.Title>
-          <Button
-            variant={
-              layout.preset === "Assistant" || layout.preset === "AssistantHistory"
-                ? "primary"
-                : "secondary"
-            }
-            size="sm"
-            onClick={toggleAssistant}
-          >
-            Assistant
-          </Button>
+          <div className="relative">
+            <Button
+              variant={
+                layout.preset === "Assistant" || layout.preset === "AssistantHistory"
+                  ? "primary"
+                  : "secondary"
+              }
+              size="sm"
+              onClick={toggleAssistant}
+            >
+              Assistant
+            </Button>
+            {/* Working indicator — spinning dot when agent is active and panel is closed */}
+            {isAgentWorking && !isPanelOpen && (
+              <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500" />
+              </span>
+            )}
+            {/* Unread response dot — static dot when agent finished while panel was closed */}
+            {hasUnreadResponse && !isAgentWorking && !isPanelOpen && (
+              <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-orange-500" />
+            )}
+          </div>
           <div className="flex items-center gap-1 bg-stone-200 dark:bg-stone-800 rounded-panel p-0.5">
             <Button
               variant={!layout.isArchive ? "primary" : "secondary"}

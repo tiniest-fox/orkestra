@@ -30,7 +30,9 @@ export function DiffPanel({ taskId, onClose }: DiffPanelProps) {
   // Derive selected file from path (survives diff refresh)
   const selectedFile = diff?.files.find((f) => f.path === selectedPath) ?? null;
 
-  // Auto-select first file when diff loads
+  // Auto-select first file when diff loads, but preserve manual selection across polls.
+  // Unlike CommitDiffPanel (which switches commits), we poll the same diff and should
+  // NOT reset selection when diff refreshes with same content.
   useEffect(() => {
     if (diff && diff.files.length > 0 && !selectedPath) {
       setSelectedPath(diff.files[0].path);

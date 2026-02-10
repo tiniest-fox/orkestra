@@ -20,17 +20,15 @@ export function CommitDiffPanel({ commitHash, onClose }: CommitDiffPanelProps) {
 
   const selectedFile = diff?.files.find((f) => f.path === selectedPath) ?? null;
 
+  // Reset to first file on every commit change (diff identity changes only when commitHash changes).
+  // Unlike DiffPanel (which polls), we want to reset selection when switching commits.
   useEffect(() => {
-    if (diff && diff.files.length > 0 && !selectedPath) {
+    if (diff && diff.files.length > 0) {
       setSelectedPath(diff.files[0].path);
+    } else {
+      setSelectedPath(null);
     }
-  }, [diff, selectedPath]);
-
-  // Reset selected path when commit changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: commitHash change should reset selection
-  useEffect(() => {
-    setSelectedPath(null);
-  }, [commitHash]);
+  }, [diff]);
 
   const handleSelectFile = (file: HighlightedFileDiff) => {
     setSelectedPath(file.path);

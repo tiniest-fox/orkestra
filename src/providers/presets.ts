@@ -65,7 +65,7 @@ export const PRESETS: Record<PresetName, LayoutPreset> = {
   },
   NewTask: { content: "KanbanBoard", panel: "NewTaskPanel", secondaryPanel: null },
   TaskDiff: { content: "DiffPanel", panel: "TaskDetail", secondaryPanel: null },
-  SubtaskDiff: { content: "DiffPanel", panel: "SubtaskDetail", secondaryPanel: null },
+  SubtaskDiff: { content: "DiffPanel", panel: null, secondaryPanel: "SubtaskDetail" },
   GitHistory: { content: "KanbanBoard", panel: "GitHistoryPanel", secondaryPanel: null },
   GitCommit: { content: "CommitDiffPanel", panel: "GitHistoryPanel", secondaryPanel: null },
   Assistant: { content: "KanbanBoard", panel: "AssistantPanel", secondaryPanel: null },

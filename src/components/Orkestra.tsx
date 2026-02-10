@@ -269,7 +269,7 @@ export function Orkestra() {
         </Slot>
 
         {/* CONTENT slot — main grow area */}
-        <Slot id="content" type="grow" visible={!loading}>
+        <Slot id="content" type="grow" visible={!loading && content !== "DiffPanel"}>
           {content === "KanbanBoard" &&
             (layout.isArchive ? (
               <ArchivedListView
@@ -285,16 +285,6 @@ export function Orkestra() {
                 onSelectTask={handleSelectTask}
               />
             ))}
-          {content === "DiffPanel" && layout.taskId && (
-            <DiffPanel
-              taskId={
-                layout.subtaskId && layout.preset === "SubtaskDiff"
-                  ? layout.subtaskId
-                  : layout.taskId
-              }
-              onClose={closeDiff}
-            />
-          )}
           {content === "CommitDiffPanel" && layout.commitHash && (
             <CommitDiffPanel commitHash={layout.commitHash} onClose={deselectCommit} />
           )}
@@ -365,6 +355,20 @@ export function Orkestra() {
               key={currentSelectedSubtask.id}
               task={currentSelectedSubtask}
               onClose={handleCloseSubtask}
+            />
+          )}
+        </Slot>
+
+        {/* DIFF panel slot — rightmost position for task/subtask diffs */}
+        <Slot id="diff-panel" type="grow" visible={content === "DiffPanel" && !!layout.taskId}>
+          {content === "DiffPanel" && layout.taskId && (
+            <DiffPanel
+              taskId={
+                layout.subtaskId && layout.preset === "SubtaskDiff"
+                  ? layout.subtaskId
+                  : layout.taskId
+              }
+              onClose={closeDiff}
             />
           )}
         </Slot>

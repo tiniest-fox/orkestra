@@ -46,16 +46,16 @@ Before applying decision rules, deduplicate findings:
 
 ## Decision Rules
 
-The bar is simple: **any HIGH or MEDIUM finding is a REJECT.** No exceptions, no judgment calls on whether a MEDIUM is "cosmetic enough" to let through. If a reviewer classified something as MEDIUM, it means the code should be fixed before merging.
+The rule is simple: **any finding is a REJECT.** Severity determines fix priority for the worker, not whether the code gets rejected. If a reviewer flagged it, it needs to be fixed before merge.
+
+Reviewers are instructed to only flag things worth fixing. Observations that aren't worth sending code back for go in the "Observations for Compound Agent" section, which is informational and does not count as a finding.
 
 ### REJECT
-- Any HIGH finding
-- Any MEDIUM finding
-- 3+ LOWs that point to the same root cause (suggests a systemic issue the LOWs are symptoms of)
+- Any finding (HIGH, MEDIUM, or LOW)
 - The holistic check fails: you wouldn't be confident maintaining this code or comfortable with it becoming a template
 
 ### APPROVE
-- Only LOWs remain after deduplication, and they are genuinely independent cosmetic observations
+- Zero findings after deduplication
 - The holistic check passes: the code is clean, clear, and you'd be happy to see more code like it
 
 ### Conflict Resolution
@@ -85,13 +85,13 @@ You must output a markdown document with this exact structure:
 
 ## Findings by Severity
 
-### HIGH (Must Fix)
+### HIGH (Fix First)
 [List all HIGH findings with reviewer attribution]
 
-### MEDIUM (Should Fix)
+### MEDIUM (Fix Next)
 [List all MEDIUM findings with reviewer attribution]
 
-### LOW (Observations)
+### LOW (Fix Last)
 [List all LOW findings — brief, grouped by theme]
 
 ## Observations for Compound Agent
@@ -106,26 +106,25 @@ You must output a markdown document with this exact structure:
 
 1. Read all reviewer findings
 2. **Deduplicate** — merge overlapping findings, keep highest severity
-3. Categorize by severity
-4. Check for HIGH findings in priority principles (#1-3)
-5. Apply the tiered decision rules
-6. Determine final verdict
-7. Write the markdown output
+3. Categorize by severity (for fix prioritization)
+4. If any findings remain after dedup → REJECT
+5. If zero findings → apply holistic check, then APPROVE or REJECT
+6. Write the markdown output
 
 ## Examples
 
-### Example: REJECT (architectural violations)
+### Example: REJECT (multiple severity levels)
 ```markdown
 # Code Review Verdict
 
 ## Summary
 **Verdict:** REJECT
-**Total Findings (deduplicated):** 5 (HIGH: 2, MEDIUM: 1, LOW: 2)
+**Total Findings (deduplicated):** 4 (HIGH: 2, MEDIUM: 1, LOW: 1)
 **Reviewers Consulted:** boundary, simplicity, correctness, dependency, naming, rust
 
 ## Findings by Severity
 
-### HIGH (Must Fix)
+### HIGH (Fix First)
 
 **[correctness-reviewer]** Silent error swallowing (principle #2)
 `integration.rs:80` - Merge errors are logged but execution continues as if successful.
@@ -135,16 +134,15 @@ The system marks tasks as integrated when the merge actually failed.
 `task_setup.rs:30` - Function reaches for DATABASE singleton instead of accepting a parameter.
 Untestable without modifying global state.
 
-### MEDIUM (Should Fix)
+### MEDIUM (Fix Next)
 
 **[simplicity-reviewer]** Complexity not pushed down (principle #7)
 `api.rs:200` - 15 lines of error recovery logic inline in a high-level function.
 Should be extracted to a helper.
 
-### LOW (Observations)
+### LOW (Fix Last)
 
-- [naming] `process_items` in private helper could be more specific (but context is clear)
-- [rust] Consider using `impl Iterator` return type in `get_tasks()`
+- [naming] `process_items` in public API should be `filter_completed_tasks` — callers can't tell what this does from the name
 
 ## Observations for Compound Agent
 - Error propagation pattern inconsistent across services
@@ -154,77 +152,73 @@ Should be extracted to a helper.
 1. Fix error handling in `integration.rs` to propagate or fail explicitly
 2. Pass database as parameter in `task_setup.rs`
 3. Extract error recovery logic in `api.rs` to helper
-4. Re-run review after fixes
+4. Rename `process_items` to `filter_completed_tasks`
+5. Re-run review after fixes
 ```
 
-### Example: REJECT (single MEDIUM — still rejected)
+### Example: REJECT (single LOW — still rejected)
 ```markdown
 # Code Review Verdict
 
 ## Summary
 **Verdict:** REJECT
-**Total Findings (deduplicated):** 3 (HIGH: 0, MEDIUM: 1, LOW: 2)
+**Total Findings (deduplicated):** 1 (HIGH: 0, MEDIUM: 0, LOW: 1)
 **Reviewers Consulted:** boundary, simplicity, correctness, naming
 
 ## Findings by Severity
 
-### HIGH (Must Fix)
+### HIGH (Fix First)
 None.
 
-### MEDIUM (Must Fix)
+### MEDIUM (Fix Next)
+None.
 
-**[simplicity-reviewer]** High-level function has 3 levels of nesting (principle #7)
-`workflow/services/api.rs:80-120` - The `execute_stage` function has nested match → if-let → match that buries the happy path. Extract the inner match into a helper. (Flagged by 2 reviewers)
+### LOW (Fix Last)
 
-### LOW (Observations)
-
-- [rust] Consider `?` operator instead of explicit match on line 85
-- [boundary] Module re-exports look clean
+- [naming] New public method `run` on `StageExecutor` — callers can't distinguish this from `execute`. Rename to `run_script_stage` to clarify it's script-only.
 
 ## Observations for Compound Agent
 - The action dispatch pattern used here should be documented for future reference
 
 ## Next Steps
-1. Extract inner match in `execute_stage` to a descriptive helper function
+1. Rename `StageExecutor::run` to `run_script_stage`
 2. Re-run review after fix — this is a targeted change, should be quick
 ```
 
-### Example: APPROVE
+### Example: APPROVE (zero findings)
 ```markdown
 # Code Review Verdict
 
 ## Summary
 **Verdict:** APPROVE
-**Total Findings (deduplicated):** 3 (HIGH: 0, MEDIUM: 0, LOW: 3)
+**Total Findings (deduplicated):** 0
 **Reviewers Consulted:** boundary, simplicity, correctness, dependency, naming, rust
 
 ## Findings by Severity
 
-### HIGH (Must Fix)
+### HIGH (Fix First)
 None.
 
-### MEDIUM (Should Fix)
+### MEDIUM (Fix Next)
 None.
 
-### LOW (Observations)
-
-- [naming] `build_cmd` could be `build_agent_command` for clarity (private function, low priority)
-- [rust] `collect::<Vec<_>>()` on line 45 could use iterator directly, minor optimization
-- [simplicity] `parse_output` has 3 levels of nesting — could be flattened with early returns
+### LOW (Fix Last)
+None.
 
 ## Observations for Compound Agent
 - New `StageOutput` type introduced — consider adding it to the architecture docs
 - The worktree cleanup pattern used here could be standardized across other cleanup code
 
 ## Next Steps
-- No blocking issues. Low observations can be addressed in future tasks.
+- No findings. Code is clean and ready to merge.
 ```
 
 ## Remember
-- **Deduplicate before deciding** — raw finding count across 6 reviewers is misleading
-- Be decisive — the verdict is binary: APPROVE or REJECT
+- **Any finding = REJECT.** Severity is for fix prioritization, not threshold.
+- **Deduplicate before deciding** — but reviewer agreement amplifies, not reduces
+- **Observations for Compound Agent ≠ findings** — only findings trigger rejection
+- Be decisive — the verdict is binary
 - Explain WHY for rejections
 - Group related findings
-- Note patterns for the compound agent
-- When in doubt, reject. Fix it now while context is fresh. The cost of one more review cycle is small; the cost of permanent tech debt is large.
+- When in doubt, reject. Fix it now while context is fresh.
 - Trust the hierarchy when in doubt

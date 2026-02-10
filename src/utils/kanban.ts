@@ -5,6 +5,7 @@
 import { STAGE_PALETTE } from "../components/ui/stageColors";
 import type { WorkflowConfig, WorkflowTaskView } from "../types/workflow";
 import { titleCase } from "./formatters";
+import { compareByPriority } from "./taskOrdering";
 
 /**
  * Column definition for the kanban board.
@@ -70,32 +71,5 @@ export function getTasksForColumn(tasks: WorkflowTaskView[], columnId: string): 
   });
 
   // Sort by priority tier (failed > blocked > interrupted > questions > review > working > waiting), then by created_at
-  return columnTasks.sort((a, b) => {
-    const getPriority = (task: WorkflowTaskView): number => {
-      const d = task.derived;
-      const sp = d.subtask_progress;
-
-      // Failed (or parent with failed subtasks)
-      if (d.is_failed || (sp && sp.failed > 0)) return 0;
-      // Blocked (or parent with blocked subtasks)
-      if (d.is_blocked || (sp && sp.blocked > 0)) return 1;
-      // Interrupted (or parent with interrupted subtasks)
-      if (d.is_interrupted || (sp && sp.interrupted > 0)) return 2;
-      // Needs questions answered (or parent with subtask questions)
-      if (d.has_questions || (sp && sp.has_questions > 0)) return 3;
-      // Needs review (or parent with subtask needing review)
-      if (d.needs_review || (sp && sp.needs_review > 0)) return 4;
-      // Working (agent currently running)
-      if (d.is_working) return 5;
-      // Idle/waiting (everything else)
-      return 6;
-    };
-
-    const aPriority = getPriority(a);
-    const bPriority = getPriority(b);
-    if (aPriority !== bPriority) return aPriority - bPriority;
-
-    // Within the same tier, sort by created_at (oldest first)
-    return a.created_at.localeCompare(b.created_at);
-  });
+  return columnTasks.sort(compareByPriority);
 }

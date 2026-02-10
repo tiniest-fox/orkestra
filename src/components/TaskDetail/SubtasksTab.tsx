@@ -7,6 +7,7 @@
 
 import { Layers } from "lucide-react";
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
+import { sortByPriority } from "../../utils/taskOrdering";
 import { TaskCard } from "../Kanban/TaskCard";
 import { EmptyState, taskStateColors } from "../ui";
 
@@ -69,11 +70,8 @@ export function SubtasksTab({
   const doneIds = new Set(
     subtasks.filter((s) => s.derived.is_done || s.derived.is_archived).map((s) => s.id),
   );
-  // Stable partition: incomplete first, done/archived second (preserves topological order within each group)
-  const sorted = [
-    ...subtasks.filter((s) => !s.derived.is_done && !s.derived.is_archived),
-    ...subtasks.filter((s) => s.derived.is_done || s.derived.is_archived),
-  ];
+  // Sort by priority tier (failed > blocked > ... > done > archived), then by created_at
+  const sorted = sortByPriority(subtasks);
 
   return (
     <div className="p-4">

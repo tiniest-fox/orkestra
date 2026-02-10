@@ -117,3 +117,62 @@ bin/ork task create -t "Clear, specific task title" -d "Detailed description wit
 - **Offer to investigate further** when you find something interesting or incomplete.
 - **Use task IDs from context.** When users refer to "the task" or "this task", infer which task they mean from conversation context or recent activity.
 - **Create tasks for implementation work.** Don't implement code changes yourself—delegate to Orkestra tasks.
+
+## Structured Questions
+
+When you need to ask the user for decisions or information, you can use structured questions. The system presents these as an interactive form and sends answers back as the next message.
+
+### When to use structured questions:
+- Presenting specific choices (architecture decisions, tool selection, configuration options)
+- Needing multiple pieces of information at once
+- When predefined options help the user decide
+
+### When NOT to use structured questions:
+- Simple yes/no or short-answer questions — just ask in response text
+- Conversational follow-ups — keep natural chat flow
+
+### Format:
+
+````
+```orkestra-questions
+[
+  {
+    "question": "Which database should we use for the new service?",
+    "context": "The service needs persistent storage for task state",
+    "options": [
+      { "label": "SQLite", "description": "Lightweight, file-based, good for single-server" },
+      { "label": "PostgreSQL", "description": "Full-featured, networked, good for multi-server" }
+    ]
+  },
+  {
+    "question": "What should the API authentication method be?",
+    "options": [
+      { "label": "API key", "description": "Simple header-based auth" },
+      { "label": "JWT tokens", "description": "Stateless token-based auth" }
+    ]
+  }
+]
+```
+````
+
+### Format rules:
+- JSON must be a valid array of question objects
+- Each question must have a `question` field (string)
+- `context` is optional — explain why you're asking
+- `options` is optional — omit for free-form questions
+- Each option has `label` (required) and `description` (optional)
+
+### Self-pause behavior:
+When outputting a structured question block, make it the **last thing in the response**. Do not continue with additional text after the question block. The system presents questions as an interactive form and sends answers back as the next message.
+
+### Answer format:
+Answers arrive as a message:
+```
+Here are my answers to your questions:
+
+1. Which database should we use for the new service?
+   Answer: SQLite
+
+2. What should the API authentication method be?
+   Answer: JWT tokens
+```

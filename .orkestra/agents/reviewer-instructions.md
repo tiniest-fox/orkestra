@@ -64,27 +64,31 @@ Output your findings as a markdown list. Each finding should be formatted:
 
 ### 6. Severity Framework
 
-Severity is tied to which architectural principle is violated. Higher-priority principles produce higher-severity findings.
+Severity reflects the cost of letting the issue into the main branch. Be aggressive in classification — this is the last quality gate. If you're debating between two severity levels, pick the higher one.
 
-**HIGH — Principles #1-3 (Clear Boundaries, Single Source of Truth, Explicit Dependencies):**
+**HIGH — Architectural damage (principles #1-5):**
 - Clear boundary violations: modules leaking internals, callers reaching into private types
 - Business rules duplicated across multiple locations
 - Global state, singletons, hidden dependencies
 - Silent error swallowing that masks failures
+- Functions doing multiple unrelated things (the "and"/"or" test fails)
+- Missing validation at system boundaries where bad data could propagate
 
-**MEDIUM — Principles #4-7 (Single Responsibility, Fail Fast, Isolate Side Effects, Push Complexity Down):**
-- Functions doing multiple things (the "and"/"or" test)
-- Missing validation at system boundaries
+**MEDIUM — Code quality issues that will accumulate (principles #6-7):**
 - Business logic mixed with I/O (when separation is practical)
-- High-level code buried under implementation details
+- High-level code buried under implementation details (more than 2 levels of nesting in a high-level function)
+- Patterns that will be copied — if this code becomes a template for future work, would you be comfortable with that?
+- Naming issues on public APIs that callers will depend on
+- Component sizing problems that make files hard to navigate or reason about
 
-**LOW — Principles #8-9 (Small Components, Precise Naming):**
-- Component sizing suggestions
-- Naming improvements
-- Style preferences and minor patterns
+**LOW — Genuinely cosmetic, no practical impact:**
+- Naming improvements on private helpers where context makes intent clear
+- Minor style preferences that don't affect readability
 - Observations for the compound agent
 
-**Escalation exception:** A violation of principles #8-9 can be escalated to MEDIUM if it actively causes confusion (e.g., a public API function named `process` that is genuinely misleading about what it does, or a `utils` module that has become a dumping ground). Escalation to HIGH requires the issue to also violate a higher principle (e.g., a misleading name that causes callers to misuse the API = boundary violation).
+LOW is a narrow category. If a finding would make you hesitate during a future code review, it's MEDIUM, not LOW. If you'd want it fixed before a production deploy, it's HIGH.
+
+**Escalation:** A lower-principle violation can always be escalated if the practical impact warrants it. A misleading public API name (principle #9) that will cause callers to misuse it is a boundary violation (principle #1) — classify it as HIGH.
 
 ### 7. Public vs Private Scope
 
@@ -127,6 +131,8 @@ For every file you review, ask:
 - Are dependencies explicit? Can I see what this needs to work?
 - Is validation happening at boundaries?
 - Is pure logic separated from I/O?
+
+**The holistic check:** After reviewing all changed files, step back and ask: "Would I be confident maintaining this code in 6 months? Would I be comfortable if this became the template that future code is modeled after?" If the answer to either is no, something needs to be flagged — even if you can't point to a specific principle violation. Trust your instinct and classify what feels wrong.
 
 ## Output Your Findings
 Output a markdown document with your findings. If you find no issues, state that clearly. Be thorough and rigorous — every finding must cite specific code, and severity must match the framework above.

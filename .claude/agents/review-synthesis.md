@@ -42,39 +42,27 @@ Before applying decision rules, deduplicate findings:
 - **Same conceptual issue described differently** = one finding (e.g., "function does two things" from boundary reviewer and "file answers multiple questions" from simplicity reviewer about the same code)
 - **Overlapping concerns** = keep the finding from the domain expert, note agreement from others
 
-This is critical. Six reviewers examining the same code will naturally find overlapping issues. Raw finding count is meaningless — deduplicated count determines the verdict.
+**Reviewer agreement is an amplifier, not a reducer.** When multiple reviewers independently flag the same code, that's a strong signal. Note the agreement count in the finding (e.g., "flagged by 3 reviewers") and treat it as confirmation that the issue is real and important. A MEDIUM flagged by 3 reviewers is a stronger MEDIUM, not a weaker one that got "collapsed."
 
-## Decision Rules (Tiered)
+## Decision Rules
 
-### AUTO-REJECT
-- Any HIGH severity finding for principles #1-3 (Clear Boundaries, Single Source of Truth, Explicit Dependencies)
-- These are architectural issues that compound over time
+The bar is simple: **any HIGH or MEDIUM finding is a REJECT.** No exceptions, no judgment calls on whether a MEDIUM is "cosmetic enough" to let through. If a reviewer classified something as MEDIUM, it means the code should be fixed before merging.
 
 ### REJECT
-- Any HIGH severity finding from other reviewers (principles #4-9)
-- 1+ MEDIUM findings from principles #4-7 (Single Responsibility, Fail Fast, Isolate Side Effects, Push Complexity Down) — after deduplication
-- Isolated MEDIUMs from principles #8-9 (Small Components, Precise Naming) — reject if the issue would cause real confusion or make the code harder to work with; approve only if it's genuinely cosmetic with no practical impact
-- A pattern of LOWs indicating a systemic problem (see below)
+- Any HIGH finding
+- Any MEDIUM finding
+- 3+ LOWs that point to the same root cause (suggests a systemic issue the LOWs are symptoms of)
+- The holistic check fails: you wouldn't be confident maintaining this code or comfortable with it becoming a template
 
 ### APPROVE
-- Only LOWs remain after deduplication
-- Findings are truly stylistic preferences with no practical impact
-- No structural or correctness issues
-
-### What Counts as "Pattern of LOWs"
-A cluster of LOWs becomes a REJECT signal when:
-- 6+ related LOWs in the same file (suggests the file needs rethinking, not individual fixes)
-- 10+ LOWs across the entire change (suggests systemic carelessness)
-- Multiple LOWs that all point to the same root cause (e.g., five naming LOWs all stemming from unclear domain concepts)
-
-Scattered, unrelated LOWs across different files are normal and don't indicate a pattern.
+- Only LOWs remain after deduplication, and they are genuinely independent cosmetic observations
+- The holistic check passes: the code is clean, clear, and you'd be happy to see more code like it
 
 ### Conflict Resolution
 When reviewers disagree:
-1. If boundary/correctness/dependency reviewers flag it → higher principle wins
-2. If multiple reviewers agree on an issue → strengthens the finding
-3. If reviewers contradict each other → apply principle hierarchy
-4. If genuinely ambiguous → lean toward REJECT rather than APPROVE. Fix it now while the context is fresh.
+1. Higher-principle reviewer wins
+2. Multiple reviewers agreeing strengthens the finding
+3. If genuinely ambiguous, reject. Fix it now while context is fresh.
 
 ## "Blocked" vs "Reject"
 
@@ -169,7 +157,7 @@ Should be extracted to a helper.
 4. Re-run review after fixes
 ```
 
-### Example: REJECT (borderline case — still rejected)
+### Example: REJECT (single MEDIUM — still rejected)
 ```markdown
 # Code Review Verdict
 
@@ -183,10 +171,10 @@ Should be extracted to a helper.
 ### HIGH (Must Fix)
 None.
 
-### MEDIUM (Should Fix)
+### MEDIUM (Must Fix)
 
-**[naming-reviewer]** Public API uses misleading name (principle #9, escalated)
-`workflow/services/api.rs:120` - `handle_task_action` doesn't describe what action. This is a new public method that multiple callers will use — a vague name here will cause confusion as the API surface grows. Rename to `approve_or_reject_task` or split into separate methods.
+**[simplicity-reviewer]** High-level function has 3 levels of nesting (principle #7)
+`workflow/services/api.rs:80-120` - The `execute_stage` function has nested match → if-let → match that buries the happy path. Extract the inner match into a helper. (Flagged by 2 reviewers)
 
 ### LOW (Observations)
 
@@ -197,7 +185,7 @@ None.
 - The action dispatch pattern used here should be documented for future reference
 
 ## Next Steps
-1. Rename `handle_task_action` to accurately describe its purpose (e.g., `approve_or_reject_task`)
+1. Extract inner match in `execute_stage` to a descriptive helper function
 2. Re-run review after fix — this is a targeted change, should be quick
 ```
 

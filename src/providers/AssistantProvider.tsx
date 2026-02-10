@@ -38,10 +38,8 @@ interface AssistantContextValue {
   newSession: () => Promise<void>;
   /** Select a session from history. */
   selectSession: (session: AssistantSession) => Promise<void>;
-  /** Clear the unread response flag. */
-  clearUnread: () => void;
-  /** Mark the panel as visible or not visible. */
-  markPanelVisible: (visible: boolean) => void;
+  /** Mark the panel as open or closed. */
+  markPanelOpen: (open: boolean) => void;
 }
 
 const AssistantContext = createContext<AssistantContextValue | null>(null);
@@ -73,8 +71,12 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSession?.id ?? null;
 
-  // Track panel visibility for unread detection
-  const isPanelVisibleRef = useRef(false);
+  // Track panel open state for unread detection
+  const isPanelOpenRef = useRef(false);
+
+  // Track agent working state for completion detection
+  const isAgentWorkingRef = useRef(false);
+  isAgentWorkingRef.current = isAgentWorking;
 
   // Fetch sessions list
   const fetchSessions = useCallback(async () => {
@@ -93,12 +95,12 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
       // Only update if this is still the active session
       if (activeSessionIdRef.current === sessionId) {
         setLogs(result);
-        // Check for agent completion
+        // Check for agent completion (only if agent was actually working)
         const lastEntry = result[result.length - 1];
-        if (lastEntry?.type === "process_exit") {
+        if (lastEntry?.type === "process_exit" && isAgentWorkingRef.current) {
           setIsAgentWorking(false);
-          // Flag unread if panel is not visible
-          if (!isPanelVisibleRef.current) {
+          // Flag unread if panel is not open
+          if (!isPanelOpenRef.current) {
             setHasUnreadResponse(true);
           }
           // Refresh sessions to pick up generated title
@@ -115,15 +117,10 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
     }
   }, []);
 
-  // Clear the unread response flag
-  const clearUnread = useCallback(() => {
-    setHasUnreadResponse(false);
-  }, []);
-
-  // Mark panel as visible or not visible
-  const markPanelVisible = useCallback((visible: boolean) => {
-    isPanelVisibleRef.current = visible;
-    if (visible) {
+  // Mark panel as open or closed
+  const markPanelOpen = useCallback((open: boolean) => {
+    isPanelOpenRef.current = open;
+    if (open) {
       setHasUnreadResponse(false);
     }
   }, []);
@@ -230,8 +227,7 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
     stopAgent,
     newSession,
     selectSession,
-    clearUnread,
-    markPanelVisible,
+    markPanelOpen,
   };
 
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;

@@ -4,7 +4,7 @@
  * Navigation state is driven by DisplayContext.
  */
 
-import { useEffect, useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useFocusTaskListener } from "../hooks/useFocusTaskListener";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import {
@@ -59,15 +59,18 @@ export function Orkestra() {
     selectSession,
     isAgentWorking,
     hasUnreadResponse,
-    markPanelVisible,
+    markPanelOpen,
   } = useAssistant();
 
   const { content, panel, secondaryPanel } = activePreset;
-  const isPanelOpen = panel === "AssistantPanel";
+  const isAssistantPanelOpen = panel === "AssistantPanel";
 
-  useEffect(() => {
-    markPanelVisible(isPanelOpen);
-  }, [isPanelOpen, markPanelVisible]);
+  // Sync panel state synchronously during render
+  const isPanelOpenRef = useRef(false);
+  if (isPanelOpenRef.current !== isAssistantPanelOpen) {
+    isPanelOpenRef.current = isAssistantPanelOpen;
+    markPanelOpen(isAssistantPanelOpen);
+  }
 
   // Filter to top-level tasks only
   const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parent_id), [tasks]);
@@ -173,14 +176,14 @@ export function Orkestra() {
               Assistant
             </Button>
             {/* Working indicator — spinning dot when agent is active and panel is closed */}
-            {isAgentWorking && !isPanelOpen && (
+            {isAgentWorking && !isAssistantPanelOpen && (
               <span className="absolute -top-1 -right-1 flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500" />
               </span>
             )}
             {/* Unread response dot — static dot when agent finished while panel was closed */}
-            {hasUnreadResponse && !isAgentWorking && !isPanelOpen && (
+            {hasUnreadResponse && !isAgentWorking && !isAssistantPanelOpen && (
               <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-orange-500" />
             )}
           </div>

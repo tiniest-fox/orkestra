@@ -111,7 +111,7 @@ vi.mock("../providers", () => ({
     isLoading: false,
     isAgentWorking: false,
     hasUnreadResponse: false,
-    markPanelVisible: vi.fn(),
+    markPanelOpen: vi.fn(),
     sendMessage: vi.fn(),
     stopAgent: vi.fn(),
     newSession: vi.fn(),

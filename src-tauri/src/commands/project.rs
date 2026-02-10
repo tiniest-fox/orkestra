@@ -252,13 +252,11 @@ fn start_project_orchestrator(app_handle: &AppHandle, window_label: &str) {
         iteration_service,
     ));
 
-    // Store in ProjectState for interrupt/resume commands
-    if let Err(e) = registry.with_project_mut(window_label, |state| {
-        state.set_stage_executor(std::sync::Arc::clone(&stage_executor));
-        Ok(())
-    }) {
-        orkestra_debug!("orchestrator", "Failed to set stage executor: {}", e);
-        return;
+    // Inject AgentKiller into WorkflowApi so interrupt() can kill agents internally
+    {
+        let mut api_lock = api.lock().unwrap();
+        api_lock.set_agent_killer(std::sync::Arc::clone(&stage_executor)
+            as std::sync::Arc<dyn orkestra_core::workflow::AgentKiller>);
     }
 
     let app_handle = app_handle.clone();

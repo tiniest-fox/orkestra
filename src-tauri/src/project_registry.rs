@@ -16,8 +16,8 @@ use orkestra_core::workflow::execution::{
 };
 use orkestra_core::workflow::ports::ProcessSpawner;
 use orkestra_core::workflow::{
-    AutoTaskTemplate, Git2GitService, GitService, SqliteWorkflowStore, StageExecutionService,
-    WorkflowApi, WorkflowConfig, WorkflowStore,
+    AutoTaskTemplate, Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi, WorkflowConfig,
+    WorkflowStore,
 };
 use serde::{Deserialize, Serialize};
 
@@ -42,8 +42,6 @@ pub struct ProjectState {
     provider_registry: Arc<ProviderRegistry>,
     /// Stop flag for the orchestrator loop.
     pub(crate) stop_flag: Arc<AtomicBool>,
-    /// Stage execution service for killing active agents (used by interrupt).
-    stage_executor: Option<Arc<StageExecutionService>>,
 }
 
 impl ProjectState {
@@ -123,7 +121,6 @@ impl ProjectState {
             has_git,
             provider_registry: Arc::new(provider_registry),
             stop_flag,
-            stage_executor: None,
         })
     }
 
@@ -178,18 +175,6 @@ impl ProjectState {
         if let Err(e) = self.db_conn.checkpoint() {
             orkestra_debug!("shutdown", "WAL checkpoint failed: {}", e);
         }
-    }
-
-    /// Set the stage execution service (called when orchestrator starts).
-    pub fn set_stage_executor(&mut self, executor: Arc<StageExecutionService>) {
-        self.stage_executor = Some(executor);
-    }
-
-    /// Get the stage execution service.
-    pub fn stage_executor(&self) -> Result<&Arc<StageExecutionService>, TauriError> {
-        self.stage_executor.as_ref().ok_or_else(|| {
-            TauriError::new("ORCHESTRATOR_NOT_STARTED", "Stage executor not available")
-        })
     }
 }
 
@@ -263,6 +248,7 @@ impl ProjectRegistry {
     /// Execute a function with mutable access to a project's state.
     ///
     /// Returns an error if the label doesn't exist or the lock is poisoned.
+    #[allow(dead_code)]
     pub fn with_project_mut<F, R>(&self, label: &str, f: F) -> Result<R, TauriError>
     where
         F: FnOnce(&mut ProjectState) -> Result<R, TauriError>,

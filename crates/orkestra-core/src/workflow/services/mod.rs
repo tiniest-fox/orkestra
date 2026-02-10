@@ -64,7 +64,7 @@ macro_rules! workflow_warn {
 // Make macros available within the services module
 pub(crate) use workflow_warn;
 
-pub use api::WorkflowApi;
+pub use api::{AgentKiller, WorkflowApi};
 pub use assistant::AssistantService;
 pub use cleanup::cleanup_stale_target_lock;
 pub use integration::{perform_git_integration, IntegrationGitResult, IntegrationParams};

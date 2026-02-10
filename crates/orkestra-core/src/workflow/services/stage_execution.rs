@@ -270,17 +270,19 @@ impl StageExecutionService {
         agent_count + self.script_service.active_count()
     }
 
-    /// Kill the active execution for a task and remove it from tracking.
+    /// Kill the active agent for a task and remove it from tracking.
     ///
-    /// Returns the PID that was killed, or None if no active execution was found.
+    /// Returns the PID that was killed, or None if no active agent was found.
     /// This is used by the interrupt flow — kill the process first, then transition state.
-    pub fn kill_active_execution(&self, task_id: &str) -> Option<u32> {
+    /// Scripts are intentionally excluded from this method.
+    pub fn kill_active_agent(&self, task_id: &str) -> Option<u32> {
         // First check active agents
         let pid = self
             .active_agents
             .lock()
-            .ok()
-            .and_then(|mut agents| agents.remove(task_id).map(|agent| agent.handle.pid));
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(task_id)
+            .map(|agent| agent.handle.pid);
 
         if let Some(pid) = pid {
             if let Err(e) = crate::process::kill_process_tree(pid) {
@@ -712,6 +714,16 @@ impl StageExecutionService {
                 }
             })
             .collect()
+    }
+}
+
+// ============================================================================
+// AgentKiller Implementation
+// ============================================================================
+
+impl super::api::AgentKiller for StageExecutionService {
+    fn kill_agent(&self, task_id: &str) -> Option<u32> {
+        self.kill_active_agent(task_id)
     }
 }
 

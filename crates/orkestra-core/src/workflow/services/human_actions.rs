@@ -584,9 +584,10 @@ impl WorkflowApi {
 
     /// Interrupt a running agent execution.
     ///
+    /// If an `AgentKiller` is configured, kills the agent process before transitioning state.
+    /// Otherwise, the caller is responsible for killing the process.
     /// Ends the current iteration with `Outcome::Interrupted` and transitions
-    /// the task to `Phase::Interrupted`. The caller must kill the agent process
-    /// BEFORE calling this method (via `StageExecutionService::kill_active_execution()`).
+    /// the task to `Phase::Interrupted`.
     ///
     /// # Errors
     /// Returns `InvalidTransition` if the task is not in `AgentWorking` phase.
@@ -600,7 +601,22 @@ impl WorkflowApi {
             )));
         }
 
-        orkestra_debug!("action", "interrupt {}: killing agent", task_id);
+        // Kill agent if configured
+        if let Some(killer) = &self.agent_killer {
+            let pid = killer.kill_agent(task_id);
+            orkestra_debug!(
+                "action",
+                "interrupt {}: killed agent (pid: {:?})",
+                task_id,
+                pid
+            );
+        } else {
+            orkestra_debug!(
+                "action",
+                "interrupt {}: no agent killer configured, transitioning only",
+                task_id
+            );
+        }
 
         // End current iteration with Interrupted outcome
         self.end_current_iteration(&task, Outcome::Interrupted)?;

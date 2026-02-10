@@ -58,7 +58,7 @@ pub use runtime::{
     TransitionTrigger, TransitionValidator,
 };
 pub use services::{
-    cleanup_stale_target_lock, AssistantService, OrchestratorError, OrchestratorEvent,
+    cleanup_stale_target_lock, AgentKiller, AssistantService, OrchestratorError, OrchestratorEvent,
     OrchestratorLoop, StageExecutionService, WorkflowApi,
 };
 

@@ -113,11 +113,6 @@ pub fn workflow_interrupt(
     task_id: String,
 ) -> Result<Task, TauriError> {
     registry.with_project(window.label(), |state| {
-        // Kill the agent process first (before state transition)
-        let stage_executor = state.stage_executor()?;
-        stage_executor.kill_active_execution(&task_id);
-
-        // Then transition state
         state.api()?.interrupt(&task_id).map_err(Into::into)
     })
 }

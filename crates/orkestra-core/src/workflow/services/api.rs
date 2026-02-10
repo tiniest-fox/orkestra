@@ -14,6 +14,18 @@ use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
+/// Trait for killing active agent processes.
+///
+/// Used by `interrupt()` to kill the agent before transitioning state.
+/// Implemented by `StageExecutionService`.
+pub trait AgentKiller: Send + Sync {
+    /// Kill the active agent for a task, removing it from tracking.
+    /// Returns the PID that was killed, or None if no active agent was found.
+    /// Implementations should handle errors internally (log and continue)
+    /// since the state transition should proceed regardless.
+    fn kill_agent(&self, task_id: &str) -> Option<u32>;
+}
+
 /// The main API for workflow operations.
 ///
 /// This is the interface that Tauri commands, CLI, and tests use.
@@ -33,6 +45,7 @@ pub struct WorkflowApi {
     pub(crate) title_generator: Arc<dyn TitleGenerator>,
     pub(crate) commit_message_generator: Arc<dyn CommitMessageGenerator>,
     pub(crate) setup_service: Arc<TaskSetupService>,
+    pub(crate) agent_killer: Option<Arc<dyn AgentKiller>>,
 }
 
 impl WorkflowApi {
@@ -57,6 +70,7 @@ impl WorkflowApi {
             title_generator,
             commit_message_generator,
             setup_service,
+            agent_killer: None,
         }
     }
 
@@ -86,6 +100,7 @@ impl WorkflowApi {
             title_generator,
             commit_message_generator,
             setup_service,
+            agent_killer: None,
         }
     }
 
@@ -115,6 +130,11 @@ impl WorkflowApi {
     /// deterministic execution.
     pub fn set_sync_setup(&self, sync: bool) {
         self.setup_service.set_sync(sync);
+    }
+
+    /// Set the agent killer (used by interrupt to kill active agents).
+    pub fn set_agent_killer(&mut self, killer: Arc<dyn AgentKiller>) {
+        self.agent_killer = Some(killer);
     }
 
     /// Get the git service, if configured.

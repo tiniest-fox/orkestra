@@ -32,15 +32,6 @@ export function AssistantPanel({ onClose, onToggleHistory }: AssistantPanelProps
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs.length]);
 
-  // Stop agent on unmount
-  useEffect(() => {
-    return () => {
-      if (isAgentWorking) {
-        stopAgent();
-      }
-    };
-  }, [isAgentWorking, stopAgent]);
-
   const handleSend = async () => {
     const trimmed = messageInput.trim();
     if (!trimmed || isAgentWorking) return;

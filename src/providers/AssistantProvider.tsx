@@ -28,6 +28,8 @@ interface AssistantContextValue {
   isLoading: boolean;
   /** Whether the agent is currently working. */
   isAgentWorking: boolean;
+  /** Whether there's an unread response (agent finished while panel was closed). */
+  hasUnreadResponse: boolean;
   /** Send a message (creates new session or resumes existing). */
   sendMessage: (message: string) => Promise<void>;
   /** Stop the running agent process. */
@@ -36,6 +38,10 @@ interface AssistantContextValue {
   newSession: () => Promise<void>;
   /** Select a session from history. */
   selectSession: (session: AssistantSession) => Promise<void>;
+  /** Clear the unread response flag. */
+  clearUnread: () => void;
+  /** Mark the panel as visible or not visible. */
+  markPanelVisible: (visible: boolean) => void;
 }
 
 const AssistantContext = createContext<AssistantContextValue | null>(null);
@@ -61,10 +67,14 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAgentWorking, setIsAgentWorking] = useState(false);
+  const [hasUnreadResponse, setHasUnreadResponse] = useState(false);
 
   // Track active session in a ref for race condition protection
   const activeSessionIdRef = useRef<string | null>(null);
   activeSessionIdRef.current = activeSession?.id ?? null;
+
+  // Track panel visibility for unread detection
+  const isPanelVisibleRef = useRef(false);
 
   // Fetch sessions list
   const fetchSessions = useCallback(async () => {
@@ -87,6 +97,10 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
         const lastEntry = result[result.length - 1];
         if (lastEntry?.type === "process_exit") {
           setIsAgentWorking(false);
+          // Flag unread if panel is not visible
+          if (!isPanelVisibleRef.current) {
+            setHasUnreadResponse(true);
+          }
           // Refresh sessions to pick up generated title
           const updatedSessions = await invoke<AssistantSession[]>("assistant_list_sessions");
           setSessions(updatedSessions);
@@ -98,6 +112,19 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
       }
     } catch (err) {
       console.error("Failed to fetch logs:", err);
+    }
+  }, []);
+
+  // Clear the unread response flag
+  const clearUnread = useCallback(() => {
+    setHasUnreadResponse(false);
+  }, []);
+
+  // Mark panel as visible or not visible
+  const markPanelVisible = useCallback((visible: boolean) => {
+    isPanelVisibleRef.current = visible;
+    if (visible) {
+      setHasUnreadResponse(false);
     }
   }, []);
 
@@ -198,10 +225,13 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
     logs,
     isLoading,
     isAgentWorking,
+    hasUnreadResponse,
     sendMessage,
     stopAgent,
     newSession,
     selectSession,
+    clearUnread,
+    markPanelVisible,
   };
 
   return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>;

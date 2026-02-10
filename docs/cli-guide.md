@@ -45,6 +45,17 @@ Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkest
 - `-f, --feedback`: Reason for rejection (required)
 - Creates new iteration, returns to `Idle` phase
 
+**`ork task interrupt <ID>`**
+- Interrupts a running agent execution
+- Kills the agent process and transitions to `Interrupted` phase
+- Requires task in `AgentWorking` phase
+
+**`ork task resume <ID> [--message <MESSAGE>]`**
+- Resumes an interrupted task
+- `-m, --message`: Optional message to guide the agent on resume
+- Creates new iteration with `ManualResume` trigger, returns to `Idle` phase
+- Requires task in `Interrupted` phase
+
 ### Logs
 
 **`ork logs <TASK_ID> --stage <STAGE> [OPTIONS]`**
@@ -80,6 +91,7 @@ Auto-detects project root by finding `Cargo.toml` with `[workspace]` or `.orkest
 - `Idle` - Ready for work
 - `Working` - Agent executing
 - `Review` - Ready for approve/reject
+- `Interrupted` - Agent was manually interrupted, awaiting resume
 - `Integrating` - Merging to main branch
 
 ## Task Lifecycle

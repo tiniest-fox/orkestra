@@ -42,9 +42,11 @@ All paths relative to `crates/orkestra-core/src/`.
 ## Phase Transitions
 
 ```
-Idle ──[orchestrator]──> AgentWorking ──[output]──> AwaitingReview
-                                                     or Idle (auto-advance to next stage)
-                                                     or Idle (failed/blocked)
+Idle ──[orchestrator]──> AgentWorking ──[output]──────> AwaitingReview
+                              │                         or Idle (auto-advance to next stage)
+                              │                         or Idle (failed/blocked)
+                              │
+                              └──[interrupt]──> Interrupted ──[resume]──> Idle
 ```
 
 ## Resume vs First Spawn
@@ -68,6 +70,7 @@ Idle ──[orchestrator]──> AgentWorking ──[output]──> AwaitingRevi
 |---------|-----------|-------------------|
 | `None` | First iteration (no context) | `Continue` |
 | `Interrupted` | Crash recovery | `Continue` |
+| `ManualResume { message }` | Human resumes interrupted task (`human_actions.rs::resume`) | `ManualResume` |
 | `Feedback { feedback }` | Human rejection (`human_actions.rs::reject`) | `Feedback` |
 | `Answers { answers }` | Human answers questions (`human_actions.rs::answer_questions`) | `Answers` |
 | `Integration { message, files }` | Merge conflict (`integration.rs::integration_failed`) | `Integration` |

@@ -98,7 +98,7 @@ cargo test -p orkestra-core --test e2e
 
 | File | Covers |
 |------|--------|
-| `workflow.rs` | Full stage pipelines, approval/rejection loops, questions, flows, script stages |
+| `workflow.rs` | Full stage pipelines, approval/rejection loops, questions, flows, script stages, interrupt/resume |
 | `subtasks.rs` | Subtask creation, dependencies, parent advancement, integration |
 | `task_creation.rs` | Task setup, worktree creation, title generation, base branch handling |
 | `startup.rs` | Startup recovery (stale PIDs, orphaned worktrees, stuck integrations) |
@@ -221,7 +221,7 @@ Tasks progress through an ordered list of stages defined in `StageConfig` struct
 
 **Runtime types** (`workflow/runtime/`, `workflow/domain/`):
 
-- **`Phase`** — Current execution state: `Idle`, `SettingUp`, `AgentWorking`, `AwaitingReview`, `Integrating`.
+- **`Phase`** — Current execution state: `Idle`, `SettingUp`, `AgentWorking`, `AwaitingReview`, `Interrupted`, `Integrating`.
 - **`Iteration`** — Each agent/script run within a stage. Rejections create new iterations with feedback.
 - **`Artifact`** — Named output content stored on the task, keyed by artifact name.
 

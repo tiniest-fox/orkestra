@@ -14,7 +14,7 @@ Commands live in `src/commands/`, organized by concern:
 |------|---------|---------|
 | `project.rs` | Open projects, recent projects, folder picker, orchestrator lifecycle | `registry.with_project(label, |state| ...)` |
 | `task_crud.rs` | Create, read, delete tasks | `registry.with_project(label, |state| state.api.method())` |
-| `human_actions.rs` | Approve, reject, answer questions, retry, auto-mode | `registry.with_project(label, |state| state.api.method())` |
+| `human_actions.rs` | Approve, reject, answer questions, retry, auto-mode, interrupt, resume | `registry.with_project(label, |state| state.api.method())` |
 | `queries.rs` | Read-only data fetching (iterations, artifacts, config, logs) | `registry.with_project(label, |state| state.api.method())` |
 | `external_tools.rs` | Open worktrees in terminal/editor | Shell commands via `tauri-plugin-shell` |
 

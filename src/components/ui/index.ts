@@ -19,6 +19,7 @@ export { Badge } from "./Badge";
 export { Button } from "./Button";
 export { useContentAnimation, useContentSettled } from "./ContentAnimation";
 export { EmptyState } from "./EmptyState";
+export { ErrorState } from "./ErrorState";
 export { ExpandablePanel, useExpandablePanel } from "./ExpandablePanel";
 export { ExpandButton } from "./ExpandButton";
 export { IconButton } from "./IconButton";

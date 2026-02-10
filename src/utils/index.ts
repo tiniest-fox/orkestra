@@ -2,6 +2,7 @@
  * Utility exports.
  */
 
+export { parseAssistantQuestions } from "./assistantQuestions";
 export { formatPath, formatTimestamp } from "./formatters";
 export type { KanbanColumn } from "./kanban";
 export { buildColumns, getTasksForColumn } from "./kanban";

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { RecentProject } from "../../types/project";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
+import { LoadingState } from "../ui/LoadingState";
 import { Panel } from "../ui/Panel";
 
 interface ProjectPickerProps {
@@ -89,11 +90,7 @@ export function ProjectPicker({ errorMessage: initialError }: ProjectPickerProps
             </Button>
           </div>
 
-          {loading && (
-            <div className="py-8 text-center text-sm text-stone-500 dark:text-stone-400">
-              Loading recent projects...
-            </div>
-          )}
+          {loading && <LoadingState message="Loading recent projects..." />}
 
           {!loading && recents.length === 0 && (
             <EmptyState

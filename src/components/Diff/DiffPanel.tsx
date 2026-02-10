@@ -13,7 +13,7 @@ import { FileText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type HighlightedFileDiff, useDiff } from "../../hooks/useDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
-import { EmptyState, FlexContainer, Panel } from "../ui";
+import { EmptyState, FlexContainer, LoadingState, Panel } from "../ui";
 import { DiffContent } from "./DiffContent";
 import { DiffFileList } from "./DiffFileList";
 
@@ -48,8 +48,8 @@ export function DiffPanel({ taskId, onClose }: DiffPanelProps) {
           <Panel.Title>Changes</Panel.Title>
           <Panel.CloseButton onClick={onClose} />
         </Panel.Header>
-        <Panel.Body className="flex-1 flex items-center justify-center text-stone-400 dark:text-stone-500">
-          Loading...
+        <Panel.Body className="flex-1 flex items-center justify-center">
+          <LoadingState message="Loading..." className="py-0" />
         </Panel.Body>
       </Panel>
     );

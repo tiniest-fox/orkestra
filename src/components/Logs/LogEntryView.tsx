@@ -4,7 +4,6 @@
 
 import type { LogEntry } from "../../types/workflow";
 import { ErrorLogEntry } from "./entries/ErrorLogEntry";
-import { ProcessExitLogEntry } from "./entries/ProcessExitLogEntry";
 import { ScriptExitLogEntry } from "./entries/ScriptExitLogEntry";
 import { ScriptOutputLogEntry } from "./entries/ScriptOutputLogEntry";
 import { ScriptStartLogEntry } from "./entries/ScriptStartLogEntry";
@@ -40,7 +39,8 @@ export function LogEntryView({ entry }: LogEntryViewProps) {
       return null;
 
     case "process_exit":
-      return <ProcessExitLogEntry code={entry.code} />;
+      // Skip process exit logs, they're redundant in assistant panel
+      return null;
 
     case "error":
       return <ErrorLogEntry message={entry.message} />;

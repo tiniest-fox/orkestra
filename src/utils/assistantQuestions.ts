@@ -10,6 +10,19 @@ import type { LogEntry, WorkflowQuestion } from "../types/workflow";
 const QUESTION_BLOCK_REGEX = /```orkestra-questions\s*\n([\s\S]*?)\n\s*```/g;
 
 /**
+ * Removes orkestra-questions fenced code blocks from text content.
+ *
+ * Question blocks are parsed by parseAssistantQuestions() and rendered as
+ * interactive widgets, so the raw JSON is redundant in the chat display.
+ *
+ * @param content - Text content that may contain question blocks
+ * @returns Content with question blocks removed and trimmed
+ */
+export function stripQuestionBlocks(content: string): string {
+  return content.replace(QUESTION_BLOCK_REGEX, "").trim();
+}
+
+/**
  * Parses assistant questions from log entries.
  *
  * Scans text entries after the last user_message for orkestra-questions fenced

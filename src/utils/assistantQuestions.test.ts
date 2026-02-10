@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LogEntry } from "../types/workflow";
-import { parseAssistantQuestions } from "./assistantQuestions";
+import { parseAssistantQuestions, stripQuestionBlocks } from "./assistantQuestions";
 
 describe("parseAssistantQuestions", () => {
   it("should return empty array for empty logs", () => {
@@ -365,5 +365,137 @@ Actually, let me correct that:
         { label: "Approach B", description: "Slow but safe" },
       ],
     });
+  });
+});
+
+describe("stripQuestionBlocks", () => {
+  it("should return content unchanged when no question blocks exist", () => {
+    const content = "This is plain text without any question blocks.";
+    const result = stripQuestionBlocks(content);
+    expect(result).toBe(content);
+  });
+
+  it("should remove a single question block", () => {
+    const content = `Here is some text.
+
+\`\`\`orkestra-questions
+[
+  { "question": "What color do you prefer?" }
+]
+\`\`\`
+
+More text after.`;
+
+    const result = stripQuestionBlocks(content);
+    expect(result).toBe("Here is some text.\n\n\n\nMore text after.");
+  });
+
+  it("should remove multiple question blocks", () => {
+    const content = `First text.
+
+\`\`\`orkestra-questions
+[
+  { "question": "First question" }
+]
+\`\`\`
+
+Middle text.
+
+\`\`\`orkestra-questions
+[
+  { "question": "Second question" }
+]
+\`\`\`
+
+Last text.`;
+
+    const result = stripQuestionBlocks(content);
+    expect(result).toBe("First text.\n\n\n\nMiddle text.\n\n\n\nLast text.");
+  });
+
+  it("should preserve surrounding text when stripping blocks", () => {
+    const content = `Introduction paragraph.
+
+\`\`\`orkestra-questions
+[
+  { "question": "Question here" }
+]
+\`\`\`
+
+Conclusion paragraph.`;
+
+    const result = stripQuestionBlocks(content);
+    expect(result).toContain("Introduction paragraph.");
+    expect(result).toContain("Conclusion paragraph.");
+    expect(result).not.toContain("orkestra-questions");
+  });
+
+  it("should return empty string when content is only a question block", () => {
+    const content = `\`\`\`orkestra-questions
+[
+  { "question": "Only question here" }
+]
+\`\`\``;
+
+    const result = stripQuestionBlocks(content);
+    expect(result).toBe("");
+  });
+
+  it("should trim whitespace after stripping blocks", () => {
+    const content = `
+
+\`\`\`orkestra-questions
+[
+  { "question": "Question" }
+]
+\`\`\`
+
+    `;
+
+    const result = stripQuestionBlocks(content);
+    expect(result).toBe("");
+  });
+
+  it("should handle blocks with varying whitespace", () => {
+    const content = `Text before.
+
+\`\`\`orkestra-questions
+[
+  { "question": "Question with trailing spaces after marker" }
+]
+  \`\`\`
+
+Text after.`;
+
+    const result = stripQuestionBlocks(content);
+    expect(result).not.toContain("orkestra-questions");
+    expect(result).toContain("Text before.");
+    expect(result).toContain("Text after.");
+  });
+
+  it("should handle empty string input", () => {
+    const result = stripQuestionBlocks("");
+    expect(result).toBe("");
+  });
+
+  it("should leave other code blocks unchanged", () => {
+    const content = `Some text.
+
+\`\`\`javascript
+console.log("test");
+\`\`\`
+
+\`\`\`orkestra-questions
+[
+  { "question": "Question" }
+]
+\`\`\`
+
+More text.`;
+
+    const result = stripQuestionBlocks(content);
+    expect(result).toContain("```javascript");
+    expect(result).toContain('console.log("test");');
+    expect(result).not.toContain("orkestra-questions");
   });
 });

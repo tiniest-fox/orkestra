@@ -45,8 +45,6 @@ export function parseAssistantQuestions(logs: LogEntry[]): WorkflowQuestion[] {
   let lastQuestionBlock: string | null = null;
 
   for (const entry of textEntries) {
-    if (entry.type !== "text") continue;
-
     const matches = Array.from(entry.content.matchAll(QUESTION_BLOCK_REGEX));
     if (matches.length > 0) {
       // Use the last match in this entry
@@ -67,17 +65,22 @@ export function parseAssistantQuestions(logs: LogEntry[]): WorkflowQuestion[] {
     }
 
     // Filter and validate each question
-    return parsed.filter((q) => {
+    const validQuestions: WorkflowQuestion[] = [];
+    for (const q of parsed) {
       if (typeof q !== "object" || q === null) {
-        return false;
+        console.warn("Assistant question entry is not an object:", q);
+        continue;
       }
       if (typeof q.question !== "string" || q.question.trim() === "") {
-        return false;
+        console.warn("Assistant question entry missing valid 'question' field:", q);
+        continue;
       }
-      return true;
-    });
-  } catch {
+      validQuestions.push(q);
+    }
+    return validQuestions;
+  } catch (err) {
     // Malformed JSON - gracefully degrade
+    console.warn("Failed to parse assistant questions block as JSON:", err);
     return [];
   }
 }

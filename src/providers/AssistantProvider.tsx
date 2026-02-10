@@ -73,6 +73,10 @@ interface AssistantProviderProps {
 
 /**
  * Format question answers as a plaintext message.
+ *
+ * IMPORTANT: This format must match the "Answer format" section in
+ * crates/orkestra-core/src/prompts/templates/assistant/system_prompt.md (lines 169-178).
+ * Changes to this format require updating the system prompt.
  */
 function formatAnswerMessage(answers: WorkflowQuestionAnswer[]): string {
   const lines = answers.map((a, i) => `${i + 1}. ${a.question}\n   Answer: ${a.answer}`);
@@ -182,27 +186,38 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
     fetchSessions().finally(() => setIsLoading(false));
   }, [fetchSessions]);
 
+  /**
+   * Send a message to the assistant and track the session state.
+   * Throws on failure (caller adds error logs).
+   */
+  const sendAndTrack = useCallback(
+    async (sessionId: string | null, message: string): Promise<void> => {
+      const session = await invoke<AssistantSession>("assistant_send_message", {
+        sessionId,
+        message,
+      });
+      setActiveSession(session);
+      setIsAgentWorking(true);
+      // Fetch initial logs immediately
+      await fetchLogs(session.id);
+      // Refresh sessions list to include the new session
+      await fetchSessions();
+    },
+    [fetchLogs, fetchSessions],
+  );
+
   // Send a message
   const sendMessage = useCallback(
     async (message: string) => {
       try {
-        const session = await invoke<AssistantSession>("assistant_send_message", {
-          sessionId: activeSession?.id ?? null,
-          message,
-        });
-        setActiveSession(session);
-        setIsAgentWorking(true);
-        // Fetch initial logs immediately
-        await fetchLogs(session.id);
-        // Refresh sessions list to include the new session
-        await fetchSessions();
+        await sendAndTrack(activeSession?.id ?? null, message);
       } catch (err) {
         console.error("Failed to send message:", err);
         // Add error entry to logs
         setLogs((prev) => [...prev, { type: "error", message: `Failed to send message: ${err}` }]);
       }
     },
-    [activeSession?.id, fetchLogs, fetchSessions],
+    [activeSession?.id, sendAndTrack],
   );
 
   // Stop the agent
@@ -228,17 +243,7 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
       try {
         // Format answers as plaintext message
         const message = formatAnswerMessage(answers);
-        // Call invoke directly to properly catch errors (sendMessage swallows them)
-        const session = await invoke<AssistantSession>("assistant_send_message", {
-          sessionId: activeSession.id,
-          message,
-        });
-        setActiveSession(session);
-        setIsAgentWorking(true);
-        // Fetch initial logs immediately
-        await fetchLogs(session.id);
-        // Refresh sessions list to include the new session
-        await fetchSessions();
+        await sendAndTrack(activeSession.id, message);
         // Only clear questions on success
         setPendingQuestions([]);
       } catch (err) {
@@ -253,7 +258,7 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
         setIsAnswering(false);
       }
     },
-    [activeSession?.id, fetchLogs, fetchSessions],
+    [activeSession?.id, sendAndTrack],
   );
 
   // Start a new session

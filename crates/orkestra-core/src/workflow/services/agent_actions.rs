@@ -201,8 +201,12 @@ impl WorkflowApi {
         task.artifacts
             .set(Artifact::new(&artifact_name, &artifact_content, stage, now));
 
-        // Store structured subtask data as JSON for later Task creation on approval
-        if !subtasks.is_empty() {
+        // Store or clear structured subtask data for later Task creation on approval
+        if subtasks.is_empty() {
+            // Clear any stale structured data from a previous run
+            task.artifacts
+                .remove(&format!("{artifact_name}_structured"));
+        } else {
             let json = serde_json::to_string(subtasks).unwrap_or_default();
             task.artifacts.set(Artifact::new(
                 format!("{artifact_name}_structured"),

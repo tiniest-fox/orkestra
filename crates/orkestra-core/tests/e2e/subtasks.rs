@@ -1103,3 +1103,100 @@ fn test_archived_subtasks_included_in_views_and_progress() {
         "One subtask should be awaiting review. Progress: {progress:?}"
     );
 }
+
+// =============================================================================
+// Stale structured artifact after re-run
+// =============================================================================
+
+/// When breakdown is rejected and re-run with empty subtasks, the stale
+/// `_structured` artifact from the first run must be cleared. Otherwise
+/// approval incorrectly creates subtasks from the stale data.
+#[test]
+fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
+    let wf = workflows::with_subtasks();
+    let env = TestEnv::with_git(&wf, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let parent = env.create_task("Feature", "Build it", None);
+
+    // Planning → approve
+    env.set_output(
+        &parent.id,
+        MockAgentOutput::Artifact {
+            name: "plan".into(),
+            content: "The plan".into(),
+        },
+    );
+    env.advance(); // spawns planner
+    env.advance(); // processes plan output
+    env.api().approve(&parent.id).unwrap();
+
+    // Breakdown #1: produces subtasks → AwaitingReview
+    env.set_output(
+        &parent.id,
+        MockAgentOutput::Subtasks {
+            content: "Technical design".into(),
+            subtasks: vec![SubtaskOutput {
+                title: "Subtask A".into(),
+                description: "Do A".into(),
+                detailed_instructions: "Implement A".into(),
+                depends_on: vec![],
+            }],
+            skip_reason: None,
+        },
+    );
+    env.advance(); // spawns breakdown agent
+    env.advance(); // processes breakdown output
+
+    let task = env.api().get_task(&parent.id).unwrap();
+    assert_eq!(
+        task.phase,
+        Phase::AwaitingReview,
+        "Should be awaiting review after breakdown"
+    );
+
+    // Reject breakdown → stays in breakdown stage, new iteration
+    env.api()
+        .reject(&parent.id, "Don't break this down, just do it directly")
+        .unwrap();
+
+    // Breakdown #2: empty subtasks with skip reason
+    env.set_output(
+        &parent.id,
+        MockAgentOutput::Subtasks {
+            content: "Will implement directly".into(),
+            subtasks: vec![],
+            skip_reason: Some("Task is simple enough to implement directly".into()),
+        },
+    );
+    env.advance(); // spawns breakdown agent (new iteration)
+    env.advance(); // processes breakdown output
+
+    let task = env.api().get_task(&parent.id).unwrap();
+    assert_eq!(
+        task.phase,
+        Phase::AwaitingReview,
+        "Should be awaiting review after second breakdown"
+    );
+
+    // Approve → should NOT create subtasks, should advance to work stage
+    env.api().approve(&parent.id).unwrap();
+
+    let task = env.api().get_task(&parent.id).unwrap();
+    let subtasks = env.api().list_subtasks(&parent.id).unwrap();
+
+    assert!(
+        subtasks.is_empty(),
+        "No subtasks should exist after approving empty breakdown, got {} subtask(s)",
+        subtasks.len()
+    );
+    assert_eq!(
+        task.current_stage().unwrap(),
+        "work",
+        "Task should advance to work stage, not WaitingOnChildren"
+    );
+    assert_eq!(
+        task.phase,
+        Phase::Idle,
+        "Task should be Idle (ready for work agent)"
+    );
+}

@@ -12,49 +12,49 @@ interface UserMessageLogEntryProps {
 
 const RESUME_STYLES: Record<
   ResumeType,
-  { label: string; textColor: string; bgColor: string; borderColor: string }
+  { label: string; textColor: string; bgColor: string; gradientTo: string }
 > = {
   continue: {
-    label: "Session Resumed",
+    label: "RESUMING SESSION",
     textColor: "text-blue-600 dark:text-blue-400",
     bgColor: "bg-blue-100 dark:bg-blue-900/30",
-    borderColor: "border-blue-500",
+    gradientTo: "to-blue-100 dark:to-blue-900/30",
   },
   feedback: {
-    label: "Feedback Requested",
+    label: "FEEDBACK",
     textColor: "text-amber-600 dark:text-amber-400",
     bgColor: "bg-amber-100 dark:bg-amber-900/30",
-    borderColor: "border-amber-500",
+    gradientTo: "to-amber-100 dark:to-amber-900/30",
   },
   integration: {
-    label: "Integration Conflict",
+    label: "INTEGRATION FAILED",
     textColor: "text-red-600 dark:text-red-400",
     bgColor: "bg-red-100 dark:bg-red-900/30",
-    borderColor: "border-red-500",
+    gradientTo: "to-red-100 dark:to-red-900/30",
   },
   answers: {
-    label: "Questions Answered",
+    label: "ANSWERS PROVIDED",
     textColor: "text-green-600 dark:text-green-400",
     bgColor: "bg-green-100 dark:bg-green-900/30",
-    borderColor: "border-green-500",
+    gradientTo: "to-green-100 dark:to-green-900/30",
   },
   retry_failed: {
-    label: "Retrying After Failure",
+    label: "RETRYING",
     textColor: "text-orange-600 dark:text-orange-400",
     bgColor: "bg-orange-100 dark:bg-orange-900/30",
-    borderColor: "border-orange-500",
+    gradientTo: "to-orange-100 dark:to-orange-900/30",
   },
   retry_blocked: {
-    label: "Retrying After Block",
+    label: "RETRYING",
     textColor: "text-yellow-600 dark:text-yellow-400",
     bgColor: "bg-yellow-100 dark:bg-yellow-900/30",
-    borderColor: "border-yellow-500",
+    gradientTo: "to-yellow-100 dark:to-yellow-900/30",
   },
   initial: {
-    label: "Initial Prompt",
+    label: "INITIAL PROMPT",
     textColor: "text-purple-600 dark:text-purple-400",
     bgColor: "bg-purple-100 dark:bg-purple-900/30",
-    borderColor: "border-purple-500",
+    gradientTo: "to-purple-100 dark:to-purple-900/30",
   },
 };
 
@@ -77,15 +77,11 @@ export function UserMessageLogEntry({
   const toggleExpanded = useCallback(() => setExpanded((prev) => !prev), []);
 
   return (
-    <div className="py-3 my-4">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="flex-1 h-px bg-stone-300 dark:bg-stone-600" />
-        <span className={`text-xs ${style.textColor} font-medium uppercase tracking-wider`}>
+    <div className="flex justify-end my-3">
+      <div className={`max-w-[85%] px-4 py-3 ${style.bgColor} rounded-2xl`}>
+        <div className={`text-xs font-medium uppercase tracking-wider mb-1 ${style.textColor}`}>
           {style.label}
-        </span>
-        <div className="flex-1 h-px bg-stone-300 dark:bg-stone-600" />
-      </div>
-      <div className={`px-3 py-2 ${style.bgColor} border-l-2 ${style.borderColor} rounded-r`}>
+        </div>
         <div className="relative">
           <div
             ref={measureRef}
@@ -95,7 +91,9 @@ export function UserMessageLogEntry({
             {content}
           </div>
           {overflows && !expanded && (
-            <div className="absolute bottom-0 left-0 right-0 h-12 pointer-events-none bg-gradient-to-b from-transparent to-stone-100 dark:to-stone-900" />
+            <div
+              className={`absolute bottom-0 left-0 right-0 h-12 pointer-events-none bg-gradient-to-b from-transparent ${style.gradientTo}`}
+            />
           )}
         </div>
         {overflows && (

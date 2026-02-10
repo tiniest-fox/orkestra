@@ -60,6 +60,7 @@ useEffect(() => {
 
 - Tailwind classes only. No CSS modules, styled-components, or inline style objects.
 - Use the project's custom design tokens: `stone-*` (neutrals), `orange-*` (accent), semantic colors (`info`, `warning`, `error`, `success`), `panel` border radius and shadows.
+  - **Border radius tokens**: `rounded-panel` (12px) for structural panels, `rounded-panel-sm` (8px) for smaller containers. For chat-like UI elements (messages, bubbles), `rounded-2xl` (16px) is acceptable to differentiate conversational UI from structural panels.
 - **Dark mode pattern**: Always use `light-value dark:dark-value` for all color classes. Never hardcode only light or only dark colors. Dark mode is via `darkMode: 'media'` (system preference).
   - Text: `text-stone-700 dark:text-stone-300` (600-700 for light, 200-300 for dark)
   - Backgrounds: `bg-stone-50 dark:bg-stone-900` (50-100 for light, 800-900 for dark)

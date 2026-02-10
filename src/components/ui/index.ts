@@ -23,6 +23,7 @@ export { ExpandablePanel, useExpandablePanel } from "./ExpandablePanel";
 export { ExpandButton } from "./ExpandButton";
 export { IconButton } from "./IconButton";
 export { Link } from "./Link";
+export { LoadingState } from "./LoadingState";
 export { ModalPanel } from "./ModalPanel";
 // Layout components
 export { OverlayContainer } from "./OverlayContainer";

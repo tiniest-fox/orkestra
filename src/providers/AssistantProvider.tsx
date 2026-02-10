@@ -15,7 +15,13 @@ import {
   useRef,
   useState,
 } from "react";
-import type { AssistantSession, LogEntry } from "../types/workflow";
+import type {
+  AssistantSession,
+  LogEntry,
+  WorkflowQuestion,
+  WorkflowQuestionAnswer,
+} from "../types/workflow";
+import { parseAssistantQuestions } from "../utils/assistantQuestions";
 
 interface AssistantContextValue {
   /** Currently active session (or null if none). */
@@ -30,6 +36,12 @@ interface AssistantContextValue {
   isAgentWorking: boolean;
   /** Whether there's an unread response (agent finished while panel was closed). */
   hasUnreadResponse: boolean;
+  /** Pending questions detected from assistant output. */
+  pendingQuestions: WorkflowQuestion[];
+  /** Submit answers to pending questions. */
+  answerQuestions: (answers: WorkflowQuestionAnswer[]) => Promise<void>;
+  /** Whether answer submission is in progress. */
+  isAnswering: boolean;
   /** Send a message (creates new session or resumes existing). */
   sendMessage: (message: string) => Promise<void>;
   /** Stop the running agent process. */
@@ -59,6 +71,14 @@ interface AssistantProviderProps {
   children: ReactNode;
 }
 
+/**
+ * Format question answers as a plaintext message.
+ */
+function formatAnswerMessage(answers: WorkflowQuestionAnswer[]): string {
+  const lines = answers.map((a, i) => `${i + 1}. ${a.question}\n   Answer: ${a.answer}`);
+  return `Here are my answers to your questions:\n\n${lines.join("\n\n")}`;
+}
+
 export function AssistantProvider({ children }: AssistantProviderProps) {
   const [activeSession, setActiveSession] = useState<AssistantSession | null>(null);
   const [sessions, setSessions] = useState<AssistantSession[]>([]);
@@ -66,6 +86,8 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isAgentWorking, setIsAgentWorking] = useState(false);
   const [hasUnreadResponse, setHasUnreadResponse] = useState(false);
+  const [pendingQuestions, setPendingQuestions] = useState<WorkflowQuestion[]>([]);
+  const [isAnswering, setIsAnswering] = useState(false);
 
   // Track active session in a ref for race condition protection
   const activeSessionIdRef = useRef<string | null>(null);
@@ -98,7 +120,15 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
         // Check for agent completion (only if agent was actually working)
         const lastEntry = result[result.length - 1];
         if (lastEntry?.type === "process_exit" && isAgentWorkingRef.current) {
+          // Detect questions BEFORE setting isAgentWorking to false
+          const questions = parseAssistantQuestions(result);
+
+          // Batch state updates — React batches these into one render
+          if (questions.length > 0) {
+            setPendingQuestions(questions);
+          }
           setIsAgentWorking(false);
+
           // Flag unread if panel is not open
           if (!isPanelOpenRef.current) {
             setHasUnreadResponse(true);
@@ -189,6 +219,43 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
     }
   }, [activeSession?.id, fetchSessions]);
 
+  // Answer pending questions
+  const answerQuestions = useCallback(
+    async (answers: WorkflowQuestionAnswer[]) => {
+      if (!activeSession?.id) return;
+
+      setIsAnswering(true);
+      try {
+        // Format answers as plaintext message
+        const message = formatAnswerMessage(answers);
+        // Call invoke directly to properly catch errors (sendMessage swallows them)
+        const session = await invoke<AssistantSession>("assistant_send_message", {
+          sessionId: activeSession.id,
+          message,
+        });
+        setActiveSession(session);
+        setIsAgentWorking(true);
+        // Fetch initial logs immediately
+        await fetchLogs(session.id);
+        // Refresh sessions list to include the new session
+        await fetchSessions();
+        // Only clear questions on success
+        setPendingQuestions([]);
+      } catch (err) {
+        console.error("Failed to submit answers:", err);
+        // Add error entry to logs
+        setLogs((prev) => [
+          ...prev,
+          { type: "error", message: `Failed to submit answers: ${err}` },
+        ]);
+        // Don't clear pendingQuestions — keep form visible for retry
+      } finally {
+        setIsAnswering(false);
+      }
+    },
+    [activeSession?.id, fetchLogs, fetchSessions],
+  );
+
   // Start a new session
   const newSession = useCallback(async () => {
     // Stop current agent if running
@@ -198,6 +265,7 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
     // Clear state
     setActiveSession(null);
     setLogs([]);
+    setPendingQuestions([]);
   }, [isAgentWorking, stopAgent]);
 
   // Select a session from history
@@ -209,6 +277,7 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
       }
       // Load session and logs
       setActiveSession(session);
+      setPendingQuestions([]);
       await fetchLogs(session.id);
       // Check if agent is running (based on agent_pid)
       setIsAgentWorking(session.agent_pid !== null);
@@ -223,6 +292,9 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
     isLoading,
     isAgentWorking,
     hasUnreadResponse,
+    pendingQuestions,
+    answerQuestions,
+    isAnswering,
     sendMessage,
     stopAgent,
     newSession,

@@ -12,6 +12,7 @@ import { History, Plus, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useAssistant } from "../../providers";
 import { LogList } from "../Logs/LogList";
+import { QuestionFormPanel } from "../TaskDetail/QuestionFormPanel";
 import { Button, EmptyState, FlexContainer, Panel, PanelLayout, Slot } from "../ui";
 import { ChatInputPanel } from "./ChatInputPanel";
 
@@ -21,8 +22,18 @@ interface AssistantPanelProps {
 }
 
 export function AssistantPanel({ onClose, onToggleHistory }: AssistantPanelProps) {
-  const { activeSession, logs, isLoading, isAgentWorking, sendMessage, stopAgent, newSession } =
-    useAssistant();
+  const {
+    activeSession,
+    logs,
+    isLoading,
+    isAgentWorking,
+    pendingQuestions,
+    answerQuestions,
+    isAnswering,
+    sendMessage,
+    stopAgent,
+    newSession,
+  } = useAssistant();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -37,6 +48,7 @@ export function AssistantPanel({ onClose, onToggleHistory }: AssistantPanelProps
   };
 
   const sessionTitle = activeSession?.title || "Assistant";
+  const hasPendingQuestions = pendingQuestions.length > 0;
 
   return (
     <PanelLayout direction="vertical">
@@ -82,9 +94,24 @@ export function AssistantPanel({ onClose, onToggleHistory }: AssistantPanelProps
         </Panel>
       </Slot>
 
-      {/* Footer: Chat input - always visible (for now) */}
-      <Slot id="assistant-footer-input" type="auto" visible={true} plain>
+      {/* Footer: Chat input - visible when NO pending questions */}
+      <Slot id="assistant-footer-input" type="auto" visible={!hasPendingQuestions} plain>
         <ChatInputPanel onSend={sendMessage} onStop={stopAgent} isAgentWorking={isAgentWorking} />
+      </Slot>
+
+      {/* Footer: Question form - visible when pending questions exist */}
+      <Slot
+        id="assistant-footer-questions"
+        type="fixed"
+        size={480}
+        visible={hasPendingQuestions}
+        plain
+      >
+        <QuestionFormPanel
+          questions={pendingQuestions}
+          onSubmit={answerQuestions}
+          isSubmitting={isAnswering}
+        />
       </Slot>
     </PanelLayout>
   );

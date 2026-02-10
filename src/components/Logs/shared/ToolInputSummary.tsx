@@ -73,9 +73,9 @@ function TodoDisplay({ todos }: { todos: TodoItem[] }) {
     <div className="text-xs space-y-0.5">
       {todos.map((todo, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: todos are display-only without stable IDs
-        <div key={i} className="flex items-center gap-1.5">
+        <div key={i} className="flex items-start gap-1.5">
           <span
-            className={`w-1.5 h-1.5 rounded-full ${
+            className={`w-1.5 h-1.5 rounded-full shrink-0 mt-[5px] ${
               todo.status === "completed"
                 ? "bg-green-400"
                 : todo.status === "in_progress"

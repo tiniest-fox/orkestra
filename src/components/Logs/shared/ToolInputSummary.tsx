@@ -21,26 +21,30 @@ export function ToolInputSummary({ input }: ToolInputSummaryProps) {
       );
     case "read":
       return (
-        <span className="text-blue-600 dark:text-blue-300 text-xs">
+        <span className="text-blue-600 dark:text-blue-300 text-xs break-all">
           {formatPath(input.file_path)}
         </span>
       );
     case "write":
       return (
-        <span className="text-amber-600 dark:text-amber-300 text-xs">
+        <span className="text-amber-600 dark:text-amber-300 text-xs break-all">
           {formatPath(input.file_path)}
         </span>
       );
     case "edit":
       return (
-        <span className="text-purple-600 dark:text-purple-300 text-xs">
+        <span className="text-purple-600 dark:text-purple-300 text-xs break-all">
           {formatPath(input.file_path)}
         </span>
       );
     case "glob":
-      return <span className="text-cyan-600 dark:text-cyan-300 text-xs">{input.pattern}</span>;
+      return (
+        <span className="text-cyan-600 dark:text-cyan-300 text-xs break-all">{input.pattern}</span>
+      );
     case "grep":
-      return <span className="text-cyan-600 dark:text-cyan-300 text-xs">{input.pattern}</span>;
+      return (
+        <span className="text-cyan-600 dark:text-cyan-300 text-xs break-all">{input.pattern}</span>
+      );
     case "task":
       return <span className="text-pink-600 dark:text-pink-300 text-xs">{input.description}</span>;
     case "todo_write":
@@ -54,7 +58,9 @@ export function ToolInputSummary({ input }: ToolInputSummaryProps) {
     case "web_search":
       return <span className="text-violet-600 dark:text-violet-300 text-xs">{input.query}</span>;
     case "web_fetch":
-      return <span className="text-violet-600 dark:text-violet-300 text-xs">{input.url}</span>;
+      return (
+        <span className="text-violet-600 dark:text-violet-300 text-xs break-all">{input.url}</span>
+      );
     case "other":
       return <span className="text-stone-500 dark:text-stone-400 text-xs">{input.summary}</span>;
     default:

@@ -89,6 +89,21 @@ body {
   margin-right: 0.375rem;
 }
 
+/* List alignment: consistent indentation for both ordered and unordered lists.
+   margin-left positions the markers, padding-left controls marker-to-text gap. */
+.prose.prose-sm ol,
+.prose.prose-sm ul {
+  padding-left: 0;
+}
+
+.prose.prose-sm ul > li {
+  margin-left: 1.2rem;
+}
+
+.prose.prose-sm ol > li {
+  margin-left: 2rem;
+}
+
 /* Intermittent spin: one rotation with elastic overshoot, then a pause */
 @keyframes spin-bounce {
   0% {

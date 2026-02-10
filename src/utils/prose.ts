@@ -8,7 +8,7 @@
  */
 export const PROSE_CLASSES_LIGHT = [
   // Base prose
-  "prose prose-sm max-w-none",
+  "prose prose-sm max-w-none break-words",
   // Colors
   "prose-headings:text-stone-800",
   "dark:prose-headings:text-stone-200",
@@ -35,15 +35,15 @@ export const PROSE_CLASSES_LIGHT = [
   "prose-h4:text-sm prose-h4:font-semibold",
   "prose-h5:text-sm prose-h5:font-medium",
   "prose-h6:text-sm prose-h6:font-medium",
-  // Compact vertical spacing
-  "prose-headings:mt-3 prose-headings:mb-1",
-  "prose-p:my-1",
-  "prose-ul:my-1 prose-ol:my-1",
-  "prose-ul:pl-[1.1em] prose-ol:pl-[1.1em]",
-  "prose-li:my-0",
-  "prose-pre:my-1.5",
-  "prose-blockquote:my-1.5",
-  "prose-hr:my-2",
+  // Compact vertical spacing with breathing room
+  "prose-headings:mt-3 prose-headings:mb-1.5",
+  "prose-p:my-2",
+  "prose-ul:my-2 prose-ol:my-2",
+  // padding-left set in index.css with specificity to override prose-sm defaults
+  "prose-li:my-1",
+  "prose-pre:my-2",
+  "prose-blockquote:my-2",
+  "prose-hr:my-3",
   // Table overflow
   "artifact-prose",
 ].join(" ");

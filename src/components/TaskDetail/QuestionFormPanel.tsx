@@ -67,7 +67,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
 
   return (
     <Panel accent="info" autoFill={false} className="h-[480px]">
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full overflow-hidden">
         <div className="flex items-center justify-between bg-info-500 text-white mt-1 mx-1 rounded-panel px-3 py-1">
           <div className="text-sm font-medium">Questions</div>
           <div className="text-xs">
@@ -78,7 +78,7 @@ export function QuestionFormPanel({ questions, onSubmit, isSubmitting }: Questio
         <div
           key={currentIndex}
           ref={scrollContainerRef}
-          className="overflow-y-auto max-h-[480px] p-4"
+          className="overflow-y-auto p-2 grow shrink basis-0"
         >
           <div className="text-sm font-medium text-stone-800 dark:text-stone-100 mb-1">
             {currentQuestion.question}

@@ -185,7 +185,11 @@ fn compute_phase_icon(task: &Task) -> Option<String> {
         Phase::Idle | Phase::Finished if !task.status.is_waiting_on_children() => {
             Some("waiting_for_orchestrator".to_string())
         }
-        _ => None,
+        // Explicit arms so the compiler catches new Phase variants
+        Phase::Idle | Phase::Finished // waiting_on_children case (guard failed above)
+        | Phase::AgentWorking
+        | Phase::AwaitingReview
+        | Phase::Interrupted => None,
     }
 }
 

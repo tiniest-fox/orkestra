@@ -36,6 +36,7 @@ fn setup_parent_with_subtasks(
         MockAgentOutput::Artifact {
             name: "plan".into(),
             content: "Plan".into(),
+            activity_log: None,
         },
     );
     env.advance(); // spawns planner (completion ready)
@@ -50,6 +51,7 @@ fn setup_parent_with_subtasks(
             content: "Technical design".into(),
             subtasks: subtask_outputs,
             skip_reason: None,
+            activity_log: None,
         },
     );
     env.advance(); // spawns breakdown agent (completion ready)
@@ -89,6 +91,7 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
             MockAgentOutput::Artifact {
                 name: "summary".into(),
                 content: format!("Work done for {id}"),
+            activity_log: None,
             },
         );
     }
@@ -115,6 +118,7 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
             MockAgentOutput::Artifact {
                 name: "verdict".into(),
                 content: "Looks good".into(),
+            activity_log: None,
             },
         );
     }
@@ -151,6 +155,7 @@ fn test_breakdown_approval_creates_subtasks() {
         MockAgentOutput::Artifact {
             name: "plan".into(),
             content: "The implementation plan".into(),
+            activity_log: None,
         },
     );
     env.advance(); // spawns planner (completion ready)
@@ -188,6 +193,7 @@ fn test_breakdown_approval_creates_subtasks() {
                 },
             ],
             skip_reason: None,
+            activity_log: None,
         },
     );
     env.advance(); // spawns breakdown agent (completion ready)
@@ -409,6 +415,7 @@ fn test_parent_advances_when_all_subtasks_done() {
         MockAgentOutput::Artifact {
             name: "summary".into(),
             content: "Parent work".into(),
+            activity_log: None,
         },
     );
 
@@ -598,6 +605,7 @@ fn test_breakdown_skip_advances_normally() {
         MockAgentOutput::Artifact {
             name: "plan".into(),
             content: "Simple plan".into(),
+            activity_log: None,
         },
     );
     env.advance(); // spawns planner (completion ready)
@@ -612,6 +620,7 @@ fn test_breakdown_skip_advances_normally() {
             content: "Technical design content".into(),
             subtasks: vec![],
             skip_reason: Some("Task is simple enough to complete directly".into()),
+            activity_log: None,
         },
     );
     env.advance(); // spawns breakdown agent (completion ready)
@@ -878,6 +887,7 @@ fn test_subtask_integration_conflict() {
             MockAgentOutput::Artifact {
                 name: "summary".into(),
                 content: format!("Work done for {id}"),
+            activity_log: None,
             },
         );
     }
@@ -905,6 +915,7 @@ fn test_subtask_integration_conflict() {
             MockAgentOutput::Artifact {
                 name: "verdict".into(),
                 content: "Looks good".into(),
+            activity_log: None,
             },
         );
         env.set_output(
@@ -912,6 +923,7 @@ fn test_subtask_integration_conflict() {
             MockAgentOutput::Artifact {
                 name: "summary".into(),
                 content: format!("Recovery work for {id}"),
+            activity_log: None,
             },
         );
     }
@@ -1018,6 +1030,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
         MockAgentOutput::Artifact {
             name: "summary".into(),
             content: "Work done for A".into(),
+            activity_log: None,
         },
     );
     env.set_output(
@@ -1025,6 +1038,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
         MockAgentOutput::Artifact {
             name: "summary".into(),
             content: "Work done for B".into(),
+            activity_log: None,
         },
     );
     // Set a mock output for C but don't approve it, so it stays in AwaitingReview
@@ -1033,6 +1047,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
         MockAgentOutput::Artifact {
             name: "summary".into(),
             content: "Work done for C".into(),
+            activity_log: None,
         },
     );
 
@@ -1049,6 +1064,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
         MockAgentOutput::Artifact {
             name: "verdict".into(),
             content: "Looks good".into(),
+            activity_log: None,
         },
     );
     env.set_output(
@@ -1056,6 +1072,7 @@ fn test_archived_subtasks_included_in_views_and_progress() {
         MockAgentOutput::Artifact {
             name: "verdict".into(),
             content: "Looks good".into(),
+            activity_log: None,
         },
     );
 
@@ -1134,6 +1151,7 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
         MockAgentOutput::Artifact {
             name: "plan".into(),
             content: "The plan".into(),
+            activity_log: None,
         },
     );
     env.advance(); // spawns planner
@@ -1153,6 +1171,7 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
                 depends_on: vec![],
             }],
             skip_reason: None,
+            activity_log: None,
         },
     );
     env.advance(); // spawns breakdown agent
@@ -1177,6 +1196,7 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
             content: "Will implement directly".into(),
             subtasks: vec![],
             skip_reason: Some("Task is simple enough to implement directly".into()),
+            activity_log: None,
         },
     );
     env.advance(); // spawns breakdown agent (new iteration)

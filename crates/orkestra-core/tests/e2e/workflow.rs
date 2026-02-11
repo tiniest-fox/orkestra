@@ -164,6 +164,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Artifact {
             name: "plan".to_string(),
             content: "Initial plan v1 - not detailed enough".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns planner agent (completion ready)
@@ -228,6 +229,7 @@ fn test_exhaustive_workflow_flow() {
             name: "plan".to_string(),
             content: "Detailed plan v2:\n1. Create module\n2. Add tests\n3. Update docs"
                 .to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns planner agent (completion ready)
@@ -271,6 +273,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Artifact {
             name: "breakdown".to_string(),
             content: "Subtasks:\n1. Create module\n2. Add tests".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns breakdown agent (completion ready)
@@ -317,6 +320,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Initial implementation - tests failing".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker agent (completion ready)
@@ -344,6 +348,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Implementation complete with passing tests".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker agent (completion ready)
@@ -374,6 +379,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Code style issues found - please fix formatting".to_string(),
+            activity_log: None,
         },
     );
     ctx.set_output(
@@ -381,6 +387,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Implementation with fixed formatting".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -475,6 +482,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Artifact {
             name: "verdict".to_string(),
             content: "LGTM! All checks pass.".to_string(),
+            activity_log: None,
         },
     );
     ctx.set_output(
@@ -482,6 +490,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Resolved merge conflict".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -564,6 +573,7 @@ fn test_exhaustive_workflow_flow() {
         MockAgentOutput::Artifact {
             name: "verdict".to_string(),
             content: "Conflict resolved correctly".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -647,6 +657,7 @@ fn test_approval_validation() {
         MockAgentOutput::Artifact {
             name: "plan".to_string(),
             content: "Plan".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns planner (completion ready)
@@ -660,6 +671,7 @@ fn test_approval_validation() {
         MockAgentOutput::Artifact {
             name: "breakdown".to_string(),
             content: "Breakdown".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns breakdown agent (completion ready)
@@ -673,6 +685,7 @@ fn test_approval_validation() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Should fail".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -743,6 +756,7 @@ fn test_custom_integration_on_failure() {
         MockAgentOutput::Artifact {
             name: "plan".to_string(),
             content: "Plan".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns planner (completion ready)
@@ -772,6 +786,7 @@ fn test_custom_integration_on_failure() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Summary".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -794,6 +809,7 @@ fn test_custom_integration_on_failure() {
         MockAgentOutput::Artifact {
             name: "verdict".to_string(),
             content: "LGTM".to_string(),
+            activity_log: None,
         },
     );
     ctx.set_output(
@@ -801,6 +817,7 @@ fn test_custom_integration_on_failure() {
         MockAgentOutput::Artifact {
             name: "plan".to_string(),
             content: "Recovery plan".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -888,6 +905,7 @@ fn test_script_stage_with_recovery() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Initial implementation".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -915,6 +933,7 @@ fn test_script_stage_with_recovery() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Fixed implementation after script failure".to_string(),
+            activity_log: None,
         },
     );
 
@@ -965,6 +984,7 @@ fn test_script_stage_with_recovery() {
         MockAgentOutput::Artifact {
             name: "verdict".to_string(),
             content: "All checks passed, implementation complete".to_string(),
+            activity_log: None,
         },
     );
 
@@ -1303,6 +1323,7 @@ fn test_opencode_no_pregenerated_session_id() {
         MockAgentOutput::Artifact {
             name: "result".to_string(),
             content: "First run output".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -1342,6 +1363,7 @@ fn test_opencode_no_pregenerated_session_id() {
         MockAgentOutput::Artifact {
             name: "result".to_string(),
             content: "Second run output".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -1428,6 +1450,7 @@ fn test_session_reset_on_cross_stage_rejection() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Initial implementation".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -1472,6 +1495,7 @@ fn test_session_reset_on_cross_stage_rejection() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Code needs refactoring — extract helper methods".to_string(),
+            activity_log: None,
         },
     );
     ctx.set_output(
@@ -1479,6 +1503,7 @@ fn test_session_reset_on_cross_stage_rejection() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Refactored implementation".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -1670,6 +1695,7 @@ fn test_session_not_reset_without_flag() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Initial implementation".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker
@@ -1691,6 +1717,7 @@ fn test_session_not_reset_without_flag() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs more tests".to_string(),
+            activity_log: None,
         },
     );
     ctx.set_output(
@@ -1698,6 +1725,7 @@ fn test_session_not_reset_without_flag() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Implementation with more tests".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer
@@ -1827,6 +1855,7 @@ fn test_handlebars_passthrough_for_plain_definitions() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Done".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker
@@ -1892,6 +1921,7 @@ fn test_retry_failed_with_instructions_sends_resume_prompt() {
         MockAgentOutput::Artifact {
             name: "plan".into(),
             content: "Plan using v2 API".into(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns agent with retry_failed resume prompt
@@ -1948,6 +1978,7 @@ fn test_retry_blocked_with_instructions_sends_resume_prompt() {
         MockAgentOutput::Artifact {
             name: "plan".into(),
             content: "Plan with CI passing".into(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns agent with retry_blocked resume prompt
@@ -1991,6 +2022,7 @@ fn test_retry_failed_without_instructions_sends_resume_prompt() {
         MockAgentOutput::Artifact {
             name: "plan".into(),
             content: "Plan v2".into(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns agent with retry_failed resume prompt (no instructions)
@@ -2034,6 +2066,7 @@ fn test_kill_before_output_retries_without_resume() {
         MockAgentOutput::Artifact {
             name: "plan".into(),
             content: "Retry plan".into(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns agent for retry
@@ -2072,6 +2105,7 @@ fn test_agent_with_activity_retries_with_resume() {
         MockAgentOutput::Artifact {
             name: "plan".into(),
             content: "First plan".into(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns agent (with activity LogLine)
@@ -2089,6 +2123,7 @@ fn test_agent_with_activity_retries_with_resume() {
         MockAgentOutput::Artifact {
             name: "plan".into(),
             content: "Improved plan".into(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns agent for retry (should be resume)
@@ -2158,6 +2193,7 @@ fn test_rejection_review_override_then_approval() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Initial implementation with tests".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker (completion ready)
@@ -2183,6 +2219,7 @@ fn test_rejection_review_override_then_approval() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Tests are incomplete — missing edge case coverage".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -2280,6 +2317,7 @@ fn test_rejection_review_override_then_approval() {
             name: "verdict".to_string(),
             content: "Re-evaluated: edge cases are actually covered by integration tests"
                 .to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -2359,6 +2397,7 @@ fn test_rejection_review_confirm() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Implementation".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker
@@ -2371,6 +2410,7 @@ fn test_rejection_review_confirm() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Code quality is poor".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer
@@ -2450,6 +2490,7 @@ fn test_automated_review_rejection_skips_human_review() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Implementation".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker
@@ -2462,6 +2503,7 @@ fn test_automated_review_rejection_skips_human_review() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Needs refactoring".to_string(),
+            activity_log: None,
         },
     );
     ctx.set_output(
@@ -2469,6 +2511,7 @@ fn test_automated_review_rejection_skips_human_review() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Refactored implementation".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer (completion ready)
@@ -2631,6 +2674,7 @@ fn test_artifact_generation_for_all_output_types() {
         MockAgentOutput::Artifact {
             name: "plan".to_string(),
             content: "Detailed implementation plan v1".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns planner
@@ -2665,6 +2709,7 @@ fn test_artifact_generation_for_all_output_types() {
         MockAgentOutput::Artifact {
             name: "plan".to_string(),
             content: "Detailed plan v2 with error handling".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns planner
@@ -2701,6 +2746,7 @@ fn test_artifact_generation_for_all_output_types() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Implementation complete with tests".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker
@@ -2725,6 +2771,7 @@ fn test_artifact_generation_for_all_output_types() {
         MockAgentOutput::Approval {
             decision: "reject".to_string(),
             content: "Missing integration tests".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns script → passes → auto-advances to review → spawns reviewer
@@ -2780,6 +2827,7 @@ fn test_artifact_generation_for_all_output_types() {
         MockAgentOutput::Approval {
             decision: "approve".to_string(),
             content: "Re-evaluated: all tests adequate, implementation is solid".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns reviewer
@@ -2847,6 +2895,7 @@ fn test_script_failure_creates_artifact() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Initial work".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // spawns worker
@@ -2859,6 +2908,7 @@ fn test_script_failure_creates_artifact() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Fixed work".to_string(),
+            activity_log: None,
         },
     );
 
@@ -2901,6 +2951,7 @@ fn test_system_prompt_split() {
         MockAgentOutput::Artifact {
             name: "plan".to_string(),
             content: "Implementation plan here".to_string(),
+            activity_log: None,
         },
     );
 
@@ -2966,6 +3017,7 @@ fn test_opencode_provider_fallback() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Work complete".to_string(),
+            activity_log: None,
         },
     );
 
@@ -3068,6 +3120,7 @@ fn test_commit_message_generation_during_integration() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Implemented feature successfully".to_string(),
+            activity_log: None,
         },
     );
 
@@ -3093,6 +3146,7 @@ fn test_commit_message_generation_during_integration() {
         MockAgentOutput::Artifact {
             name: "verdict".to_string(),
             content: "Approved! Changes look good.".to_string(),
+            activity_log: None,
         },
     );
 
@@ -3210,6 +3264,7 @@ fn test_interrupt_and_resume() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Completed work with error handling".to_string(),
+            activity_log: None,
         },
     );
 
@@ -3312,6 +3367,7 @@ fn test_interrupt_resume_multiple_cycles() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Final work".to_string(),
+            activity_log: None,
         },
     );
     ctx.advance(); // Spawn
@@ -3351,6 +3407,7 @@ fn test_interrupt_wrong_phase() {
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
             content: "Work done".to_string(),
+            activity_log: None,
         },
     );
 

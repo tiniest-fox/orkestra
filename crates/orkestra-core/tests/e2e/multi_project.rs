@@ -46,6 +46,7 @@ fn test_parallel_project_isolation() {
             MockAgentOutput::Artifact {
                 name: "plan".to_string(),
                 content: "Implementation plan for project 1".to_string(),
+            activity_log: None,
             },
         );
     }
@@ -58,6 +59,7 @@ fn test_parallel_project_isolation() {
             MockAgentOutput::Artifact {
                 name: "plan".to_string(),
                 content: "Implementation plan for project 2".to_string(),
+            activity_log: None,
             },
         );
     }
@@ -201,6 +203,7 @@ fn test_phase_state_isolation() {
         MockAgentOutput::Artifact {
             name: "plan".to_string(),
             content: "Plan for task 1".to_string(),
+            activity_log: None,
         },
     );
 

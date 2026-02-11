@@ -445,6 +445,11 @@ impl WorkflowApi {
 
         let now = chrono::Utc::now().to_rfc3339();
 
+        // Persist activity log before processing the output
+        if let Some(log) = output.activity_log() {
+            self.iteration_service.set_activity_log(task_id, &current_stage, log)?;
+        }
+
         match output {
             StageOutput::Questions { questions } => {
                 self.handle_questions_output(&mut task, &questions, &current_stage, &now)?;

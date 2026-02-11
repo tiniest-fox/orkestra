@@ -595,14 +595,23 @@ pub enum MockAgentOutput {
     /// Agent is asking clarifying questions.
     Questions(Vec<Question>),
     /// Agent produced an artifact (plan, summary, verdict).
-    Artifact { name: String, content: String },
+    Artifact {
+        name: String,
+        content: String,
+        activity_log: Option<String>,
+    },
     /// Agent (reviewer) is producing an approval decision.
-    Approval { decision: String, content: String },
+    Approval {
+        decision: String,
+        content: String,
+        activity_log: Option<String>,
+    },
     /// Agent produced subtasks for breakdown.
     Subtasks {
         content: String,
         subtasks: Vec<orkestra_core::workflow::execution::SubtaskOutput>,
         skip_reason: Option<String>,
+        activity_log: Option<String>,
     },
     /// Agent failed.
     Failed { error: String },
@@ -614,24 +623,33 @@ impl From<MockAgentOutput> for StageOutput {
     fn from(mock: MockAgentOutput) -> Self {
         match mock {
             MockAgentOutput::Questions(questions) => StageOutput::Questions { questions },
-            MockAgentOutput::Artifact { content, .. } => StageOutput::Artifact {
+            MockAgentOutput::Artifact {
                 content,
-                activity_log: None,
+                activity_log,
+                ..
+            } => StageOutput::Artifact {
+                content,
+                activity_log,
             },
-            MockAgentOutput::Approval { decision, content } => StageOutput::Approval {
+            MockAgentOutput::Approval {
                 decision,
                 content,
-                activity_log: None,
+                activity_log,
+            } => StageOutput::Approval {
+                decision,
+                content,
+                activity_log,
             },
             MockAgentOutput::Subtasks {
                 content,
                 subtasks,
                 skip_reason,
+                activity_log,
             } => StageOutput::Subtasks {
                 content,
                 subtasks,
                 skip_reason,
-                activity_log: None,
+                activity_log,
             },
             MockAgentOutput::Failed { error } => StageOutput::Failed { error },
             MockAgentOutput::Blocked { reason } => StageOutput::Blocked { reason },

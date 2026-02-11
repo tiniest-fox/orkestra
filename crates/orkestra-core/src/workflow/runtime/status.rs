@@ -215,6 +215,12 @@ impl Phase {
     pub fn has_active_agent(&self) -> bool {
         matches!(self, Phase::AgentWorking)
     }
+
+    /// Returns true for phases where the system is doing background work
+    /// (committing, integrating, finishing) but no agent is running.
+    pub fn is_system_active(&self) -> bool {
+        matches!(self, Phase::Committing | Phase::Integrating | Phase::Finishing)
+    }
 }
 
 #[cfg(test)]

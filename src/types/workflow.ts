@@ -542,6 +542,8 @@ export interface CommitInfo {
   hash: string;
   /** First line of commit message. */
   message: string;
+  /** Commit message body (lines after subject), null for single-line commits. */
+  body: string | null;
   /** Author name. */
   author: string;
   /** ISO 8601 timestamp. */

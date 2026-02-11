@@ -40,7 +40,8 @@ fn setup_parent_with_subtasks(
     );
     env.advance(); // spawns planner (completion ready)
     env.advance(); // processes plan output
-    let _ = env.api().approve(&parent.id).unwrap();
+    env.api().approve(&parent.id).unwrap();
+    env.advance(); // commit pipeline: Finishing → Finished → advance to breakdown
 
     // Breakdown
     env.set_output(
@@ -53,7 +54,8 @@ fn setup_parent_with_subtasks(
     );
     env.advance(); // spawns breakdown agent (completion ready)
     env.advance(); // processes breakdown output
-    let _ = env.api().approve(&parent.id).unwrap();
+    env.api().approve(&parent.id).unwrap();
+    env.advance(); // commit pipeline: Finishing → Finished → advance (creates subtasks)
 
     let subtasks = env.api().list_subtasks(&parent.id).unwrap();
     let id_map: Vec<(String, String)> = subtasks
@@ -104,6 +106,7 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
         );
         env.api().approve(id).expect("Should approve work stage");
     }
+    env.advance(); // commit pipeline: Finishing → Finished → advance to review
 
     // 3. Queue review outputs for all subtasks
     for &id in subtask_ids {
@@ -154,7 +157,9 @@ fn test_breakdown_approval_creates_subtasks() {
     env.advance(); // processes plan output
 
     // Approve the plan
-    let parent = env.api().approve(&parent.id).unwrap();
+    env.api().approve(&parent.id).unwrap();
+    env.advance(); // commit pipeline: Finishing → Finished → advance to breakdown
+    let parent = env.api().get_task(&parent.id).unwrap();
     assert_eq!(parent.current_stage(), Some("breakdown"));
 
     // Breakdown stage: produce subtasks
@@ -194,7 +199,9 @@ fn test_breakdown_approval_creates_subtasks() {
     assert!(parent.artifact("breakdown").is_some());
 
     // Approve the breakdown - this should create subtasks
-    let parent = env.api().approve(&parent.id).unwrap();
+    env.api().approve(&parent.id).unwrap();
+    env.advance(); // commit pipeline: Finishing → Finished → advance (creates subtasks)
+    let parent = env.api().get_task(&parent.id).unwrap();
     assert!(
         parent.status.is_waiting_on_children(),
         "Parent should be WaitingOnChildren, got: {:?}",
@@ -595,7 +602,8 @@ fn test_breakdown_skip_advances_normally() {
     );
     env.advance(); // spawns planner (completion ready)
     env.advance(); // processes plan output
-    let _ = env.api().approve(&parent.id).unwrap();
+    env.api().approve(&parent.id).unwrap();
+    env.advance(); // commit pipeline: Finishing → Finished → advance to breakdown
 
     // Breakdown: skip (empty subtasks with reason)
     env.set_output(
@@ -610,7 +618,9 @@ fn test_breakdown_skip_advances_normally() {
     env.advance(); // processes skip output
 
     // Approve the skipped breakdown
-    let parent = env.api().approve(&parent.id).unwrap();
+    env.api().approve(&parent.id).unwrap();
+    env.advance(); // commit pipeline: Finishing → Finished → advance to work
+    let parent = env.api().get_task(&parent.id).unwrap();
 
     // Should advance normally to work stage (no subtasks created)
     assert_eq!(
@@ -1129,6 +1139,7 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
     env.advance(); // spawns planner
     env.advance(); // processes plan output
     env.api().approve(&parent.id).unwrap();
+    env.advance(); // commit pipeline: Finishing → Finished → advance to breakdown
 
     // Breakdown #1: produces subtasks → AwaitingReview
     env.set_output(
@@ -1180,6 +1191,7 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
 
     // Approve → should NOT create subtasks, should advance to work stage
     env.api().approve(&parent.id).unwrap();
+    env.advance(); // commit pipeline: Finishing → Finished → advance to work
 
     let task = env.api().get_task(&parent.id).unwrap();
     let subtasks = env.api().list_subtasks(&parent.id).unwrap();

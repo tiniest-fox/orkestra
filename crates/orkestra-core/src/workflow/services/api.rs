@@ -4,10 +4,7 @@ use std::sync::Arc;
 
 use super::task_setup::TaskSetupService;
 use super::IterationService;
-use crate::commit_message::{
-    collect_model_names, fallback_commit_message, ClaudeCommitMessageGenerator,
-    CommitMessageGenerator,
-};
+use crate::commit_message::{ClaudeCommitMessageGenerator, CommitMessageGenerator};
 use crate::title::{ClaudeTitleGenerator, TitleGenerator};
 use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::Task;
@@ -337,75 +334,18 @@ impl WorkflowApi {
     /// from the git service, and invokes the commit message generator.
     /// Falls back to the task title if generation fails.
     pub fn generate_integration_commit_message(&self, task: &Task) -> String {
-        // Collect model names from workflow config
-        let model_names = collect_model_names(&self.workflow, task.flow.as_deref());
-
-        // Get diff summary from git service
-        let diff_summary = self.build_diff_summary(task);
-
-        // Try AI generation, fall back to task title
-        match self.commit_message_generator.generate_commit_message(
-            &task.title,
-            &task.description,
-            &diff_summary,
-            &model_names,
-        ) {
-            Ok(message) => message,
-            Err(e) => {
-                crate::orkestra_debug!(
-                    "integration",
-                    "Commit message generation failed for {}: {e}, using fallback",
-                    task.id
-                );
-                fallback_commit_message(&task.title, &task.id)
-            }
-        }
-    }
-
-    /// Build a diff summary string for the commit message prompt.
-    pub(crate) fn build_diff_summary(&self, task: &Task) -> String {
-        use std::fmt::Write;
-
-        let Some(git) = &self.git_service else {
-            return String::from("No git diff available");
-        };
-        let Some(branch_name) = &task.branch_name else {
-            return String::from("No branch");
-        };
-        let Some(worktree_path) = &task.worktree_path else {
-            return String::from("No worktree");
-        };
-
-        match git.diff_against_base(
-            std::path::Path::new(worktree_path),
-            branch_name,
-            &task.base_branch,
-        ) {
-            Ok(diff) => {
-                let mut summary = String::new();
-                for file in &diff.files {
-                    let change = match file.change_type {
-                        crate::workflow::ports::FileChangeType::Added => "added",
-                        crate::workflow::ports::FileChangeType::Modified => "modified",
-                        crate::workflow::ports::FileChangeType::Deleted => "deleted",
-                        crate::workflow::ports::FileChangeType::Renamed => "renamed",
-                    };
-                    let _ = writeln!(
-                        summary,
-                        "- {} ({}, +{} -{})",
-                        file.path, change, file.additions, file.deletions
-                    );
-                }
-                if summary.is_empty() {
-                    "No file changes detected".to_string()
-                } else {
-                    summary
-                }
-            }
-            Err(e) => {
-                crate::orkestra_debug!("integration", "Failed to get diff for commit message: {e}");
-                String::from("Diff unavailable")
-            }
+        match &self.git_service {
+            Some(git) => super::commit_worktree::generate_task_commit_message(
+                git.as_ref(),
+                task,
+                &self.workflow,
+                self.commit_message_generator.as_ref(),
+            ),
+            None => super::commit_worktree::generate_task_commit_message_without_diff(
+                task,
+                &self.workflow,
+                self.commit_message_generator.as_ref(),
+            ),
         }
     }
 }

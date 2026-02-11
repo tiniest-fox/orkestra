@@ -6,7 +6,6 @@ use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase, Status};
 
 use super::agent_actions::AUTO_ANSWER_TEXT;
-use super::SubtaskService;
 
 use super::WorkflowApi;
 
@@ -60,123 +59,12 @@ impl WorkflowApi {
             current_stage
         );
 
-        // End current iteration
-        self.end_current_iteration(&task, Outcome::Approved)?;
-
-        // Check if this stage produced subtasks that need to be created
-        if self.stage_has_subtasks(&current_stage, &task) {
-            return self.approve_with_subtask_creation(&mut task, &current_stage);
-        }
-
-        // Standard approval: compute next status (flow-aware progression)
-        self.apply_standard_approval(&mut task, &current_stage)
-    }
-
-    /// Approve a breakdown stage by creating subtask Task records and setting parent to `WaitingOnChildren`.
-    fn approve_with_subtask_creation(
-        &self,
-        task: &mut Task,
-        current_stage: &str,
-    ) -> WorkflowResult<Task> {
-        let artifact_name = self
-            .workflow
-            .stage(current_stage)
-            .map_or_else(|| "breakdown".to_string(), |s| s.artifact.clone());
-
-        let created = SubtaskService::create_subtasks_from_breakdown(
-            task,
-            &self.workflow,
-            &self.store,
-            &self.iteration_service,
-            &artifact_name,
-        )?;
-
+        // Enter commit pipeline. Actual advancement happens in finalize_stage_advancement after commit.
         let now = chrono::Utc::now().to_rfc3339();
+        self.enter_commit_pipeline(&mut task, &now)?;
 
-        if created.is_empty() {
-            // No subtasks created (breakdown was skipped) - proceed normally
-            return self.apply_standard_approval(task, current_stage);
-        }
-
-        orkestra_debug!(
-            "action",
-            "approve {}: created {} subtasks, setting WaitingOnChildren",
-            task.id,
-            created.len()
-        );
-
-        let next_stage = self
-            .compute_next_status_on_approve(current_stage, task.flow.as_deref())
-            .stage()
-            .unwrap_or(current_stage)
-            .to_string();
-        task.status = Status::waiting_on_children(next_stage);
-        task.phase = Phase::Idle;
-        task.updated_at = now;
-
-        self.store.save_task(task)?;
-        Ok(task.clone())
-    }
-
-    /// Apply standard approval logic: advance to next stage or mark done.
-    fn apply_standard_approval(
-        &self,
-        task: &mut Task,
-        current_stage: &str,
-    ) -> WorkflowResult<Task> {
-        let next_status = self.compute_next_status_on_approve(current_stage, task.flow.as_deref());
-        let now = chrono::Utc::now().to_rfc3339();
-
-        task.status = next_status.clone();
-        task.phase = Phase::Idle;
-        task.updated_at.clone_from(&now);
-
-        // If we moved to a new stage, create new iteration via IterationService
-        if let Some(new_stage) = next_status.stage() {
-            if new_stage != current_stage {
-                self.iteration_service
-                    .create_iteration(&task.id, new_stage, None)?;
-            }
-        }
-
-        if task.is_done() {
-            task.completed_at = Some(now);
-            orkestra_debug!("action", "approve {}: task is now Done", task.id);
-        } else {
-            orkestra_debug!(
-                "action",
-                "approve {}: moved to stage {:?}",
-                task.id,
-                task.current_stage()
-            );
-        }
-
-        self.store.save_task(task)?;
-        Ok(task.clone())
-    }
-
-    /// Check if a stage produced subtasks that need to be materialized.
-    ///
-    /// Returns true if the stage has subtask capabilities and
-    /// the task has structured subtask data stored.
-    fn stage_has_subtasks(&self, stage: &str, task: &Task) -> bool {
-        let has_capability = self
-            .workflow
-            .effective_capabilities(stage, task.flow.as_deref())
-            .is_some_and(|caps| caps.produces_subtasks());
-
-        if !has_capability {
-            return false;
-        }
-
-        // Check if there's structured subtask data
-        let artifact_name = self
-            .workflow
-            .stage(stage)
-            .map_or_else(|| "breakdown".to_string(), |s| s.artifact.clone());
-        let structured_key = format!("{artifact_name}_structured");
-
-        task.artifacts.content(&structured_key).is_some()
+        self.store.save_task(&task)?;
+        Ok(task)
     }
 
     /// Reject the current stage's artifact with feedback. Retries current stage.
@@ -490,9 +378,9 @@ impl WorkflowApi {
         Ok(task)
     }
 
-    /// Auto-approve the current stage artifact and advance the task.
+    /// Auto-approve the current stage artifact and enter the commit pipeline.
     ///
-    /// Handles subtask creation if the stage has subtask capabilities.
+    /// Actual advancement happens in `finalize_stage_advancement` after commit.
     fn auto_approve_stage(&self, task: &mut Task, current_stage: &str) -> WorkflowResult<()> {
         orkestra_debug!(
             "action",
@@ -500,62 +388,8 @@ impl WorkflowApi {
             task.id,
             current_stage
         );
-        self.end_current_iteration(task, Outcome::Approved)?;
-
-        if self.stage_has_subtasks(current_stage, task) {
-            let artifact_name = self
-                .workflow
-                .stage(current_stage)
-                .map_or_else(|| "breakdown".to_string(), |s| s.artifact.clone());
-
-            let created = SubtaskService::create_subtasks_from_breakdown(
-                task,
-                &self.workflow,
-                &self.store,
-                &self.iteration_service,
-                &artifact_name,
-            )?;
-
-            if created.is_empty() {
-                self.advance_to_next_stage(task, current_stage)?;
-            } else {
-                let now = chrono::Utc::now().to_rfc3339();
-                let next_stage = self
-                    .compute_next_status_on_approve(current_stage, task.flow.as_deref())
-                    .stage()
-                    .unwrap_or(current_stage)
-                    .to_string();
-                task.status = Status::waiting_on_children(next_stage);
-                task.phase = Phase::Idle;
-                task.updated_at = now;
-            }
-        } else {
-            self.advance_to_next_stage(task, current_stage)?;
-        }
-
-        Ok(())
-    }
-
-    /// Advance a task to the next stage after approval.
-    fn advance_to_next_stage(&self, task: &mut Task, current_stage: &str) -> WorkflowResult<()> {
-        let next_status = self.compute_next_status_on_approve(current_stage, task.flow.as_deref());
         let now = chrono::Utc::now().to_rfc3339();
-
-        task.status = next_status.clone();
-        task.phase = Phase::Idle;
-        task.updated_at.clone_from(&now);
-
-        if let Some(new_stage) = next_status.stage() {
-            if new_stage != current_stage {
-                self.iteration_service
-                    .create_iteration(&task.id, new_stage, None)?;
-            }
-        }
-        if task.is_done() {
-            task.completed_at = Some(now);
-        }
-
-        Ok(())
+        self.enter_commit_pipeline(task, &now)
     }
 
     /// Check if the latest iteration has a pending rejection awaiting human review.
@@ -675,6 +509,21 @@ impl WorkflowApi {
         Ok(task)
     }
 
+    /// End the current iteration with `Approved` and enter the commit pipeline.
+    ///
+    /// Shared by auto-advance (agent actions), human approve, and auto-approve (set_auto_mode).
+    /// Callers are responsible for saving the task after this returns.
+    pub(crate) fn enter_commit_pipeline(
+        &self,
+        task: &mut Task,
+        now: &str,
+    ) -> WorkflowResult<()> {
+        self.end_current_iteration(task, Outcome::Approved)?;
+        task.phase = Phase::Finishing;
+        task.updated_at = now.to_string();
+        Ok(())
+    }
+
     /// Helper: End the current active iteration with an outcome.
     pub(crate) fn end_current_iteration(
         &self,
@@ -740,8 +589,9 @@ mod tests {
 
         let task = api.approve(&task.id).unwrap();
 
-        assert_eq!(task.current_stage(), Some("work"));
-        assert_eq!(task.phase, Phase::Idle);
+        // Approve enters commit pipeline — actual advancement happens in finalize_stage_advancement
+        assert_eq!(task.current_stage(), Some("planning"));
+        assert_eq!(task.phase, Phase::Finishing);
     }
 
     #[test]
@@ -766,8 +616,9 @@ mod tests {
 
         let task = api.approve(&task.id).unwrap();
 
-        assert!(task.is_done());
-        assert!(task.completed_at.is_some());
+        // Approve enters commit pipeline — actual advancement happens in finalize_stage_advancement
+        assert_eq!(task.current_stage(), Some("review"));
+        assert_eq!(task.phase, Phase::Finishing);
     }
 
     #[test]
@@ -1034,7 +885,7 @@ mod tests {
         task.phase = Phase::Idle;
         api.store.save_task(&task).unwrap();
 
-        // Advance to review stage with agent working
+        // Advance to review stage with AgentWorking (simulating agent producing output)
         task.status = Status::active("review");
         task.phase = Phase::AgentWorking;
         api.store.save_task(&task).unwrap();
@@ -1140,8 +991,7 @@ mod tests {
         assert_eq!(task.phase, Phase::Idle);
 
         // Step 2: Agent starts again in review stage
-        let task = api.agent_started(&task.id).unwrap();
-        assert_eq!(task.phase, Phase::AgentWorking);
+        api.agent_started(&task.id).unwrap();
 
         // Step 3: Agent produces a new approval verdict this time
         let output = StageOutput::Approval {
@@ -1154,9 +1004,9 @@ mod tests {
         assert_eq!(task.phase, Phase::AwaitingReview);
         assert_eq!(task.current_stage(), Some("review"));
 
-        // Step 5: Human approves → task should advance past review (Done, since review is the last stage)
+        // Step 5: Human approves → enters commit pipeline (advancement happens in finalize_stage_advancement)
         let task = api.approve(&task.id).unwrap();
-        assert!(task.is_done());
+        assert_eq!(task.phase, Phase::Finishing);
     }
 
     // ========================================================================

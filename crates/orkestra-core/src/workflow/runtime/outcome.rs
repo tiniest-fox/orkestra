@@ -119,6 +119,12 @@ pub enum Outcome {
 
     /// Agent execution was interrupted by the user.
     Interrupted,
+
+    /// Commit of agent changes failed after stage completion.
+    CommitFailed {
+        /// Error message describing the commit failure.
+        error: String,
+    },
 }
 
 impl Outcome {
@@ -283,6 +289,7 @@ impl std::fmt::Display for Outcome {
             }
             Outcome::ScriptFailed { stage, .. } => write!(f, "{stage} script failed"),
             Outcome::Interrupted => write!(f, "interrupted"),
+            Outcome::CommitFailed { .. } => write!(f, "commit failed"),
         }
     }
 }

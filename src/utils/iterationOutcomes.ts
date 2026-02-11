@@ -30,7 +30,10 @@ export function getOutcomeSemantic(outcome: WorkflowIteration["outcome"]): Outco
     case "integration_failed":
     case "spawn_failed":
     case "script_failed":
+    case "commit_failed":
       return "error";
+    case "interrupted":
+      return "warning";
     case "skipped":
       return "neutral";
     case "rejection":
@@ -71,6 +74,10 @@ export function outcomeLabel(outcome: WorkflowIteration["outcome"]): string {
       return "Rejection Pending Review";
     case "script_failed":
       return "Script Failed";
+    case "commit_failed":
+      return "Commit Failed";
+    case "interrupted":
+      return "Interrupted";
   }
 }
 

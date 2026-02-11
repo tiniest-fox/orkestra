@@ -158,6 +158,9 @@ impl std::fmt::Display for Phase {
             Phase::AwaitingReview => write!(f, "awaiting_review"),
             Phase::Interrupted => write!(f, "interrupted"),
             Phase::Integrating => write!(f, "integrating"),
+            Phase::Finishing => write!(f, "finishing"),
+            Phase::Committing => write!(f, "committing"),
+            Phase::Finished => write!(f, "finished"),
         }
     }
 }
@@ -191,6 +194,15 @@ pub enum Phase {
 
     /// Integration (merge) is in progress.
     Integrating,
+
+    /// Agent completed, output stored on iteration. Check if commit needed.
+    Finishing,
+
+    /// Background commit thread is running. Tick skips these.
+    Committing,
+
+    /// Stage complete — output ready to be processed, advance to next stage.
+    Finished,
 }
 
 impl Phase {

@@ -246,8 +246,10 @@ fn test_exhaustive_workflow_flow() {
     // Step 4: Plan approved → Breakdown
     // =========================================================================
 
-    let task = ctx.api().approve(&task_id).expect("Should approve plan");
+    ctx.api().approve(&task_id).expect("Should approve plan");
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance
 
+    let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
         task.current_stage(),
         Some("breakdown"),
@@ -284,11 +286,12 @@ fn test_exhaustive_workflow_flow() {
     // Step 5: Breakdown approved → Working
     // =========================================================================
 
-    let task = ctx
-        .api()
+    ctx.api()
         .approve(&task_id)
         .expect("Should approve breakdown");
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance
 
+    let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
         task.current_stage(),
         Some("work"),
@@ -353,8 +356,10 @@ fn test_exhaustive_workflow_flow() {
     // Step 7: Work approved → Reviewing
     // =========================================================================
 
-    let task = ctx.api().approve(&task_id).expect("Should approve work");
+    ctx.api().approve(&task_id).expect("Should approve work");
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance
 
+    let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
     assert_eq!(task.phase, Phase::Idle);
 
@@ -411,11 +416,12 @@ fn test_exhaustive_workflow_flow() {
     // Step 9: Work approved again → Reviewing
     // =========================================================================
 
-    let task = ctx
-        .api()
+    ctx.api()
         .approve(&task_id)
         .expect("Should approve work again");
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance
 
+    let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
 
     // =========================================================================
@@ -546,7 +552,9 @@ fn test_exhaustive_workflow_flow() {
     );
 
     // Approve work
-    let task = ctx.api().approve(&task_id).unwrap();
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance
+    let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
 
     // Orchestrator spawns reviewer (automated stage auto-transitions to Done)
@@ -644,6 +652,7 @@ fn test_approval_validation() {
     ctx.advance(); // spawns planner (completion ready)
     ctx.advance(); // processes plan output
     ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance to breakdown
 
     // Breakdown stage
     ctx.set_output(
@@ -656,6 +665,7 @@ fn test_approval_validation() {
     ctx.advance(); // spawns breakdown agent (completion ready)
     ctx.advance(); // processes breakdown output
     ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance to work
 
     // Now we're in work stage - try approval from work (which doesn't have approval capability)
     ctx.set_output(
@@ -668,12 +678,12 @@ fn test_approval_validation() {
     ctx.advance(); // spawns worker (completion ready)
     ctx.advance(); // processes approval output (rejected by capability check)
 
-    // The task should still be in work stage (approval should have been rejected)
+    // Agent returned output that violates stage capabilities → task should be Failed
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(
-        task.current_stage(),
-        Some("work"),
-        "Approval should have been rejected"
+    assert!(
+        task.is_failed(),
+        "Agent returning invalid output type should fail the task, got: {:?}",
+        task.status
     );
 }
 
@@ -888,6 +898,7 @@ fn test_script_stage_with_recovery() {
 
     // Approve work → moves to checks (script stage)
     ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance to checks
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("checks"));
@@ -942,6 +953,7 @@ fn test_script_stage_with_recovery() {
 
     // Approve work → moves to checks again
     ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance to checks
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("checks"));
@@ -1013,6 +1025,10 @@ fn test_script_stage_with_recovery() {
 ///
 /// Drives the task through the API directly (without orchestrator ticks) to avoid
 /// triggering auto-integration. The task will be in Done status with `Phase::Idle`.
+///
+/// After `approve()` and auto-advance, the task enters `Finishing` phase.
+/// We call `finalize_stage_advancement()` to simulate the commit pipeline completing,
+/// which advances the stage without running the orchestrator.
 fn advance_to_done(ctx: &TestEnv, task_id: &str) {
     use orkestra_core::workflow::execution::StageOutput;
 
@@ -1028,10 +1044,11 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
     )
     .unwrap();
 
-    // Approve work → advances to review (automated)
+    // Approve work → enters Finishing. Simulate commit pipeline completion.
     api.approve(task_id).unwrap();
+    api.finalize_stage_advancement(task_id).unwrap();
 
-    // Review stage (automated): mark as working, process output → auto-approve → Done
+    // Review stage (automated): mark as working, process output → auto-approve → Finishing
     api.agent_started(task_id).unwrap();
     api.process_agent_output(
         task_id,
@@ -1040,6 +1057,9 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
         },
     )
     .unwrap();
+
+    // Auto-approved review enters Finishing. Simulate commit pipeline completion → Done.
+    api.finalize_stage_advancement(task_id).unwrap();
 
     let task = api.get_task(task_id).unwrap();
     assert!(
@@ -2144,8 +2164,11 @@ fn test_rejection_review_override_then_approval() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.phase, Phase::AwaitingReview);
 
-    // Approve work → advances to review
-    let task = ctx.api().approve(&task_id).unwrap();
+    // Approve work → enters commit pipeline
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance to review
+
+    let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
     assert_eq!(task.phase, Phase::Idle);
 
@@ -2291,20 +2314,13 @@ fn test_rejection_review_override_then_approval() {
     // Step 6: Human approves → Done → Integration → Archived
     // =========================================================================
 
-    let task = ctx.api().approve(&task_id).unwrap();
-    assert!(
-        task.is_done(),
-        "Task should be Done after approval, got status: {:?}",
-        task.status
-    );
-
-    // Advance to trigger integration
-    ctx.advance(); // integration runs (sync) → Archived
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → Done → integration → Archived
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
         task.is_archived(),
-        "Task should be Archived after integration, got status: {:?}",
+        "Task should be Archived after approval + integration, got status: {:?}",
         task.status
     );
 }
@@ -2668,6 +2684,10 @@ fn test_artifact_generation_for_all_output_types() {
         Some("Detailed plan v2 with error handling"),
         "Human approval should not change the artifact"
     );
+
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance to work
+
+    let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("work"));
 
     // =========================================================================
@@ -2691,6 +2711,7 @@ fn test_artifact_generation_for_all_output_types() {
     );
 
     ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance to checks
 
     // =========================================================================
     // Step 5: Script stage succeeds → artifact created with output
@@ -2776,7 +2797,14 @@ fn test_artifact_generation_for_all_output_types() {
         Some("Re-evaluated: all tests adequate, implementation is solid"),
         "Human approval should not change the verdict artifact"
     );
-    assert!(task.is_done(), "Task should be done after final approval");
+
+    ctx.advance(); // commit pipeline: Finishing → Finished → Done → integration → Archived
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_done() || task.is_archived(),
+        "Task should be done/archived after final approval"
+    );
 }
 
 /// Test that script failure creates an artifact with the error text.
@@ -3051,7 +3079,10 @@ fn test_commit_message_generation_during_integration() {
     assert_eq!(task.phase, Phase::AwaitingReview);
 
     // Approve work
-    let task = ctx.api().approve(&task_id).unwrap();
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → advance to review
+
+    let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
 
     // Set mock output for review stage (automated approval)

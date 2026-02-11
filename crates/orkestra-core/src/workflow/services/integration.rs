@@ -19,15 +19,12 @@ pub struct IntegrationParams {
     pub branch_name: String,
     pub target_branch: String,
     pub worktree_path: Option<PathBuf>,
-    pub commit_message: String,
 }
 
 /// Result of the git-only portion of integration (no API lock needed).
 pub enum IntegrationGitResult {
     /// Merge succeeded — ready to archive.
     Success,
-    /// Committing pending changes failed.
-    CommitFailed(String),
     /// Rebase had merge conflicts.
     RebaseConflict { conflict_files: Vec<String> },
     /// Rebase failed for a non-conflict reason.
@@ -36,34 +33,22 @@ pub enum IntegrationGitResult {
     MergeConflict { conflict_files: Vec<String> },
     /// Merge failed for a non-conflict reason.
     MergeError(String),
+    /// Commit failed before rebase/merge could start.
+    CommitError(String),
 }
 
 /// Perform the git work for integration without holding the API lock.
 ///
-/// This commits pending changes, rebases onto the target, and merges.
+/// Rebases onto the target branch and merges. Committing is handled by the
+/// caller (the Finishing → Committing → Finished pipeline commits worktree
+/// changes before integration starts; a safety-net commit in
+/// `run_background_integration` catches any stragglers).
+///
 /// The caller is responsible for recording the result via `apply_integration_result`.
 pub fn perform_git_integration(
     git: &dyn GitService,
     params: &IntegrationParams,
 ) -> IntegrationGitResult {
-    // Commit any pending changes in the worktree
-    if let Some(worktree_path) = &params.worktree_path {
-        let worktree = Path::new(worktree_path);
-        if worktree.exists() {
-            if let Err(e) = git.commit_pending_changes(worktree, &params.commit_message) {
-                return IntegrationGitResult::CommitFailed(format!(
-                    "Failed to commit pending changes: {e}"
-                ));
-            }
-        } else {
-            orkestra_debug!(
-                "integration",
-                "worktree missing for {}, skipping commit",
-                params.task_id
-            );
-        }
-    }
-
     // Rebase onto target branch
     if let Some(worktree_path) = &params.worktree_path {
         let worktree = Path::new(worktree_path);
@@ -192,28 +177,19 @@ impl WorkflowApi {
             branch_name
         );
 
-        // Commit any pending changes in the worktree
-        // If commit fails, we must abort integration to avoid losing changes
-        // Skip if the worktree directory no longer exists on disk (e.g., already cleaned up)
-        if let Some(worktree_path) = &task.worktree_path {
-            let worktree = Path::new(worktree_path);
-            if worktree.exists() {
-                // Generate commit message using AI, falling back to task title if generation fails
-                let commit_message = self.generate_integration_commit_message(&task);
-                if let Err(e) = git.commit_pending_changes(worktree, &commit_message) {
-                    let error_msg = format!("Failed to commit pending changes: {e}");
-                    // Record failure and move task to recovery stage
-                    self.integration_failed(task_id, &error_msg, &[])?;
-                    // Return error so caller knows integration failed
-                    return Err(WorkflowError::IntegrationFailed(error_msg));
-                }
-            } else {
-                orkestra_debug!(
-                    "integration",
-                    "worktree missing for {}, skipping commit",
-                    task_id
-                );
-            }
+        // Safety-net commit — the Finishing → Committing → Finished pipeline normally
+        // commits worktree changes before integration starts. This catches edge cases
+        // from direct `integrate_task` calls (e.g., manual recovery, tests).
+        // No-op if the worktree is already clean.
+        if let Err(e) = super::commit_worktree::commit_worktree_changes(
+            git.as_ref(),
+            &task,
+            &self.workflow,
+            self.commit_message_generator.as_ref(),
+        ) {
+            let error_msg = format!("Failed to commit pending changes: {e}");
+            self.integration_failed(task_id, &error_msg, &[])?;
+            return Err(WorkflowError::IntegrationFailed(error_msg));
         }
 
         // Target branch is always the task's base_branch (set at creation from UI selection or parent branch).
@@ -232,7 +208,14 @@ impl WorkflowApi {
             target_branch
         );
 
-        self.rebase_and_merge(&task, git.as_ref(), branch_name, &target_branch)
+        let params = IntegrationParams {
+            task_id: task.id.clone(),
+            branch_name: branch_name.clone(),
+            target_branch,
+            worktree_path: task.worktree_path.as_ref().map(PathBuf::from),
+        };
+        let result = perform_git_integration(git.as_ref(), &params);
+        self.apply_integration_result(task_id, result, task.worktree_path.is_some())
     }
 
     /// Apply the result of a background git integration.
@@ -259,10 +242,6 @@ impl WorkflowApi {
                 }
                 Ok(task)
             }
-            IntegrationGitResult::CommitFailed(error_msg) => {
-                self.integration_failed(task_id, &error_msg, &[])?;
-                Err(WorkflowError::IntegrationFailed(error_msg))
-            }
             IntegrationGitResult::RebaseConflict { conflict_files } => {
                 self.integration_failed(task_id, "Merge conflict", &conflict_files)?;
                 Err(WorkflowError::IntegrationFailed("Merge conflict".into()))
@@ -279,95 +258,7 @@ impl WorkflowApi {
                 self.integration_failed(task_id, &error_msg, &[])?;
                 Err(WorkflowError::IntegrationFailed(error_msg))
             }
-        }
-    }
-
-    /// Rebase the task branch onto the target, then merge.
-    ///
-    /// After a successful rebase the merge is a guaranteed clean fast-forward.
-    /// On conflict the task is moved to the recovery stage.
-    fn rebase_and_merge(
-        &self,
-        task: &Task,
-        git: &dyn crate::workflow::ports::GitService,
-        branch_name: &str,
-        target_branch: &str,
-    ) -> WorkflowResult<Task> {
-        let task_id = &task.id;
-
-        if let Some(worktree_path) = &task.worktree_path {
-            let worktree = Path::new(worktree_path);
-            if worktree.exists() {
-                match git.rebase_on_branch(worktree, target_branch) {
-                    Ok(()) => {
-                        orkestra_debug!(
-                            "integration",
-                            "rebased {}: branch {} onto {}",
-                            task_id,
-                            branch_name,
-                            target_branch
-                        );
-                    }
-                    Err(GitError::MergeConflict { conflict_files, .. }) => {
-                        orkestra_debug!(
-                            "integration",
-                            "failed {}: rebase conflict, {} files",
-                            task_id,
-                            conflict_files.len()
-                        );
-                        self.integration_failed(task_id, "Merge conflict", &conflict_files)?;
-                        return Err(WorkflowError::IntegrationFailed("Merge conflict".into()));
-                    }
-                    Err(e) => {
-                        orkestra_debug!("integration", "failed {}: rebase error: {}", task_id, e);
-                        let error_msg = format!("Failed to rebase branch on {target_branch}: {e}");
-                        self.integration_failed(task_id, &error_msg, &[])?;
-                        return Err(WorkflowError::IntegrationFailed(error_msg));
-                    }
-                }
-            } else {
-                orkestra_debug!(
-                    "integration",
-                    "worktree missing for {}, skipping rebase",
-                    task_id
-                );
-            }
-        }
-
-        match git.merge_to_branch(branch_name, target_branch) {
-            Ok(_merge_result) => {
-                orkestra_debug!("integration", "completed {}: merge succeeded", task_id);
-                // Update DB FIRST — this is the critical state change.
-                // If we crash after this, the task is correctly Archived.
-                let result = self.integration_succeeded(task_id);
-                // Then clean up worktree (non-critical). If this fails or the app
-                // crashes here, cleanup_orphaned_worktrees() handles it on next startup.
-                if task.worktree_path.is_some() {
-                    if let Err(e) = git.remove_worktree(task_id, true) {
-                        workflow_warn!("Failed to remove worktree for {}: {}", task_id, e);
-                    }
-                }
-                result
-            }
-            Err(GitError::MergeConflict { conflict_files, .. }) => {
-                orkestra_debug!(
-                    "integration",
-                    "failed {}: merge conflict, {} files",
-                    task_id,
-                    conflict_files.len()
-                );
-                if let Err(e) = git.abort_merge() {
-                    workflow_warn!("Failed to abort merge for {}: {}", task_id, e);
-                }
-                self.integration_failed(task_id, "Merge conflict", &conflict_files)?;
-                Err(WorkflowError::IntegrationFailed("Merge conflict".into()))
-            }
-            Err(e) => {
-                orkestra_debug!("integration", "failed {}: {}", task_id, e);
-                if let Err(abort_err) = git.abort_merge() {
-                    workflow_warn!("Failed to abort merge for {}: {}", task_id, abort_err);
-                }
-                let error_msg = format!("{e}");
+            IntegrationGitResult::CommitError(error_msg) => {
                 self.integration_failed(task_id, &error_msg, &[])?;
                 Err(WorkflowError::IntegrationFailed(error_msg))
             }

@@ -18,13 +18,20 @@ use super::periodic::PeriodicScheduler;
 
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::execution::StageOutput;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
 use super::integration::{perform_git_integration, IntegrationParams};
 use super::stage_execution::{ExecutionComplete, ExecutionResult, StageExecutionService};
 use super::WorkflowApi;
+
+/// Parameters for a background commit job.
+struct CommitJob {
+    task: crate::workflow::domain::Task,
+    workflow: WorkflowConfig,
+    commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
+    git: Arc<dyn GitService>,
+}
 
 // ============================================================================
 // Orchestrator Events
@@ -39,7 +46,7 @@ pub enum OrchestratorEvent {
         stage: String,
         pid: u32,
     },
-    /// Agent completed and output was processed.
+    /// Agent output was processed and task advanced.
     OutputProcessed {
         task_id: String,
         stage: String,
@@ -145,6 +152,8 @@ impl OrchestratorLoop {
         scheduler.register("setup_awaiting_tasks", Duration::ZERO);
         scheduler.register("check_parent_completions", Duration::ZERO);
         scheduler.register("process_completed_executions", Duration::ZERO);
+        scheduler.register("spawn_pending_commits", Duration::ZERO);
+        scheduler.register("advance_committed_stages", Duration::ZERO);
         scheduler.register("start_new_executions", Duration::ZERO);
         scheduler.register("start_integrations", Duration::ZERO);
 
@@ -223,6 +232,9 @@ impl OrchestratorLoop {
         // Recover stale agent working tasks on startup (tasks stuck in AgentWorking phase)
         self.recover_stale_agent_working_tasks();
 
+        // Recover stale committing tasks (background thread died — reset to Finishing)
+        self.recover_stale_committing_tasks();
+
         // Clean up orphaned worktrees (from deleted tasks where git cleanup was deferred)
         self.cleanup_orphaned_worktrees();
 
@@ -272,23 +284,33 @@ impl OrchestratorLoop {
 
         let mut events = Vec::new();
 
-        // Track tasks that were just set up this tick, so start_new_executions
-        // doesn't immediately spawn agents for them. This matters when setup
-        // runs synchronously (sync_background mode) — the task transitions from
-        // SettingUp to Idle within the same tick.
-        let mut just_set_up = HashSet::new();
+        // Track tasks that should not have agents started this tick.
+        // Includes tasks just set up (sync setup completes inline) and tasks
+        // that just advanced via the commit pipeline (advance_committed_stages).
+        // This gives the next tick a chance to inspect state before spawning.
+        let mut defer_spawn_ids = HashSet::new();
 
         for name in due {
             match name {
                 "setup_awaiting_tasks" => {
-                    just_set_up = self.setup_awaiting_tasks()?;
+                    defer_spawn_ids.extend(self.setup_awaiting_tasks()?);
                 }
                 "check_parent_completions" => events.extend(self.check_parent_completions()?),
                 "process_completed_executions" => {
                     events.extend(self.process_completed_executions()?);
                 }
+                "spawn_pending_commits" => self.spawn_pending_commits()?,
+                "advance_committed_stages" => {
+                    let finished_events = self.advance_committed_stages()?;
+                    for event in &finished_events {
+                        if let OrchestratorEvent::OutputProcessed { task_id, .. } = event {
+                            defer_spawn_ids.insert(task_id.clone());
+                        }
+                    }
+                    events.extend(finished_events);
+                }
                 "start_new_executions" => {
-                    events.extend(self.start_new_executions(&just_set_up)?);
+                    events.extend(self.start_new_executions(&defer_spawn_ids)?);
                 }
                 "start_integrations" => events.extend(self.start_integrations()?),
                 "cleanup_worktrees" => self.cleanup_orphaned_worktrees(),
@@ -303,6 +325,10 @@ impl OrchestratorLoop {
             for exec in self.stage_executor.drain_active() {
                 events.push(self.handle_execution_complete(exec)?);
             }
+            // Drained executions may set tasks to Finishing (auto-advance) — run
+            // the commit and advancement phases so the full pipeline completes in one tick.
+            self.spawn_pending_commits()?;
+            events.extend(self.advance_committed_stages()?);
         }
 
         Ok(events)
@@ -426,33 +452,60 @@ impl OrchestratorLoop {
 
         match exec.result {
             ExecutionResult::AgentSuccess(stage_output) => {
-                let output_type = output_type_string(&stage_output);
+                let output_type = stage_output.type_label().to_string();
                 orkestra_debug!(
                     "orchestrator",
-                    "process_agent_output {}/{}: type={}",
+                    "agent completed {}/{}: type={}, processing output",
                     exec.task_id,
                     exec.stage,
                     output_type
                 );
+                // Process output directly — sets AwaitingReview or Finishing
+                // depending on auto-advance. If Finishing, the commit pipeline
+                // runs on the next tick (or inline in sync mode).
                 match api.process_agent_output(&exec.task_id, stage_output) {
                     Ok(_) => Ok(OrchestratorEvent::OutputProcessed {
                         task_id: exec.task_id,
                         stage: exec.stage,
                         output_type,
                     }),
-                    Err(e) => Ok(OrchestratorEvent::Error {
-                        task_id: Some(exec.task_id),
-                        error: e.to_string(),
-                    }),
+                    Err(e) => {
+                        orkestra_debug!(
+                            "orchestrator",
+                            "Failed to process agent output for {}: {}",
+                            exec.task_id,
+                            e
+                        );
+                        if let Err(fe) = api.fail_agent_execution(
+                            &exec.task_id,
+                            &format!("Output processing failed: {e}"),
+                        ) {
+                            orkestra_debug!(
+                                "orchestrator",
+                                "Failed to record output failure for {}: {}",
+                                exec.task_id,
+                                fe
+                            );
+                        }
+                        Ok(OrchestratorEvent::Error {
+                            task_id: Some(exec.task_id),
+                            error: e.to_string(),
+                        })
+                    }
                 }
             }
             ExecutionResult::AgentFailed(error) | ExecutionResult::PollError { error } => {
-                let _ = api.process_agent_output(
-                    &exec.task_id,
-                    StageOutput::Failed {
-                        error: format!("Agent error: {error}"),
-                    },
-                );
+                // Failed agents don't need commits — process directly via dedicated failure path.
+                if let Err(e) =
+                    api.fail_agent_execution(&exec.task_id, &format!("Agent error: {error}"))
+                {
+                    orkestra_debug!(
+                        "orchestrator",
+                        "Failed to record agent failure for {}: {}",
+                        exec.task_id,
+                        e
+                    );
+                }
                 Ok(OrchestratorEvent::Error {
                     task_id: Some(exec.task_id),
                     error,
@@ -500,7 +553,7 @@ impl OrchestratorLoop {
     /// Start new executions for tasks needing agents or scripts.
     fn start_new_executions(
         &self,
-        skip_ids: &HashSet<String>,
+        defer_spawn_ids: &HashSet<String>,
     ) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
 
@@ -522,7 +575,7 @@ impl OrchestratorLoop {
             // Skip tasks that were just set up this tick (sync setup completes
             // inline, so the task is Idle before start_new_executions runs).
             // Let the next tick start agents, so tests can inspect post-setup state.
-            if skip_ids.contains(&task.id) {
+            if defer_spawn_ids.contains(&task.id) {
                 continue;
             }
 
@@ -583,12 +636,14 @@ impl OrchestratorLoop {
                 Err(e) => {
                     let error_msg = format!("Spawn failed: {e}");
                     let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                    let _ = api.process_agent_output(
-                        &task.id,
-                        StageOutput::Failed {
-                            error: error_msg.clone(),
-                        },
-                    );
+                    if let Err(e) = api.fail_agent_execution(&task.id, &error_msg) {
+                        orkestra_debug!(
+                            "orchestrator",
+                            "Failed to record spawn failure for {}: {}",
+                            task.id,
+                            e
+                        );
+                    }
                     events.push(OrchestratorEvent::Error {
                         task_id: Some(task.id.clone()),
                         error: error_msg,
@@ -600,67 +655,60 @@ impl OrchestratorLoop {
         Ok(events)
     }
 
-    /// Helper to generate commit message with fallback on error.
-    /// Runs in the background thread to avoid blocking the orchestrator.
-    fn generate_commit_message_with_fallback(
-        commit_gen: &Arc<dyn crate::commit_message::CommitMessageGenerator>,
-        task_title: &str,
-        task_description: &str,
-        diff_summary: &str,
-        model_names: &[String],
-        task_id: &str,
-    ) -> String {
-        match commit_gen.generate_commit_message(
-            task_title,
-            task_description,
-            diff_summary,
-            model_names,
-        ) {
-            Ok(message) => message,
-            Err(e) => {
-                orkestra_debug!(
-                    "integration",
-                    "Commit message generation failed for {}: {e}, using fallback",
-                    task_id
-                );
-                crate::commit_message::fallback_commit_message(task_title, task_id)
-            }
-        }
-    }
-
-    /// Background integration logic. Generates commit message, performs git operations,
-    /// and records the result. Runs off the orchestrator's main thread.
-    #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+    /// Background integration logic. Performs git operations and records the result.
+    /// Runs off the orchestrator's main thread.
+    ///
+    /// The Finishing → Committing → Finished pipeline already committed worktree
+    /// changes. The safety-net `commit_worktree_changes` call here is a no-op in
+    /// the normal case, but catches edge cases (e.g., manual recovery, direct
+    /// `integrate_task` calls from tests).
+    #[allow(clippy::needless_pass_by_value)]
     fn run_background_integration(
         git: Arc<dyn GitService>,
         api: Arc<Mutex<WorkflowApi>>,
-        commit_gen: Arc<dyn crate::commit_message::CommitMessageGenerator>,
-        task_id: String,
-        task_title: String,
-        task_description: String,
-        diff_summary: String,
-        model_names: Vec<String>,
-        branch: String,
-        target_branch: String,
-        worktree_path: Option<PathBuf>,
-        has_worktree: bool,
+        commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
+        task: crate::workflow::domain::Task,
+        workflow: WorkflowConfig,
     ) {
-        // Generate commit message (may spawn subprocess with timeout)
-        let commit_message = Self::generate_commit_message_with_fallback(
-            &commit_gen,
-            &task_title,
-            &task_description,
-            &diff_summary,
-            &model_names,
-            &task_id,
-        );
+        let task_id = task.id.clone();
+        let has_worktree = task.worktree_path.is_some();
+
+        // Safety-net commit — should be a no-op after the Finishing pipeline,
+        // but catches stragglers from manual recovery or direct API calls.
+        if let Err(e) = super::commit_worktree::commit_worktree_changes(
+            git.as_ref(),
+            &task,
+            &workflow,
+            commit_message_generator.as_ref(),
+        ) {
+            let error_msg = format!("Failed to commit pending changes: {e}");
+            orkestra_debug!("integration", "safety-net commit failed for {}: {}", task_id, error_msg);
+            match api.lock() {
+                Ok(api) => {
+                    if let Err(e) = api.apply_integration_result(
+                        &task_id,
+                        super::integration::IntegrationGitResult::CommitError(error_msg),
+                        has_worktree,
+                    ) {
+                        orkestra_debug!("integration", "failed to record integration result for {}: {}", task_id, e);
+                    }
+                }
+                Err(_) => {
+                    orkestra_debug!(
+                        "integration",
+                        "failed to acquire API lock after commit failure for {} — will be recovered on restart",
+                        task_id
+                    );
+                }
+            }
+            return;
+        }
 
         let params = IntegrationParams {
             task_id: task_id.clone(),
-            branch_name: branch,
-            target_branch,
-            worktree_path,
-            commit_message,
+            branch_name: task.branch_name.clone().unwrap_or_default(),
+            target_branch: task.base_branch.clone(),
+            worktree_path: task.worktree_path.as_ref().map(PathBuf::from),
         };
 
         let git_result = perform_git_integration(git.as_ref(), &params);
@@ -752,25 +800,19 @@ impl OrchestratorLoop {
             // Reset phase since we can't proceed
             let mut reset_task = api.get_task(&task_id)?;
             reset_task.phase = Phase::Idle;
-            let _ = api.store.save_task(&reset_task);
+            if let Err(e) = api.store.save_task(&reset_task) {
+                orkestra_debug!("integration", "Failed to reset task {} phase: {}", task_id, e);
+            }
             return Ok(vec![OrchestratorEvent::Error {
                 task_id: Some(task_id),
                 error: "Task has no base_branch set — cannot determine merge target".into(),
             }]);
         }
 
-        // Gather inputs for commit message generation (will be done in background thread)
-        let task_title = task.title.clone();
-        let task_description = task.description.clone();
-        let task_flow = task.flow.clone();
-        let diff_summary = api.build_diff_summary(task);
-        let model_names =
-            crate::commit_message::collect_model_names(&api.workflow, task_flow.as_deref());
-        let commit_gen = Arc::clone(&api.commit_message_generator);
-
-        let target_branch = task.base_branch.clone();
-        let worktree_path = task.worktree_path.as_ref().map(PathBuf::from);
-        let has_worktree = task.worktree_path.is_some();
+        // Gather inputs for background thread while holding lock
+        let task = task.clone();
+        let workflow = api.workflow.clone();
+        let commit_message_generator = Arc::clone(&api.commit_message_generator);
 
         // Release the API lock before spawning the background thread
         drop(api);
@@ -780,24 +822,11 @@ impl OrchestratorLoop {
             branch: branch.clone(),
         });
 
-        let git = self.git_service.clone().unwrap(); // checked above
+        let git = self.git_service.clone().expect("git_service checked above");
         let api_clone = Arc::clone(&self.api);
 
         let run_integration = move || {
-            Self::run_background_integration(
-                git,
-                api_clone,
-                commit_gen,
-                task_id,
-                task_title,
-                task_description,
-                diff_summary,
-                model_names,
-                branch,
-                target_branch,
-                worktree_path,
-                has_worktree,
-            );
+            Self::run_background_integration(git, api_clone, commit_message_generator, task, workflow);
         };
 
         if self.sync_background {
@@ -808,6 +837,178 @@ impl OrchestratorLoop {
 
         Ok(events)
     }
+
+    // ========================================================================
+    // Finishing / Committing / Finished pipeline
+    // ========================================================================
+
+    /// Transition Finishing tasks to Committing and spawn background commit threads.
+    ///
+    /// Always goes through Committing — even if there are no changes, the
+    /// background thread completes instantly (`commit_pending_changes` is a no-op
+    /// when clean). This keeps the git status check off the tick thread.
+    fn spawn_pending_commits(&self) -> WorkflowResult<()> {
+        let jobs = self.collect_pending_commit_jobs()?;
+
+        for job in jobs {
+            let api_clone = Arc::clone(&self.api);
+            let run_commit = move || {
+                Self::run_background_commit(
+                    job.git,
+                    api_clone,
+                    job.commit_message_generator,
+                    job.task,
+                    job.workflow,
+                );
+            };
+
+            if self.sync_background {
+                run_commit();
+            } else {
+                std::thread::spawn(run_commit);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Find Finishing tasks, transition them to Committing (or Finished if no git),
+    /// and return the commit jobs to spawn.
+    fn collect_pending_commit_jobs(&self) -> WorkflowResult<Vec<CommitJob>> {
+        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+        let tasks = api.store.list_tasks()?;
+        let finishing: Vec<_> = tasks
+            .into_iter()
+            .filter(|t| t.phase == Phase::Finishing)
+            .collect();
+
+        let mut jobs = Vec::new();
+        let workflow = api.workflow.clone();
+
+        for mut task in finishing {
+            orkestra_debug!(
+                "orchestrator",
+                "spawn_pending_commits {}: → {}",
+                task.id,
+                if self.git_service.is_some() { "Committing" } else { "Finished" }
+            );
+
+            if let Some(g) = &self.git_service {
+                // Git path: transition to Committing and queue background job
+                task.phase = Phase::Committing;
+                task.updated_at = chrono::Utc::now().to_rfc3339();
+                api.store.save_task(&task)?;
+
+                jobs.push(CommitJob {
+                    task,
+                    workflow: workflow.clone(),
+                    commit_message_generator: Arc::clone(&api.commit_message_generator),
+                    git: Arc::clone(g),
+                });
+            } else {
+                // No git service — skip commit, go straight to Finished
+                task.phase = Phase::Finished;
+                task.updated_at = chrono::Utc::now().to_rfc3339();
+                api.store.save_task(&task)?;
+            }
+        }
+
+        Ok(jobs)
+    }
+
+    /// Background commit logic. Commits worktree changes and records result via WorkflowApi.
+    #[allow(clippy::needless_pass_by_value)]
+    fn run_background_commit(
+        git: Arc<dyn GitService>,
+        api: Arc<Mutex<WorkflowApi>>,
+        commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
+        task: crate::workflow::domain::Task,
+        workflow: WorkflowConfig,
+    ) {
+        let task_id = task.id.clone();
+
+        let commit_result = super::commit_worktree::commit_worktree_changes(
+            git.as_ref(),
+            &task,
+            &workflow,
+            commit_message_generator.as_ref(),
+        );
+
+        let Ok(api) = api.lock() else {
+            orkestra_debug!(
+                "commit",
+                "failed to acquire API lock after commit for {} — will be recovered on restart",
+                task_id
+            );
+            return;
+        };
+
+        let result = match commit_result {
+            Ok(()) => api.commit_succeeded(&task_id),
+            Err(e) => api.commit_failed(&task_id, &format!("Failed to commit agent changes: {e}")),
+        };
+
+        if let Err(e) = result {
+            orkestra_debug!("commit", "commit result recording failed for {}: {}", task_id, e);
+        }
+    }
+
+    /// Advance tasks in Finished phase to the next stage.
+    ///
+    /// The output was already processed inline (during `handle_execution_complete`
+    /// or human approval). The commit pipeline just committed the worktree changes.
+    /// Now we complete the stage advancement.
+    fn advance_committed_stages(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
+        let mut events = Vec::new();
+
+        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+        let tasks = api.store.list_tasks()?;
+        let finished: Vec<_> = tasks
+            .into_iter()
+            .filter(|t| t.phase == Phase::Finished)
+            .collect();
+
+        for task in finished {
+            let task_id = task.id.clone();
+            let stage = task.current_stage().unwrap_or("unknown").to_string();
+
+            orkestra_debug!(
+                "orchestrator",
+                "advance_committed_stages {}/{}: advancing stage",
+                task_id,
+                stage,
+            );
+
+            match api.finalize_stage_advancement(&task_id) {
+                Ok(updated) => {
+                    let output_type = if updated.is_done() {
+                        "done"
+                    } else if updated.status.is_waiting_on_children() {
+                        "subtasks"
+                    } else {
+                        "advanced"
+                    };
+                    events.push(OrchestratorEvent::OutputProcessed {
+                        task_id,
+                        stage,
+                        output_type: output_type.to_string(),
+                    });
+                }
+                Err(e) => {
+                    events.push(OrchestratorEvent::Error {
+                        task_id: Some(task_id),
+                        error: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(events)
+    }
+
+    // ========================================================================
+    // Recovery
+    // ========================================================================
 
     /// Recover tasks stuck in Integrating phase (from app crash during merge).
     ///
@@ -918,7 +1119,9 @@ impl OrchestratorLoop {
                                     );
                                     let mut reset_task = updated_task;
                                     reset_task.phase = Phase::Idle;
-                                    let _ = api.store.save_task(&reset_task);
+                                    if let Err(e) = api.store.save_task(&reset_task) {
+                                        orkestra_debug!("integration", "Failed to reset task {} phase: {}", task.id, e);
+                                    }
                                 }
                             }
 
@@ -1073,6 +1276,46 @@ impl OrchestratorLoop {
         }
     }
 
+    /// Recover tasks stuck in Committing phase (background thread died).
+    ///
+    /// Reset to Finishing so the next tick re-checks for uncommitted changes
+    /// and re-spawns the commit thread. The commit is idempotent.
+    fn recover_stale_committing_tasks(&self) {
+        let Ok(api) = self.api.lock() else {
+            orkestra_debug!(
+                "recovery",
+                "Failed to acquire API lock for stale committing recovery"
+            );
+            return;
+        };
+
+        let Ok(tasks) = api.store.list_tasks() else {
+            orkestra_debug!(
+                "recovery",
+                "Failed to list tasks for stale committing recovery"
+            );
+            return;
+        };
+
+        for task in tasks {
+            if task.phase == Phase::Committing {
+                orkestra_debug!("recovery", "Found stale Committing task: {}", task.id);
+
+                let mut task = task;
+                task.phase = Phase::Finishing;
+
+                if let Err(e) = api.store.save_task(&task) {
+                    orkestra_debug!(
+                        "recovery",
+                        "Failed to reset stale task {} to Finishing: {}",
+                        task.id,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
     /// Clean up worktrees that are no longer needed.
     ///
     /// Removes worktrees in two cases:
@@ -1145,18 +1388,6 @@ impl OrchestratorLoop {
     }
 }
 
-/// Get a string representation of the output type.
-fn output_type_string(output: &StageOutput) -> String {
-    match output {
-        StageOutput::Artifact { .. } => "artifact".to_string(),
-        StageOutput::Questions { .. } => "questions".to_string(),
-        StageOutput::Subtasks { .. } => "subtasks".to_string(),
-        StageOutput::Approval { .. } => "approval".to_string(),
-        StageOutput::Failed { .. } => "failed".to_string(),
-        StageOutput::Blocked { .. } => "blocked".to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1204,22 +1435,6 @@ mod tests {
     fn test_active_count() {
         let orchestrator = create_test_orchestrator();
         assert_eq!(orchestrator.active_count(), 0);
-    }
-
-    #[test]
-    fn test_output_type_string() {
-        assert_eq!(
-            output_type_string(&StageOutput::Failed {
-                error: "err".into()
-            }),
-            "failed"
-        );
-        assert_eq!(
-            output_type_string(&StageOutput::Artifact {
-                content: "test".into()
-            }),
-            "artifact"
-        );
     }
 
     #[test]

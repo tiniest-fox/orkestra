@@ -152,7 +152,10 @@ export type WorkflowTaskPhase =
   | "agent_working"
   | "awaiting_review"
   | "integrating"
-  | "interrupted";
+  | "interrupted"
+  | "finishing"
+  | "committing"
+  | "finished";
 
 // =============================================================================
 // Artifacts
@@ -236,7 +239,9 @@ export type WorkflowOutcome =
   | { type: "skipped"; stage: string; reason: string }
   | { type: "rejection"; from_stage: string; target: string; feedback: string }
   | { type: "awaiting_rejection_review"; from_stage: string; target: string; feedback: string }
-  | { type: "script_failed"; stage: string; error: string; recovery_stage?: string };
+  | { type: "script_failed"; stage: string; error: string; recovery_stage?: string }
+  | { type: "commit_failed"; error: string }
+  | { type: "interrupted" };
 
 /**
  * A single iteration within a stage (one agent run).

@@ -53,10 +53,7 @@ pub use ports::{
     CommitInfo, GitError, GitService, MergeResult, WorkflowError, WorkflowResult, WorkflowStore,
     WorktreeCreated,
 };
-pub use runtime::{
-    Artifact, ArtifactStore, Outcome, Phase, Status, Transition, TransitionError,
-    TransitionTrigger, TransitionValidator,
-};
+pub use runtime::{Artifact, ArtifactStore, Outcome, Phase, Status};
 pub use services::{
     cleanup_stale_target_lock, AgentKiller, AssistantService, OrchestratorError, OrchestratorEvent,
     OrchestratorLoop, StageExecutionService, WorkflowApi,

@@ -851,6 +851,9 @@ fn phase_to_str(phase: Phase) -> &'static str {
         Phase::AwaitingReview => "awaiting_review",
         Phase::Interrupted => "interrupted",
         Phase::Integrating => "integrating",
+        Phase::Finishing => "finishing",
+        Phase::Committing => "committing",
+        Phase::Finished => "finished",
     }
 }
 
@@ -862,6 +865,9 @@ fn parse_phase(s: &str) -> Phase {
         "awaiting_review" => Phase::AwaitingReview,
         "interrupted" => Phase::Interrupted,
         "integrating" => Phase::Integrating,
+        "finishing" => Phase::Finishing,
+        "committing" => Phase::Committing,
+        "finished" => Phase::Finished,
         _ => Phase::Idle,
     }
 }

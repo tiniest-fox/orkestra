@@ -35,7 +35,8 @@ pub enum StageOutputError {
 ///
 /// This is stage-agnostic - any stage can produce these outputs
 /// based on its capabilities in the workflow config.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum StageOutput {
     /// Agent produced an artifact (the stage's primary output).
     Artifact {
@@ -271,6 +272,18 @@ impl StageOutput {
                     content: content.to_string(),
                 })
             }
+        }
+    }
+
+    /// Short label for the output variant (e.g. "artifact", "questions").
+    pub fn type_label(&self) -> &'static str {
+        match self {
+            StageOutput::Artifact { .. } => "artifact",
+            StageOutput::Questions { .. } => "questions",
+            StageOutput::Subtasks { .. } => "subtasks",
+            StageOutput::Approval { .. } => "approval",
+            StageOutput::Failed { .. } => "failed",
+            StageOutput::Blocked { .. } => "blocked",
         }
     }
 

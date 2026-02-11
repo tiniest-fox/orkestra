@@ -34,6 +34,7 @@ mod agent_execution;
 mod api;
 mod assistant;
 mod cleanup;
+pub(crate) mod commit_worktree;
 mod human_actions;
 mod integration;
 mod iteration_service;

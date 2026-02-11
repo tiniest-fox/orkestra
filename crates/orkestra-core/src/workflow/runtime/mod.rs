@@ -7,10 +7,8 @@ mod artifact;
 mod markdown;
 mod outcome;
 mod status;
-mod transition;
 
 pub use artifact::{Artifact, ArtifactStore};
 pub use markdown::markdown_to_html;
 pub use outcome::Outcome;
 pub use status::{Phase, Status};
-pub use transition::{Transition, TransitionError, TransitionTrigger, TransitionValidator};

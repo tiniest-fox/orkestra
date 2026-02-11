@@ -860,6 +860,9 @@ fn format_phase(phase: Phase) -> String {
         Phase::AwaitingReview => "Review".to_string(),
         Phase::Interrupted => "Interrupted".to_string(),
         Phase::Integrating => "Integrating".to_string(),
+        Phase::Finishing => "Finishing".to_string(),
+        Phase::Committing => "Committing".to_string(),
+        Phase::Finished => "Finished".to_string(),
     }
 }
 
@@ -890,6 +893,7 @@ fn format_outcome(outcome: &Outcome) -> String {
         }
         Outcome::ScriptFailed { error, .. } => format!("script failed\n    Error: {error}"),
         Outcome::Interrupted => "interrupted".to_string(),
+        Outcome::CommitFailed { error } => format!("commit failed\n    Error: {error}"),
     }
 }
 

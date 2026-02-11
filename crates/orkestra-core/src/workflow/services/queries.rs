@@ -583,7 +583,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let task = create_task_ready(&api, "Test", "Description");
-        let task = api.agent_started(&task.id).unwrap();
+        api.agent_started(&task.id).unwrap();
         let _ = api
             .process_agent_output(
                 &task.id,
@@ -643,7 +643,7 @@ mod tests {
         assert!(feedback.is_none());
 
         // Simulate producing artifact and getting rejected
-        let task = api.agent_started(&task.id).unwrap();
+        api.agent_started(&task.id).unwrap();
         let task = api
             .process_agent_output(
                 &task.id,

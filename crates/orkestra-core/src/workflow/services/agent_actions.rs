@@ -38,8 +38,9 @@ impl WorkflowApi {
 
     /// Auto-approve and advance if the stage/task allows it, otherwise pause for review.
     ///
-    /// If the stage produced subtasks and is auto-advancing, creates Task records
-    /// and sets the parent to `WaitingOnChildren` instead of normal progression.
+    /// Auto-advance sets `Phase::Finishing` to trigger the commit pipeline.
+    /// Actual stage advancement happens in `finalize_stage_advancement` after
+    /// the Finishing → Committing → Finished pipeline completes.
     fn auto_advance_or_review(
         &self,
         task: &mut Task,
@@ -47,75 +48,87 @@ impl WorkflowApi {
         now: &str,
     ) -> WorkflowResult<()> {
         if self.should_auto_advance(task, stage) {
-            self.end_current_iteration(task, Outcome::Approved)?;
-
-            // Check if this stage produced subtasks that need to be materialized
-            if self.stage_has_subtask_data(stage, task) {
-                self.auto_advance_with_subtask_creation(task, stage, now)?;
-            } else {
-                let next_status = self.compute_next_status_on_approve(stage, task.flow.as_deref());
-                task.status = next_status.clone();
-                task.phase = Phase::Idle;
-
-                if let Some(new_stage) = next_status.stage() {
-                    self.iteration_service
-                        .create_iteration(&task.id, new_stage, None)?;
-                }
-                if task.is_done() {
-                    task.completed_at = Some(now.to_string());
-                }
-            }
+            self.enter_commit_pipeline(task, now)?;
         } else {
             task.phase = Phase::AwaitingReview;
+            task.updated_at = now.to_string();
         }
-        task.updated_at = now.to_string();
         Ok(())
     }
 
-    /// Auto-advance a breakdown stage: create subtask Tasks and set parent to `WaitingOnChildren`.
-    fn auto_advance_with_subtask_creation(
-        &self,
-        task: &mut Task,
-        stage: &str,
-        now: &str,
-    ) -> WorkflowResult<()> {
-        use super::SubtaskService;
+    /// Complete stage advancement after the commit pipeline finishes.
+    ///
+    /// Called by `advance_committed_stages` after Finishing → Committing → Finished.
+    /// Computes the next status, creates subtasks if needed, and transitions
+    /// the task to its next stage (or Done).
+    pub fn finalize_stage_advancement(&self, task_id: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
 
-        let artifact_name = self.artifact_name_for_stage(stage, "breakdown");
-        let created = SubtaskService::create_subtasks_from_breakdown(
-            task,
-            &self.workflow,
-            &self.store,
-            &self.iteration_service,
-            &artifact_name,
-        )?;
+        if !matches!(task.phase, Phase::Finishing | Phase::Finished) {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot finalize stage advancement in phase {:?} (expected Finishing or Finished)",
+                task.phase
+            )));
+        }
 
-        if created.is_empty() {
-            // No subtasks - proceed with normal advancement
-            let next_status = self.compute_next_status_on_approve(stage, task.flow.as_deref());
-            task.status = next_status.clone();
-            task.phase = Phase::Idle;
-            if let Some(new_stage) = next_status.stage() {
-                self.iteration_service
-                    .create_iteration(&task.id, new_stage, None)?;
-            }
-            if task.is_done() {
-                task.completed_at = Some(now.to_string());
+        let stage = task
+            .current_stage()
+            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
+            .to_string();
+
+        let now = chrono::Utc::now().to_rfc3339();
+
+        if self.stage_has_subtask_data(&stage, &task) {
+            use super::SubtaskService;
+
+            let artifact_name = self.artifact_name_for_stage(&stage, "breakdown");
+            let created = SubtaskService::create_subtasks_from_breakdown(
+                &task,
+                &self.workflow,
+                &self.store,
+                &self.iteration_service,
+                &artifact_name,
+            )?;
+
+            if created.is_empty() {
+                // No subtasks — proceed with normal advancement
+                self.advance_task(&mut task, &stage, &now)?;
+            } else {
+                orkestra_debug!(
+                    "action",
+                    "finalize_stage_advancement {}: created {} subtasks, WaitingOnChildren",
+                    task.id,
+                    created.len()
+                );
+                let next_stage = self
+                    .compute_next_status_on_approve(&stage, task.flow.as_deref())
+                    .stage()
+                    .unwrap_or(&stage)
+                    .to_string();
+                task.status = Status::waiting_on_children(next_stage);
+                task.phase = Phase::Idle;
             }
         } else {
-            orkestra_debug!(
-                "action",
-                "auto_advance {}: created {} subtasks, WaitingOnChildren",
-                task.id,
-                created.len()
-            );
-            let next_stage = self
-                .compute_next_status_on_approve(stage, task.flow.as_deref())
-                .stage()
-                .unwrap_or(stage)
-                .to_string();
-            task.status = Status::waiting_on_children(next_stage);
-            task.phase = Phase::Idle;
+            self.advance_task(&mut task, &stage, &now)?;
+        }
+
+        task.updated_at = now;
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    /// Advance a task to its next stage after approval (shared by auto-advance and human approve).
+    fn advance_task(&self, task: &mut Task, stage: &str, now: &str) -> WorkflowResult<()> {
+        let next_status = self.compute_next_status_on_approve(stage, task.flow.as_deref());
+        task.status = next_status.clone();
+        task.phase = Phase::Idle;
+
+        if let Some(new_stage) = next_status.stage() {
+            self.iteration_service
+                .create_iteration(&task.id, new_stage, None)?;
+        }
+        if task.is_done() {
+            task.completed_at = Some(now.to_string());
         }
         Ok(())
     }
@@ -207,7 +220,7 @@ impl WorkflowApi {
             task.artifacts
                 .remove(&format!("{artifact_name}_structured"));
         } else {
-            let json = serde_json::to_string(subtasks).unwrap_or_default();
+            let json = serde_json::to_string(subtasks).expect("SubtaskOutput is always serializable");
             task.artifacts.set(Artifact::new(
                 format!("{artifact_name}_structured"),
                 &json,
@@ -306,7 +319,9 @@ impl WorkflowApi {
         if effective_caps.rejection_resets_session() {
             if let Ok(Some(mut session)) = self.store.get_stage_session(&task.id, target) {
                 session.supersede(now);
-                let _ = self.store.save_stage_session(&session);
+                if let Err(e) = self.store.save_stage_session(&session) {
+                    orkestra_debug!("action", "Failed to supersede session for {}/{}: {}", task.id, target, e);
+                }
             }
         }
 
@@ -388,6 +403,11 @@ impl WorkflowApi {
 
     /// Process completed agent output. Handles artifacts, questions, approvals, failures.
     ///
+    /// Called directly when an agent completes. For outputs that advance the stage
+    /// (artifacts, subtasks, approvals), the task enters the Finishing → Committing → Finished
+    /// commit pipeline before advancing. For non-advancing outputs (questions, failures,
+    /// blocked), the task transitions directly without committing.
+    ///
     /// # Errors
     ///
     /// Returns `InvalidTransition` if the task is not in `AgentWorking` phase.
@@ -396,7 +416,7 @@ impl WorkflowApi {
 
         if task.phase != Phase::AgentWorking {
             return Err(WorkflowError::InvalidTransition(format!(
-                "Cannot process agent output in phase {:?}",
+                "Cannot process agent output in phase {:?} (expected AgentWorking)",
                 task.phase
             )));
         }
@@ -406,14 +426,7 @@ impl WorkflowApi {
             .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
             .to_string();
 
-        let output_type = match &output {
-            StageOutput::Artifact { .. } => "artifact",
-            StageOutput::Questions { .. } => "questions",
-            StageOutput::Subtasks { .. } => "subtasks",
-            StageOutput::Approval { .. } => "approval",
-            StageOutput::Failed { .. } => "failed",
-            StageOutput::Blocked { .. } => "blocked",
-        };
+        let output_type = output.type_label();
 
         orkestra_debug!(
             "action",
@@ -481,6 +494,120 @@ impl WorkflowApi {
             task.status
         );
 
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    /// Handle agent execution failure (crash, poll error, spawn failure).
+    ///
+    /// Separate from `process_agent_output` because failures bypass the
+    /// Finishing → Committing → Finished pipeline (no commit needed).
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if the task is not in `AgentWorking` phase.
+    pub fn fail_agent_execution(&self, task_id: &str, error: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        if task.phase != Phase::AgentWorking {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot fail agent execution in phase {:?} (expected AgentWorking)",
+                task.phase
+            )));
+        }
+
+        let current_stage = task
+            .current_stage()
+            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
+            .to_string();
+
+        orkestra_debug!(
+            "action",
+            "fail_agent_execution {}: stage={}, error={}",
+            task_id,
+            current_stage,
+            error
+        );
+
+        self.end_current_iteration(
+            &task,
+            Outcome::AgentError {
+                error: error.to_string(),
+            },
+        )?;
+        task.status = Status::failed(error);
+        task.phase = Phase::Idle;
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    // ========================================================================
+    // Commit Pipeline Results
+    // ========================================================================
+
+    /// Record a successful commit. Transitions phase from Committing to Finished.
+    ///
+    /// Called by the background commit thread after worktree changes are committed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if the task is not in `Committing` phase.
+    pub(crate) fn commit_succeeded(&self, task_id: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        if task.phase != Phase::Committing {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot mark commit succeeded in phase {:?} (expected Committing)",
+                task.phase
+            )));
+        }
+
+        task.phase = Phase::Finished;
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    /// Record a failed commit. Marks task as failed and records a CommitFailed iteration.
+    ///
+    /// Reads `current_stage()` before changing status (stage is lost after `Status::failed`).
+    /// Creates a new iteration with `Outcome::CommitFailed` to preserve the failure in history,
+    /// following the same pattern as `integration_failed`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if the task is not in `Committing` phase.
+    pub(crate) fn commit_failed(&self, task_id: &str, error: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        if task.phase != Phase::Committing {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot mark commit failed in phase {:?} (expected Committing)",
+                task.phase
+            )));
+        }
+
+        // Read current stage BEFORE changing status (stage is lost after Status::failed)
+        let stage = task.current_stage().map(String::from);
+
+        // Record failure via iteration (create + end, matching integration_failed pattern)
+        if let Some(ref stage) = stage {
+            self.iteration_service
+                .create_iteration(task_id, stage, None)?;
+            self.iteration_service.end_iteration(
+                task_id,
+                stage,
+                Outcome::CommitFailed {
+                    error: error.to_string(),
+                },
+            )?;
+        }
+
+        task.status = Status::failed(error);
+        task.phase = Phase::Idle;
+        task.updated_at = chrono::Utc::now().to_rfc3339();
         self.store.save_task(&task)?;
         Ok(task)
     }
@@ -644,21 +771,8 @@ impl WorkflowApi {
             &now,
         ));
 
-        // Script stages always auto-approve
-        self.end_current_iteration(&task, Outcome::Approved)?;
-        let next_status = self.compute_next_status_on_approve(&current_stage, task.flow.as_deref());
-        task.status = next_status.clone();
-        task.phase = Phase::Idle;
-
-        if let Some(new_stage) = next_status.stage() {
-            self.iteration_service
-                .create_iteration(&task.id, new_stage, None)?;
-        }
-        if task.is_done() {
-            task.completed_at = Some(now.clone());
-        }
-
-        task.updated_at = now;
+        // Script stages always auto-approve — enter commit pipeline before advancing.
+        self.enter_commit_pipeline(&mut task, &now)?;
 
         orkestra_debug!(
             "action",
@@ -897,7 +1011,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let task = create_task_ready(&api, "Test", "Description");
-        let task = api.agent_started(&task.id).unwrap();
+        api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Artifact {
             content: "The plan content".to_string(),
@@ -915,7 +1029,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let task = create_task_ready(&api, "Test", "Description");
-        let task = api.agent_started(&task.id).unwrap();
+        api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Questions {
             questions: vec![Question::new("What framework?")],
@@ -1112,9 +1226,9 @@ mod tests {
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        // Should auto-approve (automated stage) and be done
-        assert!(task.is_done());
-        assert_eq!(task.phase, Phase::Idle);
+        // Should enter commit pipeline (automated stage auto-advances via Finishing)
+        assert_eq!(task.phase, Phase::Finishing);
+        assert_eq!(task.current_stage(), Some("review"));
         // Content should be stored as artifact
         assert!(task.artifacts.get("verdict").is_some());
         assert!(task
@@ -1132,7 +1246,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let task = create_task_ready(&api, "Test", "Description");
-        let task = api.agent_started(&task.id).unwrap();
+        api.agent_started(&task.id).unwrap();
 
         // Planning stage doesn't have approval capability
         let output = StageOutput::Approval {
@@ -1151,7 +1265,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let task = create_task_ready(&api, "Test", "Description");
-        let task = api.agent_started(&task.id).unwrap();
+        api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Failed {
             error: "Build failed".to_string(),
@@ -1169,7 +1283,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let task = create_task_ready(&api, "Test", "Description");
-        let task = api.agent_started(&task.id).unwrap();
+        api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Blocked {
             reason: "Waiting for API access".to_string(),
@@ -1198,9 +1312,9 @@ mod tests {
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        // Should auto-approve and be done
-        assert!(task.is_done());
-        assert_eq!(task.phase, Phase::Idle);
+        // Should enter commit pipeline (automated stage auto-advances via Finishing)
+        assert_eq!(task.phase, Phase::Finishing);
+        assert_eq!(task.current_stage(), Some("review"));
     }
 
     #[test]
@@ -1260,9 +1374,9 @@ mod tests {
             .process_script_success(&task.id, "All tests passed!\nOK")
             .unwrap();
 
-        // Should auto-advance to next stage
-        assert_eq!(task.current_stage(), Some("review"));
-        assert_eq!(task.phase, Phase::Idle);
+        // Should enter commit pipeline (script stages always auto-advance via Finishing)
+        assert_eq!(task.current_stage(), Some("checks"));
+        assert_eq!(task.phase, Phase::Finishing);
         // Artifact should be created
         assert!(task.artifacts.get("check_results").is_some());
         assert!(task
@@ -1435,5 +1549,78 @@ mod tests {
         } else {
             panic!("Expected ScriptFailure trigger");
         }
+    }
+
+    // ========================================================================
+    // Commit pipeline result tests
+    // ========================================================================
+
+    #[test]
+    fn test_commit_succeeded() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = create_task_ready(&api, "Test", "Description");
+        task.phase = Phase::Committing;
+        api.store.save_task(&task).unwrap();
+
+        let task = api.commit_succeeded(&task.id).unwrap();
+        assert_eq!(task.phase, Phase::Finished);
+    }
+
+    #[test]
+    fn test_commit_succeeded_wrong_phase() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = create_task_ready(&api, "Test", "Description");
+        // task is in Idle, not Committing
+
+        let result = api.commit_succeeded(&task.id);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_commit_failed_records_iteration() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = create_task_ready(&api, "Test", "Description");
+        task.phase = Phase::Committing;
+        api.store.save_task(&task).unwrap();
+
+        let task = api.commit_failed(&task.id, "git commit error").unwrap();
+        assert!(task.is_failed());
+        assert_eq!(task.phase, Phase::Idle);
+
+        // Should have a CommitFailed iteration
+        let iterations = api.store.get_iterations(&task.id).unwrap();
+        let commit_iter = iterations
+            .iter()
+            .find(|i| matches!(&i.outcome, Some(Outcome::CommitFailed { .. })));
+        assert!(
+            commit_iter.is_some(),
+            "Should have CommitFailed iteration"
+        );
+
+        if let Some(Outcome::CommitFailed { error }) = &commit_iter.unwrap().outcome {
+            assert_eq!(error, "git commit error");
+        }
+    }
+
+    #[test]
+    fn test_commit_failed_wrong_phase() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = create_task_ready(&api, "Test", "Description");
+        // task is in Idle, not Committing
+
+        let result = api.commit_failed(&task.id, "error");
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 }

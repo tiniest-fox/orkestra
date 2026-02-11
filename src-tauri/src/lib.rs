@@ -160,35 +160,33 @@ fn cleanup_agents_standalone() {
     }
 }
 
-/// Fix PATH for macOS/Linux GUI apps that don't inherit the user's shell environment.
+/// Best-effort PATH fix for macOS .app bundles.
 ///
-/// Runs the user's default login shell to resolve their real PATH (which includes
-/// tools like cargo, node, mise shims, etc.) and sets it on the current process.
-/// This ensures child processes (scripts, agents) can find user-installed tools.
+/// GUI apps get a minimal PATH that excludes user-installed tools. This appends
+/// common tool locations so cargo, node, mise, homebrew etc. are found. For anything
+/// exotic, users can add PATH setup in their `.orkestra/scripts/worktree_setup.sh`.
 fn fix_path_env() {
     #[cfg(unix)]
     {
-        use std::process::Command;
+        let home = std::env::var("HOME").unwrap_or_default();
+        let current = std::env::var("PATH").unwrap_or_default();
 
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        let extra_paths = [
+            format!("{home}/.cargo/bin"),
+            format!("{home}/.local/share/mise/shims"),
+            format!("{home}/.local/bin"),
+            "/opt/homebrew/bin".to_string(),
+            "/opt/homebrew/sbin".to_string(),
+        ];
 
-        // Run the user's login+interactive shell to print PATH, using a unique
-        // delimiter to reliably extract it from any shell output. The -i flag is
-        // needed because tools like mise activate in .zshrc (interactive-only).
-        let delimiter = "---ORKESTRA_PATH---";
-        let cmd = format!("echo {delimiter} && echo $PATH && echo {delimiter}");
-
-        if let Ok(output) = Command::new(&shell).args(["-l", "-i", "-c", &cmd]).output() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // Extract PATH between delimiters
-            let parts: Vec<&str> = stdout.split(delimiter).collect();
-            if parts.len() >= 3 {
-                let path = parts[1].trim();
-                if !path.is_empty() {
-                    std::env::set_var("PATH", path);
-                }
+        let mut path = current;
+        for p in extra_paths {
+            if std::path::Path::new(&p).exists() && !path.contains(&p) {
+                path = format!("{path}:{p}");
             }
         }
+
+        std::env::set_var("PATH", &path);
     }
 }
 

@@ -6,7 +6,7 @@ import { useSyntaxCss } from "../../hooks/useSyntaxCss";
 import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
 import { EmptyState, FlexContainer, Panel } from "../ui";
-import { CommitDiffSkeleton } from "./CommitDiffSkeleton";
+import { DiffSkeleton } from "../Diff/DiffSkeleton";
 
 interface CommitDiffPanelProps {
   commitHash: string;
@@ -39,7 +39,7 @@ export function CommitDiffPanel({ commitHash, onClose }: CommitDiffPanelProps) {
   let bodyClassName: string;
 
   if (loading && !diff) {
-    bodyContent = <CommitDiffSkeleton />;
+    bodyContent = <DiffSkeleton />;
     bodyClassName = "flex-1 flex pt-0";
   } else if (error) {
     bodyContent = <span className="text-error-600 dark:text-error-400">Error: {error}</span>;

@@ -163,16 +163,14 @@ fn cleanup_agents_standalone() {
 /// Best-effort PATH fix for macOS .app bundles.
 ///
 /// GUI apps get a minimal PATH that excludes user-installed tools. This appends
-/// Homebrew and cargo — the two most universal tool locations. For anything else
-/// (mise, asdf, nvm, etc.), users should set up PATH in their script stages.
+/// Homebrew — the most universal macOS tool location. Everything else (cargo, mise,
+/// asdf, nvm, etc.) should be set up in script stages by the project.
 fn fix_path_env() {
     #[cfg(unix)]
     {
-        let home = std::env::var("HOME").unwrap_or_default();
         let current = std::env::var("PATH").unwrap_or_default();
 
         let extra_paths = [
-            format!("{home}/.cargo/bin"),
             "/opt/homebrew/bin".to_string(),
             "/opt/homebrew/sbin".to_string(),
         ];

@@ -16,6 +16,11 @@ Technical debt and future improvements.
 - [ ] **`ork task show <ID> --sessions`** — Show stage session history (spawn count, session state, agent PIDs). Needed when debugging session resume failures or orphaned agents.
 - [ ] **`ork task list --status blocked`** — Already works, but add `--depends-on <ID>` to find all tasks waiting on a specific dependency.
 
+## Performance
+
+- [ ] **Replace DB Mutex with RwLock** — `Arc<Mutex<Connection>>` serializes all DB access despite SQLite WAL mode supporting concurrent readers. Consider `parking_lot::RwLock` or `r2d2-sqlite` connection pool to allow concurrent reads. File: `crates/orkestra-core/src/adapters/sqlite/connection.rs`.
+- [ ] **Cache topological sort in `list_task_views()`** — `topological_sort()` runs on subtasks for each parent on every 2s poll. Could cache sorted order and invalidate on subtask status change. File: `crates/orkestra-core/src/workflow/services/queries.rs`.
+
 ## UI Feature Ideas
 
 - [ ] **Icon stage history in task cards** - Display a visual timeline of completed stages using icons on task cards, allowing quick identification of a task's current position in the workflow without opening details.

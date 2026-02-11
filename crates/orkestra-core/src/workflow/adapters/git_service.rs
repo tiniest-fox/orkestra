@@ -776,7 +776,6 @@ impl GitService for Git2GitService {
                     "Skipping malformed commit record with {} fields (expected 5)",
                     parts.len()
                 );
-                continue;
             }
         }
 
@@ -1256,7 +1255,10 @@ mod tests {
 
         // Newest commit (single-line) should have None body
         assert_eq!(commits[0].message, "Single line only");
-        assert_eq!(commits[0].body, None, "Single-line commit should have None body");
+        assert_eq!(
+            commits[0].body, None,
+            "Single-line commit should have None body"
+        );
 
         // Second commit (multi-line) should have Some(body)
         assert_eq!(commits[1].message, "Subject line");
@@ -1276,7 +1278,10 @@ mod tests {
 
         // Initial commit (single-line) should also have None body
         assert_eq!(commits[2].message, "Initial commit");
-        assert_eq!(commits[2].body, None, "Initial commit should have None body");
+        assert_eq!(
+            commits[2].body, None,
+            "Initial commit should have None body"
+        );
     }
 
     #[test]

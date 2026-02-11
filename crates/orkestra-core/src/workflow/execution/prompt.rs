@@ -570,7 +570,7 @@ pub fn resolve_stage_agent_config(
         feedback,
         integration_error,
         FlowOverrides::default(),
-        false, // Default to false for backward compatibility
+        false,      // Default to false for backward compatibility
         Vec::new(), // activity_logs - convenience wrapper doesn't use them
     )
 }
@@ -1002,7 +1002,14 @@ mod tests {
         );
 
         let ctx = builder
-            .build_context("planning", &task, Some("Add more detail"), None, false, Vec::new())
+            .build_context(
+                "planning",
+                &task,
+                Some("Add more detail"),
+                None,
+                false,
+                Vec::new(),
+            )
             .unwrap();
 
         assert_eq!(ctx.feedback, Some("Add more detail"));
@@ -1218,7 +1225,14 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, Some("Add more detail"), None, false, Vec::new())
+            .build_context(
+                "planning",
+                &task,
+                Some("Add more detail"),
+                None,
+                false,
+                Vec::new(),
+            )
             .unwrap();
 
         let agent_def = "Planner agent";

@@ -206,6 +206,7 @@ impl AgentExecutionService {
     ///
     /// If resuming, returns a short resume prompt. Otherwise returns the full
     /// user message with task context.
+    #[allow(clippy::too_many_arguments)]
     fn build_user_prompt(
         &self,
         task: &Task,

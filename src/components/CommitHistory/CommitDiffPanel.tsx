@@ -34,51 +34,22 @@ export function CommitDiffPanel({ commitHash, onClose }: CommitDiffPanelProps) {
     setSelectedPath(file.path);
   };
 
+  // Determine body content based on state
+  let bodyContent: React.ReactNode;
+  let bodyClassName: string;
+
   if (loading && !diff) {
-    return <CommitDiffSkeleton commitHash={commitHash} onClose={onClose} />;
-  }
-
-  if (error) {
-    return (
-      <Panel className="flex flex-col">
-        <Panel.Header>
-          <Panel.Title>
-            <code className="text-xs font-mono">{commitHash}</code>
-          </Panel.Title>
-          <Panel.CloseButton onClick={onClose} />
-        </Panel.Header>
-        <Panel.Body className="flex-1 flex items-center justify-center text-error-600 dark:text-error-400">
-          Error: {error}
-        </Panel.Body>
-      </Panel>
-    );
-  }
-
-  if (!diff || diff.files.length === 0) {
-    return (
-      <Panel className="flex flex-col">
-        <Panel.Header>
-          <Panel.Title>
-            <code className="text-xs font-mono">{commitHash}</code>
-          </Panel.Title>
-          <Panel.CloseButton onClick={onClose} />
-        </Panel.Header>
-        <Panel.Body className="flex-1 flex items-center justify-center">
-          <EmptyState icon={FileText} message="No changes in this commit" />
-        </Panel.Body>
-      </Panel>
-    );
-  }
-
-  return (
-    <Panel className="flex flex-col">
-      <Panel.Header>
-        <Panel.Title>
-          <code className="text-xs font-mono">{commitHash}</code>
-        </Panel.Title>
-        <Panel.CloseButton onClick={onClose} />
-      </Panel.Header>
-      <Panel.Body className="flex-1 flex pt-0">
+    bodyContent = <CommitDiffSkeleton />;
+    bodyClassName = "flex-1 flex pt-0";
+  } else if (error) {
+    bodyContent = <span className="text-error-600 dark:text-error-400">Error: {error}</span>;
+    bodyClassName = "flex-1 flex items-center justify-center";
+  } else if (!diff || diff.files.length === 0) {
+    bodyContent = <EmptyState icon={FileText} message="No changes in this commit" />;
+    bodyClassName = "flex-1 flex items-center justify-center";
+  } else {
+    bodyContent = (
+      <>
         {css && (
           <style
             // biome-ignore lint/security/noDangerouslySetInnerHtml: syntect CSS output is trusted
@@ -104,7 +75,20 @@ export function CommitDiffPanel({ commitHash, onClose }: CommitDiffPanelProps) {
             <DiffContent file={selectedFile} />
           </Panel>
         </FlexContainer>
-      </Panel.Body>
+      </>
+    );
+    bodyClassName = "flex-1 flex pt-0";
+  }
+
+  return (
+    <Panel className="flex flex-col">
+      <Panel.Header>
+        <Panel.Title>
+          <code className="text-xs font-mono">{commitHash}</code>
+        </Panel.Title>
+        <Panel.CloseButton onClick={onClose} />
+      </Panel.Header>
+      <Panel.Body className={bodyClassName}>{bodyContent}</Panel.Body>
     </Panel>
   );
 }

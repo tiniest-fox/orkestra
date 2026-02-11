@@ -13,9 +13,10 @@ import { FileText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type HighlightedFileDiff, useDiff } from "../../hooks/useDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
-import { EmptyState, FlexContainer, LoadingState, Panel } from "../ui";
+import { EmptyState, FlexContainer, Panel } from "../ui";
 import { DiffContent } from "./DiffContent";
 import { DiffFileList } from "./DiffFileList";
+import { DiffSkeleton } from "./DiffSkeleton";
 
 interface DiffPanelProps {
   taskId: string;
@@ -43,55 +44,22 @@ export function DiffPanel({ taskId, onClose }: DiffPanelProps) {
     setSelectedPath(file.path);
   };
 
+  // Determine body content based on state
+  let bodyContent: React.ReactNode;
+  let bodyClassName: string;
+
   if (loading && !diff) {
-    return (
-      <Panel className="flex flex-col">
-        <Panel.Header>
-          <Panel.Title>Changes</Panel.Title>
-          <Panel.CloseButton onClick={onClose} />
-        </Panel.Header>
-        <Panel.Body className="flex-1 flex items-center justify-center">
-          <LoadingState message="Loading..." className="py-0" />
-        </Panel.Body>
-      </Panel>
-    );
-  }
-
-  if (error) {
-    return (
-      <Panel className="flex flex-col">
-        <Panel.Header>
-          <Panel.Title>Changes</Panel.Title>
-          <Panel.CloseButton onClick={onClose} />
-        </Panel.Header>
-        <Panel.Body className="flex-1 flex items-center justify-center text-error-600 dark:text-error-400">
-          Error: {error}
-        </Panel.Body>
-      </Panel>
-    );
-  }
-
-  if (!diff || diff.files.length === 0) {
-    return (
-      <Panel className="flex flex-col">
-        <Panel.Header>
-          <Panel.Title>Changes</Panel.Title>
-          <Panel.CloseButton onClick={onClose} />
-        </Panel.Header>
-        <Panel.Body className="flex-1 flex items-center justify-center">
-          <EmptyState icon={FileText} message="No changes to display" />
-        </Panel.Body>
-      </Panel>
-    );
-  }
-
-  return (
-    <Panel className="flex flex-col">
-      <Panel.Header>
-        <Panel.Title>Changes</Panel.Title>
-        <Panel.CloseButton onClick={onClose} />
-      </Panel.Header>
-      <Panel.Body className="flex-1 flex pt-0">
+    bodyContent = <DiffSkeleton />;
+    bodyClassName = "flex-1 flex pt-0";
+  } else if (error) {
+    bodyContent = <span className="text-error-600 dark:text-error-400">Error: {error}</span>;
+    bodyClassName = "flex-1 flex items-center justify-center";
+  } else if (!diff || diff.files.length === 0) {
+    bodyContent = <EmptyState icon={FileText} message="No changes to display" />;
+    bodyClassName = "flex-1 flex items-center justify-center";
+  } else {
+    bodyContent = (
+      <>
         {/* Inject syntax CSS */}
         {css && (
           <style
@@ -123,7 +91,18 @@ export function DiffPanel({ taskId, onClose }: DiffPanelProps) {
             <DiffContent file={selectedFile} />
           </Panel>
         </FlexContainer>
-      </Panel.Body>
+      </>
+    );
+    bodyClassName = "flex-1 flex pt-0";
+  }
+
+  return (
+    <Panel className="flex flex-col">
+      <Panel.Header>
+        <Panel.Title>Changes</Panel.Title>
+        <Panel.CloseButton onClick={onClose} />
+      </Panel.Header>
+      <Panel.Body className={bodyClassName}>{bodyContent}</Panel.Body>
     </Panel>
   );
 }

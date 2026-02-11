@@ -770,6 +770,13 @@ impl GitService for Git2GitService {
                     timestamp: parts[3].to_string(),
                     file_count: None,
                 });
+            } else {
+                crate::orkestra_debug!(
+                    "git",
+                    "Skipping malformed commit record with {} fields (expected 5)",
+                    parts.len()
+                );
+                continue;
             }
         }
 
@@ -1202,6 +1209,74 @@ mod tests {
             commits[0].file_count, None,
             "File count should be None from commit_log"
         );
+    }
+
+    #[test]
+    fn test_commit_log_parses_body_field() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create a commit with a multi-line message (subject + body)
+        std::fs::write(repo_path.join("file2.txt"), "with body").expect("Failed to write file");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to add");
+        Command::new("git")
+            .args([
+                "commit",
+                "-m",
+                "Subject line",
+                "-m",
+                "This is the body paragraph.\n\nIt has multiple lines and blank lines.",
+            ])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to commit");
+
+        // Create another commit with single-line message (no body)
+        std::fs::write(repo_path.join("file3.txt"), "no body").expect("Failed to write file");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to add");
+        Command::new("git")
+            .args(["commit", "-m", "Single line only"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to commit");
+
+        // Get commit log
+        let commits = git.commit_log(20).expect("Failed to get commit log");
+
+        // Should have 3 commits (initial + 2 new ones)
+        assert_eq!(commits.len(), 3, "Expected 3 commits");
+
+        // Newest commit (single-line) should have None body
+        assert_eq!(commits[0].message, "Single line only");
+        assert_eq!(commits[0].body, None, "Single-line commit should have None body");
+
+        // Second commit (multi-line) should have Some(body)
+        assert_eq!(commits[1].message, "Subject line");
+        assert!(
+            commits[1].body.is_some(),
+            "Multi-line commit should have Some(body)"
+        );
+        let body = commits[1].body.as_ref().unwrap();
+        assert!(
+            body.contains("body paragraph"),
+            "Body should contain expected text"
+        );
+        assert!(
+            body.contains("multiple lines"),
+            "Body should preserve content"
+        );
+
+        // Initial commit (single-line) should also have None body
+        assert_eq!(commits[2].message, "Initial commit");
+        assert_eq!(commits[2].body, None, "Initial commit should have None body");
     }
 
     #[test]

@@ -69,6 +69,16 @@ export function IterationCard({ iteration }: IterationCardProps) {
             </span>
           </div>
         )}
+        {iteration.activity_log && (
+          <details className="mt-2">
+            <summary className="text-xs font-medium text-stone-500 dark:text-stone-400 cursor-pointer hover:text-stone-700 dark:hover:text-stone-200">
+              Activity Summary
+            </summary>
+            <div className="text-sm text-stone-600 dark:text-stone-300 whitespace-pre-wrap bg-stone-50 dark:bg-stone-800 rounded px-2 py-1.5 mt-1 border border-stone-100 dark:border-stone-700">
+              {iteration.activity_log}
+            </div>
+          </details>
+        )}
         {iteration.ended_at && (
           <div className="text-xs text-stone-400 dark:text-stone-500">
             Ended: {formatTimestamp(iteration.ended_at)}

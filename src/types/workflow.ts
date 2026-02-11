@@ -263,6 +263,8 @@ export interface WorkflowIteration {
   outcome?: WorkflowOutcome;
   /** Claude session ID for logs. */
   session_id?: string;
+  /** Short narrative summary of what the agent did during this iteration. */
+  activity_log?: string;
 }
 
 // =============================================================================

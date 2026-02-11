@@ -163,8 +163,8 @@ fn cleanup_agents_standalone() {
 /// Best-effort PATH fix for macOS .app bundles.
 ///
 /// GUI apps get a minimal PATH that excludes user-installed tools. This appends
-/// common tool locations so cargo, node, mise, homebrew etc. are found. For anything
-/// exotic, users can add PATH setup in their `.orkestra/scripts/worktree_setup.sh`.
+/// Homebrew and cargo — the two most universal tool locations. For anything else
+/// (mise, asdf, nvm, etc.), users should set up PATH in their script stages.
 fn fix_path_env() {
     #[cfg(unix)]
     {
@@ -173,8 +173,6 @@ fn fix_path_env() {
 
         let extra_paths = [
             format!("{home}/.cargo/bin"),
-            format!("{home}/.local/share/mise/shims"),
-            format!("{home}/.local/bin"),
             "/opt/homebrew/bin".to_string(),
             "/opt/homebrew/sbin".to_string(),
         ];

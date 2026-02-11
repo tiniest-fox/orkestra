@@ -64,6 +64,7 @@ pub struct SchemaConfig<'a> {
 /// # Panics
 ///
 /// Panics if the schema cannot be serialized to JSON (should never happen).
+#[allow(clippy::too_many_lines)]
 pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
     let artifact = load_component(ARTIFACT_COMPONENT);
     let terminal = load_component(TERMINAL_COMPONENT);

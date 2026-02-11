@@ -452,7 +452,9 @@ impl WorkflowApi {
             StageOutput::Artifact { content, .. } => {
                 self.handle_artifact_output(&mut task, &content, &current_stage, &now)?;
             }
-            StageOutput::Approval { decision, content, .. } => {
+            StageOutput::Approval {
+                decision, content, ..
+            } => {
                 self.handle_approval_output(&mut task, &current_stage, &decision, &content, &now)?;
             }
             StageOutput::Subtasks {
@@ -1022,7 +1024,8 @@ mod tests {
         api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Artifact {
-            content: "The plan content".to_string(), activity_log: None,
+            content: "The plan content".to_string(),
+            activity_log: None,
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -1113,7 +1116,8 @@ mod tests {
 
         let output = StageOutput::Approval {
             decision: "reject".to_string(),
-            content: "Tests failing".to_string(), activity_log: None,
+            content: "Tests failing".to_string(),
+            activity_log: None,
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -1207,7 +1211,8 @@ mod tests {
 
         let output = StageOutput::Approval {
             decision: "reject".to_string(),
-            content: "Tests failing".to_string(), activity_log: None,
+            content: "Tests failing".to_string(),
+            activity_log: None,
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -1261,7 +1266,8 @@ mod tests {
         // Planning stage doesn't have approval capability
         let output = StageOutput::Approval {
             decision: "approve".to_string(),
-            content: "Should fail".to_string(), activity_log: None,
+            content: "Should fail".to_string(),
+            activity_log: None,
         };
         let result = api.process_agent_output(&task.id, output);
 
@@ -1318,7 +1324,8 @@ mod tests {
         api.store.save_task(&task).unwrap();
 
         let output = StageOutput::Artifact {
-            content: "Approved".to_string(), activity_log: None,
+            content: "Approved".to_string(),
+            activity_log: None,
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 

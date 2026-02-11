@@ -1040,6 +1040,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
         task_id,
         StageOutput::Artifact {
             content: "Implementation complete".to_string(),
+            activity_log: None,
         },
     )
     .unwrap();
@@ -1054,6 +1055,7 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
         task_id,
         StageOutput::Artifact {
             content: "Approved".to_string(),
+            activity_log: None,
         },
     )
     .unwrap();

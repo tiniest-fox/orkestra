@@ -614,10 +614,15 @@ impl From<MockAgentOutput> for StageOutput {
     fn from(mock: MockAgentOutput) -> Self {
         match mock {
             MockAgentOutput::Questions(questions) => StageOutput::Questions { questions },
-            MockAgentOutput::Artifact { content, .. } => StageOutput::Artifact { content },
-            MockAgentOutput::Approval { decision, content } => {
-                StageOutput::Approval { decision, content }
-            }
+            MockAgentOutput::Artifact { content, .. } => StageOutput::Artifact {
+                content,
+                activity_log: None,
+            },
+            MockAgentOutput::Approval { decision, content } => StageOutput::Approval {
+                decision,
+                content,
+                activity_log: None,
+            },
             MockAgentOutput::Subtasks {
                 content,
                 subtasks,
@@ -626,6 +631,7 @@ impl From<MockAgentOutput> for StageOutput {
                 content,
                 subtasks,
                 skip_reason,
+                activity_log: None,
             },
             MockAgentOutput::Failed { error } => StageOutput::Failed { error },
             MockAgentOutput::Blocked { reason } => StageOutput::Blocked { reason },

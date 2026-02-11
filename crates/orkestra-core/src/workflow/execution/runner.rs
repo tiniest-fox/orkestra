@@ -858,7 +858,9 @@ pub mod mock {
                 "type": "questions",
                 "questions": questions
             }),
-            StageOutput::Approval { decision, content, .. } => serde_json::json!({
+            StageOutput::Approval {
+                decision, content, ..
+            } => serde_json::json!({
                 "type": "approval",
                 "decision": decision,
                 "content": content
@@ -946,7 +948,8 @@ mod tests {
             runner.set_output(
                 "task-1",
                 StageOutput::Artifact {
-                    content: "Done".into(), activity_log: None,
+                    content: "Done".into(),
+                    activity_log: None,
                 },
             );
 
@@ -962,7 +965,8 @@ mod tests {
             runner.set_output(
                 "task-2",
                 StageOutput::Artifact {
-                    content: "Plan".into(), activity_log: None,
+                    content: "Plan".into(),
+                    activity_log: None,
                 },
             );
 
@@ -988,7 +992,8 @@ mod tests {
             runner.set_output(
                 "task-1",
                 StageOutput::Artifact {
-                    content: "Done".into(), activity_log: None,
+                    content: "Done".into(),
+                    activity_log: None,
                 },
             );
 
@@ -1020,7 +1025,8 @@ mod tests {
             runner.set_output(
                 "task-1",
                 StageOutput::Artifact {
-                    content: "Done".into(), activity_log: None,
+                    content: "Done".into(),
+                    activity_log: None,
                 },
             );
 

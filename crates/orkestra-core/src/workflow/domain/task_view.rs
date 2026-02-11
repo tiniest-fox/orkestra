@@ -36,6 +36,7 @@ pub struct DerivedTaskState {
     pub current_stage: Option<String>,
     pub is_working: bool,
     pub is_system_active: bool,
+    pub phase_icon: Option<String>,
     pub is_interrupted: bool,
     pub is_failed: bool,
     pub is_blocked: bool,
@@ -100,8 +101,9 @@ impl DerivedTaskState {
 
         Self {
             current_stage: task.current_stage().map(str::to_string),
-            is_working: task.phase.has_active_agent(),
+            is_working: !task.is_terminal() && task.phase.has_active_agent(),
             is_system_active: !task.is_terminal() && task.phase.is_system_active(),
+            phase_icon: compute_phase_icon(task),
             is_interrupted: task.phase == Phase::Interrupted,
             is_failed: task.is_failed(),
             is_blocked: task.is_blocked(),
@@ -163,6 +165,28 @@ fn compute_subtask_progress(subtask_states: &[DerivedTaskState]) -> Option<Subta
     }
 
     Some(progress)
+}
+
+/// Compute the phase icon hint for the frontend.
+///
+/// Returns a string tag that the frontend maps to a specific icon.
+/// Returns `None` when no phase-specific icon should be shown
+/// (e.g., terminal tasks, agent working, awaiting review).
+fn compute_phase_icon(task: &Task) -> Option<String> {
+    if task.is_terminal() {
+        return None;
+    }
+    match task.phase {
+        Phase::Committing => Some("committing".to_string()),
+        Phase::Integrating => Some("integrating".to_string()),
+        Phase::Finishing => Some("system_busy".to_string()),
+        Phase::SettingUp => Some("setting_up".to_string()),
+        Phase::AwaitingSetup => Some("awaiting_setup".to_string()),
+        Phase::Idle | Phase::Finished if !task.status.is_waiting_on_children() => {
+            Some("waiting_for_orchestrator".to_string())
+        }
+        _ => None,
+    }
 }
 
 /// Extract pending questions from the latest iteration of the current stage.
@@ -767,5 +791,127 @@ mod tests {
         assert_eq!(progress.failed, 1); // Failed check comes first
         assert_eq!(progress.working, 1);
         assert_eq!(progress.waiting, 0);
+    }
+
+    #[test]
+    fn test_phase_icon_committing() {
+        let mut task = make_task("work");
+        task.phase = Phase::Committing;
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(derived.phase_icon, Some("committing".to_string()));
+    }
+
+    #[test]
+    fn test_phase_icon_integrating() {
+        let mut task = make_task("work");
+        task.phase = Phase::Integrating;
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(derived.phase_icon, Some("integrating".to_string()));
+    }
+
+    #[test]
+    fn test_phase_icon_finishing() {
+        let mut task = make_task("work");
+        task.phase = Phase::Finishing;
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(derived.phase_icon, Some("system_busy".to_string()));
+    }
+
+    #[test]
+    fn test_phase_icon_setting_up() {
+        let mut task = make_task("work");
+        task.phase = Phase::SettingUp;
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(derived.phase_icon, Some("setting_up".to_string()));
+    }
+
+    #[test]
+    fn test_phase_icon_awaiting_setup() {
+        let mut task = make_task("work");
+        task.phase = Phase::AwaitingSetup;
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(derived.phase_icon, Some("awaiting_setup".to_string()));
+    }
+
+    #[test]
+    fn test_phase_icon_idle_waiting() {
+        let task = make_task("work");
+        // Task is idle with an active status
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(
+            derived.phase_icon,
+            Some("waiting_for_orchestrator".to_string())
+        );
+    }
+
+    #[test]
+    fn test_phase_icon_finished_waiting() {
+        let mut task = make_task("work");
+        task.phase = Phase::Finished;
+        // Task is finished but not waiting on children
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(
+            derived.phase_icon,
+            Some("waiting_for_orchestrator".to_string())
+        );
+    }
+
+    #[test]
+    fn test_phase_icon_idle_waiting_on_children() {
+        let mut task = make_task("work");
+        task.phase = Phase::Idle;
+        task.status = Status::waiting_on_children("work");
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(derived.phase_icon, None);
+    }
+
+    #[test]
+    fn test_phase_icon_terminal() {
+        let mut task = make_task("work");
+        task.phase = Phase::Committing;
+        task.status = Status::failed("err");
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        // Terminal tasks don't show phase icons
+        assert_eq!(derived.phase_icon, None);
+    }
+
+    #[test]
+    fn test_phase_icon_agent_working() {
+        let mut task = make_task("work");
+        task.phase = Phase::AgentWorking;
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(derived.phase_icon, None);
+    }
+
+    #[test]
+    fn test_phase_icon_awaiting_review() {
+        let mut task = make_task("work");
+        task.phase = Phase::AwaitingReview;
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(derived.phase_icon, None);
+    }
+
+    #[test]
+    fn test_is_working_terminal_guard() {
+        let mut task = make_task("work");
+        task.phase = Phase::AgentWorking;
+        task.status = Status::failed("err");
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        // Terminal status overrides agent working phase
+        assert!(!derived.is_working);
+        assert!(derived.is_terminal);
+        assert!(derived.is_failed);
     }
 }

@@ -3572,7 +3572,10 @@ fn activity_log_stored_on_iteration() {
     // Assert the iteration has the expected activity_log
     assert_eq!(
         planning_iter.activity_log,
-        Some("Analyzed requirements. Decided on JWT auth approach. Reviewed existing patterns.".to_string()),
+        Some(
+            "Analyzed requirements. Decided on JWT auth approach. Reviewed existing patterns."
+                .to_string()
+        ),
         "Planning iteration should have stored the activity_log from agent output"
     );
 }
@@ -3768,7 +3771,7 @@ fn activity_log_accumulates_across_stages() {
     );
 }
 
-/// Test that missing activity_log (None) doesn't break the workflow.
+/// Test that missing `activity_log` (None) doesn't break the workflow.
 #[test]
 fn activity_log_none_does_not_break() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};

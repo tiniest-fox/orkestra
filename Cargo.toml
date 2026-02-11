@@ -16,3 +16,10 @@ module_name_repetitions = "allow"  # common in Rust APIs
 must_use_candidate = "allow"       # too many false positives
 missing_errors_doc = "allow"       # we're in v0, docs can come later
 missing_panics_doc = "allow"       # same
+
+[profile.dev]
+debug = "line-tables-only"       # ~20-40% faster builds, keeps backtraces
+split-debuginfo = "unpacked"     # faster linking on macOS
+
+[profile.dev.build-override]
+opt-level = 3                    # faster proc-macros (serde, tauri)

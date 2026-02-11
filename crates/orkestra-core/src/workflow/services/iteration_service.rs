@@ -112,6 +112,24 @@ impl IterationService {
     pub fn get_active(&self, task_id: &str, stage: &str) -> WorkflowResult<Option<Iteration>> {
         self.store.get_active_iteration(task_id, stage)
     }
+
+    /// Set the activity log on the active iteration for a task/stage.
+    ///
+    /// Called before ending the iteration, when the agent output includes
+    /// an activity_log field. If no active iteration exists, this is a no-op
+    /// (same behavior as end_iteration).
+    pub fn set_activity_log(
+        &self,
+        task_id: &str,
+        stage: &str,
+        activity_log: &str,
+    ) -> WorkflowResult<()> {
+        if let Some(mut iteration) = self.store.get_active_iteration(task_id, stage)? {
+            iteration.activity_log = Some(activity_log.to_string());
+            self.store.save_iteration(&iteration)?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -259,5 +277,37 @@ mod tests {
 
             assert!(iteration.incoming_context.is_some());
         }
+    }
+}
+
+#[cfg(test)]
+mod activity_log_tests {
+    use super::*;
+    use crate::workflow::adapters::InMemoryWorkflowStore;
+
+    #[test]
+    fn test_set_activity_log() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = IterationService::new(store.clone());
+
+        // Create an active iteration
+        service.create_initial_iteration("task-1", "work").unwrap();
+
+        // Set activity log
+        service.set_activity_log("task-1", "work", "Implemented the feature").unwrap();
+
+        // Verify it was set
+        let iteration = service.get_active("task-1", "work").unwrap().unwrap();
+        assert_eq!(iteration.activity_log, Some("Implemented the feature".to_string()));
+    }
+
+    #[test]
+    fn test_set_activity_log_no_active_iteration() {
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let service = IterationService::new(store);
+
+        // Should not error when no iteration exists
+        let result = service.set_activity_log("nonexistent", "work", "Some log");
+        assert!(result.is_ok());
     }
 }

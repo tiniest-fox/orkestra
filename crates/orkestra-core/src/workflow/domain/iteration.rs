@@ -89,6 +89,11 @@ pub struct Iteration {
     /// replaying the original trigger.
     #[serde(default)]
     pub trigger_delivered: bool,
+
+    /// Short narrative summary of what the agent did during this iteration.
+    /// Only present on work-completing outputs (artifact, approval, subtasks).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub activity_log: Option<String>,
 }
 
 impl Iteration {
@@ -111,6 +116,7 @@ impl Iteration {
             stage_session_id: None,
             incoming_context: None,
             trigger_delivered: false,
+            activity_log: None,
         }
     }
 
@@ -125,6 +131,13 @@ impl Iteration {
     #[must_use]
     pub fn with_stage_session_id(mut self, stage_session_id: impl Into<String>) -> Self {
         self.stage_session_id = Some(stage_session_id.into());
+        self
+    }
+
+    /// Builder: set activity log.
+    #[must_use]
+    pub fn with_activity_log(mut self, log: impl Into<String>) -> Self {
+        self.activity_log = Some(log.into());
         self
     }
 

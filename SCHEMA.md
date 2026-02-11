@@ -65,6 +65,7 @@ Tracks individual agent/script runs within a stage. Each stage execution creates
 | `stage_session_id` | TEXT | FOREIGN KEY → workflow_stage_sessions(id) | Links to the agent session that executed this iteration |
 | `incoming_context` | TEXT | | JSON trigger context explaining why this iteration was created (feedback from rejection, integration failure, etc.) |
 | `trigger_delivered` | INTEGER | NOT NULL, DEFAULT 0 | Boolean: whether the trigger prompt has been delivered to the agent (1 = delivered, 0 = pending) |
+| `activity_log` | TEXT | | Short narrative summary of what the agent did during this iteration. Only present on work-completing outputs (artifact, approval, subtasks). |
 
 **Indexes:**
 - `idx_workflow_iterations_task` on `task_id`

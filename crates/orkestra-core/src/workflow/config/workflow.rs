@@ -1092,8 +1092,7 @@ mod tests {
 
     #[test]
     fn test_workflow_validation_restart_on_reentry_on_script_stage() {
-        let mut script_stage =
-            StageConfig::new_script("checks", "check_results", "cargo test");
+        let mut script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
         script_stage.restart_on_reentry = true; // Manually set (invalid)
 
         let workflow = WorkflowConfig::new(vec![

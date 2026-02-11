@@ -946,10 +946,7 @@ mod tests {
         service.on_agent_exited("task-1", "work").unwrap();
 
         // Verify session exists and is Active
-        let session = store
-            .get_stage_session("task-1", "work")
-            .unwrap()
-            .unwrap();
+        let session = store.get_stage_session("task-1", "work").unwrap().unwrap();
         assert_eq!(session.session_state, SessionState::Active);
 
         // Supersede the session

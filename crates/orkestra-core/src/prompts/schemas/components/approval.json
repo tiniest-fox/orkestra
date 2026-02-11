@@ -12,7 +12,7 @@
     },
     "activity_log": {
       "type": "string",
-      "description": "Short narrative summary of what you did during this stage. Describe what was implemented, what was skipped and why, and any key decisions made."
+      "description": "Terse bullet points (2-5) covering: what you built, what you skipped (with reason), key decisions. Be specific, not generic. Focus on decisions and outcomes, not process."
     }
   },
   "required": ["decision", "content"]

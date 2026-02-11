@@ -231,8 +231,7 @@ export function TaskCard({
           )}
           {(task.phase === "idle" || task.phase === "finished") &&
             !derived.is_waiting_on_children &&
-            !derived.is_done &&
-            !derived.is_archived && (
+            !derived.is_terminal && (
               <span className="flex-shrink-0 p-1.5">
                 <Hourglass className="w-4 h-4 text-stone-300 dark:text-stone-600 animate-spin-bounce" />
               </span>

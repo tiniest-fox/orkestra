@@ -116,8 +116,8 @@ impl IterationService {
     /// Set the activity log on the active iteration for a task/stage.
     ///
     /// Called before ending the iteration, when the agent output includes
-    /// an activity_log field. If no active iteration exists, this is a no-op
-    /// (same behavior as end_iteration).
+    /// an `activity_log` field. If no active iteration exists, this is a no-op
+    /// (same behavior as `end_iteration`).
     pub fn set_activity_log(
         &self,
         task_id: &str,
@@ -294,11 +294,16 @@ mod activity_log_tests {
         service.create_initial_iteration("task-1", "work").unwrap();
 
         // Set activity log
-        service.set_activity_log("task-1", "work", "Implemented the feature").unwrap();
+        service
+            .set_activity_log("task-1", "work", "Implemented the feature")
+            .unwrap();
 
         // Verify it was set
         let iteration = service.get_active("task-1", "work").unwrap().unwrap();
-        assert_eq!(iteration.activity_log, Some("Implemented the feature".to_string()));
+        assert_eq!(
+            iteration.activity_log,
+            Some("Implemented the feature".to_string())
+        );
     }
 
     #[test]

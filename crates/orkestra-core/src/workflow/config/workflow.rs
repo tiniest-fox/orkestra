@@ -793,11 +793,18 @@ impl WorkflowConfig {
 
     /// Validate model fields on stages and flow overrides.
     fn validate_model_fields(&self, errors: &mut Vec<String>) {
-        // Script stages should not have model set
+        // Script stages should not have model or restart_on_reentry set
         for stage in &self.stages {
             if stage.model.is_some() && stage.is_script_stage() {
                 errors.push(format!(
                     "Script stage \"{}\" has a model field, but model is only used by agent stages.",
+                    stage.name
+                ));
+            }
+
+            if stage.restart_on_reentry && stage.is_script_stage() {
+                errors.push(format!(
+                    "Script stage \"{}\" has restart_on_reentry set, but restart_on_reentry is only meaningful for agent stages.",
                     stage.name
                 ));
             }
@@ -1081,6 +1088,41 @@ mod tests {
         assert!(errors
             .iter()
             .any(|e| e.contains("Integration on_failure") && e.contains("doesn't exist")));
+    }
+
+    #[test]
+    fn test_workflow_validation_restart_on_reentry_on_script_stage() {
+        let mut script_stage =
+            StageConfig::new_script("checks", "check_results", "cargo test");
+        script_stage.restart_on_reentry = true; // Manually set (invalid)
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            script_stage,
+            StageConfig::new("work", "summary"),
+        ]);
+
+        let errors = workflow.validate();
+        assert!(
+            errors.iter().any(|e| e.contains("restart_on_reentry")
+                && e.contains("checks")
+                && e.contains("only meaningful for agent stages")),
+            "Expected validation error for restart_on_reentry on script stage. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_workflow_validation_restart_on_reentry_on_agent_stage_valid() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary").restart_on_reentry(),
+        ]);
+
+        let errors = workflow.validate();
+        assert!(
+            errors.is_empty(),
+            "restart_on_reentry should be valid on agent stages. Got errors: {errors:?}"
+        );
     }
 
     #[test]

@@ -326,6 +326,17 @@ impl SessionService {
         Ok(())
     }
 
+    /// Supersede the active session for a stage, forcing the next spawn to create
+    /// a fresh session. No-op if no active session exists.
+    pub fn supersede_session(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
+        let now = chrono::Utc::now().to_rfc3339();
+        if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
+            session.supersede(&now);
+            self.store.save_stage_session(&session)?;
+        }
+        Ok(())
+    }
+
     /// Get all sessions with running agents.
     ///
     /// Returns `(task_id, stage, pid)` tuples for sessions that have PIDs.
@@ -914,6 +925,67 @@ mod tests {
         assert!(
             !ctx.is_resume,
             "Should NOT resume when has_activity is false, even with spawn_count > 0"
+        );
+    }
+
+    // ========================================================================
+    // Supersede Session Tests
+    // ========================================================================
+
+    #[test]
+    fn test_supersede_session() {
+        use crate::workflow::domain::SessionState;
+
+        let (service, store) = create_service();
+
+        // Create and spawn a session
+        service
+            .on_spawn_starting("task-1", "work", Some("test-uuid".into()))
+            .unwrap();
+        service.on_agent_spawned("task-1", "work", 12345).unwrap();
+        service.on_agent_exited("task-1", "work").unwrap();
+
+        // Verify session exists and is Active
+        let session = store
+            .get_stage_session("task-1", "work")
+            .unwrap()
+            .unwrap();
+        assert_eq!(session.session_state, SessionState::Active);
+
+        // Supersede the session
+        service.supersede_session("task-1", "work").unwrap();
+
+        // After supersede, get_stage_session should return None (filtered out)
+        let session = store.get_stage_session("task-1", "work").unwrap();
+        assert!(
+            session.is_none(),
+            "Superseded session should be filtered out by get_stage_session"
+        );
+
+        // Next spawn should create a new session
+        let ctx = service
+            .on_spawn_starting("task-1", "work", Some("new-uuid".into()))
+            .unwrap();
+        assert!(
+            !ctx.is_resume,
+            "After supersede, next spawn should NOT be a resume"
+        );
+        assert_eq!(
+            ctx.session_id,
+            Some("new-uuid".to_string()),
+            "New spawn should use new session ID"
+        );
+    }
+
+    #[test]
+    fn test_supersede_session_noop_when_no_session() {
+        let (service, _store) = create_service();
+
+        // Supersede a non-existent session should succeed without error
+        let result = service.supersede_session("task-1", "work");
+        assert!(
+            result.is_ok(),
+            "supersede_session should be no-op when no session exists"
         );
     }
 }

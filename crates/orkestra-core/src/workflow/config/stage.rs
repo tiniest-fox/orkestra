@@ -64,6 +64,12 @@ pub struct StageConfig {
     /// Ignored for script stages.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+
+    /// When true, re-entering this stage after a full pipeline cycle starts a
+    /// completely new agent session instead of resuming the existing one.
+    /// Only meaningful for agent stages; ignored (and validated against) for script stages.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub restart_on_reentry: bool,
 }
 
 impl StageConfig {
@@ -81,6 +87,7 @@ impl StageConfig {
             script: None,
             is_automated: false,
             model: None,
+            restart_on_reentry: false,
         }
     }
 
@@ -102,6 +109,7 @@ impl StageConfig {
             script: Some(ScriptStageConfig::new(command)),
             is_automated: false,
             model: None,
+            restart_on_reentry: false,
         }
     }
 
@@ -158,6 +166,13 @@ impl StageConfig {
     #[must_use]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
+        self
+    }
+
+    /// Builder: enable restart on stage re-entry.
+    #[must_use]
+    pub fn restart_on_reentry(mut self) -> Self {
+        self.restart_on_reentry = true;
         self
     }
 
@@ -685,5 +700,37 @@ mod tests {
         let stage_no_icon = StageConfig::new("work", "summary");
         let yaml_no_icon = serde_yaml::to_string(&stage_no_icon).unwrap();
         assert!(!yaml_no_icon.contains("icon:"));
+    }
+
+    #[test]
+    fn test_restart_on_reentry_defaults_to_false() {
+        let agent_stage = StageConfig::new("work", "summary");
+        assert!(!agent_stage.restart_on_reentry);
+
+        let script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
+        assert!(!script_stage.restart_on_reentry);
+    }
+
+    #[test]
+    fn test_restart_on_reentry_builder() {
+        let stage = StageConfig::new("work", "summary").restart_on_reentry();
+        assert!(stage.restart_on_reentry);
+    }
+
+    #[test]
+    fn test_restart_on_reentry_serialization() {
+        // False value should be omitted (skip_serializing_if)
+        let stage_false = StageConfig::new("work", "summary");
+        let yaml = serde_yaml::to_string(&stage_false).unwrap();
+        assert!(!yaml.contains("restart_on_reentry"));
+
+        // True value should be included
+        let stage_true = StageConfig::new("work", "summary").restart_on_reentry();
+        let yaml = serde_yaml::to_string(&stage_true).unwrap();
+        assert!(yaml.contains("restart_on_reentry: true"));
+
+        // Round-trip test
+        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert!(parsed.restart_on_reentry);
     }
 }

@@ -155,9 +155,7 @@ fn compute_subtask_progress(subtask_states: &[DerivedTaskState]) -> Option<Subta
             progress.has_questions += 1;
         } else if s.needs_review {
             progress.needs_review += 1;
-        } else if s.is_working {
-            progress.working += 1;
-        } else if s.is_system_active {
+        } else if s.is_working || s.is_system_active {
             progress.working += 1;
         } else {
             progress.waiting += 1;

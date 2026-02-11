@@ -5,8 +5,8 @@ import type { HighlightedFileDiff } from "../../hooks/useDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
 import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
-import { EmptyState, FlexContainer, Panel } from "../ui";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
+import { EmptyState, FlexContainer, Panel } from "../ui";
 
 interface CommitDiffPanelProps {
   commitHash: string;

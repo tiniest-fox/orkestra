@@ -589,6 +589,7 @@ mod tests {
                 &task.id,
                 StageOutput::Artifact {
                     content: "The plan".to_string(),
+                    activity_log: None,
                 },
             )
             .unwrap();
@@ -649,6 +650,7 @@ mod tests {
                 &task.id,
                 StageOutput::Artifact {
                     content: "Plan v1".to_string(),
+                    activity_log: None,
                 },
             )
             .unwrap();

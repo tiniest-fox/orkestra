@@ -36,6 +36,10 @@
     "skip_reason": {
       "type": "string",
       "description": "Required justification when subtasks array is empty (skipping breakdown)"
+    },
+    "activity_log": {
+      "type": "string",
+      "description": "Short narrative summary of what you did during this stage. Describe what was implemented, what was skipped and why, and any key decisions made."
     }
   },
   "required": ["content", "subtasks"]

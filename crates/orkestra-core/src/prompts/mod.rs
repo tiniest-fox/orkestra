@@ -110,6 +110,15 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
         }
     }
 
+    // Add activity_log property for non-subtask, non-approval stages
+    if !config.capabilities.produces_subtasks() && !config.capabilities.has_approval() {
+        if let Some(artifact_props) = artifact.get("properties") {
+            if let Some(activity_log) = artifact_props.get("activity_log") {
+                properties["activity_log"] = activity_log.clone();
+            }
+        }
+    }
+
     // Add terminal state properties
     if let Some(failed) = terminal.get("failed").and_then(|f| f.get("properties")) {
         if let Some(error) = failed.get("error") {
@@ -143,6 +152,9 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
             if let Some(sr) = s_props.get("skip_reason") {
                 properties["skip_reason"] = sr.clone();
             }
+            if let Some(al) = s_props.get("activity_log") {
+                properties["activity_log"] = al.clone();
+            }
         }
     }
 
@@ -154,6 +166,9 @@ pub fn generate_stage_schema(config: &SchemaConfig<'_>) -> String {
             }
             if let Some(content) = a_props.get("content") {
                 properties["content"] = content.clone();
+            }
+            if let Some(al) = a_props.get("activity_log") {
+                properties["activity_log"] = al.clone();
             }
         }
     }

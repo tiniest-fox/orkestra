@@ -42,6 +42,8 @@ pub enum StageOutput {
     Artifact {
         /// The artifact content.
         content: String,
+        /// Optional activity log.
+        activity_log: Option<String>,
     },
 
     /// Agent is asking clarifying questions.
@@ -58,6 +60,8 @@ pub enum StageOutput {
         decision: String,
         /// Review content: becomes artifact on approve, feedback on reject.
         content: String,
+        /// Optional activity log.
+        activity_log: Option<String>,
     },
 
     /// Agent produced subtasks for breakdown.
@@ -69,6 +73,8 @@ pub enum StageOutput {
         subtasks: Vec<SubtaskOutput>,
         /// Reason for skipping breakdown (required if subtasks is empty).
         skip_reason: Option<String>,
+        /// Optional activity log.
+        activity_log: Option<String>,
     },
 
     /// Agent failed to complete.
@@ -167,11 +173,13 @@ impl StageOutput {
                         .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
 
                 let skip_reason = value["skip_reason"].as_str().map(String::from);
+                let activity_log = value["activity_log"].as_str().map(String::from);
 
                 Ok(StageOutput::Subtasks {
                     content,
                     subtasks,
                     skip_reason,
+                    activity_log,
                 })
             }
 
@@ -184,6 +192,7 @@ impl StageOutput {
                     .as_str()
                     .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                     .to_string(),
+                activity_log: value["activity_log"].as_str().map(String::from),
             }),
 
             // Any other type is an artifact (the schema validated the type is in the enum)
@@ -192,6 +201,7 @@ impl StageOutput {
                     .as_str()
                     .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                     .to_string(),
+                activity_log: value["activity_log"].as_str().map(String::from),
             }),
         }
     }
@@ -243,11 +253,13 @@ impl StageOutput {
                         .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
 
                 let skip_reason = value["skip_reason"].as_str().map(String::from);
+                let activity_log = value["activity_log"].as_str().map(String::from);
 
                 Ok(StageOutput::Subtasks {
                     content,
                     subtasks,
                     skip_reason,
+                    activity_log,
                 })
             }
 
@@ -260,6 +272,7 @@ impl StageOutput {
                     .as_str()
                     .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                     .to_string(),
+                activity_log: value["activity_log"].as_str().map(String::from),
             }),
 
             // Any other type with content is treated as an artifact
@@ -270,6 +283,7 @@ impl StageOutput {
 
                 Ok(StageOutput::Artifact {
                     content: content.to_string(),
+                    activity_log: value["activity_log"].as_str().map(String::from),
                 })
             }
         }
@@ -305,7 +319,7 @@ impl StageOutput {
     /// Get the artifact content if this is an artifact output.
     pub fn artifact_content(&self) -> Option<&str> {
         match self {
-            StageOutput::Artifact { content } => Some(content),
+            StageOutput::Artifact { content, .. } => Some(content),
             _ => None,
         }
     }
@@ -314,6 +328,16 @@ impl StageOutput {
     pub fn questions(&self) -> Option<&[Question]> {
         match self {
             StageOutput::Questions { questions } => Some(questions),
+            _ => None,
+        }
+    }
+
+    /// Get the activity log, if present.
+    pub fn activity_log(&self) -> Option<&str> {
+        match self {
+            StageOutput::Artifact { activity_log, .. }
+            | StageOutput::Approval { activity_log, .. }
+            | StageOutput::Subtasks { activity_log, .. } => activity_log.as_deref(),
             _ => None,
         }
     }
@@ -464,6 +488,7 @@ mod tests {
                 content,
                 subtasks,
                 skip_reason,
+                ..
             } => {
                 assert_eq!(content, "The technical design content");
                 assert_eq!(subtasks.len(), 2);
@@ -491,6 +516,7 @@ mod tests {
                 content,
                 subtasks,
                 skip_reason,
+                ..
             } => {
                 assert!(content.contains("simple enough"));
                 assert!(subtasks.is_empty());
@@ -597,6 +623,7 @@ mod tests {
                 content,
                 subtasks,
                 skip_reason,
+                ..
             } => {
                 assert!(content.contains("skipped"));
                 assert!(subtasks.is_empty());

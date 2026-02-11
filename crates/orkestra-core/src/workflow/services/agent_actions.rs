@@ -449,16 +449,17 @@ impl WorkflowApi {
             StageOutput::Questions { questions } => {
                 self.handle_questions_output(&mut task, &questions, &current_stage, &now)?;
             }
-            StageOutput::Artifact { content } => {
+            StageOutput::Artifact { content, .. } => {
                 self.handle_artifact_output(&mut task, &content, &current_stage, &now)?;
             }
-            StageOutput::Approval { decision, content } => {
+            StageOutput::Approval { decision, content, .. } => {
                 self.handle_approval_output(&mut task, &current_stage, &decision, &content, &now)?;
             }
             StageOutput::Subtasks {
                 content,
                 subtasks,
                 skip_reason,
+                ..
             } => {
                 self.handle_subtasks_output(
                     &mut task,
@@ -1021,7 +1022,7 @@ mod tests {
         api.agent_started(&task.id).unwrap();
 
         let output = StageOutput::Artifact {
-            content: "The plan content".to_string(),
+            content: "The plan content".to_string(), activity_log: None,
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -1112,7 +1113,7 @@ mod tests {
 
         let output = StageOutput::Approval {
             decision: "reject".to_string(),
-            content: "Tests failing".to_string(),
+            content: "Tests failing".to_string(), activity_log: None,
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -1151,6 +1152,7 @@ mod tests {
         let output = StageOutput::Approval {
             decision: "reject".to_string(),
             content: "Tests failing, please fix".to_string(),
+            activity_log: None,
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -1205,7 +1207,7 @@ mod tests {
 
         let output = StageOutput::Approval {
             decision: "reject".to_string(),
-            content: "Tests failing".to_string(),
+            content: "Tests failing".to_string(), activity_log: None,
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -1230,6 +1232,7 @@ mod tests {
         let output = StageOutput::Approval {
             decision: "approve".to_string(),
             content: "Looks good, well implemented".to_string(),
+            activity_log: None,
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
@@ -1258,7 +1261,7 @@ mod tests {
         // Planning stage doesn't have approval capability
         let output = StageOutput::Approval {
             decision: "approve".to_string(),
-            content: "Should fail".to_string(),
+            content: "Should fail".to_string(), activity_log: None,
         };
         let result = api.process_agent_output(&task.id, output);
 
@@ -1315,7 +1318,7 @@ mod tests {
         api.store.save_task(&task).unwrap();
 
         let output = StageOutput::Artifact {
-            content: "Approved".to_string(),
+            content: "Approved".to_string(), activity_log: None,
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 

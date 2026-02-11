@@ -850,7 +850,7 @@ pub mod mock {
     /// Convert `StageOutput` to JSON value for mock raw output.
     fn output_to_json(output: &StageOutput) -> serde_json::Value {
         match output {
-            StageOutput::Artifact { content } => serde_json::json!({
+            StageOutput::Artifact { content, .. } => serde_json::json!({
                 "type": "artifact",
                 "content": content
             }),
@@ -858,7 +858,7 @@ pub mod mock {
                 "type": "questions",
                 "questions": questions
             }),
-            StageOutput::Approval { decision, content } => serde_json::json!({
+            StageOutput::Approval { decision, content, .. } => serde_json::json!({
                 "type": "approval",
                 "decision": decision,
                 "content": content
@@ -867,6 +867,7 @@ pub mod mock {
                 content,
                 subtasks,
                 skip_reason,
+                ..
             } => {
                 let mut json = serde_json::json!({
                     "type": "subtasks",
@@ -945,7 +946,7 @@ mod tests {
             runner.set_output(
                 "task-1",
                 StageOutput::Artifact {
-                    content: "Done".into(),
+                    content: "Done".into(), activity_log: None,
                 },
             );
 
@@ -961,7 +962,7 @@ mod tests {
             runner.set_output(
                 "task-2",
                 StageOutput::Artifact {
-                    content: "Plan".into(),
+                    content: "Plan".into(), activity_log: None,
                 },
             );
 
@@ -987,7 +988,7 @@ mod tests {
             runner.set_output(
                 "task-1",
                 StageOutput::Artifact {
-                    content: "Done".into(),
+                    content: "Done".into(), activity_log: None,
                 },
             );
 
@@ -1019,7 +1020,7 @@ mod tests {
             runner.set_output(
                 "task-1",
                 StageOutput::Artifact {
-                    content: "Done".into(),
+                    content: "Done".into(), activity_log: None,
                 },
             );
 

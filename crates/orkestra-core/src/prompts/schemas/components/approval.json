@@ -9,6 +9,10 @@
     "content": {
       "type": "string",
       "description": "Review content: on approve this becomes the artifact, on reject this becomes feedback"
+    },
+    "activity_log": {
+      "type": "string",
+      "description": "Short narrative summary of what you did during this stage. Describe what was implemented, what was skipped and why, and any key decisions made."
     }
   },
   "required": ["decision", "content"]

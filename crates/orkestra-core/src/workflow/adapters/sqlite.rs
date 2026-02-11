@@ -10,7 +10,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::orkestra_debug;
 use crate::workflow::domain::{
-    AssistantSession, Iteration, LogEntry, SessionState, StageSession, Task,
+    AssistantSession, Iteration, LogEntry, SessionState, StageSession, Task, TaskHeader,
 };
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Phase, Status};
@@ -131,6 +131,31 @@ impl WorkflowStore for SqliteWorkflowStore {
         }
 
         Ok(tasks)
+    }
+
+    fn list_task_headers(&self) -> WorkflowResult<Vec<TaskHeader>> {
+        let conn = self.lock_conn()?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, description, status, phase,
+                        parent_id, depends_on, branch_name, worktree_path,
+                        auto_mode, created_at, updated_at, completed_at,
+                        base_branch, flow, short_id, base_commit
+                 FROM workflow_tasks ORDER BY created_at",
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], row_to_task_header)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut headers = Vec::new();
+        for row in rows {
+            headers.push(row.map_err(|e| WorkflowError::Storage(e.to_string()))?);
+        }
+
+        Ok(headers)
     }
 
     fn list_subtasks(&self, parent_id: &str) -> WorkflowResult<Vec<Task>> {
@@ -815,6 +840,42 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         created_at: row.get(11)?,
         updated_at: row.get(12)?,
         completed_at: row.get(13)?,
+    })
+}
+
+/// Convert a row to a `TaskHeader` — same as `row_to_task` but without the `artifacts` column.
+///
+/// Column order matches the `list_task_headers` query (no artifacts column at index 5):
+///
+/// `0:id, 1:title, 2:description, 3:status, 4:phase,`
+/// `5:parent_id, 6:depends_on, 7:branch_name, 8:worktree_path,`
+/// `9:auto_mode, 10:created_at, 11:updated_at, 12:completed_at,`
+/// `13:base_branch, 14:flow, 15:short_id, 16:base_commit`
+fn row_to_task_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
+    let status_json: String = row.get(3)?;
+    let phase_str: String = row.get(4)?;
+    let depends_json: String = row.get(6)?;
+    let auto_mode: bool = row.get::<_, i32>(9).unwrap_or(0) != 0;
+    let flow: Option<String> = row.get(14).unwrap_or(None);
+
+    Ok(TaskHeader {
+        id: row.get(0)?,
+        title: row.get(1)?,
+        description: row.get(2)?,
+        status: serde_json::from_str(&status_json).unwrap_or(Status::active("unknown")),
+        phase: parse_phase(&phase_str)?,
+        parent_id: row.get(5)?,
+        short_id: row.get(15)?,
+        depends_on: serde_json::from_str(&depends_json).unwrap_or_default(),
+        branch_name: row.get(7)?,
+        worktree_path: row.get(8)?,
+        base_branch: row.get(13)?,
+        base_commit: row.get(16)?,
+        auto_mode,
+        flow,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+        completed_at: row.get(12)?,
     })
 }
 

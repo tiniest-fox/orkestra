@@ -4,6 +4,8 @@
 //! Unlike the legacy Task which has separate plan/summary/breakdown fields,
 //! this uses `ArtifactStore` for stage-agnostic artifact storage.
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::workflow::runtime::{ArtifactStore, Phase, Status};
@@ -232,6 +234,172 @@ impl Task {
     /// Check if the task needs human review (awaiting review + active status).
     pub fn needs_review(&self) -> bool {
         self.is_awaiting_review() && self.status.is_active()
+    }
+}
+
+/// Lightweight task metadata for orchestrator routing decisions.
+///
+/// Contains all `Task` fields except `artifacts` — the heavy `ArtifactStore`
+/// that holds all stage outputs as deserialized JSON. This avoids the cost of
+/// deserializing artifact data when the orchestrator only needs to categorize
+/// tasks by status/phase for dispatch.
+#[derive(Debug, Clone)]
+pub struct TaskHeader {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub status: Status,
+    pub phase: Phase,
+    pub parent_id: Option<String>,
+    pub short_id: Option<String>,
+    pub depends_on: Vec<String>,
+    pub branch_name: Option<String>,
+    pub worktree_path: Option<String>,
+    pub base_branch: String,
+    pub base_commit: String,
+    pub auto_mode: bool,
+    pub flow: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub completed_at: Option<String>,
+}
+
+impl TaskHeader {
+    /// Check if the task is done.
+    pub fn is_done(&self) -> bool {
+        matches!(self.status, Status::Done)
+    }
+
+    /// Check if the task is archived (completed and integrated).
+    pub fn is_archived(&self) -> bool {
+        matches!(self.status, Status::Archived)
+    }
+
+    /// Check if the task is a subtask.
+    pub fn is_subtask(&self) -> bool {
+        self.parent_id.is_some()
+    }
+
+    /// Get the current stage name, if active.
+    pub fn current_stage(&self) -> Option<&str> {
+        self.status.stage()
+    }
+}
+
+impl From<&Task> for TaskHeader {
+    fn from(task: &Task) -> Self {
+        Self {
+            id: task.id.clone(),
+            title: task.title.clone(),
+            description: task.description.clone(),
+            status: task.status.clone(),
+            phase: task.phase,
+            parent_id: task.parent_id.clone(),
+            short_id: task.short_id.clone(),
+            depends_on: task.depends_on.clone(),
+            branch_name: task.branch_name.clone(),
+            worktree_path: task.worktree_path.clone(),
+            base_branch: task.base_branch.clone(),
+            base_commit: task.base_commit.clone(),
+            auto_mode: task.auto_mode,
+            flow: task.flow.clone(),
+            created_at: task.created_at.clone(),
+            updated_at: task.updated_at.clone(),
+            completed_at: task.completed_at.clone(),
+        }
+    }
+}
+
+/// Pre-computed categorization of tasks for a single orchestrator tick.
+///
+/// Built once from `list_task_headers()` at the start of each tick. Each phase
+/// method reads from the relevant bucket instead of querying the store independently.
+pub struct TickSnapshot {
+    /// All task headers (for subtask filtering in parent completion check).
+    pub all: Vec<TaskHeader>,
+    /// Tasks in `AwaitingSetup` phase.
+    pub awaiting_setup: Vec<TaskHeader>,
+    /// Parents in `WaitingOnChildren` status + `Idle` phase.
+    pub waiting_parents: Vec<TaskHeader>,
+    /// Tasks in `Idle` phase + `Active` status (candidates for agent spawning).
+    pub idle_active: Vec<TaskHeader>,
+    /// Tasks that are `Done` + `Idle` + have a worktree (candidates for integration).
+    pub idle_done_with_worktree: Vec<TaskHeader>,
+    /// Whether any task is currently in `Integrating` phase.
+    pub has_integrating: bool,
+    /// IDs of `Archived` tasks (for subtask dependency checking — setup waits for integration).
+    pub integrated_ids: HashSet<String>,
+    /// IDs of `Done` or `Archived` tasks (for general dependency checking).
+    pub done_ids: HashSet<String>,
+}
+
+impl TickSnapshot {
+    /// Build a snapshot from a list of task headers in a single pass.
+    pub fn build(headers: Vec<TaskHeader>) -> Self {
+        let mut awaiting_setup = Vec::new();
+        let mut waiting_parents = Vec::new();
+        let mut idle_active = Vec::new();
+        let mut idle_done_with_worktree = Vec::new();
+        let mut has_integrating = false;
+        let mut integrated_ids = HashSet::new();
+        let mut done_ids = HashSet::new();
+
+        for header in &headers {
+            // Build ID sets
+            if header.is_archived() {
+                integrated_ids.insert(header.id.clone());
+                done_ids.insert(header.id.clone());
+            } else if header.is_done() {
+                done_ids.insert(header.id.clone());
+            }
+
+            // Track integrating
+            if header.phase == Phase::Integrating {
+                has_integrating = true;
+            }
+
+            // Categorize into buckets
+            match header.phase {
+                Phase::AwaitingSetup => {
+                    awaiting_setup.push(header.clone());
+                }
+                Phase::Idle => {
+                    if header.status.is_waiting_on_children() {
+                        waiting_parents.push(header.clone());
+                    }
+                    if header.status.is_active() {
+                        idle_active.push(header.clone());
+                    }
+                    if header.is_done() && header.worktree_path.is_some() {
+                        idle_done_with_worktree.push(header.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Self {
+            all: headers,
+            awaiting_setup,
+            waiting_parents,
+            idle_active,
+            idle_done_with_worktree,
+            has_integrating,
+            integrated_ids,
+            done_ids,
+        }
+    }
+
+    /// Check if the snapshot has no actionable tasks (everything idle/terminal).
+    ///
+    /// Note: does not account for Finishing/Finished tasks (commit pipeline
+    /// queries the DB directly). Those are transient states that resolve within
+    /// one tick, so missing them here just means one extra idle-sleep cycle.
+    pub fn is_idle(&self) -> bool {
+        self.awaiting_setup.is_empty()
+            && self.waiting_parents.is_empty()
+            && self.idle_active.is_empty()
+            && self.idle_done_with_worktree.is_empty()
     }
 }
 

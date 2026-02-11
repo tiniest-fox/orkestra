@@ -3,7 +3,9 @@
 //! This trait abstracts over storage backends, allowing the workflow system
 //! to work with `SQLite`, in-memory stores for testing, or other backends.
 
-use crate::workflow::domain::{AssistantSession, Iteration, LogEntry, StageSession, Task};
+use crate::workflow::domain::{
+    AssistantSession, Iteration, LogEntry, StageSession, Task, TaskHeader,
+};
 
 /// Error type for workflow operations.
 #[derive(Debug, thiserror::Error)]
@@ -66,6 +68,19 @@ pub trait WorkflowStore: Send + Sync {
 
     /// List all tasks.
     fn list_tasks(&self) -> WorkflowResult<Vec<Task>>;
+
+    /// List all tasks as lightweight headers (skipping artifact deserialization).
+    ///
+    /// Returns `TaskHeader` structs that contain all fields except `artifacts`.
+    /// Used by the orchestrator for per-tick categorization where artifact
+    /// content is not needed.
+    ///
+    /// Default implementation maps `list_tasks()` results. The `SQLite` store
+    /// overrides this with a query that skips the `artifacts` column entirely.
+    fn list_task_headers(&self) -> WorkflowResult<Vec<TaskHeader>> {
+        let tasks = self.list_tasks()?;
+        Ok(tasks.iter().map(TaskHeader::from).collect())
+    }
 
     /// List all tasks excluding archived ones.
     ///

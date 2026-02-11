@@ -16,5 +16,5 @@ pub use iteration::{Iteration, IterationTrigger};
 pub use log_entry::{LogEntry, OrkAction, TodoItem, ToolInput};
 pub use question::{Question, QuestionAnswer, QuestionOption};
 pub use stage_session::{SessionState, StageSession};
-pub use task::Task;
+pub use task::{Task, TaskHeader, TickSnapshot};
 pub use task_view::{DerivedTaskState, PendingRejection, SubtaskProgress, TaskView};

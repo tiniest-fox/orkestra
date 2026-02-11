@@ -229,11 +229,14 @@ export function TaskCard({
               <Hourglass className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
             </span>
           )}
-          {(task.phase === "idle" || task.phase === "finished") && !derived.is_waiting_on_children && !derived.is_done && !derived.is_archived && (
-            <span className="flex-shrink-0 p-1.5">
-              <Hourglass className="w-4 h-4 text-stone-300 dark:text-stone-600 animate-spin-bounce" />
-            </span>
-          )}
+          {(task.phase === "idle" || task.phase === "finished") &&
+            !derived.is_waiting_on_children &&
+            !derived.is_done &&
+            !derived.is_archived && (
+              <span className="flex-shrink-0 p-1.5">
+                <Hourglass className="w-4 h-4 text-stone-300 dark:text-stone-600 animate-spin-bounce" />
+              </span>
+            )}
           {hasUnresolvedDeps && (
             <span className="flex-shrink-0 p-1.5 rounded-md bg-stone-100 dark:bg-stone-800">
               <Hand className="w-4 h-4 text-stone-500 dark:text-stone-400" />

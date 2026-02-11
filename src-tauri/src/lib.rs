@@ -160,6 +160,38 @@ fn cleanup_agents_standalone() {
     }
 }
 
+/// Fix PATH for macOS/Linux GUI apps that don't inherit the user's shell environment.
+///
+/// Runs the user's default login shell to resolve their real PATH (which includes
+/// tools like cargo, node, mise shims, etc.) and sets it on the current process.
+/// This ensures child processes (scripts, agents) can find user-installed tools.
+fn fix_path_env() {
+    #[cfg(unix)]
+    {
+        use std::process::Command;
+
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+
+        // Run the user's login+interactive shell to print PATH, using a unique
+        // delimiter to reliably extract it from any shell output. The -i flag is
+        // needed because tools like mise activate in .zshrc (interactive-only).
+        let delimiter = "---ORKESTRA_PATH---";
+        let cmd = format!("echo {delimiter} && echo $PATH && echo {delimiter}");
+
+        if let Ok(output) = Command::new(&shell).args(["-l", "-i", "-c", &cmd]).output() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // Extract PATH between delimiters
+            let parts: Vec<&str> = stdout.split(delimiter).collect();
+            if parts.len() >= 3 {
+                let path = parts[1].trim();
+                if !path.is_empty() {
+                    std::env::set_var("PATH", path);
+                }
+            }
+        }
+    }
+}
+
 /// Set up signal handlers to clean up agents on termination signals (Unix only).
 #[cfg(unix)]
 fn setup_signal_handlers() {
@@ -284,6 +316,11 @@ fn handle_window_close(app_handle: &AppHandle, window_label: &str) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::too_many_lines)]
 pub fn run() {
+    // Fix PATH for macOS .app bundles. GUI apps don't inherit the user's shell
+    // PATH, so tools like cargo, node, mise shims etc. aren't found. This runs
+    // the user's login shell to resolve their real PATH and sets it on this process.
+    fix_path_env();
+
     // Set up signal handlers to ensure cleanup on external termination
     setup_signal_handlers();
 

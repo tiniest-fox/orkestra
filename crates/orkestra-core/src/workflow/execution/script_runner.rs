@@ -131,7 +131,7 @@ impl ScriptHandle {
         env: &ScriptEnv,
     ) -> std::io::Result<Self> {
         let mut cmd = Command::new("sh");
-        cmd.args(["-l", "-c", command])
+        cmd.args(["-c", command])
             .current_dir(working_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

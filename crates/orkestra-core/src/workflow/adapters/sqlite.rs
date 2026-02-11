@@ -800,7 +800,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         title: row.get(1)?,
         description: row.get(2)?,
         status: serde_json::from_str(&status_json).unwrap_or(Status::active("unknown")),
-        phase: parse_phase(&phase_str),
+        phase: parse_phase(&phase_str)?,
         artifacts: serde_json::from_str(&artifacts_json).unwrap_or_default(),
         parent_id: row.get(6)?,
         short_id: row.get(16)?,
@@ -857,18 +857,23 @@ fn phase_to_str(phase: Phase) -> &'static str {
     }
 }
 
-fn parse_phase(s: &str) -> Phase {
+fn parse_phase(s: &str) -> rusqlite::Result<Phase> {
     match s {
-        "awaiting_setup" => Phase::AwaitingSetup,
-        "setting_up" => Phase::SettingUp,
-        "agent_working" => Phase::AgentWorking,
-        "awaiting_review" => Phase::AwaitingReview,
-        "interrupted" => Phase::Interrupted,
-        "integrating" => Phase::Integrating,
-        "finishing" => Phase::Finishing,
-        "committing" => Phase::Committing,
-        "finished" => Phase::Finished,
-        _ => Phase::Idle,
+        "idle" => Ok(Phase::Idle),
+        "awaiting_setup" => Ok(Phase::AwaitingSetup),
+        "setting_up" => Ok(Phase::SettingUp),
+        "agent_working" => Ok(Phase::AgentWorking),
+        "awaiting_review" => Ok(Phase::AwaitingReview),
+        "interrupted" => Ok(Phase::Interrupted),
+        "integrating" => Ok(Phase::Integrating),
+        "finishing" => Ok(Phase::Finishing),
+        "committing" => Ok(Phase::Committing),
+        "finished" => Ok(Phase::Finished),
+        _ => Err(rusqlite::Error::FromSqlConversionFailure(
+            4,
+            rusqlite::types::Type::Text,
+            format!("unknown phase in database: '{s}'").into(),
+        )),
     }
 }
 

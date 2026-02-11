@@ -220,7 +220,8 @@ impl WorkflowApi {
             task.artifacts
                 .remove(&format!("{artifact_name}_structured"));
         } else {
-            let json = serde_json::to_string(subtasks).expect("SubtaskOutput is always serializable");
+            let json =
+                serde_json::to_string(subtasks).expect("SubtaskOutput is always serializable");
             task.artifacts.set(Artifact::new(
                 format!("{artifact_name}_structured"),
                 &json,
@@ -320,7 +321,13 @@ impl WorkflowApi {
             if let Ok(Some(mut session)) = self.store.get_stage_session(&task.id, target) {
                 session.supersede(now);
                 if let Err(e) = self.store.save_stage_session(&session) {
-                    orkestra_debug!("action", "Failed to supersede session for {}/{}: {}", task.id, target, e);
+                    orkestra_debug!(
+                        "action",
+                        "Failed to supersede session for {}/{}: {}",
+                        task.id,
+                        target,
+                        e
+                    );
                 }
             }
         }
@@ -570,7 +577,7 @@ impl WorkflowApi {
         Ok(task)
     }
 
-    /// Record a failed commit. Marks task as failed and records a CommitFailed iteration.
+    /// Record a failed commit. Marks task as failed and records a `CommitFailed` iteration.
     ///
     /// Reads `current_stage()` before changing status (stage is lost after `Status::failed`).
     /// Creates a new iteration with `Outcome::CommitFailed` to preserve the failure in history,
@@ -1601,10 +1608,7 @@ mod tests {
         let commit_iter = iterations
             .iter()
             .find(|i| matches!(&i.outcome, Some(Outcome::CommitFailed { .. })));
-        assert!(
-            commit_iter.is_some(),
-            "Should have CommitFailed iteration"
-        );
+        assert!(commit_iter.is_some(), "Should have CommitFailed iteration");
 
         if let Some(Outcome::CommitFailed { error }) = &commit_iter.unwrap().outcome {
             assert_eq!(error, "git commit error");

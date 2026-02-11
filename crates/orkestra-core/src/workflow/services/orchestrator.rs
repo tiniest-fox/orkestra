@@ -18,6 +18,7 @@ use super::periodic::PeriodicScheduler;
 
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
+use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
@@ -27,7 +28,7 @@ use super::WorkflowApi;
 
 /// Parameters for a background commit job.
 struct CommitJob {
-    task: crate::workflow::domain::Task,
+    task: Task,
     workflow: WorkflowConfig,
     commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
     git: Arc<dyn GitService>,
@@ -667,7 +668,7 @@ impl OrchestratorLoop {
         git: Arc<dyn GitService>,
         api: Arc<Mutex<WorkflowApi>>,
         commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
-        task: crate::workflow::domain::Task,
+        task: Task,
         workflow: WorkflowConfig,
     ) {
         let task_id = task.id.clone();
@@ -682,7 +683,12 @@ impl OrchestratorLoop {
             commit_message_generator.as_ref(),
         ) {
             let error_msg = format!("Failed to commit pending changes: {e}");
-            orkestra_debug!("integration", "safety-net commit failed for {}: {}", task_id, error_msg);
+            orkestra_debug!(
+                "integration",
+                "safety-net commit failed for {}: {}",
+                task_id,
+                error_msg
+            );
             match api.lock() {
                 Ok(api) => {
                     if let Err(e) = api.apply_integration_result(
@@ -690,7 +696,12 @@ impl OrchestratorLoop {
                         super::integration::IntegrationGitResult::CommitError(error_msg),
                         has_worktree,
                     ) {
-                        orkestra_debug!("integration", "failed to record integration result for {}: {}", task_id, e);
+                        orkestra_debug!(
+                            "integration",
+                            "failed to record integration result for {}: {}",
+                            task_id,
+                            e
+                        );
                     }
                 }
                 Err(_) => {
@@ -801,7 +812,12 @@ impl OrchestratorLoop {
             let mut reset_task = api.get_task(&task_id)?;
             reset_task.phase = Phase::Idle;
             if let Err(e) = api.store.save_task(&reset_task) {
-                orkestra_debug!("integration", "Failed to reset task {} phase: {}", task_id, e);
+                orkestra_debug!(
+                    "integration",
+                    "Failed to reset task {} phase: {}",
+                    task_id,
+                    e
+                );
             }
             return Ok(vec![OrchestratorEvent::Error {
                 task_id: Some(task_id),
@@ -826,7 +842,13 @@ impl OrchestratorLoop {
         let api_clone = Arc::clone(&self.api);
 
         let run_integration = move || {
-            Self::run_background_integration(git, api_clone, commit_message_generator, task, workflow);
+            Self::run_background_integration(
+                git,
+                api_clone,
+                commit_message_generator,
+                task,
+                workflow,
+            );
         };
 
         if self.sync_background {
@@ -890,7 +912,11 @@ impl OrchestratorLoop {
                 "orchestrator",
                 "spawn_pending_commits {}: → {}",
                 task.id,
-                if self.git_service.is_some() { "Committing" } else { "Finished" }
+                if self.git_service.is_some() {
+                    "Committing"
+                } else {
+                    "Finished"
+                }
             );
 
             if let Some(g) = &self.git_service {
@@ -916,13 +942,13 @@ impl OrchestratorLoop {
         Ok(jobs)
     }
 
-    /// Background commit logic. Commits worktree changes and records result via WorkflowApi.
+    /// Background commit logic. Commits worktree changes and records result via `WorkflowApi`.
     #[allow(clippy::needless_pass_by_value)]
     fn run_background_commit(
         git: Arc<dyn GitService>,
         api: Arc<Mutex<WorkflowApi>>,
         commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
-        task: crate::workflow::domain::Task,
+        task: Task,
         workflow: WorkflowConfig,
     ) {
         let task_id = task.id.clone();
@@ -949,7 +975,12 @@ impl OrchestratorLoop {
         };
 
         if let Err(e) = result {
-            orkestra_debug!("commit", "commit result recording failed for {}: {}", task_id, e);
+            orkestra_debug!(
+                "commit",
+                "commit result recording failed for {}: {}",
+                task_id,
+                e
+            );
         }
     }
 
@@ -1042,101 +1073,113 @@ impl OrchestratorLoop {
         for task in tasks {
             if task.phase == Phase::Integrating && task.is_done() {
                 orkestra_debug!("recovery", "Found stale Integrating task: {}", task.id);
-
-                if Self::is_branch_already_merged(&api, &task) {
-                    // Branch is already merged — archive directly
-                    orkestra_debug!(
-                        "recovery",
-                        "Branch already merged for {}, archiving directly",
-                        task.id
-                    );
-
-                    // Clean up worktree if it still exists on disk
-                    if task.worktree_path.is_some() {
-                        if let Some(ref git) = api.git_service {
-                            if let Err(e) = git.remove_worktree(&task.id, true) {
-                                orkestra_debug!(
-                                    "recovery",
-                                    "Failed to remove worktree for {} (non-critical): {}",
-                                    task.id,
-                                    e
-                                );
-                            }
-                        }
-                    }
-
-                    match api.integration_succeeded(&task.id) {
-                        Ok(_) => {
-                            orkestra_debug!("recovery", "Archived already-merged task {}", task.id);
-                            events.push(OrchestratorEvent::IntegrationCompleted {
-                                task_id: task.id.clone(),
-                            });
-                        }
-                        Err(e) => {
-                            orkestra_debug!(
-                                "recovery",
-                                "Failed to archive already-merged task {}: {}",
-                                task.id,
-                                e
-                            );
-                            events.push(OrchestratorEvent::IntegrationFailed {
-                                task_id: task.id.clone(),
-                                error: e.to_string(),
-                                conflict_files: vec![],
-                            });
-                        }
-                    }
-                } else {
-                    // Branch is NOT merged — re-attempt full integration
-                    match api.integrate_task(&task.id) {
-                        Ok(_) => {
-                            orkestra_debug!(
-                                "recovery",
-                                "Successfully recovered integration for {}",
-                                task.id
-                            );
-                            events.push(OrchestratorEvent::IntegrationCompleted {
-                                task_id: task.id.clone(),
-                            });
-                        }
-                        Err(e) => {
-                            orkestra_debug!(
-                                "recovery",
-                                "Integration failed for {}: {}",
-                                task.id,
-                                e
-                            );
-
-                            // integration_failed() should have moved task to recovery stage.
-                            // Verify the task is no longer stuck in Integrating phase.
-                            if let Ok(updated_task) = api.get_task(&task.id) {
-                                if updated_task.phase == Phase::Integrating {
-                                    // Fallback: reset phase to Idle so orchestrator can retry later
-                                    orkestra_debug!(
-                                        "recovery",
-                                        "Task {} still in Integrating phase, resetting to Idle",
-                                        task.id
-                                    );
-                                    let mut reset_task = updated_task;
-                                    reset_task.phase = Phase::Idle;
-                                    if let Err(e) = api.store.save_task(&reset_task) {
-                                        orkestra_debug!("integration", "Failed to reset task {} phase: {}", task.id, e);
-                                    }
-                                }
-                            }
-
-                            events.push(OrchestratorEvent::IntegrationFailed {
-                                task_id: task.id.clone(),
-                                error: e.to_string(),
-                                conflict_files: vec![],
-                            });
-                        }
-                    }
-                }
+                events.push(Self::recover_stale_task(&api, &task));
             }
         }
 
         events
+    }
+
+    /// Attempt to recover a single task stuck in `Integrating` phase.
+    fn recover_stale_task(api: &WorkflowApi, task: &Task) -> OrchestratorEvent {
+        if Self::is_branch_already_merged(api, task) {
+            Self::archive_already_merged_task(api, task)
+        } else {
+            Self::reattempt_integration(api, task)
+        }
+    }
+
+    /// Archive a task whose branch is already merged into the target.
+    fn archive_already_merged_task(api: &WorkflowApi, task: &Task) -> OrchestratorEvent {
+        orkestra_debug!(
+            "recovery",
+            "Branch already merged for {}, archiving directly",
+            task.id
+        );
+
+        // Clean up worktree if it still exists on disk
+        if task.worktree_path.is_some() {
+            if let Some(ref git) = api.git_service {
+                if let Err(e) = git.remove_worktree(&task.id, true) {
+                    orkestra_debug!(
+                        "recovery",
+                        "Failed to remove worktree for {} (non-critical): {}",
+                        task.id,
+                        e
+                    );
+                }
+            }
+        }
+
+        match api.integration_succeeded(&task.id) {
+            Ok(_) => {
+                orkestra_debug!("recovery", "Archived already-merged task {}", task.id);
+                OrchestratorEvent::IntegrationCompleted {
+                    task_id: task.id.clone(),
+                }
+            }
+            Err(e) => {
+                orkestra_debug!(
+                    "recovery",
+                    "Failed to archive already-merged task {}: {}",
+                    task.id,
+                    e
+                );
+                OrchestratorEvent::IntegrationFailed {
+                    task_id: task.id.clone(),
+                    error: e.to_string(),
+                    conflict_files: vec![],
+                }
+            }
+        }
+    }
+
+    /// Re-attempt full integration for a task whose branch is not yet merged.
+    fn reattempt_integration(api: &WorkflowApi, task: &Task) -> OrchestratorEvent {
+        match api.integrate_task(&task.id) {
+            Ok(_) => {
+                orkestra_debug!(
+                    "recovery",
+                    "Successfully recovered integration for {}",
+                    task.id
+                );
+                OrchestratorEvent::IntegrationCompleted {
+                    task_id: task.id.clone(),
+                }
+            }
+            Err(e) => {
+                orkestra_debug!("recovery", "Integration failed for {}: {}", task.id, e);
+
+                // integration_failed() should have moved task to recovery stage.
+                // Verify the task is no longer stuck in Integrating phase.
+                if let Ok(updated_task) = api.get_task(&task.id) {
+                    if updated_task.phase == Phase::Integrating {
+                        // Fallback: reset phase to Idle so orchestrator can retry later
+                        orkestra_debug!(
+                            "recovery",
+                            "Task {} still in Integrating phase, resetting to Idle",
+                            task.id
+                        );
+                        let mut reset_task = updated_task;
+                        reset_task.phase = Phase::Idle;
+                        if let Err(e) = api.store.save_task(&reset_task) {
+                            orkestra_debug!(
+                                "integration",
+                                "Failed to reset task {} phase: {}",
+                                task.id,
+                                e
+                            );
+                        }
+                    }
+                }
+
+                OrchestratorEvent::IntegrationFailed {
+                    task_id: task.id.clone(),
+                    error: e.to_string(),
+                    conflict_files: vec![],
+                }
+            }
+        }
     }
 
     /// Check if a task's branch is already merged into its target branch.
@@ -1148,7 +1191,7 @@ impl OrchestratorLoop {
     /// - The branch's commits are all reachable from the target
     ///
     /// Returns `false` if the branch has unmerged commits or if the check fails.
-    fn is_branch_already_merged(api: &WorkflowApi, task: &crate::workflow::domain::Task) -> bool {
+    fn is_branch_already_merged(api: &WorkflowApi, task: &Task) -> bool {
         let Some(ref git) = api.git_service else {
             return true; // No git = nothing to merge
         };
@@ -1358,7 +1401,7 @@ impl OrchestratorLoop {
             return;
         };
 
-        let tasks_by_id: HashMap<&str, &crate::workflow::domain::Task> =
+        let tasks_by_id: HashMap<&str, &Task> =
             all_tasks.iter().map(|t| (t.id.as_str(), t)).collect();
 
         for name in &worktree_names {

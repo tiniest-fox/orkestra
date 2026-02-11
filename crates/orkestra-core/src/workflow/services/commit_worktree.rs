@@ -26,6 +26,12 @@ pub(crate) fn commit_worktree_changes(
     };
     let worktree = Path::new(worktree_path);
     if !worktree.exists() {
+        crate::orkestra_debug!(
+            "commit",
+            "WARNING: worktree missing for task {} at {}, skipping commit",
+            task.id,
+            worktree_path
+        );
         return Ok(());
     }
 

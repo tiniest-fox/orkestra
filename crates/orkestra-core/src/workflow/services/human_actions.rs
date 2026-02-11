@@ -511,13 +511,9 @@ impl WorkflowApi {
 
     /// End the current iteration with `Approved` and enter the commit pipeline.
     ///
-    /// Shared by auto-advance (agent actions), human approve, and auto-approve (set_auto_mode).
+    /// Shared by auto-advance (agent actions), human approve, and auto-approve (`set_auto_mode`).
     /// Callers are responsible for saving the task after this returns.
-    pub(crate) fn enter_commit_pipeline(
-        &self,
-        task: &mut Task,
-        now: &str,
-    ) -> WorkflowResult<()> {
+    pub(crate) fn enter_commit_pipeline(&self, task: &mut Task, now: &str) -> WorkflowResult<()> {
         self.end_current_iteration(task, Outcome::Approved)?;
         task.phase = Phase::Finishing;
         task.updated_at = now.to_string();

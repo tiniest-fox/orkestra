@@ -342,10 +342,43 @@ impl StageExecutionService {
         };
 
         // 1. Create session + get spawn context (session ID, resume flag, reentry detection)
-        let spawn_context = self
+        let mut spawn_context = self
             .session_service
             .on_spawn_starting(&task.id, stage, initial_session_id)
             .map_err(|e| SpawnError::SessionError(e.to_string()))?;
+
+        // 2. If this stage has restart_on_reentry and we detected a re-entry,
+        //    supersede the existing session and create a fresh one.
+        if spawn_context.is_stage_reentry {
+            let restart = self
+                .workflow
+                .stage(stage)
+                .map(|s| s.restart_on_reentry)
+                .unwrap_or(false);
+
+            if restart {
+                // Supersede the old session so the next on_spawn_starting creates a new one
+                self.session_service
+                    .supersede_session(&task.id, stage)
+                    .map_err(|e| SpawnError::SessionError(e.to_string()))?;
+
+                // Generate a FRESH UUID — reusing the old one would cause Claude Code
+                // to find the old JSONL session file and resume it
+                let fresh_session_id = if generates_own {
+                    None
+                } else {
+                    Some(uuid::Uuid::new_v4().to_string())
+                };
+
+                // Re-create session: on_spawn_starting will find no active session
+                // (Superseded is filtered) and create a new one. The iteration from
+                // the first call is reused via get_active_iteration.
+                spawn_context = self
+                    .session_service
+                    .on_spawn_starting(&task.id, stage, fresh_session_id)
+                    .map_err(|e| SpawnError::SessionError(e.to_string()))?;
+            }
+        }
 
         // 3. Execute (dispatch by stage type)
         let result = if self.is_script_stage(stage) {

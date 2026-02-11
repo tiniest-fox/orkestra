@@ -91,7 +91,7 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
             MockAgentOutput::Artifact {
                 name: "summary".into(),
                 content: format!("Work done for {id}"),
-            activity_log: None,
+                activity_log: None,
             },
         );
     }
@@ -118,7 +118,7 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
             MockAgentOutput::Artifact {
                 name: "verdict".into(),
                 content: "Looks good".into(),
-            activity_log: None,
+                activity_log: None,
             },
         );
     }
@@ -887,7 +887,7 @@ fn test_subtask_integration_conflict() {
             MockAgentOutput::Artifact {
                 name: "summary".into(),
                 content: format!("Work done for {id}"),
-            activity_log: None,
+                activity_log: None,
             },
         );
     }
@@ -915,7 +915,7 @@ fn test_subtask_integration_conflict() {
             MockAgentOutput::Artifact {
                 name: "verdict".into(),
                 content: "Looks good".into(),
-            activity_log: None,
+                activity_log: None,
             },
         );
         env.set_output(
@@ -923,7 +923,7 @@ fn test_subtask_integration_conflict() {
             MockAgentOutput::Artifact {
                 name: "summary".into(),
                 content: format!("Recovery work for {id}"),
-            activity_log: None,
+                activity_log: None,
             },
         );
     }

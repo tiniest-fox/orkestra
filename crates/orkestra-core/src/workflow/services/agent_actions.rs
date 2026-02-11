@@ -447,7 +447,8 @@ impl WorkflowApi {
 
         // Persist activity log before processing the output
         if let Some(log) = output.activity_log() {
-            self.iteration_service.set_activity_log(task_id, &current_stage, log)?;
+            self.iteration_service
+                .set_activity_log(task_id, &current_stage, log)?;
         }
 
         match output {

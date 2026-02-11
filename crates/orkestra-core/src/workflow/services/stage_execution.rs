@@ -353,8 +353,7 @@ impl StageExecutionService {
             let restart = self
                 .workflow
                 .stage(stage)
-                .map(|s| s.restart_on_reentry)
-                .unwrap_or(false);
+                .is_some_and(|s| s.restart_on_reentry);
 
             if restart {
                 // Supersede the old session so the next on_spawn_starting creates a new one

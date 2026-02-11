@@ -3946,4 +3946,3 @@ fn activity_log_on_rejection_retry() {
         "Review iteration should be complete"
     );
 }
-

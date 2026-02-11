@@ -628,6 +628,105 @@ impl WorkflowStore for SqliteWorkflowStore {
         Ok(())
     }
 
+    fn list_iterations_for_tasks(&self, task_ids: &[&str]) -> WorkflowResult<Vec<Iteration>> {
+        if task_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.lock_conn()?;
+        let placeholders = vec!["?"; task_ids.len()].join(", ");
+        let sql = format!(
+            "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered, activity_log
+             FROM workflow_iterations WHERE task_id IN ({placeholders}) ORDER BY task_id, started_at, iteration_number"
+        );
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(
+                rusqlite::params_from_iter(task_ids.iter()),
+                row_to_iteration,
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut iterations = Vec::new();
+        for row in rows {
+            iterations.push(row.map_err(|e| WorkflowError::Storage(e.to_string()))?);
+        }
+
+        Ok(iterations)
+    }
+
+    fn list_stage_sessions_for_tasks(
+        &self,
+        task_ids: &[&str],
+    ) -> WorkflowResult<Vec<StageSession>> {
+        if task_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.lock_conn()?;
+        let placeholders = vec!["?"; task_ids.len()].join(", ");
+        let sql = format!(
+            "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
+                    session_state, created_at, updated_at, has_activity
+             FROM workflow_stage_sessions WHERE task_id IN ({placeholders}) ORDER BY task_id, created_at"
+        );
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(
+                rusqlite::params_from_iter(task_ids.iter()),
+                row_to_stage_session,
+            )
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(row.map_err(|e| WorkflowError::Storage(e.to_string()))?);
+        }
+
+        Ok(sessions)
+    }
+
+    fn list_archived_subtasks_by_parents(&self, parent_ids: &[&str]) -> WorkflowResult<Vec<Task>> {
+        if parent_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.lock_conn()?;
+        let placeholders = vec!["?"; parent_ids.len()].join(", ");
+        let sql = format!(
+            "SELECT id, title, description, status, phase, artifacts,
+                    parent_id, depends_on, branch_name, worktree_path,
+                    auto_mode, created_at, updated_at, completed_at,
+                    base_branch, flow, short_id, base_commit
+             FROM workflow_tasks
+             WHERE parent_id IN ({placeholders}) AND status LIKE '%archived%'
+             ORDER BY created_at"
+        );
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(parent_ids.iter()), row_to_task)
+            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+
+        let mut tasks = Vec::new();
+        for row in rows {
+            tasks.push(row.map_err(|e| WorkflowError::Storage(e.to_string()))?);
+        }
+
+        Ok(tasks)
+    }
+
     fn delete_task_tree(&self, task_ids: &[String]) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
         // unchecked_transaction takes &self (not &mut self), which is safe here

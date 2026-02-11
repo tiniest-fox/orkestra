@@ -249,6 +249,49 @@ pub trait WorkflowStore: Send + Sync {
         Ok(all)
     }
 
+    /// List iterations scoped to a set of task IDs.
+    ///
+    /// More efficient than `list_all_iterations()` when only a subset of tasks
+    /// is needed (e.g., active tasks for the UI). Default implementation queries
+    /// per-task; the `SQLite` store uses a single `IN` clause query.
+    fn list_iterations_for_tasks(&self, task_ids: &[&str]) -> WorkflowResult<Vec<Iteration>> {
+        let mut all = Vec::new();
+        for id in task_ids {
+            all.extend(self.get_iterations(id)?);
+        }
+        Ok(all)
+    }
+
+    /// List stage sessions scoped to a set of task IDs.
+    ///
+    /// More efficient than `list_all_stage_sessions()` when only a subset of tasks
+    /// is needed. Default implementation queries per-task; the `SQLite` store uses
+    /// a single `IN` clause query.
+    fn list_stage_sessions_for_tasks(
+        &self,
+        task_ids: &[&str],
+    ) -> WorkflowResult<Vec<StageSession>> {
+        let mut all = Vec::new();
+        for id in task_ids {
+            all.extend(self.get_stage_sessions(id)?);
+        }
+        Ok(all)
+    }
+
+    /// List archived subtasks for multiple parent IDs in one query.
+    ///
+    /// Returns subtasks that are archived and belong to any of the given parent IDs.
+    /// Default implementation queries per-parent and filters; the `SQLite` store uses
+    /// a single `IN` clause query.
+    fn list_archived_subtasks_by_parents(&self, parent_ids: &[&str]) -> WorkflowResult<Vec<Task>> {
+        let mut all = Vec::new();
+        for id in parent_ids {
+            let subtasks = self.list_subtasks(id)?;
+            all.extend(subtasks.into_iter().filter(Task::is_archived));
+        }
+        Ok(all)
+    }
+
     // =========================================================================
     // Bulk Write Operations
     // =========================================================================

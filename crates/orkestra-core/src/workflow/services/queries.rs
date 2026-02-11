@@ -223,24 +223,40 @@ impl WorkflowApi {
 
         // For non-archived parent tasks, load their archived subtasks too
         // so they appear in the subtasks tab and count in progress displays
-        for parent_id in &parent_ids {
-            let all_subtasks = self.store.list_subtasks(parent_id)?;
-            let archived_subtasks: Vec<Task> = all_subtasks
-                .into_iter()
-                .filter(super::super::domain::task::Task::is_archived)
-                .collect();
-
-            if !archived_subtasks.is_empty() {
-                subtasks_by_parent
-                    .entry(parent_id.clone())
-                    .or_default()
-                    .extend(archived_subtasks);
+        {
+            let parent_id_refs: Vec<&str> = parent_ids.iter().map(String::as_str).collect();
+            let archived_subtasks = self
+                .store
+                .list_archived_subtasks_by_parents(&parent_id_refs)?;
+            for subtask in archived_subtasks {
+                if let Some(ref parent_id) = subtask.parent_id {
+                    subtasks_by_parent
+                        .entry(parent_id.clone())
+                        .or_default()
+                        .push(subtask);
+                }
             }
         }
 
-        // Batch-load all iterations and sessions in 2 queries (not 2N)
-        let iterations_by_task = group_by_task_id(self.store.list_all_iterations()?);
-        let sessions_by_task = group_by_task_id(self.store.list_all_stage_sessions()?);
+        // Collect all task IDs (parents + subtasks) for scoped batch loading
+        let all_task_ids: Vec<String> = {
+            let mut ids = parent_ids.clone();
+            for subtasks in subtasks_by_parent.values() {
+                for subtask in subtasks {
+                    ids.push(subtask.id.clone());
+                }
+            }
+            ids
+        };
+        let all_task_id_refs: Vec<&str> = all_task_ids.iter().map(String::as_str).collect();
+
+        // Batch-load iterations and sessions scoped to displayed tasks only
+        let iterations_by_task =
+            group_by_task_id(self.store.list_iterations_for_tasks(&all_task_id_refs)?);
+        let sessions_by_task = group_by_task_id(
+            self.store
+                .list_stage_sessions_for_tasks(&all_task_id_refs)?,
+        );
 
         // Build subtask views (sorted topologically per parent) and collect
         // derived states for parent aggregate flags.
@@ -352,9 +368,25 @@ impl WorkflowApi {
             }
         }
 
-        // Batch-load all iterations and sessions in 2 queries (not 2N)
-        let iterations_by_task = group_by_task_id(self.store.list_all_iterations()?);
-        let sessions_by_task = group_by_task_id(self.store.list_all_stage_sessions()?);
+        // Collect all task IDs (parents + subtasks) for scoped batch loading
+        let all_task_ids: Vec<String> = {
+            let mut ids = parent_ids.clone();
+            for subtasks in subtasks_by_parent.values() {
+                for subtask in subtasks {
+                    ids.push(subtask.id.clone());
+                }
+            }
+            ids
+        };
+        let all_task_id_refs: Vec<&str> = all_task_ids.iter().map(String::as_str).collect();
+
+        // Batch-load iterations and sessions scoped to archived tasks only
+        let iterations_by_task =
+            group_by_task_id(self.store.list_iterations_for_tasks(&all_task_id_refs)?);
+        let sessions_by_task = group_by_task_id(
+            self.store
+                .list_stage_sessions_for_tasks(&all_task_id_refs)?,
+        );
 
         // Build subtask views (sorted topologically per parent) and collect
         // derived states for parent aggregate flags.

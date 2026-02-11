@@ -46,6 +46,7 @@ Stores task definitions, workflow position, execution phase, artifacts, and git 
 **Indexes:**
 - `idx_workflow_tasks_parent` on `parent_id`
 - `idx_workflow_tasks_status` on `status`
+- `idx_workflow_tasks_phase` on `phase`
 
 ---
 
@@ -90,6 +91,9 @@ Tracks agent process continuity across iterations. Enables session recovery via 
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 | `updated_at` | TEXT | NOT NULL | ISO 8601 timestamp |
 
+**Indexes:**
+- `idx_workflow_stage_sessions_task` on `task_id`
+
 ---
 
 ### `assistant_sessions`
@@ -129,6 +133,9 @@ Stores structured logs from agent sessions. Each entry is a serialized `LogEntry
 **Constraints:**
 - Exactly one of `stage_session_id` or `assistant_session_id` must be set (enforced by triggers)
 - `sequence_number` is unique per session (regardless of session type)
+
+**Indexes:**
+- `idx_log_entries_session` on `stage_session_id`
 
 ---
 

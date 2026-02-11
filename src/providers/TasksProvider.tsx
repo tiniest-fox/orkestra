@@ -93,23 +93,29 @@ export function TasksProvider({ children }: TasksProviderProps) {
     }
   }, []);
 
+  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+
+  const resetPolling = useCallback(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(fetchTasks, 2000);
+  }, [fetchTasks]);
+
   useEffect(() => {
     fetchTasks();
     fetchArchivedTasks();
+    resetPolling();
 
-    const interval = setInterval(fetchTasks, 2000);
-
-    // Fix event name: backend emits "task-updated"
     const unlistenPromise = listen<string>("task-updated", () => {
       fetchTasks();
       fetchArchivedTasks();
+      resetPolling(); // Reset interval so next poll is 2s from now
     });
 
     return () => {
-      clearInterval(interval);
+      if (intervalRef.current) clearInterval(intervalRef.current);
       unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [fetchTasks, fetchArchivedTasks]);
+  }, [fetchTasks, fetchArchivedTasks, resetPolling]);
 
   const createTask = useCallback(
     async (

@@ -224,6 +224,59 @@ impl WorkflowStore for InMemoryWorkflowStore {
         Ok(result)
     }
 
+    fn list_iterations_for_tasks(&self, task_ids: &[&str]) -> WorkflowResult<Vec<Iteration>> {
+        let iterations = self.iterations.lock().map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = iterations
+            .iter()
+            .filter(|i| task_ids.contains(&i.task_id.as_str()))
+            .cloned()
+            .collect();
+        result.sort_by(|a, b| {
+            a.task_id
+                .cmp(&b.task_id)
+                .then(a.started_at.cmp(&b.started_at))
+                .then(a.iteration_number.cmp(&b.iteration_number))
+        });
+        Ok(result)
+    }
+
+    fn list_stage_sessions_for_tasks(
+        &self,
+        task_ids: &[&str],
+    ) -> WorkflowResult<Vec<StageSession>> {
+        let sessions = self
+            .stage_sessions
+            .lock()
+            .map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = sessions
+            .iter()
+            .filter(|s| task_ids.contains(&s.task_id.as_str()))
+            .cloned()
+            .collect();
+        result.sort_by(|a, b| {
+            a.task_id
+                .cmp(&b.task_id)
+                .then(a.created_at.cmp(&b.created_at))
+        });
+        Ok(result)
+    }
+
+    fn list_archived_subtasks_by_parents(&self, parent_ids: &[&str]) -> WorkflowResult<Vec<Task>> {
+        let tasks = self.tasks.lock().map_err(|_| WorkflowError::Lock)?;
+        let mut result: Vec<_> = tasks
+            .values()
+            .filter(|t| {
+                t.parent_id
+                    .as_deref()
+                    .is_some_and(|pid| parent_ids.contains(&pid))
+                    && t.is_archived()
+            })
+            .cloned()
+            .collect();
+        result.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        Ok(result)
+    }
+
     fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {
         let sessions = self
             .stage_sessions

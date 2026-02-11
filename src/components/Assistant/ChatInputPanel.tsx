@@ -2,12 +2,12 @@
  * ChatInputPanel - Text input with send/stop buttons for assistant chat.
  *
  * Manages its own message input state and keyboard shortcuts.
- * Renders the border-top and padding (no Panel.Footer wrapper needed).
+ * Wrapped in a Panel component for consistent styling and animation with other footer panels.
  */
 
 import { Send, Square } from "lucide-react";
 import { useState } from "react";
-import { Button } from "../ui";
+import { Button, Panel } from "../ui";
 
 interface ChatInputPanelProps {
   onSend: (message: string) => void;
@@ -33,8 +33,8 @@ export function ChatInputPanel({ onSend, onStop, isAgentWorking }: ChatInputPane
   };
 
   return (
-    <div className="border-t border-stone-200 dark:border-stone-700 p-3">
-      <div className="flex gap-2">
+    <Panel accent="none" autoFill={false} padded={true} className="h-[120px] flex flex-col">
+      <div className="flex gap-2 flex-1">
         <textarea
           value={messageInput}
           onChange={(e) => setMessageInput(e.target.value)}
@@ -54,6 +54,6 @@ export function ChatInputPanel({ onSend, onStop, isAgentWorking }: ChatInputPane
           </Button>
         )}
       </div>
-    </div>
+    </Panel>
   );
 }

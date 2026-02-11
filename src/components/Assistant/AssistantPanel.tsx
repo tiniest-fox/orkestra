@@ -95,7 +95,7 @@ export function AssistantPanel({ onClose, onToggleHistory }: AssistantPanelProps
       </Slot>
 
       {/* Footer: Chat input - visible when NO pending questions */}
-      <Slot id="assistant-footer-input" type="auto" visible={!hasPendingQuestions} plain>
+      <Slot id="assistant-footer-input" type="fixed" size={120} visible={!hasPendingQuestions} plain>
         <ChatInputPanel onSend={sendMessage} onStop={stopAgent} isAgentWorking={isAgentWorking} />
       </Slot>
 

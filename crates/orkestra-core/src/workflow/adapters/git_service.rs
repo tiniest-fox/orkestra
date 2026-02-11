@@ -729,12 +729,12 @@ impl GitService for Git2GitService {
         &self,
         limit: usize,
     ) -> Result<Vec<crate::workflow::ports::CommitInfo>, GitError> {
-        // Get commit metadata using null-byte separator for reliable parsing
+        // Use record separator (0x1e) between commits to handle multi-line bodies
         let output = Command::new("git")
             .args([
                 "log",
                 &format!("-{limit}"),
-                "--format=%h%x00%s%x00%an%x00%aI",
+                "--format=%x1e%h%x00%s%x00%an%x00%aI%x00%b",
             ])
             .current_dir(&self.repo_path)
             .output()
@@ -748,12 +748,24 @@ impl GitService for Git2GitService {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let mut commits = Vec::new();
 
-        for line in stdout.lines() {
-            let parts: Vec<&str> = line.splitn(4, '\0').collect();
-            if parts.len() == 4 {
+        // Split on record separator (0x1e) — each record is one commit
+        for record in stdout.split('\x1e') {
+            let record = record.trim();
+            if record.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = record.splitn(5, '\0').collect();
+            if parts.len() == 5 {
+                let body_text = parts[4].trim();
+                let body = if body_text.is_empty() {
+                    None
+                } else {
+                    Some(body_text.to_string())
+                };
                 commits.push(crate::workflow::ports::CommitInfo {
                     hash: parts[0].to_string(),
                     message: parts[1].to_string(),
+                    body,
                     author: parts[2].to_string(),
                     timestamp: parts[3].to_string(),
                     file_count: None,

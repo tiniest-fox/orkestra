@@ -130,6 +130,8 @@ pub struct CommitInfo {
     pub hash: String,
     /// First line of the commit message.
     pub message: String,
+    /// Lines after the subject line, if any.
+    pub body: Option<String>,
     /// Author name.
     pub author: String,
     /// ISO 8601 timestamp.

@@ -11,18 +11,19 @@ import type { WorkflowTaskView } from "../types/workflow";
 /**
  * Priority tiers for task ordering (lower number = higher priority).
  *
- * Tiers 0-6 apply to active tasks:
+ * Tiers 0-7 apply to active tasks:
  * - 0: Failed (or parent with failed subtasks)
  * - 1: Blocked (or parent with blocked subtasks)
  * - 2: Interrupted (or parent with interrupted subtasks)
  * - 3: Has questions (or parent with subtask questions)
  * - 4: Needs review (or parent with subtask needing review)
  * - 5: Working (agent currently running)
- * - 6: Idle/waiting (everything else active)
+ * - 6: System active (committing, integrating, finishing)
+ * - 7: Idle/waiting (everything else active)
  *
- * Tiers 7-8 apply to terminal tasks (used in subtask lists, filtered out in kanban):
- * - 7: Done
- * - 8: Archived
+ * Tiers 8-9 apply to terminal tasks (used in subtask lists, filtered out in kanban):
+ * - 8: Done
+ * - 9: Archived
  */
 function getPriority(task: WorkflowTaskView): number {
   const d = task.derived;
@@ -40,12 +41,14 @@ function getPriority(task: WorkflowTaskView): number {
   if (d.needs_review || (sp && sp.needs_review > 0)) return 4;
   // Working (agent currently running)
   if (d.is_working) return 5;
+  // System active (committing, integrating, finishing — no agent, but system busy)
+  if (d.is_system_active) return 6;
   // Done (terminal state)
-  if (d.is_done) return 7;
+  if (d.is_done) return 8;
   // Archived (terminal state)
-  if (d.is_archived) return 8;
+  if (d.is_archived) return 9;
   // Idle/waiting (everything else)
-  return 6;
+  return 7;
 }
 
 /**

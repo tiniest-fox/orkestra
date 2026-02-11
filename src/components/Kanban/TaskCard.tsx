@@ -8,7 +8,10 @@ import {
   CircleCheck,
   Eye,
   GitBranch,
+  GitCommitVertical,
+  GitMerge,
   Hand,
+  Hourglass,
   Layers,
   MessageCircle,
   Pause,
@@ -209,6 +212,26 @@ export function TaskCard({
           {isInterrupted && (
             <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.interrupted.icon}`}>
               <Pause className="w-4 h-4" />
+            </span>
+          )}
+          {task.phase === "committing" && (
+            <span className="flex-shrink-0 p-1.5">
+              <GitCommitVertical className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
+            </span>
+          )}
+          {task.phase === "integrating" && (
+            <span className="flex-shrink-0 p-1.5">
+              <GitMerge className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
+            </span>
+          )}
+          {task.phase === "finishing" && (
+            <span className="flex-shrink-0 p-1.5">
+              <Hourglass className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
+            </span>
+          )}
+          {(task.phase === "idle" || task.phase === "finished") && !derived.is_waiting_on_children && !derived.is_done && !derived.is_archived && (
+            <span className="flex-shrink-0 p-1.5">
+              <Hourglass className="w-4 h-4 text-stone-300 dark:text-stone-600 animate-spin-bounce" />
             </span>
           )}
           {hasUnresolvedDeps && (

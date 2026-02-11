@@ -169,6 +169,9 @@ pub struct StagePromptContext<'a> {
 
     /// Whether to show instructions for direct `StructuredOutput` usage (Claude Code specific).
     pub show_direct_structured_output_hint: bool,
+
+    /// Activity logs from prior completed iterations.
+    pub activity_logs: Vec<ActivityLogEntry>,
 }
 
 /// Context for an artifact available to the stage.
@@ -198,6 +201,17 @@ pub struct IntegrationErrorContext<'a> {
     pub conflict_files: Vec<&'a str>,
     /// Base branch to rebase onto.
     pub base_branch: &'a str,
+}
+
+/// Context for an activity log entry from a prior iteration.
+#[derive(Debug, Clone, Serialize)]
+pub struct ActivityLogEntry {
+    /// Stage that produced this log (e.g., "planning", "work").
+    pub stage: String,
+    /// Iteration number within the stage.
+    pub iteration_number: u32,
+    /// The activity log content.
+    pub content: String,
 }
 
 /// Flow-specific overrides for agent configuration.
@@ -238,6 +252,7 @@ impl<'a> PromptBuilder<'a> {
         feedback: Option<&'a str>,
         integration_error: Option<IntegrationErrorContext<'a>>,
         show_direct_structured_output_hint: bool,
+        activity_logs: Vec<ActivityLogEntry>,
     ) -> Option<StagePromptContext<'a>> {
         let stage = self.workflow.stage(stage_name)?;
 
@@ -272,6 +287,7 @@ impl<'a> PromptBuilder<'a> {
             base_branch: task.base_branch.as_str(),
             base_commit: task.base_commit.as_str(),
             show_direct_structured_output_hint,
+            activity_logs,
         })
     }
 
@@ -286,6 +302,7 @@ impl<'a> PromptBuilder<'a> {
         feedback: Option<&'a str>,
         integration_error: Option<IntegrationErrorContext<'a>>,
         show_direct_structured_output_hint: bool,
+        activity_logs: Vec<ActivityLogEntry>,
     ) -> Option<StagePromptContext<'a>> {
         let artifacts: Vec<ArtifactContext<'a>> = stage
             .inputs
@@ -315,6 +332,7 @@ impl<'a> PromptBuilder<'a> {
             base_branch: task.base_branch.as_str(),
             base_commit: task.base_commit.as_str(),
             show_direct_structured_output_hint,
+            activity_logs,
         })
     }
 
@@ -328,7 +346,7 @@ impl<'a> PromptBuilder<'a> {
         task: &'a Task,
         feedback: Option<&'a str>,
     ) -> Option<String> {
-        let ctx = self.build_context(stage_name, task, feedback, None, false)?;
+        let ctx = self.build_context(stage_name, task, feedback, None, false, Vec::new())?;
 
         let mut prompt = String::new();
 
@@ -553,6 +571,7 @@ pub fn resolve_stage_agent_config(
         integration_error,
         FlowOverrides::default(),
         false, // Default to false for backward compatibility
+        Vec::new(), // activity_logs - convenience wrapper doesn't use them
     )
 }
 
@@ -570,6 +589,7 @@ pub fn resolve_stage_agent_config_for(
     integration_error: Option<IntegrationErrorContext<'_>>,
     flow_overrides: FlowOverrides<'_>,
     show_direct_structured_output_hint: bool,
+    activity_logs: Vec<ActivityLogEntry>,
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
         .stage(stage_name)
@@ -618,6 +638,7 @@ pub fn resolve_stage_agent_config_for(
             feedback,
             integration_error,
             show_direct_structured_output_hint,
+            activity_logs,
         )
         .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;
 
@@ -660,6 +681,7 @@ struct UserMessageContext<'a> {
     worktree_path: Option<&'a str>,
     base_branch: &'a str,
     base_commit: &'a str,
+    activity_logs: &'a [ActivityLogEntry],
 }
 
 /// Context available to agent definition Handlebars templates.
@@ -714,6 +736,7 @@ pub fn build_user_message(ctx: &StagePromptContext<'_>) -> String {
         worktree_path: ctx.worktree_path,
         base_branch: ctx.base_branch,
         base_commit: ctx.base_commit,
+        activity_logs: &ctx.activity_logs,
     };
 
     TEMPLATES
@@ -926,7 +949,7 @@ mod tests {
         );
 
         let ctx = builder
-            .build_context("planning", &task, None, None, false)
+            .build_context("planning", &task, None, None, false, Vec::new())
             .unwrap();
 
         assert_eq!(ctx.stage.name, "planning");
@@ -956,7 +979,7 @@ mod tests {
         ));
 
         let ctx = builder
-            .build_context("work", &task, None, None, false)
+            .build_context("work", &task, None, None, false, Vec::new())
             .unwrap();
 
         assert_eq!(ctx.stage.name, "work");
@@ -979,7 +1002,7 @@ mod tests {
         );
 
         let ctx = builder
-            .build_context("planning", &task, Some("Add more detail"), None, false)
+            .build_context("planning", &task, Some("Add more detail"), None, false, Vec::new())
             .unwrap();
 
         assert_eq!(ctx.feedback, Some("Add more detail"));
@@ -1003,7 +1026,7 @@ mod tests {
             .set(Artifact::new("summary", "Work done", "work", "t2"));
 
         let ctx = builder
-            .build_context("review", &task, None, None, false)
+            .build_context("review", &task, None, None, false, Vec::new())
             .unwrap();
 
         assert_eq!(ctx.stage.name, "review");
@@ -1019,7 +1042,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Desc", "planning", "now");
 
-        let ctx = builder.build_context("nonexistent", &task, None, None, false);
+        let ctx = builder.build_context("nonexistent", &task, None, None, false, Vec::new());
         assert!(ctx.is_none());
     }
 
@@ -1106,7 +1129,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false)
+            .build_context("planning", &task, None, None, false, Vec::new())
             .unwrap();
 
         assert!(ctx.question_history.is_empty());
@@ -1168,7 +1191,7 @@ mod tests {
         ));
 
         let ctx = builder
-            .build_context("work", &task, None, None, false)
+            .build_context("work", &task, None, None, false, Vec::new())
             .unwrap();
         let agent_def = "You are a worker agent. Implement the plan.";
         let prompt = build_complete_prompt(agent_def, &ctx);
@@ -1195,7 +1218,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, Some("Add more detail"), None, false)
+            .build_context("planning", &task, Some("Add more detail"), None, false, Vec::new())
             .unwrap();
 
         let agent_def = "Planner agent";
@@ -1221,7 +1244,7 @@ mod tests {
         };
 
         let ctx = builder
-            .build_context("work", &task, None, Some(error), false)
+            .build_context("work", &task, None, Some(error), false, Vec::new())
             .unwrap();
 
         let agent_def = "Worker agent";
@@ -1241,7 +1264,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false)
+            .build_context("planning", &task, None, None, false, Vec::new())
             .unwrap();
 
         let agent_def = "Planner agent";
@@ -1264,7 +1287,7 @@ mod tests {
             .set(Artifact::new("summary", "Summary", "work", "now"));
 
         let ctx = builder
-            .build_context("review", &task, None, None, false)
+            .build_context("review", &task, None, None, false, Vec::new())
             .unwrap();
 
         let agent_def = "Reviewer agent";
@@ -1286,7 +1309,7 @@ mod tests {
             .with_base_commit("abc123def456");
 
         let ctx = builder
-            .build_context("planning", &task, None, None, false)
+            .build_context("planning", &task, None, None, false, Vec::new())
             .unwrap();
 
         let agent_def = "Planner agent";
@@ -1310,7 +1333,7 @@ mod tests {
         // No worktree set
 
         let ctx = builder
-            .build_context("planning", &task, None, None, false)
+            .build_context("planning", &task, None, None, false, Vec::new())
             .unwrap();
 
         let agent_def = "Planner agent";
@@ -1552,7 +1575,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false)
+            .build_context("planning", &task, None, None, false, Vec::new())
             .unwrap();
 
         // No {{ markers — should pass through unchanged
@@ -1569,7 +1592,7 @@ mod tests {
 
         // With feedback
         let ctx = builder
-            .build_context("planning", &task, Some("Fix this"), None, false)
+            .build_context("planning", &task, Some("Fix this"), None, false, Vec::new())
             .unwrap();
         let template = "Base instructions.\n\n{{#if feedback}}\nFEEDBACK_SECTION\n{{/if}}";
         let result = render_agent_definition(template, &ctx);
@@ -1578,7 +1601,7 @@ mod tests {
 
         // Without feedback
         let ctx = builder
-            .build_context("planning", &task, None, None, false)
+            .build_context("planning", &task, None, None, false, Vec::new())
             .unwrap();
         let result = render_agent_definition(template, &ctx);
         assert!(!result.contains("FEEDBACK_SECTION"));
@@ -1591,7 +1614,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false)
+            .build_context("planning", &task, None, None, false, Vec::new())
             .unwrap();
 
         // Invalid template — should return raw definition
@@ -1606,7 +1629,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false)
+            .build_context("planning", &task, None, None, false, Vec::new())
             .unwrap();
 
         let template = "Stage: {{stage_name}}, Task: {{task_id}}";
@@ -1658,6 +1681,7 @@ mod tests {
             None,
             FlowOverrides::default(),
             false,
+            Vec::new(),
         )
         .unwrap();
 
@@ -1707,7 +1731,7 @@ mod tests {
         ));
 
         let ctx = builder
-            .build_context("work", &task, None, None, false)
+            .build_context("work", &task, None, None, false, Vec::new())
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -1742,7 +1766,7 @@ mod tests {
         ));
 
         let ctx = builder
-            .build_context("work", &task, None, None, false)
+            .build_context("work", &task, None, None, false, Vec::new())
             .unwrap();
 
         let user_message = build_user_message(&ctx);

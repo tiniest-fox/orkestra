@@ -23,8 +23,8 @@ use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
-    build_resume_prompt, AgentConfigError, AgentRunnerTrait, ProviderRegistry, RegistryError,
-    ResumeQuestionAnswer, ResumeType, RunConfig, RunError, RunEvent,
+    build_resume_prompt, ActivityLogEntry, AgentConfigError, AgentRunnerTrait, ProviderRegistry,
+    RegistryError, ResumeQuestionAnswer, ResumeType, RunConfig, RunError, RunEvent,
 };
 
 use super::prompt_service::PromptService;
@@ -189,6 +189,7 @@ impl AgentExecutionService {
         task: &Task,
         feedback: Option<&str>,
         show_direct_structured_output_hint: bool,
+        activity_logs: Vec<ActivityLogEntry>,
     ) -> Result<String, ExecutionError> {
         let config = self.prompt_service.resolve_config(
             &self.workflow,
@@ -196,6 +197,7 @@ impl AgentExecutionService {
             feedback,
             None, // No integration error for system prompt
             show_direct_structured_output_hint,
+            activity_logs,
         )?;
         Ok(config.system_prompt)
     }
@@ -212,6 +214,7 @@ impl AgentExecutionService {
         is_stage_reentry: bool,
         trigger: Option<&IterationTrigger>,
         show_direct_structured_output_hint: bool,
+        activity_logs: Vec<ActivityLogEntry>,
     ) -> Result<String, ExecutionError> {
         if is_resume {
             let resume_type = if is_stage_reentry {
@@ -246,6 +249,7 @@ impl AgentExecutionService {
                 feedback,
                 None, // No integration error on first spawn
                 show_direct_structured_output_hint,
+                activity_logs,
             )?;
             Ok(config.prompt)
         }
@@ -381,11 +385,13 @@ impl AgentExecutionService {
     /// * `task` - The task to execute
     /// * `trigger` - Why this iteration was created (determines resume prompt type)
     /// * `spawn_context` - Pre-created session context from `StageExecutionService`
+    /// * `activity_logs` - Activity logs from prior completed iterations
     pub fn execute_stage(
         &self,
         task: &Task,
         trigger: Option<&IterationTrigger>,
         spawn_context: &SessionSpawnContext,
+        activity_logs: Vec<ActivityLogEntry>,
     ) -> Result<ExecutionHandle, ExecutionError> {
         let stage = task
             .current_stage()
@@ -416,6 +422,7 @@ impl AgentExecutionService {
             task,
             feedback,
             resolved.capabilities.requires_direct_structured_output,
+            activity_logs.clone(),
         )?;
 
         // 5. Build user message prompt based on whether this is a resume
@@ -426,6 +433,7 @@ impl AgentExecutionService {
             spawn_context.is_stage_reentry,
             trigger,
             resolved.capabilities.requires_direct_structured_output,
+            activity_logs,
         )?;
 
         // 6. Apply provider fallbacks for system prompt and schema enforcement

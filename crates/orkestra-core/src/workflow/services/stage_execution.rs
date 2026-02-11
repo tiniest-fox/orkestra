@@ -15,7 +15,9 @@ use std::time::{Duration, Instant};
 
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, LogEntry, Task};
-use crate::workflow::execution::{AgentRunner, AgentRunnerTrait, ProviderRegistry, StageOutput};
+use crate::workflow::execution::{
+    ActivityLogEntry, AgentRunner, AgentRunnerTrait, ProviderRegistry, StageOutput,
+};
 use crate::workflow::ports::WorkflowStore;
 
 use super::agent_execution::{AgentExecutionService, ExecutionHandle};
@@ -411,9 +413,25 @@ impl StageExecutionService {
         trigger: Option<&IterationTrigger>,
         spawn_context: &SessionSpawnContext,
     ) -> Result<SpawnResult, SpawnError> {
+        // Query activity logs from completed iterations
+        let iterations = self
+            .store
+            .get_iterations(&task.id)
+            .map_err(|e| SpawnError::AgentError(format!("Failed to query iterations: {e}")))?;
+
+        let activity_logs: Vec<ActivityLogEntry> = iterations
+            .iter()
+            .filter(|i| i.ended_at.is_some() && i.activity_log.is_some())
+            .map(|i| ActivityLogEntry {
+                stage: i.stage.clone(),
+                iteration_number: i.iteration_number,
+                content: i.activity_log.clone().unwrap(),
+            })
+            .collect();
+
         let handle = self
             .agent_service
-            .execute_stage(task, trigger, spawn_context)
+            .execute_stage(task, trigger, spawn_context, activity_logs)
             .map_err(|e| SpawnError::AgentError(e.to_string()))?;
 
         let pid = handle.pid;

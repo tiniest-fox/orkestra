@@ -20,6 +20,18 @@
 
 {{/each}}
 {{/if}}
+{{#if activity_logs}}
+## Activity Log
+
+Prior stages have recorded the following activity:
+
+{{#each activity_logs}}
+### {{this.stage}} (iteration #{{this.iteration_number}})
+
+{{this.content}}
+
+{{/each}}
+{{/if}}
 {{#if question_history}}
 ## Previous Questions and Answers
 

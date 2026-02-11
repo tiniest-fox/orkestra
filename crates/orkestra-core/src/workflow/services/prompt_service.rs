@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::{
-    resolve_stage_agent_config_for, AgentConfigError, FlowOverrides, IntegrationErrorContext,
-    ResolvedAgentConfig,
+    resolve_stage_agent_config_for, ActivityLogEntry, AgentConfigError, FlowOverrides,
+    IntegrationErrorContext, ResolvedAgentConfig,
 };
 
 // ============================================================================
@@ -53,6 +53,7 @@ impl PromptService {
     /// * `task` - The task requiring an agent
     /// * `feedback` - Optional rejection feedback to incorporate
     /// * `integration_error` - Optional merge conflict information
+    /// * `activity_logs` - Activity logs from prior completed iterations
     ///
     /// # Returns
     /// Complete agent configuration including prompt and JSON schema.
@@ -63,6 +64,7 @@ impl PromptService {
         feedback: Option<&str>,
         integration_error: Option<IntegrationErrorContext<'_>>,
         show_direct_structured_output_hint: bool,
+        activity_logs: Vec<ActivityLogEntry>,
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
         let stage_name = task
             .current_stage()
@@ -94,6 +96,7 @@ impl PromptService {
             integration_error,
             flow_overrides,
             show_direct_structured_output_hint,
+            activity_logs,
         )
     }
 
@@ -113,6 +116,7 @@ impl PromptService {
             Some(feedback),
             None,
             show_direct_structured_output_hint,
+            Vec::new(), // activity_logs - convenience method doesn't use them
         )
     }
 
@@ -131,6 +135,7 @@ impl PromptService {
             None,
             None,
             show_direct_structured_output_hint,
+            Vec::new(), // activity_logs - convenience method doesn't use them
         )
     }
 }

@@ -12,7 +12,7 @@
     },
     "activity_log": {
       "type": "string",
-      "description": "Terse bullet points (2-5) covering: what you built, what you skipped (with reason), key decisions. Be specific, not generic. Focus on decisions and outcomes, not process."
+      "description": "Terse bullet points (2-5) covering: what you did, what you skipped (with reason), key decisions. Be specific, not generic. Focus on decisions and outcomes, not process."
     }
   },
   "required": ["decision", "content"]

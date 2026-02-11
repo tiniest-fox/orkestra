@@ -28,9 +28,31 @@
 
 set -e
 
-# This project uses mise for tool management. Activate it so cargo, node, pnpm
-# etc. are available when running from the .app bundle or agent worktrees.
+# === DEBUG: remove after fixing PATH issue ===
+echo "[DEBUG] pwd=$(pwd)"
+echo "[DEBUG] shell=$BASH $BASH_VERSION (pid $$)"
+echo "[DEBUG] HOME=$HOME"
+echo "[DEBUG] PATH=$PATH"
+echo "[DEBUG] full env:"
+env | sort
+echo "[DEBUG] ---"
+echo "[DEBUG] which mise=$(which mise 2>&1 || echo 'NOT FOUND')"
+echo "[DEBUG] which cargo=$(which cargo 2>&1 || echo 'NOT FOUND')"
+echo "[DEBUG] which sh=$(which sh 2>&1)"
+echo "[DEBUG] which bash=$(which bash 2>&1)"
+echo "[DEBUG] ls homebrew=$(ls /opt/homebrew/bin/mise 2>&1 || echo 'NOT FOUND')"
+echo "[DEBUG] ls cargo=$(ls ~/.cargo/bin/cargo 2>&1 || echo 'NOT FOUND')"
+echo "[DEBUG] ls mise shims=$(ls ~/.local/share/mise/shims/ 2>&1 | head -5 || echo 'NOT FOUND')"
+echo "[DEBUG] mise activate output:"
+mise activate bash --shims 2>&1 || echo "[DEBUG] mise activate FAILED with exit=$?"
+echo "[DEBUG] --- running eval ---"
 eval "$(mise activate bash --shims)" 2>/dev/null || true
+echo "[DEBUG] POST-EVAL PATH=$PATH"
+echo "[DEBUG] POST which cargo=$(which cargo 2>&1 || echo 'NOT FOUND')"
+echo "[DEBUG] POST which node=$(which node 2>&1 || echo 'NOT FOUND')"
+echo "[DEBUG] POST which pnpm=$(which pnpm 2>&1 || echo 'NOT FOUND')"
+echo "[DEBUG] === end debug ==="
+# === END DEBUG ===
 
 # Parse arguments
 FORCE_ALL=false

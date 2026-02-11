@@ -115,8 +115,6 @@ export function TaskCard({
   const hasUnresolvedDeps = isSubtask && !!dependencyNames && dependencyNames.length > 0;
   const collapseDone = isSubtask && (isDone || derived.is_archived);
 
-  const isAwaitingSetup = task.phase === "awaiting_setup";
-  const isSettingUp = task.phase === "setting_up";
   const showSpinner = hasActiveProcess && !taskNeedsReview && !hasQuestions;
 
   // Include subtask aggregate state in border highlights
@@ -167,12 +165,12 @@ export function TaskCard({
           {getDisplayTitle(task)}
         </h3>
         <div className="flex items-center gap-1.5">
-          {isAwaitingSetup && (
+          {derived.phase_icon === "awaiting_setup" && (
             <span className="flex-shrink-0 p-1.5">
               <GitBranch className="w-4 h-4 text-stone-400 dark:text-stone-500" />
             </span>
           )}
-          {isSettingUp && (
+          {derived.phase_icon === "setting_up" && (
             <span className="flex-shrink-0 p-1.5">
               <GitBranch className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
             </span>
@@ -214,28 +212,26 @@ export function TaskCard({
               <Pause className="w-4 h-4" />
             </span>
           )}
-          {task.phase === "committing" && (
+          {derived.phase_icon === "committing" && (
             <span className="flex-shrink-0 p-1.5">
               <GitCommitVertical className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
             </span>
           )}
-          {task.phase === "integrating" && (
+          {derived.phase_icon === "integrating" && (
             <span className="flex-shrink-0 p-1.5">
               <GitMerge className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
             </span>
           )}
-          {task.phase === "finishing" && (
+          {derived.phase_icon === "system_busy" && (
             <span className="flex-shrink-0 p-1.5">
               <Hourglass className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
             </span>
           )}
-          {(task.phase === "idle" || task.phase === "finished") &&
-            !derived.is_waiting_on_children &&
-            !derived.is_terminal && (
-              <span className="flex-shrink-0 p-1.5">
-                <Hourglass className="w-4 h-4 text-stone-300 dark:text-stone-600 animate-spin-bounce" />
-              </span>
-            )}
+          {derived.phase_icon === "waiting_for_orchestrator" && (
+            <span className="flex-shrink-0 p-1.5">
+              <Hourglass className="w-4 h-4 text-stone-300 dark:text-stone-600 animate-spin-bounce" />
+            </span>
+          )}
           {hasUnresolvedDeps && (
             <span className="flex-shrink-0 p-1.5 rounded-md bg-stone-100 dark:bg-stone-800">
               <Hand className="w-4 h-4 text-stone-500 dark:text-stone-400" />

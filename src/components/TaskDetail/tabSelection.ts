@@ -52,7 +52,7 @@ export function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
     preferred = TaskDetailTabs.details(task.id);
   } else if (task.status.type === "waiting_on_children") {
     preferred = TaskDetailTabs.subtasks(task.id);
-  } else if (derived.is_working || task.phase === "integrating") {
+  } else if (derived.is_working || derived.is_system_active) {
     preferred = TaskDetailTabs.logs(task.id);
   } else if (derived.needs_review) {
     preferred = TaskDetailTabs.artifacts(task.id);

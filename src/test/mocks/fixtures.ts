@@ -29,6 +29,7 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     current_stage: "planning",
     is_working: false,
     is_system_active: false,
+    phase_icon: null,
     is_interrupted: false,
     is_failed: false,
     is_blocked: false,
@@ -86,6 +87,24 @@ export function createMockWorkflowTaskView(
   }
   if (task.phase === "agent_working") {
     derivedDefaults.is_working = true;
+  }
+  if (task.phase === "committing") {
+    derivedDefaults.phase_icon = "committing";
+    derivedDefaults.is_system_active = true;
+  }
+  if (task.phase === "integrating") {
+    derivedDefaults.phase_icon = "integrating";
+    derivedDefaults.is_system_active = true;
+  }
+  if (task.phase === "finishing") {
+    derivedDefaults.phase_icon = "system_busy";
+    derivedDefaults.is_system_active = true;
+  }
+  if (task.phase === "setting_up") {
+    derivedDefaults.phase_icon = "setting_up";
+  }
+  if (task.phase === "awaiting_setup") {
+    derivedDefaults.phase_icon = "awaiting_setup";
   }
 
   return {

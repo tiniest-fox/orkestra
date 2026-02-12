@@ -4102,7 +4102,12 @@ fn test_restart_on_reentry_spawns_fresh_session() {
         .count();
     let active_count = review_sessions
         .iter()
-        .filter(|s| matches!(s.session_state, SessionState::Active | SessionState::Spawning))
+        .filter(|s| {
+            matches!(
+                s.session_state,
+                SessionState::Active | SessionState::Spawning
+            )
+        })
         .count();
     assert_eq!(superseded_count, 1, "Should have 1 superseded session");
     assert_eq!(active_count, 1, "Should have 1 active/spawning session");
@@ -4114,8 +4119,7 @@ fn test_restart_on_reentry_spawns_fresh_session() {
         .unwrap()
         .expect("Should have review session");
     assert_ne!(
-        current_review_session.claude_session_id,
-        first_review_session_id,
+        current_review_session.claude_session_id, first_review_session_id,
         "Re-entry should have a DIFFERENT session ID"
     );
 }
@@ -4253,8 +4257,7 @@ fn test_reentry_without_restart_flag_uses_recheck() {
         .unwrap()
         .expect("Should have review session");
     assert_eq!(
-        current_review_session.claude_session_id,
-        first_review_session_id,
+        current_review_session.claude_session_id, first_review_session_id,
         "Re-entry should use the SAME session ID (recheck, not restart)"
     );
 }

@@ -323,7 +323,8 @@ impl<'a> PromptBuilder<'a> {
         // Initial prompts don't include question history since no questions have been asked yet
         let question_history = Vec::new();
 
-        let workflow_stages = build_workflow_stage_entries(self.workflow, stage_name, task.flow.as_deref());
+        let workflow_stages =
+            build_workflow_stage_entries(self.workflow, stage_name, task.flow.as_deref());
 
         Some(StagePromptContext {
             stage,
@@ -371,7 +372,8 @@ impl<'a> PromptBuilder<'a> {
 
         let question_history = Vec::new();
 
-        let workflow_stages = build_workflow_stage_entries(self.workflow, &stage.name, task.flow.as_deref());
+        let workflow_stages =
+            build_workflow_stage_entries(self.workflow, &stage.name, task.flow.as_deref());
 
         Some(StagePromptContext {
             stage,

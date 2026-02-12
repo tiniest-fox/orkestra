@@ -55,6 +55,7 @@ stages:
     artifact: verdict
     inputs: [breakdown, summary, check_results]
     prompt: reviewer.md
+    restart_on_reentry: true
     capabilities:
       approval:
         rejection_stage: task

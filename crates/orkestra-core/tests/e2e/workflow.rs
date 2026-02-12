@@ -3946,3 +3946,315 @@ fn activity_log_on_rejection_retry() {
         "Review iteration should be complete"
     );
 }
+
+// =============================================================================
+// restart_on_reentry Tests
+// =============================================================================
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn test_restart_on_reentry_spawns_fresh_session() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::domain::SessionState;
+
+    // 3-stage workflow: work → checks (script) → review
+    // Review has approval rejecting back to work AND restart_on_reentry: true
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new_script("checks", "check_results", "echo ok")
+            .with_inputs(vec!["summary".into()]),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into(), "check_results".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+            .restart_on_reentry()
+            .automated(),
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    // =========================================================================
+    // Step 1: Work stage → produce artifact → approve → checks → review
+    // =========================================================================
+    let task = ctx.create_task(
+        "Restart on reentry test",
+        "Test that restart_on_reentry spawns fresh session",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Set work output
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial work completed".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance(); // spawn work agent
+    ctx.advance(); // process work output
+
+    // =========================================================================
+    // Step 2: Review rejects back to work (first review spawn)
+    // =========================================================================
+
+    // Queue mock outputs BEFORE they're consumed
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Needs more tests".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Also queue the next work output (for the re-entered work stage after rejection)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work with tests added".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Approve work → moves to checks
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // task moves to checks Idle
+    ctx.advance(); // checks script runs (instant), completes, task moves to review Idle
+    ctx.advance(); // orchestrator spawns reviewer (first time)
+
+    // Verify this is NOT a resume (first spawn)
+    let first_review_config = ctx.last_run_config();
+    assert!(
+        !first_review_config.is_resume,
+        "First review spawn should not be a resume"
+    );
+
+    // Record the first review session ID
+    let first_review_session = ctx
+        .api()
+        .get_stage_session(&task_id, "review")
+        .unwrap()
+        .expect("Should have review session");
+    let first_review_session_id = first_review_session.claude_session_id.clone();
+
+    ctx.advance(); // process review rejection → moves to work → spawns work agent
+    ctx.advance(); // process work output
+
+    // =========================================================================
+    // Step 3: Approve work again → checks → review (re-entry with restart)
+    // =========================================================================
+
+    // Set final review approval BEFORE approve
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Looks good now".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // task moves to checks Idle
+    ctx.advance(); // checks script runs, completes, task moves to review Idle
+    ctx.advance(); // spawn reviewer (second time - this is the re-entry with fresh session)
+
+    // =========================================================================
+    // Assertions: Re-entry should spawn fresh session (not resume)
+    // =========================================================================
+    let reentry_config = ctx.last_run_config();
+    assert!(
+        !reentry_config.is_resume,
+        "Re-entry with restart_on_reentry should NOT resume"
+    );
+
+    // Verify the prompt is a full prompt (not resume)
+    let prompt = ctx.last_prompt();
+    assert!(
+        prompt.contains("## Your Current Task"),
+        "Re-entry prompt should be a full prompt"
+    );
+    assert!(
+        !prompt.starts_with("<!orkestra:resume:"),
+        "Re-entry prompt should NOT be a resume prompt"
+    );
+
+    // Verify session was superseded (should have 2 review sessions)
+    let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
+    let review_sessions: Vec<_> = all_sessions
+        .iter()
+        .filter(|s| s.stage == "review")
+        .collect();
+    assert_eq!(
+        review_sessions.len(),
+        2,
+        "Should have 2 review sessions (one superseded, one fresh)"
+    );
+
+    // Verify one is superseded, one is active
+    let superseded_count = review_sessions
+        .iter()
+        .filter(|s| matches!(s.session_state, SessionState::Superseded))
+        .count();
+    let active_count = review_sessions
+        .iter()
+        .filter(|s| matches!(s.session_state, SessionState::Active | SessionState::Spawning))
+        .count();
+    assert_eq!(superseded_count, 1, "Should have 1 superseded session");
+    assert_eq!(active_count, 1, "Should have 1 active/spawning session");
+
+    // Verify the new session has a DIFFERENT session ID
+    let current_review_session = ctx
+        .api()
+        .get_stage_session(&task_id, "review")
+        .unwrap()
+        .expect("Should have review session");
+    assert_ne!(
+        current_review_session.claude_session_id,
+        first_review_session_id,
+        "Re-entry should have a DIFFERENT session ID"
+    );
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn test_reentry_without_restart_flag_uses_recheck() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+
+    // Same workflow as above, but WITHOUT restart_on_reentry
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new_script("checks", "check_results", "echo ok")
+            .with_inputs(vec!["summary".into()]),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into(), "check_results".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+            .automated(), // No .restart_on_reentry()
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    // =========================================================================
+    // Step 1: Work stage → produce artifact → approve → checks → review
+    // =========================================================================
+    let task = ctx.create_task(
+        "Recheck test",
+        "Test that default behavior uses recheck (not restart)",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Set work output
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial work completed".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance(); // spawn work agent
+    ctx.advance(); // process work output
+
+    // =========================================================================
+    // Step 2: Review rejects back to work (first review spawn)
+    // =========================================================================
+
+    // Queue mock outputs BEFORE they're consumed
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Needs more tests".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Also queue the next work output (for the re-entered work stage after rejection)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work with tests added".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Approve work → moves to checks
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // task moves to checks Idle
+    ctx.advance(); // checks script runs, completes, task moves to review Idle
+    ctx.advance(); // orchestrator spawns reviewer (first time)
+
+    // Record the first review session ID
+    let first_review_session = ctx
+        .api()
+        .get_stage_session(&task_id, "review")
+        .unwrap()
+        .expect("Should have review session");
+    let first_review_session_id = first_review_session.claude_session_id.clone();
+
+    ctx.advance(); // process review rejection → moves to work → spawns work agent
+    ctx.advance(); // process work output
+
+    // =========================================================================
+    // Step 3: Approve work again → checks → review (re-entry without restart)
+    // =========================================================================
+
+    // Set final review approval BEFORE approve
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Looks good now".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // task moves to checks Idle
+    ctx.advance(); // checks script runs, completes, task moves to review Idle
+    ctx.advance(); // spawn reviewer (second time - this is the re-entry with recheck)
+
+    // =========================================================================
+    // Assertions: Re-entry should RESUME existing session (recheck)
+    // =========================================================================
+    let reentry_config = ctx.last_run_config();
+    assert!(
+        reentry_config.is_resume,
+        "Re-entry WITHOUT restart_on_reentry should resume"
+    );
+
+    // Verify the prompt is a resume prompt with "recheck"
+    ctx.assert_resume_prompt_contains("recheck", &[]);
+
+    // Verify session was NOT superseded (should have only 1 review session)
+    let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
+    let review_sessions: Vec<_> = all_sessions
+        .iter()
+        .filter(|s| s.stage == "review")
+        .collect();
+    assert_eq!(
+        review_sessions.len(),
+        1,
+        "Should have only 1 review session (no superseding)"
+    );
+
+    // Verify the session ID is the SAME as the original
+    let current_review_session = ctx
+        .api()
+        .get_stage_session(&task_id, "review")
+        .unwrap()
+        .expect("Should have review session");
+    assert_eq!(
+        current_review_session.claude_session_id,
+        first_review_session_id,
+        "Re-entry should use the SAME session ID (recheck, not restart)"
+    );
+}

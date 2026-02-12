@@ -451,8 +451,12 @@ impl AgentExecutionService {
             use std::fmt::Write;
             let mut restrictions = String::from("\n\n## Tool Restrictions\n\nThe following tools are NOT available to you in this stage:\n");
             for entry in &effective_tools {
-                write!(restrictions, "\n- **`{}`**: {}", entry.pattern, entry.message)
-                    .expect("Writing to String cannot fail");
+                write!(
+                    restrictions,
+                    "\n- **`{}`**: {}",
+                    entry.pattern, entry.message
+                )
+                .expect("Writing to String cannot fail");
             }
             restrictions
                 .push_str("\n\nDo not attempt to use these tools. Find alternative approaches.");

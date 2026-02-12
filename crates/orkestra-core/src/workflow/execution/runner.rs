@@ -51,6 +51,9 @@ pub struct RunConfig {
     pub model: Option<String>,
     /// System prompt to pass via CLI flag (if provider supports it).
     pub system_prompt: Option<String>,
+    /// Tool patterns that the agent is not allowed to use.
+    /// Threaded to ProcessConfig and ultimately to the CLI flag.
+    pub disallowed_tools: Vec<String>,
 }
 
 impl RunConfig {
@@ -71,6 +74,7 @@ impl RunConfig {
             task_id: None,
             model: None,
             system_prompt: None,
+            disallowed_tools: Vec::new(),
         }
     }
 
@@ -100,6 +104,13 @@ impl RunConfig {
     #[must_use]
     pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
         self.system_prompt = Some(prompt.into());
+        self
+    }
+
+    /// Set the disallowed tool patterns.
+    #[must_use]
+    pub fn with_disallowed_tools(mut self, tools: Vec<String>) -> Self {
+        self.disallowed_tools = tools;
         self
     }
 }
@@ -402,6 +413,10 @@ impl AgentRunnerTrait for AgentRunner {
 
         if let Some(system_prompt) = config.system_prompt {
             process_config = process_config.with_system_prompt(system_prompt);
+        }
+
+        if !config.disallowed_tools.is_empty() {
+            process_config = process_config.with_disallowed_tools(config.disallowed_tools);
         }
 
         // Spawn the process via the resolved provider's spawner

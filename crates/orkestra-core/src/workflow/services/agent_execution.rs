@@ -356,6 +356,7 @@ impl AgentExecutionService {
         system_prompt_for_config: Option<String>,
         spawn_context: &SessionSpawnContext,
         model_spec: Option<String>,
+        disallowed_tools: Vec<String>,
     ) -> RunConfig {
         let working_dir = self.get_working_dir(task);
         let mut run_config =
@@ -375,6 +376,10 @@ impl AgentExecutionService {
         // Thread system prompt if provider supports it
         if let Some(sp) = system_prompt_for_config {
             run_config = run_config.with_system_prompt(sp);
+        }
+
+        if !disallowed_tools.is_empty() {
+            run_config = run_config.with_disallowed_tools(disallowed_tools);
         }
 
         run_config
@@ -432,6 +437,21 @@ impl AgentExecutionService {
             activity_logs.clone(),
         )?;
 
+        // 4.5. Resolve disallowed tools and inject restriction messages into system prompt
+        let effective_tools = self.workflow.effective_disallowed_tools(stage, task.flow.as_deref());
+        let disallowed_patterns: Vec<String> = effective_tools.iter().map(|e| e.pattern.clone()).collect();
+
+        let system_prompt = if effective_tools.is_empty() {
+            system_prompt
+        } else {
+            let mut restrictions = String::from("\n\n## Tool Restrictions\n\nThe following tools are NOT available to you in this stage:\n");
+            for entry in &effective_tools {
+                restrictions.push_str(&format!("\n- **`{}`**: {}", entry.pattern, entry.message));
+            }
+            restrictions.push_str("\n\nDo not attempt to use these tools. Find alternative approaches.");
+            format!("{system_prompt}{restrictions}")
+        };
+
         // 5. Build user message prompt based on whether this is a resume
         let user_prompt = self.build_user_prompt(
             task,
@@ -471,6 +491,7 @@ impl AgentExecutionService {
             system_prompt_for_config,
             spawn_context,
             model_spec,
+            disallowed_patterns,
         );
 
         // 8. Run the agent

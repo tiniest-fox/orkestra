@@ -28,6 +28,10 @@ pub struct ProcessConfig {
     /// System prompt to pass via `--system` flag.
     /// If None, no system prompt is provided.
     pub system_prompt: Option<String>,
+    /// Tool patterns that the agent is not allowed to use.
+    /// Passed as `--disallowedTools` to Claude Code. Ignored by providers that
+    /// don't support it.
+    pub disallowed_tools: Vec<String>,
 }
 
 impl ProcessConfig {
@@ -39,6 +43,7 @@ impl ProcessConfig {
             json_schema: json_schema.into(),
             model: None,
             system_prompt: None,
+            disallowed_tools: Vec::new(),
         }
     }
 
@@ -61,6 +66,13 @@ impl ProcessConfig {
     #[must_use]
     pub fn with_system_prompt(mut self, prompt: impl Into<String>) -> Self {
         self.system_prompt = Some(prompt.into());
+        self
+    }
+
+    /// Set the disallowed tool patterns.
+    #[must_use]
+    pub fn with_disallowed_tools(mut self, tools: Vec<String>) -> Self {
+        self.disallowed_tools = tools;
         self
     }
 }

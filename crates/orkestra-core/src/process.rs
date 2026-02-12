@@ -136,6 +136,7 @@ pub fn prepare_path_env() -> String {
 /// * `json_schema` - JSON schema for structured output (required)
 /// * `model` - Model identifier to pass via `--model` flag. If None, omits the flag.
 /// * `system_prompt` - System prompt to append via `--append-system-prompt` flag. If None, omits the flag.
+/// * `disallowed_tools` - Tool patterns to pass via `--disallowedTools` flag. If empty, omits the flag.
 pub fn spawn_claude_process(
     project_root: &Path,
     path_env: &str,
@@ -144,6 +145,7 @@ pub fn spawn_claude_process(
     json_schema: &str,
     model: Option<&str>,
     system_prompt: Option<&str>,
+    disallowed_tools: &[String],
 ) -> std::io::Result<Child> {
     let mut cmd = Command::new("claude");
 
@@ -174,6 +176,12 @@ pub fn spawn_claude_process(
     // Append system prompt if provided (appends to Claude Code's built-in system prompt)
     if let Some(sp) = system_prompt {
         cmd.args(["--append-system-prompt", sp]);
+    }
+
+    // Pass disallowed tools if any are configured
+    if !disallowed_tools.is_empty() {
+        let joined = disallowed_tools.join(",");
+        cmd.args(["--disallowedTools", &joined]);
     }
 
     cmd.args(["--dangerously-skip-permissions"])

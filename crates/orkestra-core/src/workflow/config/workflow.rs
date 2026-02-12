@@ -8,18 +8,6 @@ use serde::{Deserialize, Serialize};
 
 use super::stage::{StageCapabilities, StageConfig, ToolRestriction};
 
-/// A stage entry for the workflow overview in agent prompts.
-/// Contains the stage name, description, and whether it's the current stage.
-#[derive(Debug, Clone, Serialize)]
-pub struct WorkflowStageEntry {
-    /// Stage name (e.g., "plan", "work").
-    pub name: String,
-    /// Human-readable description of what this stage does.
-    pub description: String,
-    /// Whether this is the current stage being executed.
-    pub is_current: bool,
-}
-
 /// Complete workflow configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WorkflowConfig {
@@ -407,19 +395,15 @@ impl WorkflowConfig {
         &self,
         current_stage: &str,
         flow: Option<&str>,
-    ) -> Vec<WorkflowStageEntry> {
+    ) -> Vec<crate::workflow::execution::prompt::WorkflowStageEntry> {
+        let to_entry = |stage: &StageConfig| crate::workflow::execution::prompt::WorkflowStageEntry {
+            name: stage.name.clone(),
+            description: stage.description.clone().unwrap_or_else(|| stage.display()),
+            is_current: stage.name == current_stage,
+        };
+
         match flow {
-            None => {
-                // Default flow: iterate all global stages
-                self.stages
-                    .iter()
-                    .map(|stage| WorkflowStageEntry {
-                        name: stage.name.clone(),
-                        description: stage.description.clone().unwrap_or_else(|| stage.display()),
-                        is_current: stage.name == current_stage,
-                    })
-                    .collect()
-            }
+            None => self.stages.iter().map(to_entry).collect(),
             Some(flow_name) => {
                 let Some(flow_config) = self.flows.get(flow_name) else {
                     return Vec::new();
@@ -427,17 +411,7 @@ impl WorkflowConfig {
                 flow_config
                     .stages
                     .iter()
-                    .filter_map(|entry| {
-                        let stage = self.stage(&entry.stage_name)?;
-                        Some(WorkflowStageEntry {
-                            name: stage.name.clone(),
-                            description: stage
-                                .description
-                                .clone()
-                                .unwrap_or_else(|| stage.display()),
-                            is_current: stage.name == current_stage,
-                        })
-                    })
+                    .filter_map(|entry| self.stage(&entry.stage_name).map(to_entry))
                     .collect()
             }
         }

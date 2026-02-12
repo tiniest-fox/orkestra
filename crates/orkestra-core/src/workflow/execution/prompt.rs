@@ -18,6 +18,22 @@ use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::{QuestionAnswer, Task};
 
 // =============================================================================
+// Workflow Stage Entry (for prompt rendering)
+// =============================================================================
+
+/// A stage entry for the workflow overview in agent prompts.
+/// Contains the stage name, description, and whether it's the current stage.
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkflowStageEntry {
+    /// Stage name (e.g., "plan", "work").
+    pub name: String,
+    /// Human-readable description of what this stage does.
+    pub description: String,
+    /// Whether this is the current stage being executed.
+    pub is_current: bool,
+}
+
+// =============================================================================
 // Template Loading
 // =============================================================================
 
@@ -174,7 +190,7 @@ pub struct StagePromptContext<'a> {
     pub activity_logs: Vec<ActivityLogEntry>,
 
     /// Workflow stage entries for the overview section.
-    pub workflow_stages: Vec<crate::workflow::config::WorkflowStageEntry>,
+    pub workflow_stages: Vec<WorkflowStageEntry>,
 }
 
 /// Context for an artifact available to the stage.
@@ -695,7 +711,7 @@ struct UserMessageContext<'a> {
     base_branch: &'a str,
     base_commit: &'a str,
     activity_logs: &'a [ActivityLogEntry],
-    workflow_stages: &'a [crate::workflow::config::WorkflowStageEntry],
+    workflow_stages: &'a [WorkflowStageEntry],
 }
 
 /// Context available to agent definition Handlebars templates.

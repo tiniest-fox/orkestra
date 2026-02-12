@@ -108,11 +108,11 @@ export function IterationCard({ iteration }: IterationCardProps) {
       </div>
       <div className="px-3 py-2 space-y-2">
         {contextInfo && (
-          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded px-2 py-1.5">
-            <div className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">
+          <div className="bg-info-50 dark:bg-info-950 border border-info-200 dark:border-info-800 rounded px-2 py-1.5">
+            <div className="text-xs font-medium text-info-700 dark:text-info-300 mb-1">
               {contextInfo.label}
             </div>
-            <div className="text-sm text-blue-900 dark:text-blue-100 whitespace-pre-wrap">
+            <div className="text-sm text-info-900 dark:text-info-100 whitespace-pre-wrap">
               {contextInfo.message}
             </div>
           </div>

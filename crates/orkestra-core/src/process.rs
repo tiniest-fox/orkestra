@@ -129,30 +129,17 @@ pub fn prepare_path_env() -> String {
 /// # Arguments
 /// * `project_root` - Working directory for the process
 /// * `path_env` - PATH environment variable value
-/// * `session_id` - Session ID (generated upfront). If provided:
-///   - `is_resume=false`: passes `--session-id <uuid>` (first spawn)
-///   - `is_resume=true`: passes `--resume <uuid>` (continuing session)
-/// * `is_resume` - Whether this is resuming an existing session
-/// * `json_schema` - JSON schema for structured output (required)
-/// * `model` - Model identifier to pass via `--model` flag. If None, omits the flag.
-/// * `system_prompt` - System prompt to append via `--append-system-prompt` flag. If None, omits the flag.
-/// * `disallowed_tools` - Tool patterns to pass via `--disallowedTools` flag. If empty, omits the flag.
-#[allow(clippy::too_many_arguments)]
+/// * `config` - Process configuration (session, schema, model, prompts, tool restrictions)
 pub fn spawn_claude_process(
     project_root: &Path,
     path_env: &str,
-    session_id: Option<&str>,
-    is_resume: bool,
-    json_schema: &str,
-    model: Option<&str>,
-    system_prompt: Option<&str>,
-    disallowed_tools: &[String],
+    config: &crate::workflow::ports::ProcessConfig,
 ) -> std::io::Result<Child> {
     let mut cmd = Command::new("claude");
 
     // Pass session ID with appropriate flag
-    if let Some(sid) = session_id {
-        if is_resume {
+    if let Some(ref sid) = config.session_id {
+        if config.is_resume {
             cmd.args(["--resume", sid]);
         } else {
             cmd.args(["--session-id", sid]);
@@ -160,7 +147,7 @@ pub fn spawn_claude_process(
     }
 
     // Pass model flag if specified
-    if let Some(model_id) = model {
+    if let Some(ref model_id) = config.model {
         cmd.args(["--model", model_id]);
     }
 
@@ -171,17 +158,17 @@ pub fn spawn_claude_process(
         "--output-format",
         "stream-json",
         "--json-schema",
-        json_schema,
+        &config.json_schema,
     ]);
 
     // Append system prompt if provided (appends to Claude Code's built-in system prompt)
-    if let Some(sp) = system_prompt {
+    if let Some(ref sp) = config.system_prompt {
         cmd.args(["--append-system-prompt", sp]);
     }
 
     // Pass disallowed tools if any are configured
-    if !disallowed_tools.is_empty() {
-        let joined = disallowed_tools.join(",");
+    if !config.disallowed_tools.is_empty() {
+        let joined = config.disallowed_tools.join(",");
         cmd.args(["--disallowedTools", &joined]);
     }
 

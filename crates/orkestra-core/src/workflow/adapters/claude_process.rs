@@ -41,17 +41,8 @@ impl ProcessSpawner for ClaudeProcessSpawner {
         let path_env = prepare_path_env();
 
         // Spawn the process
-        let mut child = spawn_claude_process(
-            working_dir,
-            &path_env,
-            config.session_id.as_deref(),
-            config.is_resume,
-            &config.json_schema,
-            config.model.as_deref(),
-            config.system_prompt.as_deref(),
-            &config.disallowed_tools,
-        )
-        .map_err(|e| ProcessError::SpawnFailed(e.to_string()))?;
+        let mut child = spawn_claude_process(working_dir, &path_env, &config)
+            .map_err(|e| ProcessError::SpawnFailed(e.to_string()))?;
 
         let pid = child.id();
 

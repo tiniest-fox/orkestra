@@ -29,8 +29,8 @@ pub struct ProcessConfig {
     /// If None, no system prompt is provided.
     pub system_prompt: Option<String>,
     /// Tool patterns that the agent is not allowed to use.
-    /// Passed as `--disallowedTools` to Claude Code. Ignored by providers that
-    /// don't support it.
+    /// Providers that support tool restrictions will enforce these patterns;
+    /// others will ignore them.
     pub disallowed_tools: Vec<String>,
 }
 

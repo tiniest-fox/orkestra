@@ -15,12 +15,13 @@
 //! This is one of the execution backends used by `StageExecutionService`.
 //! For script execution, see `ScriptExecutionService`.
 
+use std::fmt::Write;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
 use crate::orkestra_debug;
-use crate::workflow::config::WorkflowConfig;
+use crate::workflow::config::{DisallowedToolEntry, WorkflowConfig};
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
     build_resume_prompt, ActivityLogEntry, AgentConfigError, AgentRunnerTrait, ProviderRegistry,
@@ -50,6 +51,20 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
         IterationTrigger::ManualResume { message } => message.as_deref(),
         _ => None,
     })
+}
+
+/// Format tool restrictions as a markdown section for injection into system prompt.
+///
+/// Returns a formatted string with a "## Tool Restrictions" header listing each
+/// disallowed tool pattern with its explanation message.
+fn format_tool_restrictions(tools: &[DisallowedToolEntry]) -> String {
+    let mut restrictions = String::from("\n\n## Tool Restrictions\n\nThe following tools are NOT available to you in this stage:\n");
+    for entry in tools {
+        write!(restrictions, "\n- **`{}`**: {}", entry.pattern, entry.message)
+            .expect("Writing to String cannot fail");
+    }
+    restrictions.push_str("\n\nDo not attempt to use these tools. Find alternative approaches.");
+    restrictions
 }
 
 // ============================================================================
@@ -448,19 +463,7 @@ impl AgentExecutionService {
         let system_prompt = if effective_tools.is_empty() {
             system_prompt
         } else {
-            use std::fmt::Write;
-            let mut restrictions = String::from("\n\n## Tool Restrictions\n\nThe following tools are NOT available to you in this stage:\n");
-            for entry in &effective_tools {
-                write!(
-                    restrictions,
-                    "\n- **`{}`**: {}",
-                    entry.pattern, entry.message
-                )
-                .expect("Writing to String cannot fail");
-            }
-            restrictions
-                .push_str("\n\nDo not attempt to use these tools. Find alternative approaches.");
-            format!("{system_prompt}{restrictions}")
+            format!("{system_prompt}{}", format_tool_restrictions(&effective_tools))
         };
 
         // 5. Build user message prompt based on whether this is a resume

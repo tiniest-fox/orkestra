@@ -290,6 +290,10 @@ impl AgentRunnerTrait for AgentRunner {
             process_config = process_config.with_system_prompt(system_prompt);
         }
 
+        if !config.disallowed_tools.is_empty() {
+            process_config = process_config.with_disallowed_tools(config.disallowed_tools);
+        }
+
         // Spawn the process via the resolved provider's spawner
         let mut handle = resolved
             .spawner

@@ -12,10 +12,7 @@ use crate::workflow::ports::{FileChangeType, FileDiff, GitError, TaskDiff};
 /// This encapsulates the common pattern used by both `execute_diff()` and
 /// `execute_uncommitted_diff()`: execute git diff, parse numstat/patch output,
 /// then collect untracked files.
-fn run_diff_and_collect(
-    worktree_path: &Path,
-    git_args: &[&str],
-) -> Result<TaskDiff, GitError> {
+fn run_diff_and_collect(worktree_path: &Path, git_args: &[&str]) -> Result<TaskDiff, GitError> {
     let output = Command::new("git")
         .args(git_args)
         .current_dir(worktree_path)
@@ -738,8 +735,8 @@ mod tests {
         let find_file = |name: &str| result.files.iter().find(|f| f.path == name);
 
         // Uncommitted tracked modifications SHOULD appear as Modified
-        let existing_edit = find_file("existing.txt")
-            .expect("Uncommitted edit to existing.txt should be in diff");
+        let existing_edit =
+            find_file("existing.txt").expect("Uncommitted edit to existing.txt should be in diff");
         assert!(
             matches!(existing_edit.change_type, FileChangeType::Modified),
             "Uncommitted edit should be Modified, not Added"

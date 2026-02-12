@@ -37,6 +37,7 @@ Before designing the technical approach, study existing implementations deeply:
 3. **Understand module boundaries**: Where does this feature belong in the existing module structure? Follow established domain separation. Read the module's existing public API to understand what patterns it expects.
 4. **Map integration points**: Identify the exact traits and interfaces the new code must implement or consume. Note specific function signatures, not just module names.
 5. **Document findings**: In the `content` field, explicitly list the existing patterns and services identified and how the design reuses them. This demonstrates the research was done and gives workers concrete references.
+6. **Check available skills**: Review `.claude/skills/` for skills relevant to the work being designed. Skills contain distilled domain knowledge (patterns, reference files, anti-patterns) that should inform your technical design. Reference relevant skills in each subtask's `detailed_instructions` so workers can load them (e.g., "Load the `/panel-slot` skill before starting — it covers the layout system patterns you'll need").
 
 ## Output: Two Cases
 

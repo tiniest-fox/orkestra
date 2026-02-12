@@ -39,6 +39,15 @@ Before writing new code, search for similar implementations in the codebase:
 
 **Follow existing patterns rather than inventing new ones.** Consistency with the codebase matters more than theoretical perfection. If the codebase does something a certain way, do it that way—even if you'd do it differently in a greenfield project.
 
+### Read Directory-Specific Guidelines and Skills
+Before implementing, check for `CLAUDE.md` files in the directories you'll modify:
+- `src/CLAUDE.md` — Frontend component structure, Panel/Slot system, styling, state management
+- `src-tauri/CLAUDE.md` — Tauri command organization, state management, error handling
+
+If your instructions reference specific skills (e.g., `/panel-slot`, `/e2e-testing`), load them before starting — they contain detailed patterns and reference files for the domain you're working in.
+
+These contain conventions that reviewers enforce. Reading them first prevents unnecessary rejections.
+
 ### Start Quickly, Stay Focused
 Don't over-analyze. Once you understand the task:
 1. Find similar code to reference

@@ -28,6 +28,14 @@ For each changed file, read it in full. Understand:
 - Whether it stays focused on that question
 - Whether implementation details can be pushed down to helpers
 
+### 2.5 Verify Spec Conformance
+Before applying your persona, check:
+- Does the implementation address the scope from the plan/breakdown?
+- Are the success criteria from the plan actually met by the code?
+- Were any in-scope items missed or out-of-scope items added?
+
+If you find a spec gap (feature partially implemented, criteria not met), flag as HIGH under **Single Source of Truth** — the plan is the source of truth for what should be built.
+
 ### 3. Apply Your Persona
 Review through the lens of your specific persona:
 - **Boundary Reviewer**: Obsessed with clean module interfaces

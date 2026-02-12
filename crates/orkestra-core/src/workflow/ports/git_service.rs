@@ -208,8 +208,9 @@ pub trait GitService: Send + Sync {
 
     /// Merge a task branch into a specific target branch.
     ///
-    /// Stashes uncommitted changes in main repo, performs merge, restores stash.
-    /// Returns merge result on success, or `GitError::MergeConflict` if conflicts occur.
+    /// Operates in the target branch's working directory (worktree for `task/*`
+    /// branches, main repo otherwise). Stashes uncommitted changes, performs an
+    /// `--ff-only` merge, then restores the stash.
     fn merge_to_branch(
         &self,
         branch_name: &str,

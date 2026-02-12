@@ -159,95 +159,80 @@ impl Git2GitService {
         Ok(())
     }
 
-    /// Internal helper to perform the actual merge operation.
-    fn do_merge(&self, primary: &str, branch_name: &str) -> Result<MergeResult, GitError> {
-        // First, checkout the primary branch
+    /// Resolve a branch name to the working directory where it's checked out.
+    ///
+    /// - `task/*` branches → worktree path (if it exists)
+    /// - Everything else → main repo path
+    fn resolve_branch_working_dir(&self, branch: &str) -> PathBuf {
+        if let Some(task_id) = branch.strip_prefix("task/") {
+            let worktree_path = self.worktrees_dir.join(task_id);
+            if worktree_path.exists() {
+                return worktree_path;
+            }
+        }
+        self.repo_path.clone()
+    }
+
+    /// Perform checkout + ff-only merge in a specific working directory.
+    fn do_merge_in(
+        working_dir: &Path,
+        source: &str,
+        target: &str,
+    ) -> Result<MergeResult, GitError> {
+        // Checkout the target branch (no-op if already on it in a worktree)
         let checkout_output = Command::new("git")
-            .args(["checkout", primary])
-            .current_dir(&self.repo_path)
+            .args(["checkout", target])
+            .current_dir(working_dir)
             .output()
-            .map_err(|e| GitError::MergeError(format!("Failed to run git checkout: {e}")))?;
+            .map_err(|e| {
+                GitError::MergeError(format!(
+                    "Failed to checkout {target} in {}: {e}",
+                    working_dir.display()
+                ))
+            })?;
 
         if !checkout_output.status.success() {
             let stderr = String::from_utf8_lossy(&checkout_output.stderr);
-
-            // If the target branch is checked out in a worktree (e.g., subtask merging
-            // to parent's branch), merge inside that worktree so both the branch pointer
-            // AND the working directory update. After rebase, this is always a fast-forward.
-            if stderr.contains("checked out at") || stderr.contains("is already used by worktree") {
-                let task_id = primary.strip_prefix("task/").ok_or_else(|| {
-                    GitError::MergeError(format!(
-                        "Cannot derive worktree path for branch {primary}"
-                    ))
-                })?;
-                let worktree_path = self.worktrees_dir.join(task_id);
-
-                let merge_output = Command::new("git")
-                    .args(["merge", "--ff-only", branch_name])
-                    .current_dir(&worktree_path)
-                    .output()
-                    .map_err(|e| {
-                        GitError::MergeError(format!("Failed to merge in worktree: {e}"))
-                    })?;
-
-                if !merge_output.status.success() {
-                    let merge_stderr = String::from_utf8_lossy(&merge_output.stderr);
-                    return Err(GitError::MergeError(format!(
-                        "Failed to merge {branch_name} into {primary}: {merge_stderr}"
-                    )));
-                }
-
-                let head_output = Command::new("git")
-                    .args(["rev-parse", "HEAD"])
-                    .current_dir(&worktree_path)
-                    .output()
-                    .map_err(|e| GitError::MergeError(format!("Failed to get HEAD: {e}")))?;
-
-                let commit_sha = String::from_utf8_lossy(&head_output.stdout)
-                    .trim()
-                    .to_string();
-
-                return Ok(MergeResult {
-                    commit_sha,
-                    target_branch: primary.to_string(),
-                    merged_at: chrono::Utc::now().to_rfc3339(),
-                });
+            // "Already on" is fine — worktrees are already on the right branch
+            if !stderr.contains("Already on") {
+                return Err(GitError::MergeError(format!(
+                    "Failed to checkout {target} in {}: {stderr}",
+                    working_dir.display()
+                )));
             }
-
-            return Err(GitError::MergeError(format!(
-                "Failed to checkout {primary}: {stderr}"
-            )));
         }
 
-        // Attempt the merge
+        // Fast-forward merge — after rebase this is always ff
         let merge_output = Command::new("git")
-            .args(["merge", "--no-edit", branch_name])
-            .current_dir(&self.repo_path)
+            .args(["merge", "--ff-only", source])
+            .current_dir(working_dir)
             .output()
-            .map_err(|e| GitError::MergeError(format!("Failed to run git merge: {e}")))?;
+            .map_err(|e| {
+                GitError::MergeError(format!(
+                    "Failed to merge {source} into {target} in {}: {e}",
+                    working_dir.display()
+                ))
+            })?;
 
         if !merge_output.status.success() {
-            // Check if this is a merge conflict
-            let conflict_files = self.get_conflict_files()?;
-            if !conflict_files.is_empty() {
-                return Err(GitError::MergeConflict {
-                    branch: branch_name.to_string(),
-                    conflict_files,
-                });
-            }
-            // Some other merge error
             let stderr = String::from_utf8_lossy(&merge_output.stderr);
             return Err(GitError::MergeError(format!(
-                "Failed to merge {branch_name}: {stderr}"
+                "Failed to merge {source} into {target} in {}: {stderr}",
+                working_dir.display()
             )));
         }
 
         // Get the resulting commit SHA
         let head_output = Command::new("git")
             .args(["rev-parse", "HEAD"])
-            .current_dir(&self.repo_path)
+            .current_dir(working_dir)
             .output()
-            .map_err(|e| GitError::MergeError(format!("Failed to get HEAD: {e}")))?;
+            .map_err(|e| {
+                GitError::MergeError(format!(
+                    "Failed to get HEAD in {}: {e}",
+                    working_dir.display()
+                ))
+            })?;
 
         let commit_sha = String::from_utf8_lossy(&head_output.stdout)
             .trim()
@@ -255,16 +240,16 @@ impl Git2GitService {
 
         Ok(MergeResult {
             commit_sha,
-            target_branch: primary.to_string(),
+            target_branch: target.to_string(),
             merged_at: chrono::Utc::now().to_rfc3339(),
         })
     }
 
-    /// Check if the main repository has uncommitted changes.
-    fn has_uncommitted_changes(&self) -> Result<bool, GitError> {
+    /// Check if a working directory has uncommitted changes.
+    fn has_uncommitted_changes(working_dir: &Path) -> Result<bool, GitError> {
         let output = Command::new("git")
             .args(["status", "--porcelain"])
-            .current_dir(&self.repo_path)
+            .current_dir(working_dir)
             .output()
             .map_err(|e| GitError::IoError(format!("Failed to run git status: {e}")))?;
 
@@ -272,42 +257,42 @@ impl Git2GitService {
         Ok(!status.trim().is_empty())
     }
 
-    /// Stash uncommitted changes in the main repository.
+    /// Stash uncommitted changes in a working directory.
     ///
     /// Returns `true` if changes were stashed, `false` if there was nothing to stash.
-    fn stash_changes(&self) -> Result<bool, GitError> {
-        // Check if there are changes to stash
-        if !self.has_uncommitted_changes()? {
+    fn stash_changes(working_dir: &Path) -> Result<bool, GitError> {
+        if !Self::has_uncommitted_changes(working_dir)? {
             return Ok(false);
         }
 
         let output = Command::new("git")
             .args(["stash", "push", "-m", "orkestra-temp"])
-            .current_dir(&self.repo_path)
+            .current_dir(working_dir)
             .output()
             .map_err(|e| GitError::IoError(format!("Failed to run git stash: {e}")))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(GitError::IoError(format!(
-                "Failed to stash changes: {stderr}"
+                "Failed to stash changes in {}: {stderr}",
+                working_dir.display()
             )));
         }
 
         Ok(true)
     }
 
-    /// Restore stashed changes in the main repository.
+    /// Restore stashed changes in a working directory.
     ///
     /// Only pops if we actually stashed something (indicated by `was_stashed`).
-    fn stash_pop(&self, was_stashed: bool) -> Result<(), GitError> {
+    fn stash_pop(working_dir: &Path, was_stashed: bool) -> Result<(), GitError> {
         if !was_stashed {
             return Ok(());
         }
 
         let output = Command::new("git")
             .args(["stash", "pop"])
-            .current_dir(&self.repo_path)
+            .current_dir(working_dir)
             .output()
             .map_err(|e| GitError::IoError(format!("Failed to run git stash pop: {e}")))?;
 
@@ -316,7 +301,8 @@ impl Git2GitService {
             // Don't fail if there's nothing to pop (edge case)
             if !stderr.contains("No stash entries found") {
                 return Err(GitError::IoError(format!(
-                    "Failed to restore stashed changes: {stderr}"
+                    "Failed to restore stashed changes in {}: {stderr}",
+                    working_dir.display()
                 )));
             }
         }
@@ -572,14 +558,12 @@ impl GitService for Git2GitService {
         branch_name: &str,
         target_branch: &str,
     ) -> Result<MergeResult, GitError> {
-        // Stash any uncommitted changes in the main repo before merge
-        let was_stashed = self.stash_changes()?;
+        let working_dir = self.resolve_branch_working_dir(target_branch);
+        let was_stashed = Self::stash_changes(&working_dir)?;
 
-        // Use a closure to ensure stash is always popped, even on error
-        let merge_result = self.do_merge(target_branch, branch_name);
+        let merge_result = Self::do_merge_in(&working_dir, branch_name, target_branch);
 
-        // Always restore stashed changes
-        if let Err(e) = self.stash_pop(was_stashed) {
+        if let Err(e) = Self::stash_pop(&working_dir, was_stashed) {
             crate::orkestra_debug!("git", "WARNING: Failed to restore stashed changes: {}", e);
         }
 
@@ -1451,6 +1435,48 @@ mod tests {
         assert_eq!(file.additions, 1);
         assert!(!file.is_binary);
         assert!(file.diff_content.is_some());
+    }
+
+    #[test]
+    fn test_merge_to_branch_in_worktree() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create parent worktree (branched from main)
+        let parent = git
+            .create_worktree("PARENT", Some("main"))
+            .expect("Failed to create parent worktree");
+
+        // Add a commit to parent so child branches from it
+        std::fs::write(parent.worktree_path.join("parent_file.txt"), "parent work")
+            .expect("Failed to write parent file");
+        git.commit_pending_changes(&parent.worktree_path, "Parent commit")
+            .expect("Failed to commit in parent");
+
+        // Create child worktree branched from parent
+        let child = git
+            .create_worktree("CHILD", Some("task/PARENT"))
+            .expect("Failed to create child worktree");
+
+        // Add a commit to child
+        std::fs::write(child.worktree_path.join("child_file.txt"), "child work")
+            .expect("Failed to write child file");
+        git.commit_pending_changes(&child.worktree_path, "Child commit")
+            .expect("Failed to commit in child");
+
+        // Merge child → parent (target is a worktree branch)
+        let result = git
+            .merge_to_branch("task/CHILD", "task/PARENT")
+            .expect("Failed to merge child into parent");
+
+        assert_eq!(result.target_branch, "task/PARENT");
+        assert!(!result.commit_sha.is_empty());
+
+        // Verify the child's file now appears in the parent worktree
+        assert!(
+            parent.worktree_path.join("child_file.txt").exists(),
+            "Child file should be visible in parent worktree after merge"
+        );
     }
 
     #[test]

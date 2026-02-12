@@ -35,6 +35,7 @@ File count alone is a poor proxy — a 2-file change to a central trait with man
 
 **Conditionally spawn:**
 6. `review-rust.md` - Rust idioms (if any `*.rs` files are in the changed files list)
+7. `review-frontend.md` - Frontend conventions (if any `src/*.ts` or `src/*.tsx` files are in the changed files list)
 
 ### 4. Spawn Reviewers in Parallel
 

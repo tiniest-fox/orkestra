@@ -40,6 +40,7 @@ Before writing the plan, study the codebase. This is what separates the quick pl
 3. **Map the change surface**: Identify which files need to be created or modified, which functions/types are involved, and where in each file changes should go. Note the exact traits and interfaces new code must implement or consume.
 4. **Check for conventions**: Read relevant CLAUDE.md files, look for project patterns in nearby code. Note naming conventions, error handling patterns, and test structure.
 5. **Study existing tests**: Find the test files and patterns for the modules you're changing. Understand what test infrastructure exists (helpers, fixtures, mocks) so the worker can write tests that fit the existing suite.
+6. **Check available skills**: Review `.claude/skills/` for skills relevant to the work. Skills contain distilled domain knowledge (patterns, reference files, anti-patterns). Reference relevant skills in the Implementation Map so workers can load them (e.g., "Load the `/panel-slot` skill before starting").
 
 **Key distinction**: Describe *what exists and what needs to change*, not *exactly how to change it*. The worker retains autonomy on implementation details — your job is to ensure they know *where* to work and *what patterns to follow*, not to dictate every line.
 
@@ -81,7 +82,9 @@ Describe what **new tests need to be written** (if any) and where they should li
 
 ## Self-Review
 
-Before finalizing, check your plan against these four questions. Do not spawn subagents — just review mentally and revise if needed.
+Before finalizing, assess the scope of your plan:
+
+**For small tasks** (single file, clear change, no design decisions): check your plan mentally against these questions and revise if needed:
 
 1. Could a worker implement this without asking "but which file?"
 2. Does the Implementation Map reference specific files and code?
@@ -90,6 +93,8 @@ Before finalizing, check your plan against these four questions. Do not spawn su
 5. Does the Verification Strategy include a concrete test the worker can write or run?
 
 If any answer is "no," revise the relevant section before outputting.
+
+**For medium tasks** (multi-file, touches shared patterns, or involves component interactions): spawn a single subagent review to catch issues you might miss. Use the `review-simplicity` reviewer (`.claude/agents/review-simplicity.md`) — pass your draft plan and ask it to verify the Implementation Map is grounded in actual codebase patterns and the scope is correctly bounded. Revise based on findings before outputting.
 
 ## If You Have Feedback to Address
 

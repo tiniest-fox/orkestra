@@ -387,36 +387,6 @@ impl WorkflowConfig {
         }
     }
 
-    /// Get workflow stage entries for the prompt overview.
-    ///
-    /// Returns a list of all stages in the given flow (or default flow if None),
-    /// with their names, descriptions, and a flag indicating the current stage.
-    pub fn workflow_stage_entries(
-        &self,
-        current_stage: &str,
-        flow: Option<&str>,
-    ) -> Vec<crate::workflow::execution::WorkflowStageEntry> {
-        let to_entry = |stage: &StageConfig| crate::workflow::execution::WorkflowStageEntry {
-            name: stage.name.clone(),
-            description: stage.description.clone().unwrap_or_else(|| stage.display()),
-            is_current: stage.name == current_stage,
-        };
-
-        match flow {
-            None => self.stages.iter().map(to_entry).collect(),
-            Some(flow_name) => {
-                let Some(flow_config) = self.flows.get(flow_name) else {
-                    return Vec::new();
-                };
-                flow_config
-                    .stages
-                    .iter()
-                    .filter_map(|entry| self.stage(&entry.stage_name).map(to_entry))
-                    .collect()
-            }
-        }
-    }
-
     /// Check whether a given stage is in the specified flow.
     pub fn stage_in_flow(&self, stage_name: &str, flow: Option<&str>) -> bool {
         match flow {
@@ -1511,95 +1481,6 @@ integration:
 
         let specs = workflow.agent_model_specs(Some("nonexistent"));
         assert!(specs.is_empty());
-    }
-
-    #[test]
-    fn test_workflow_stage_entries_default_flow() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("plan", "plan").with_description("Create a plan"),
-            StageConfig::new("work", "summary").with_description("Implement the plan"),
-            StageConfig::new("review", "verdict"),
-        ]);
-
-        let entries = workflow.workflow_stage_entries("work", None);
-        assert_eq!(entries.len(), 3);
-
-        // Check first stage
-        assert_eq!(entries[0].name, "plan");
-        assert_eq!(entries[0].description, "Create a plan");
-        assert!(!entries[0].is_current);
-
-        // Check current stage
-        assert_eq!(entries[1].name, "work");
-        assert_eq!(entries[1].description, "Implement the plan");
-        assert!(entries[1].is_current);
-
-        // Check stage without description (should use display())
-        assert_eq!(entries[2].name, "review");
-        assert_eq!(entries[2].description, "Review");
-        assert!(!entries[2].is_current);
-    }
-
-    #[test]
-    fn test_workflow_stage_entries_with_flow() {
-        let mut flows = IndexMap::new();
-        flows.insert(
-            "quick".into(),
-            FlowConfig {
-                description: "Skip breakdown".into(),
-                icon: Some("zap".into()),
-                stages: vec![
-                    FlowStageEntry {
-                        stage_name: "plan".into(),
-                        overrides: None,
-                    },
-                    FlowStageEntry {
-                        stage_name: "work".into(),
-                        overrides: None,
-                    },
-                ],
-            },
-        );
-
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("plan", "plan").with_description("Create a plan"),
-            StageConfig::new("task", "breakdown"),
-            StageConfig::new("work", "summary").with_description("Implement the plan"),
-            StageConfig::new("review", "verdict"),
-        ])
-        .with_flows(flows);
-
-        let entries = workflow.workflow_stage_entries("work", Some("quick"));
-        assert_eq!(entries.len(), 2);
-
-        // Should only include plan and work, not task or review
-        assert_eq!(entries[0].name, "plan");
-        assert_eq!(entries[0].description, "Create a plan");
-        assert!(!entries[0].is_current);
-
-        assert_eq!(entries[1].name, "work");
-        assert_eq!(entries[1].description, "Implement the plan");
-        assert!(entries[1].is_current);
-    }
-
-    #[test]
-    fn test_workflow_stage_entries_nonexistent_flow() {
-        let workflow = WorkflowConfig::new(vec![StageConfig::new("plan", "plan")]);
-
-        let entries = workflow.workflow_stage_entries("plan", Some("nonexistent"));
-        assert!(entries.is_empty());
-    }
-
-    #[test]
-    fn test_workflow_stage_entries_description_fallback() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"), // No display_name, should fall back to "Planning"
-            StageConfig::new("work", "summary").with_display_name("Work Stage"), // Should fall back to "Work Stage"
-        ]);
-
-        let entries = workflow.workflow_stage_entries("work", None);
-        assert_eq!(entries[0].description, "Planning");
-        assert_eq!(entries[1].description, "Work Stage");
     }
 
     // ========================================================================

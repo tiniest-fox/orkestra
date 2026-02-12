@@ -16,6 +16,3 @@ pub use stage::{
 pub use workflow::{
     FlowConfig, FlowStageEntry, FlowStageOverride, IntegrationConfig, WorkflowConfig,
 };
-
-// Re-export WorkflowStageEntry from its new location in the execution module
-pub use crate::workflow::execution::WorkflowStageEntry;

@@ -33,6 +33,36 @@ pub struct WorkflowStageEntry {
     pub is_current: bool,
 }
 
+/// Build workflow stage entries for the prompt overview.
+///
+/// Returns a list of all stages in the given flow (or default flow if None),
+/// with their names, descriptions, and a flag indicating the current stage.
+pub fn build_workflow_stage_entries(
+    workflow: &WorkflowConfig,
+    current_stage: &str,
+    flow: Option<&str>,
+) -> Vec<WorkflowStageEntry> {
+    let to_entry = |stage: &StageConfig| WorkflowStageEntry {
+        name: stage.name.clone(),
+        description: stage.description.clone().unwrap_or_else(|| stage.display()),
+        is_current: stage.name == current_stage,
+    };
+
+    match flow {
+        None => workflow.stages.iter().map(to_entry).collect(),
+        Some(flow_name) => {
+            let Some(flow_config) = workflow.flows.get(flow_name) else {
+                return Vec::new();
+            };
+            flow_config
+                .stages
+                .iter()
+                .filter_map(|entry| workflow.stage(&entry.stage_name).map(to_entry))
+                .collect()
+        }
+    }
+}
+
 // =============================================================================
 // Template Loading
 // =============================================================================
@@ -293,9 +323,7 @@ impl<'a> PromptBuilder<'a> {
         // Initial prompts don't include question history since no questions have been asked yet
         let question_history = Vec::new();
 
-        let workflow_stages = self
-            .workflow
-            .workflow_stage_entries(stage_name, task.flow.as_deref());
+        let workflow_stages = build_workflow_stage_entries(self.workflow, stage_name, task.flow.as_deref());
 
         Some(StagePromptContext {
             stage,
@@ -343,9 +371,7 @@ impl<'a> PromptBuilder<'a> {
 
         let question_history = Vec::new();
 
-        let workflow_stages = self
-            .workflow
-            .workflow_stage_entries(&stage.name, task.flow.as_deref());
+        let workflow_stages = build_workflow_stage_entries(self.workflow, &stage.name, task.flow.as_deref());
 
         Some(StagePromptContext {
             stage,
@@ -1973,5 +1999,98 @@ mod tests {
         // Should use display() fallback for stages without description
         assert!(user_message.contains("[planning] — Planning"));
         assert!(user_message.contains("[work] ← YOU ARE HERE — Work Stage"));
+    }
+
+    // ========================================================================
+    // build_workflow_stage_entries tests
+    // ========================================================================
+
+    #[test]
+    fn test_build_workflow_stage_entries_default_flow() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("plan", "plan").with_description("Create a plan"),
+            StageConfig::new("work", "summary").with_description("Implement the plan"),
+            StageConfig::new("review", "verdict"),
+        ]);
+
+        let entries = build_workflow_stage_entries(&workflow, "work", None);
+        assert_eq!(entries.len(), 3);
+
+        // Check first stage
+        assert_eq!(entries[0].name, "plan");
+        assert_eq!(entries[0].description, "Create a plan");
+        assert!(!entries[0].is_current);
+
+        // Check current stage
+        assert_eq!(entries[1].name, "work");
+        assert_eq!(entries[1].description, "Implement the plan");
+        assert!(entries[1].is_current);
+
+        // Check stage without description (should use display())
+        assert_eq!(entries[2].name, "review");
+        assert_eq!(entries[2].description, "Review");
+        assert!(!entries[2].is_current);
+    }
+
+    #[test]
+    fn test_build_workflow_stage_entries_with_flow() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".into(),
+            FlowConfig {
+                description: "Skip breakdown".into(),
+                icon: Some("zap".into()),
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "plan".into(),
+                        overrides: None,
+                    },
+                    FlowStageEntry {
+                        stage_name: "work".into(),
+                        overrides: None,
+                    },
+                ],
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("plan", "plan").with_description("Create a plan"),
+            StageConfig::new("task", "breakdown"),
+            StageConfig::new("work", "summary").with_description("Implement the plan"),
+            StageConfig::new("review", "verdict"),
+        ])
+        .with_flows(flows);
+
+        let entries = build_workflow_stage_entries(&workflow, "work", Some("quick"));
+        assert_eq!(entries.len(), 2);
+
+        // Should only include plan and work, not task or review
+        assert_eq!(entries[0].name, "plan");
+        assert_eq!(entries[0].description, "Create a plan");
+        assert!(!entries[0].is_current);
+
+        assert_eq!(entries[1].name, "work");
+        assert_eq!(entries[1].description, "Implement the plan");
+        assert!(entries[1].is_current);
+    }
+
+    #[test]
+    fn test_build_workflow_stage_entries_nonexistent_flow() {
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("plan", "plan")]);
+
+        let entries = build_workflow_stage_entries(&workflow, "plan", Some("nonexistent"));
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_build_workflow_stage_entries_description_fallback() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"), // No display_name, should fall back to "Planning"
+            StageConfig::new("work", "summary").with_display_name("Work Stage"), // Should fall back to "Work Stage"
+        ]);
+
+        let entries = build_workflow_stage_entries(&workflow, "work", None);
+        assert_eq!(entries[0].description, "Planning");
+        assert_eq!(entries[1].description, "Work Stage");
     }
 }

@@ -4275,11 +4275,11 @@ fn test_disallowed_tools_threaded_to_run_config() {
     let work_stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
         DisallowedToolEntry {
             pattern: "Bash(cargo test)".to_string(),
-            message: "Automated checks handle testing".to_string(),
+            message: Some("Automated checks handle testing".to_string()),
         },
         DisallowedToolEntry {
             pattern: "Bash(cargo build)".to_string(),
-            message: "Build runs in CI".to_string(),
+            message: Some("Build runs in CI".to_string()),
         },
     ]);
 
@@ -4324,11 +4324,11 @@ fn test_disallowed_tools_injected_into_system_prompt() {
     let work_stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
         DisallowedToolEntry {
             pattern: "Bash(cargo test)".to_string(),
-            message: "Automated checks handle testing".to_string(),
+            message: Some("Automated checks handle testing".to_string()),
         },
         DisallowedToolEntry {
             pattern: "Bash(cargo build)".to_string(),
-            message: "Build runs in CI".to_string(),
+            message: Some("Build runs in CI".to_string()),
         },
     ]);
 
@@ -4392,7 +4392,7 @@ fn test_disallowed_tools_flow_override() {
     let work_stage =
         StageConfig::new("work", "summary").with_disallowed_tools(vec![DisallowedToolEntry {
             pattern: "Bash(cargo test)".to_string(),
-            message: "No testing".to_string(),
+            message: Some("No testing".to_string()),
         }]);
 
     // Flow overrides with no restrictions

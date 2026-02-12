@@ -16,9 +16,10 @@ use serde::{Deserialize, Serialize};
 pub struct DisallowedToolEntry {
     /// Tool pattern in Claude Code format (e.g., `Bash(cargo *)`, `Edit`, `Write`).
     pub pattern: String,
-    /// Human-readable reason why this tool is disallowed.
+    /// Optional human-readable reason why this tool is disallowed.
     /// Injected into the agent's system prompt.
-    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// Configuration for a single workflow stage.
@@ -822,11 +823,11 @@ mod tests {
         let tools = vec![
             DisallowedToolEntry {
                 pattern: "Bash(cargo *)".to_string(),
-                message: "Use the checks script stage instead".to_string(),
+                message: Some("Use the checks script stage instead".to_string()),
             },
             DisallowedToolEntry {
                 pattern: "Edit".to_string(),
-                message: "Read-only stage".to_string(),
+                message: Some("Read-only stage".to_string()),
             },
         ];
 
@@ -847,7 +848,7 @@ mod tests {
         let stage_with_tools =
             StageConfig::new("work", "summary").with_disallowed_tools(vec![DisallowedToolEntry {
                 pattern: "Bash(cargo *)".to_string(),
-                message: "Use the checks stage".to_string(),
+                message: Some("Use the checks stage".to_string()),
             }]);
         let yaml = serde_yaml::to_string(&stage_with_tools).unwrap();
         assert!(yaml.contains("disallowed_tools"));
@@ -862,7 +863,8 @@ mod tests {
 
     #[test]
     fn test_disallowed_tools_yaml_parsing() {
-        let yaml = r"
+        // Test with explicit messages
+        let yaml_with_messages = r"
 name: work
 artifact: summary
 disallowed_tools:
@@ -871,11 +873,32 @@ disallowed_tools:
   - pattern: Edit
     message: Read-only stage
 ";
-        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        let stage: StageConfig = serde_yaml::from_str(yaml_with_messages).unwrap();
         assert_eq!(stage.disallowed_tools.len(), 2);
         assert_eq!(stage.disallowed_tools[0].pattern, "Bash(cargo *)");
-        assert_eq!(stage.disallowed_tools[0].message, "Use the checks stage");
+        assert_eq!(
+            stage.disallowed_tools[0].message,
+            Some("Use the checks stage".to_string())
+        );
         assert_eq!(stage.disallowed_tools[1].pattern, "Edit");
-        assert_eq!(stage.disallowed_tools[1].message, "Read-only stage");
+        assert_eq!(
+            stage.disallowed_tools[1].message,
+            Some("Read-only stage".to_string())
+        );
+
+        // Test without messages (should deserialize to None)
+        let yaml_without_messages = r"
+name: work
+artifact: summary
+disallowed_tools:
+  - pattern: 'Bash(cargo *)'
+  - pattern: Edit
+";
+        let stage: StageConfig = serde_yaml::from_str(yaml_without_messages).unwrap();
+        assert_eq!(stage.disallowed_tools.len(), 2);
+        assert_eq!(stage.disallowed_tools[0].pattern, "Bash(cargo *)");
+        assert_eq!(stage.disallowed_tools[0].message, None);
+        assert_eq!(stage.disallowed_tools[1].pattern, "Edit");
+        assert_eq!(stage.disallowed_tools[1].message, None);
     }
 }

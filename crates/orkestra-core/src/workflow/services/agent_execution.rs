@@ -72,23 +72,13 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
 ///
 /// Returns a formatted string with a "## Tool Restrictions" header listing each
 /// disallowed tool pattern with its explanation message.
-fn format_tool_restrictions(tools: &[DisallowedToolEntry]) -> String {
-    let entries: Vec<serde_json::Value> = tools
-        .iter()
-        .map(|e| {
-            serde_json::json!({
-                "pattern": e.pattern,
-                "message": if e.message.is_empty() { None::<&str> } else { Some(e.message.as_str()) }
-            })
-        })
-        .collect();
-
-    let data = serde_json::json!({ "entries": entries });
-    let rendered = handlebars::Handlebars::new()
+fn format_tool_restrictions(tools: &[DisallowedToolEntry]) -> Result<String, ExecutionError> {
+    let data = serde_json::json!({ "entries": tools });
+    handlebars::Handlebars::new()
         .render_template(TOOL_RESTRICTIONS_TEMPLATE, &data)
-        .expect("tool_restrictions template should render");
-
-    format!("\n\n{rendered}")
+        .map_err(|e| {
+            ExecutionError::ConfigError(format!("Failed to render tool restrictions template: {e}"))
+        })
 }
 
 /// Resolve disallowed tools for a stage and split into prompt text and CLI patterns.
@@ -99,17 +89,14 @@ fn format_tool_restrictions(tools: &[DisallowedToolEntry]) -> String {
 fn apply_tool_restrictions(
     system_prompt: String,
     effective_tools: &[DisallowedToolEntry],
-) -> (String, Vec<String>) {
+) -> Result<(String, Vec<String>), ExecutionError> {
     if effective_tools.is_empty() {
-        return (system_prompt, Vec::new());
+        return Ok((system_prompt, Vec::new()));
     }
-
     let patterns = effective_tools.iter().map(|e| e.pattern.clone()).collect();
-    let augmented = format!(
-        "{system_prompt}{}",
-        format_tool_restrictions(effective_tools)
-    );
-    (augmented, patterns)
+    let restrictions = format_tool_restrictions(effective_tools)?;
+    let prompt_with_restrictions = format!("{system_prompt}\n\n{restrictions}");
+    Ok((prompt_with_restrictions, patterns))
 }
 
 // ============================================================================
@@ -501,7 +488,7 @@ impl AgentExecutionService {
             .workflow
             .effective_disallowed_tools(stage, task.flow.as_deref());
         let (system_prompt, disallowed_patterns) =
-            apply_tool_restrictions(system_prompt, &effective_tools);
+            apply_tool_restrictions(system_prompt, &effective_tools)?;
 
         // 6. Build user message prompt based on whether this is a resume
         let user_prompt = self.build_user_prompt(
@@ -663,14 +650,14 @@ mod tests {
         let tools = vec![
             DisallowedToolEntry {
                 pattern: "Bash(cargo test)".to_string(),
-                message: "Use checks stage".to_string(),
+                message: Some("Use checks stage".to_string()),
             },
             DisallowedToolEntry {
                 pattern: "Edit".to_string(),
-                message: "Read-only".to_string(),
+                message: Some("Read-only".to_string()),
             },
         ];
-        let result = format_tool_restrictions(&tools);
+        let result = format_tool_restrictions(&tools).unwrap();
         assert!(result.contains("## Tool Restrictions"));
         assert!(result.contains("`Bash(cargo test)`"));
         assert!(result.contains("Use checks stage"));
@@ -683,9 +670,9 @@ mod tests {
     fn test_format_tool_restrictions_empty_message() {
         let tools = vec![DisallowedToolEntry {
             pattern: "Bash(cargo *)".to_string(),
-            message: String::new(),
+            message: None,
         }];
-        let result = format_tool_restrictions(&tools);
+        let result = format_tool_restrictions(&tools).unwrap();
         // Should contain the pattern but NOT a trailing colon
         assert!(result.contains("`Bash(cargo *)`"));
         assert!(

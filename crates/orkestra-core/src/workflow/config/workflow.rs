@@ -1638,7 +1638,7 @@ integration:
 
         let tools = vec![DisallowedToolEntry {
             pattern: "Bash(cargo *)".to_string(),
-            message: "Use checks stage".to_string(),
+            message: Some("Use checks stage".to_string()),
         }];
 
         let stage = StageConfig::new("work", "summary").with_disallowed_tools(tools.clone());
@@ -1655,12 +1655,12 @@ integration:
 
         let global_tools = vec![DisallowedToolEntry {
             pattern: "Bash(cargo *)".to_string(),
-            message: "Global restriction".to_string(),
+            message: Some("Global restriction".to_string()),
         }];
 
         let flow_tools = vec![DisallowedToolEntry {
             pattern: "Edit".to_string(),
-            message: "Flow restriction".to_string(),
+            message: Some("Flow restriction".to_string()),
         }];
 
         let stage = StageConfig::new("work", "summary").with_disallowed_tools(global_tools);
@@ -1697,7 +1697,7 @@ integration:
 
         let global_tools = vec![DisallowedToolEntry {
             pattern: "Bash(cargo *)".to_string(),
-            message: "Global restriction".to_string(),
+            message: Some("Global restriction".to_string()),
         }];
 
         let stage = StageConfig::new("work", "summary").with_disallowed_tools(global_tools);
@@ -1728,7 +1728,7 @@ integration:
 
         let global_tools = vec![DisallowedToolEntry {
             pattern: "Bash(cargo *)".to_string(),
-            message: "Global restriction".to_string(),
+            message: Some("Global restriction".to_string()),
         }];
 
         let stage = StageConfig::new("work", "summary").with_disallowed_tools(global_tools);
@@ -1765,7 +1765,7 @@ integration:
         let mut script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
         script_stage.disallowed_tools = vec![DisallowedToolEntry {
             pattern: "Edit".to_string(),
-            message: "Read-only".to_string(),
+            message: Some("Read-only".to_string()),
         }];
 
         let workflow = WorkflowConfig::new(vec![script_stage]);
@@ -1786,11 +1786,11 @@ integration:
         let stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
             DisallowedToolEntry {
                 pattern: "Bash(cargo *)".to_string(),
-                message: "Valid".to_string(),
+                message: Some("Valid".to_string()),
             },
             DisallowedToolEntry {
                 pattern: "  ".to_string(),
-                message: "Invalid".to_string(),
+                message: Some("Invalid".to_string()),
             },
         ]);
 
@@ -1812,7 +1812,7 @@ integration:
         let stage =
             StageConfig::new("work", "summary").with_disallowed_tools(vec![DisallowedToolEntry {
                 pattern: "Bash(cargo *)".to_string(),
-                message: "Use checks stage".to_string(),
+                message: Some("Use checks stage".to_string()),
             }]);
 
         let workflow = WorkflowConfig::new(vec![stage]);
@@ -1846,11 +1846,11 @@ integration:
                         disallowed_tools: Some(vec![
                             DisallowedToolEntry {
                                 pattern: "Edit".to_string(),
-                                message: "Valid".to_string(),
+                                message: Some("Valid".to_string()),
                             },
                             DisallowedToolEntry {
                                 pattern: "  ".to_string(),
-                                message: "Invalid".to_string(),
+                                message: Some("Invalid".to_string()),
                             },
                         ]),
                     }),
@@ -1875,7 +1875,7 @@ integration:
 
         let tools = vec![DisallowedToolEntry {
             pattern: "Edit".to_string(),
-            message: "Read-only".to_string(),
+            message: Some("Read-only".to_string()),
         }];
 
         let override_with_tools = FlowStageOverride {

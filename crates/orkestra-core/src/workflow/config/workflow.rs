@@ -942,7 +942,7 @@ impl WorkflowConfig {
         }
     }
 
-    /// Validate `disallowed_tools` fields on stages.
+    /// Validate `disallowed_tools` fields on stages and flow overrides.
     fn validate_disallowed_tools(&self, errors: &mut Vec<String>) {
         for stage in &self.stages {
             if !stage.disallowed_tools.is_empty() && stage.is_script_stage() {
@@ -958,6 +958,24 @@ impl WorkflowConfig {
                         "Stage \"{}\" has disallowed_tools[{}] with an empty pattern.",
                         stage.name, i
                     ));
+                }
+            }
+        }
+
+        // Validate disallowed_tools in flow overrides
+        for (flow_name, flow) in &self.flows {
+            for entry in &flow.stages {
+                if let Some(ref overrides) = entry.overrides {
+                    if let Some(ref tools) = overrides.disallowed_tools {
+                        for (i, tool_entry) in tools.iter().enumerate() {
+                            if tool_entry.pattern.trim().is_empty() {
+                                errors.push(format!(
+                                    "Flow \"{}\" stage \"{}\" has disallowed_tools[{}] with an empty pattern.",
+                                    flow_name, entry.stage_name, i
+                                ));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1870,6 +1888,51 @@ integration:
         assert!(
             errors.is_empty(),
             "Expected no errors for agent stage with disallowed_tools. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_validate_disallowed_tools_empty_pattern_in_flow_override() {
+        use crate::workflow::config::stage::DisallowedToolEntry;
+
+        let stage = StageConfig::new("work", "summary");
+
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "restricted".to_string(),
+            FlowConfig {
+                description: "Restricted flow".to_string(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: Some(FlowStageOverride {
+                        prompt: None,
+                        capabilities: None,
+                        model: None,
+                        inputs: None,
+                        disallowed_tools: Some(vec![
+                            DisallowedToolEntry {
+                                pattern: "Edit".to_string(),
+                                message: "Valid".to_string(),
+                            },
+                            DisallowedToolEntry {
+                                pattern: "  ".to_string(),
+                                message: "Invalid".to_string(),
+                            },
+                        ]),
+                    }),
+                }],
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![stage]).with_flows(flows);
+
+        let errors = workflow.validate();
+        assert!(
+            errors.iter().any(|e| e.contains("empty pattern")
+                && e.contains("restricted")
+                && e.contains("work")),
+            "Expected validation error for empty pattern in flow override. Got: {errors:?}"
         );
     }
 

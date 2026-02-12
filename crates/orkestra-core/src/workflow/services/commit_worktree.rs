@@ -98,14 +98,11 @@ fn generate_with_fallback(
 fn build_diff_summary(git: &dyn GitService, task: &Task) -> String {
     use std::fmt::Write;
 
-    let Some(branch_name) = &task.branch_name else {
-        return String::from("No branch");
-    };
     let Some(worktree_path) = &task.worktree_path else {
         return String::from("No worktree");
     };
 
-    match git.diff_against_base(Path::new(worktree_path), branch_name, &task.base_branch) {
+    match git.diff_uncommitted(Path::new(worktree_path)) {
         Ok(diff) => {
             let mut summary = String::new();
             for file in &diff.files {

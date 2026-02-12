@@ -8,6 +8,19 @@
 
 use serde::{Deserialize, Serialize};
 
+/// A tool restriction entry for agent stages.
+///
+/// Each entry specifies a tool pattern that the agent cannot use,
+/// plus a message explaining why (injected into the agent's prompt).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DisallowedToolEntry {
+    /// Tool pattern in Claude Code format (e.g., `Bash(cargo *)`, `Edit`, `Write`).
+    pub pattern: String,
+    /// Human-readable reason why this tool is disallowed.
+    /// Injected into the agent's system prompt.
+    pub message: String,
+}
+
 /// Configuration for a single workflow stage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StageConfig {
@@ -75,6 +88,12 @@ pub struct StageConfig {
     /// Only meaningful for agent stages; ignored (and validated against) for script stages.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub restart_on_reentry: bool,
+
+    /// Tools that this stage's agent is not allowed to use.
+    /// Each entry has a pattern (e.g., `Bash(cargo *)`) and a message explaining why.
+    /// Only meaningful for agent stages; validated against script stages.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disallowed_tools: Vec<DisallowedToolEntry>,
 }
 
 impl StageConfig {
@@ -94,6 +113,7 @@ impl StageConfig {
             is_automated: false,
             model: None,
             restart_on_reentry: false,
+            disallowed_tools: Vec::new(),
         }
     }
 
@@ -117,6 +137,7 @@ impl StageConfig {
             is_automated: false,
             model: None,
             restart_on_reentry: false,
+            disallowed_tools: Vec::new(),
         }
     }
 
@@ -187,6 +208,13 @@ impl StageConfig {
     #[must_use]
     pub fn restart_on_reentry(mut self) -> Self {
         self.restart_on_reentry = true;
+        self
+    }
+
+    /// Builder: set disallowed tools.
+    #[must_use]
+    pub fn with_disallowed_tools(mut self, tools: Vec<DisallowedToolEntry>) -> Self {
+        self.disallowed_tools = tools;
         self
     }
 
@@ -778,5 +806,80 @@ mod tests {
         // Round-trip test
         let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
         assert!(parsed.restart_on_reentry);
+    }
+
+    #[test]
+    fn test_disallowed_tools_default_empty() {
+        let stage = StageConfig::new("work", "summary");
+        assert!(stage.disallowed_tools.is_empty());
+
+        let script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
+        assert!(script_stage.disallowed_tools.is_empty());
+    }
+
+    #[test]
+    fn test_disallowed_tools_builder() {
+        let tools = vec![
+            DisallowedToolEntry {
+                pattern: "Bash(cargo *)".to_string(),
+                message: "Use the checks script stage instead".to_string(),
+            },
+            DisallowedToolEntry {
+                pattern: "Edit".to_string(),
+                message: "Read-only stage".to_string(),
+            },
+        ];
+
+        let stage = StageConfig::new("work", "summary").with_disallowed_tools(tools.clone());
+        assert_eq!(stage.disallowed_tools.len(), 2);
+        assert_eq!(stage.disallowed_tools[0].pattern, "Bash(cargo *)");
+        assert_eq!(stage.disallowed_tools[1].pattern, "Edit");
+    }
+
+    #[test]
+    fn test_disallowed_tools_serialization() {
+        // Empty vec should be omitted
+        let stage_empty = StageConfig::new("work", "summary");
+        let yaml = serde_yaml::to_string(&stage_empty).unwrap();
+        assert!(!yaml.contains("disallowed_tools"));
+
+        // Non-empty vec should be included
+        let stage_with_tools = StageConfig::new("work", "summary").with_disallowed_tools(vec![
+            DisallowedToolEntry {
+                pattern: "Bash(cargo *)".to_string(),
+                message: "Use the checks stage".to_string(),
+            },
+        ]);
+        let yaml = serde_yaml::to_string(&stage_with_tools).unwrap();
+        assert!(yaml.contains("disallowed_tools"));
+        assert!(yaml.contains("pattern:") && yaml.contains("Bash(cargo *)"));
+        assert!(yaml.contains("message:") && yaml.contains("Use the checks stage"));
+
+        // Round-trip test
+        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.disallowed_tools.len(), 1);
+        assert_eq!(parsed.disallowed_tools[0].pattern, "Bash(cargo *)");
+    }
+
+    #[test]
+    fn test_disallowed_tools_yaml_parsing() {
+        let yaml = r"
+name: work
+artifact: summary
+disallowed_tools:
+  - pattern: 'Bash(cargo *)'
+    message: Use the checks stage
+  - pattern: Edit
+    message: Read-only stage
+";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(stage.disallowed_tools.len(), 2);
+        assert_eq!(stage.disallowed_tools[0].pattern, "Bash(cargo *)");
+        assert_eq!(
+            stage.disallowed_tools[0].message,
+            "Use the checks stage"
+        );
+        assert_eq!(stage.disallowed_tools[1].pattern, "Edit");
+        assert_eq!(stage.disallowed_tools[1].message, "Read-only stage");
     }
 }

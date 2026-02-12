@@ -6,7 +6,7 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use super::stage::{StageCapabilities, StageConfig};
+use super::stage::{DisallowedToolEntry, StageCapabilities, StageConfig};
 
 /// A stage entry for the workflow overview in agent prompts.
 /// Contains the stage name, description, and whether it's the current stage.
@@ -84,6 +84,11 @@ pub struct FlowStageOverride {
     /// Override input artifacts (full replace, not merge).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inputs: Option<Vec<String>>,
+    /// Override disallowed tools (full replace, not merge).
+    /// `Some(vec![])` means "explicitly no restrictions" (overrides global config).
+    /// `None` means "inherit from global stage config".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disallowed_tools: Option<Vec<DisallowedToolEntry>>,
 }
 
 // Custom serde for FlowStageEntry to handle the YAML format:
@@ -389,6 +394,38 @@ impl WorkflowConfig {
         self.stage(stage_name).map(|s| s.inputs.clone())
     }
 
+    /// Get the effective disallowed tools for a stage in a flow.
+    ///
+    /// Flow overrides fully replace (not merge) the global disallowed tools.
+    /// Returns empty vec if no restrictions are configured.
+    pub fn effective_disallowed_tools(
+        &self,
+        stage_name: &str,
+        flow: Option<&str>,
+    ) -> Vec<DisallowedToolEntry> {
+        // Check flow override first
+        if let Some(flow_name) = flow {
+            if let Some(flow_config) = self.flows.get(flow_name) {
+                if let Some(entry) = flow_config
+                    .stages
+                    .iter()
+                    .find(|e| e.stage_name == stage_name)
+                {
+                    if let Some(ref overrides) = entry.overrides {
+                        if let Some(ref tools) = overrides.disallowed_tools {
+                            return tools.clone();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fall back to global stage config
+        self.stage(stage_name)
+            .map(|s| s.disallowed_tools.clone())
+            .unwrap_or_default()
+    }
+
     /// Get the effective model specs for all agent (non-script) stages in the given flow.
     ///
     /// For default flow (None), iterates all global stages.
@@ -517,6 +554,7 @@ impl WorkflowConfig {
         self.validate_flows(&stage_names_set, &artifact_names_set, &mut errors);
         self.validate_subtask_flows(&mut errors);
         self.validate_model_fields(&mut errors);
+        self.validate_disallowed_tools(&mut errors);
 
         errors
     }
@@ -899,6 +937,27 @@ impl WorkflowConfig {
                             ));
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// Validate disallowed_tools fields on stages.
+    fn validate_disallowed_tools(&self, errors: &mut Vec<String>) {
+        for stage in &self.stages {
+            if !stage.disallowed_tools.is_empty() && stage.is_script_stage() {
+                errors.push(format!(
+                    "Script stage \"{}\" has disallowed_tools, but tool restrictions are only used by agent stages.",
+                    stage.name
+                ));
+            }
+            // Validate entries have non-empty patterns
+            for (i, entry) in stage.disallowed_tools.iter().enumerate() {
+                if entry.pattern.trim().is_empty() {
+                    errors.push(format!(
+                        "Stage \"{}\" has disallowed_tools[{}] with an empty pattern.",
+                        stage.name, i
+                    ));
                 }
             }
         }
@@ -1501,6 +1560,7 @@ integration:
                             capabilities: None,
                             model: Some("haiku".to_string()),
                             inputs: None,
+                            disallowed_tools: None,
                         }),
                     },
                     FlowStageEntry {
@@ -1615,5 +1675,241 @@ integration:
         let entries = workflow.workflow_stage_entries("work", None);
         assert_eq!(entries[0].description, "Planning");
         assert_eq!(entries[1].description, "Work Stage");
+    }
+
+    // ========================================================================
+    // Disallowed tools tests
+    // ========================================================================
+
+    #[test]
+    fn test_effective_disallowed_tools_no_flow() {
+        use crate::workflow::config::stage::DisallowedToolEntry;
+
+        let tools = vec![DisallowedToolEntry {
+            pattern: "Bash(cargo *)".to_string(),
+            message: "Use checks stage".to_string(),
+        }];
+
+        let stage = StageConfig::new("work", "summary").with_disallowed_tools(tools.clone());
+        let workflow = WorkflowConfig::new(vec![stage]);
+
+        let effective = workflow.effective_disallowed_tools("work", None);
+        assert_eq!(effective.len(), 1);
+        assert_eq!(effective[0].pattern, "Bash(cargo *)");
+    }
+
+    #[test]
+    fn test_effective_disallowed_tools_flow_override() {
+        use crate::workflow::config::stage::DisallowedToolEntry;
+
+        let global_tools = vec![DisallowedToolEntry {
+            pattern: "Bash(cargo *)".to_string(),
+            message: "Global restriction".to_string(),
+        }];
+
+        let flow_tools = vec![DisallowedToolEntry {
+            pattern: "Edit".to_string(),
+            message: "Flow restriction".to_string(),
+        }];
+
+        let stage = StageConfig::new("work", "summary").with_disallowed_tools(global_tools);
+
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "restricted".to_string(),
+            FlowConfig {
+                description: "Restricted flow".to_string(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: Some(FlowStageOverride {
+                        prompt: None,
+                        capabilities: None,
+                        model: None,
+                        inputs: None,
+                        disallowed_tools: Some(flow_tools),
+                    }),
+                }],
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![stage]).with_flows(flows);
+
+        let effective = workflow.effective_disallowed_tools("work", Some("restricted"));
+        assert_eq!(effective.len(), 1);
+        assert_eq!(effective[0].pattern, "Edit");
+    }
+
+    #[test]
+    fn test_effective_disallowed_tools_flow_no_override() {
+        use crate::workflow::config::stage::DisallowedToolEntry;
+
+        let global_tools = vec![DisallowedToolEntry {
+            pattern: "Bash(cargo *)".to_string(),
+            message: "Global restriction".to_string(),
+        }];
+
+        let stage = StageConfig::new("work", "summary").with_disallowed_tools(global_tools);
+
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "normal".to_string(),
+            FlowConfig {
+                description: "Normal flow".to_string(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: None,
+                }],
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![stage]).with_flows(flows);
+
+        let effective = workflow.effective_disallowed_tools("work", Some("normal"));
+        assert_eq!(effective.len(), 1);
+        assert_eq!(effective[0].pattern, "Bash(cargo *)");
+    }
+
+    #[test]
+    fn test_effective_disallowed_tools_flow_empty_override() {
+        use crate::workflow::config::stage::DisallowedToolEntry;
+
+        let global_tools = vec![DisallowedToolEntry {
+            pattern: "Bash(cargo *)".to_string(),
+            message: "Global restriction".to_string(),
+        }];
+
+        let stage = StageConfig::new("work", "summary").with_disallowed_tools(global_tools);
+
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "unrestricted".to_string(),
+            FlowConfig {
+                description: "Unrestricted flow".to_string(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: Some(FlowStageOverride {
+                        prompt: None,
+                        capabilities: None,
+                        model: None,
+                        inputs: None,
+                        disallowed_tools: Some(vec![]),
+                    }),
+                }],
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![stage]).with_flows(flows);
+
+        let effective = workflow.effective_disallowed_tools("work", Some("unrestricted"));
+        assert!(effective.is_empty());
+    }
+
+    #[test]
+    fn test_validate_disallowed_tools_on_script_stage() {
+        use crate::workflow::config::stage::DisallowedToolEntry;
+
+        let mut script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
+        script_stage.disallowed_tools = vec![DisallowedToolEntry {
+            pattern: "Edit".to_string(),
+            message: "Read-only".to_string(),
+        }];
+
+        let workflow = WorkflowConfig::new(vec![script_stage]);
+
+        let errors = workflow.validate();
+        assert!(
+            errors.iter().any(|e| e.contains("disallowed_tools")
+                && e.contains("checks")
+                && e.contains("only used by agent stages")),
+            "Expected validation error. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_validate_disallowed_tools_empty_pattern() {
+        use crate::workflow::config::stage::DisallowedToolEntry;
+
+        let stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
+            DisallowedToolEntry {
+                pattern: "Bash(cargo *)".to_string(),
+                message: "Valid".to_string(),
+            },
+            DisallowedToolEntry {
+                pattern: "  ".to_string(),
+                message: "Invalid".to_string(),
+            },
+        ]);
+
+        let workflow = WorkflowConfig::new(vec![stage]);
+
+        let errors = workflow.validate();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("empty pattern") && e.contains("work")),
+            "Expected validation error. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_validate_disallowed_tools_on_agent_stage_valid() {
+        use crate::workflow::config::stage::DisallowedToolEntry;
+
+        let stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
+            DisallowedToolEntry {
+                pattern: "Bash(cargo *)".to_string(),
+                message: "Use checks stage".to_string(),
+            },
+        ]);
+
+        let workflow = WorkflowConfig::new(vec![stage]);
+
+        let errors = workflow.validate();
+        assert!(
+            errors.is_empty(),
+            "Expected no errors for agent stage with disallowed_tools. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_flow_stage_override_disallowed_tools_serialization() {
+        use crate::workflow::config::stage::DisallowedToolEntry;
+
+        let tools = vec![DisallowedToolEntry {
+            pattern: "Edit".to_string(),
+            message: "Read-only".to_string(),
+        }];
+
+        let override_with_tools = FlowStageOverride {
+            prompt: None,
+            capabilities: None,
+            model: None,
+            inputs: None,
+            disallowed_tools: Some(tools),
+        };
+
+        let yaml = serde_yaml::to_string(&override_with_tools).unwrap();
+        assert!(yaml.contains("disallowed_tools"));
+        assert!(yaml.contains("pattern: Edit"));
+        assert!(yaml.contains("message: Read-only"));
+
+        let parsed: FlowStageOverride = serde_yaml::from_str(&yaml).unwrap();
+        assert!(parsed.disallowed_tools.is_some());
+        assert_eq!(parsed.disallowed_tools.unwrap().len(), 1);
+
+        // Test with None (should be omitted)
+        let override_none = FlowStageOverride {
+            prompt: None,
+            capabilities: None,
+            model: None,
+            inputs: None,
+            disallowed_tools: None,
+        };
+
+        let yaml_none = serde_yaml::to_string(&override_none).unwrap();
+        assert!(!yaml_none.contains("disallowed_tools"));
     }
 }

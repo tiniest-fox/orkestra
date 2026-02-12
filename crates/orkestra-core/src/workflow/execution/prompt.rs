@@ -816,6 +816,7 @@ pub fn build_resume_prompt(
     resume_type: &ResumeType,
     base_branch: &str,
     artifacts: &[(String, String)],
+    activity_logs: &[ActivityLogEntry],
 ) -> Result<String, AgentConfigError> {
     let (template, mut context) = match &resume_type {
         ResumeType::Continue => (RESUME_CONTINUE, serde_json::json!({})),
@@ -861,6 +862,11 @@ pub fn build_resume_prompt(
             .map(|(name, content)| serde_json::json!({"name": name, "content": content}))
             .collect();
         context["artifacts"] = serde_json::json!(artifact_values);
+    }
+
+    // Inject activity logs for Recheck resume type
+    if matches!(resume_type, ResumeType::Recheck) && !activity_logs.is_empty() {
+        context["activity_logs"] = serde_json::json!(activity_logs);
     }
 
     render_template(template, &context)
@@ -1380,7 +1386,7 @@ mod tests {
             "The implementation plan content".to_string(),
         )];
         let prompt =
-            build_resume_prompt("work", &ResumeType::Continue, "main", &artifacts).unwrap();
+            build_resume_prompt("work", &ResumeType::Continue, "main", &artifacts, &[]).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -1397,6 +1403,7 @@ mod tests {
             },
             "main",
             &artifacts,
+            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:feedback>"));
@@ -1419,6 +1426,7 @@ mod tests {
             },
             "feature/parent-branch",
             &artifacts,
+            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:integration>"));
@@ -1451,6 +1459,7 @@ mod tests {
             },
             "main",
             &artifacts,
+            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:planning:answers>"));
@@ -1471,7 +1480,7 @@ mod tests {
             ),
         ];
         let prompt =
-            build_resume_prompt("review", &ResumeType::Recheck, "main", &artifacts).unwrap();
+            build_resume_prompt("review", &ResumeType::Recheck, "main", &artifacts, &[]).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
         assert!(prompt.contains("re-run"));
         assert!(prompt.contains("re-examine"));
@@ -1484,8 +1493,41 @@ mod tests {
     }
 
     #[test]
+    fn test_build_resume_prompt_recheck_with_activity_logs() {
+        let artifacts = vec![("summary".to_string(), "Updated work summary".to_string())];
+        let activity_logs = vec![
+            ActivityLogEntry {
+                stage: "work".to_string(),
+                iteration_number: 1,
+                content: "- Implemented the feature\n- Added tests".to_string(),
+            },
+            ActivityLogEntry {
+                stage: "review".to_string(),
+                iteration_number: 1,
+                content: "- Found issue with error handling\n- Requested changes".to_string(),
+            },
+        ];
+        let prompt = build_resume_prompt(
+            "review",
+            &ResumeType::Recheck,
+            "main",
+            &artifacts,
+            &activity_logs,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
+        assert!(prompt.contains("Activity Log"));
+        assert!(prompt.contains("Prior stages have recorded the following activity"));
+        assert!(prompt.contains("### work (iteration #1)"));
+        assert!(prompt.contains("Implemented the feature"));
+        assert!(prompt.contains("### review (iteration #1)"));
+        assert!(prompt.contains("Found issue with error handling"));
+        assert!(prompt.contains("Updated Input Artifacts"));
+    }
+
+    #[test]
     fn test_build_resume_prompt_no_artifacts() {
-        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[]).unwrap();
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[], &[]).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -1502,6 +1544,7 @@ mod tests {
             },
             "main",
             &artifacts,
+            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:manual_resume>"));
@@ -1520,6 +1563,7 @@ mod tests {
             &ResumeType::ManualResume { message: None },
             "main",
             &artifacts,
+            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:manual_resume>"));
@@ -1795,7 +1839,7 @@ mod tests {
 
     #[test]
     fn test_resume_prompt_has_no_system_prompt() {
-        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[]).unwrap();
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[], &[]).unwrap();
 
         // Resume prompts are just short user messages
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));

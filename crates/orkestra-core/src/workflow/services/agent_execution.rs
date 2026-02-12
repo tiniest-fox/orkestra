@@ -238,7 +238,7 @@ impl AgentExecutionService {
                 })
                 .collect();
 
-            build_resume_prompt(stage, &resume_type, &task.base_branch, &artifacts)
+            build_resume_prompt(stage, &resume_type, &task.base_branch, &artifacts, &activity_logs)
                 .map_err(ExecutionError::from)
         } else {
             // Extract feedback from trigger if present (fresh spawn after session reset)

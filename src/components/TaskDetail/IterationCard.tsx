@@ -30,7 +30,7 @@ function formatOutcome(outcome: WorkflowIteration["outcome"]): {
   return { label, color };
 }
 
-function formatIncomingContext(context: IterationTrigger): {
+function extractContextMessage(context: IterationTrigger): {
   label: string;
   message: string;
 } | null {
@@ -62,9 +62,15 @@ function formatIncomingContext(context: IterationTrigger): {
         label: "Integration failed:",
         message: `${context.message}\nConflict files: ${context.conflict_files.join(", ")}`,
       };
-    // These triggers have no meaningful display content
-    case "interrupted":
     case "answers":
+      return {
+        label: "Your answers:",
+        message: context.answers
+          .map((qa) => `Q: ${qa.question}\nA: ${qa.answer}`)
+          .join("\n\n"),
+      };
+    // Unit variant with no user-facing content
+    case "interrupted":
       return null;
   }
 }
@@ -73,7 +79,7 @@ export function IterationCard({ iteration }: IterationCardProps) {
   const isActive = !iteration.outcome;
   const outcomeInfo = formatOutcome(iteration.outcome);
   const contextInfo = iteration.incoming_context
-    ? formatIncomingContext(iteration.incoming_context)
+    ? extractContextMessage(iteration.incoming_context)
     : null;
 
   return (

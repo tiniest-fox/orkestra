@@ -395,8 +395,8 @@ impl WorkflowConfig {
         &self,
         current_stage: &str,
         flow: Option<&str>,
-    ) -> Vec<crate::workflow::execution::prompt::WorkflowStageEntry> {
-        let to_entry = |stage: &StageConfig| crate::workflow::execution::prompt::WorkflowStageEntry {
+    ) -> Vec<crate::workflow::execution::WorkflowStageEntry> {
+        let to_entry = |stage: &StageConfig| crate::workflow::execution::WorkflowStageEntry {
             name: stage.name.clone(),
             description: stage.description.clone().unwrap_or_else(|| stage.display()),
             is_current: stage.name == current_stage,

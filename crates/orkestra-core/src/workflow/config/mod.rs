@@ -13,7 +13,9 @@ pub use loader::{load_workflow, load_workflow_for_project, LoadError};
 pub use stage::{
     ScriptStageConfig, StageCapabilities, StageConfig, SubtaskCapabilities, ToolRestriction,
 };
-pub use workflow::{FlowConfig, FlowStageEntry, FlowStageOverride, IntegrationConfig, WorkflowConfig};
+pub use workflow::{
+    FlowConfig, FlowStageEntry, FlowStageOverride, IntegrationConfig, WorkflowConfig,
+};
 
-// Re-export WorkflowStageEntry from its new location
-pub use crate::workflow::execution::prompt::WorkflowStageEntry;
+// Re-export WorkflowStageEntry from its new location in the execution module
+pub use crate::workflow::execution::WorkflowStageEntry;

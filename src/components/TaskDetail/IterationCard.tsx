@@ -2,7 +2,7 @@
  * Iteration card - displays a single workflow iteration.
  */
 
-import type { WorkflowIteration, IterationTrigger } from "../../types/workflow";
+import type { IterationTrigger, WorkflowIteration } from "../../types/workflow";
 import { formatTimestamp, titleCase } from "../../utils/formatters";
 import {
   getOutcomeBadgeColor,
@@ -36,9 +36,7 @@ function formatIncomingContext(context: IterationTrigger): {
 } | null {
   switch (context.type) {
     case "manual_resume":
-      return context.message
-        ? { label: "You wrote:", message: context.message }
-        : null;
+      return context.message ? { label: "You wrote:", message: context.message } : null;
     case "feedback":
       return { label: "Your feedback:", message: context.feedback };
     case "rejection":

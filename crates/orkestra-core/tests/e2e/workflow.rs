@@ -4269,15 +4269,15 @@ fn test_reentry_without_restart_flag_uses_recheck() {
 /// Test that `disallowed_tools` patterns are threaded to `RunConfig`.
 #[test]
 fn test_disallowed_tools_threaded_to_run_config() {
-    use orkestra_core::workflow::config::{DisallowedToolEntry, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{StageConfig, ToolRestriction, WorkflowConfig};
 
     // Build a workflow with a "work" stage that has disallowed_tools
     let work_stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
-        DisallowedToolEntry {
+        ToolRestriction {
             pattern: "Bash(cargo test)".to_string(),
             message: Some("Automated checks handle testing".to_string()),
         },
-        DisallowedToolEntry {
+        ToolRestriction {
             pattern: "Bash(cargo build)".to_string(),
             message: Some("Build runs in CI".to_string()),
         },
@@ -4318,15 +4318,15 @@ fn test_disallowed_tools_threaded_to_run_config() {
 /// Test that `disallowed_tools` are injected into the system prompt.
 #[test]
 fn test_disallowed_tools_injected_into_system_prompt() {
-    use orkestra_core::workflow::config::{DisallowedToolEntry, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{StageConfig, ToolRestriction, WorkflowConfig};
 
     // Build a workflow with disallowed_tools
     let work_stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
-        DisallowedToolEntry {
+        ToolRestriction {
             pattern: "Bash(cargo test)".to_string(),
             message: Some("Automated checks handle testing".to_string()),
         },
-        DisallowedToolEntry {
+        ToolRestriction {
             pattern: "Bash(cargo build)".to_string(),
             message: Some("Build runs in CI".to_string()),
         },
@@ -4384,13 +4384,13 @@ fn test_disallowed_tools_injected_into_system_prompt() {
 fn test_disallowed_tools_flow_override() {
     use indexmap::IndexMap;
     use orkestra_core::workflow::config::{
-        DisallowedToolEntry, FlowConfig, FlowStageEntry, FlowStageOverride, StageConfig,
+        FlowConfig, FlowStageEntry, FlowStageOverride, StageConfig, ToolRestriction,
         WorkflowConfig,
     };
 
     // Global stage has restrictions
     let work_stage =
-        StageConfig::new("work", "summary").with_disallowed_tools(vec![DisallowedToolEntry {
+        StageConfig::new("work", "summary").with_disallowed_tools(vec![ToolRestriction {
             pattern: "Bash(cargo test)".to_string(),
             message: Some("No testing".to_string()),
         }]);

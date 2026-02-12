@@ -8,12 +8,12 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A tool restriction entry for agent stages.
+/// A tool restriction rule for agent stages.
 ///
 /// Each entry specifies a tool pattern that the agent cannot use,
 /// plus a message explaining why (injected into the agent's prompt).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct DisallowedToolEntry {
+pub struct ToolRestriction {
     /// Tool pattern in Claude Code format (e.g., `Bash(cargo *)`, `Edit`, `Write`).
     pub pattern: String,
     /// Optional human-readable reason why this tool is disallowed.
@@ -94,7 +94,7 @@ pub struct StageConfig {
     /// Each entry has a pattern (e.g., `Bash(cargo *)`) and a message explaining why.
     /// Only meaningful for agent stages; validated against script stages.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub disallowed_tools: Vec<DisallowedToolEntry>,
+    pub disallowed_tools: Vec<ToolRestriction>,
 }
 
 impl StageConfig {
@@ -214,7 +214,7 @@ impl StageConfig {
 
     /// Builder: set disallowed tools.
     #[must_use]
-    pub fn with_disallowed_tools(mut self, tools: Vec<DisallowedToolEntry>) -> Self {
+    pub fn with_disallowed_tools(mut self, tools: Vec<ToolRestriction>) -> Self {
         self.disallowed_tools = tools;
         self
     }
@@ -821,11 +821,11 @@ mod tests {
     #[test]
     fn test_disallowed_tools_builder() {
         let tools = vec![
-            DisallowedToolEntry {
+            ToolRestriction {
                 pattern: "Bash(cargo *)".to_string(),
                 message: Some("Use the checks script stage instead".to_string()),
             },
-            DisallowedToolEntry {
+            ToolRestriction {
                 pattern: "Edit".to_string(),
                 message: Some("Read-only stage".to_string()),
             },
@@ -846,7 +846,7 @@ mod tests {
 
         // Non-empty vec should be included
         let stage_with_tools =
-            StageConfig::new("work", "summary").with_disallowed_tools(vec![DisallowedToolEntry {
+            StageConfig::new("work", "summary").with_disallowed_tools(vec![ToolRestriction {
                 pattern: "Bash(cargo *)".to_string(),
                 message: Some("Use the checks stage".to_string()),
             }]);

@@ -20,7 +20,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
 use crate::orkestra_debug;
-use crate::workflow::config::{DisallowedToolEntry, WorkflowConfig};
+use crate::workflow::config::{ToolRestriction, WorkflowConfig};
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
     build_resume_prompt, ActivityLogEntry, AgentConfigError, AgentRunnerTrait, ProviderRegistry,
@@ -34,11 +34,11 @@ use super::session_service::SessionSpawnContext;
 // Helper Types
 // ============================================================================
 
-/// Resolved stage parameters for building `RunConfig`.
+/// Resolved stage configuration for building `RunConfig`.
 ///
 /// Groups the prompt-related and provider-resolved values that flow through
 /// `execute_stage` into `build_run_config`.
-struct ResolvedStageParams {
+struct ResolvedStageConfig {
     user_prompt: String,
     json_schema: String,
     system_prompt: Option<String>,
@@ -72,7 +72,7 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
 ///
 /// Returns a formatted string with a "## Tool Restrictions" header listing each
 /// disallowed tool pattern with its explanation message.
-fn format_tool_restrictions(tools: &[DisallowedToolEntry]) -> Result<String, ExecutionError> {
+fn format_tool_restrictions(tools: &[ToolRestriction]) -> Result<String, ExecutionError> {
     let data = serde_json::json!({ "entries": tools });
     handlebars::Handlebars::new()
         .render_template(TOOL_RESTRICTIONS_TEMPLATE, &data)
@@ -88,7 +88,7 @@ fn format_tool_restrictions(tools: &[DisallowedToolEntry]) -> Result<String, Exe
 /// and an empty pattern list.
 fn apply_tool_restrictions(
     system_prompt: String,
-    effective_tools: &[DisallowedToolEntry],
+    effective_tools: &[ToolRestriction],
 ) -> Result<(String, Vec<String>), ExecutionError> {
     if effective_tools.is_empty() {
         return Ok((system_prompt, Vec::new()));
@@ -401,11 +401,11 @@ impl AgentExecutionService {
     fn build_run_config(
         &self,
         task: &Task,
-        params: ResolvedStageParams,
+        resolved: ResolvedStageConfig,
         spawn_context: &SessionSpawnContext,
     ) -> RunConfig {
         let working_dir = self.get_working_dir(task);
-        let mut run_config = RunConfig::new(working_dir, params.user_prompt, params.json_schema)
+        let mut run_config = RunConfig::new(working_dir, resolved.user_prompt, resolved.json_schema)
             .with_task_id(&task.id);
 
         // Only set session when we have a caller-provided session ID.
@@ -415,17 +415,17 @@ impl AgentExecutionService {
         }
 
         // Thread model spec from stage config (respects flow overrides)
-        if let Some(model) = params.model_spec {
+        if let Some(model) = resolved.model_spec {
             run_config = run_config.with_model(model);
         }
 
         // Thread system prompt if provider supports it
-        if let Some(sp) = params.system_prompt {
+        if let Some(sp) = resolved.system_prompt {
             run_config = run_config.with_system_prompt(sp);
         }
 
-        if !params.disallowed_tools.is_empty() {
-            run_config = run_config.with_disallowed_tools(params.disallowed_tools);
+        if !resolved.disallowed_tools.is_empty() {
+            run_config = run_config.with_disallowed_tools(resolved.disallowed_tools);
         }
 
         run_config
@@ -522,14 +522,14 @@ impl AgentExecutionService {
         );
 
         // 8. Build run config with session info, model spec, and system prompt
-        let params = ResolvedStageParams {
+        let stage_config = ResolvedStageConfig {
             user_prompt,
             json_schema,
             system_prompt: system_prompt_for_config,
             model_spec,
             disallowed_tools: disallowed_patterns,
         };
-        let run_config = self.build_run_config(task, params, spawn_context);
+        let run_config = self.build_run_config(task, stage_config, spawn_context);
 
         // 9. Run the agent
         let (pid, events) = self.runner.run_async(run_config)?;
@@ -648,11 +648,11 @@ mod tests {
     #[test]
     fn test_format_tool_restrictions_basic() {
         let tools = vec![
-            DisallowedToolEntry {
+            ToolRestriction {
                 pattern: "Bash(cargo test)".to_string(),
                 message: Some("Use checks stage".to_string()),
             },
-            DisallowedToolEntry {
+            ToolRestriction {
                 pattern: "Edit".to_string(),
                 message: Some("Read-only".to_string()),
             },
@@ -668,7 +668,7 @@ mod tests {
 
     #[test]
     fn test_format_tool_restrictions_empty_message() {
-        let tools = vec![DisallowedToolEntry {
+        let tools = vec![ToolRestriction {
             pattern: "Bash(cargo *)".to_string(),
             message: None,
         }];

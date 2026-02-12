@@ -6,7 +6,7 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use super::stage::{DisallowedToolEntry, StageCapabilities, StageConfig};
+use super::stage::{StageCapabilities, StageConfig, ToolRestriction};
 
 /// A stage entry for the workflow overview in agent prompts.
 /// Contains the stage name, description, and whether it's the current stage.
@@ -88,7 +88,7 @@ pub struct FlowStageOverride {
     /// `Some(vec![])` means "explicitly no restrictions" (overrides global config).
     /// `None` means "inherit from global stage config".
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub disallowed_tools: Option<Vec<DisallowedToolEntry>>,
+    pub disallowed_tools: Option<Vec<ToolRestriction>>,
 }
 
 // Custom serde for FlowStageEntry to handle the YAML format:
@@ -359,7 +359,7 @@ impl WorkflowConfig {
         &self,
         stage_name: &str,
         flow: Option<&str>,
-    ) -> Vec<DisallowedToolEntry> {
+    ) -> Vec<ToolRestriction> {
         self.flow_override(stage_name, flow, |o| o.disallowed_tools.clone())
             .or_else(|| self.stage(stage_name).map(|s| s.disallowed_tools.clone()))
             .unwrap_or_default()
@@ -1634,9 +1634,9 @@ integration:
 
     #[test]
     fn test_effective_disallowed_tools_no_flow() {
-        use crate::workflow::config::stage::DisallowedToolEntry;
+        use crate::workflow::config::stage::ToolRestriction;
 
-        let tools = vec![DisallowedToolEntry {
+        let tools = vec![ToolRestriction {
             pattern: "Bash(cargo *)".to_string(),
             message: Some("Use checks stage".to_string()),
         }];
@@ -1651,14 +1651,14 @@ integration:
 
     #[test]
     fn test_effective_disallowed_tools_flow_override() {
-        use crate::workflow::config::stage::DisallowedToolEntry;
+        use crate::workflow::config::stage::ToolRestriction;
 
-        let global_tools = vec![DisallowedToolEntry {
+        let global_tools = vec![ToolRestriction {
             pattern: "Bash(cargo *)".to_string(),
             message: Some("Global restriction".to_string()),
         }];
 
-        let flow_tools = vec![DisallowedToolEntry {
+        let flow_tools = vec![ToolRestriction {
             pattern: "Edit".to_string(),
             message: Some("Flow restriction".to_string()),
         }];
@@ -1693,9 +1693,9 @@ integration:
 
     #[test]
     fn test_effective_disallowed_tools_flow_no_override() {
-        use crate::workflow::config::stage::DisallowedToolEntry;
+        use crate::workflow::config::stage::ToolRestriction;
 
-        let global_tools = vec![DisallowedToolEntry {
+        let global_tools = vec![ToolRestriction {
             pattern: "Bash(cargo *)".to_string(),
             message: Some("Global restriction".to_string()),
         }];
@@ -1724,9 +1724,9 @@ integration:
 
     #[test]
     fn test_effective_disallowed_tools_flow_empty_override() {
-        use crate::workflow::config::stage::DisallowedToolEntry;
+        use crate::workflow::config::stage::ToolRestriction;
 
-        let global_tools = vec![DisallowedToolEntry {
+        let global_tools = vec![ToolRestriction {
             pattern: "Bash(cargo *)".to_string(),
             message: Some("Global restriction".to_string()),
         }];
@@ -1760,10 +1760,10 @@ integration:
 
     #[test]
     fn test_validate_disallowed_tools_on_script_stage() {
-        use crate::workflow::config::stage::DisallowedToolEntry;
+        use crate::workflow::config::stage::ToolRestriction;
 
         let mut script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
-        script_stage.disallowed_tools = vec![DisallowedToolEntry {
+        script_stage.disallowed_tools = vec![ToolRestriction {
             pattern: "Edit".to_string(),
             message: Some("Read-only".to_string()),
         }];
@@ -1781,14 +1781,14 @@ integration:
 
     #[test]
     fn test_validate_disallowed_tools_empty_pattern() {
-        use crate::workflow::config::stage::DisallowedToolEntry;
+        use crate::workflow::config::stage::ToolRestriction;
 
         let stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
-            DisallowedToolEntry {
+            ToolRestriction {
                 pattern: "Bash(cargo *)".to_string(),
                 message: Some("Valid".to_string()),
             },
-            DisallowedToolEntry {
+            ToolRestriction {
                 pattern: "  ".to_string(),
                 message: Some("Invalid".to_string()),
             },
@@ -1807,10 +1807,10 @@ integration:
 
     #[test]
     fn test_validate_disallowed_tools_on_agent_stage_valid() {
-        use crate::workflow::config::stage::DisallowedToolEntry;
+        use crate::workflow::config::stage::ToolRestriction;
 
         let stage =
-            StageConfig::new("work", "summary").with_disallowed_tools(vec![DisallowedToolEntry {
+            StageConfig::new("work", "summary").with_disallowed_tools(vec![ToolRestriction {
                 pattern: "Bash(cargo *)".to_string(),
                 message: Some("Use checks stage".to_string()),
             }]);
@@ -1826,7 +1826,7 @@ integration:
 
     #[test]
     fn test_validate_disallowed_tools_empty_pattern_in_flow_override() {
-        use crate::workflow::config::stage::DisallowedToolEntry;
+        use crate::workflow::config::stage::ToolRestriction;
 
         let stage = StageConfig::new("work", "summary");
 
@@ -1844,11 +1844,11 @@ integration:
                         model: None,
                         inputs: None,
                         disallowed_tools: Some(vec![
-                            DisallowedToolEntry {
+                            ToolRestriction {
                                 pattern: "Edit".to_string(),
                                 message: Some("Valid".to_string()),
                             },
-                            DisallowedToolEntry {
+                            ToolRestriction {
                                 pattern: "  ".to_string(),
                                 message: Some("Invalid".to_string()),
                             },
@@ -1871,9 +1871,9 @@ integration:
 
     #[test]
     fn test_flow_stage_override_disallowed_tools_serialization() {
-        use crate::workflow::config::stage::DisallowedToolEntry;
+        use crate::workflow::config::stage::ToolRestriction;
 
-        let tools = vec![DisallowedToolEntry {
+        let tools = vec![ToolRestriction {
             pattern: "Edit".to_string(),
             message: Some("Read-only".to_string()),
         }];

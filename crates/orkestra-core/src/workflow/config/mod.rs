@@ -11,7 +11,7 @@ mod workflow;
 pub use auto_task::{load_auto_task_templates, AutoTaskTemplate};
 pub use loader::{load_workflow, load_workflow_for_project, LoadError};
 pub use stage::{
-    DisallowedToolEntry, ScriptStageConfig, StageCapabilities, StageConfig, SubtaskCapabilities,
+    ScriptStageConfig, StageCapabilities, StageConfig, SubtaskCapabilities, ToolRestriction,
 };
 pub use workflow::{
     FlowConfig, FlowStageEntry, FlowStageOverride, IntegrationConfig, WorkflowConfig,

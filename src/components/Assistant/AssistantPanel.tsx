@@ -36,12 +36,16 @@ export function AssistantPanel({ onClose, onToggleHistory }: AssistantPanelProps
     newSession,
   } = useAssistant();
 
-  const { containerRef, handleScroll, resetAutoScroll } = useAutoScroll<HTMLDivElement>([logs], true);
+  const { containerRef, handleScroll, resetAutoScroll } = useAutoScroll<HTMLDivElement>(
+    [logs],
+    true,
+  );
 
   // Reset auto-scroll when session changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetAutoScroll is stable, activeSession is the trigger
   useEffect(() => {
     resetAutoScroll();
-  }, [activeSession, resetAutoScroll]);
+  }, [activeSession]);
 
   const handleNewSession = async () => {
     await newSession();

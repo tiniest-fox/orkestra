@@ -844,12 +844,11 @@ mod tests {
         assert!(!yaml.contains("disallowed_tools"));
 
         // Non-empty vec should be included
-        let stage_with_tools = StageConfig::new("work", "summary").with_disallowed_tools(vec![
-            DisallowedToolEntry {
+        let stage_with_tools =
+            StageConfig::new("work", "summary").with_disallowed_tools(vec![DisallowedToolEntry {
                 pattern: "Bash(cargo *)".to_string(),
                 message: "Use the checks stage".to_string(),
-            },
-        ]);
+            }]);
         let yaml = serde_yaml::to_string(&stage_with_tools).unwrap();
         assert!(yaml.contains("disallowed_tools"));
         assert!(yaml.contains("pattern:") && yaml.contains("Bash(cargo *)"));
@@ -875,10 +874,7 @@ disallowed_tools:
         let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(stage.disallowed_tools.len(), 2);
         assert_eq!(stage.disallowed_tools[0].pattern, "Bash(cargo *)");
-        assert_eq!(
-            stage.disallowed_tools[0].message,
-            "Use the checks stage"
-        );
+        assert_eq!(stage.disallowed_tools[0].message, "Use the checks stage");
         assert_eq!(stage.disallowed_tools[1].pattern, "Edit");
         assert_eq!(stage.disallowed_tools[1].message, "Read-only stage");
     }

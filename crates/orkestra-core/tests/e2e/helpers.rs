@@ -714,6 +714,7 @@ pub mod workflows {
                             ))),
                             model: None,
                             inputs: None,
+                            disallowed_tools: None,
                         }),
                     },
                 ],

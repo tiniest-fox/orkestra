@@ -942,7 +942,7 @@ impl WorkflowConfig {
         }
     }
 
-    /// Validate disallowed_tools fields on stages.
+    /// Validate `disallowed_tools` fields on stages.
     fn validate_disallowed_tools(&self, errors: &mut Vec<String>) {
         for stage in &self.stages {
             if !stage.disallowed_tools.is_empty() && stage.is_script_stage() {
@@ -1858,12 +1858,11 @@ integration:
     fn test_validate_disallowed_tools_on_agent_stage_valid() {
         use crate::workflow::config::stage::DisallowedToolEntry;
 
-        let stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
-            DisallowedToolEntry {
+        let stage =
+            StageConfig::new("work", "summary").with_disallowed_tools(vec![DisallowedToolEntry {
                 pattern: "Bash(cargo *)".to_string(),
                 message: "Use checks stage".to_string(),
-            },
-        ]);
+            }]);
 
         let workflow = WorkflowConfig::new(vec![stage]);
 

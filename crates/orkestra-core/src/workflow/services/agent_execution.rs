@@ -15,7 +15,6 @@
 //! This is one of the execution backends used by `StageExecutionService`.
 //! For script execution, see `ScriptExecutionService`.
 
-use std::fmt::Write;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
@@ -74,19 +73,22 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
 /// Returns a formatted string with a "## Tool Restrictions" header listing each
 /// disallowed tool pattern with its explanation message.
 fn format_tool_restrictions(tools: &[DisallowedToolEntry]) -> String {
-    let mut restrictions = String::from(
-        "\n\n## Tool Restrictions\n\nThe following tools are NOT available to you in this stage:\n",
-    );
-    for entry in tools {
-        write!(
-            restrictions,
-            "\n- **`{}`**: {}",
-            entry.pattern, entry.message
-        )
-        .expect("Writing to String cannot fail");
-    }
-    restrictions.push_str("\n\nDo not attempt to use these tools. Find alternative approaches.");
-    restrictions
+    let entries: Vec<serde_json::Value> = tools
+        .iter()
+        .map(|e| {
+            serde_json::json!({
+                "pattern": e.pattern,
+                "message": if e.message.is_empty() { None::<&str> } else { Some(e.message.as_str()) }
+            })
+        })
+        .collect();
+
+    let data = serde_json::json!({ "entries": entries });
+    let rendered = handlebars::Handlebars::new()
+        .render_template(TOOL_RESTRICTIONS_TEMPLATE, &data)
+        .expect("tool_restrictions template should render");
+
+    format!("\n\n{rendered}")
 }
 
 // ============================================================================
@@ -156,6 +158,9 @@ impl From<RegistryError> for ExecutionError {
 
 const SCHEMA_ENFORCEMENT_TEMPLATE: &str =
     include_str!("../../prompts/templates/schema_enforcement.md");
+
+const TOOL_RESTRICTIONS_TEMPLATE: &str =
+    include_str!("../../prompts/templates/tool_restrictions.md");
 
 /// Append a schema enforcement section to a prompt for providers that don't
 /// support native `--json-schema` enforcement.
@@ -639,6 +644,42 @@ mod tests {
         let result = append_schema_enforcement(prompt, schema);
 
         assert!(result.starts_with("Line 1\nLine 2\nLine 3\n"));
+    }
+
+    #[test]
+    fn test_format_tool_restrictions_basic() {
+        let tools = vec![
+            DisallowedToolEntry {
+                pattern: "Bash(cargo test)".to_string(),
+                message: "Use checks stage".to_string(),
+            },
+            DisallowedToolEntry {
+                pattern: "Edit".to_string(),
+                message: "Read-only".to_string(),
+            },
+        ];
+        let result = format_tool_restrictions(&tools);
+        assert!(result.contains("## Tool Restrictions"));
+        assert!(result.contains("`Bash(cargo test)`"));
+        assert!(result.contains("Use checks stage"));
+        assert!(result.contains("`Edit`"));
+        assert!(result.contains("Read-only"));
+        assert!(result.contains("Do not attempt"));
+    }
+
+    #[test]
+    fn test_format_tool_restrictions_empty_message() {
+        let tools = vec![DisallowedToolEntry {
+            pattern: "Bash(cargo *)".to_string(),
+            message: "".to_string(),
+        }];
+        let result = format_tool_restrictions(&tools);
+        // Should contain the pattern but NOT a trailing colon
+        assert!(result.contains("`Bash(cargo *)`"));
+        assert!(
+            !result.contains("`Bash(cargo *)`**:"),
+            "Empty message should not produce trailing colon"
+        );
     }
 
     #[test]

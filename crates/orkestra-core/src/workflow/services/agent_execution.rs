@@ -671,7 +671,7 @@ mod tests {
     fn test_format_tool_restrictions_empty_message() {
         let tools = vec![DisallowedToolEntry {
             pattern: "Bash(cargo *)".to_string(),
-            message: "".to_string(),
+            message: String::new(),
         }];
         let result = format_tool_restrictions(&tools);
         // Should contain the pattern but NOT a trailing colon

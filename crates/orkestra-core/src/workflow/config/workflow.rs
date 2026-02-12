@@ -392,13 +392,7 @@ impl WorkflowConfig {
                         if stage.script.is_some() {
                             return None;
                         }
-                        // Check flow model override, fall back to global stage model
-                        let model = entry
-                            .overrides
-                            .as_ref()
-                            .and_then(|o| o.model.clone())
-                            .or_else(|| stage.model.clone());
-                        Some(model)
+                        Some(self.effective_model(&entry.stage_name, Some(flow_name)))
                     })
                     .collect()
             }

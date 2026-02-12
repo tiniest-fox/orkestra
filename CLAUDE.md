@@ -288,6 +288,45 @@ Note: Title generation and commit message generation use separate internal templ
 
 When you need to iterate agent stages while respecting flow overrides, use `WorkflowConfig::agent_model_specs(task_flow)` rather than directly accessing `.stages`. This method encapsulates the flow-aware traversal logic (checking flow overrides, filtering scripts, falling back to global config). Example use case: collecting model names for commit attribution — see `commit_message.rs::collect_model_names()`.
 
+**Disallowed Tools:**
+
+Stages can restrict which tools agents are allowed to use via the `disallowed_tools` configuration. This is useful when automated stages handle certain operations (like the `check` stage running tests/lints) and you want to prevent agents from duplicating that work.
+
+Configuration syntax in `.orkestra/workflow.yaml`:
+
+```yaml
+stages:
+  - name: work
+    artifact: summary
+    disallowed_tools:
+      - pattern: "Bash(cargo test)"
+        message: "Testing is handled by the automated checks stage"
+      - pattern: "Bash(cargo build)"
+        message: "Building is handled by the automated checks stage"
+      - pattern: "Bash(cargo fmt)"
+      - pattern: "Bash(cargo clippy)"
+```
+
+- **`pattern`**: Tool pattern in Claude Code format (e.g., `Bash(cargo *)`, `Edit(*.lock)`, `Write`)
+- **`message`** (optional): Human-readable reason injected into the agent's system prompt
+
+**How restrictions are enforced:**
+- **System prompt**: Restriction messages are injected into the agent's system prompt before any tool use, so the agent learns about the restrictions upfront
+- **CLI flag** (Claude Code only): Patterns are passed via `--disallowedTools "pattern1,pattern2"` for hard enforcement
+- **OpenCode**: Only system prompt injection (no native enforcement support)
+
+**Flow overrides**: Flows can override `disallowed_tools` per stage (full replacement, not merge). Example:
+
+```yaml
+flows:
+  quick:
+    stages:
+      - work:
+          disallowed_tools: []  # Explicitly allow all tools in quick flow
+```
+
+Access the effective restrictions (respecting flow overrides) via `WorkflowConfig::effective_disallowed_tools(stage, task_flow)`.
+
 ### Tauri Commands
 
 Commands in `src-tauri/src/commands/` are thin wrappers around `WorkflowApi` methods, organized by concern: task CRUD, human actions (approve/reject/answer), read-only queries, and external tools. See `src-tauri/CLAUDE.md` for details on adding new commands.

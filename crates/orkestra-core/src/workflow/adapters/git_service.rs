@@ -161,40 +161,46 @@ impl Git2GitService {
 
     /// Resolve a branch name to the working directory where it's checked out.
     ///
-    /// - `task/*` branches → worktree path (if it exists)
+    /// - `task/*` branches → worktree path (must exist)
     /// - Everything else → main repo path
-    fn resolve_branch_working_dir(&self, branch: &str) -> PathBuf {
+    fn resolve_branch_working_dir(&self, branch: &str) -> Result<PathBuf, GitError> {
         if let Some(task_id) = branch.strip_prefix("task/") {
             let worktree_path = self.worktrees_dir.join(task_id);
             if worktree_path.exists() {
-                return worktree_path;
+                return Ok(worktree_path);
             }
+            return Err(GitError::WorktreeError(format!(
+                "Worktree for task branch '{branch}' not found at {}",
+                worktree_path.display()
+            )));
         }
-        self.repo_path.clone()
+        Ok(self.repo_path.clone())
     }
 
-    /// Perform checkout + ff-only merge in a specific working directory.
-    fn do_merge_in(
+    /// Perform fast-forward merge in a specific working directory.
+    fn fast_forward_merge(
         working_dir: &Path,
         source: &str,
         target: &str,
     ) -> Result<MergeResult, GitError> {
-        // Checkout the target branch (no-op if already on it in a worktree)
-        let checkout_output = Command::new("git")
-            .args(["checkout", target])
-            .current_dir(working_dir)
-            .output()
-            .map_err(|e| {
-                GitError::MergeError(format!(
-                    "Failed to checkout {target} in {}: {e}",
-                    working_dir.display()
-                ))
-            })?;
+        // Detect if this is a worktree by checking if .git is a file (not a directory)
+        let is_worktree = working_dir.join(".git").is_file();
 
-        if !checkout_output.status.success() {
-            let stderr = String::from_utf8_lossy(&checkout_output.stderr);
-            // "Already on" is fine — worktrees are already on the right branch
-            if !stderr.contains("Already on") {
+        if !is_worktree {
+            // Checkout the target branch (only needed in main repo)
+            let checkout_output = Command::new("git")
+                .args(["checkout", target])
+                .current_dir(working_dir)
+                .output()
+                .map_err(|e| {
+                    GitError::MergeError(format!(
+                        "Failed to checkout {target} in {}: {e}",
+                        working_dir.display()
+                    ))
+                })?;
+
+            if !checkout_output.status.success() {
+                let stderr = String::from_utf8_lossy(&checkout_output.stderr);
                 return Err(GitError::MergeError(format!(
                     "Failed to checkout {target} in {}: {stderr}",
                     working_dir.display()
@@ -558,10 +564,10 @@ impl GitService for Git2GitService {
         branch_name: &str,
         target_branch: &str,
     ) -> Result<MergeResult, GitError> {
-        let working_dir = self.resolve_branch_working_dir(target_branch);
+        let working_dir = self.resolve_branch_working_dir(target_branch)?;
         let was_stashed = Self::stash_changes(&working_dir)?;
 
-        let merge_result = Self::do_merge_in(&working_dir, branch_name, target_branch);
+        let merge_result = Self::fast_forward_merge(&working_dir, branch_name, target_branch);
 
         if let Err(e) = Self::stash_pop(&working_dir, was_stashed) {
             crate::orkestra_debug!("git", "WARNING: Failed to restore stashed changes: {}", e);

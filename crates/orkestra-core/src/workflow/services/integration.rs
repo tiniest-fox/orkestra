@@ -29,8 +29,6 @@ pub enum IntegrationGitResult {
     RebaseConflict { conflict_files: Vec<String> },
     /// Rebase failed for a non-conflict reason.
     RebaseError(String),
-    /// Merge had conflicts (rebase succeeded but merge to target failed).
-    MergeConflict { conflict_files: Vec<String> },
     /// Merge failed for a non-conflict reason.
     MergeError(String),
     /// Commit failed before rebase/merge could start.
@@ -94,7 +92,7 @@ pub fn perform_git_integration(
         }
     }
 
-    // Merge to target branch
+    // Fast-forward merge to target branch
     match git.merge_to_branch(&params.branch_name, &params.target_branch) {
         Ok(_merge_result) => {
             orkestra_debug!(
@@ -103,19 +101,6 @@ pub fn perform_git_integration(
                 params.task_id
             );
             IntegrationGitResult::Success
-        }
-        Err(GitError::MergeConflict { conflict_files, .. }) => {
-            orkestra_debug!(
-                "integration",
-                "failed {}: merge conflict, {} files",
-                params.task_id,
-                conflict_files.len()
-            );
-            // Abort the merge so the repo is left clean
-            if let Err(e) = git.abort_merge() {
-                workflow_warn!("Failed to abort merge for {}: {}", params.task_id, e);
-            }
-            IntegrationGitResult::MergeConflict { conflict_files }
         }
         Err(e) => {
             orkestra_debug!("integration", "failed {}: {}", params.task_id, e);
@@ -137,7 +122,7 @@ impl WorkflowApi {
     /// This method orchestrates the full integration process:
     /// 1. Commits any pending changes in the worktree
     /// 2. Rebases the task branch onto primary (conflicts stay on the task branch)
-    /// 3. Merges the rebased branch to primary (guaranteed clean fast-forward)
+    /// 3. Fast-forward merges the rebased branch to primary
     /// 4. On success: cleans up worktree and branch, records success
     /// 5. On conflict: task branch is restored, moves task back to recovery stage
     ///
@@ -249,10 +234,6 @@ impl WorkflowApi {
             IntegrationGitResult::RebaseError(error_msg) => {
                 self.integration_failed(task_id, &error_msg, &[])?;
                 Err(WorkflowError::IntegrationFailed(error_msg))
-            }
-            IntegrationGitResult::MergeConflict { conflict_files } => {
-                self.integration_failed(task_id, "Merge conflict", &conflict_files)?;
-                Err(WorkflowError::IntegrationFailed("Merge conflict".into()))
             }
             IntegrationGitResult::MergeError(error_msg) => {
                 self.integration_failed(task_id, &error_msg, &[])?;

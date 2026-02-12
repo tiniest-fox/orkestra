@@ -4266,7 +4266,7 @@ fn test_reentry_without_restart_flag_uses_recheck() {
 // Disallowed Tools E2E Tests
 // =============================================================================
 
-/// Test that disallowed_tools patterns are threaded to RunConfig.
+/// Test that `disallowed_tools` patterns are threaded to `RunConfig`.
 #[test]
 fn test_disallowed_tools_threaded_to_run_config() {
     use orkestra_core::workflow::config::{DisallowedToolEntry, StageConfig, WorkflowConfig};
@@ -4315,7 +4315,7 @@ fn test_disallowed_tools_threaded_to_run_config() {
     );
 }
 
-/// Test that disallowed_tools are injected into the system prompt.
+/// Test that `disallowed_tools` are injected into the system prompt.
 #[test]
 fn test_disallowed_tools_injected_into_system_prompt() {
     use orkestra_core::workflow::config::{DisallowedToolEntry, StageConfig, WorkflowConfig};
@@ -4379,7 +4379,7 @@ fn test_disallowed_tools_injected_into_system_prompt() {
     );
 }
 
-/// Test that flow override replaces global disallowed_tools.
+/// Test that flow override replaces global `disallowed_tools`.
 #[test]
 fn test_disallowed_tools_flow_override() {
     use indexmap::IndexMap;
@@ -4389,12 +4389,11 @@ fn test_disallowed_tools_flow_override() {
     };
 
     // Global stage has restrictions
-    let work_stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
-        DisallowedToolEntry {
+    let work_stage =
+        StageConfig::new("work", "summary").with_disallowed_tools(vec![DisallowedToolEntry {
             pattern: "Bash(cargo test)".to_string(),
             message: "No testing".to_string(),
-        },
-    ]);
+        }]);
 
     // Flow overrides with no restrictions
     let mut flows = IndexMap::new();
@@ -4457,7 +4456,7 @@ fn test_disallowed_tools_flow_override() {
     }
 }
 
-/// Test that empty disallowed_tools produces no restrictions.
+/// Test that empty `disallowed_tools` produces no restrictions.
 #[test]
 fn test_disallowed_tools_empty_no_flag() {
     use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};

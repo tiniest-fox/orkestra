@@ -1938,10 +1938,9 @@ integration:
                 }],
             },
         );
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("work", "summary").with_model("opus"),
-        ])
-        .with_flows(flows);
+        let workflow =
+            WorkflowConfig::new(vec![StageConfig::new("work", "summary").with_model("opus")])
+                .with_flows(flows);
         // Flow entry exists but has no overrides — should fall back to global
         assert_eq!(
             workflow.effective_model("work", Some("simple")),

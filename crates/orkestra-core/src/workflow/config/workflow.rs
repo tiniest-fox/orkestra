@@ -445,10 +445,7 @@ impl WorkflowConfig {
                     .iter()
                     .map(|stage| WorkflowStageEntry {
                         name: stage.name.clone(),
-                        description: stage
-                            .description
-                            .clone()
-                            .unwrap_or_else(|| stage.display()),
+                        description: stage.description.clone().unwrap_or_else(|| stage.display()),
                         is_current: stage.name == current_stage,
                     })
                     .collect()

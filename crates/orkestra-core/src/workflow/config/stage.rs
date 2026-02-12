@@ -739,8 +739,8 @@ mod tests {
 
     #[test]
     fn test_description_builder() {
-        let stage = StageConfig::new("work", "summary")
-            .with_description("Implement the approved plan");
+        let stage =
+            StageConfig::new("work", "summary").with_description("Implement the approved plan");
 
         assert_eq!(
             stage.description,

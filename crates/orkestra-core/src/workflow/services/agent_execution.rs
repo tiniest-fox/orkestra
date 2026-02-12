@@ -32,6 +32,22 @@ use super::prompt_service::PromptService;
 use super::session_service::SessionSpawnContext;
 
 // ============================================================================
+// Helper Types
+// ============================================================================
+
+/// Resolved stage parameters for building `RunConfig`.
+///
+/// Groups the prompt-related and provider-resolved values that flow through
+/// `execute_stage` into `build_run_config`.
+struct ResolvedStageParams {
+    user_prompt: String,
+    json_schema: String,
+    system_prompt: Option<String>,
+    model_spec: Option<String>,
+    disallowed_tools: Vec<String>,
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -369,20 +385,15 @@ impl AgentExecutionService {
     }
 
     /// Build `RunConfig` with session info, model spec, and system prompt.
-    #[allow(clippy::too_many_arguments)]
     fn build_run_config(
         &self,
         task: &Task,
-        user_prompt: String,
-        json_schema: String,
-        system_prompt_for_config: Option<String>,
+        params: ResolvedStageParams,
         spawn_context: &SessionSpawnContext,
-        model_spec: Option<String>,
-        disallowed_tools: Vec<String>,
     ) -> RunConfig {
         let working_dir = self.get_working_dir(task);
-        let mut run_config =
-            RunConfig::new(working_dir, user_prompt, json_schema).with_task_id(&task.id);
+        let mut run_config = RunConfig::new(working_dir, params.user_prompt, params.json_schema)
+            .with_task_id(&task.id);
 
         // Only set session when we have a caller-provided session ID.
         // Providers that generate their own IDs (OpenCode) start without one.
@@ -391,17 +402,17 @@ impl AgentExecutionService {
         }
 
         // Thread model spec from stage config (respects flow overrides)
-        if let Some(model) = model_spec {
+        if let Some(model) = params.model_spec {
             run_config = run_config.with_model(model);
         }
 
         // Thread system prompt if provider supports it
-        if let Some(sp) = system_prompt_for_config {
+        if let Some(sp) = params.system_prompt {
             run_config = run_config.with_system_prompt(sp);
         }
 
-        if !disallowed_tools.is_empty() {
-            run_config = run_config.with_disallowed_tools(disallowed_tools);
+        if !params.disallowed_tools.is_empty() {
+            run_config = run_config.with_disallowed_tools(params.disallowed_tools);
         }
 
         run_config
@@ -507,15 +518,14 @@ impl AgentExecutionService {
         );
 
         // 7. Build run config with session info, model spec, and system prompt
-        let run_config = self.build_run_config(
-            task,
+        let params = ResolvedStageParams {
             user_prompt,
             json_schema,
-            system_prompt_for_config,
-            spawn_context,
+            system_prompt: system_prompt_for_config,
             model_spec,
-            disallowed_patterns,
-        );
+            disallowed_tools: disallowed_patterns,
+        };
+        let run_config = self.build_run_config(task, params, spawn_context);
 
         // 8. Run the agent
         let (pid, events) = self.runner.run_async(run_config)?;

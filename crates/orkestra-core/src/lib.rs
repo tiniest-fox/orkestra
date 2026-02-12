@@ -34,8 +34,8 @@ pub use commit_message::{ClaudeCommitMessageGenerator, CommitMessageGenerator};
 
 // Process infrastructure re-exports
 pub use process::{
-    is_process_running, kill_process_tree, spawn_claude_process, write_prompt_to_stdin,
-    ParsedStreamEvent, ProcessGuard,
+    is_process_running, kill_process_tree, write_prompt_to_stdin, ParsedStreamEvent,
+    ProcessGuard,
 };
 
 // Init re-exports

@@ -244,6 +244,38 @@ impl AgentRunner {
             registry: Arc::new(registry),
         }
     }
+
+    /// Build a `ProcessConfig` from `RunConfig` and resolved model ID.
+    ///
+    /// This centralizes the mapping logic shared between `run_sync` and `run_async`.
+    /// Returns `(ProcessConfig, prompt, working_dir)` tuple.
+    fn build_process_config(
+        config: RunConfig,
+        resolved_model_id: Option<String>,
+    ) -> (ProcessConfig, String, PathBuf) {
+        let prompt = config.prompt;
+        let working_dir = config.working_dir.clone();
+
+        let mut process_config = ProcessConfig::new(config.json_schema);
+
+        if let Some(sid) = config.session_id {
+            process_config = process_config.with_session(sid, config.is_resume);
+        }
+
+        if let Some(model) = resolved_model_id {
+            process_config = process_config.with_model(model);
+        }
+
+        if let Some(system_prompt) = config.system_prompt {
+            process_config = process_config.with_system_prompt(system_prompt);
+        }
+
+        if !config.disallowed_tools.is_empty() {
+            process_config = process_config.with_disallowed_tools(config.disallowed_tools);
+        }
+
+        (process_config, prompt, working_dir)
+    }
 }
 
 impl AgentRunnerTrait for AgentRunner {
@@ -272,32 +304,14 @@ impl AgentRunnerTrait for AgentRunner {
         // Parse the schema for validation
         let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
-        // Extract prompt before moving config fields
-        let prompt = config.prompt;
-
-        // Build process config with resolved model ID
-        let mut process_config = ProcessConfig::new(config.json_schema);
-
-        if let Some(ref sid) = config.session_id {
-            process_config = process_config.with_session(sid.clone(), config.is_resume);
-        }
-
-        if let Some(model) = resolved.model_id {
-            process_config = process_config.with_model(model);
-        }
-
-        if let Some(system_prompt) = config.system_prompt {
-            process_config = process_config.with_system_prompt(system_prompt);
-        }
-
-        if !config.disallowed_tools.is_empty() {
-            process_config = process_config.with_disallowed_tools(config.disallowed_tools);
-        }
+        // Build process config with resolved model ID (extracts prompt and working_dir)
+        let (process_config, prompt, working_dir) =
+            Self::build_process_config(config, resolved.model_id);
 
         // Spawn the process via the resolved provider's spawner
         let mut handle = resolved
             .spawner
-            .spawn(&config.working_dir, process_config)
+            .spawn(&working_dir, process_config)
             .map_err(RunError::from)?;
 
         orkestra_debug!("runner", "run_sync: spawned process");
@@ -400,33 +414,17 @@ impl AgentRunnerTrait for AgentRunner {
             .create_parser(&resolved.provider_name)
             .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-        // Extract fields before moving config
-        let prompt = config.prompt;
+        // Extract json_schema_str before moving config
         let json_schema_str = config.json_schema.clone();
 
-        // Build process config with resolved model ID
-        let mut process_config = ProcessConfig::new(config.json_schema);
-
-        if let Some(ref sid) = config.session_id {
-            process_config = process_config.with_session(sid.clone(), config.is_resume);
-        }
-
-        if let Some(model) = resolved.model_id {
-            process_config = process_config.with_model(model);
-        }
-
-        if let Some(system_prompt) = config.system_prompt {
-            process_config = process_config.with_system_prompt(system_prompt);
-        }
-
-        if !config.disallowed_tools.is_empty() {
-            process_config = process_config.with_disallowed_tools(config.disallowed_tools);
-        }
+        // Build process config with resolved model ID (extracts prompt and working_dir)
+        let (process_config, prompt, working_dir) =
+            Self::build_process_config(config, resolved.model_id);
 
         // Spawn the process via the resolved provider's spawner
         let mut handle = resolved
             .spawner
-            .spawn(&config.working_dir, process_config)
+            .spawn(&working_dir, process_config)
             .map_err(RunError::from)?;
 
         let pid = handle.pid;

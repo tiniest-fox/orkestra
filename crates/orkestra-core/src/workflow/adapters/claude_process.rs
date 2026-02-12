@@ -4,9 +4,81 @@
 //! actual Claude Code CLI processes.
 
 use std::path::Path;
+use std::process::{Child, Command, Stdio};
 
-use crate::process::{prepare_path_env, spawn_claude_process};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
+use crate::process::prepare_path_env;
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
+
+// ============================================================================
+// Process Spawning
+// ============================================================================
+
+/// Spawns a Claude Code process with the given configuration.
+///
+/// # Arguments
+/// * `working_dir` - Working directory for the process
+/// * `path_env` - PATH environment variable value
+/// * `config` - Process configuration (session, schema, model, prompts, tool restrictions)
+fn spawn_claude_process(
+    working_dir: &Path,
+    path_env: &str,
+    config: &ProcessConfig,
+) -> std::io::Result<Child> {
+    let mut cmd = Command::new("claude");
+
+    // Pass session ID with appropriate flag
+    if let Some(ref sid) = config.session_id {
+        if config.is_resume {
+            cmd.args(["--resume", sid]);
+        } else {
+            cmd.args(["--session-id", sid]);
+        }
+    }
+
+    // Pass model flag if specified
+    if let Some(ref model_id) = config.model {
+        cmd.args(["--model", model_id]);
+    }
+
+    cmd.args(["--print", "--verbose"]);
+
+    // Always use structured JSON output with schema
+    cmd.args([
+        "--output-format",
+        "stream-json",
+        "--json-schema",
+        &config.json_schema,
+    ]);
+
+    // Append system prompt if provided (appends to Claude Code's built-in system prompt)
+    if let Some(ref sp) = config.system_prompt {
+        cmd.args(["--append-system-prompt", sp]);
+    }
+
+    // Pass disallowed tools if any are configured
+    if !config.disallowed_tools.is_empty() {
+        let joined = config.disallowed_tools.join(",");
+        cmd.args(["--disallowedTools", &joined]);
+    }
+
+    cmd.args(["--dangerously-skip-permissions"])
+        .env("PATH", path_env)
+        .env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1")
+        .current_dir(working_dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // Create new process group so we can kill all descendants (cargo, rustc, etc.)
+    // when the agent is terminated. Without this, child processes become orphans.
+    #[cfg(unix)]
+    cmd.process_group(0);
+
+    cmd.spawn()
+}
 
 // ============================================================================
 // Claude Process Spawner

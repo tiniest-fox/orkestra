@@ -4384,8 +4384,7 @@ fn test_disallowed_tools_injected_into_system_prompt() {
 fn test_disallowed_tools_flow_override() {
     use indexmap::IndexMap;
     use orkestra_core::workflow::config::{
-        FlowConfig, FlowStageEntry, FlowStageOverride, StageConfig, ToolRestriction,
-        WorkflowConfig,
+        FlowConfig, FlowStageEntry, FlowStageOverride, StageConfig, ToolRestriction, WorkflowConfig,
     };
 
     // Global stage has restrictions

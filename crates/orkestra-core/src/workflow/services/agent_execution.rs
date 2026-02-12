@@ -405,8 +405,9 @@ impl AgentExecutionService {
         spawn_context: &SessionSpawnContext,
     ) -> RunConfig {
         let working_dir = self.get_working_dir(task);
-        let mut run_config = RunConfig::new(working_dir, resolved.user_prompt, resolved.json_schema)
-            .with_task_id(&task.id);
+        let mut run_config =
+            RunConfig::new(working_dir, resolved.user_prompt, resolved.json_schema)
+                .with_task_id(&task.id);
 
         // Only set session when we have a caller-provided session ID.
         // Providers that generate their own IDs (OpenCode) start without one.

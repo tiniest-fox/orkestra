@@ -288,30 +288,38 @@ impl WorkflowConfig {
         }
     }
 
+    /// Resolve a flow-level override for a stage field.
+    ///
+    /// This is the generic core of all `effective_*` methods. It checks whether
+    /// the flow has an override for the given stage, and if so, extracts the
+    /// field using the provided closure. Returns `None` if:
+    /// - No flow is specified
+    /// - The flow doesn't exist
+    /// - The flow doesn't include this stage
+    /// - The stage has no overrides
+    /// - The extractor returns `None` (field not overridden)
+    fn flow_override<T>(
+        &self,
+        stage_name: &str,
+        flow: Option<&str>,
+        extractor: impl FnOnce(&FlowStageOverride) -> Option<T>,
+    ) -> Option<T> {
+        let flow_name = flow?;
+        let flow_config = self.flows.get(flow_name)?;
+        let entry = flow_config
+            .stages
+            .iter()
+            .find(|e| e.stage_name == stage_name)?;
+        let overrides = entry.overrides.as_ref()?;
+        extractor(overrides)
+    }
+
     /// Get the effective prompt path for a stage in a flow.
     ///
     /// Returns the flow override if one exists, otherwise the global stage's prompt path.
     pub fn effective_prompt_path(&self, stage_name: &str, flow: Option<&str>) -> Option<String> {
-        // Check flow override first
-        if let Some(flow_name) = flow {
-            if let Some(flow_config) = self.flows.get(flow_name) {
-                if let Some(entry) = flow_config
-                    .stages
-                    .iter()
-                    .find(|e| e.stage_name == stage_name)
-                {
-                    if let Some(ref overrides) = entry.overrides {
-                        if let Some(ref prompt) = overrides.prompt {
-                            return Some(prompt.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fall back to global stage config
-        self.stage(stage_name)
-            .and_then(super::stage::StageConfig::prompt_path)
+        self.flow_override(stage_name, flow, |o| o.prompt.clone())
+            .or_else(|| self.stage(stage_name).and_then(StageConfig::prompt_path))
     }
 
     /// Get the effective capabilities for a stage in a flow.
@@ -322,25 +330,8 @@ impl WorkflowConfig {
         stage_name: &str,
         flow: Option<&str>,
     ) -> Option<StageCapabilities> {
-        // Check flow override first
-        if let Some(flow_name) = flow {
-            if let Some(flow_config) = self.flows.get(flow_name) {
-                if let Some(entry) = flow_config
-                    .stages
-                    .iter()
-                    .find(|e| e.stage_name == stage_name)
-                {
-                    if let Some(ref overrides) = entry.overrides {
-                        if let Some(ref caps) = overrides.capabilities {
-                            return Some(caps.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fall back to global stage config
-        self.stage(stage_name).map(|s| s.capabilities.clone())
+        self.flow_override(stage_name, flow, |o| o.capabilities.clone())
+            .or_else(|| self.stage(stage_name).map(|s| s.capabilities.clone()))
     }
 
     /// Get the effective model for a stage in a flow.
@@ -348,50 +339,16 @@ impl WorkflowConfig {
     /// Flow overrides take precedence over the global stage config.
     /// Returns None if no model is configured (use provider default).
     pub fn effective_model(&self, stage_name: &str, flow: Option<&str>) -> Option<String> {
-        // Check flow override first
-        if let Some(flow_name) = flow {
-            if let Some(flow_config) = self.flows.get(flow_name) {
-                if let Some(entry) = flow_config
-                    .stages
-                    .iter()
-                    .find(|e| e.stage_name == stage_name)
-                {
-                    if let Some(ref overrides) = entry.overrides {
-                        if let Some(ref model) = overrides.model {
-                            return Some(model.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fall back to global stage config
-        self.stage(stage_name).and_then(|s| s.model.clone())
+        self.flow_override(stage_name, flow, |o| o.model.clone())
+            .or_else(|| self.stage(stage_name).and_then(|s| s.model.clone()))
     }
 
     /// Get the effective inputs for a stage in a flow.
     ///
     /// Flow overrides fully replace (not merge) the global inputs.
     pub fn effective_inputs(&self, stage_name: &str, flow: Option<&str>) -> Option<Vec<String>> {
-        // Check flow override first
-        if let Some(flow_name) = flow {
-            if let Some(flow_config) = self.flows.get(flow_name) {
-                if let Some(entry) = flow_config
-                    .stages
-                    .iter()
-                    .find(|e| e.stage_name == stage_name)
-                {
-                    if let Some(ref overrides) = entry.overrides {
-                        if let Some(ref inputs) = overrides.inputs {
-                            return Some(inputs.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fall back to global stage config
-        self.stage(stage_name).map(|s| s.inputs.clone())
+        self.flow_override(stage_name, flow, |o| o.inputs.clone())
+            .or_else(|| self.stage(stage_name).map(|s| s.inputs.clone()))
     }
 
     /// Get the effective disallowed tools for a stage in a flow.
@@ -403,26 +360,8 @@ impl WorkflowConfig {
         stage_name: &str,
         flow: Option<&str>,
     ) -> Vec<DisallowedToolEntry> {
-        // Check flow override first
-        if let Some(flow_name) = flow {
-            if let Some(flow_config) = self.flows.get(flow_name) {
-                if let Some(entry) = flow_config
-                    .stages
-                    .iter()
-                    .find(|e| e.stage_name == stage_name)
-                {
-                    if let Some(ref overrides) = entry.overrides {
-                        if let Some(ref tools) = overrides.disallowed_tools {
-                            return tools.clone();
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fall back to global stage config
-        self.stage(stage_name)
-            .map(|s| s.disallowed_tools.clone())
+        self.flow_override(stage_name, flow, |o| o.disallowed_tools.clone())
+            .or_else(|| self.stage(stage_name).map(|s| s.disallowed_tools.clone()))
             .unwrap_or_default()
     }
 
@@ -1973,5 +1912,40 @@ integration:
 
         let yaml_none = serde_yaml::to_string(&override_none).unwrap();
         assert!(!yaml_none.contains("disallowed_tools"));
+    }
+
+    #[test]
+    fn test_flow_override_returns_none_for_missing_flow() {
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+        // No flows defined — all effective_* should fall back to global
+        assert_eq!(workflow.effective_model("work", Some("nonexistent")), None);
+        assert!(workflow
+            .effective_disallowed_tools("work", Some("nonexistent"))
+            .is_empty());
+    }
+
+    #[test]
+    fn test_flow_override_returns_none_for_no_overrides() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "simple".to_string(),
+            FlowConfig {
+                description: "Simple".to_string(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: None,
+                }],
+            },
+        );
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("work", "summary").with_model("opus"),
+        ])
+        .with_flows(flows);
+        // Flow entry exists but has no overrides — should fall back to global
+        assert_eq!(
+            workflow.effective_model("work", Some("simple")),
+            Some("opus".to_string())
+        );
     }
 }

@@ -191,7 +191,9 @@ fn append_schema_enforcement(prompt: &str, json_schema: &str) -> Result<String, 
             &serde_json::json!({ "json_schema": json_schema }),
         )
         .map_err(|e| {
-            ExecutionError::ConfigError(format!("Failed to render schema enforcement template: {e}"))
+            ExecutionError::ConfigError(format!(
+                "Failed to render schema enforcement template: {e}"
+            ))
         })?;
     Ok(format!("{prompt}\n\n{rendered}"))
 }
@@ -367,9 +369,7 @@ impl AgentExecutionService {
             schema_stage,
             Some(self.prompt_service.project_root()),
         )
-        .ok_or_else(|| {
-            ExecutionError::ConfigError(format!("No schema for agent stage: {stage}"))
-        })
+        .ok_or_else(|| ExecutionError::ConfigError(format!("No schema for agent stage: {stage}")))
     }
 
     /// Apply provider-specific fallbacks for system prompt and schema enforcement.

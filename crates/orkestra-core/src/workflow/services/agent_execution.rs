@@ -470,7 +470,7 @@ impl AgentExecutionService {
             activity_logs.clone(),
         )?;
 
-        // 4.5. Resolve disallowed tools and inject restriction messages into system prompt
+        // 5. Resolve disallowed tools and inject restriction messages into system prompt
         let effective_tools = self
             .workflow
             .effective_disallowed_tools(stage, task.flow.as_deref());
@@ -486,7 +486,7 @@ impl AgentExecutionService {
             )
         };
 
-        // 5. Build user message prompt based on whether this is a resume
+        // 6. Build user message prompt based on whether this is a resume
         let user_prompt = self.build_user_prompt(
             task,
             stage,
@@ -497,7 +497,7 @@ impl AgentExecutionService {
             activity_logs,
         )?;
 
-        // 6. Apply provider fallbacks for system prompt and schema enforcement
+        // 7. Apply provider fallbacks for system prompt and schema enforcement
         let (user_prompt, system_prompt_for_config) = Self::apply_provider_fallbacks(
             &task.id,
             stage,
@@ -517,7 +517,7 @@ impl AgentExecutionService {
             spawn_context.is_resume
         );
 
-        // 7. Build run config with session info, model spec, and system prompt
+        // 8. Build run config with session info, model spec, and system prompt
         let params = ResolvedStageParams {
             user_prompt,
             json_schema,
@@ -527,7 +527,7 @@ impl AgentExecutionService {
         };
         let run_config = self.build_run_config(task, params, spawn_context);
 
-        // 8. Run the agent
+        // 9. Run the agent
         let (pid, events) = self.runner.run_async(run_config)?;
 
         orkestra_debug!(

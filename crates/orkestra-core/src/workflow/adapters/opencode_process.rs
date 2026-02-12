@@ -58,6 +58,16 @@ impl ProcessSpawner for OpenCodeProcessSpawner {
             );
         }
 
+        // Note: OpenCode does NOT support disallowed_tools via CLI flags.
+        // The restriction messages are injected into the system prompt upstream,
+        // but CLI-level enforcement (like Claude Code's --disallowedTools) is not available.
+        if !config.disallowed_tools.is_empty() {
+            crate::orkestra_debug!(
+                "opencode",
+                "WARNING: disallowed_tools configured but OpenCode does not support --disallowedTools flag; relying on prompt-level restrictions only"
+            );
+        }
+
         let mut cmd = Command::new("opencode");
 
         // Non-interactive run mode

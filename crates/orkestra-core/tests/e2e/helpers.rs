@@ -431,6 +431,11 @@ impl TestEnv {
         calls.last().expect("No agent calls recorded").clone()
     }
 
+    /// Get all `RunConfig` calls made to the mock runner.
+    pub fn runner_calls(&self) -> Vec<RunConfig> {
+        self.runner.calls()
+    }
+
     // =========================================================================
     // Query Shortcuts
     // =========================================================================

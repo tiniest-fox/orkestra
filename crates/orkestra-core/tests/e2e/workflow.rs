@@ -4261,3 +4261,237 @@ fn test_reentry_without_restart_flag_uses_recheck() {
         "Re-entry should use the SAME session ID (recheck, not restart)"
     );
 }
+
+// =============================================================================
+// Disallowed Tools E2E Tests
+// =============================================================================
+
+/// Test that disallowed_tools patterns are threaded to RunConfig.
+#[test]
+fn test_disallowed_tools_threaded_to_run_config() {
+    use orkestra_core::workflow::config::{DisallowedToolEntry, StageConfig, WorkflowConfig};
+
+    // Build a workflow with a "work" stage that has disallowed_tools
+    let work_stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
+        DisallowedToolEntry {
+            pattern: "Bash(cargo test)".to_string(),
+            message: "Automated checks handle testing".to_string(),
+        },
+        DisallowedToolEntry {
+            pattern: "Bash(cargo build)".to_string(),
+            message: "Build runs in CI".to_string(),
+        },
+    ]);
+
+    let workflow = WorkflowConfig::new(vec![work_stage]);
+    let ctx = TestEnv::with_git(&workflow, &["work"]);
+
+    // Create a task
+    let task = ctx.create_task("Test task", "Test disallowed tools", None);
+    let task_id = task.id.clone();
+
+    // Set mock output for the work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Done".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Advance orchestrator to spawn agent
+    ctx.advance();
+
+    // Inspect the RunConfig from mock runner calls
+    let calls = ctx.runner_calls();
+    assert!(!calls.is_empty(), "Expected at least one runner call");
+
+    let call = &calls[0];
+    assert_eq!(
+        call.disallowed_tools,
+        vec!["Bash(cargo test)", "Bash(cargo build)"],
+        "RunConfig should contain disallowed_tools patterns"
+    );
+}
+
+/// Test that disallowed_tools are injected into the system prompt.
+#[test]
+fn test_disallowed_tools_injected_into_system_prompt() {
+    use orkestra_core::workflow::config::{DisallowedToolEntry, StageConfig, WorkflowConfig};
+
+    // Build a workflow with disallowed_tools
+    let work_stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
+        DisallowedToolEntry {
+            pattern: "Bash(cargo test)".to_string(),
+            message: "Automated checks handle testing".to_string(),
+        },
+        DisallowedToolEntry {
+            pattern: "Bash(cargo build)".to_string(),
+            message: "Build runs in CI".to_string(),
+        },
+    ]);
+
+    let workflow = WorkflowConfig::new(vec![work_stage]);
+    let ctx = TestEnv::with_git(&workflow, &["work"]);
+
+    let task = ctx.create_task("Test task", "Test system prompt injection", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Done".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance();
+
+    // Assert system prompt contains restriction messages
+    let calls = ctx.runner_calls();
+    let call = &calls[0];
+    let system_prompt = call
+        .system_prompt
+        .as_ref()
+        .expect("System prompt should be set");
+
+    assert!(
+        system_prompt.contains("Tool Restrictions"),
+        "System prompt should contain Tool Restrictions section"
+    );
+    assert!(
+        system_prompt.contains("Bash(cargo test)"),
+        "System prompt should contain pattern"
+    );
+    assert!(
+        system_prompt.contains("Automated checks handle testing"),
+        "System prompt should contain message"
+    );
+    assert!(
+        system_prompt.contains("Bash(cargo build)"),
+        "System prompt should contain second pattern"
+    );
+    assert!(
+        system_prompt.contains("Build runs in CI"),
+        "System prompt should contain second message"
+    );
+}
+
+/// Test that flow override replaces global disallowed_tools.
+#[test]
+fn test_disallowed_tools_flow_override() {
+    use indexmap::IndexMap;
+    use orkestra_core::workflow::config::{
+        DisallowedToolEntry, FlowConfig, FlowStageEntry, FlowStageOverride, StageConfig,
+        WorkflowConfig,
+    };
+
+    // Global stage has restrictions
+    let work_stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
+        DisallowedToolEntry {
+            pattern: "Bash(cargo test)".to_string(),
+            message: "No testing".to_string(),
+        },
+    ]);
+
+    // Flow overrides with no restrictions
+    let mut flows = IndexMap::new();
+    flows.insert(
+        "hotfix".to_string(),
+        FlowConfig {
+            description: "Hotfix flow".to_string(),
+            icon: None,
+            stages: vec![FlowStageEntry {
+                stage_name: "work".to_string(),
+                overrides: Some(FlowStageOverride {
+                    prompt: None,
+                    capabilities: None,
+                    model: None,
+                    inputs: None,
+                    disallowed_tools: Some(vec![]), // Explicitly no restrictions
+                }),
+            }],
+        },
+    );
+
+    let workflow = WorkflowConfig::new(vec![work_stage]).with_flows(flows);
+    let ctx = TestEnv::with_git(&workflow, &["work"]);
+
+    // Create task with "hotfix" flow
+    let task = ctx
+        .api()
+        .create_task_with_options("Hotfix task", "Fix it", None, false, Some("hotfix"))
+        .unwrap();
+    let task_id = task.id.clone();
+
+    // Advance setup
+    ctx.advance();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Fixed".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance();
+
+    // RunConfig should have NO disallowed tools (flow override cleared them)
+    let calls = ctx.runner_calls();
+    let call = &calls[0];
+    assert!(
+        call.disallowed_tools.is_empty(),
+        "Flow override should clear disallowed tools"
+    );
+
+    // System prompt should NOT contain Tool Restrictions section
+    if let Some(ref sp) = call.system_prompt {
+        assert!(
+            !sp.contains("Tool Restrictions"),
+            "System prompt should not contain Tool Restrictions when no tools are disallowed"
+        );
+    }
+}
+
+/// Test that empty disallowed_tools produces no restrictions.
+#[test]
+fn test_disallowed_tools_empty_no_flag() {
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
+
+    // Create a simple workflow with no disallowed_tools
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")]);
+    let ctx = TestEnv::with_git(&workflow, &["work"]);
+
+    let task = ctx.create_task("Simple task", "No restrictions", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Done".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance();
+
+    let calls = ctx.runner_calls();
+    let call = &calls[0];
+    assert!(
+        call.disallowed_tools.is_empty(),
+        "RunConfig should have empty disallowed_tools"
+    );
+
+    // System prompt should NOT contain Tool Restrictions section
+    if let Some(ref sp) = call.system_prompt {
+        assert!(
+            !sp.contains("Tool Restrictions"),
+            "System prompt should not contain Tool Restrictions when no tools are disallowed"
+        );
+    }
+}

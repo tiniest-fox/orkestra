@@ -2,7 +2,7 @@
  * Iteration card - displays a single workflow iteration.
  */
 
-import type { WorkflowIteration } from "../../types/workflow";
+import type { WorkflowIteration, IterationTrigger } from "../../types/workflow";
 import { formatTimestamp, titleCase } from "../../utils/formatters";
 import {
   getOutcomeBadgeColor,
@@ -30,9 +30,53 @@ function formatOutcome(outcome: WorkflowIteration["outcome"]): {
   return { label, color };
 }
 
+function formatIncomingContext(context: IterationTrigger): {
+  label: string;
+  message: string;
+} | null {
+  switch (context.type) {
+    case "manual_resume":
+      return context.message
+        ? { label: "You wrote:", message: context.message }
+        : null;
+    case "feedback":
+      return { label: "Your feedback:", message: context.feedback };
+    case "rejection":
+      return {
+        label: `Rejection from ${context.from_stage}:`,
+        message: context.feedback,
+      };
+    case "retry_failed":
+      return context.instructions
+        ? { label: "Retry instructions:", message: context.instructions }
+        : null;
+    case "retry_blocked":
+      return context.instructions
+        ? { label: "Retry instructions:", message: context.instructions }
+        : null;
+    case "script_failure":
+      return {
+        label: `Script failed (${context.from_stage}):`,
+        message: context.error,
+      };
+    case "integration":
+      return {
+        label: "Integration failed:",
+        message: `${context.message}\nConflict files: ${context.conflict_files.join(", ")}`,
+      };
+    // These triggers have no meaningful display content
+    case "interrupted":
+    case "answers":
+      return null;
+  }
+}
+
 export function IterationCard({ iteration }: IterationCardProps) {
   const isActive = !iteration.outcome;
   const outcomeInfo = formatOutcome(iteration.outcome);
+  const contextInfo = iteration.incoming_context
+    ? formatIncomingContext(iteration.incoming_context)
+    : null;
 
   return (
     <div
@@ -61,6 +105,16 @@ export function IterationCard({ iteration }: IterationCardProps) {
         </span>
       </div>
       <div className="px-3 py-2 space-y-2">
+        {contextInfo && (
+          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded px-2 py-1.5">
+            <div className="text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">
+              {contextInfo.label}
+            </div>
+            <div className="text-sm text-blue-900 dark:text-blue-100 whitespace-pre-wrap">
+              {contextInfo.message}
+            </div>
+          </div>
+        )}
         {outcomeInfo && (
           <div className="flex items-center gap-2">
             <span className="text-stone-500 dark:text-stone-400 text-sm">Outcome:</span>

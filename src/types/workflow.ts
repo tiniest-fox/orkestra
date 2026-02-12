@@ -244,6 +244,21 @@ export type WorkflowOutcome =
   | { type: "interrupted" };
 
 /**
+ * Why an iteration was created - determines the resume prompt type.
+ * Uses snake_case to match Rust's serde serialization.
+ */
+export type IterationTrigger =
+  | { type: "feedback"; feedback: string }
+  | { type: "rejection"; from_stage: string; feedback: string }
+  | { type: "integration"; message: string; conflict_files: string[] }
+  | { type: "answers"; answers: WorkflowQuestionAnswer[] }
+  | { type: "interrupted" }
+  | { type: "script_failure"; from_stage: string; error: string }
+  | { type: "retry_failed"; instructions?: string }
+  | { type: "retry_blocked"; instructions?: string }
+  | { type: "manual_resume"; message?: string };
+
+/**
  * A single iteration within a stage (one agent run).
  */
 export interface WorkflowIteration {
@@ -265,6 +280,8 @@ export interface WorkflowIteration {
   session_id?: string;
   /** Short narrative summary of what the agent did during this iteration. */
   activity_log?: string;
+  /** Context explaining why this iteration was created (e.g., user message, feedback, rejection). */
+  incoming_context?: IterationTrigger;
 }
 
 // =============================================================================

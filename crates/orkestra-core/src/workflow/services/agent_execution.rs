@@ -105,7 +105,10 @@ fn apply_tool_restrictions(
     }
 
     let patterns = effective_tools.iter().map(|e| e.pattern.clone()).collect();
-    let augmented = format!("{system_prompt}{}", format_tool_restrictions(effective_tools));
+    let augmented = format!(
+        "{system_prompt}{}",
+        format_tool_restrictions(effective_tools)
+    );
     (augmented, patterns)
 }
 

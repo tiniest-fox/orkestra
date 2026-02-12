@@ -9,7 +9,8 @@
  */
 
 import { History, Plus, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { useAssistant } from "../../providers";
 import { LogList } from "../Logs/LogList";
 import { QuestionFormPanel } from "../TaskDetail/QuestionFormPanel";
@@ -35,13 +36,12 @@ export function AssistantPanel({ onClose, onToggleHistory }: AssistantPanelProps
     newSession,
   } = useAssistant();
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { containerRef, handleScroll, resetAutoScroll } = useAutoScroll<HTMLDivElement>([logs], true);
 
-  // Auto-scroll to bottom when new messages arrive
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally scroll when logs change
+  // Reset auto-scroll when session changes
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs.length]);
+    resetAutoScroll();
+  }, [activeSession, resetAutoScroll]);
 
   const handleNewSession = async () => {
     await newSession();
@@ -75,7 +75,11 @@ export function AssistantPanel({ onClose, onToggleHistory }: AssistantPanelProps
             </Panel.Header>
 
             {/* Message area */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 min-h-0">
+            <div
+              ref={containerRef}
+              onScroll={handleScroll}
+              className="flex-1 overflow-y-auto overflow-x-hidden p-4 min-h-0"
+            >
               {logs.length === 0 && !isLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <EmptyState
@@ -84,10 +88,7 @@ export function AssistantPanel({ onClose, onToggleHistory }: AssistantPanelProps
                   />
                 </div>
               ) : (
-                <>
-                  <LogList logs={logs} isLoading={isLoading} />
-                  <div ref={messagesEndRef} />
-                </>
+                <LogList logs={logs} isLoading={isLoading} />
               )}
             </div>
           </FlexContainer>

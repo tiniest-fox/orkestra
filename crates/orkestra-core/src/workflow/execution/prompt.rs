@@ -172,6 +172,9 @@ pub struct StagePromptContext<'a> {
 
     /// Activity logs from prior completed iterations.
     pub activity_logs: Vec<ActivityLogEntry>,
+
+    /// Workflow stage entries for the overview section.
+    pub workflow_stages: Vec<crate::workflow::config::WorkflowStageEntry>,
 }
 
 /// Context for an artifact available to the stage.
@@ -274,6 +277,10 @@ impl<'a> PromptBuilder<'a> {
         // Initial prompts don't include question history since no questions have been asked yet
         let question_history = Vec::new();
 
+        let workflow_stages = self
+            .workflow
+            .workflow_stage_entries(stage_name, task.flow.as_deref());
+
         Some(StagePromptContext {
             stage,
             task_id: &task.id,
@@ -288,6 +295,7 @@ impl<'a> PromptBuilder<'a> {
             base_commit: task.base_commit.as_str(),
             show_direct_structured_output_hint,
             activity_logs,
+            workflow_stages,
         })
     }
 
@@ -319,6 +327,10 @@ impl<'a> PromptBuilder<'a> {
 
         let question_history = Vec::new();
 
+        let workflow_stages = self
+            .workflow
+            .workflow_stage_entries(&stage.name, task.flow.as_deref());
+
         Some(StagePromptContext {
             stage,
             task_id: &task.id,
@@ -333,6 +345,7 @@ impl<'a> PromptBuilder<'a> {
             base_commit: task.base_commit.as_str(),
             show_direct_structured_output_hint,
             activity_logs,
+            workflow_stages,
         })
     }
 
@@ -682,6 +695,7 @@ struct UserMessageContext<'a> {
     base_branch: &'a str,
     base_commit: &'a str,
     activity_logs: &'a [ActivityLogEntry],
+    workflow_stages: &'a [crate::workflow::config::WorkflowStageEntry],
 }
 
 /// Context available to agent definition Handlebars templates.
@@ -737,6 +751,7 @@ pub fn build_user_message(ctx: &StagePromptContext<'_>) -> String {
         base_branch: ctx.base_branch,
         base_commit: ctx.base_commit,
         activity_logs: &ctx.activity_logs,
+        workflow_stages: &ctx.workflow_stages,
     };
 
     TEMPLATES
@@ -922,8 +937,11 @@ pub fn determine_resume_type(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use crate::workflow::config::{
+        FlowConfig, FlowStageEntry, StageCapabilities, StageConfig, WorkflowConfig,
+    };
     use crate::workflow::runtime::Artifact;
+    use indexmap::IndexMap;
 
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
@@ -1847,5 +1865,97 @@ mod tests {
         // Should NOT contain system prompt elements
         assert!(!prompt.contains("Output Format"));
         assert!(!prompt.contains("agent definition"));
+    }
+
+    #[test]
+    fn test_workflow_overview_in_prompt() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("plan", "plan").with_description("Create a plan"),
+            StageConfig::new("work", "summary").with_description("Implement the plan"),
+            StageConfig::new("review", "verdict").with_description("Review the work"),
+        ]);
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "work", "now");
+        let ctx = builder
+            .build_context("work", &task, None, None, false, Vec::new())
+            .unwrap();
+
+        let user_message = build_user_message(&ctx);
+
+        // Should contain workflow overview section
+        assert!(user_message.contains("## Your Workflow"));
+        assert!(user_message.contains("[plan] — Create a plan"));
+        assert!(user_message.contains("[work] ← YOU ARE HERE — Implement the plan"));
+        assert!(user_message.contains("[review] — Review the work"));
+    }
+
+    #[test]
+    fn test_workflow_overview_with_flow() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".into(),
+            FlowConfig {
+                description: "Quick flow".into(),
+                icon: Some("zap".into()),
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "plan".into(),
+                        overrides: None,
+                    },
+                    FlowStageEntry {
+                        stage_name: "work".into(),
+                        overrides: None,
+                    },
+                ],
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("plan", "plan").with_description("Create a plan"),
+            StageConfig::new("task", "breakdown"),
+            StageConfig::new("work", "summary").with_description("Implement the plan"),
+            StageConfig::new("review", "verdict"),
+        ])
+        .with_flows(flows);
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new("task-1", "Test", "Description", "work", "now");
+        task.flow = Some("quick".into());
+
+        let ctx = builder
+            .build_context("work", &task, None, None, false, Vec::new())
+            .unwrap();
+
+        let user_message = build_user_message(&ctx);
+
+        // Should only show stages in the quick flow
+        assert!(user_message.contains("## Your Workflow"));
+        assert!(user_message.contains("[plan] — Create a plan"));
+        assert!(user_message.contains("[work] ← YOU ARE HERE — Implement the plan"));
+
+        // Should NOT contain stages not in the flow
+        assert!(!user_message.contains("[task]"));
+        assert!(!user_message.contains("[review]"));
+    }
+
+    #[test]
+    fn test_workflow_overview_description_fallback() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"), // No description, should use display()
+            StageConfig::new("work", "summary").with_display_name("Work Stage"),
+        ]);
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "work", "now");
+        let ctx = builder
+            .build_context("work", &task, None, None, false, Vec::new())
+            .unwrap();
+
+        let user_message = build_user_message(&ctx);
+
+        // Should use display() fallback for stages without description
+        assert!(user_message.contains("[planning] — Planning"));
+        assert!(user_message.contains("[work] ← YOU ARE HERE — Work Stage"));
     }
 }

@@ -25,6 +25,11 @@ pub struct StageConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
 
+    /// Human-readable description of what this stage does.
+    /// Used in the workflow overview to help agents understand their position.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
     /// Name of the artifact this stage produces (e.g., "plan", "summary").
     /// The artifact content is stored with this key.
     pub artifact: String,
@@ -79,6 +84,7 @@ impl StageConfig {
             name: name.into(),
             display_name: None,
             icon: None,
+            description: None,
             artifact: artifact.into(),
             inputs: Vec::new(),
             capabilities: StageCapabilities::default(),
@@ -101,6 +107,7 @@ impl StageConfig {
             name: name.into(),
             display_name: None,
             icon: None,
+            description: None,
             artifact: artifact.into(),
             inputs: Vec::new(),
             capabilities: StageCapabilities::default(),
@@ -124,6 +131,13 @@ impl StageConfig {
     #[must_use]
     pub fn with_icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = Some(icon.into());
+        self
+    }
+
+    /// Builder: set description.
+    #[must_use]
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
         self
     }
 
@@ -700,6 +714,38 @@ mod tests {
         let stage_no_icon = StageConfig::new("work", "summary");
         let yaml_no_icon = serde_yaml::to_string(&stage_no_icon).unwrap();
         assert!(!yaml_no_icon.contains("icon:"));
+    }
+
+    #[test]
+    fn test_description_field_serialization() {
+        // Test with description present
+        let stage_with_desc =
+            StageConfig::new("planning", "plan").with_description("Create an implementation plan");
+
+        let yaml = serde_yaml::to_string(&stage_with_desc).unwrap();
+        assert!(yaml.contains("description: Create an implementation plan"));
+
+        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(
+            parsed.description,
+            Some("Create an implementation plan".to_string())
+        );
+
+        // Test without description (should be omitted from YAML)
+        let stage_no_desc = StageConfig::new("work", "summary");
+        let yaml_no_desc = serde_yaml::to_string(&stage_no_desc).unwrap();
+        assert!(!yaml_no_desc.contains("description:"));
+    }
+
+    #[test]
+    fn test_description_builder() {
+        let stage = StageConfig::new("work", "summary")
+            .with_description("Implement the approved plan");
+
+        assert_eq!(
+            stage.description,
+            Some("Implement the approved plan".to_string())
+        );
     }
 
     #[test]

@@ -1,4 +1,16 @@
 <!orkestra:spawn:{{stage_name}}>
+{{#if workflow_stages}}
+
+## Your Workflow
+
+{{#each workflow_stages}}
+{{#if this.is_current}}
+[{{this.name}}] ← YOU ARE HERE — {{this.description}}
+{{else}}
+[{{this.name}}] — {{this.description}}
+{{/if}}
+{{/each}}
+{{/if}}
 
 ---
 

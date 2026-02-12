@@ -10,6 +10,7 @@ stages:
   - name: plan
     display_name: Plan
     icon: file-text
+    description: Create an implementation plan
     artifact: plan
     prompt: planner.md
     capabilities:
@@ -19,6 +20,7 @@ stages:
   - name: task
     display_name: Task
     icon: list-tree
+    description: Break down the plan into subtasks
     artifact: breakdown
     inputs: [plan]
     prompt: breakdown.md
@@ -31,6 +33,7 @@ stages:
   - name: work
     display_name: Work
     icon: code
+    description: Implement the approved plan
     artifact: summary
     inputs: [breakdown]
     prompt: worker.md
@@ -41,6 +44,7 @@ stages:
   - name: check
     display_name: Check
     icon: circle-check-big
+    description: Run automated code quality checks
     artifact: check_results
     inputs: [summary]
     script:
@@ -52,6 +56,7 @@ stages:
   - name: review
     display_name: Review
     icon: eye
+    description: Review completed work for correctness
     artifact: verdict
     inputs: [breakdown, summary, check_results]
     prompt: reviewer.md
@@ -66,6 +71,7 @@ stages:
   - name: compound
     display_name: Compound
     icon: book-open
+    description: Capture learnings and update documentation
     artifact: learnings
     inputs: [summary, verdict]
     prompt: compound.md

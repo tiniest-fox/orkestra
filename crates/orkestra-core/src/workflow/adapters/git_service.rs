@@ -466,17 +466,19 @@ impl GitService for Git2GitService {
         Ok(branch)
     }
 
-    fn commit_pending_changes(&self, worktree_path: &Path, message: &str) -> Result<(), GitError> {
-        // Check if there are any changes (staged or unstaged)
-        let status_output = Command::new("git")
+    fn has_pending_changes(&self, worktree_path: &Path) -> Result<bool, GitError> {
+        let output = Command::new("git")
             .args(["status", "--porcelain"])
             .current_dir(worktree_path)
             .output()
             .map_err(|e| GitError::IoError(format!("Failed to run git status: {e}")))?;
 
-        let status = String::from_utf8_lossy(&status_output.stdout);
-        if status.trim().is_empty() {
-            // No changes to commit
+        let status = String::from_utf8_lossy(&output.stdout);
+        Ok(!status.trim().is_empty())
+    }
+
+    fn commit_pending_changes(&self, worktree_path: &Path, message: &str) -> Result<(), GitError> {
+        if !self.has_pending_changes(worktree_path)? {
             return Ok(());
         }
 

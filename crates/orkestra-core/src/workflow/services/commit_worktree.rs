@@ -35,6 +35,10 @@ pub(crate) fn commit_worktree_changes(
         return Ok(());
     }
 
+    if !git.has_pending_changes(worktree)? {
+        return Ok(());
+    }
+
     let message = generate_task_commit_message(git, task, workflow, commit_gen);
     git.commit_pending_changes(worktree, &message)
 }

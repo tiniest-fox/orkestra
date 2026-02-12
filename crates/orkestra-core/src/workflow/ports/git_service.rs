@@ -197,6 +197,9 @@ pub trait GitService: Send + Sync {
     /// Returns "HEAD" if in detached HEAD state.
     fn current_branch(&self) -> Result<String, GitError>;
 
+    /// Check whether a worktree has uncommitted changes (staged or unstaged).
+    fn has_pending_changes(&self, worktree_path: &Path) -> Result<bool, GitError>;
+
     /// Commit any uncommitted changes in a worktree.
     ///
     /// Stages all changes with `git add -A` and commits with the given message.
@@ -441,6 +444,11 @@ pub mod mock {
 
         fn current_branch(&self) -> Result<String, GitError> {
             Ok(self.current_branch.lock().unwrap().clone())
+        }
+
+        fn has_pending_changes(&self, _worktree_path: &Path) -> Result<bool, GitError> {
+            // Mock: no pending changes
+            Ok(false)
         }
 
         fn commit_pending_changes(

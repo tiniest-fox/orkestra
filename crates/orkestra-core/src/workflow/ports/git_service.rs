@@ -262,6 +262,13 @@ pub trait GitService: Send + Sync {
         base_branch: &str,
     ) -> Result<TaskDiff, GitError>;
 
+    /// Get the diff of uncommitted changes in a worktree.
+    ///
+    /// Computes staged + unstaged changes relative to HEAD, plus untracked files.
+    /// Used for commit message generation (as opposed to `diff_against_base` which
+    /// shows all branch changes for review context).
+    fn diff_uncommitted(&self, worktree_path: &Path) -> Result<TaskDiff, GitError>;
+
     /// Read the content of a file at HEAD in a worktree.
     ///
     /// Returns the file content as a string, or None if the file doesn't exist.
@@ -523,6 +530,11 @@ pub mod mock {
             _base_branch: &str,
         ) -> Result<TaskDiff, GitError> {
             // Mock: return empty diff
+            Ok(TaskDiff { files: vec![] })
+        }
+
+        fn diff_uncommitted(&self, _worktree_path: &Path) -> Result<TaskDiff, GitError> {
+            // Mock: return empty diff (consistent with diff_against_base mock)
             Ok(TaskDiff { files: vec![] })
         }
 

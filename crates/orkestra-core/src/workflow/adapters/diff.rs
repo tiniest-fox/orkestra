@@ -266,6 +266,56 @@ fn determine_change_type(is_new_file: bool, is_deleted_file: bool) -> FileChange
     }
 }
 
+/// Execute git diff for uncommitted changes and parse output into structured diff data.
+///
+/// Computes the diff of staged + unstaged changes relative to HEAD, showing only
+/// uncommitted changes (not committed changes on the branch). Also includes untracked
+/// files as new files.
+///
+/// This is used for commit message generation, as opposed to `execute_diff()` which
+/// shows all branch changes (for review context).
+pub fn execute_uncommitted_diff(worktree_path: &Path) -> Result<TaskDiff, GitError> {
+    // Get uncommitted tracked changes via git diff HEAD
+    let output = Command::new("git")
+        .args([
+            "diff",
+            "HEAD",
+            "--unified=3",
+            "--no-color",
+            "--numstat",
+            "--no-renames",
+            "-p",
+        ])
+        .current_dir(worktree_path)
+        .output()
+        .map_err(|e| GitError::IoError(format!("Failed to execute git diff: {e}")))?;
+
+    // Handle edge case: first commit on a branch (no HEAD yet)
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("unknown revision") || stderr.contains("bad revision") {
+            // No HEAD ref yet — return empty diff gracefully
+            // In practice, first commits use `git add -A` so there are always staged changes,
+            // but we handle this edge case for correctness
+            return Ok(TaskDiff { files: vec![] });
+        }
+        return Err(GitError::IoError(format!("git diff failed: {stderr}")));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut task_diff = parse_diff_output(&stdout);
+
+    // Add untracked files as new additions
+    let untracked = get_untracked_files(worktree_path)?;
+    for path in untracked {
+        if let Some(file_diff) = create_untracked_file_diff(worktree_path, &path) {
+            task_diff.files.push(file_diff);
+        }
+    }
+
+    Ok(task_diff)
+}
+
 /// Read file content at HEAD in a worktree.
 pub fn read_file_at_head(
     worktree_path: &Path,
@@ -617,5 +667,82 @@ mod tests {
             find_file("keep_unchanged.txt").is_none(),
             "Unchanged file should not appear in diff"
         );
+    }
+
+    /// Test that `execute_uncommitted_diff` only includes uncommitted changes,
+    /// excluding committed changes on the branch.
+    #[test]
+    fn test_uncommitted_diff_excludes_committed_changes() {
+        let dir = setup_test_repo();
+        let path = dir.path();
+
+        // === Committed changes on feature branch ===
+        // Edit a file and commit it
+        fs::write(path.join("existing.txt"), "committed change\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "committed edit"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+
+        // Add a new file and commit it
+        fs::write(path.join("committed_new.txt"), "new file committed\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "add new file"])
+            .current_dir(path)
+            .output()
+            .unwrap();
+
+        // === Uncommitted changes ===
+        // Edit another file (unstaged)
+        fs::write(path.join("uncommitted_edit.txt"), "uncommitted change\n").unwrap();
+
+        // Create an untracked file
+        fs::write(path.join("untracked.txt"), "untracked file\n").unwrap();
+
+        // === Run execute_uncommitted_diff ===
+        let result = execute_uncommitted_diff(path).unwrap();
+
+        // === Verify results ===
+        // Should ONLY have uncommitted changes, NOT committed changes
+        assert_eq!(
+            result.files.len(),
+            2,
+            "Expected 2 uncommitted files (1 edit + 1 untracked)"
+        );
+
+        let find_file = |name: &str| result.files.iter().find(|f| f.path == name);
+
+        // Committed changes should NOT appear
+        assert!(
+            find_file("existing.txt").is_none(),
+            "Committed edit should NOT be in uncommitted diff"
+        );
+        assert!(
+            find_file("committed_new.txt").is_none(),
+            "Committed new file should NOT be in uncommitted diff"
+        );
+
+        // Uncommitted changes SHOULD appear
+        let uncommitted_edit = find_file("uncommitted_edit.txt")
+            .expect("Uncommitted edit should be in diff");
+        assert!(matches!(
+            uncommitted_edit.change_type,
+            FileChangeType::Added
+        ));
+
+        let untracked = find_file("untracked.txt").expect("Untracked file should be in diff");
+        assert!(matches!(untracked.change_type, FileChangeType::Added));
+        assert_eq!(untracked.additions, 1);
     }
 }

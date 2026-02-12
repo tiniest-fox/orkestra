@@ -703,6 +703,13 @@ impl GitService for Git2GitService {
         super::diff::execute_diff(worktree_path, branch_name, base_branch)
     }
 
+    fn diff_uncommitted(
+        &self,
+        worktree_path: &Path,
+    ) -> Result<crate::workflow::ports::TaskDiff, GitError> {
+        super::diff::execute_uncommitted_diff(worktree_path)
+    }
+
     fn read_file_at_head(
         &self,
         worktree_path: &Path,

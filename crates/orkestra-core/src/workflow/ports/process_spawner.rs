@@ -13,7 +13,7 @@ use crate::process::ProcessGuard;
 // Process Configuration
 // ============================================================================
 
-/// Configuration for spawning a Claude process.
+/// Configuration for spawning an agent process.
 #[derive(Debug, Clone)]
 pub struct ProcessConfig {
     /// Session ID (generated upfront). Always present for agent spawns.
@@ -81,7 +81,7 @@ impl ProcessConfig {
 // Process Handle
 // ============================================================================
 
-/// Handle to a spawned Claude process.
+/// Handle to a spawned agent process.
 ///
 /// Provides access to stdin/stdout for communication and ensures cleanup on drop.
 pub struct ProcessHandle {
@@ -183,14 +183,15 @@ impl std::error::Error for ProcessError {}
 // Process Spawner Trait
 // ============================================================================
 
-/// Port for spawning Claude Code processes.
+/// Port for spawning agent processes.
 ///
 /// This trait abstracts over the actual process spawning mechanism,
 /// allowing different implementations:
 /// - `ClaudeProcessSpawner`: Spawns real `claude` CLI processes
+/// - `OpenCodeProcessSpawner`: Spawns real `opencode` CLI processes
 /// - `MockProcessSpawner`: Returns canned output for testing
 pub trait ProcessSpawner: Send + Sync {
-    /// Spawn a Claude process.
+    /// Spawn an agent process.
     ///
     /// # Arguments
     /// * `working_dir` - Working directory for the process

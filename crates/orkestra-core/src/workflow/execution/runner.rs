@@ -253,25 +253,35 @@ impl AgentRunner {
         config: RunConfig,
         resolved_model_id: Option<String>,
     ) -> (ProcessConfig, String, PathBuf) {
-        let prompt = config.prompt;
-        let working_dir = config.working_dir.clone();
+        // Destructure to consume all fields (compiler enforces exhaustiveness)
+        let RunConfig {
+            working_dir,
+            prompt,
+            json_schema,
+            session_id,
+            is_resume,
+            task_id: _,
+            model: _,
+            system_prompt,
+            disallowed_tools,
+        } = config;
 
-        let mut process_config = ProcessConfig::new(config.json_schema);
+        let mut process_config = ProcessConfig::new(json_schema);
 
-        if let Some(sid) = config.session_id {
-            process_config = process_config.with_session(sid, config.is_resume);
+        if let Some(sid) = session_id {
+            process_config = process_config.with_session(sid, is_resume);
         }
 
         if let Some(model) = resolved_model_id {
             process_config = process_config.with_model(model);
         }
 
-        if let Some(system_prompt) = config.system_prompt {
-            process_config = process_config.with_system_prompt(system_prompt);
+        if let Some(sp) = system_prompt {
+            process_config = process_config.with_system_prompt(sp);
         }
 
-        if !config.disallowed_tools.is_empty() {
-            process_config = process_config.with_disallowed_tools(config.disallowed_tools);
+        if !disallowed_tools.is_empty() {
+            process_config = process_config.with_disallowed_tools(disallowed_tools);
         }
 
         (process_config, prompt, working_dir)
@@ -414,8 +424,8 @@ impl AgentRunnerTrait for AgentRunner {
             .create_parser(&resolved.provider_name)
             .map_err(|e| RunError::SpawnFailed(e.to_string()))?;
 
-        // Extract json_schema_str before moving config
-        let json_schema_str = config.json_schema.clone();
+        // Parse the schema for validation (before build_process_config consumes config)
+        let schema: Option<serde_json::Value> = serde_json::from_str(&config.json_schema).ok();
 
         // Build process config with resolved model ID (extracts prompt and working_dir)
         let (process_config, prompt, working_dir) =
@@ -447,9 +457,6 @@ impl AgentRunnerTrait for AgentRunner {
                 content: marker.content,
             }));
         }
-
-        // Parse the schema for validation
-        let schema: Option<serde_json::Value> = serde_json::from_str(&json_schema_str).ok();
 
         // Spawn background thread to read output and emit log events
         thread::spawn(move || {

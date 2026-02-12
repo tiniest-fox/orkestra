@@ -65,9 +65,7 @@ function extractContextMessage(context: IterationTrigger): {
     case "answers":
       return {
         label: "Your answers:",
-        message: context.answers
-          .map((qa) => `Q: ${qa.question}\nA: ${qa.answer}`)
-          .join("\n\n"),
+        message: context.answers.map((qa) => `Q: ${qa.question}\nA: ${qa.answer}`).join("\n\n"),
       };
     // Unit variant with no user-facing content
     case "interrupted":

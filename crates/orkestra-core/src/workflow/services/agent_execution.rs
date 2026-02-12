@@ -348,6 +348,7 @@ impl AgentExecutionService {
     }
 
     /// Build `RunConfig` with session info, model spec, and system prompt.
+    #[allow(clippy::too_many_arguments)]
     fn build_run_config(
         &self,
         task: &Task,
@@ -438,17 +439,23 @@ impl AgentExecutionService {
         )?;
 
         // 4.5. Resolve disallowed tools and inject restriction messages into system prompt
-        let effective_tools = self.workflow.effective_disallowed_tools(stage, task.flow.as_deref());
-        let disallowed_patterns: Vec<String> = effective_tools.iter().map(|e| e.pattern.clone()).collect();
+        let effective_tools = self
+            .workflow
+            .effective_disallowed_tools(stage, task.flow.as_deref());
+        let disallowed_patterns: Vec<String> =
+            effective_tools.iter().map(|e| e.pattern.clone()).collect();
 
         let system_prompt = if effective_tools.is_empty() {
             system_prompt
         } else {
+            use std::fmt::Write;
             let mut restrictions = String::from("\n\n## Tool Restrictions\n\nThe following tools are NOT available to you in this stage:\n");
             for entry in &effective_tools {
-                restrictions.push_str(&format!("\n- **`{}`**: {}", entry.pattern, entry.message));
+                write!(restrictions, "\n- **`{}`**: {}", entry.pattern, entry.message)
+                    .expect("Writing to String cannot fail");
             }
-            restrictions.push_str("\n\nDo not attempt to use these tools. Find alternative approaches.");
+            restrictions
+                .push_str("\n\nDo not attempt to use these tools. Find alternative approaches.");
             format!("{system_prompt}{restrictions}")
         };
 

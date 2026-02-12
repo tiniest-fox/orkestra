@@ -137,6 +137,7 @@ pub fn prepare_path_env() -> String {
 /// * `model` - Model identifier to pass via `--model` flag. If None, omits the flag.
 /// * `system_prompt` - System prompt to append via `--append-system-prompt` flag. If None, omits the flag.
 /// * `disallowed_tools` - Tool patterns to pass via `--disallowedTools` flag. If empty, omits the flag.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_claude_process(
     project_root: &Path,
     path_env: &str,

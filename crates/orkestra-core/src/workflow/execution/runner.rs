@@ -52,7 +52,7 @@ pub struct RunConfig {
     /// System prompt to pass via CLI flag (if provider supports it).
     pub system_prompt: Option<String>,
     /// Tool patterns that the agent is not allowed to use.
-    /// Threaded to ProcessConfig and ultimately to the CLI flag.
+    /// Threaded to `ProcessConfig` and ultimately to the CLI flag.
     pub disallowed_tools: Vec<String>,
 }
 

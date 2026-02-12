@@ -734,8 +734,8 @@ mod tests {
         );
 
         // Uncommitted changes SHOULD appear
-        let uncommitted_edit = find_file("uncommitted_edit.txt")
-            .expect("Uncommitted edit should be in diff");
+        let uncommitted_edit =
+            find_file("uncommitted_edit.txt").expect("Uncommitted edit should be in diff");
         assert!(matches!(
             uncommitted_edit.change_type,
             FileChangeType::Added

@@ -98,7 +98,6 @@ flows:
       - work
       - check
       - review:
-          prompt: hotfix_reviewer.md
           capabilities:
             approval:
               rejection_stage: work

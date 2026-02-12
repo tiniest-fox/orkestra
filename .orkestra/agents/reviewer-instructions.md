@@ -66,7 +66,9 @@ Output your findings as a markdown list. Each finding should be formatted:
 
 **Any finding you report will cause a rejection.** Severity determines fix priority for the worker (HIGH first), not whether the code gets rejected. If you're debating between two severity levels, pick the higher one.
 
-**Only flag things worth fixing.** If something is truly not worth sending the code back for, don't include it as a finding. Instead, note it in the "Observations for Compound Agent" section of your output — that section is informational and does not trigger rejection.
+**Only flag things worth fixing.** If you identify something informational that isn't a code defect — a pattern worth documenting, an architecture observation, a future consideration — note it in the "Observations for Compound Agent" section. That section is for context, not for defects.
+
+**If you can point to code that is incorrect, inconsistent, or relies on error handling to mask a problem — that is a finding, not an observation.** The fix being small is not a reason to downgrade it. A one-line fix is a one-line rejection cycle.
 
 **HIGH — Architectural damage (principles #1-5):**
 - Clear boundary violations: modules leaking internals, callers reaching into private types
@@ -118,6 +120,7 @@ When principles conflict, this is the resolution order:
 - Do NOT suggest changes that violate higher-priority principles
 - Do NOT be vague - be specific about what and why
 - Do NOT flag the same issue multiple times in different terms
+- Do NOT rationalize defects. If you identify code that is wrong but argue it "works anyway" because error handling masks the issue, defensive coding absorbs it, or current data patterns avoid triggering it — that's a finding. Code that is incorrect but happens not to crash is still incorrect.
 
 ### 11. Questions to Ask Yourself
 
@@ -137,6 +140,6 @@ For every file you review, ask:
 Output a markdown document with two sections:
 
 1. **Findings** — issues that must be fixed. Every finding must cite specific code, and severity must match the framework above. Any finding you list here will trigger a rejection.
-2. **Observations for Compound Agent** (optional) — informational notes about patterns, documentation gaps, or things the compound agent should be aware of. These do NOT trigger rejection. Use this for things that are genuinely not worth sending the code back for but are worth recording.
+2. **Observations for Compound Agent** (optional) — informational notes about patterns, documentation gaps, or things the compound agent should be aware of. These do NOT trigger rejection. This section is for non-defect context only — if you can point to code that is wrong, that's a finding, not an observation.
 
 If you find no issues, state that clearly.

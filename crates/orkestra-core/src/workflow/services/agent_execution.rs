@@ -17,7 +17,7 @@
 
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use crate::orkestra_debug;
 use crate::workflow::config::{ToolRestriction, WorkflowConfig};
@@ -43,7 +43,7 @@ struct ResolvedStageConfig {
     json_schema: String,
     system_prompt: Option<String>,
     model_spec: Option<String>,
-    disallowed_tools: Vec<String>,
+    disallowed_tool_patterns: Vec<String>,
 }
 
 // ============================================================================
@@ -74,8 +74,8 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
 /// disallowed tool pattern with its explanation message.
 fn format_tool_restrictions(tools: &[ToolRestriction]) -> Result<String, ExecutionError> {
     let data = serde_json::json!({ "entries": tools });
-    handlebars::Handlebars::new()
-        .render_template(TOOL_RESTRICTIONS_TEMPLATE, &data)
+    AGENT_EXEC_TEMPLATES
+        .render("tool_restrictions", &data)
         .map_err(|e| {
             ExecutionError::ConfigError(format!("Failed to render tool restrictions template: {e}"))
         })
@@ -170,18 +170,30 @@ const SCHEMA_ENFORCEMENT_TEMPLATE: &str =
 const TOOL_RESTRICTIONS_TEMPLATE: &str =
     include_str!("../../prompts/templates/tool_restrictions.md");
 
+static AGENT_EXEC_TEMPLATES: LazyLock<handlebars::Handlebars<'static>> = LazyLock::new(|| {
+    let mut hb = handlebars::Handlebars::new();
+    hb.register_escape_fn(handlebars::no_escape);
+    hb.register_template_string("tool_restrictions", TOOL_RESTRICTIONS_TEMPLATE)
+        .expect("tool_restrictions template should be valid");
+    hb.register_template_string("schema_enforcement", SCHEMA_ENFORCEMENT_TEMPLATE)
+        .expect("schema_enforcement template should be valid");
+    hb
+});
+
 /// Append a schema enforcement section to a prompt for providers that don't
 /// support native `--json-schema` enforcement.
 ///
 /// The section instructs the agent to output valid JSON matching the schema.
-fn append_schema_enforcement(prompt: &str, json_schema: &str) -> String {
-    let rendered = handlebars::Handlebars::new()
-        .render_template(
-            SCHEMA_ENFORCEMENT_TEMPLATE,
+fn append_schema_enforcement(prompt: &str, json_schema: &str) -> Result<String, ExecutionError> {
+    let rendered = AGENT_EXEC_TEMPLATES
+        .render(
+            "schema_enforcement",
             &serde_json::json!({ "json_schema": json_schema }),
         )
-        .expect("schema_enforcement template should render");
-    format!("{prompt}\n\n{rendered}")
+        .map_err(|e| {
+            ExecutionError::ConfigError(format!("Failed to render schema enforcement template: {e}"))
+        })?;
+    Ok(format!("{prompt}\n\n{rendered}"))
 }
 
 // ============================================================================
@@ -351,11 +363,13 @@ impl AgentExecutionService {
         };
         let schema_stage = effective_config.as_ref().unwrap_or(stage_config);
 
-        Ok(crate::workflow::execution::get_agent_schema(
+        crate::workflow::execution::get_agent_schema(
             schema_stage,
             Some(self.prompt_service.project_root()),
         )
-        .expect("Agent stage should have schema"))
+        .ok_or_else(|| {
+            ExecutionError::ConfigError(format!("No schema for agent stage: {stage}"))
+        })
     }
 
     /// Apply provider-specific fallbacks for system prompt and schema enforcement.
@@ -368,7 +382,7 @@ impl AgentExecutionService {
         system_prompt: String,
         json_schema: &str,
         capabilities: &super::super::execution::ProviderCapabilities,
-    ) -> (String, Option<String>) {
+    ) -> Result<(String, Option<String>), ExecutionError> {
         // System prompt fallback (prepend to user message if provider doesn't support CLI flag)
         let system_prompt_for_config = if capabilities.supports_system_prompt {
             Some(system_prompt)
@@ -391,10 +405,10 @@ impl AgentExecutionService {
                 task_id,
                 stage
             );
-            user_prompt = append_schema_enforcement(&user_prompt, json_schema);
+            user_prompt = append_schema_enforcement(&user_prompt, json_schema)?;
         }
 
-        (user_prompt, system_prompt_for_config)
+        Ok((user_prompt, system_prompt_for_config))
     }
 
     /// Build `RunConfig` with session info, model spec, and system prompt.
@@ -425,8 +439,8 @@ impl AgentExecutionService {
             run_config = run_config.with_system_prompt(sp);
         }
 
-        if !resolved.disallowed_tools.is_empty() {
-            run_config = run_config.with_disallowed_tools(resolved.disallowed_tools);
+        if !resolved.disallowed_tool_patterns.is_empty() {
+            run_config = run_config.with_disallowed_tools(resolved.disallowed_tool_patterns);
         }
 
         run_config
@@ -510,7 +524,7 @@ impl AgentExecutionService {
             system_prompt,
             &json_schema,
             &resolved.capabilities,
-        );
+        )?;
 
         orkestra_debug!(
             "exec",
@@ -528,7 +542,7 @@ impl AgentExecutionService {
             json_schema,
             system_prompt: system_prompt_for_config,
             model_spec,
-            disallowed_tools: disallowed_patterns,
+            disallowed_tool_patterns: disallowed_patterns,
         };
         let run_config = self.build_run_config(task, stage_config, spawn_context);
 
@@ -629,7 +643,7 @@ mod tests {
     fn test_append_schema_enforcement() {
         let prompt = "Do the task";
         let schema = r#"{"type":"object","properties":{"result":{"type":"string"}}}"#;
-        let result = append_schema_enforcement(prompt, schema);
+        let result = append_schema_enforcement(prompt, schema).unwrap();
 
         assert!(result.starts_with("Do the task"));
         assert!(result.contains("## Required Output Format"));
@@ -641,7 +655,7 @@ mod tests {
     fn test_append_schema_enforcement_preserves_original_prompt() {
         let prompt = "Line 1\nLine 2\nLine 3";
         let schema = r#"{"type":"object"}"#;
-        let result = append_schema_enforcement(prompt, schema);
+        let result = append_schema_enforcement(prompt, schema).unwrap();
 
         assert!(result.starts_with("Line 1\nLine 2\nLine 3\n"));
     }
@@ -709,7 +723,8 @@ mod tests {
             system_prompt.clone(),
             json_schema,
             &claude_caps,
-        );
+        )
+        .unwrap();
 
         // User message should remain unchanged
         assert_eq!(final_user, "Do the work");
@@ -732,7 +747,8 @@ mod tests {
             system_prompt.clone(),
             json_schema,
             &opencode_caps,
-        );
+        )
+        .unwrap();
 
         // System prompt should be prepended to user message with "\n\n" separator
         assert!(final_user.starts_with("You are a worker agent"));

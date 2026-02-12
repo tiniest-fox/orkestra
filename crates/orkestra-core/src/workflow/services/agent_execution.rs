@@ -91,6 +91,24 @@ fn format_tool_restrictions(tools: &[DisallowedToolEntry]) -> String {
     format!("\n\n{rendered}")
 }
 
+/// Resolve disallowed tools for a stage and split into prompt text and CLI patterns.
+///
+/// Returns the (potentially augmented) system prompt and the list of tool patterns
+/// for the CLI flag. If no tools are disallowed, returns the system prompt unchanged
+/// and an empty pattern list.
+fn apply_tool_restrictions(
+    system_prompt: String,
+    effective_tools: &[DisallowedToolEntry],
+) -> (String, Vec<String>) {
+    if effective_tools.is_empty() {
+        return (system_prompt, Vec::new());
+    }
+
+    let patterns = effective_tools.iter().map(|e| e.pattern.clone()).collect();
+    let augmented = format!("{system_prompt}{}", format_tool_restrictions(effective_tools));
+    (augmented, patterns)
+}
+
 // ============================================================================
 // Execution Handle
 // ============================================================================
@@ -475,21 +493,12 @@ impl AgentExecutionService {
             activity_logs.clone(),
         )?;
 
-        // 5. Resolve disallowed tools and inject restriction messages into system prompt
+        // 5. Apply tool restrictions (split into prompt text + CLI patterns)
         let effective_tools = self
             .workflow
             .effective_disallowed_tools(stage, task.flow.as_deref());
-        let disallowed_patterns: Vec<String> =
-            effective_tools.iter().map(|e| e.pattern.clone()).collect();
-
-        let system_prompt = if effective_tools.is_empty() {
-            system_prompt
-        } else {
-            format!(
-                "{system_prompt}{}",
-                format_tool_restrictions(&effective_tools)
-            )
-        };
+        let (system_prompt, disallowed_patterns) =
+            apply_tool_restrictions(system_prompt, &effective_tools);
 
         // 6. Build user message prompt based on whether this is a resume
         let user_prompt = self.build_user_prompt(

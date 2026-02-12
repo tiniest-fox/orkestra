@@ -58,10 +58,16 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
 /// Returns a formatted string with a "## Tool Restrictions" header listing each
 /// disallowed tool pattern with its explanation message.
 fn format_tool_restrictions(tools: &[DisallowedToolEntry]) -> String {
-    let mut restrictions = String::from("\n\n## Tool Restrictions\n\nThe following tools are NOT available to you in this stage:\n");
+    let mut restrictions = String::from(
+        "\n\n## Tool Restrictions\n\nThe following tools are NOT available to you in this stage:\n",
+    );
     for entry in tools {
-        write!(restrictions, "\n- **`{}`**: {}", entry.pattern, entry.message)
-            .expect("Writing to String cannot fail");
+        write!(
+            restrictions,
+            "\n- **`{}`**: {}",
+            entry.pattern, entry.message
+        )
+        .expect("Writing to String cannot fail");
     }
     restrictions.push_str("\n\nDo not attempt to use these tools. Find alternative approaches.");
     restrictions
@@ -463,7 +469,10 @@ impl AgentExecutionService {
         let system_prompt = if effective_tools.is_empty() {
             system_prompt
         } else {
-            format!("{system_prompt}{}", format_tool_restrictions(&effective_tools))
+            format!(
+                "{system_prompt}{}",
+                format_tool_restrictions(&effective_tools)
+            )
         };
 
         // 5. Build user message prompt based on whether this is a resume

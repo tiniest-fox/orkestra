@@ -873,6 +873,79 @@ impl GitService for Git2GitService {
         }
         Ok(())
     }
+
+    fn squash_commits(
+        &self,
+        worktree_path: &Path,
+        target_branch: &str,
+        message: &str,
+    ) -> Result<bool, GitError> {
+        // 1. Find merge-base
+        let merge_base_output = Command::new("git")
+            .args(["merge-base", "HEAD", target_branch])
+            .current_dir(worktree_path)
+            .output()
+            .map_err(|e| GitError::Other(format!("Failed to find merge-base: {e}")))?;
+
+        if !merge_base_output.status.success() {
+            let stderr = String::from_utf8_lossy(&merge_base_output.stderr);
+            return Err(GitError::BranchError(format!(
+                "Failed to find merge-base with {target_branch}: {stderr}"
+            )));
+        }
+
+        let merge_base = String::from_utf8_lossy(&merge_base_output.stdout)
+            .trim()
+            .to_string();
+
+        // 2. Check if we're already at merge-base (no commits to squash)
+        let head_output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(worktree_path)
+            .output()
+            .map_err(|e| GitError::Other(format!("Failed to get HEAD: {e}")))?;
+
+        let head = String::from_utf8_lossy(&head_output.stdout)
+            .trim()
+            .to_string();
+
+        if head == merge_base {
+            crate::orkestra_debug!("git", "No commits to squash (HEAD == merge-base)");
+            return Ok(false);
+        }
+
+        // 3. git reset --soft merge-base
+        let reset_output = Command::new("git")
+            .args(["reset", "--soft", &merge_base])
+            .current_dir(worktree_path)
+            .output()
+            .map_err(|e| GitError::Other(format!("Failed to reset: {e}")))?;
+
+        if !reset_output.status.success() {
+            let stderr = String::from_utf8_lossy(&reset_output.stderr);
+            return Err(GitError::Other(format!("git reset --soft failed: {stderr}")));
+        }
+
+        // 4. Create new commit with provided message
+        let commit_output = Command::new("git")
+            .args(["commit", "-m", message])
+            .current_dir(worktree_path)
+            .output()
+            .map_err(|e| GitError::Other(format!("Failed to commit: {e}")))?;
+
+        if !commit_output.status.success() {
+            let stderr = String::from_utf8_lossy(&commit_output.stderr);
+            return Err(GitError::Other(format!("Squash commit failed: {stderr}")));
+        }
+
+        crate::orkestra_debug!(
+            "git",
+            "Squashed commits from {} to HEAD into single commit",
+            &merge_base[..7.min(merge_base.len())]
+        );
+
+        Ok(true)
+    }
 }
 
 #[cfg(test)]
@@ -1567,5 +1640,133 @@ mod tests {
             file.change_type,
             crate::workflow::ports::FileChangeType::Added
         ));
+    }
+
+    #[test]
+    fn test_squash_commits_multiple_commits() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create worktree
+        let worktree = git
+            .create_worktree("TASK-SQUASH", None)
+            .expect("Failed to create worktree");
+
+        // Create multiple commits in the worktree
+        std::fs::write(worktree.worktree_path.join("file1.txt"), "first")
+            .expect("Failed to write file");
+        git.commit_pending_changes(&worktree.worktree_path, "First commit")
+            .expect("Failed to commit");
+
+        std::fs::write(worktree.worktree_path.join("file2.txt"), "second")
+            .expect("Failed to write file");
+        git.commit_pending_changes(&worktree.worktree_path, "Second commit")
+            .expect("Failed to commit");
+
+        std::fs::write(worktree.worktree_path.join("file3.txt"), "third")
+            .expect("Failed to write file");
+        git.commit_pending_changes(&worktree.worktree_path, "Third commit")
+            .expect("Failed to commit");
+
+        // Verify we have multiple commits (initial + 3)
+        let log_output = Command::new("git")
+            .args(["log", "--oneline", "main..HEAD"])
+            .current_dir(&worktree.worktree_path)
+            .output()
+            .expect("Failed to get log");
+        let log_text = String::from_utf8_lossy(&log_output.stdout);
+        let commits_before = log_text.lines().filter(|l| !l.is_empty()).count();
+        assert_eq!(commits_before, 3, "Should have 3 commits before squash");
+
+        // Squash all commits into one
+        let result = git
+            .squash_commits(&worktree.worktree_path, "main", "Squashed: all changes")
+            .expect("Failed to squash");
+
+        assert!(result, "Should have squashed commits");
+
+        // Verify we now have exactly one commit since main
+        let log_output = Command::new("git")
+            .args(["log", "--oneline", "main..HEAD"])
+            .current_dir(&worktree.worktree_path)
+            .output()
+            .expect("Failed to get log after squash");
+        let log_text = String::from_utf8_lossy(&log_output.stdout);
+        let commits_after = log_text.lines().filter(|l| !l.is_empty()).count();
+        assert_eq!(commits_after, 1, "Should have 1 commit after squash");
+
+        // Verify the commit message
+        let msg_output = Command::new("git")
+            .args(["log", "-1", "--format=%s"])
+            .current_dir(&worktree.worktree_path)
+            .output()
+            .expect("Failed to get commit message");
+        let message = String::from_utf8_lossy(&msg_output.stdout).trim().to_string();
+        assert_eq!(message, "Squashed: all changes");
+
+        // Verify all files are still present
+        assert!(worktree.worktree_path.join("file1.txt").exists());
+        assert!(worktree.worktree_path.join("file2.txt").exists());
+        assert!(worktree.worktree_path.join("file3.txt").exists());
+    }
+
+    #[test]
+    fn test_squash_commits_no_commits() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create worktree but don't add any commits
+        let worktree = git
+            .create_worktree("TASK-NO-SQUASH", None)
+            .expect("Failed to create worktree");
+
+        // Squash with no commits — should return false
+        let result = git
+            .squash_commits(&worktree.worktree_path, "main", "Should not appear")
+            .expect("Failed to squash");
+
+        assert!(!result, "Should return false when no commits to squash");
+    }
+
+    #[test]
+    fn test_squash_commits_single_commit() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Create worktree with a single commit
+        let worktree = git
+            .create_worktree("TASK-SINGLE", None)
+            .expect("Failed to create worktree");
+
+        std::fs::write(worktree.worktree_path.join("only.txt"), "only commit")
+            .expect("Failed to write file");
+        git.commit_pending_changes(&worktree.worktree_path, "Only commit")
+            .expect("Failed to commit");
+
+        // Squash the single commit
+        let result = git
+            .squash_commits(&worktree.worktree_path, "main", "Squashed single")
+            .expect("Failed to squash");
+
+        assert!(result, "Should have squashed the single commit");
+
+        // Verify we still have exactly one commit
+        let log_output = Command::new("git")
+            .args(["log", "--oneline", "main..HEAD"])
+            .current_dir(&worktree.worktree_path)
+            .output()
+            .expect("Failed to get log");
+        let log_text = String::from_utf8_lossy(&log_output.stdout);
+        let commit_count = log_text.lines().filter(|l| !l.is_empty()).count();
+        assert_eq!(commit_count, 1, "Should have 1 commit after squash");
+
+        // Verify the commit message was updated
+        let msg_output = Command::new("git")
+            .args(["log", "-1", "--format=%s"])
+            .current_dir(&worktree.worktree_path)
+            .output()
+            .expect("Failed to get commit message");
+        let message = String::from_utf8_lossy(&msg_output.stdout).trim().to_string();
+        assert_eq!(message, "Squashed single");
     }
 }

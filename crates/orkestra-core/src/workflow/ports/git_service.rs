@@ -298,6 +298,26 @@ pub trait GitService: Send + Sync {
     /// Uses the default remote (typically "origin"). Fails if no remote is configured
     /// or if the push is rejected.
     fn push_branch(&self, branch: &str) -> Result<(), GitError>;
+
+    /// Squash all commits since merge-base into a single commit.
+    ///
+    /// Finds the merge-base of the current branch and `target_branch`, then:
+    /// 1. Performs `git reset --soft {merge-base}` to unstage commits
+    /// 2. Creates a new commit with the provided `message`
+    ///
+    /// This operation is performed in the worktree directory and does not
+    /// affect the main repository's working directory.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(true)` if commits were squashed, `Ok(false)` if there were
+    /// no commits to squash (branch is at merge-base already).
+    fn squash_commits(
+        &self,
+        worktree_path: &Path,
+        target_branch: &str,
+        message: &str,
+    ) -> Result<bool, GitError>;
 }
 
 // =============================================================================
@@ -319,9 +339,11 @@ pub mod mock {
         current_branch: Mutex<String>,
         next_merge_result: Mutex<Option<Result<MergeResult, GitError>>>,
         next_rebase_result: Mutex<Option<Result<(), GitError>>>,
+        next_squash_result: Mutex<Option<Result<bool, GitError>>>,
         push_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
         create_worktree_calls: Mutex<Vec<(String, Option<String>)>>,
         remove_worktree_calls: Mutex<Vec<(String, bool)>>,
+        squash_calls: Mutex<Vec<(PathBuf, String, String)>>,
         merged_branches: Mutex<HashMap<String, bool>>,
     }
 
@@ -334,9 +356,11 @@ pub mod mock {
                 current_branch: Mutex::new("main".to_string()),
                 next_merge_result: Mutex::new(None),
                 next_rebase_result: Mutex::new(None),
+                next_squash_result: Mutex::new(None),
                 push_results: Mutex::new(std::collections::VecDeque::new()),
                 create_worktree_calls: Mutex::new(Vec::new()),
                 remove_worktree_calls: Mutex::new(Vec::new()),
+                squash_calls: Mutex::new(Vec::new()),
                 merged_branches: Mutex::new(HashMap::new()),
             }
         }
@@ -382,6 +406,16 @@ pub mod mock {
                 .lock()
                 .unwrap()
                 .insert(branch_name.to_string(), merged);
+        }
+
+        /// Set the result for the next squash operation.
+        pub fn set_next_squash_result(&self, result: Result<bool, GitError>) {
+            *self.next_squash_result.lock().unwrap() = Some(result);
+        }
+
+        /// Get the list of `squash_commits` calls for verification.
+        pub fn get_squash_calls(&self) -> Vec<(PathBuf, String, String)> {
+            self.squash_calls.lock().unwrap().clone()
         }
     }
 
@@ -571,6 +605,26 @@ pub mod mock {
                 .pop_front()
                 .unwrap_or(Ok(()))
         }
+
+        fn squash_commits(
+            &self,
+            worktree_path: &Path,
+            target_branch: &str,
+            message: &str,
+        ) -> Result<bool, GitError> {
+            self.squash_calls.lock().unwrap().push((
+                worktree_path.to_path_buf(),
+                target_branch.to_string(),
+                message.to_string(),
+            ));
+
+            if let Some(result) = self.next_squash_result.lock().unwrap().take() {
+                return result;
+            }
+
+            // Default: assume squash succeeded with commits to squash
+            Ok(true)
+        }
     }
 
     #[cfg(test)]
@@ -622,6 +676,45 @@ pub mod mock {
 
             let err = mock.merge_to_branch("task/TASK-002", "main").unwrap_err();
             assert!(matches!(err, GitError::MergeConflict { .. }));
+        }
+
+        #[test]
+        fn test_mock_squash_commits_default() {
+            let mock = MockGitService::new();
+            let worktree_path = PathBuf::from("/test/worktree");
+
+            // Default: returns Ok(true)
+            let result = mock
+                .squash_commits(&worktree_path, "main", "Squash message")
+                .unwrap();
+            assert!(result, "Default should return true");
+
+            // Verify call was recorded
+            let calls = mock.get_squash_calls();
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].0, worktree_path);
+            assert_eq!(calls[0].1, "main");
+            assert_eq!(calls[0].2, "Squash message");
+        }
+
+        #[test]
+        fn test_mock_squash_commits_configured() {
+            let mock = MockGitService::new();
+            let worktree_path = PathBuf::from("/test/worktree");
+
+            // Configure to return false (no commits to squash)
+            mock.set_next_squash_result(Ok(false));
+            let result = mock
+                .squash_commits(&worktree_path, "main", "msg")
+                .unwrap();
+            assert!(!result, "Should return false when configured");
+
+            // Configure an error
+            mock.set_next_squash_result(Err(GitError::Other("squash failed".into())));
+            let err = mock
+                .squash_commits(&worktree_path, "main", "msg")
+                .unwrap_err();
+            assert!(matches!(err, GitError::Other(_)));
         }
     }
 }

@@ -797,7 +797,12 @@ impl OrchestratorLoop {
             None,
         ) {
             let error_msg = format!("Failed to commit pending changes: {e}");
-            orkestra_debug!("integration", "safety-net commit failed for {}: {}", task_id, error_msg);
+            orkestra_debug!(
+                "integration",
+                "safety-net commit failed for {}: {}",
+                task_id,
+                error_msg
+            );
             record_commit_error(&api, &task_id, error_msg, has_worktree);
             return;
         }
@@ -1849,7 +1854,12 @@ fn squash_task_commits(
         }
         Err(e) => {
             let error_msg = format!("Failed to squash commits: {e}");
-            orkestra_debug!("integration", "squash failed for {}: {}", task.id, error_msg);
+            orkestra_debug!(
+                "integration",
+                "squash failed for {}: {}",
+                task.id,
+                error_msg
+            );
             record_commit_error(api, &task.id, error_msg, has_worktree);
             false
         }

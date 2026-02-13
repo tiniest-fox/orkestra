@@ -1,6 +1,8 @@
 /**
  * Types for the new stage-agnostic workflow system.
- * These types match the Rust domain types in orkestra-core/src/workflow/.
+ * Based on the Rust domain types in orkestra-core/src/workflow/.
+ * Note: These types are a subset - not all Rust fields are represented here.
+ * Only includes fields currently consumed by the frontend.
  */
 
 // =============================================================================

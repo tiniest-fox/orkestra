@@ -13,6 +13,7 @@ stages:
     description: Create an implementation plan
     artifact: plan
     prompt: planner.md
+    model: opus
     capabilities:
       ask_questions: true
 
@@ -24,6 +25,7 @@ stages:
     artifact: breakdown
     inputs: [plan]
     prompt: breakdown.md
+    model: opus
     capabilities:
       subtasks:
         flow: hotfix
@@ -37,10 +39,16 @@ stages:
     artifact: summary
     inputs: [breakdown]
     prompt: worker.md
-    model: sonnet
+    model: opus
     disallowed_tools:
-      - pattern: "Bash(cargo *)"
-        message: "Automated checks (tests, linting, formatting) run automatically once work is complete — no need to run them yourself"
+      - pattern: "Bash(cargo test*)"
+        message: "Testing runs automatically in the checks stage"
+      - pattern: "Bash(cargo build*)"
+        message: "Building is handled by the automated checks stage"
+      - pattern: "Bash(cargo clippy*)"
+        message: "Linting runs automatically in the checks stage"
+      - pattern: "Bash(cargo fmt*)"
+        message: "Formatting runs automatically in the checks stage"
 
   # Checks: Automated quality gates (lint, test, type check)
   # Runs in the task's worktree, detects what changed, runs relevant checks
@@ -49,7 +57,6 @@ stages:
     icon: circle-check-big
     description: Run automated code quality checks
     artifact: check_results
-    inputs: [summary]
     script:
       command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
       timeout_seconds: 600 # 10 minutes for full test suite
@@ -61,8 +68,8 @@ stages:
     icon: eye
     description: Review completed work for correctness
     artifact: verdict
-    inputs: [breakdown, summary, check_results]
     prompt: reviewer.md
+    model: opus
     restart_on_reentry: true
     disallowed_tools:
       - pattern: "Bash(cargo *)"
@@ -110,6 +117,7 @@ flows:
       - work
       - check
       - review:
+          prompt: subtask-reviewer.md
           capabilities:
             approval:
               rejection_stage: work

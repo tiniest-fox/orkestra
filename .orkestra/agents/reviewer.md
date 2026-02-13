@@ -27,15 +27,17 @@ After reading the changed files, decide how many reviewers to spawn. **Always sp
 File count alone is a poor proxy — a 2-file change to a central trait with many dependents may warrant the full panel, while a 10-file change that adds parallel, independent features might not. Think about where mistakes would be costly and where the interactions are complex. **Default to more reviewers, not fewer.**
 
 **Available reviewers:**
-1. `review-boundary.md` - Clear Boundaries + Single Responsibility
-2. `review-simplicity.md` - Push Complexity Down + Small Components
-3. `review-correctness.md` - Single Source of Truth + Fail Fast
-4. `review-dependency.md` - Explicit Dependencies + Isolate Side Effects
-5. `review-naming.md` - Precise Naming
+0. `review-testing.md` - **MANDATORY** — Verifies test coverage and test quality. Always spawn this first. This is the most important reviewer.
+1. `review-flow.md` - **MANDATORY** — Traces user flows end-to-end for reachability and correctness.
+2. `review-boundary.md` - Clear Boundaries + Single Responsibility
+3. `review-simplicity.md` - Push Complexity Down + Small Components
+4. `review-correctness.md` - Single Source of Truth + Fail Fast
+5. `review-dependency.md` - Explicit Dependencies + Isolate Side Effects
+6. `review-naming.md` - Precise Naming
 
 **Conditionally spawn:**
-6. `review-rust.md` - Rust idioms (if any `*.rs` files are in the changed files list)
-7. `review-frontend.md` - Frontend conventions (if any `src/*.ts` or `src/*.tsx` files are in the changed files list)
+7. `review-rust.md` - Rust idioms (if any `*.rs` files are in the changed files list)
+8. `review-frontend.md` - Frontend conventions (if any `src/*.ts` or `src/*.tsx` files are in the changed files list)
 
 ### 4. Spawn Reviewers in Parallel
 
@@ -55,6 +57,15 @@ For each reviewer, spawn a subagent task with:
 ### 5. Collect All Findings
 
 Wait for all reviewers to complete. Collect their output.
+
+### 5.5 Proportional Rejection
+
+Check the activity logs to determine the current review cycle count. If this is the 3rd or later review iteration:
+
+- **Only reject on HIGH findings** — MEDIUM and LOW findings become "Observations for Compound Agent" instead of rejection triggers
+- **State this explicitly** in the verdict: "This is review cycle N. Only HIGH findings trigger rejection; MEDIUM/LOW findings noted as observations."
+
+The rationale: after 2+ rejection cycles, diminishing-returns style issues should not block shipping. HIGH findings (broken flows, missing tests, architectural damage) always block.
 
 ### 6. Spawn Synthesis Reviewer
 

@@ -72,7 +72,11 @@ Output your findings as a markdown list. Each finding should be formatted:
 
 ### 6. Severity Framework
 
-**Any finding you report will cause a rejection.** Severity determines fix priority for the worker (HIGH first), not whether the code gets rejected. If you're debating between two severity levels, pick the higher one.
+**Any finding you report will cause a rejection.** Only report issues that are genuinely worth a rejection cycle. Ask yourself: "Is fixing this worth delaying the feature by another full review round?" If the answer is no, put it in "Observations for Compound Agent" instead.
+
+**The test:** Would you stop a colleague's PR for this issue? If you'd leave a comment but approve, it's an observation, not a finding.
+
+Severity determines fix priority for the worker (HIGH first), not whether the code gets rejected. If you're debating between two severity levels, pick the higher one.
 
 **Only flag things worth fixing.** If you identify something informational that isn't a code defect — a pattern worth documenting, an architecture observation, a future consideration — note it in the "Observations for Compound Agent" section. That section is for context, not for defects.
 

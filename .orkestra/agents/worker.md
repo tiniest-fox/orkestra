@@ -88,16 +88,20 @@ Don't invent notes for the sake of having notes. Only flag things that were genu
 3. Implement the requested changes, following existing conventions
 4. **CRITICAL**: When complete, output valid JSON with your result
 
-## Automated Quality Checks
+## Testing and Quality Checks
 
-**Do NOT run automated checks yourself.** A separate script stage automatically handles all linting, formatting, tests, and builds after your implementation.
+### Writing Tests
+If your breakdown instructions specify tests to write, write them as part of your implementation. Load the `/e2e-testing` skill for patterns and infrastructure.
 
-This means:
-- Don't run `cargo test`, `cargo clippy`, `cargo fmt`
-- Don't run `pnpm build`, `pnpm lint`, `pnpm test`
-- Don't run any other project-specific quality checks
+Key principles:
+- **Drive the orchestrator**: Use `ctx.advance()` to test behavior, not direct API calls
+- **Mock minimally**: Only mock external services (agents, LLM calls, GitHub API). Use real SQLite, git, worktrees.
+- **Test the behavior, not the implementation**: Name tests after what they verify, not what code they call
 
-Focus entirely on implementation. The automated checks will catch any issues.
+### Automated Quality Checks
+A separate script stage handles linting, formatting, test execution, and builds after your implementation. **Do NOT run** `cargo test`, `cargo clippy`, `cargo fmt`, `cargo build`, `pnpm build`, `pnpm lint`, or `pnpm test`.
+
+**You MAY run `cargo check`** to verify your code compiles before finishing. This catches type errors, missing fields, and wrong imports immediately — much faster than waiting for the full check script. Use it as a quick sanity check, not as a substitute for the automated checks stage.
 
 ## Rules
 

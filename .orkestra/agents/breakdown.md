@@ -56,6 +56,24 @@ When the task is complex enough to decompose (the common case):
 5. **Interfaces with sibling subtasks** — What they produce that this depends on, and what this produces that others depend on
 6. **Acceptance criteria** — How to know the subtask is complete (focus on implementation correctness, not on passing automated checks — those run automatically)
 
+## Decomposition Strategy: Vertical Over Horizontal
+
+**Prefer vertical slicing** — each subtask should deliver a testable end-to-end behavior, not just a code layer.
+
+**Bad (horizontal):** Types subtask → Service subtask → API subtask → UI subtask → Tests subtask
+- Each subtask "succeeds" independently while the feature is broken end-to-end
+- Cross-cutting changes (new struct fields, new enum variants) break sibling subtasks
+- No single subtask owns "the feature works"
+
+**Good (vertical):** "Merge flow works end-to-end" → "PR flow works end-to-end" → "UI integration"
+- Each subtask delivers working behavior that can be tested through the system
+- If a subtask adds a method, it also wires the method into whatever calls it
+- Tests exercise the actual execution path (e.g., orchestrator tick loop), not just API methods
+
+**The integration rule:** If subtask A creates a method and subtask B is supposed to call it, one of them must own the wiring. Never leave "who calls this?" ambiguous between subtasks. If multiple components must be wired together, create an explicit integration subtask that connects them and verifies the end-to-end flow.
+
+**When horizontal slicing is OK:** Foundation layers that genuinely MUST exist before anything else (database migrations, trait definitions with no callers yet). But even then, the first subtask that implements behavior on top of the foundation should wire the full path.
+
 **Subtask structure**:
 - **Title**: Clear, specific action (e.g., "Add rate limiting middleware to API layer")
 - **Description**: Short summary of what this subtask accomplishes
@@ -80,19 +98,25 @@ When the task is simple enough to complete directly (single-focus work):
 
 Every breakdown must have a clear testing plan. Think hard about how the work will be validated — what tests need to be written, what existing tests cover the change, and where the gaps are.
 
-### When to Create a Verification Subtask
+### Testing is Part of Every Subtask
 
-Create a dedicated verification subtask **only when new tests need to be written or existing tests need to be modified**. A subtask whose only job is "run the existing test suite" is redundant — the system already runs tests. Verification subtasks are for actual test authoring work.
+Every subtask that adds observable system behavior must include e2e tests as part of its implementation — not as a separate verification subtask. Tests are not an afterthought; they are how the subtask proves it works.
 
-**Good verification subtasks** (create these):
-- "Add E2E test for rate limiting middleware" — new test code needs to be written
-- "Update integration tests to cover new error handling paths" — existing tests need modification
-- "Create regression test for the race condition in task setup" — specific new test
+Include this in each subtask's `detailed_instructions`:
+- What e2e test(s) to write (or which existing tests to extend)
+- The test should exercise the behavior through the orchestrator (`ctx.advance()`), not just call API methods directly
+- Reference the `/e2e-testing` skill for patterns and infrastructure
 
-**Bad verification subtasks** (don't create these):
-- "Run all tests and verify they pass" — the system does this already
-- "Verify the feature works" — too vague, not a coding task
-- "Check that existing tests still pass" — belongs in acceptance criteria, not a subtask
+**When to create a separate verification subtask:** Only when the testing work is substantial enough to be its own focused session (e.g., "Add comprehensive e2e test suite for the new integration flow covering happy path, conflict recovery, and timeout scenarios"). Simple "verify my subtask works" tests belong inside the implementation subtask.
+
+### Testing at the Right Level
+
+When a subtask adds a new orchestrator code path or system behavior, its tests must exercise the full path — not just API method calls.
+
+- **Wrong:** Call `api.begin_pr_creation()` then `api.pr_creation_succeeded()` directly
+- **Right:** Set mock outputs, call `ctx.advance()`, verify the orchestrator drives the flow
+
+Include this guidance in each subtask's `detailed_instructions` when the subtask touches orchestrator behavior.
 
 ### Choosing Verification Approach
 
@@ -110,7 +134,7 @@ The `content` field should describe the overall testing strategy: what existing 
 
 Each implementation subtask's `detailed_instructions` should include an "Acceptance Criteria" section stating what the worker must confirm before marking it complete. Focus on **implementation completeness** — what code exists, what behavior it produces, what edge cases it handles.
 
-**Do NOT include criteria about passing tests, linting, formatting, or builds.** A separate automated checks stage runs after every worker — tests, clippy, fmt, and builds are all verified automatically. Acceptance criteria like "existing tests still pass" or "cargo test succeeds" are redundant and confuse workers into running checks themselves.
+**Do NOT include criteria about passing linting, formatting, or builds** (automated checks handle those). **DO include criteria about what tests the subtask must include** — e.g., "Add e2e test verifying the PR creation flow drives through the orchestrator tick loop."
 
 Good examples: "new function handles empty input by returning None", "migration adds index on `task_id` column", "error messages include the failing file path"
 Bad examples: "all tests pass", "cargo clippy has no warnings", "cargo fmt produces no changes"

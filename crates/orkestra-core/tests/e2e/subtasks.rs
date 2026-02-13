@@ -1324,8 +1324,7 @@ fn test_subtask_prompt_includes_sibling_context() {
     let setup_count = prompt.matches("Setup foundation").count();
     assert!(
         setup_count <= 1,
-        "Current task should not appear in sibling list. Found {} occurrences",
-        setup_count
+        "Current task should not appear in sibling list. Found {setup_count} occurrences"
     );
 
     // Verify status is shown

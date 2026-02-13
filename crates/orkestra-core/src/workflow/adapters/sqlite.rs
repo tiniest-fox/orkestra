@@ -45,7 +45,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 "SELECT id, title, description, status, phase, artifacts,
                         parent_id, depends_on, branch_name, worktree_path,
                         auto_mode, created_at, updated_at, completed_at,
-                        base_branch, flow, short_id, base_commit
+                        base_branch, flow, short_id, base_commit, pr_url
                  FROM workflow_tasks WHERE id = ?",
                 params![id],
                 row_to_task,
@@ -80,8 +80,8 @@ impl WorkflowStore for SqliteWorkflowStore {
                 id, title, description, status, phase, artifacts,
                 parent_id, depends_on, branch_name, worktree_path,
                 auto_mode, created_at, updated_at, completed_at,
-                base_branch, flow, short_id, base_commit
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                base_branch, flow, short_id, base_commit, pr_url
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 task.id,
                 task.title,
@@ -101,6 +101,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 task.flow,
                 task.short_id,
                 task.base_commit,
+                task.pr_url,
             ],
         )
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -116,7 +117,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 "SELECT id, title, description, status, phase, artifacts,
                         parent_id, depends_on, branch_name, worktree_path,
                         auto_mode, created_at, updated_at, completed_at,
-                        base_branch, flow, short_id, base_commit
+                        base_branch, flow, short_id, base_commit, pr_url
                  FROM workflow_tasks ORDER BY created_at",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -141,7 +142,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 "SELECT id, title, description, status, phase,
                         parent_id, depends_on, branch_name, worktree_path,
                         auto_mode, created_at, updated_at, completed_at,
-                        base_branch, flow, short_id, base_commit
+                        base_branch, flow, short_id, base_commit, pr_url
                  FROM workflow_tasks ORDER BY created_at",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -166,7 +167,7 @@ impl WorkflowStore for SqliteWorkflowStore {
                 "SELECT id, title, description, status, phase, artifacts,
                         parent_id, depends_on, branch_name, worktree_path,
                         auto_mode, created_at, updated_at, completed_at,
-                        base_branch, flow, short_id, base_commit
+                        base_branch, flow, short_id, base_commit, pr_url
                  FROM workflow_tasks WHERE parent_id = ? ORDER BY created_at",
             )
             .map_err(|e| WorkflowError::Storage(e.to_string()))?;
@@ -919,6 +920,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let depends_json: String = row.get(7)?;
     let auto_mode: bool = row.get::<_, i32>(10).unwrap_or(0) != 0;
     let flow: Option<String> = row.get(15).unwrap_or(None);
+    let pr_url: Option<String> = row.get(18).unwrap_or(None);
 
     Ok(Task {
         id: row.get(0)?,
@@ -934,6 +936,7 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         worktree_path: row.get(9)?,
         base_branch: row.get(14)?,
         base_commit: row.get(17)?,
+        pr_url,
         auto_mode,
         flow,
         created_at: row.get(11)?,
@@ -949,13 +952,14 @@ fn row_to_task(row: &rusqlite::Row) -> rusqlite::Result<Task> {
 /// `0:id, 1:title, 2:description, 3:status, 4:phase,`
 /// `5:parent_id, 6:depends_on, 7:branch_name, 8:worktree_path,`
 /// `9:auto_mode, 10:created_at, 11:updated_at, 12:completed_at,`
-/// `13:base_branch, 14:flow, 15:short_id, 16:base_commit`
+/// `13:base_branch, 14:flow, 15:short_id, 16:base_commit, 17:pr_url`
 fn row_to_task_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
     let status_json: String = row.get(3)?;
     let phase_str: String = row.get(4)?;
     let depends_json: String = row.get(6)?;
     let auto_mode: bool = row.get::<_, i32>(9).unwrap_or(0) != 0;
     let flow: Option<String> = row.get(14).unwrap_or(None);
+    let pr_url: Option<String> = row.get(17).unwrap_or(None);
 
     Ok(TaskHeader {
         id: row.get(0)?,
@@ -970,6 +974,7 @@ fn row_to_task_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
         worktree_path: row.get(8)?,
         base_branch: row.get(13)?,
         base_commit: row.get(16)?,
+        pr_url,
         auto_mode,
         flow,
         created_at: row.get(10)?,

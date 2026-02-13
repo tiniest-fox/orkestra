@@ -131,3 +131,46 @@ pub fn workflow_resume(
         state.api()?.resume(&task_id, message).map_err(Into::into)
     })
 }
+
+/// Merge a Done task's branch into its base branch.
+///
+/// Commits changes, rebases onto base, merges, and cleans up worktree.
+/// On conflict, task returns to work stage for resolution.
+#[tauri::command]
+pub fn workflow_merge_task(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Task, TauriError> {
+    registry.with_project(window.label(), |state| {
+        state.api()?.merge_task(&task_id).map_err(Into::into)
+    })
+}
+
+/// Create a pull request for a Done task's branch.
+///
+/// Marks task as Integrating - the orchestrator will spawn PR creation in the background.
+#[tauri::command]
+pub fn workflow_open_pr(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Task, TauriError> {
+    registry.with_project(window.label(), |state| {
+        state.api()?.begin_pr_creation(&task_id).map_err(Into::into)
+    })
+}
+
+/// Retry PR creation by recovering from Failed to Done+Idle.
+///
+/// Clears the error state so the user can attempt PR creation again.
+#[tauri::command]
+pub fn workflow_retry_pr(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Task, TauriError> {
+    registry.with_project(window.label(), |state| {
+        state.api()?.retry_pr_creation(&task_id).map_err(Into::into)
+    })
+}

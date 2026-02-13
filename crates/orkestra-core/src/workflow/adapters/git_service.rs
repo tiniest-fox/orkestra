@@ -860,6 +860,19 @@ impl GitService for Git2GitService {
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(super::diff::parse_diff_output(&stdout))
     }
+
+    fn push_branch(&self, branch: &str) -> Result<(), GitError> {
+        let output = Command::new("git")
+            .args(["push", "-u", "origin", branch])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GitError::Other(format!("Failed to run git push: {e}")))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::Other(format!("git push failed: {stderr}")));
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -742,6 +742,7 @@ fn test_custom_integration_on_failure() {
     ])
     .with_integration(IntegrationConfig {
         on_failure: "planning".into(),
+        auto_merge: true,
     });
 
     assert_eq!(workflow.integration.on_failure, "planning");

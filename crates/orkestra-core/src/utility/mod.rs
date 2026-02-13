@@ -52,6 +52,14 @@ pub mod tasks {
         pub const SCHEMA: &str =
             include_str!("../prompts/templates/utilities/generate_commit_message/schema.json");
     }
+
+    /// PR description generation task.
+    pub mod generate_pr_description {
+        pub const PROMPT: &str =
+            include_str!("../prompts/templates/utilities/generate_pr_description/prompt.md");
+        pub const SCHEMA: &str =
+            include_str!("../prompts/templates/utilities/generate_pr_description/schema.json");
+    }
 }
 
 /// Error type for utility task execution.
@@ -235,6 +243,10 @@ fn load_task_definition(task_name: &str) -> Result<(String, String), UtilityErro
             tasks::generate_commit_message::PROMPT.to_string(),
             tasks::generate_commit_message::SCHEMA.to_string(),
         )),
+        "generate_pr_description" => Ok((
+            tasks::generate_pr_description::PROMPT.to_string(),
+            tasks::generate_pr_description::SCHEMA.to_string(),
+        )),
         _ => Err(UtilityError::TaskNotFound(task_name.to_string())),
     }
 }
@@ -403,6 +415,18 @@ mod tests {
     fn test_load_task_definition_not_found() {
         let result = load_task_definition("nonexistent");
         assert!(matches!(result, Err(UtilityError::TaskNotFound(_))));
+    }
+
+    #[test]
+    fn test_load_task_definition_pr_description() {
+        let (prompt, schema) = load_task_definition("generate_pr_description").unwrap();
+        assert!(prompt.contains("{{title}}"));
+        assert!(prompt.contains("{{description}}"));
+        assert!(prompt.contains("{{plan}}"));
+        assert!(prompt.contains("{{diff_summary}}"));
+        assert!(prompt.contains("{{base_branch}}"));
+        assert!(schema.contains("\"title\""));
+        assert!(schema.contains("\"body\""));
     }
 
     #[test]

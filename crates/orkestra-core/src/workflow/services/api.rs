@@ -5,10 +5,11 @@ use std::sync::Arc;
 use super::task_setup::TaskSetupService;
 use super::IterationService;
 use crate::commit_message::{ClaudeCommitMessageGenerator, CommitMessageGenerator};
+use crate::pr_description::{ClaudePrDescriptionGenerator, PrDescriptionGenerator};
 use crate::title::{ClaudeTitleGenerator, TitleGenerator};
 use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::Task;
-use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
 /// Trait for killing active agent processes.
@@ -41,6 +42,8 @@ pub struct WorkflowApi {
     pub(crate) iteration_service: Arc<IterationService>,
     pub(crate) title_generator: Arc<dyn TitleGenerator>,
     pub(crate) commit_message_generator: Arc<dyn CommitMessageGenerator>,
+    pub(crate) pr_description_generator: Arc<dyn PrDescriptionGenerator>,
+    pub(crate) pr_service: Option<Arc<dyn PrService>>,
     pub(crate) setup_service: Arc<TaskSetupService>,
     pub(crate) agent_killer: Option<Arc<dyn AgentKiller>>,
 }
@@ -54,6 +57,8 @@ impl WorkflowApi {
         let title_generator: Arc<dyn TitleGenerator> = Arc::new(ClaudeTitleGenerator);
         let commit_message_generator: Arc<dyn CommitMessageGenerator> =
             Arc::new(ClaudeCommitMessageGenerator);
+        let pr_description_generator: Arc<dyn PrDescriptionGenerator> =
+            Arc::new(ClaudePrDescriptionGenerator);
         let setup_service = Arc::new(TaskSetupService::new(
             Arc::clone(&store),
             None,
@@ -66,6 +71,8 @@ impl WorkflowApi {
             iteration_service,
             title_generator,
             commit_message_generator,
+            pr_description_generator,
+            pr_service: None,
             setup_service,
             agent_killer: None,
         }
@@ -84,6 +91,8 @@ impl WorkflowApi {
         let title_generator: Arc<dyn TitleGenerator> = Arc::new(ClaudeTitleGenerator);
         let commit_message_generator: Arc<dyn CommitMessageGenerator> =
             Arc::new(ClaudeCommitMessageGenerator);
+        let pr_description_generator: Arc<dyn PrDescriptionGenerator> =
+            Arc::new(ClaudePrDescriptionGenerator);
         let setup_service = Arc::new(TaskSetupService::new(
             Arc::clone(&store),
             Some(Arc::clone(&git_service)),
@@ -96,6 +105,8 @@ impl WorkflowApi {
             iteration_service,
             title_generator,
             commit_message_generator,
+            pr_description_generator,
+            pr_service: None,
             setup_service,
             agent_killer: None,
         }
@@ -117,6 +128,20 @@ impl WorkflowApi {
     #[must_use]
     pub fn with_commit_message_generator(mut self, gen: Arc<dyn CommitMessageGenerator>) -> Self {
         self.commit_message_generator = gen;
+        self
+    }
+
+    /// Replace the PR description generator (for testing).
+    #[must_use]
+    pub fn with_pr_description_generator(mut self, gen: Arc<dyn PrDescriptionGenerator>) -> Self {
+        self.pr_description_generator = gen;
+        self
+    }
+
+    /// Set the PR service.
+    #[must_use]
+    pub fn with_pr_service(mut self, service: Arc<dyn PrService>) -> Self {
+        self.pr_service = Some(service);
         self
     }
 

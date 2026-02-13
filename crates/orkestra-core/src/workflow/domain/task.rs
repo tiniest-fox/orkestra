@@ -72,6 +72,10 @@ pub struct Task {
     #[serde(default)]
     pub base_commit: String,
 
+    /// URL of the pull request created for this task's branch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_url: Option<String>,
+
     // === Configuration ===
     /// Whether the task runs autonomously through all stages without pausing for review.
     #[serde(default)]
@@ -117,6 +121,7 @@ impl Task {
             worktree_path: None,
             base_branch: String::new(),
             base_commit: String::new(),
+            pr_url: None,
             auto_mode: false,
             flow: None,
             created_at: created.clone(),
@@ -235,6 +240,11 @@ impl Task {
     pub fn needs_review(&self) -> bool {
         self.is_awaiting_review() && self.status.is_active()
     }
+
+    /// Whether this task has an open pull request (one-way door — cannot merge or re-open PR).
+    pub fn has_open_pr(&self) -> bool {
+        self.pr_url.is_some()
+    }
 }
 
 /// Lightweight task metadata for orchestrator routing decisions.
@@ -257,6 +267,7 @@ pub struct TaskHeader {
     pub worktree_path: Option<String>,
     pub base_branch: String,
     pub base_commit: String,
+    pub pr_url: Option<String>,
     pub auto_mode: bool,
     pub flow: Option<String>,
     pub created_at: String,
@@ -284,6 +295,11 @@ impl TaskHeader {
     pub fn current_stage(&self) -> Option<&str> {
         self.status.stage()
     }
+
+    /// Whether this task has an open pull request (one-way door — cannot merge or re-open PR).
+    pub fn has_open_pr(&self) -> bool {
+        self.pr_url.is_some()
+    }
 }
 
 impl From<&Task> for TaskHeader {
@@ -301,6 +317,7 @@ impl From<&Task> for TaskHeader {
             worktree_path: task.worktree_path.clone(),
             base_branch: task.base_branch.clone(),
             base_commit: task.base_commit.clone(),
+            pr_url: task.pr_url.clone(),
             auto_mode: task.auto_mode,
             flow: task.flow.clone(),
             created_at: task.created_at.clone(),

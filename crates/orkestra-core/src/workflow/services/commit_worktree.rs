@@ -95,7 +95,7 @@ fn generate_with_fallback(
 }
 
 /// Build a diff summary string from a task's worktree changes.
-fn build_diff_summary(git: &dyn GitService, task: &Task) -> String {
+pub(crate) fn build_diff_summary(git: &dyn GitService, task: &Task) -> String {
     use std::fmt::Write;
 
     let Some(worktree_path) = &task.worktree_path else {

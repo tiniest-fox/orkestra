@@ -29,6 +29,8 @@ pub enum GitError {
     },
     /// I/O error (filesystem operations).
     IoError(String),
+    /// Other git operation error.
+    Other(String),
 }
 
 impl fmt::Display for GitError {
@@ -49,6 +51,7 @@ impl fmt::Display for GitError {
                 )
             }
             Self::IoError(msg) => write!(f, "I/O error: {msg}"),
+            Self::Other(msg) => write!(f, "Git error: {msg}"),
         }
     }
 }
@@ -289,6 +292,12 @@ pub trait GitService: Send + Sync {
     /// Returns the same `TaskDiff` format as `diff_against_base`,
     /// showing all changes introduced by the given commit.
     fn commit_diff(&self, commit_hash: &str) -> Result<TaskDiff, GitError>;
+
+    /// Push a branch to the remote.
+    ///
+    /// Uses the default remote (typically "origin"). Fails if no remote is configured
+    /// or if the push is rejected.
+    fn push_branch(&self, branch: &str) -> Result<(), GitError>;
 }
 
 // =============================================================================
@@ -310,6 +319,7 @@ pub mod mock {
         current_branch: Mutex<String>,
         next_merge_result: Mutex<Option<Result<MergeResult, GitError>>>,
         next_rebase_result: Mutex<Option<Result<(), GitError>>>,
+        push_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
         create_worktree_calls: Mutex<Vec<(String, Option<String>)>>,
         remove_worktree_calls: Mutex<Vec<(String, bool)>>,
         merged_branches: Mutex<HashMap<String, bool>>,
@@ -324,6 +334,7 @@ pub mod mock {
                 current_branch: Mutex::new("main".to_string()),
                 next_merge_result: Mutex::new(None),
                 next_rebase_result: Mutex::new(None),
+                push_results: Mutex::new(std::collections::VecDeque::new()),
                 create_worktree_calls: Mutex::new(Vec::new()),
                 remove_worktree_calls: Mutex::new(Vec::new()),
                 merged_branches: Mutex::new(HashMap::new()),
@@ -338,6 +349,11 @@ pub mod mock {
         /// Set the result for the next rebase operation.
         pub fn set_next_rebase_result(&self, result: Result<(), GitError>) {
             *self.next_rebase_result.lock().unwrap() = Some(result);
+        }
+
+        /// Set the result for the next push operation.
+        pub fn set_next_push_result(&self, result: Result<(), GitError>) {
+            self.push_results.lock().unwrap().push_back(result);
         }
 
         /// Add a branch to the list of available branches.
@@ -546,6 +562,14 @@ pub mod mock {
 
         fn commit_diff(&self, _commit_hash: &str) -> Result<TaskDiff, GitError> {
             Ok(TaskDiff { files: vec![] })
+        }
+
+        fn push_branch(&self, _branch: &str) -> Result<(), GitError> {
+            self.push_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(()))
         }
     }
 

@@ -129,6 +129,21 @@ enum TaskAction {
         #[arg(short, long)]
         feedback: String,
     },
+    /// Merge a Done task's branch into its base branch
+    Merge {
+        /// Task ID to merge
+        id: String,
+    },
+    /// Create a pull request for a Done task's branch
+    OpenPr {
+        /// Task ID to create PR for
+        id: String,
+    },
+    /// Retry PR creation (recover from Failed back to Done)
+    RetryPr {
+        /// Task ID to retry
+        id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -209,6 +224,9 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         ),
         TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
         TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback, pretty),
+        TaskAction::Merge { id } => handle_merge_task(&api, &id, pretty),
+        TaskAction::OpenPr { id } => handle_open_pr_task(&api, &id, pretty),
+        TaskAction::RetryPr { id } => handle_retry_pr_task(&api, &id, pretty),
     }
 }
 
@@ -779,6 +797,62 @@ fn handle_utility_action(action: UtilityAction) {
                 "  ork utility run generate_title -c '{{\"description\": \"Fix the login bug\"}}'"
             );
         }
+    }
+}
+
+fn handle_merge_task(api: &WorkflowApi, id: &str, pretty: bool) {
+    let task = match api.merge_task(id) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error merging task: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        println!("Merged task {} into {}", task.id, task.base_branch);
+        println!("Status: {}", format_status(&task.status));
+    } else {
+        output_json(&task);
+    }
+}
+
+fn handle_open_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
+    // For CLI, call begin_pr_creation to mark as Integrating
+    // The orchestrator (if running) would spawn the background thread,
+    // but CLI is typically used for inspection rather than running the full loop
+    let task = match api.begin_pr_creation(id) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error opening PR: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        println!("Marked task {} for PR creation", task.id);
+        println!("Phase: {}", format_phase(task.phase));
+        println!("Note: PR creation will be spawned by the orchestrator");
+    } else {
+        output_json(&task);
+    }
+}
+
+fn handle_retry_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
+    let task = match api.retry_pr_creation(id) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error retrying PR creation: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        println!("Reset task {} to Done+Idle", task.id);
+        println!("Status: {}", format_status(&task.status));
+        println!("You can now retry merge or PR creation");
+    } else {
+        output_json(&task);
     }
 }
 

@@ -163,6 +163,7 @@ fn test_startup_with_invalid_integration_on_failure() {
     ])
     .with_integration(IntegrationConfig {
         on_failure: "nonexistent".to_string(),
+        auto_merge: true,
     });
 
     let errors = workflow.validate();

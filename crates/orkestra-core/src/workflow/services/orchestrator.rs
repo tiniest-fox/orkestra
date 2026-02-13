@@ -17,9 +17,10 @@ use std::time::Duration;
 use super::periodic::PeriodicScheduler;
 
 use crate::orkestra_debug;
+use crate::pr_description::PrDescriptionGenerator;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{Task, TaskHeader, TickSnapshot};
-use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
 use super::integration::{perform_git_integration, IntegrationParams};
@@ -73,6 +74,12 @@ pub enum OrchestratorEvent {
         error: String,
         conflict_files: Vec<String>,
     },
+    /// PR creation started for a task.
+    PrCreationStarted { task_id: String, branch: String },
+    /// PR creation completed successfully.
+    PrCreationCompleted { task_id: String, pr_url: String },
+    /// PR creation failed.
+    PrCreationFailed { task_id: String, error: String },
     /// Script was spawned for a task.
     ScriptSpawned {
         task_id: String,
@@ -339,6 +346,7 @@ impl OrchestratorLoop {
 
         events.extend(self.start_new_executions(&snapshot, &defer_spawn_ids)?);
         events.extend(self.start_integrations(&snapshot)?);
+        events.extend(self.start_pr_creations(&snapshot)?);
 
         // Periodic maintenance
         let due = {
@@ -847,6 +855,127 @@ impl OrchestratorLoop {
         }
     }
 
+    /// Background PR creation logic. Performs git push and PR creation, records the result.
+    /// Runs off the orchestrator's main thread.
+    #[allow(clippy::needless_pass_by_value)]
+    fn run_background_pr_creation(
+        git: Arc<dyn GitService>,
+        pr_service: Arc<dyn PrService>,
+        pr_description_generator: Arc<dyn PrDescriptionGenerator>,
+        commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
+        api: Arc<Mutex<WorkflowApi>>,
+        task: Task,
+        workflow: WorkflowConfig,
+    ) {
+        let task_id = task.id.clone();
+        let branch = task.branch_name.clone().unwrap_or_default();
+        let base_branch = task.base_branch.clone();
+
+        // 1. Safety-net commit
+        if let Err(e) = super::commit_worktree::commit_worktree_changes(
+            git.as_ref(),
+            &task,
+            &workflow,
+            commit_message_generator.as_ref(),
+        ) {
+            if let Ok(api) = api.lock() {
+                let _ = api.pr_creation_failed(&task_id, &format!("Commit failed: {e}"));
+            }
+            return;
+        }
+
+        // 2. Push branch
+        if let Err(e) = git.push_branch(&branch) {
+            if let Ok(api) = api.lock() {
+                let _ = api.pr_creation_failed(&task_id, &e.to_string());
+            }
+            return;
+        }
+
+        // 3. Generate PR description (with fallback on failure)
+        let diff_summary = super::commit_worktree::build_diff_summary(git.as_ref(), &task);
+
+        // Get plan artifact if available for richer PR body
+        let plan_artifact = task.artifacts.get("plan").map(|a| a.content.as_str());
+
+        let (pr_title, pr_body) = pr_description_generator
+            .generate_pr_description(
+                &task.title,
+                &task.description,
+                plan_artifact,
+                &diff_summary,
+                &base_branch,
+            )
+            .unwrap_or_else(|_| {
+                // Fallback: use task title and basic body
+                (
+                    task.title.clone(),
+                    format!(
+                        "## Summary\n\n{}\n\n## Test plan\n\n- [ ] Verify changes",
+                        task.description
+                    ),
+                )
+            });
+
+        // 4. Create PR (idempotent — checks for existing PR first)
+        let repo_root = task
+            .worktree_path
+            .as_deref()
+            .map_or_else(|| std::path::Path::new("."), std::path::Path::new);
+        match pr_service.create_pull_request(repo_root, &branch, &base_branch, &pr_title, &pr_body)
+        {
+            Ok(pr_url) => {
+                if let Ok(api) = api.lock() {
+                    let _ = api.pr_creation_succeeded(&task_id, &pr_url);
+                }
+            }
+            Err(e) => {
+                if let Ok(api) = api.lock() {
+                    let _ = api.pr_creation_failed(&task_id, &e.to_string());
+                }
+            }
+        }
+    }
+
+    /// Spawn a background PR creation thread for a task that is already marked Integrating.
+    pub fn spawn_pr_creation(&self, task: &Task) -> WorkflowResult<()> {
+        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+        let task = task.clone();
+        let workflow = api.workflow.clone();
+        let commit_message_generator = Arc::clone(&api.commit_message_generator);
+        let pr_description_generator = Arc::clone(&api.pr_description_generator);
+        let pr_service = api
+            .pr_service
+            .clone()
+            .ok_or_else(|| WorkflowError::GitError("No PR service configured".into()))?;
+        drop(api);
+
+        let git = self
+            .git_service
+            .clone()
+            .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
+        let api_clone = Arc::clone(&self.api);
+
+        let run = move || {
+            Self::run_background_pr_creation(
+                git,
+                pr_service,
+                pr_description_generator,
+                commit_message_generator,
+                api_clone,
+                task,
+                workflow,
+            );
+        };
+
+        if self.sync_background {
+            run();
+        } else {
+            std::thread::spawn(run);
+        }
+        Ok(())
+    }
+
     /// Start integrations for Done tasks that need merging.
     ///
     /// Only one integration runs at a time — if any task is already in
@@ -866,6 +995,15 @@ impl OrchestratorLoop {
         // One integration at a time — skip if any task is already integrating
         if snapshot.has_integrating {
             return Ok(events);
+        }
+
+        // Check auto_merge config — when false, don't auto-integrate.
+        // User must trigger merge or PR creation explicitly.
+        {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            if !api.workflow.integration.auto_merge {
+                return Ok(events);
+            }
         }
 
         let Some(header) = snapshot.idle_done_with_worktree.first() else {
@@ -959,6 +1097,61 @@ impl OrchestratorLoop {
             run_integration();
         } else {
             std::thread::spawn(run_integration);
+        }
+
+        Ok(events)
+    }
+
+    /// Start PR creations for Done tasks awaiting PR.
+    ///
+    /// Detects tasks in `Done+Integrating` with no `pr_url` and spawns background
+    /// PR creation. The PR work runs on a background thread so the API lock is not
+    /// held during gh CLI calls.
+    ///
+    /// Flow:
+    /// 1. Filter snapshot for Done+Integrating tasks with no `pr_url`
+    /// 2. Call `spawn_pr_creation()` (acquires lock, reads params, spawns bg thread)
+    /// 3. Background thread calls gh CLI and records result
+    fn start_pr_creations(
+        &self,
+        snapshot: &TickSnapshot,
+    ) -> WorkflowResult<Vec<OrchestratorEvent>> {
+        let mut events = Vec::new();
+
+        // Find Done+Integrating tasks with no pr_url (awaiting PR creation)
+        let candidates: Vec<_> = snapshot
+            .all
+            .iter()
+            .filter(|h| h.is_done() && h.phase == Phase::Integrating && h.pr_url.is_none())
+            .collect();
+
+        if candidates.is_empty() {
+            return Ok(events);
+        }
+
+        // Process first candidate (one at a time, like integrations)
+        let header = candidates[0];
+        let task_id = header.id.clone();
+        let branch = header.branch_name.clone().unwrap_or_default();
+
+        // Acquire lock to read full task
+        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+        let Some(task) = api.store.get_task(&task_id)? else {
+            return Ok(events);
+        };
+        drop(api);
+
+        // Spawn PR creation background thread
+        events.push(OrchestratorEvent::PrCreationStarted {
+            task_id: task_id.clone(),
+            branch: branch.clone(),
+        });
+
+        if let Err(e) = self.spawn_pr_creation(&task) {
+            events.push(OrchestratorEvent::PrCreationFailed {
+                task_id: task_id.clone(),
+                error: e.to_string(),
+            });
         }
 
         Ok(events)
@@ -1208,11 +1401,37 @@ impl OrchestratorLoop {
 
     /// Attempt to recover a single task stuck in `Integrating` phase.
     fn recover_stale_task(api: &WorkflowApi, task: &Task) -> OrchestratorEvent {
+        // First check if the branch is already merged (handles both regular merges and PRs)
         if Self::is_branch_already_merged(api, task) {
-            Self::archive_already_merged_task(api, task)
-        } else {
-            Self::reattempt_integration(api, task)
+            return Self::archive_already_merged_task(api, task);
         }
+
+        // auto_merge disabled — return to choice point for user to retry.
+        // Covers both failed PR creation and failed manual merge attempts.
+        if !api.workflow.integration.auto_merge {
+            orkestra_debug!(
+                "recovery",
+                "Task {} stuck in Integrating (auto_merge=false) — resetting to Done+Idle for retry",
+                task.id
+            );
+            let mut reset_task = task.clone();
+            reset_task.phase = Phase::Idle;
+            if let Err(e) = api.store.save_task(&reset_task) {
+                orkestra_debug!(
+                    "recovery",
+                    "Failed to reset task {} to Idle: {}",
+                    task.id,
+                    e
+                );
+            }
+            return OrchestratorEvent::Error {
+                task_id: Some(task.id.clone()),
+                error: "Task was stuck in Integrating phase — reset to Done+Idle".into(),
+            };
+        }
+
+        // Otherwise, this is a regular merge attempt - retry integration
+        Self::reattempt_integration(api, task)
     }
 
     /// Archive a task whose branch is already merged into the target.

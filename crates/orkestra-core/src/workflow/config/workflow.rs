@@ -138,13 +138,17 @@ pub struct IntegrationConfig {
     /// The failure details (error, conflict files) are passed to this stage's prompt.
     #[serde(default = "default_on_failure")]
     pub on_failure: String,
-    // Future: mode (auto_merge, pull_request), target_branch, etc.
+    /// Whether to automatically merge (rebase + merge) when tasks reach Done.
+    /// When false, tasks pause at Done until user chooses "Merge" or "Open PR".
+    #[serde(default = "default_auto_merge")]
+    pub auto_merge: bool,
 }
 
 impl Default for IntegrationConfig {
     fn default() -> Self {
         Self {
             on_failure: default_on_failure(),
+            auto_merge: default_auto_merge(),
         }
     }
 }
@@ -155,6 +159,10 @@ fn default_version() -> u32 {
 
 fn default_on_failure() -> String {
     "work".to_string()
+}
+
+fn default_auto_merge() -> bool {
+    true
 }
 
 impl WorkflowConfig {
@@ -1074,6 +1082,7 @@ mod tests {
     fn test_integration_config_default() {
         let config = IntegrationConfig::default();
         assert_eq!(config.on_failure, "work");
+        assert!(config.auto_merge);
     }
 
     #[test]
@@ -1084,6 +1093,7 @@ mod tests {
         ])
         .with_integration(IntegrationConfig {
             on_failure: "planning".to_string(),
+            auto_merge: true,
         });
 
         assert_eq!(workflow.integration.on_failure, "planning");
@@ -1098,6 +1108,7 @@ mod tests {
         ])
         .with_integration(IntegrationConfig {
             on_failure: "nonexistent".to_string(),
+            auto_merge: true,
         });
 
         let errors = workflow.validate();

@@ -8,6 +8,7 @@ pub mod commit_message;
 pub mod debug_log;
 pub mod error;
 pub mod init;
+pub mod pr_description;
 pub mod process;
 pub mod project;
 pub mod prompts;
@@ -31,6 +32,11 @@ pub use title::{generate_title_sync, ClaudeTitleGenerator, TitleGenerator};
 #[cfg(any(test, feature = "testutil"))]
 pub use commit_message::mock::MockCommitMessageGenerator;
 pub use commit_message::{ClaudeCommitMessageGenerator, CommitMessageGenerator};
+
+// PR description generation
+#[cfg(any(test, feature = "testutil"))]
+pub use pr_description::mock::MockPrDescriptionGenerator;
+pub use pr_description::{ClaudePrDescriptionGenerator, PrDescriptionGenerator};
 
 // Process infrastructure re-exports
 pub use process::{

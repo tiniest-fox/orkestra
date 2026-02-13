@@ -10,6 +10,20 @@ use crate::workflow::runtime::{Outcome, Phase, Status};
 use super::{workflow_warn, WorkflowApi};
 
 // ============================================================================
+// Validation helpers
+// ============================================================================
+
+/// Validate that the task doesn't already have an open PR.
+fn validate_no_open_pr(task: &Task) -> WorkflowResult<()> {
+    if task.has_open_pr() {
+        return Err(WorkflowError::InvalidTransition(
+            "Task already has an open PR".into(),
+        ));
+    }
+    Ok(())
+}
+
+// ============================================================================
 // Standalone integration types and function
 // ============================================================================
 
@@ -110,6 +124,94 @@ pub fn perform_git_integration(
 }
 
 impl WorkflowApi {
+    /// Merge a Done task's branch into its base branch (user-triggered).
+    ///
+    /// This is the explicit merge path when `auto_merge` is disabled.
+    /// Delegates to existing `integrate_task()` after validation.
+    pub fn merge_task(&self, task_id: &str) -> WorkflowResult<Task> {
+        let task = self.get_task(task_id)?;
+        if !task.is_done() {
+            return Err(WorkflowError::InvalidTransition(
+                "Can only merge Done tasks".into(),
+            ));
+        }
+        if task.phase != Phase::Idle {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Task must be Idle to merge, but is {:?}",
+                task.phase
+            )));
+        }
+        validate_no_open_pr(&task)?;
+        self.integrate_task(task_id)
+    }
+
+    /// Begin PR creation for a Done task.
+    ///
+    /// Marks the task as Integrating and returns it. The caller is responsible for
+    /// spawning the background PR creation thread.
+    pub fn begin_pr_creation(&self, task_id: &str) -> WorkflowResult<Task> {
+        // Fail fast if no PR service configured
+        if self.pr_service.is_none() {
+            return Err(WorkflowError::GitError(
+                "No PR service configured — cannot create PR".into(),
+            ));
+        }
+
+        let task = self.get_task(task_id)?;
+        if !task.is_done() {
+            return Err(WorkflowError::InvalidTransition(
+                "Can only open PR for Done tasks".into(),
+            ));
+        }
+        if task.phase != Phase::Idle {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Task must be Idle to open PR, but is {:?}",
+                task.phase
+            )));
+        }
+        validate_no_open_pr(&task)?;
+        self.mark_integrating(task_id)
+    }
+
+    /// Retry PR creation by recovering from Failed state back to Done+Idle.
+    ///
+    /// Unlike `retry()` (which restores to Active { `last_stage` }), this restores
+    /// to Done+Idle — the integration choice point — so the user can attempt
+    /// "Open PR" or "Merge" again.
+    pub fn retry_pr_creation(&self, task_id: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+        if !matches!(task.status, Status::Failed { .. }) {
+            return Err(WorkflowError::InvalidTransition(
+                "Can only retry PR creation for Failed tasks".into(),
+            ));
+        }
+        task.status = Status::Done;
+        task.phase = Phase::Idle;
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    /// Record successful PR creation.
+    pub fn pr_creation_succeeded(&self, task_id: &str, pr_url: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+        task.pr_url = Some(pr_url.to_string());
+        task.phase = Phase::Idle; // Back to Idle — task stays Done with PR link
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    /// Record failed PR creation. Task transitions to Failed with error message.
+    pub fn pr_creation_failed(&self, task_id: &str, error: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+        task.status = Status::failed(format!("PR creation failed: {error}"));
+        task.phase = Phase::Idle;
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
     /// Attempt to integrate a completed task by merging its branch to primary.
     ///
     /// This method orchestrates the full integration process:

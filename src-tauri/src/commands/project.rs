@@ -459,6 +459,37 @@ fn handle_orchestrator_event(
             );
             let _ = window.emit("task-updated", task_id);
         }
+        OrchestratorEvent::PrCreationStarted { task_id, branch } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Starting PR creation for {} (branch: {})",
+                window_label,
+                task_id,
+                branch
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::PrCreationCompleted { task_id, pr_url } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] PR creation completed for {}: {}",
+                window_label,
+                task_id,
+                pr_url
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::PrCreationFailed { task_id, error } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] PR creation failed for {}: {}",
+                window_label,
+                task_id,
+                error
+            );
+            let _ = window.emit("task-updated", task_id);
+            TaskNotifier::new(app_handle, window_label).task_error(task_id, error);
+        }
     }
 }
 

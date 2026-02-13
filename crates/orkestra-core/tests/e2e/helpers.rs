@@ -16,10 +16,14 @@ use orkestra_core::workflow::{
         claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
         ProviderRegistry, RunConfig, StageOutput,
     },
+    ports::{MockPrService, PrService},
     runtime::Phase,
     MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService, WorkflowApi,
 };
-use orkestra_core::{MockCommitMessageGenerator, MockTitleGenerator};
+use orkestra_core::{
+    MockCommitMessageGenerator, MockPrDescriptionGenerator, MockTitleGenerator,
+    PrDescriptionGenerator,
+};
 
 // =============================================================================
 // Prompt Helpers
@@ -76,6 +80,7 @@ pub struct TestEnv {
     api: Arc<Mutex<WorkflowApi>>,
     orchestrator: OrchestratorLoop,
     runner: Arc<MockAgentRunner>,
+    pr_service: Arc<MockPrService>,
     temp_dir: TempDir,
 }
 
@@ -98,12 +103,16 @@ impl TestEnv {
         let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
             Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
 
+        let pr_service = Arc::new(MockPrService::new());
         let api = Arc::new(Mutex::new(
             WorkflowApi::new(
                 workflow.clone(),
                 Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
             )
-            .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding())),
+            .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding()))
+            .with_pr_service(pr_service.clone() as Arc<dyn PrService>)
+            .with_pr_description_generator(Arc::new(MockPrDescriptionGenerator::succeeding())
+                as Arc<dyn PrDescriptionGenerator>),
         ));
 
         let project_root = temp_dir.path().to_path_buf();
@@ -130,6 +139,7 @@ impl TestEnv {
             api,
             orchestrator,
             runner,
+            pr_service,
             temp_dir,
         }
     }
@@ -177,15 +187,20 @@ impl TestEnv {
         let git_service: Arc<dyn GitService> =
             Arc::new(Git2GitService::new(temp_dir.path()).expect("Git service should init"));
 
-        let api = Arc::new(Mutex::new(
-            WorkflowApi::with_git(
-                loaded_workflow.clone(),
-                Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
-                git_service,
-            )
-            .with_title_generator(Arc::new(MockTitleGenerator::succeeding()))
-            .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding())),
-        ));
+        let pr_service = Arc::new(MockPrService::new());
+        let api = WorkflowApi::with_git(
+            loaded_workflow.clone(),
+            Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
+            git_service,
+        )
+        .with_title_generator(Arc::new(MockTitleGenerator::succeeding()))
+        .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding()))
+        .with_pr_service(pr_service.clone() as Arc<dyn PrService>)
+        .with_pr_description_generator(
+            Arc::new(MockPrDescriptionGenerator::succeeding()) as Arc<dyn PrDescriptionGenerator>
+        );
+
+        let api = Arc::new(Mutex::new(api));
         let project_root = PathBuf::from(temp_dir.path());
 
         let iteration_service = api.lock().unwrap().iteration_service().clone();
@@ -208,6 +223,7 @@ impl TestEnv {
             api,
             orchestrator,
             runner,
+            pr_service,
             temp_dir,
         }
     }
@@ -255,6 +271,7 @@ impl TestEnv {
         let git_service: Arc<dyn GitService> =
             Arc::new(Git2GitService::new(temp_dir.path()).expect("Git service should init"));
 
+        let pr_service = Arc::new(MockPrService::new());
         let api = Arc::new(Mutex::new(
             WorkflowApi::with_git(
                 loaded_workflow.clone(),
@@ -262,7 +279,10 @@ impl TestEnv {
                 git_service,
             )
             .with_title_generator(Arc::new(MockTitleGenerator::failing()))
-            .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding())),
+            .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding()))
+            .with_pr_service(pr_service.clone() as Arc<dyn PrService>)
+            .with_pr_description_generator(Arc::new(MockPrDescriptionGenerator::succeeding())
+                as Arc<dyn PrDescriptionGenerator>),
         ));
         let project_root = PathBuf::from(temp_dir.path());
 
@@ -286,6 +306,7 @@ impl TestEnv {
             api,
             orchestrator,
             runner,
+            pr_service,
             temp_dir,
         }
     }
@@ -297,6 +318,16 @@ impl TestEnv {
     /// Get the API lock for human actions.
     pub fn api(&self) -> MutexGuard<'_, WorkflowApi> {
         self.api.lock().unwrap()
+    }
+
+    /// Get the mock PR service for configuring test results.
+    pub fn pr_service(&self) -> Arc<MockPrService> {
+        Arc::clone(&self.pr_service)
+    }
+
+    /// Get the temp directory path for direct file/git operations.
+    pub fn temp_dir(&self) -> &Path {
+        self.temp_dir.path()
     }
 
     /// Create a task with synchronous setup.
@@ -780,6 +811,12 @@ pub mod workflows {
             flows: indexmap::IndexMap::new(),
         }
     }
+}
+
+/// Disable `auto_merge` on a workflow config.
+pub fn disable_auto_merge(mut workflow: WorkflowConfig) -> WorkflowConfig {
+    workflow.integration.auto_merge = false;
+    workflow
 }
 
 // =============================================================================

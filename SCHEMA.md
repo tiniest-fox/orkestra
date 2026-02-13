@@ -37,6 +37,7 @@ Stores task definitions, workflow position, execution phase, artifacts, and git 
 | `worktree_path` | TEXT | | Absolute path to git worktree (e.g., `.orkestra/.worktrees/{task-id}`) |
 | `base_branch` | TEXT | NOT NULL, DEFAULT '' | Base branch to merge into when task completes |
 | `base_commit` | TEXT | NOT NULL, DEFAULT '' | Git commit SHA of the base branch at the time the worktree was created |
+| `pr_url` | TEXT | | URL of the pull request created for this task's branch |
 | `auto_mode` | INTEGER | NOT NULL, DEFAULT 0 | Boolean: auto-approve stages without human review (1 = true, 0 = false) |
 | `flow` | TEXT | | Named flow (alternate pipeline) to use instead of default stage sequence |
 | `created_at` | TEXT | NOT NULL | ISO 8601 timestamp |

@@ -30,8 +30,10 @@ use super::WorkflowApi;
 /// Parameters for a background commit job.
 struct CommitJob {
     task: Task,
-    workflow: WorkflowConfig,
-    commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
+    /// The stage being committed (for simple commit message format).
+    stage: String,
+    /// Activity log from the iteration (for commit message body).
+    activity_log: Option<String>,
     git: Arc<dyn GitService>,
 }
 
@@ -772,23 +774,18 @@ impl OrchestratorLoop {
     /// the normal case, but catches edge cases (e.g., manual recovery, direct
     /// `integrate_task` calls from tests).
     #[allow(clippy::needless_pass_by_value)]
-    fn run_background_integration(
-        git: Arc<dyn GitService>,
-        api: Arc<Mutex<WorkflowApi>>,
-        commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
-        task: Task,
-        workflow: WorkflowConfig,
-    ) {
+    fn run_background_integration(git: Arc<dyn GitService>, api: Arc<Mutex<WorkflowApi>>, task: Task) {
         let task_id = task.id.clone();
         let has_worktree = task.worktree_path.is_some();
 
         // Safety-net commit — should be a no-op after the Finishing pipeline,
         // but catches stragglers from manual recovery or direct API calls.
+        // Uses "integration-safety" as stage name since this is a fallback path.
         if let Err(e) = super::commit_worktree::commit_worktree_changes(
             git.as_ref(),
             &task,
-            &workflow,
-            commit_message_generator.as_ref(),
+            "integration-safety",
+            None,
         ) {
             let error_msg = format!("Failed to commit pending changes: {e}");
             orkestra_debug!(
@@ -862,21 +859,20 @@ impl OrchestratorLoop {
         git: Arc<dyn GitService>,
         pr_service: Arc<dyn PrService>,
         pr_description_generator: Arc<dyn PrDescriptionGenerator>,
-        commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
         api: Arc<Mutex<WorkflowApi>>,
         task: Task,
-        workflow: WorkflowConfig,
     ) {
         let task_id = task.id.clone();
         let branch = task.branch_name.clone().unwrap_or_default();
         let base_branch = task.base_branch.clone();
 
         // 1. Safety-net commit
+        // Uses "pr-safety" as stage name since this is a fallback path.
         if let Err(e) = super::commit_worktree::commit_worktree_changes(
             git.as_ref(),
             &task,
-            &workflow,
-            commit_message_generator.as_ref(),
+            "pr-safety",
+            None,
         ) {
             if let Ok(api) = api.lock() {
                 let _ = api.pr_creation_failed(&task_id, &format!("Commit failed: {e}"));
@@ -941,8 +937,6 @@ impl OrchestratorLoop {
     pub fn spawn_pr_creation(&self, task: &Task) -> WorkflowResult<()> {
         let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
         let task = task.clone();
-        let workflow = api.workflow.clone();
-        let commit_message_generator = Arc::clone(&api.commit_message_generator);
         let pr_description_generator = Arc::clone(&api.pr_description_generator);
         let pr_service = api
             .pr_service
@@ -961,10 +955,8 @@ impl OrchestratorLoop {
                 git,
                 pr_service,
                 pr_description_generator,
-                commit_message_generator,
                 api_clone,
                 task,
-                workflow,
             );
         };
 
@@ -1069,8 +1061,6 @@ impl OrchestratorLoop {
 
         // Gather inputs for background thread while holding lock
         let task = task.clone();
-        let workflow = api.workflow.clone();
-        let commit_message_generator = Arc::clone(&api.commit_message_generator);
 
         // Release the API lock before spawning the background thread
         drop(api);
@@ -1084,13 +1074,7 @@ impl OrchestratorLoop {
         let api_clone = Arc::clone(&self.api);
 
         let run_integration = move || {
-            Self::run_background_integration(
-                git,
-                api_clone,
-                commit_message_generator,
-                task,
-                workflow,
-            );
+            Self::run_background_integration(git, api_clone, task);
         };
 
         if self.sync_background {
@@ -1175,9 +1159,9 @@ impl OrchestratorLoop {
                 Self::run_background_commit(
                     job.git,
                     api_clone,
-                    job.commit_message_generator,
                     job.task,
-                    job.workflow,
+                    job.stage,
+                    job.activity_log,
                 );
             };
 
@@ -1207,7 +1191,6 @@ impl OrchestratorLoop {
         }
 
         let mut jobs = Vec::new();
-        let workflow = api.workflow.clone();
 
         for header in &finishing {
             let Some(mut task) = api.store.get_task(&header.id)? else {
@@ -1216,6 +1199,14 @@ impl OrchestratorLoop {
             if task.phase != Phase::Finishing {
                 continue;
             }
+
+            // Get stage and activity_log for simple commit message
+            let stage = task.current_stage().unwrap_or("unknown").to_string();
+            let activity_log = api
+                .store
+                .get_latest_iteration(&task.id, &stage)?
+                .and_then(|iter| iter.activity_log);
+
             orkestra_debug!(
                 "orchestrator",
                 "spawn_pending_commits {}: → {}",
@@ -1235,8 +1226,8 @@ impl OrchestratorLoop {
 
                 jobs.push(CommitJob {
                     task,
-                    workflow: workflow.clone(),
-                    commit_message_generator: Arc::clone(&api.commit_message_generator),
+                    stage,
+                    activity_log,
                     git: Arc::clone(g),
                 });
             } else {
@@ -1255,17 +1246,17 @@ impl OrchestratorLoop {
     fn run_background_commit(
         git: Arc<dyn GitService>,
         api: Arc<Mutex<WorkflowApi>>,
-        commit_message_generator: Arc<dyn crate::commit_message::CommitMessageGenerator>,
         task: Task,
-        workflow: WorkflowConfig,
+        stage: String,
+        activity_log: Option<String>,
     ) {
         let task_id = task.id.clone();
 
         let commit_result = super::commit_worktree::commit_worktree_changes(
             git.as_ref(),
             &task,
-            &workflow,
-            commit_message_generator.as_ref(),
+            &stage,
+            activity_log.as_deref(),
         );
 
         let Ok(api) = api.lock() else {

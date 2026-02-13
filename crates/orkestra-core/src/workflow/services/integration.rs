@@ -261,11 +261,12 @@ impl WorkflowApi {
         // commits worktree changes before integration starts. This catches edge cases
         // from direct `integrate_task` calls (e.g., manual recovery, tests).
         // No-op if the worktree is already clean.
+        // Uses "integration-safety" as stage name since this is a fallback path.
         if let Err(e) = super::commit_worktree::commit_worktree_changes(
             git.as_ref(),
             &task,
-            &self.workflow,
-            self.commit_message_generator.as_ref(),
+            "integration-safety",
+            None,
         ) {
             let error_msg = format!("Failed to commit pending changes: {e}");
             self.integration_failed(task_id, &error_msg, &[])?;

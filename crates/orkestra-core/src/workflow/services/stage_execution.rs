@@ -16,7 +16,8 @@ use std::time::{Duration, Instant};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, LogEntry, Task};
 use crate::workflow::execution::{
-    ActivityLogEntry, AgentRunner, AgentRunnerTrait, ProviderRegistry, StageOutput,
+    sibling_status_display, ActivityLogEntry, AgentRunner, AgentRunnerTrait, ProviderRegistry,
+    SiblingTaskContext, StageOutput,
 };
 use crate::workflow::ports::WorkflowStore;
 
@@ -24,6 +25,42 @@ use super::agent_execution::{AgentExecutionService, ExecutionHandle};
 use super::script_execution::{ScriptExecutionService, ScriptPollResult};
 use super::session_service::{SessionService, SessionSpawnContext};
 use super::IterationService;
+
+// ============================================================================
+// Sibling Context Computation
+// ============================================================================
+
+/// Transform sibling tasks into template context.
+///
+/// Filters out the current task and archived siblings.
+/// Computes dependency relationships relative to the current task.
+fn compute_sibling_contexts(current_task: &Task, all_siblings: Vec<Task>) -> Vec<SiblingTaskContext> {
+    all_siblings
+        .into_iter()
+        .filter(|s| s.id != current_task.id) // Exclude self
+        .filter(|s| !s.is_archived()) // Exclude archived
+        .map(|sibling| {
+            let dependency_relationship = if sibling.depends_on.contains(&current_task.id) {
+                Some("depends on this task".to_string())
+            } else if current_task.depends_on.contains(&sibling.id) {
+                Some("this task depends on".to_string())
+            } else {
+                None
+            };
+
+            SiblingTaskContext {
+                short_id: sibling
+                    .short_id
+                    .clone()
+                    .unwrap_or_else(|| sibling.id.clone()),
+                title: sibling.title.clone(),
+                description: sibling.description.clone(),
+                dependency_relationship,
+                status_display: sibling_status_display(&sibling.status, sibling.phase).to_string(),
+            }
+        })
+        .collect()
+}
 
 // ============================================================================
 // Execution Poll Result (internal)
@@ -459,9 +496,20 @@ impl StageExecutionService {
             })
             .collect();
 
+        // Fetch sibling context for subtasks
+        let sibling_tasks = if let Some(parent_id) = &task.parent_id {
+            let siblings = self
+                .store
+                .list_subtasks(parent_id)
+                .map_err(|e| SpawnError::AgentError(format!("Failed to query siblings: {e}")))?;
+            compute_sibling_contexts(task, siblings)
+        } else {
+            Vec::new()
+        };
+
         let handle = self
             .agent_service
-            .execute_stage(task, trigger, spawn_context, activity_logs)
+            .execute_stage(task, trigger, spawn_context, activity_logs, sibling_tasks)
             .map_err(|e| SpawnError::AgentError(e.to_string()))?;
 
         let pid = handle.pid;

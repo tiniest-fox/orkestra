@@ -16,6 +16,7 @@ use crate::prompts::examples::{
 };
 use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::{QuestionAnswer, Task};
+use crate::workflow::runtime::{Phase, Status};
 
 // =============================================================================
 // Workflow Stage Entry (for prompt rendering)
@@ -211,6 +212,9 @@ pub struct StagePromptContext<'a> {
 
     /// Workflow stage entries for the overview section.
     pub workflow_stages: Vec<WorkflowStageEntry>,
+
+    /// Sibling subtasks (for subtasks only, empty for non-subtasks).
+    pub sibling_tasks: Vec<SiblingTaskContext>,
 }
 
 /// Context for an artifact available to the stage.
@@ -253,6 +257,36 @@ pub struct ActivityLogEntry {
     pub content: String,
 }
 
+/// Context for a sibling subtask in the prompt.
+#[derive(Debug, Clone, Serialize)]
+pub struct SiblingTaskContext {
+    /// Short display ID (e.g., "bird").
+    pub short_id: String,
+    /// Subtask title.
+    pub title: String,
+    /// Brief description (from breakdown, not detailed_instructions).
+    pub description: String,
+    /// Dependency relationship to current task: "depends on this task", "this task depends on", or None.
+    pub dependency_relationship: Option<String>,
+    /// User-friendly status display ("pending", "working", "done", etc.).
+    pub status_display: String,
+}
+
+/// Convert Status and Phase to a user-friendly display string for sibling context.
+pub fn sibling_status_display(status: &Status, phase: Phase) -> &'static str {
+    match status {
+        Status::Done | Status::Archived => "done",
+        Status::Failed { .. } => "failed",
+        Status::Blocked { .. } => "blocked",
+        Status::WaitingOnChildren { .. } => "waiting",
+        Status::Active { .. } => match phase {
+            Phase::AgentWorking => "working",
+            Phase::AwaitingReview => "reviewing",
+            _ => "pending",
+        },
+    }
+}
+
 /// Flow-specific overrides for agent configuration.
 ///
 /// When a task uses a named flow, the flow may override the prompt path,
@@ -292,6 +326,7 @@ impl<'a> PromptBuilder<'a> {
         integration_error: Option<IntegrationErrorContext<'a>>,
         show_direct_structured_output_hint: bool,
         activity_logs: Vec<ActivityLogEntry>,
+        sibling_tasks: Vec<SiblingTaskContext>,
     ) -> Option<StagePromptContext<'a>> {
         let stage = self.workflow.stage(stage_name)?;
 
@@ -331,6 +366,7 @@ impl<'a> PromptBuilder<'a> {
             show_direct_structured_output_hint,
             activity_logs,
             workflow_stages,
+            sibling_tasks,
         })
     }
 
@@ -346,6 +382,7 @@ impl<'a> PromptBuilder<'a> {
         integration_error: Option<IntegrationErrorContext<'a>>,
         show_direct_structured_output_hint: bool,
         activity_logs: Vec<ActivityLogEntry>,
+        sibling_tasks: Vec<SiblingTaskContext>,
     ) -> Option<StagePromptContext<'a>> {
         let artifacts: Vec<ArtifactContext<'a>> = stage
             .inputs
@@ -380,6 +417,7 @@ impl<'a> PromptBuilder<'a> {
             show_direct_structured_output_hint,
             activity_logs,
             workflow_stages,
+            sibling_tasks,
         })
     }
 
@@ -393,7 +431,7 @@ impl<'a> PromptBuilder<'a> {
         task: &'a Task,
         feedback: Option<&'a str>,
     ) -> Option<String> {
-        let ctx = self.build_context(stage_name, task, feedback, None, false, Vec::new())?;
+        let ctx = self.build_context(stage_name, task, feedback, None, false, Vec::new(), Vec::new())?;
 
         let mut prompt = String::new();
 
@@ -619,6 +657,7 @@ pub fn resolve_stage_agent_config(
         FlowOverrides::default(),
         false,      // Default to false for backward compatibility
         Vec::new(), // activity_logs - convenience wrapper doesn't use them
+        Vec::new(), // sibling_tasks - convenience wrapper doesn't use them
     )
 }
 
@@ -637,6 +676,7 @@ pub fn resolve_stage_agent_config_for(
     flow_overrides: FlowOverrides<'_>,
     show_direct_structured_output_hint: bool,
     activity_logs: Vec<ActivityLogEntry>,
+    sibling_tasks: Vec<SiblingTaskContext>,
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
         .stage(stage_name)
@@ -686,6 +726,7 @@ pub fn resolve_stage_agent_config_for(
             integration_error,
             show_direct_structured_output_hint,
             activity_logs,
+            sibling_tasks,
         )
         .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;
 
@@ -730,6 +771,7 @@ struct UserMessageContext<'a> {
     base_commit: &'a str,
     activity_logs: &'a [ActivityLogEntry],
     workflow_stages: &'a [WorkflowStageEntry],
+    sibling_tasks: &'a [SiblingTaskContext],
 }
 
 /// Context available to agent definition Handlebars templates.
@@ -786,6 +828,7 @@ pub fn build_user_message(ctx: &StagePromptContext<'_>) -> String {
         base_commit: ctx.base_commit,
         activity_logs: &ctx.activity_logs,
         workflow_stages: &ctx.workflow_stages,
+        sibling_tasks: &ctx.sibling_tasks,
     };
 
     TEMPLATES
@@ -1007,7 +1050,7 @@ mod tests {
         );
 
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new())
+            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         assert_eq!(ctx.stage.name, "planning");
@@ -1037,7 +1080,7 @@ mod tests {
         ));
 
         let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new())
+            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         assert_eq!(ctx.stage.name, "work");
@@ -1067,6 +1110,7 @@ mod tests {
                 None,
                 false,
                 Vec::new(),
+                Vec::new(),
             )
             .unwrap();
 
@@ -1091,7 +1135,7 @@ mod tests {
             .set(Artifact::new("summary", "Work done", "work", "t2"));
 
         let ctx = builder
-            .build_context("review", &task, None, None, false, Vec::new())
+            .build_context("review", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         assert_eq!(ctx.stage.name, "review");
@@ -1107,7 +1151,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Desc", "planning", "now");
 
-        let ctx = builder.build_context("nonexistent", &task, None, None, false, Vec::new());
+        let ctx = builder.build_context("nonexistent", &task, None, None, false, Vec::new(), Vec::new());
         assert!(ctx.is_none());
     }
 
@@ -1194,7 +1238,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new())
+            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         assert!(ctx.question_history.is_empty());
@@ -1256,7 +1300,7 @@ mod tests {
         ));
 
         let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new())
+            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
         let agent_def = "You are a worker agent. Implement the plan.";
         let prompt = build_complete_prompt(agent_def, &ctx);
@@ -1290,6 +1334,7 @@ mod tests {
                 None,
                 false,
                 Vec::new(),
+                Vec::new(),
             )
             .unwrap();
 
@@ -1316,7 +1361,7 @@ mod tests {
         };
 
         let ctx = builder
-            .build_context("work", &task, None, Some(error), false, Vec::new())
+            .build_context("work", &task, None, Some(error), false, Vec::new(), Vec::new())
             .unwrap();
 
         let agent_def = "Worker agent";
@@ -1336,7 +1381,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new())
+            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         let agent_def = "Planner agent";
@@ -1359,7 +1404,7 @@ mod tests {
             .set(Artifact::new("summary", "Summary", "work", "now"));
 
         let ctx = builder
-            .build_context("review", &task, None, None, false, Vec::new())
+            .build_context("review", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         let agent_def = "Reviewer agent";
@@ -1381,7 +1426,7 @@ mod tests {
             .with_base_commit("abc123def456");
 
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new())
+            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         let agent_def = "Planner agent";
@@ -1404,7 +1449,7 @@ mod tests {
         // No worktree set
 
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new())
+            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         let agent_def = "Planner agent";
@@ -1684,7 +1729,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new())
+            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         // No {{ markers — should pass through unchanged
@@ -1701,7 +1746,7 @@ mod tests {
 
         // With feedback
         let ctx = builder
-            .build_context("planning", &task, Some("Fix this"), None, false, Vec::new())
+            .build_context("planning", &task, Some("Fix this"), None, false, Vec::new(), Vec::new())
             .unwrap();
         let template = "Base instructions.\n\n{{#if feedback}}\nFEEDBACK_SECTION\n{{/if}}";
         let result = render_agent_definition(template, &ctx);
@@ -1710,7 +1755,7 @@ mod tests {
 
         // Without feedback
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new())
+            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
         let result = render_agent_definition(template, &ctx);
         assert!(!result.contains("FEEDBACK_SECTION"));
@@ -1723,7 +1768,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new())
+            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         // Invalid template — should return raw definition
@@ -1738,7 +1783,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new())
+            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         let template = "Stage: {{stage_name}}, Task: {{task_id}}";
@@ -1791,6 +1836,7 @@ mod tests {
             FlowOverrides::default(),
             false,
             Vec::new(),
+            Vec::new(),
         )
         .unwrap();
 
@@ -1840,7 +1886,7 @@ mod tests {
         ));
 
         let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new())
+            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -1875,7 +1921,7 @@ mod tests {
         ));
 
         let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new())
+            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -1911,7 +1957,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "work", "now");
         let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new())
+            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -1957,7 +2003,7 @@ mod tests {
         task.flow = Some("quick".into());
 
         let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new())
+            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -1982,7 +2028,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "work", "now");
         let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new())
+            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -2083,5 +2129,196 @@ mod tests {
         let entries = build_workflow_stage_entries(&workflow, "work", None);
         assert_eq!(entries[0].description, "Planning");
         assert_eq!(entries[1].description, "Work Stage");
+    }
+
+    // ========================================================================
+    // Sibling Context tests
+    // ========================================================================
+
+    #[test]
+    fn test_sibling_status_display_done() {
+        assert_eq!(sibling_status_display(&Status::Done, Phase::Idle), "done");
+        assert_eq!(
+            sibling_status_display(&Status::Archived, Phase::Idle),
+            "done"
+        );
+    }
+
+    #[test]
+    fn test_sibling_status_display_failed() {
+        assert_eq!(
+            sibling_status_display(
+                &Status::Failed {
+                    error: Some("error".into())
+                },
+                Phase::Idle
+            ),
+            "failed"
+        );
+        assert_eq!(
+            sibling_status_display(&Status::Failed { error: None }, Phase::Idle),
+            "failed"
+        );
+    }
+
+    #[test]
+    fn test_sibling_status_display_blocked() {
+        assert_eq!(
+            sibling_status_display(
+                &Status::Blocked {
+                    reason: Some("reason".into())
+                },
+                Phase::Idle
+            ),
+            "blocked"
+        );
+        assert_eq!(
+            sibling_status_display(&Status::Blocked { reason: None }, Phase::Idle),
+            "blocked"
+        );
+    }
+
+    #[test]
+    fn test_sibling_status_display_waiting() {
+        assert_eq!(
+            sibling_status_display(
+                &Status::WaitingOnChildren {
+                    stage: "work".into()
+                },
+                Phase::Idle
+            ),
+            "waiting"
+        );
+    }
+
+    #[test]
+    fn test_sibling_status_display_active_phases() {
+        let active = Status::Active {
+            stage: "work".into(),
+        };
+
+        // AgentWorking -> "working"
+        assert_eq!(
+            sibling_status_display(&active, Phase::AgentWorking),
+            "working"
+        );
+
+        // AwaitingReview -> "reviewing"
+        assert_eq!(
+            sibling_status_display(&active, Phase::AwaitingReview),
+            "reviewing"
+        );
+
+        // Other phases -> "pending"
+        assert_eq!(sibling_status_display(&active, Phase::Idle), "pending");
+        assert_eq!(sibling_status_display(&active, Phase::Integrating), "pending");
+        assert_eq!(sibling_status_display(&active, Phase::SettingUp), "pending");
+        assert_eq!(
+            sibling_status_display(&active, Phase::AwaitingSetup),
+            "pending"
+        );
+    }
+
+    #[test]
+    fn test_build_user_message_with_siblings() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+
+        let siblings = vec![
+            SiblingTaskContext {
+                short_id: "bird".into(),
+                title: "First subtask".into(),
+                description: "Do the first thing".into(),
+                dependency_relationship: None,
+                status_display: "pending".into(),
+            },
+            SiblingTaskContext {
+                short_id: "cat".into(),
+                title: "Second subtask".into(),
+                description: "Depends on first".into(),
+                dependency_relationship: Some("this task depends on".into()),
+                status_display: "done".into(),
+            },
+        ];
+
+        let ctx = builder
+            .build_context("planning", &task, None, None, false, Vec::new(), siblings)
+            .unwrap();
+
+        let user_message = build_user_message(&ctx);
+
+        // Should contain sibling section
+        assert!(user_message.contains("## Sibling Subtasks"));
+        assert!(user_message.contains("This task is part of a breakdown"));
+        assert!(user_message.contains("**bird** First subtask"));
+        assert!(user_message.contains("(pending)"));
+        assert!(user_message.contains("Do the first thing"));
+        assert!(user_message.contains("**cat** Second subtask"));
+        assert!(user_message.contains("[this task depends on]"));
+        assert!(user_message.contains("(done)"));
+    }
+
+    #[test]
+    fn test_build_user_message_without_siblings() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+
+        let ctx = builder
+            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
+            .unwrap();
+
+        let user_message = build_user_message(&ctx);
+
+        // Should NOT contain sibling section when empty
+        assert!(!user_message.contains("## Sibling Subtasks"));
+        assert!(!user_message.contains("This task is part of a breakdown"));
+    }
+
+    #[test]
+    fn test_sibling_dependency_relationship_display() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let task = Task::new("task-1", "Test", "Description", "planning", "now");
+
+        let siblings = vec![
+            SiblingTaskContext {
+                short_id: "dep".into(),
+                title: "Dependent task".into(),
+                description: "Depends on current".into(),
+                dependency_relationship: Some("depends on this task".into()),
+                status_display: "pending".into(),
+            },
+            SiblingTaskContext {
+                short_id: "prereq".into(),
+                title: "Prerequisite task".into(),
+                description: "Current depends on this".into(),
+                dependency_relationship: Some("this task depends on".into()),
+                status_display: "done".into(),
+            },
+            SiblingTaskContext {
+                short_id: "unrelated".into(),
+                title: "Unrelated task".into(),
+                description: "No dependency".into(),
+                dependency_relationship: None,
+                status_display: "working".into(),
+            },
+        ];
+
+        let ctx = builder
+            .build_context("planning", &task, None, None, false, Vec::new(), siblings)
+            .unwrap();
+
+        let user_message = build_user_message(&ctx);
+
+        // Check dependency markers appear correctly
+        assert!(user_message.contains("[depends on this task]"));
+        assert!(user_message.contains("[this task depends on]"));
+        // Unrelated task should not have a dependency marker
+        assert!(user_message.contains("**unrelated** Unrelated task (working)"));
     }
 }

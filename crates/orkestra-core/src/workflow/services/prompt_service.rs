@@ -13,7 +13,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::{
     resolve_stage_agent_config_for, ActivityLogEntry, AgentConfigError, FlowOverrides,
-    IntegrationErrorContext, ResolvedAgentConfig,
+    IntegrationErrorContext, ResolvedAgentConfig, SiblingTaskContext,
 };
 
 // ============================================================================
@@ -54,6 +54,7 @@ impl PromptService {
     /// * `feedback` - Optional rejection feedback to incorporate
     /// * `integration_error` - Optional merge conflict information
     /// * `activity_logs` - Activity logs from prior completed iterations
+    /// * `sibling_tasks` - Sibling subtask context for subtasks
     ///
     /// # Returns
     /// Complete agent configuration including prompt and JSON schema.
@@ -65,6 +66,7 @@ impl PromptService {
         integration_error: Option<IntegrationErrorContext<'_>>,
         show_direct_structured_output_hint: bool,
         activity_logs: Vec<ActivityLogEntry>,
+        sibling_tasks: Vec<SiblingTaskContext>,
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
         let stage_name = task
             .current_stage()
@@ -97,6 +99,7 @@ impl PromptService {
             flow_overrides,
             show_direct_structured_output_hint,
             activity_logs,
+            sibling_tasks,
         )
     }
 
@@ -117,6 +120,7 @@ impl PromptService {
             None,
             show_direct_structured_output_hint,
             Vec::new(), // activity_logs - convenience method doesn't use them
+            Vec::new(), // sibling_tasks - convenience method doesn't use them
         )
     }
 
@@ -136,6 +140,7 @@ impl PromptService {
             None,
             show_direct_structured_output_hint,
             Vec::new(), // activity_logs - convenience method doesn't use them
+            Vec::new(), // sibling_tasks - convenience method doesn't use them
         )
     }
 }

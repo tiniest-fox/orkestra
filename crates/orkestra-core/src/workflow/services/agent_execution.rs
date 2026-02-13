@@ -25,6 +25,7 @@ use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
     build_resume_prompt, ActivityLogEntry, AgentConfigError, AgentRunnerTrait, ProviderRegistry,
     RegistryError, ResumeQuestionAnswer, ResumeType, RunConfig, RunError, RunEvent,
+    SiblingTaskContext,
 };
 
 use super::prompt_service::PromptService;
@@ -254,6 +255,7 @@ impl AgentExecutionService {
         feedback: Option<&str>,
         show_direct_structured_output_hint: bool,
         activity_logs: Vec<ActivityLogEntry>,
+        sibling_tasks: Vec<SiblingTaskContext>,
     ) -> Result<String, ExecutionError> {
         let config = self.prompt_service.resolve_config(
             &self.workflow,
@@ -262,6 +264,7 @@ impl AgentExecutionService {
             None, // No integration error for system prompt
             show_direct_structured_output_hint,
             activity_logs,
+            sibling_tasks,
         )?;
         Ok(config.system_prompt)
     }
@@ -280,6 +283,7 @@ impl AgentExecutionService {
         trigger: Option<&IterationTrigger>,
         show_direct_structured_output_hint: bool,
         activity_logs: Vec<ActivityLogEntry>,
+        sibling_tasks: Vec<SiblingTaskContext>,
     ) -> Result<String, ExecutionError> {
         if is_resume {
             let resume_type = if is_stage_reentry {
@@ -321,6 +325,7 @@ impl AgentExecutionService {
                 None, // No integration error on first spawn
                 show_direct_structured_output_hint,
                 activity_logs,
+                sibling_tasks,
             )?;
             Ok(config.prompt)
         }
@@ -459,12 +464,14 @@ impl AgentExecutionService {
     /// * `trigger` - Why this iteration was created (determines resume prompt type)
     /// * `spawn_context` - Pre-created session context from `StageExecutionService`
     /// * `activity_logs` - Activity logs from prior completed iterations
+    /// * `sibling_tasks` - Sibling subtask context for subtasks
     pub fn execute_stage(
         &self,
         task: &Task,
         trigger: Option<&IterationTrigger>,
         spawn_context: &SessionSpawnContext,
         activity_logs: Vec<ActivityLogEntry>,
+        sibling_tasks: Vec<SiblingTaskContext>,
     ) -> Result<ExecutionHandle, ExecutionError> {
         let stage = task
             .current_stage()
@@ -496,6 +503,7 @@ impl AgentExecutionService {
             feedback,
             resolved.capabilities.requires_direct_structured_output,
             activity_logs.clone(),
+            sibling_tasks.clone(),
         )?;
 
         // 5. Apply tool restrictions (split into prompt text + CLI patterns)
@@ -514,6 +522,7 @@ impl AgentExecutionService {
             trigger,
             resolved.capabilities.requires_direct_structured_output,
             activity_logs,
+            sibling_tasks,
         )?;
 
         // 7. Apply provider fallbacks for system prompt and schema enforcement

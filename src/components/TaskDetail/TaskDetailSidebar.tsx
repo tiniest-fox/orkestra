@@ -120,8 +120,7 @@ export function TaskDetailSidebar({
   // Show integration panel for Done+Idle tasks (ready to merge or PR)
   // Also show for PR creation failures (error starts with "PR creation failed:")
   const isPrCreationFailure =
-    task.status.type === "failed" &&
-    task.status.error?.startsWith("PR creation failed:");
+    task.status.type === "failed" && task.status.error?.startsWith("PR creation failed:");
   const showIntegration =
     !showDelete &&
     !showQuestions &&

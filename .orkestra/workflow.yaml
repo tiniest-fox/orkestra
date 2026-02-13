@@ -38,6 +38,9 @@ stages:
     inputs: [breakdown]
     prompt: worker.md
     model: sonnet
+    disallowed_tools:
+      - pattern: "Bash(cargo *)"
+        message: "Automated checks (tests, linting, formatting) run automatically once work is complete — no need to run them yourself"
 
   # Checks: Automated quality gates (lint, test, type check)
   # Runs in the task's worktree, detects what changed, runs relevant checks
@@ -61,6 +64,9 @@ stages:
     inputs: [breakdown, summary, check_results]
     prompt: reviewer.md
     restart_on_reentry: true
+    disallowed_tools:
+      - pattern: "Bash(cargo *)"
+        message: "All automated checks have passed and all tests pass as-is — focus on code review, not re-running checks"
     capabilities:
       approval:
         rejection_stage: task

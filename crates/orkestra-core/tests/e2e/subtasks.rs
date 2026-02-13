@@ -274,7 +274,8 @@ fn test_breakdown_approval_creates_subtasks() {
 
 #[test]
 fn test_dependency_aware_orchestration() {
-    let workflow = enable_auto_merge(workflows::with_subtasks());
+    // No enable_auto_merge — subtasks auto-merge regardless of the setting
+    let workflow = workflows::with_subtasks();
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     let (parent_id, id_map) = setup_parent_with_subtasks(

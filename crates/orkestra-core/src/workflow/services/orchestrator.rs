@@ -972,16 +972,20 @@ impl OrchestratorLoop {
             return Ok(events);
         }
 
-        // Check auto_merge config — when false, don't auto-integrate.
-        // User must trigger merge or PR creation explicitly.
-        {
+        // Find the first integration candidate.
+        // Subtasks always auto-merge (they merge into their parent branch, not main).
+        // Top-level tasks respect the auto_merge config — when false, the user must
+        // trigger merge or PR creation explicitly.
+        let auto_merge = {
             let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-            if !api.workflow.integration.auto_merge {
-                return Ok(events);
-            }
-        }
+            api.workflow.integration.auto_merge
+        };
 
-        let Some(header) = snapshot.idle_done_with_worktree.first() else {
+        let Some(header) = snapshot
+            .idle_done_with_worktree
+            .iter()
+            .find(|h| h.parent_id.is_some() || auto_merge)
+        else {
             return Ok(events);
         };
 

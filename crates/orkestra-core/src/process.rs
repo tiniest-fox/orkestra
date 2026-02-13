@@ -158,7 +158,10 @@ pub fn spawn_claude_assistant_process(
 
     // Restrict to read-only tools — the assistant investigates and creates
     // Orkestra tasks but never modifies files directly
-    cmd.args(["--disallowedTools", "Edit,Write,NotebookEdit,AskUserQuestion"]);
+    cmd.args([
+        "--disallowedTools",
+        "Edit,Write,NotebookEdit,AskUserQuestion",
+    ]);
 
     // No --json-schema (free-form conversation)
 

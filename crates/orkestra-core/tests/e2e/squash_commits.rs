@@ -597,7 +597,10 @@ fn test_conflict_recovery_squashes_all_commits() {
         Some("review"),
         "Task should be in review stage after recovery approval"
     );
-    assert!(!task.is_archived(), "Task should not be archived during recovery");
+    assert!(
+        !task.is_archived(),
+        "Task should not be archived during recovery"
+    );
 
     // Verify we have commits on the branch after recovery
     // The squash happens during integration, so after conflict recovery but before re-integration,

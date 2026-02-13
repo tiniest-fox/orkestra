@@ -55,9 +55,10 @@ function extractContextMessage(context: IterationTrigger): {
         message: context.error,
       };
     case "integration": {
-      const files = context.conflict_files.length > 0
-        ? `\nConflict files: ${context.conflict_files.join(", ")}`
-        : "";
+      const files =
+        context.conflict_files.length > 0
+          ? `\nConflict files: ${context.conflict_files.join(", ")}`
+          : "";
       return {
         label: "Integration failed:",
         message: `${context.message}${files}`,

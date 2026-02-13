@@ -240,7 +240,8 @@ describe("TaskDetailSidebar", () => {
     });
 
     expect(screen.getByText("PR Creation Failed")).toBeInTheDocument();
-    expect(screen.getByText("PR creation failed: auth error")).toBeInTheDocument();
+    // Error text appears in both DetailsTab and IntegrationPanel
+    expect(screen.getAllByText("PR creation failed: auth error").length).toBeGreaterThan(0);
     // IntegrationPanel shows "Retry" button (distinct from DetailsTab's "Retry Task")
     expect(screen.getByRole("button", { name: /^retry$/i })).toBeInTheDocument();
   });

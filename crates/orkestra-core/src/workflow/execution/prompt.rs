@@ -1392,7 +1392,7 @@ mod tests {
         assert!(prompt.contains("/path/to/worktree/task-1"));
         assert!(prompt.contains("branched from `main`"));
         assert!(prompt.contains("at commit `abc123def456`"));
-        assert!(prompt.contains("git diff abc123def456"));
+        assert!(prompt.contains("git diff --merge-base main"));
         assert!(prompt.contains("subagents"));
     }
 

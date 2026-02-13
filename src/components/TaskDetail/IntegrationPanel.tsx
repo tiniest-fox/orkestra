@@ -51,9 +51,7 @@ export function IntegrationPanel({
   // Done+Idle state — show integration options
   return (
     <Panel accent="info" autoFill={false} padded={true} className="h-[200px] flex flex-col">
-      <div className="text-sm font-medium text-info-600 dark:text-info-400 mb-3">
-        Integration
-      </div>
+      <div className="text-sm font-medium text-info-600 dark:text-info-400 mb-3">Integration</div>
       <p className="text-sm text-stone-600 dark:text-stone-400 mb-3 flex-1">
         Task complete. Choose how to integrate the changes:
       </p>

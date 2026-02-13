@@ -16,7 +16,6 @@ use std::time::Duration;
 
 use super::periodic::PeriodicScheduler;
 
-use crate::commit_message::CommitMessageGenerator;
 use crate::orkestra_debug;
 use crate::pr_description::PrDescriptionGenerator;
 use crate::workflow::config::WorkflowConfig;
@@ -24,7 +23,6 @@ use crate::workflow::domain::{Task, TaskHeader, TickSnapshot};
 use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
-use super::integration::{perform_git_integration, IntegrationParams};
 use super::stage_execution::{ExecutionComplete, ExecutionResult, StageExecutionService};
 use super::WorkflowApi;
 
@@ -767,75 +765,6 @@ impl OrchestratorLoop {
         Ok(events)
     }
 
-    /// Background integration logic. Performs git operations and records the result.
-    /// Runs off the orchestrator's main thread.
-    ///
-    /// The Finishing → Committing → Finished pipeline already committed worktree
-    /// changes. The safety-net `commit_worktree_changes` call here is a no-op in
-    /// the normal case, but catches edge cases (e.g., manual recovery, direct
-    /// `integrate_task` calls from tests).
-    ///
-    /// For non-subtask tasks, squashes all commits on the branch into a single
-    /// commit with an LLM-generated message before performing the rebase.
-    #[allow(clippy::needless_pass_by_value)]
-    fn run_background_integration(
-        git: Arc<dyn GitService>,
-        api: Arc<Mutex<WorkflowApi>>,
-        commit_message_generator: Arc<dyn CommitMessageGenerator>,
-        task: Task,
-        workflow: WorkflowConfig,
-    ) {
-        let task_id = task.id.clone();
-        let has_worktree = task.worktree_path.is_some();
-
-        // Safety-net commit — should be a no-op after the Finishing pipeline,
-        // but catches stragglers from manual recovery or direct API calls.
-        if let Err(e) = super::commit_worktree::commit_worktree_changes(
-            git.as_ref(),
-            &task,
-            "integrating",
-            None,
-        ) {
-            let error_msg = format!("Failed to commit pending changes: {e}");
-            orkestra_debug!(
-                "integration",
-                "safety-net commit failed for {}: {}",
-                task_id,
-                error_msg
-            );
-            record_commit_error(&api, &task_id, error_msg, has_worktree);
-            return;
-        }
-
-        // Squash commits for non-subtask tasks.
-        // Subtasks keep their individual commits when merging to parent's branch.
-        if task.parent_id.is_none() {
-            if let Some(worktree_path) = &task.worktree_path {
-                if !squash_task_commits(
-                    git.as_ref(),
-                    &api,
-                    commit_message_generator.as_ref(),
-                    &task,
-                    &workflow,
-                    worktree_path,
-                    has_worktree,
-                ) {
-                    return;
-                }
-            }
-        }
-
-        let params = IntegrationParams {
-            task_id: task_id.clone(),
-            branch_name: task.branch_name.clone().unwrap_or_default(),
-            target_branch: task.base_branch.clone(),
-            worktree_path: task.worktree_path.as_ref().map(PathBuf::from),
-        };
-
-        let git_result = perform_git_integration(git.as_ref(), &params);
-        record_integration_result(&api, &params.task_id, git_result, has_worktree);
-    }
-
     /// Background PR creation logic. Performs git push and PR creation, records the result.
     /// Runs off the orchestrator's main thread.
     #[allow(clippy::needless_pass_by_value)]
@@ -1063,7 +992,7 @@ impl OrchestratorLoop {
         let api_clone = Arc::clone(&self.api);
 
         let run_integration = move || {
-            Self::run_background_integration(
+            super::integration::run_integration(
                 git,
                 api_clone,
                 commit_message_generator,
@@ -1766,107 +1695,6 @@ impl OrchestratorLoop {
     /// Get count of active executions.
     pub fn active_count(&self) -> usize {
         self.stage_executor.active_count()
-    }
-}
-
-// ============================================================================
-// Integration helper functions
-// ============================================================================
-
-/// Record a commit error result for a task integration.
-fn record_commit_error(
-    api: &Arc<Mutex<WorkflowApi>>,
-    task_id: &str,
-    error_msg: String,
-    has_worktree: bool,
-) {
-    match api.lock() {
-        Ok(api) => {
-            if let Err(e) = api.apply_integration_result(
-                task_id,
-                super::integration::IntegrationGitResult::CommitError(error_msg),
-                has_worktree,
-            ) {
-                orkestra_debug!(
-                    "integration",
-                    "failed to record integration result for {}: {}",
-                    task_id,
-                    e
-                );
-            }
-        }
-        Err(_) => {
-            orkestra_debug!(
-                "integration",
-                "failed to acquire API lock after commit error for {} — will be recovered on restart",
-                task_id
-            );
-        }
-    }
-}
-
-/// Record an integration result (success or failure) for a task.
-fn record_integration_result(
-    api: &Arc<Mutex<WorkflowApi>>,
-    task_id: &str,
-    git_result: super::integration::IntegrationGitResult,
-    has_worktree: bool,
-) {
-    match api.lock() {
-        Ok(api) => {
-            if let Err(e) = api.apply_integration_result(task_id, git_result, has_worktree) {
-                orkestra_debug!("integration", "integration failed for {}: {}", task_id, e);
-            }
-        }
-        Err(_) => {
-            orkestra_debug!(
-                "integration",
-                "failed to acquire API lock after git work for {} — will be recovered on restart",
-                task_id
-            );
-        }
-    }
-}
-
-/// Squash all commits on a task's branch into a single commit.
-///
-/// Returns `true` if squash succeeded (or there were no commits to squash),
-/// `false` if squash failed (error already recorded).
-fn squash_task_commits(
-    git: &dyn GitService,
-    api: &Arc<Mutex<WorkflowApi>>,
-    commit_gen: &dyn CommitMessageGenerator,
-    task: &Task,
-    workflow: &WorkflowConfig,
-    worktree_path: &str,
-    has_worktree: bool,
-) -> bool {
-    // Generate squash commit message using all committed changes
-    let squash_message =
-        super::commit_worktree::generate_squash_commit_message(git, task, workflow, commit_gen);
-
-    match git.squash_commits(
-        std::path::Path::new(worktree_path),
-        &task.base_branch,
-        &squash_message,
-    ) {
-        Ok(squashed) => {
-            if squashed {
-                orkestra_debug!("integration", "Squashed commits for task {}", task.id);
-            }
-            true
-        }
-        Err(e) => {
-            let error_msg = format!("Failed to squash commits: {e}");
-            orkestra_debug!(
-                "integration",
-                "squash failed for {}: {}",
-                task.id,
-                error_msg
-            );
-            record_commit_error(api, &task.id, error_msg, has_worktree);
-            false
-        }
     }
 }
 

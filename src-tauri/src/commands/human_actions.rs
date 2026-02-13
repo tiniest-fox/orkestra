@@ -1,7 +1,7 @@
 //! Human action commands: approve, reject, answer questions.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
-use orkestra_core::workflow::{QuestionAnswer, Task};
+use orkestra_core::workflow::{spawn_merge_integration, QuestionAnswer, Task};
 use tauri::{State, Window};
 
 /// Approve the current stage artifact.
@@ -48,21 +48,6 @@ pub fn workflow_answer_questions(
             .api()?
             .answer_questions(&task_id, answers)
             .map_err(Into::into)
-    })
-}
-
-/// Integrate a completed task by merging its branch to primary.
-///
-/// Commits any pending changes, merges the task branch, and cleans up.
-/// On merge conflict, the task is moved back to the work stage.
-#[tauri::command]
-pub fn workflow_integrate_task(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-) -> Result<Task, TauriError> {
-    registry.with_project(window.label(), |state| {
-        state.api()?.integrate_task(&task_id).map_err(Into::into)
     })
 }
 
@@ -134,8 +119,8 @@ pub fn workflow_resume(
 
 /// Merge a Done task's branch into its base branch.
 ///
-/// Commits changes, rebases onto base, merges, and cleans up worktree.
-/// On conflict, task returns to work stage for resolution.
+/// Validates and marks the task as Integrating, then spawns the git work
+/// (squash, rebase, merge) on a background thread so the UI is not blocked.
 #[tauri::command]
 pub fn workflow_merge_task(
     registry: State<ProjectRegistry>,
@@ -143,7 +128,7 @@ pub fn workflow_merge_task(
     task_id: String,
 ) -> Result<Task, TauriError> {
     registry.with_project(window.label(), |state| {
-        state.api()?.merge_task(&task_id).map_err(Into::into)
+        spawn_merge_integration(state.api_arc(), &task_id).map_err(Into::into)
     })
 }
 

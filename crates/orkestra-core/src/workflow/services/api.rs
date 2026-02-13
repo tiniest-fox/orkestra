@@ -169,6 +169,11 @@ impl WorkflowApi {
         &self.workflow
     }
 
+    /// Get the commit message generator.
+    pub fn commit_message_generator(&self) -> &Arc<dyn CommitMessageGenerator> {
+        &self.commit_message_generator
+    }
+
     /// Get the iteration service (shared reference).
     pub fn iteration_service(&self) -> &Arc<IterationService> {
         &self.iteration_service

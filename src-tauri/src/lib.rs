@@ -467,7 +467,6 @@ pub fn run() {
             commands::workflow_approve,
             commands::workflow_reject,
             commands::workflow_answer_questions,
-            commands::workflow_integrate_task,
             commands::workflow_merge_task,
             commands::workflow_open_pr,
             commands::workflow_retry_pr,

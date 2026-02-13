@@ -1,11 +1,14 @@
 //! Git integration operations: success/failure handling.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::orkestra_debug;
+use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::ports::{GitError, GitService, WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase, Status};
+use crate::CommitMessageGenerator;
 
 use super::{workflow_warn, WorkflowApi};
 
@@ -28,15 +31,15 @@ fn validate_no_open_pr(task: &Task) -> WorkflowResult<()> {
 // ============================================================================
 
 /// Parameters needed to perform git integration without holding the API lock.
-pub struct IntegrationParams {
-    pub task_id: String,
-    pub branch_name: String,
-    pub target_branch: String,
-    pub worktree_path: Option<PathBuf>,
+struct IntegrationParams {
+    task_id: String,
+    branch_name: String,
+    target_branch: String,
+    worktree_path: Option<PathBuf>,
 }
 
 /// Result of the git-only portion of integration (no API lock needed).
-pub enum IntegrationGitResult {
+pub(crate) enum IntegrationGitResult {
     /// Merge succeeded — ready to archive.
     Success,
     /// Rebase had merge conflicts.
@@ -57,7 +60,7 @@ pub enum IntegrationGitResult {
 /// `run_background_integration` catches any stragglers).
 ///
 /// The caller is responsible for recording the result via `apply_integration_result`.
-pub fn perform_git_integration(
+fn perform_git_integration(
     git: &dyn GitService,
     params: &IntegrationParams,
 ) -> IntegrationGitResult {
@@ -126,8 +129,9 @@ pub fn perform_git_integration(
 impl WorkflowApi {
     /// Merge a Done task's branch into its base branch (user-triggered).
     ///
-    /// This is the explicit merge path when `auto_merge` is disabled.
-    /// Delegates to existing `integrate_task()` after validation.
+    /// Validates preconditions and marks the task as `Integrating`.
+    /// The actual git work (squash, rebase, merge) runs on a background thread
+    /// via [`spawn_merge_integration`].
     pub fn merge_task(&self, task_id: &str) -> WorkflowResult<Task> {
         let task = self.get_task(task_id)?;
         if !task.is_done() {
@@ -142,7 +146,7 @@ impl WorkflowApi {
             )));
         }
         validate_no_open_pr(&task)?;
-        self.integrate_task(task_id)
+        self.mark_integrating(task_id)
     }
 
     /// Begin PR creation for a Done task.
@@ -214,12 +218,8 @@ impl WorkflowApi {
 
     /// Attempt to integrate a completed task by merging its branch to primary.
     ///
-    /// This method orchestrates the full integration process:
-    /// 1. Commits any pending changes in the worktree
-    /// 2. Rebases the task branch onto primary (conflicts stay on the task branch)
-    /// 3. Fast-forward merges the rebased branch to primary
-    /// 4. On success: cleans up worktree and branch, records success
-    /// 5. On conflict: task branch is restored, moves task back to recovery stage
+    /// Runs the full commit → squash → rebase → merge pipeline synchronously
+    /// while holding the API lock. Used for startup recovery of stuck tasks.
     ///
     /// If no git service is configured, silently succeeds.
     ///
@@ -235,85 +235,20 @@ impl WorkflowApi {
             ));
         }
 
-        // If no git service, just record success
         let Some(git) = &self.git_service else {
             return self.integration_succeeded(task_id);
         };
 
-        // If no branch, nothing to merge
-        let Some(branch_name) = &task.branch_name else {
-            orkestra_debug!(
-                "integration",
-                "integrate_task {}: no branch, marking success",
-                task_id
-            );
+        if task.branch_name.is_none() {
             return self.integration_succeeded(task_id);
-        };
+        }
 
-        orkestra_debug!(
-            "integration",
-            "starting {}: branch={}",
-            task_id,
-            branch_name
-        );
-
-        // Safety-net commit — the Finishing → Committing → Finished pipeline normally
-        // commits worktree changes before integration starts. This catches edge cases
-        // from direct `integrate_task` calls (e.g., manual recovery, tests).
-        // No-op if the worktree is already clean.
-        if let Err(e) = super::commit_worktree::commit_worktree_changes(
+        let result = commit_squash_rebase_merge(
             git.as_ref(),
             &task,
-            "integrating",
-            None,
-        ) {
-            let error_msg = format!("Failed to commit pending changes: {e}");
-            self.integration_failed(task_id, &error_msg, &[])?;
-            return Err(WorkflowError::IntegrationFailed(error_msg));
-        }
-
-        // Squash commits for top-level tasks (subtasks keep individual commits).
-        if task.parent_id.is_none() {
-            if let Some(worktree_path) = &task.worktree_path {
-                let squash_message = super::commit_worktree::generate_squash_commit_message(
-                    git.as_ref(),
-                    &task,
-                    &self.workflow,
-                    self.commit_message_generator.as_ref(),
-                );
-                if let Err(e) =
-                    git.squash_commits(Path::new(worktree_path), &task.base_branch, &squash_message)
-                {
-                    let error_msg = format!("Failed to squash commits: {e}");
-                    self.integration_failed(task_id, &error_msg, &[])?;
-                    return Err(WorkflowError::IntegrationFailed(error_msg));
-                }
-            }
-        }
-
-        // Target branch is always the task's base_branch (set at creation from UI selection or parent branch).
-        if task.base_branch.is_empty() {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Task {} has no base_branch set — cannot determine merge target",
-                task.id
-            )));
-        }
-        let target_branch = task.base_branch.clone();
-
-        orkestra_debug!(
-            "integration",
-            "target branch for {}: {}",
-            task_id,
-            target_branch
+            &self.workflow,
+            self.commit_message_generator.as_ref(),
         );
-
-        let params = IntegrationParams {
-            task_id: task.id.clone(),
-            branch_name: branch_name.clone(),
-            target_branch,
-            worktree_path: task.worktree_path.as_ref().map(PathBuf::from),
-        };
-        let result = perform_git_integration(git.as_ref(), &params);
         self.apply_integration_result(task_id, result, task.worktree_path.is_some())
     }
 
@@ -321,7 +256,7 @@ impl WorkflowApi {
     ///
     /// Called from the background thread after `perform_git_integration` completes.
     /// Records success (archive + worktree cleanup) or failure (recovery stage).
-    pub fn apply_integration_result(
+    pub(crate) fn apply_integration_result(
         &self,
         task_id: &str,
         result: IntegrationGitResult,
@@ -455,6 +390,239 @@ impl WorkflowApi {
 
         self.store.save_task(&task)?;
         Ok(task)
+    }
+}
+
+// ============================================================================
+// Non-blocking merge integration
+// ============================================================================
+
+/// Result of [`prepare_merge_integration`]: either the inputs needed for git
+/// work, or the already-finalized task (when no git service or no branch).
+enum MergePreparation {
+    /// Git work is needed — extracted inputs for the background/inline pipeline.
+    NeedsGitWork {
+        task: Box<Task>,
+        git: Arc<dyn GitService>,
+        workflow: WorkflowConfig,
+        commit_gen: Arc<dyn CommitMessageGenerator>,
+    },
+    /// No git work needed — task is already in its final state.
+    AlreadyComplete,
+}
+
+/// Validate, mark as integrating, and extract everything needed for git work.
+///
+/// Shared setup logic for both `spawn_merge_integration` (async) and
+/// `merge_task_sync` (inline). Returns [`MergePreparation::NeedsGitWork`]
+/// with the extracted dependencies, or [`MergePreparation::AlreadyComplete`]
+/// if no git work is needed.
+fn prepare_merge_integration(
+    api: &Mutex<WorkflowApi>,
+    task_id: &str,
+) -> WorkflowResult<MergePreparation> {
+    let api = api.lock().map_err(|_| WorkflowError::Lock)?;
+    let task = api.merge_task(task_id)?;
+
+    let Some(git) = api.git_service() else {
+        api.integration_succeeded(task_id)?;
+        return Ok(MergePreparation::AlreadyComplete);
+    };
+    let git = Arc::clone(git);
+
+    if task.branch_name.is_none() {
+        api.integration_succeeded(task_id)?;
+        return Ok(MergePreparation::AlreadyComplete);
+    }
+
+    let workflow = api.workflow().clone();
+    let commit_gen = Arc::clone(api.commit_message_generator());
+    Ok(MergePreparation::NeedsGitWork {
+        task: Box::new(task),
+        git,
+        workflow,
+        commit_gen,
+    })
+}
+
+/// Validate, mark as integrating, then run git work on a background thread.
+///
+/// Returns the task in `Done + Integrating` state. The actual squash/rebase/merge
+/// runs on a spawned thread so the caller (Tauri UI) is not blocked.
+#[allow(clippy::needless_pass_by_value)]
+pub fn spawn_merge_integration(
+    api: Arc<Mutex<WorkflowApi>>,
+    task_id: &str,
+) -> WorkflowResult<Task> {
+    let MergePreparation::NeedsGitWork {
+        task,
+        git,
+        workflow,
+        commit_gen,
+    } = prepare_merge_integration(&api, task_id)?
+    else {
+        // Already complete (no git service or no branch) — re-read final state
+        let api = api.lock().map_err(|_| WorkflowError::Lock)?;
+        return api.get_task(task_id);
+    };
+
+    let result_task = (*task).clone();
+    let api_for_thread = Arc::clone(&api);
+
+    std::thread::spawn(move || {
+        run_integration(git, api_for_thread, commit_gen, *task, workflow);
+    });
+
+    Ok(result_task)
+}
+
+/// Validate, mark as integrating, run the full git pipeline inline, and return
+/// the final task state (re-read from the store).
+///
+/// Used by tests and the CLI where synchronous execution is needed.
+#[allow(clippy::needless_pass_by_value)]
+pub fn merge_task_sync(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> WorkflowResult<Task> {
+    let MergePreparation::NeedsGitWork {
+        task,
+        git,
+        workflow,
+        commit_gen,
+    } = prepare_merge_integration(&api, task_id)?
+    else {
+        // Already complete (no git service or no branch) — re-read final state
+        let api = api.lock().map_err(|_| WorkflowError::Lock)?;
+        return api.get_task(task_id);
+    };
+
+    run_integration(git, Arc::clone(&api), commit_gen, *task, workflow);
+
+    // Re-read the task from the store to return the correct final state
+    let api = api.lock().map_err(|_| WorkflowError::Lock)?;
+    api.get_task(task_id)
+}
+
+/// Safety-net commit → squash (top-level only) → rebase → merge.
+///
+/// Pure git work — no API lock needed. Returns an `IntegrationGitResult` that
+/// the caller records via `apply_integration_result` (sync) or `record_result` (background).
+fn commit_squash_rebase_merge(
+    git: &dyn GitService,
+    task: &Task,
+    workflow: &WorkflowConfig,
+    commit_message_generator: &dyn CommitMessageGenerator,
+) -> IntegrationGitResult {
+    let task_id = &task.id;
+
+    if task.base_branch.is_empty() {
+        return IntegrationGitResult::CommitError(format!(
+            "Task {} has no base_branch set — cannot determine merge target",
+            task.id
+        ));
+    }
+
+    // Safety-net commit — should be a no-op after the Finishing pipeline,
+    // but catches stragglers from manual recovery or direct API calls.
+    if let Err(e) = super::commit_worktree::commit_worktree_changes(git, task, "integrating", None)
+    {
+        let error_msg = format!("Failed to commit pending changes: {e}");
+        orkestra_debug!(
+            "integration",
+            "safety-net commit failed for {}: {}",
+            task_id,
+            error_msg
+        );
+        return IntegrationGitResult::CommitError(error_msg);
+    }
+
+    // Squash commits for top-level tasks (subtasks keep individual commits).
+    if task.parent_id.is_none() {
+        if let Some(worktree_path) = &task.worktree_path {
+            let squash_message = super::commit_worktree::generate_squash_commit_message(
+                git,
+                task,
+                workflow,
+                commit_message_generator,
+            );
+            match git.squash_commits(Path::new(worktree_path), &task.base_branch, &squash_message) {
+                Ok(squashed) => {
+                    if squashed {
+                        orkestra_debug!("integration", "squashed commits for task {}", task_id);
+                    }
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to squash commits: {e}");
+                    orkestra_debug!(
+                        "integration",
+                        "squash failed for {}: {}",
+                        task_id,
+                        error_msg
+                    );
+                    return IntegrationGitResult::CommitError(error_msg);
+                }
+            }
+        }
+    }
+
+    let Some(branch_name) = task.branch_name.clone() else {
+        return IntegrationGitResult::CommitError(format!(
+            "Task {} has no branch_name — cannot integrate",
+            task.id
+        ));
+    };
+
+    let params = IntegrationParams {
+        task_id: task_id.clone(),
+        branch_name,
+        target_branch: task.base_branch.clone(),
+        worktree_path: task.worktree_path.as_ref().map(PathBuf::from),
+    };
+
+    perform_git_integration(git, &params)
+}
+
+/// Run the integration pipeline on a background thread and record the result.
+///
+/// Called from both the orchestrator (auto-merge) and user-triggered merge
+/// (`spawn_merge_integration`). Delegates to [`commit_squash_rebase_merge`]
+/// for the actual git work.
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn run_integration(
+    git: Arc<dyn GitService>,
+    api: Arc<Mutex<WorkflowApi>>,
+    commit_message_generator: Arc<dyn CommitMessageGenerator>,
+    task: Task,
+    workflow: WorkflowConfig,
+) {
+    let task_id = task.id.clone();
+    let has_worktree = task.worktree_path.is_some();
+    let result = commit_squash_rebase_merge(
+        git.as_ref(),
+        &task,
+        &workflow,
+        commit_message_generator.as_ref(),
+    );
+    record_result(&api, &task_id, result, has_worktree);
+}
+
+/// Record an integration result (success or failure) by acquiring the API lock.
+fn record_result(
+    api: &Arc<Mutex<WorkflowApi>>,
+    task_id: &str,
+    git_result: IntegrationGitResult,
+    has_worktree: bool,
+) {
+    match api.lock() {
+        Ok(api) => {
+            if let Err(e) = api.apply_integration_result(task_id, git_result, has_worktree) {
+                workflow_warn!("integration failed for {}: {}", task_id, e);
+            }
+        }
+        Err(_) => {
+            workflow_warn!(
+                "API lock poisoned after git work for {} — task stuck in Integrating, will be recovered on restart",
+                task_id
+            );
+        }
     }
 }
 

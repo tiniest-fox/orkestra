@@ -12,6 +12,7 @@ use std::process::Command;
 
 use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::execution::SubtaskOutput;
+use orkestra_core::workflow::merge_task_sync;
 use orkestra_core::workflow::runtime::Phase;
 
 use super::helpers::{disable_auto_merge, enable_auto_merge, workflows, MockAgentOutput, TestEnv};
@@ -897,8 +898,8 @@ fn test_merge_task_squashes_commits() {
     );
     assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
 
-    // User triggers merge
-    ctx.api().merge_task(&task_id).unwrap();
+    // User triggers merge (sync=true runs inline for tests)
+    merge_task_sync(ctx.api_arc(), &task_id).unwrap();
 
     // Task should be archived after user-triggered merge
     let task = ctx.api().get_task(&task_id).unwrap();

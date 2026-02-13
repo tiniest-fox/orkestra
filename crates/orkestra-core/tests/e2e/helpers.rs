@@ -320,6 +320,11 @@ impl TestEnv {
         self.api.lock().unwrap()
     }
 
+    /// Get a clone of the `Arc<Mutex<WorkflowApi>>` for functions that need it.
+    pub fn api_arc(&self) -> Arc<Mutex<WorkflowApi>> {
+        Arc::clone(&self.api)
+    }
+
     /// Get the mock PR service for configuring test results.
     pub fn pr_service(&self) -> Arc<MockPrService> {
         Arc::clone(&self.pr_service)

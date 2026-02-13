@@ -1,6 +1,7 @@
 //! E2E tests for the integration choice point (`auto_merge`, `merge_task`, `open_pr`, Failed state).
 
 use orkestra_core::testutil::fixtures::test_default_workflow;
+use orkestra_core::workflow::merge_task_sync;
 use orkestra_core::workflow::ports::{PrError, WorkflowError};
 use orkestra_core::workflow::runtime::{Phase, Status};
 
@@ -137,11 +138,8 @@ fn merge_task_triggers_integration() {
     assert_eq!(task.status, Status::Done, "Task should be Done");
     assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
 
-    // Task is Done but not integrated (auto_merge is false)
-    ctx.api().merge_task(&task_id).unwrap();
-
-    // Integration runs in background, but sync_background makes it run inline
-    ctx.advance(); // let integration complete
+    // User triggers merge (sync=true runs inline for tests)
+    merge_task_sync(ctx.api_arc(), &task_id).unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.status, Status::Archived, "Task should be Archived");

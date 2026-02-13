@@ -805,7 +805,13 @@ fn handle_utility_action(action: UtilityAction) {
 }
 
 fn handle_merge_task(api: &WorkflowApi, id: &str, pretty: bool) {
-    let task = match api.merge_task(id) {
+    // Validate preconditions (Done + Idle + no open PR) and mark as Integrating
+    if let Err(e) = api.merge_task(id) {
+        eprintln!("Error merging task: {e}");
+        std::process::exit(1);
+    }
+    // Run the git pipeline synchronously (task is now Done + Integrating)
+    let task = match api.integrate_task(id) {
         Ok(task) => task,
         Err(e) => {
             eprintln!("Error merging task: {e}");

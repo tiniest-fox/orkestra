@@ -55,8 +55,9 @@ pub use ports::{
 };
 pub use runtime::{Artifact, ArtifactStore, Outcome, Phase, Status};
 pub use services::{
-    cleanup_stale_target_lock, AgentKiller, AssistantService, OrchestratorError, OrchestratorEvent,
-    OrchestratorLoop, StageExecutionService, WorkflowApi,
+    cleanup_stale_target_lock, merge_task_sync, spawn_merge_integration, AgentKiller,
+    AssistantService, OrchestratorError, OrchestratorEvent, OrchestratorLoop,
+    StageExecutionService, WorkflowApi,
 };
 
 // Export execution types for testing

@@ -22,6 +22,7 @@ import {
 import { ArtifactsTab } from "./ArtifactsTab";
 import { DeleteConfirmPanel } from "./DeleteConfirmPanel";
 import { DetailsTab } from "./DetailsTab";
+import { IntegrationPanel } from "./IntegrationPanel";
 import { IterationsTab } from "./IterationsTab";
 import { LogsTab } from "./LogsTab";
 import { QuestionFormPanel } from "./QuestionFormPanel";
@@ -61,6 +62,9 @@ export function TaskDetailSidebar({
     setAutoMode,
     interrupt,
     resume,
+    mergeTask,
+    openPr,
+    retryPr,
   } = useTaskDetail(task);
 
   const tabs = useMemo(() => buildTabs(task), [task]);
@@ -113,7 +117,16 @@ export function TaskDetailSidebar({
     !showResume &&
     task.derived.needs_review &&
     task.derived.current_stage;
-  const showCompactFooter = !!(showDelete || showReview || showResume);
+  // Show integration panel for Done+Idle tasks (ready to merge or PR)
+  // Also show for Failed tasks (PR creation failure — retry available)
+  const showIntegration =
+    !showDelete &&
+    !showQuestions &&
+    !showResume &&
+    !showReview &&
+    ((task.derived.is_done && task.phase === "idle") ||
+      (task.derived.is_failed && task.phase === "idle"));
+  const showCompactFooter = !!(showDelete || showReview || showResume || showIntegration);
 
   return (
     <PanelLayout direction="vertical">
@@ -214,6 +227,16 @@ export function TaskDetailSidebar({
             onReject={reject}
             isSubmitting={isSubmitting}
             pendingRejection={task.derived.pending_rejection}
+          />
+        )}
+
+        {showIntegration && (
+          <IntegrationPanel
+            status={task.status}
+            onMerge={mergeTask}
+            onOpenPr={openPr}
+            onRetryPr={retryPr}
+            isSubmitting={isSubmitting}
           />
         )}
       </Slot>

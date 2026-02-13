@@ -405,6 +405,9 @@ if $HAS_RUST; then
     run_check "Cargo fmt fix" "cargo fmt --all"
     run_check "Cargo fmt verify" "cargo fmt --all --check"
 
+    # Acquire lock for cargo commands that use the shared target/ directory
+    acquire_lock
+
     # Invalidate cargo's mtime-based fingerprints for crates we're about to check.
     # All worktrees share one target/ directory. Cargo considers a crate "Fresh" when
     # every source file is older than the cached binary — but a binary compiled by
@@ -412,14 +415,15 @@ if $HAS_RUST; then
     # to B without recompiling. Touching the crate root forces cargo to see "Dirty" and
     # rebuild. sccache still provides content-based cache hits, so unchanged files
     # compile instantly — the only real cost is linking (~5-10s per affected crate).
+    #
+    # IMPORTANT: This must happen INSIDE the lock. If touch runs before acquire_lock,
+    # another worktree can compile between our touch and our cargo run, making its
+    # binary newer than our touched source — cargo then sees "Fresh" and serves stale code.
     if [ -L "target" ]; then
         $HAS_CORE && touch crates/orkestra-core/src/lib.rs
         $HAS_CLI && touch cli/src/main.rs
         $HAS_TAURI && touch src-tauri/src/main.rs
     fi
-
-    # Acquire lock for cargo commands that use the shared target/ directory
-    acquire_lock
 
     # Run clippy with auto-fix, then verify no remaining warnings
     # --fix applies automatic fixes, --allow-dirty/--allow-staged permit uncommitted changes

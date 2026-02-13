@@ -34,7 +34,10 @@ use super::IterationService;
 ///
 /// Filters out the current task and archived siblings.
 /// Computes dependency relationships relative to the current task.
-fn compute_sibling_contexts(current_task: &Task, all_siblings: Vec<Task>) -> Vec<SiblingTaskContext> {
+fn compute_sibling_contexts(
+    current_task: &Task,
+    all_siblings: Vec<Task>,
+) -> Vec<SiblingTaskContext> {
     all_siblings
         .into_iter()
         .filter(|s| s.id != current_task.id) // Exclude self

@@ -58,6 +58,7 @@ impl PromptService {
     ///
     /// # Returns
     /// Complete agent configuration including prompt and JSON schema.
+    #[allow(clippy::too_many_arguments)]
     pub fn resolve_config(
         &self,
         workflow: &WorkflowConfig,

@@ -264,7 +264,7 @@ pub struct SiblingTaskContext {
     pub short_id: String,
     /// Subtask title.
     pub title: String,
-    /// Brief description (from breakdown, not detailed_instructions).
+    /// Brief description (from breakdown, not `detailed_instructions`).
     pub description: String,
     /// Dependency relationship to current task: "depends on this task", "this task depends on", or None.
     pub dependency_relationship: Option<String>,
@@ -318,6 +318,7 @@ impl<'a> PromptBuilder<'a> {
     /// Build prompt context for a stage.
     ///
     /// This provides all the context needed to render a prompt template.
+    #[allow(clippy::too_many_arguments)]
     pub fn build_context(
         &self,
         stage_name: &'a str,
@@ -374,6 +375,7 @@ impl<'a> PromptBuilder<'a> {
     ///
     /// This is like `build_context` but accepts the stage directly instead of
     /// looking it up by name. Used when capabilities have been overridden by a flow.
+    #[allow(clippy::too_many_arguments)]
     pub fn build_context_with_stage(
         &self,
         stage: &'a StageConfig,
@@ -431,7 +433,15 @@ impl<'a> PromptBuilder<'a> {
         task: &'a Task,
         feedback: Option<&'a str>,
     ) -> Option<String> {
-        let ctx = self.build_context(stage_name, task, feedback, None, false, Vec::new(), Vec::new())?;
+        let ctx = self.build_context(
+            stage_name,
+            task,
+            feedback,
+            None,
+            false,
+            Vec::new(),
+            Vec::new(),
+        )?;
 
         let mut prompt = String::new();
 
@@ -1151,7 +1161,15 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Desc", "planning", "now");
 
-        let ctx = builder.build_context("nonexistent", &task, None, None, false, Vec::new(), Vec::new());
+        let ctx = builder.build_context(
+            "nonexistent",
+            &task,
+            None,
+            None,
+            false,
+            Vec::new(),
+            Vec::new(),
+        );
         assert!(ctx.is_none());
     }
 
@@ -1361,7 +1379,15 @@ mod tests {
         };
 
         let ctx = builder
-            .build_context("work", &task, None, Some(error), false, Vec::new(), Vec::new())
+            .build_context(
+                "work",
+                &task,
+                None,
+                Some(error),
+                false,
+                Vec::new(),
+                Vec::new(),
+            )
             .unwrap();
 
         let agent_def = "Worker agent";
@@ -1746,7 +1772,15 @@ mod tests {
 
         // With feedback
         let ctx = builder
-            .build_context("planning", &task, Some("Fix this"), None, false, Vec::new(), Vec::new())
+            .build_context(
+                "planning",
+                &task,
+                Some("Fix this"),
+                None,
+                false,
+                Vec::new(),
+                Vec::new(),
+            )
             .unwrap();
         let template = "Base instructions.\n\n{{#if feedback}}\nFEEDBACK_SECTION\n{{/if}}";
         let result = render_agent_definition(template, &ctx);
@@ -2211,7 +2245,10 @@ mod tests {
 
         // Other phases -> "pending"
         assert_eq!(sibling_status_display(&active, Phase::Idle), "pending");
-        assert_eq!(sibling_status_display(&active, Phase::Integrating), "pending");
+        assert_eq!(
+            sibling_status_display(&active, Phase::Integrating),
+            "pending"
+        );
         assert_eq!(sibling_status_display(&active, Phase::SettingUp), "pending");
         assert_eq!(
             sibling_status_display(&active, Phase::AwaitingSetup),

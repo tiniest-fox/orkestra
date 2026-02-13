@@ -797,35 +797,8 @@ impl OrchestratorLoop {
             None,
         ) {
             let error_msg = format!("Failed to commit pending changes: {e}");
-            orkestra_debug!(
-                "integration",
-                "safety-net commit failed for {}: {}",
-                task_id,
-                error_msg
-            );
-            match api.lock() {
-                Ok(api) => {
-                    if let Err(e) = api.apply_integration_result(
-                        &task_id,
-                        super::integration::IntegrationGitResult::CommitError(error_msg),
-                        has_worktree,
-                    ) {
-                        orkestra_debug!(
-                            "integration",
-                            "failed to record integration result for {}: {}",
-                            task_id,
-                            e
-                        );
-                    }
-                }
-                Err(_) => {
-                    orkestra_debug!(
-                        "integration",
-                        "failed to acquire API lock after commit failure for {} — will be recovered on restart",
-                        task_id
-                    );
-                }
-            }
+            orkestra_debug!("integration", "safety-net commit failed for {}: {}", task_id, error_msg);
+            record_commit_error(&api, &task_id, error_msg, has_worktree);
             return;
         }
 
@@ -833,63 +806,16 @@ impl OrchestratorLoop {
         // Subtasks keep their individual commits when merging to parent's branch.
         if task.parent_id.is_none() {
             if let Some(worktree_path) = &task.worktree_path {
-                // Generate squash commit message using all committed changes
-                let squash_message = super::commit_worktree::generate_squash_commit_message(
+                if !squash_task_commits(
                     git.as_ref(),
+                    &api,
+                    commit_message_generator.as_ref(),
                     &task,
                     &workflow,
-                    commit_message_generator.as_ref(),
-                );
-
-                match git.squash_commits(
-                    std::path::Path::new(worktree_path),
-                    &task.base_branch,
-                    &squash_message,
+                    worktree_path,
+                    has_worktree,
                 ) {
-                    Ok(squashed) => {
-                        if squashed {
-                            orkestra_debug!(
-                                "integration",
-                                "Squashed commits for task {}",
-                                task_id
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        let error_msg = format!("Failed to squash commits: {e}");
-                        orkestra_debug!(
-                            "integration",
-                            "squash failed for {}: {}",
-                            task_id,
-                            error_msg
-                        );
-                        match api.lock() {
-                            Ok(api) => {
-                                if let Err(e) = api.apply_integration_result(
-                                    &task_id,
-                                    super::integration::IntegrationGitResult::CommitError(
-                                        error_msg,
-                                    ),
-                                    has_worktree,
-                                ) {
-                                    orkestra_debug!(
-                                        "integration",
-                                        "failed to record integration result for {}: {}",
-                                        task_id,
-                                        e
-                                    );
-                                }
-                            }
-                            Err(_) => {
-                                orkestra_debug!(
-                                    "integration",
-                                    "failed to acquire API lock after squash failure for {} — will be recovered on restart",
-                                    task_id
-                                );
-                            }
-                        }
-                        return;
-                    }
+                    return;
                 }
             }
         }
@@ -902,28 +828,7 @@ impl OrchestratorLoop {
         };
 
         let git_result = perform_git_integration(git.as_ref(), &params);
-
-        match api.lock() {
-            Ok(api) => {
-                if let Err(e) =
-                    api.apply_integration_result(&params.task_id, git_result, has_worktree)
-                {
-                    orkestra_debug!(
-                        "integration",
-                        "integration failed for {}: {}",
-                        params.task_id,
-                        e
-                    );
-                }
-            }
-            Err(_) => {
-                orkestra_debug!(
-                    "integration",
-                    "failed to acquire API lock after git work for {} — will be recovered on restart",
-                    params.task_id
-                );
-            }
-        }
+        record_integration_result(&api, &params.task_id, git_result, has_worktree);
     }
 
     /// Background PR creation logic. Performs git push and PR creation, records the result.
@@ -1852,6 +1757,102 @@ impl OrchestratorLoop {
     /// Get count of active executions.
     pub fn active_count(&self) -> usize {
         self.stage_executor.active_count()
+    }
+}
+
+// ============================================================================
+// Integration helper functions
+// ============================================================================
+
+/// Record a commit error result for a task integration.
+fn record_commit_error(
+    api: &Arc<Mutex<WorkflowApi>>,
+    task_id: &str,
+    error_msg: String,
+    has_worktree: bool,
+) {
+    match api.lock() {
+        Ok(api) => {
+            if let Err(e) = api.apply_integration_result(
+                task_id,
+                super::integration::IntegrationGitResult::CommitError(error_msg),
+                has_worktree,
+            ) {
+                orkestra_debug!(
+                    "integration",
+                    "failed to record integration result for {}: {}",
+                    task_id,
+                    e
+                );
+            }
+        }
+        Err(_) => {
+            orkestra_debug!(
+                "integration",
+                "failed to acquire API lock after commit error for {} — will be recovered on restart",
+                task_id
+            );
+        }
+    }
+}
+
+/// Record an integration result (success or failure) for a task.
+fn record_integration_result(
+    api: &Arc<Mutex<WorkflowApi>>,
+    task_id: &str,
+    git_result: super::integration::IntegrationGitResult,
+    has_worktree: bool,
+) {
+    match api.lock() {
+        Ok(api) => {
+            if let Err(e) = api.apply_integration_result(task_id, git_result, has_worktree) {
+                orkestra_debug!("integration", "integration failed for {}: {}", task_id, e);
+            }
+        }
+        Err(_) => {
+            orkestra_debug!(
+                "integration",
+                "failed to acquire API lock after git work for {} — will be recovered on restart",
+                task_id
+            );
+        }
+    }
+}
+
+/// Squash all commits on a task's branch into a single commit.
+///
+/// Returns `true` if squash succeeded (or there were no commits to squash),
+/// `false` if squash failed (error already recorded).
+fn squash_task_commits(
+    git: &dyn GitService,
+    api: &Arc<Mutex<WorkflowApi>>,
+    commit_gen: &dyn CommitMessageGenerator,
+    task: &Task,
+    workflow: &WorkflowConfig,
+    worktree_path: &str,
+    has_worktree: bool,
+) -> bool {
+    // Generate squash commit message using all committed changes
+    let squash_message =
+        super::commit_worktree::generate_squash_commit_message(git, task, workflow, commit_gen);
+
+    match git.squash_commits(
+        std::path::Path::new(worktree_path),
+        &task.base_branch,
+        &squash_message,
+    ) {
+        Ok(squashed) => {
+            if squashed {
+                orkestra_debug!("integration", "Squashed commits for task {}", task.id);
+            }
+            true
+        }
+        Err(e) => {
+            let error_msg = format!("Failed to squash commits: {e}");
+            orkestra_debug!("integration", "squash failed for {}: {}", task.id, error_msg);
+            record_commit_error(api, &task.id, error_msg, has_worktree);
+            false
+        }
     }
 }
 

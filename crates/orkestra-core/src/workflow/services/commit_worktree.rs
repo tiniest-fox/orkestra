@@ -182,7 +182,7 @@ pub(crate) fn build_committed_diff_summary(git: &dyn GitService, task: &Task) ->
     }
 }
 
-/// Format a TaskDiff into a human-readable summary.
+/// Format a `TaskDiff` into a human-readable summary.
 fn format_diff_summary(diff: &crate::workflow::ports::TaskDiff) -> String {
     use std::fmt::Write;
 

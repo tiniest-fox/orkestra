@@ -704,9 +704,7 @@ pub mod mock {
 
             // Configure to return false (no commits to squash)
             mock.set_next_squash_result(Ok(false));
-            let result = mock
-                .squash_commits(&worktree_path, "main", "msg")
-                .unwrap();
+            let result = mock.squash_commits(&worktree_path, "main", "msg").unwrap();
             assert!(!result, "Should return false when configured");
 
             // Configure an error

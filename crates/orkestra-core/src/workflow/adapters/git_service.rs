@@ -923,7 +923,9 @@ impl GitService for Git2GitService {
 
         if !reset_output.status.success() {
             let stderr = String::from_utf8_lossy(&reset_output.stderr);
-            return Err(GitError::Other(format!("git reset --soft failed: {stderr}")));
+            return Err(GitError::Other(format!(
+                "git reset --soft failed: {stderr}"
+            )));
         }
 
         // 4. Create new commit with provided message
@@ -1701,7 +1703,9 @@ mod tests {
             .current_dir(&worktree.worktree_path)
             .output()
             .expect("Failed to get commit message");
-        let message = String::from_utf8_lossy(&msg_output.stdout).trim().to_string();
+        let message = String::from_utf8_lossy(&msg_output.stdout)
+            .trim()
+            .to_string();
         assert_eq!(message, "Squashed: all changes");
 
         // Verify all files are still present
@@ -1766,7 +1770,9 @@ mod tests {
             .current_dir(&worktree.worktree_path)
             .output()
             .expect("Failed to get commit message");
-        let message = String::from_utf8_lossy(&msg_output.stdout).trim().to_string();
+        let message = String::from_utf8_lossy(&msg_output.stdout)
+            .trim()
+            .to_string();
         assert_eq!(message, "Squashed single");
     }
 }

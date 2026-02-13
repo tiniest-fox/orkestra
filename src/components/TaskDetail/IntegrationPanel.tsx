@@ -14,6 +14,8 @@ interface IntegrationPanelProps {
   onOpenPr: () => void;
   onRetryPr: () => void;
   isSubmitting: boolean;
+  /** Whether the `gh` CLI is available. When false, the Open PR button is disabled. */
+  ghAvailable: boolean;
 }
 
 export function IntegrationPanel({
@@ -22,6 +24,7 @@ export function IntegrationPanel({
   onOpenPr,
   onRetryPr,
   isSubmitting,
+  ghAvailable,
 }: IntegrationPanelProps) {
   // Failed state — show error and retry
   if (status.type === "failed") {
@@ -67,10 +70,11 @@ export function IntegrationPanel({
         </Button>
         <Button
           onClick={onOpenPr}
-          disabled={isSubmitting}
+          disabled={isSubmitting || !ghAvailable}
           loading={isSubmitting}
           fullWidth
           className="bg-info-500 hover:bg-info-600 text-white"
+          title={ghAvailable ? undefined : "Requires gh CLI to create PRs"}
         >
           Open PR
         </Button>

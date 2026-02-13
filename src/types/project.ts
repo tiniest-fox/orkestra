@@ -22,6 +22,8 @@ export interface ProjectInfo {
   project_root: string;
   /** Whether the project has git service available. */
   has_git: boolean;
+  /** Whether the `gh` CLI is available for PR creation. */
+  has_gh_cli: boolean;
 }
 
 /**

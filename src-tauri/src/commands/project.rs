@@ -26,6 +26,8 @@ pub struct ProjectInfo {
     pub project_root: String,
     /// Whether git service is available.
     pub has_git: bool,
+    /// Whether the `gh` CLI is available for PR creation.
+    pub has_gh_cli: bool,
 }
 
 /// Payload for review-ready events.
@@ -159,6 +161,7 @@ pub fn get_project_info(
         Ok(ProjectInfo {
             project_root: state.project_root().display().to_string(),
             has_git: state.has_git_service(),
+            has_gh_cli: state.has_gh_cli(),
         })
     })
 }

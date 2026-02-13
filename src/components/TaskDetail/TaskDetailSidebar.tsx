@@ -5,10 +5,12 @@
  * Actions are managed by the useTaskDetail hook.
  */
 
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import { useLogs } from "../../hooks/useLogs";
 import { useTaskDetail } from "../../hooks/useTaskDetail";
 import { useWorkflowConfig } from "../../providers";
+import type { ProjectInfo } from "../../types/project";
 import type { WorkflowTaskView } from "../../types/workflow";
 import {
   FlexContainer,
@@ -78,6 +80,14 @@ export function TaskDetailSidebar({
 
   const [isRetrying, setIsRetrying] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [ghAvailable, setGhAvailable] = useState(false);
+
+  useEffect(() => {
+    invoke<ProjectInfo>("get_project_info").then(
+      (info) => setGhAvailable(info.has_gh_cli),
+      () => setGhAvailable(false),
+    );
+  }, []);
 
   const logsState = useLogs(task, activeTab === TaskDetailTabs.logs(task.id));
 
@@ -244,6 +254,7 @@ export function TaskDetailSidebar({
             onOpenPr={openPr}
             onRetryPr={retryPr}
             isSubmitting={isSubmitting}
+            ghAvailable={ghAvailable}
           />
         )}
       </Slot>

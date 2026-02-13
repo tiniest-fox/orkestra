@@ -13,6 +13,7 @@ use orkestra_core::{
     find_project_root,
     utility::UtilityRunner,
     workflow::{
+        adapters::GhPrService,
         domain::{IterationTrigger, LogEntry},
         load_workflow_for_project,
         runtime::Outcome,
@@ -901,6 +902,7 @@ fn init_workflow_api() -> Result<WorkflowApi, String> {
     // Create API with or without git
     let api = if let Some(git) = git_service {
         WorkflowApi::with_git(workflow_config, Arc::new(store), git)
+            .with_pr_service(Arc::new(GhPrService::new()))
     } else {
         WorkflowApi::new(workflow_config, Arc::new(store))
     };

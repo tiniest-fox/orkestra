@@ -9,7 +9,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
-use orkestra_core::workflow::adapters::{ClaudeProcessSpawner, OpenCodeProcessSpawner};
+use orkestra_core::workflow::adapters::{
+    ClaudeProcessSpawner, GhPrService, OpenCodeProcessSpawner,
+};
 use orkestra_core::workflow::execution::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
     ProviderRegistry,
@@ -38,6 +40,8 @@ pub struct ProjectState {
     db_conn: DatabaseConnection,
     /// Whether git service is available for worktree isolation.
     has_git: bool,
+    /// Whether the `gh` CLI is available for PR creation.
+    has_gh_cli: bool,
     /// Shared provider registry for agent spawning.
     provider_registry: Arc<ProviderRegistry>,
     /// Stop flag for the orchestrator loop.
@@ -91,6 +95,7 @@ impl ProjectState {
         // Create workflow API with or without git service
         let api = if let Some(git) = git_service {
             WorkflowApi::with_git(workflow.clone(), store, git)
+                .with_pr_service(Arc::new(GhPrService::new()))
         } else {
             WorkflowApi::new(workflow.clone(), store)
         };
@@ -110,6 +115,13 @@ impl ProjectState {
             opencode_aliases(),
         );
 
+        let has_gh_cli = std::process::Command::new("gh")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok();
+
         let stop_flag = Arc::new(AtomicBool::new(false));
 
         Ok(Self {
@@ -119,6 +131,7 @@ impl ProjectState {
             project_root,
             db_conn: conn,
             has_git,
+            has_gh_cli,
             provider_registry: Arc::new(provider_registry),
             stop_flag,
         })
@@ -161,6 +174,11 @@ impl ProjectState {
     /// Check if git service is available.
     pub fn has_git_service(&self) -> bool {
         self.has_git
+    }
+
+    /// Check if the `gh` CLI is available.
+    pub fn has_gh_cli(&self) -> bool {
+        self.has_gh_cli
     }
 
     /// Get the shared provider registry.

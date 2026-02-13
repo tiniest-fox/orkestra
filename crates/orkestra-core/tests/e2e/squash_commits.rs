@@ -115,6 +115,11 @@ fn get_commit_message(repo_path: &Path, commit_sha: &str) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
+/// Create a file in a worktree to generate pending changes for commit.
+fn create_file_in_worktree(worktree_path: &Path, filename: &str, content: &str) {
+    std::fs::write(worktree_path.join(filename), content).expect("Failed to write file");
+}
+
 // =============================================================================
 // Test 1: Per-Stage Commits Use Simple Format
 // =============================================================================
@@ -132,6 +137,9 @@ fn test_per_stage_commits_use_simple_format() {
     let worktree_path = Path::new(task.worktree_path.as_ref().unwrap());
 
     // Planning stage: produce plan with activity log
+    // Create a file change so commit_worktree_changes has something to commit
+    create_file_in_worktree(worktree_path, "plan.md", "# Implementation Plan\n\nThis is the plan.");
+
     ctx.set_output_with_activity(
         &task_id,
         MockAgentOutput::Artifact {
@@ -191,7 +199,8 @@ fn test_integration_squashes_commits_for_non_subtask() {
     let task_id = task.id.clone();
     let worktree_path = Path::new(task.worktree_path.as_ref().unwrap());
 
-    // Planning stage
+    // Planning stage - create file change
+    create_file_in_worktree(worktree_path, "plan.md", "# Plan\n\nImplementation plan.");
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -205,7 +214,8 @@ fn test_integration_squashes_commits_for_non_subtask() {
     ctx.api().approve(&task_id).unwrap();
     ctx.advance(); // commit + advance to breakdown
 
-    // Breakdown stage
+    // Breakdown stage - create file change
+    create_file_in_worktree(worktree_path, "breakdown.md", "# Breakdown\n\nTask breakdown.");
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -219,7 +229,8 @@ fn test_integration_squashes_commits_for_non_subtask() {
     ctx.api().approve(&task_id).unwrap();
     ctx.advance(); // commit + advance to work
 
-    // Work stage
+    // Work stage - create file change
+    create_file_in_worktree(worktree_path, "feature.txt", "Feature implementation complete.");
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -291,8 +302,10 @@ fn test_subtask_integration_preserves_commits() {
     // Create parent task
     let parent = ctx.create_task("Parent feature", "Build a feature with subtasks", None);
     let parent_id = parent.id.clone();
+    let parent_worktree = Path::new(parent.worktree_path.as_ref().unwrap());
 
-    // Planning stage for parent
+    // Planning stage for parent - create file change
+    create_file_in_worktree(parent_worktree, "parent_plan.md", "# Parent Plan");
     ctx.set_output(
         &parent_id,
         MockAgentOutput::Artifact {
@@ -306,7 +319,8 @@ fn test_subtask_integration_preserves_commits() {
     ctx.api().approve(&parent_id).unwrap();
     ctx.advance(); // commit + advance to breakdown
 
-    // Breakdown stage: produce a single subtask
+    // Breakdown stage: produce a single subtask - create file change
+    create_file_in_worktree(parent_worktree, "breakdown.md", "# Breakdown\n\nSubtask design.");
     ctx.set_output(
         &parent_id,
         MockAgentOutput::Subtasks {
@@ -349,7 +363,8 @@ fn test_subtask_integration_preserves_commits() {
     let parent = ctx.api().get_task(&parent_id).unwrap();
     let parent_branch = parent.branch_name.clone().unwrap();
 
-    // Work stage for subtask (subtask flow: work → review)
+    // Work stage for subtask (subtask flow: work → review) - create file change
+    create_file_in_worktree(subtask_worktree, "subtask_work.txt", "Subtask implementation.");
     ctx.set_output(
         subtask_id,
         MockAgentOutput::Artifact {
@@ -408,14 +423,11 @@ fn test_subtask_integration_preserves_commits() {
     let parent_commits = get_commits_since_merge_base(parent_worktree, "main");
 
     // Subtask commits should be preserved (not squashed into one)
-    // We expect individual stage commits like "work: subtask-id", "review: subtask-id"
-    let has_work_commit = parent_commits
-        .iter()
-        .any(|c| c.starts_with("work:") || c.starts_with("planning:"));
+    // We expect individual stage commits like "work: subtask-id"
+    let has_work_commit = parent_commits.iter().any(|c| c.starts_with("work:"));
     assert!(
         has_work_commit,
-        "Parent branch should have individual subtask commits (not squashed). Commits: {:?}",
-        parent_commits
+        "Parent branch should have individual subtask commits (not squashed). Commits: {parent_commits:?}"
     );
 }
 
@@ -439,7 +451,8 @@ fn test_conflict_recovery_squashes_all_commits() {
     let task_id = task.id.clone();
     let worktree_path = Path::new(task.worktree_path.as_ref().unwrap());
 
-    // Planning stage
+    // Planning stage - create file change
+    create_file_in_worktree(worktree_path, "plan.md", "# Plan");
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -453,7 +466,8 @@ fn test_conflict_recovery_squashes_all_commits() {
     ctx.api().approve(&task_id).unwrap();
     ctx.advance(); // commit + advance to breakdown
 
-    // Breakdown stage
+    // Breakdown stage - create file change
+    create_file_in_worktree(worktree_path, "breakdown.md", "# Breakdown");
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -468,7 +482,7 @@ fn test_conflict_recovery_squashes_all_commits() {
     ctx.advance(); // commit + advance to work
 
     // Work stage: create a file that will conflict
-    std::fs::write(worktree_path.join("conflict.txt"), "Task's version").unwrap();
+    create_file_in_worktree(worktree_path, "conflict.txt", "Task's version");
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -482,18 +496,12 @@ fn test_conflict_recovery_squashes_all_commits() {
     ctx.api().approve(&task_id).unwrap();
     ctx.advance(); // commit + advance to review
 
-    // Review approves
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Approval {
-            decision: "approve".to_string(),
-            content: "LGTM".to_string(),
-            activity_log: None,
-        },
-    );
-
     // Count commits before integration attempt
     let commits_before_first_integration = count_commits_since_merge_base(worktree_path, "main");
+    assert!(
+        commits_before_first_integration >= 3,
+        "Should have at least 3 commits before integration, got: {commits_before_first_integration}"
+    );
 
     // Create conflict on main BEFORE review completes (so integration fails)
     orkestra_core::testutil::create_and_commit_file(
@@ -504,7 +512,18 @@ fn test_conflict_recovery_squashes_all_commits() {
     )
     .unwrap();
 
+    // Review approves
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "LGTM".to_string(),
+            activity_log: None,
+        },
+    );
+
     // Queue the recovery output before triggering integration
+    // Recovery creates a new file to resolve conflict
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -532,6 +551,9 @@ fn test_conflict_recovery_squashes_all_commits() {
         "Work agent should have completed"
     );
 
+    // Create file change for recovery commit
+    create_file_in_worktree(worktree_path, "recovery.txt", "Recovery changes");
+
     // Approve the recovery work
     ctx.api().approve(&task_id).unwrap();
     ctx.advance(); // commit + advance to review
@@ -540,9 +562,7 @@ fn test_conflict_recovery_squashes_all_commits() {
     let commits_after_recovery = count_commits_since_merge_base(worktree_path, "main");
     assert!(
         commits_after_recovery > commits_before_first_integration,
-        "Should have more commits after recovery: {} > {}",
-        commits_after_recovery,
-        commits_before_first_integration
+        "Should have more commits after recovery: {commits_after_recovery} > {commits_before_first_integration}"
     );
 
     // Resolve conflict on main by reverting

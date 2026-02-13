@@ -774,7 +774,11 @@ impl OrchestratorLoop {
     /// the normal case, but catches edge cases (e.g., manual recovery, direct
     /// `integrate_task` calls from tests).
     #[allow(clippy::needless_pass_by_value)]
-    fn run_background_integration(git: Arc<dyn GitService>, api: Arc<Mutex<WorkflowApi>>, task: Task) {
+    fn run_background_integration(
+        git: Arc<dyn GitService>,
+        api: Arc<Mutex<WorkflowApi>>,
+        task: Task,
+    ) {
         let task_id = task.id.clone();
         let has_worktree = task.worktree_path.is_some();
 
@@ -868,12 +872,9 @@ impl OrchestratorLoop {
 
         // 1. Safety-net commit
         // Uses "pr-safety" as stage name since this is a fallback path.
-        if let Err(e) = super::commit_worktree::commit_worktree_changes(
-            git.as_ref(),
-            &task,
-            "pr-safety",
-            None,
-        ) {
+        if let Err(e) =
+            super::commit_worktree::commit_worktree_changes(git.as_ref(), &task, "pr-safety", None)
+        {
             if let Ok(api) = api.lock() {
                 let _ = api.pr_creation_failed(&task_id, &format!("Commit failed: {e}"));
             }

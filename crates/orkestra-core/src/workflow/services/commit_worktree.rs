@@ -7,7 +7,7 @@
 //! # Commit Message Strategy
 //!
 //! Per-stage commits use simple deterministic messages: `{stage}: {task_id}` with
-//! the iteration's activity_log as the body. LLM-generated commit messages are
+//! the iteration's `activity_log` as the body. LLM-generated commit messages are
 //! reserved for the final squash during integration.
 
 use std::path::Path;
@@ -23,7 +23,7 @@ use crate::workflow::ports::{FileChangeType, GitError, GitService};
 /// no uncommitted changes (handled by `commit_pending_changes`).
 ///
 /// Uses simple deterministic messages (`{stage}: {task_id}`) instead of LLM generation.
-/// The activity_log from the iteration is included as the commit body.
+/// The `activity_log` from the iteration is included as the commit body.
 pub(crate) fn commit_worktree_changes(
     git: &dyn GitService,
     task: &Task,

@@ -23,7 +23,7 @@ pub use prompt::{
     determine_resume_type, get_agent_schema, load_agent_definition, resolve_stage_agent_config,
     resolve_stage_agent_config_for, ActivityLogEntry, AgentConfigError, ArtifactContext,
     FlowOverrides, IntegrationErrorContext, PromptBuilder, QuestionAnswerContext,
-    ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType, StagePromptContext, WorkflowStageEntry,
+    ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType, StagePromptContext,
 };
 pub use provider_registry::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,

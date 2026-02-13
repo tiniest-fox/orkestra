@@ -42,25 +42,15 @@ pub fn build_workflow_stage_entries(
     current_stage: &str,
     flow: Option<&str>,
 ) -> Vec<WorkflowStageEntry> {
-    let to_entry = |stage: &StageConfig| WorkflowStageEntry {
-        name: stage.name.clone(),
-        description: stage.description.clone().unwrap_or_else(|| stage.display()),
-        is_current: stage.name == current_stage,
-    };
-
-    match flow {
-        None => workflow.stages.iter().map(to_entry).collect(),
-        Some(flow_name) => {
-            let Some(flow_config) = workflow.flows.get(flow_name) else {
-                return Vec::new();
-            };
-            flow_config
-                .stages
-                .iter()
-                .filter_map(|entry| workflow.stage(&entry.stage_name).map(to_entry))
-                .collect()
-        }
-    }
+    workflow
+        .stages_in_flow(flow)
+        .into_iter()
+        .map(|stage| WorkflowStageEntry {
+            name: stage.name.clone(),
+            description: stage.description.clone().unwrap_or_else(|| stage.display()),
+            is_current: stage.name == current_stage,
+        })
+        .collect()
 }
 
 // =============================================================================

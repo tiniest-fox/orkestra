@@ -353,21 +353,14 @@ impl WorkflowConfig {
             .unwrap_or_default()
     }
 
-    /// Get the effective model specs for all agent (non-script) stages in the given flow.
+    /// Get ordered stage references for a given flow.
     ///
-    /// For default flow (None), iterates all global stages.
-    /// For named flows, iterates only the stages listed in that flow.
-    /// Returns model specs in stage order (None means "use provider default").
-    pub fn agent_model_specs(&self, flow: Option<&str>) -> Vec<Option<String>> {
+    /// Returns all stages in the default pipeline when `flow` is None,
+    /// or the flow's subset of stages when a flow name is given.
+    /// Returns an empty vec if the flow name doesn't exist.
+    pub fn stages_in_flow(&self, flow: Option<&str>) -> Vec<&StageConfig> {
         match flow {
-            None => {
-                // Default flow: iterate all global stages
-                self.stages
-                    .iter()
-                    .filter(|s| s.script.is_none())
-                    .map(|s| s.model.clone())
-                    .collect()
-            }
+            None => self.stages.iter().collect(),
             Some(flow_name) => {
                 let Some(flow_config) = self.flows.get(flow_name) else {
                     return Vec::new();
@@ -375,16 +368,29 @@ impl WorkflowConfig {
                 flow_config
                     .stages
                     .iter()
-                    .filter_map(|entry| {
-                        let stage = self.stage(&entry.stage_name)?;
-                        if stage.script.is_some() {
-                            return None;
-                        }
-                        Some(self.effective_model(&entry.stage_name, Some(flow_name)))
-                    })
+                    .filter_map(|entry| self.stage(&entry.stage_name))
                     .collect()
             }
         }
+    }
+
+    /// Get the effective model specs for all agent (non-script) stages in the given flow.
+    ///
+    /// For default flow (None), iterates all global stages.
+    /// For named flows, iterates only the stages listed in that flow.
+    /// Returns model specs in stage order (None means "use provider default").
+    pub fn agent_model_specs(&self, flow: Option<&str>) -> Vec<Option<String>> {
+        self.stages_in_flow(flow)
+            .into_iter()
+            .filter(|s| s.script.is_none())
+            .map(|s| {
+                // For flow stages, check for model override
+                match flow {
+                    Some(flow_name) => self.effective_model(&s.name, Some(flow_name)),
+                    None => s.model.clone(),
+                }
+            })
+            .collect()
     }
 
     /// Check whether a given stage is in the specified flow.

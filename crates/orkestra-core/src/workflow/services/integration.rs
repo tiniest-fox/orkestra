@@ -272,6 +272,25 @@ impl WorkflowApi {
             return Err(WorkflowError::IntegrationFailed(error_msg));
         }
 
+        // Squash commits for top-level tasks (subtasks keep individual commits).
+        if task.parent_id.is_none() {
+            if let Some(worktree_path) = &task.worktree_path {
+                let squash_message = super::commit_worktree::generate_squash_commit_message(
+                    git.as_ref(),
+                    &task,
+                    &self.workflow,
+                    self.commit_message_generator.as_ref(),
+                );
+                if let Err(e) =
+                    git.squash_commits(Path::new(worktree_path), &task.base_branch, &squash_message)
+                {
+                    let error_msg = format!("Failed to squash commits: {e}");
+                    self.integration_failed(task_id, &error_msg, &[])?;
+                    return Err(WorkflowError::IntegrationFailed(error_msg));
+                }
+            }
+        }
+
         // Target branch is always the task's base_branch (set at creation from UI selection or parent branch).
         if task.base_branch.is_empty() {
             return Err(WorkflowError::InvalidTransition(format!(

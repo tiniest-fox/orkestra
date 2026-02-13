@@ -5,6 +5,7 @@
 //! 2. Non-subtask integration squashes all commits into one
 //! 3. Subtask integration does NOT squash (individual commits preserved)
 //! 4. After conflict recovery, re-integration squashes all commits (including recovery)
+//! 5. User-triggered `merge_task()` also squashes commits (same as auto-merge)
 
 use std::path::Path;
 use std::process::Command;
@@ -13,7 +14,7 @@ use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::execution::SubtaskOutput;
 use orkestra_core::workflow::runtime::Phase;
 
-use super::helpers::{enable_auto_merge, workflows, MockAgentOutput, TestEnv};
+use super::helpers::{disable_auto_merge, enable_auto_merge, workflows, MockAgentOutput, TestEnv};
 
 // =============================================================================
 // Helper: Git Commit Inspection
@@ -793,5 +794,136 @@ fn test_integration_with_no_commits_succeeds() {
     assert_eq!(
         commits_on_main, 0,
         "Main should have 0 new commits when task had no changes, got: {commits_on_main}"
+    );
+}
+
+// =============================================================================
+// Test 6: User-Triggered merge_task() Squashes Commits
+// =============================================================================
+
+/// User-triggered `merge_task()` should squash commits the same way auto-merge does.
+#[test]
+fn test_merge_task_squashes_commits() {
+    let ctx = TestEnv::with_git(
+        &disable_auto_merge(test_default_workflow()),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    // Record initial main commit for comparison
+    let initial_main_commit = get_main_commit_sha(ctx.repo_path());
+
+    let task = ctx.create_task("User merge squash test", "Description", None);
+    let task_id = task.id.clone();
+    let worktree_path = Path::new(task.worktree_path.as_ref().unwrap());
+
+    // Planning stage - create file change
+    create_file_in_worktree(worktree_path, "plan.md", "# Plan\n\nImplementation plan.");
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Implementation plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn planner
+    ctx.advance(); // process plan
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit + advance to breakdown
+
+    // Breakdown stage - create file change
+    create_file_in_worktree(
+        worktree_path,
+        "breakdown.md",
+        "# Breakdown\n\nTask breakdown.",
+    );
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "Task breakdown".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn breakdown
+    ctx.advance(); // process breakdown
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit + advance to work
+
+    // Work stage - create file change
+    create_file_in_worktree(
+        worktree_path,
+        "feature.txt",
+        "Feature implementation complete.",
+    );
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process summary
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit + advance to review
+
+    // Verify we have multiple commits on the task branch before integration
+    let commits_before = count_commits_since_merge_base(worktree_path, "main");
+    assert!(
+        commits_before >= 3,
+        "Should have at least 3 stage commits before integration, got: {commits_before}"
+    );
+
+    // Review stage (automated) — moves to Done but does NOT auto-integrate
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "LGTM".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn reviewer
+    ctx.advance(); // process approval -> Done (no auto-merge)
+
+    // Verify task is Done+Idle (not archived — auto_merge is off)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_done(),
+        "Task should be Done, got: {:?}",
+        task.status
+    );
+    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+
+    // User triggers merge
+    ctx.api().merge_task(&task_id).unwrap();
+
+    // Task should be archived after user-triggered merge
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_archived(),
+        "Task should be Archived after merge_task(), got: {:?}",
+        task.status
+    );
+
+    // Main should have exactly 1 new commit (the squashed commit)
+    let commits_on_main = count_commits_on_main(ctx.repo_path(), &initial_main_commit);
+    assert_eq!(
+        commits_on_main, 1,
+        "Main should have exactly 1 squashed commit, got: {commits_on_main}"
+    );
+
+    // The squashed commit should have an LLM-generated message (from MockCommitMessageGenerator)
+    let main_commit_sha = get_main_commit_sha(ctx.repo_path());
+    let squashed_message = get_full_commit_message(ctx.repo_path(), &main_commit_sha);
+    assert!(
+        squashed_message.contains("User merge squash test"),
+        "Squashed commit should contain task title, got: {squashed_message}"
+    );
+    assert!(
+        squashed_message.contains("Automated changes"),
+        "Squashed commit should have LLM-generated body from mock, got: {squashed_message}"
     );
 }

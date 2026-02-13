@@ -87,7 +87,7 @@ stages:
     icon: book-open
     description: Capture learnings and update documentation
     artifact: learnings
-    inputs: [summary, verdict]
+    inputs: [plan, summary, check_results, verdict]
     prompt: compound.md
     model: sonnet
     is_automated: true
@@ -108,7 +108,8 @@ flows:
           capabilities:
             approval:
               rejection_stage: work
-      - compound
+      - compound:
+          inputs: [plan, summary, check_results, verdict]
 
   # Hotfix flow: Straight to work, minimal overhead
   hotfix:

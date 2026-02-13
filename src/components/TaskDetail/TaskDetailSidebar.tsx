@@ -118,14 +118,16 @@ export function TaskDetailSidebar({
     task.derived.needs_review &&
     task.derived.current_stage;
   // Show integration panel for Done+Idle tasks (ready to merge or PR)
-  // Also show for Failed tasks (PR creation failure — retry available)
+  // Also show for PR creation failures (error starts with "PR creation failed:")
+  const isPrCreationFailure =
+    task.status.type === "failed" &&
+    task.status.error?.startsWith("PR creation failed:");
   const showIntegration =
     !showDelete &&
     !showQuestions &&
     !showResume &&
     !showReview &&
-    ((task.derived.is_done && task.phase === "idle") ||
-      (task.derived.is_failed && task.phase === "idle"));
+    ((task.derived.is_done && task.phase === "idle") || isPrCreationFailure);
   const showCompactFooter = !!(showDelete || showReview || showResume || showIntegration);
 
   return (

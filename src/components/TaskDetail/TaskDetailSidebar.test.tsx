@@ -61,6 +61,12 @@ vi.mock("../../hooks/useTaskDetail", () => ({
     reject: mockReject,
     answerQuestions: mockAnswerQuestions,
     retry: mockRetry,
+    setAutoMode: vi.fn(() => Promise.resolve()),
+    interrupt: vi.fn(() => Promise.resolve()),
+    resume: vi.fn(() => Promise.resolve()),
+    mergeTask: vi.fn(() => Promise.resolve()),
+    openPr: vi.fn(() => Promise.resolve()),
+    retryPr: vi.fn(() => Promise.resolve()),
   }),
 }));
 

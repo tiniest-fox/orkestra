@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createMockArtifact,
@@ -14,6 +14,9 @@ const mockReject = vi.fn(() => Promise.resolve());
 const mockAnswerQuestions = vi.fn(() => Promise.resolve());
 const mockRetry = vi.fn(() => Promise.resolve());
 const mockRefetch = vi.fn(() => Promise.resolve());
+const mockMergeTask = vi.fn(() => Promise.resolve());
+const mockOpenPr = vi.fn(() => Promise.resolve());
+const mockRetryPr = vi.fn(() => Promise.resolve());
 const mockConfig = createMockWorkflowConfig();
 
 // Mock the providers
@@ -64,15 +67,18 @@ vi.mock("../../hooks/useTaskDetail", () => ({
     setAutoMode: vi.fn(() => Promise.resolve()),
     interrupt: vi.fn(() => Promise.resolve()),
     resume: vi.fn(() => Promise.resolve()),
-    mergeTask: vi.fn(() => Promise.resolve()),
-    openPr: vi.fn(() => Promise.resolve()),
-    retryPr: vi.fn(() => Promise.resolve()),
+    mergeTask: mockMergeTask,
+    openPr: mockOpenPr,
+    retryPr: mockRetryPr,
   }),
 }));
 
 describe("TaskDetailSidebar", () => {
   beforeEach(() => {
     resetMocks();
+    mockMergeTask.mockClear();
+    mockOpenPr.mockClear();
+    mockRetryPr.mockClear();
   });
 
   it("renders task in planning stage", async () => {
@@ -169,5 +175,89 @@ describe("TaskDetailSidebar", () => {
     expect(screen.getByRole("button", { name: "Activity" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Logs" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Artifacts" })).toBeInTheDocument();
+  });
+
+  it("renders integration panel for Done+Idle task", async () => {
+    const task = createMockWorkflowTaskView({
+      status: { type: "done" },
+      phase: "idle",
+      derived: { is_done: true },
+    });
+
+    await act(async () => {
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+    });
+
+    expect(screen.getByText("Integration")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /auto-merge/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open pr/i })).toBeInTheDocument();
+  });
+
+  it("calls mergeTask when Auto-merge is clicked", async () => {
+    const task = createMockWorkflowTaskView({
+      status: { type: "done" },
+      phase: "idle",
+      derived: { is_done: true },
+    });
+
+    await act(async () => {
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /auto-merge/i }));
+    });
+
+    expect(mockMergeTask).toHaveBeenCalled();
+  });
+
+  it("calls openPr when Open PR is clicked", async () => {
+    const task = createMockWorkflowTaskView({
+      status: { type: "done" },
+      phase: "idle",
+      derived: { is_done: true },
+    });
+
+    await act(async () => {
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /open pr/i }));
+    });
+
+    expect(mockOpenPr).toHaveBeenCalled();
+  });
+
+  it("renders retry panel for PR creation failure", async () => {
+    const task = createMockWorkflowTaskView({
+      status: { type: "failed", error: "PR creation failed: auth error" },
+      phase: "idle",
+    });
+
+    await act(async () => {
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+    });
+
+    expect(screen.getByText("PR Creation Failed")).toBeInTheDocument();
+    expect(screen.getByText("PR creation failed: auth error")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
+  it("calls retryPr when Retry is clicked", async () => {
+    const task = createMockWorkflowTaskView({
+      status: { type: "failed", error: "PR creation failed: auth error" },
+      phase: "idle",
+    });
+
+    await act(async () => {
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    });
+
+    expect(mockRetryPr).toHaveBeenCalled();
   });
 });

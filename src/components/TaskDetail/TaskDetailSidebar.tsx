@@ -32,6 +32,12 @@ import { SubtasksTab } from "./SubtasksTab";
 import { TaskDetailHeader } from "./TaskDetailHeader";
 import { buildTabs, smartDefaultTab } from "./tabSelection";
 
+/**
+ * Prefix used by backend to indicate PR creation failures.
+ * @see crates/orkestra-core/src/workflow/services/integration.rs (pr_creation_failed)
+ */
+const PR_CREATION_FAILURE_PREFIX = "PR creation failed:";
+
 interface TaskDetailSidebarProps {
   task: WorkflowTaskView;
   onClose: () => void;
@@ -118,9 +124,9 @@ export function TaskDetailSidebar({
     task.derived.needs_review &&
     task.derived.current_stage;
   // Show integration panel for Done+Idle tasks (ready to merge or PR)
-  // Also show for PR creation failures (error starts with "PR creation failed:")
+  // Also show for PR creation failures (error starts with PR_CREATION_FAILURE_PREFIX)
   const isPrCreationFailure =
-    task.status.type === "failed" && task.status.error?.startsWith("PR creation failed:");
+    task.status.type === "failed" && task.status.error?.startsWith(PR_CREATION_FAILURE_PREFIX);
   const showIntegration =
     !showDelete &&
     !showQuestions &&

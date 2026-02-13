@@ -81,8 +81,8 @@ Run `git rebase {{integration_error.base_branch}}` and resolve the conflicts, th
 ## Important: Worktree Context
 
 You are working in a git worktree at: `{{worktree_path}}`
-{{#if base_commit}}
-You branched from `{{base_branch}}` at commit `{{base_commit}}`. To see all changes (committed and uncommitted) made in this worktree, run:
+{{#if base_branch}}
+You branched from `{{base_branch}}`. To see all changes (committed and uncommitted) made in this worktree, run:
 ```
 git diff --merge-base {{base_branch}}
 ```

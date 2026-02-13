@@ -1387,11 +1387,10 @@ mod tests {
         let agent_def = "Planner agent";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Should contain worktree note with base branch and commit
+        // Should contain worktree note with base branch
         assert!(prompt.contains("Worktree Context"));
         assert!(prompt.contains("/path/to/worktree/task-1"));
         assert!(prompt.contains("branched from `main`"));
-        assert!(prompt.contains("at commit `abc123def456`"));
         assert!(prompt.contains("git diff --merge-base main"));
         assert!(prompt.contains("subagents"));
     }

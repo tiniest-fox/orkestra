@@ -32,6 +32,12 @@ interface UseTaskDetailResult {
   interrupt: () => Promise<void>;
   /** Resume an interrupted task, optionally with a message for the agent. */
   resume: (message?: string) => Promise<void>;
+  /** Merge the Done task's branch into base. */
+  mergeTask: () => Promise<void>;
+  /** Create a pull request for the Done task. */
+  openPr: () => Promise<void>;
+  /** Retry PR creation after a failure. */
+  retryPr: () => Promise<void>;
 }
 
 export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
@@ -141,6 +147,42 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     [task.id, refetch],
   );
 
+  const mergeTask = useCallback(async () => {
+    setIsSubmitting(true);
+    try {
+      await invoke<WorkflowTask>("workflow_merge_task", { taskId: task.id });
+      refetch();
+    } catch (err) {
+      console.error("Failed to merge task:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [task.id, refetch]);
+
+  const openPr = useCallback(async () => {
+    setIsSubmitting(true);
+    try {
+      await invoke<WorkflowTask>("workflow_open_pr", { taskId: task.id });
+      refetch();
+    } catch (err) {
+      console.error("Failed to open PR:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [task.id, refetch]);
+
+  const retryPr = useCallback(async () => {
+    setIsSubmitting(true);
+    try {
+      await invoke<WorkflowTask>("workflow_retry_pr", { taskId: task.id });
+      refetch();
+    } catch (err) {
+      console.error("Failed to retry PR:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [task.id, refetch]);
+
   return {
     task,
     currentStageDisplayName,
@@ -152,5 +194,8 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     setAutoMode,
     interrupt,
     resume,
+    mergeTask,
+    openPr,
+    retryPr,
   };
 }

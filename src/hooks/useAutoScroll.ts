@@ -1,13 +1,13 @@
 /**
  * Hook for managing auto-scroll behavior.
- * Tracks whether user is at bottom of scroll container and enables auto-scroll on updates.
+ * Uses MutationObserver to detect DOM changes and scroll after layout completes.
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface UseAutoScrollResult<T extends HTMLElement> {
-  /** Ref to attach to the scroll container. */
-  containerRef: React.RefObject<T>;
+  /** Callback ref to attach to the scroll container. */
+  containerRef: (node: T | null) => void;
   /** Handle scroll events to track user position. */
   handleScroll: () => void;
   /** Reset auto-scroll state (re-enable). */
@@ -15,41 +15,67 @@ interface UseAutoScrollResult<T extends HTMLElement> {
 }
 
 export function useAutoScroll<T extends HTMLElement>(
-  /** Dependencies that trigger auto-scroll when changed. */
-  dependencies: unknown[],
   /** Whether auto-scroll is active (e.g., tab is visible). */
   isActive: boolean,
 ): UseAutoScrollResult<T> {
-  const containerRef = useRef<T>(null);
+  // Track container element with state so effect re-runs when element changes
+  const [container, setContainer] = useState<T | null>(null);
   const isAutoScrollEnabledRef = useRef(true);
+
+  // Callback ref that updates state when container element changes
+  const containerRef = useCallback((node: T | null) => setContainer(node), []);
 
   // Threshold in pixels - allows for minor scroll jitter
   const SCROLL_THRESHOLD = 30;
 
-  const isAtBottom = useCallback((container: HTMLElement): boolean => {
-    const distanceFromBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight;
+  const isAtBottom = useCallback((el: HTMLElement): boolean => {
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     return distanceFromBottom <= SCROLL_THRESHOLD;
   }, []);
 
   const handleScroll = useCallback(() => {
-    const container = containerRef.current;
     if (!container) return;
-
     isAutoScrollEnabledRef.current = isAtBottom(container);
-  }, [isAtBottom]);
+  }, [container, isAtBottom]);
 
   const resetAutoScroll = useCallback(() => {
     isAutoScrollEnabledRef.current = true;
   }, []);
 
-  // Auto-scroll to bottom when dependencies change (only if user is following)
+  // Auto-scroll using MutationObserver - fires after DOM mutations
+  // Combined with RAF to ensure scroll happens after layout completes
   useEffect(() => {
-    if (isActive && containerRef.current && isAutoScrollEnabledRef.current) {
-      const container = containerRef.current;
-      container.scrollTop = container.scrollHeight;
-    }
-  }, [...dependencies, isActive]);
+    if (!container) return;
+
+    let rafId: number | null = null;
+
+    const scrollToBottom = () => {
+      if (isActive && isAutoScrollEnabledRef.current && container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    };
+
+    const observer = new MutationObserver(() => {
+      // Cancel any pending RAF to avoid queuing multiple scrolls
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      // Schedule scroll after layout completes
+      rafId = requestAnimationFrame(scrollToBottom);
+    });
+
+    observer.observe(container, { childList: true, subtree: true });
+
+    // Initial scroll for content already present when observer connects
+    rafId = requestAnimationFrame(scrollToBottom);
+
+    return () => {
+      observer.disconnect();
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [isActive, container]);
 
   return {
     containerRef,

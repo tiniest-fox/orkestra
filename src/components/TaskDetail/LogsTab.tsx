@@ -2,6 +2,7 @@
  * Logs tab - displays session logs with stage switching via TabbedPanel.
  */
 
+import { useEffect } from "react";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import type { LogEntry, WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
@@ -27,7 +28,13 @@ export function LogsTab({
   activeLogStage,
   onStageChange,
 }: LogsTabProps) {
-  const { containerRef, handleScroll } = useAutoScroll<HTMLDivElement>([logs], true);
+  const { containerRef, handleScroll, resetAutoScroll } = useAutoScroll<HTMLDivElement>(true);
+
+  // Reset auto-scroll when stage changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetAutoScroll is stable, activeLogStage is the trigger
+  useEffect(() => {
+    resetAutoScroll();
+  }, [activeLogStage]);
 
   const tabs = stagesWithLogs.map((stage) => ({
     id: LogTabs.stage(stage),
@@ -66,7 +73,11 @@ export function LogsTab({
       )}
 
       {(tabs.length === 0 || !activeLogStage) && (
-        <div className="p-4 bg-stone-50 dark:bg-stone-900 text-stone-800 dark:text-stone-200 font-mono text-sm flex-1">
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          className="h-full p-4 overflow-auto bg-stone-50 dark:bg-stone-900 text-stone-800 dark:text-stone-200 font-mono text-sm flex-1"
+        >
           <LogList logs={logs} isLoading={isLoading} error={error} />
         </div>
       )}

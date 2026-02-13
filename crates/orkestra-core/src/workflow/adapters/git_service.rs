@@ -166,7 +166,7 @@ impl Git2GitService {
     fn resolve_branch_working_dir(&self, branch: &str) -> Result<PathBuf, GitError> {
         if let Some(task_id) = branch.strip_prefix("task/") {
             let worktree_path = self.worktrees_dir.join(task_id);
-            if worktree_path.exists() {
+            if worktree_path.join(".git").exists() {
                 return Ok(worktree_path);
             }
             return Err(GitError::WorktreeError(format!(
@@ -239,6 +239,14 @@ impl Git2GitService {
                     working_dir.display()
                 ))
             })?;
+
+        if !head_output.status.success() {
+            let stderr = String::from_utf8_lossy(&head_output.stderr);
+            return Err(GitError::MergeError(format!(
+                "Failed to get HEAD after merge in {}: {stderr}",
+                working_dir.display()
+            )));
+        }
 
         let commit_sha = String::from_utf8_lossy(&head_output.stdout)
             .trim()

@@ -104,13 +104,6 @@ pub fn perform_git_integration(
         }
         Err(e) => {
             orkestra_debug!("integration", "failed {}: {}", params.task_id, e);
-            if let Err(abort_err) = git.abort_merge() {
-                workflow_warn!(
-                    "Failed to abort merge for {}: {}",
-                    params.task_id,
-                    abort_err
-                );
-            }
             IntegrationGitResult::MergeError(format!("{e}"))
         }
     }

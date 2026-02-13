@@ -1232,3 +1232,105 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
         "Task should be Idle (ready for work agent)"
     );
 }
+
+// =============================================================================
+// Sibling Context in Prompts
+// =============================================================================
+
+/// Verify that subtask agents receive sibling context in their prompts,
+/// with correct dependency relationship markers.
+#[test]
+fn test_subtask_prompt_includes_sibling_context() {
+    let workflow = workflows::with_subtasks();
+    let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    // Create subtasks: A (no deps), B (depends on A), C (depends on A)
+    let subtask_outputs = vec![
+        SubtaskOutput {
+            title: "Setup foundation".into(),
+            description: "Create base infrastructure".into(),
+            detailed_instructions: "Implementation details for foundation".into(),
+            depends_on: vec![],
+        },
+        SubtaskOutput {
+            title: "Build API layer".into(),
+            description: "Create REST endpoints".into(),
+            detailed_instructions: "Implementation details for API".into(),
+            depends_on: vec![0], // Depends on A
+        },
+        SubtaskOutput {
+            title: "Build UI layer".into(),
+            description: "Create frontend components".into(),
+            detailed_instructions: "Implementation details for UI".into(),
+            depends_on: vec![0], // Depends on A
+        },
+    ];
+
+    let (_parent_id, id_map) = setup_parent_with_subtasks(&env, subtask_outputs, None);
+
+    // Find subtask A ("Setup foundation")
+    let subtask_a_id = id_map
+        .iter()
+        .find(|(title, _)| title == "Setup foundation")
+        .map(|(_, id)| id.clone())
+        .expect("Should find subtask A");
+
+    // Subtask A has no dependencies, so it should be ready for setup immediately
+    // Advance to run setup (creates worktree)
+    env.advance();
+
+    // Set mock output for subtask A's work stage
+    env.set_output(
+        &subtask_a_id,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Work done".into(),
+            activity_log: None,
+        },
+    );
+
+    // Advance to spawn the work agent for subtask A
+    env.advance();
+
+    // Capture the prompt
+    let prompt = env.last_prompt_for(&subtask_a_id);
+
+    // Verify sibling section exists
+    assert!(
+        prompt.contains("## Sibling Subtasks"),
+        "Prompt should contain sibling section. Got:\n{}",
+        &prompt[..prompt.len().min(2000)]
+    );
+
+    // Verify siblings B and C are listed (A should NOT be in its own list)
+    assert!(
+        prompt.contains("Build API layer"),
+        "Sibling B should be in the list"
+    );
+    assert!(
+        prompt.contains("Build UI layer"),
+        "Sibling C should be in the list"
+    );
+
+    // Verify dependency relationships are shown
+    // B and C both depend on A, so they should show "depends on this task"
+    assert!(
+        prompt.contains("depends on this task"),
+        "Dependent siblings should show relationship marker"
+    );
+
+    // Verify current task (A) is NOT in its own sibling list
+    // Count occurrences of "Setup foundation" - should only appear in task description, not siblings
+    let setup_count = prompt.matches("Setup foundation").count();
+    assert!(
+        setup_count <= 1,
+        "Current task should not appear in sibling list. Found {} occurrences",
+        setup_count
+    );
+
+    // Verify status is shown
+    assert!(
+        prompt.contains("pending"),
+        "Sibling status should be displayed"
+    );
+}

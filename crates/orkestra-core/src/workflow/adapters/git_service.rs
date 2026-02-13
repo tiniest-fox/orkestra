@@ -484,7 +484,7 @@ impl GitService for Git2GitService {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(GitError::IoError(format!(
-                "Failed to check uncommitted changes in {}: {stderr}",
+                "Failed to check pending changes in {}: {stderr}",
                 worktree_path.display()
             )));
         }
@@ -537,6 +537,15 @@ impl GitService for Git2GitService {
             .current_dir(worktree_path)
             .output()
             .map_err(|e| GitError::IoError(format!("Failed to get branch name: {e}")))?;
+
+        if !branch_output.status.success() {
+            let stderr = String::from_utf8_lossy(&branch_output.stderr);
+            return Err(GitError::IoError(format!(
+                "Failed to get branch name in {}: {stderr}",
+                worktree_path.display()
+            )));
+        }
+
         let branch_name = String::from_utf8_lossy(&branch_output.stdout)
             .trim()
             .to_string();
@@ -598,40 +607,6 @@ impl GitService for Git2GitService {
         }
 
         merge_result
-    }
-
-    fn get_conflict_files(&self) -> Result<Vec<String>, GitError> {
-        let output = Command::new("git")
-            .args(["diff", "--name-only", "--diff-filter=U"])
-            .current_dir(&self.repo_path)
-            .output()
-            .map_err(|e| GitError::IoError(format!("Failed to get conflict files: {e}")))?;
-
-        let files = String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect();
-        Ok(files)
-    }
-
-    fn abort_merge(&self) -> Result<(), GitError> {
-        let output = Command::new("git")
-            .args(["merge", "--abort"])
-            .current_dir(&self.repo_path)
-            .output()
-            .map_err(|e| GitError::MergeError(format!("Failed to abort merge: {e}")))?;
-
-        if !output.status.success() {
-            // It's okay if there's nothing to abort
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if !stderr.contains("no merge to abort") {
-                return Err(GitError::MergeError(format!(
-                    "Failed to abort merge: {stderr}"
-                )));
-            }
-        }
-        Ok(())
     }
 
     fn delete_branch(&self, branch_name: &str) -> Result<(), GitError> {

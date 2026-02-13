@@ -217,12 +217,6 @@ pub trait GitService: Send + Sync {
         target_branch: &str,
     ) -> Result<MergeResult, GitError>;
 
-    /// Get list of files currently in merge conflict.
-    fn get_conflict_files(&self) -> Result<Vec<String>, GitError>;
-
-    /// Abort a merge in progress.
-    fn abort_merge(&self) -> Result<(), GitError>;
-
     /// Rebase the current branch in a worktree onto a specific target branch.
     ///
     /// Runs in the worktree directory so the main repo checkout is never touched.
@@ -492,14 +486,6 @@ pub mod mock {
             if let Some(result) = self.next_rebase_result.lock().unwrap().take() {
                 return result;
             }
-            Ok(())
-        }
-
-        fn get_conflict_files(&self) -> Result<Vec<String>, GitError> {
-            Ok(vec![])
-        }
-
-        fn abort_merge(&self) -> Result<(), GitError> {
             Ok(())
         }
 

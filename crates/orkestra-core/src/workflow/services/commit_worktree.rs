@@ -73,8 +73,8 @@ pub(crate) fn format_simple_commit_message(
 
 /// Generate a commit message for a task using AI with fallback to task title.
 ///
-/// Used during integration to create a single squash commit with an AI-generated
-/// summary of all changes. Per-stage commits use `format_simple_commit_message` instead.
+/// Uses uncommitted changes diff. For squash commits during integration,
+/// use `generate_squash_commit_message` instead which uses committed changes.
 pub(crate) fn generate_task_commit_message(
     git: &dyn GitService,
     task: &Task,
@@ -82,6 +82,22 @@ pub(crate) fn generate_task_commit_message(
     commit_gen: &dyn CommitMessageGenerator,
 ) -> String {
     let diff_summary = build_diff_summary(git, task);
+    generate_with_fallback(task, workflow, commit_gen, &diff_summary)
+}
+
+/// Generate a squash commit message for integration using all committed changes.
+///
+/// Used during integration to create a single squash commit with an AI-generated
+/// summary of all changes on the branch. Unlike `generate_task_commit_message`,
+/// this uses `build_committed_diff_summary` which shows all committed changes
+/// between the branch and its merge-base, not just uncommitted changes.
+pub(crate) fn generate_squash_commit_message(
+    git: &dyn GitService,
+    task: &Task,
+    workflow: &WorkflowConfig,
+    commit_gen: &dyn CommitMessageGenerator,
+) -> String {
+    let diff_summary = build_committed_diff_summary(git, task);
     generate_with_fallback(task, workflow, commit_gen, &diff_summary)
 }
 
@@ -127,41 +143,68 @@ fn generate_with_fallback(
     }
 }
 
-/// Build a diff summary string from a task's worktree changes.
+/// Build a diff summary string from a task's uncommitted worktree changes.
 pub(crate) fn build_diff_summary(git: &dyn GitService, task: &Task) -> String {
-    use std::fmt::Write;
-
     let Some(worktree_path) = &task.worktree_path else {
         return String::from("No worktree");
     };
 
     match git.diff_uncommitted(Path::new(worktree_path)) {
-        Ok(diff) => {
-            let mut summary = String::new();
-            for file in &diff.files {
-                let change = match file.change_type {
-                    FileChangeType::Added => "added",
-                    FileChangeType::Modified => "modified",
-                    FileChangeType::Deleted => "deleted",
-                    FileChangeType::Renamed => "renamed",
-                };
-                writeln!(
-                    summary,
-                    "- {} ({}, +{} -{})",
-                    file.path, change, file.additions, file.deletions
-                )
-                .unwrap();
-            }
-            if summary.is_empty() {
-                "No file changes detected".to_string()
-            } else {
-                summary
-            }
-        }
+        Ok(diff) => format_diff_summary(&diff),
         Err(e) => {
             crate::orkestra_debug!("commit", "Failed to get diff for commit message: {e}");
             String::from("Diff unavailable")
         }
+    }
+}
+
+/// Build a diff summary string from a task's committed changes (all commits on branch).
+///
+/// Used for squash commit message generation, where we need to summarize all committed
+/// changes on the branch, not just uncommitted changes.
+pub(crate) fn build_committed_diff_summary(git: &dyn GitService, task: &Task) -> String {
+    let Some(worktree_path) = &task.worktree_path else {
+        return String::from("No worktree");
+    };
+    let Some(branch_name) = &task.branch_name else {
+        return String::from("No branch");
+    };
+
+    match git.diff_against_base(Path::new(worktree_path), branch_name, &task.base_branch) {
+        Ok(diff) => format_diff_summary(&diff),
+        Err(e) => {
+            crate::orkestra_debug!(
+                "commit",
+                "Failed to get committed diff for commit message: {e}"
+            );
+            String::from("Diff unavailable")
+        }
+    }
+}
+
+/// Format a TaskDiff into a human-readable summary.
+fn format_diff_summary(diff: &crate::workflow::ports::TaskDiff) -> String {
+    use std::fmt::Write;
+
+    let mut summary = String::new();
+    for file in &diff.files {
+        let change = match file.change_type {
+            FileChangeType::Added => "added",
+            FileChangeType::Modified => "modified",
+            FileChangeType::Deleted => "deleted",
+            FileChangeType::Renamed => "renamed",
+        };
+        writeln!(
+            summary,
+            "- {} ({}, +{} -{})",
+            file.path, change, file.additions, file.deletions
+        )
+        .unwrap();
+    }
+    if summary.is_empty() {
+        "No file changes detected".to_string()
+    } else {
+        summary
     }
 }
 

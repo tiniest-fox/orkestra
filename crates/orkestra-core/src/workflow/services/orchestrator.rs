@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use super::periodic::PeriodicScheduler;
 
+use crate::commit_message::CommitMessageGenerator;
 use crate::orkestra_debug;
 use crate::pr_description::PrDescriptionGenerator;
 use crate::workflow::config::WorkflowConfig;
@@ -773,11 +774,16 @@ impl OrchestratorLoop {
     /// changes. The safety-net `commit_worktree_changes` call here is a no-op in
     /// the normal case, but catches edge cases (e.g., manual recovery, direct
     /// `integrate_task` calls from tests).
+    ///
+    /// For non-subtask tasks, squashes all commits on the branch into a single
+    /// commit with an LLM-generated message before performing the rebase.
     #[allow(clippy::needless_pass_by_value)]
     fn run_background_integration(
         git: Arc<dyn GitService>,
         api: Arc<Mutex<WorkflowApi>>,
+        commit_message_generator: Arc<dyn CommitMessageGenerator>,
         task: Task,
+        workflow: WorkflowConfig,
     ) {
         let task_id = task.id.clone();
         let has_worktree = task.worktree_path.is_some();
@@ -821,6 +827,71 @@ impl OrchestratorLoop {
                 }
             }
             return;
+        }
+
+        // Squash commits for non-subtask tasks.
+        // Subtasks keep their individual commits when merging to parent's branch.
+        if task.parent_id.is_none() {
+            if let Some(worktree_path) = &task.worktree_path {
+                // Generate squash commit message using all committed changes
+                let squash_message = super::commit_worktree::generate_squash_commit_message(
+                    git.as_ref(),
+                    &task,
+                    &workflow,
+                    commit_message_generator.as_ref(),
+                );
+
+                match git.squash_commits(
+                    std::path::Path::new(worktree_path),
+                    &task.base_branch,
+                    &squash_message,
+                ) {
+                    Ok(squashed) => {
+                        if squashed {
+                            orkestra_debug!(
+                                "integration",
+                                "Squashed commits for task {}",
+                                task_id
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Failed to squash commits: {e}");
+                        orkestra_debug!(
+                            "integration",
+                            "squash failed for {}: {}",
+                            task_id,
+                            error_msg
+                        );
+                        match api.lock() {
+                            Ok(api) => {
+                                if let Err(e) = api.apply_integration_result(
+                                    &task_id,
+                                    super::integration::IntegrationGitResult::CommitError(
+                                        error_msg,
+                                    ),
+                                    has_worktree,
+                                ) {
+                                    orkestra_debug!(
+                                        "integration",
+                                        "failed to record integration result for {}: {}",
+                                        task_id,
+                                        e
+                                    );
+                                }
+                            }
+                            Err(_) => {
+                                orkestra_debug!(
+                                    "integration",
+                                    "failed to acquire API lock after squash failure for {} — will be recovered on restart",
+                                    task_id
+                                );
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
         }
 
         let params = IntegrationParams {
@@ -1063,6 +1134,8 @@ impl OrchestratorLoop {
 
         // Gather inputs for background thread while holding lock
         let task = task.clone();
+        let workflow = api.workflow.clone();
+        let commit_message_generator = Arc::clone(&api.commit_message_generator);
 
         // Release the API lock before spawning the background thread
         drop(api);
@@ -1076,7 +1149,13 @@ impl OrchestratorLoop {
         let api_clone = Arc::clone(&self.api);
 
         let run_integration = move || {
-            Self::run_background_integration(git, api_clone, task);
+            Self::run_background_integration(
+                git,
+                api_clone,
+                commit_message_generator,
+                task,
+                workflow,
+            );
         };
 
         if self.sync_background {

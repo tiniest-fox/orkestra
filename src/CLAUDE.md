@@ -49,6 +49,38 @@ useEffect(() => {
 - Remove failed items from the ref so they retry on next trigger
 - See `GitHistoryProvider.tsx` for the canonical example
 
+### DOM Observation Pattern (Callback Ref + useState)
+
+When building hooks that observe DOM elements (auto-scroll, resize detection, mutation tracking), use a **callback ref + useState** to track the element reference. This makes `useEffect` re-run when the element changes, which is critical for attaching/detaching observers.
+
+```tsx
+const [container, setContainer] = useState<HTMLDivElement | null>(null);
+const containerRef = useCallback((node: HTMLDivElement | null) => {
+  setContainer(node);
+}, []);
+
+useEffect(() => {
+  if (!container) return;
+
+  const observer = new MutationObserver(() => {
+    // React to DOM changes...
+  });
+
+  observer.observe(container, { childList: true, subtree: true });
+
+  return () => observer.disconnect();
+}, [container]); // Effect re-runs when element changes
+```
+
+**Why this pattern:**
+- `useRef` doesn't trigger effect re-runs when `.current` changes (React doesn't track ref mutations)
+- Callback ref + state ensures effects re-attach observers when the element reference changes
+- Combine with `MutationObserver` + `requestAnimationFrame` for reliable DOM-change reactions
+
+**Common use case:** Auto-scroll hooks that need to scroll after DOM content changes. `MutationObserver` detects content additions, `requestAnimationFrame` ensures scroll happens after browser layout completes.
+
+**Example:** See `useAutoScroll.ts` for the canonical implementation
+
 ## State Management
 
 - Use the existing Context + hooks pattern (`TasksProvider`, `WorkflowConfigProvider`, `DisplayContextProvider`). No Redux, Zustand, or other state libraries.

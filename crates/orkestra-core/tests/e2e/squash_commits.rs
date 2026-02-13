@@ -182,6 +182,55 @@ fn test_per_stage_commits_use_simple_format() {
         body.contains("Analyzed requirements"),
         "Body should contain activity log, got: {body}"
     );
+
+    // =========================================================================
+    // Breakdown stage: verify same simple format applies
+    // =========================================================================
+
+    // Create file change for breakdown stage
+    create_file_in_worktree(
+        worktree_path,
+        "breakdown.md",
+        "# Breakdown\n\nTask decomposition here.",
+    );
+
+    ctx.set_output_with_activity(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "Task breakdown".to_string(),
+            activity_log: Some("- Decomposed into subtasks\n- Defined dependencies".to_string()),
+        },
+    );
+    ctx.advance(); // spawn breakdown
+    ctx.advance(); // process breakdown
+
+    // Approve to trigger commit
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit + advance to work
+
+    // Verify breakdown commit format
+    let breakdown_commit = get_head_commit_message(worktree_path);
+    assert!(
+        breakdown_commit.starts_with("breakdown: "),
+        "Breakdown commit should start with 'breakdown: ', got: {breakdown_commit}"
+    );
+    assert!(
+        breakdown_commit.contains(&task_id),
+        "Breakdown commit should contain task ID '{task_id}', got: {breakdown_commit}"
+    );
+
+    // Check breakdown commit body
+    let breakdown_body = get_head_commit_body(worktree_path);
+    assert!(
+        breakdown_body.is_some(),
+        "Breakdown commit should have a body with activity log"
+    );
+    let body = breakdown_body.unwrap();
+    assert!(
+        body.contains("Decomposed into subtasks"),
+        "Breakdown body should contain activity log, got: {body}"
+    );
 }
 
 // =============================================================================

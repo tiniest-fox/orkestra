@@ -45,9 +45,6 @@ function extractContextMessage(context: IterationTrigger): {
         message: context.feedback,
       };
     case "retry_failed":
-      return context.instructions
-        ? { label: "Retry instructions:", message: context.instructions }
-        : null;
     case "retry_blocked":
       return context.instructions
         ? { label: "Retry instructions:", message: context.instructions }
@@ -57,11 +54,15 @@ function extractContextMessage(context: IterationTrigger): {
         label: `Script failed (${context.from_stage}):`,
         message: context.error,
       };
-    case "integration":
+    case "integration": {
+      const files = context.conflict_files.length > 0
+        ? `\nConflict files: ${context.conflict_files.join(", ")}`
+        : "";
       return {
         label: "Integration failed:",
-        message: `${context.message}\nConflict files: ${context.conflict_files.join(", ")}`,
+        message: `${context.message}${files}`,
       };
+    }
     case "answers":
       return {
         label: "Your answers:",

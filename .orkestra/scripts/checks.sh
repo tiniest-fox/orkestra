@@ -76,9 +76,12 @@ fi
 # =============================================================================
 # Lock management for shared target directory
 # =============================================================================
-# Multiple worktrees share the same target/ directory. Without locking, concurrent
-# cargo runs can pick up stale binaries from other worktrees, causing spurious
-# failures. The lock is acquired only around cargo clippy/test/build commands —
+# Multiple worktrees share the same target/ directory. Two problems arise:
+# 1. Concurrent cargo runs can corrupt build artifacts (solved by the lock below).
+# 2. Sequential runs can serve stale binaries from other worktrees because cargo's
+#    mtime-based fingerprinting sees binaries compiled by worktree A as "Fresh" when
+#    worktree B's source files are older (solved by touching crate roots before build).
+# The lock is acquired only around cargo clippy/test/build commands —
 # frontend checks and cargo fmt don't need it.
 #
 # Uses mkdir-based locking (atomic on POSIX) with PID tracking for stale lock detection.
@@ -401,6 +404,19 @@ if $HAS_RUST; then
     # Auto-format Rust code (no compilation, no lock needed)
     run_check "Cargo fmt fix" "cargo fmt --all"
     run_check "Cargo fmt verify" "cargo fmt --all --check"
+
+    # Invalidate cargo's mtime-based fingerprints for crates we're about to check.
+    # All worktrees share one target/ directory. Cargo considers a crate "Fresh" when
+    # every source file is older than the cached binary — but a binary compiled by
+    # worktree A is newer than worktree B's checkout, so cargo serves A's stale binary
+    # to B without recompiling. Touching the crate root forces cargo to see "Dirty" and
+    # rebuild. sccache still provides content-based cache hits, so unchanged files
+    # compile instantly — the only real cost is linking (~5-10s per affected crate).
+    if [ -L "target" ]; then
+        $HAS_CORE && touch crates/orkestra-core/src/lib.rs
+        $HAS_CLI && touch cli/src/main.rs
+        $HAS_TAURI && touch src-tauri/src/main.rs
+    fi
 
     # Acquire lock for cargo commands that use the shared target/ directory
     acquire_lock

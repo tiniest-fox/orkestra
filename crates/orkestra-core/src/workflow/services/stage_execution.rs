@@ -16,8 +16,13 @@ use std::time::{Duration, Instant};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, LogEntry, Task};
 use crate::workflow::execution::{
+<<<<<<< HEAD
     sibling_status_display, ActivityLogEntry, AgentRunner, AgentRunnerTrait, ProviderRegistry,
     SiblingTaskContext, StageOutput,
+=======
+    deduplicate_activity_logs_by_stage, ActivityLogEntry, AgentRunner, AgentRunnerTrait,
+    ProviderRegistry, StageOutput,
+>>>>>>> 72d1eeb (Streamline activity log verbosity and deduplication)
 };
 use crate::workflow::ports::WorkflowStore;
 
@@ -484,10 +489,13 @@ impl StageExecutionService {
         spawn_context: &SessionSpawnContext,
     ) -> Result<SpawnResult, SpawnError> {
         // Query activity logs from completed iterations
-        let iterations = self
+        let mut iterations = self
             .store
             .get_iterations(&task.id)
             .map_err(|e| SpawnError::AgentError(format!("Failed to query iterations: {e}")))?;
+
+        // Sort by started_at to ensure chronological order (get_iterations doesn't guarantee order)
+        iterations.sort_by(|a, b| a.started_at.cmp(&b.started_at));
 
         let activity_logs: Vec<ActivityLogEntry> = iterations
             .iter()
@@ -499,6 +507,7 @@ impl StageExecutionService {
             })
             .collect();
 
+<<<<<<< HEAD
         // Fetch sibling context for subtasks
         let sibling_tasks = if let Some(parent_id) = &task.parent_id {
             let siblings = self
@@ -509,6 +518,10 @@ impl StageExecutionService {
         } else {
             Vec::new()
         };
+=======
+        // Deduplicate: keep only the most recent log per stage
+        let activity_logs = deduplicate_activity_logs_by_stage(activity_logs);
+>>>>>>> 72d1eeb (Streamline activity log verbosity and deduplication)
 
         let handle = self
             .agent_service

@@ -257,6 +257,7 @@ pub struct ActivityLogEntry {
     pub content: String,
 }
 
+<<<<<<< HEAD
 /// Context for a sibling subtask in the prompt.
 #[derive(Debug, Clone, Serialize)]
 pub struct SiblingTaskContext {
@@ -285,6 +286,41 @@ pub fn sibling_status_display(status: &Status, phase: Phase) -> &'static str {
             _ => "pending",
         },
     }
+=======
+/// Consolidate activity logs, collapsing only consecutive same-stage entries.
+///
+/// Uses "intervening stage prevents deduplication" semantics: consecutive entries from
+/// the same stage are collapsed (last wins), but if a different stage appears in between,
+/// both entries are preserved.
+///
+/// Example: `work(A) → review(C) → work(B)` produces 3 entries (A, C, B) because
+/// review intervened. But `work(A) → work(B)` produces 1 entry (B) because they're
+/// consecutive.
+///
+/// **Important**: Callers must provide logs in chronological order (by `started_at`).
+///
+/// Empty or whitespace-only logs are filtered out.
+pub fn deduplicate_activity_logs_by_stage(logs: Vec<ActivityLogEntry>) -> Vec<ActivityLogEntry> {
+    let mut result: Vec<ActivityLogEntry> = Vec::new();
+
+    for log in logs {
+        // Skip empty/whitespace-only logs
+        if log.content.trim().is_empty() {
+            continue;
+        }
+
+        // Only collapse if the immediately previous entry was from the same stage
+        if result.last().is_some_and(|prev| prev.stage == log.stage) {
+            // Consecutive same-stage: replace previous entry
+            *result.last_mut().unwrap() = log;
+        } else {
+            // Different stage (or first entry): keep both
+            result.push(log);
+        }
+    }
+
+    result
+>>>>>>> 72d1eeb (Streamline activity log verbosity and deduplication)
 }
 
 /// Flow-specific overrides for agent configuration.
@@ -1640,9 +1676,9 @@ mod tests {
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
         assert!(prompt.contains("Activity Log"));
         assert!(prompt.contains("Prior stages have recorded the following activity"));
-        assert!(prompt.contains("### work (iteration #1)"));
+        assert!(prompt.contains("[work]"));
         assert!(prompt.contains("Implemented the feature"));
-        assert!(prompt.contains("### review (iteration #1)"));
+        assert!(prompt.contains("[review]"));
         assert!(prompt.contains("Found issue with error handling"));
         assert!(prompt.contains("Updated Input Artifacts"));
     }
@@ -2166,6 +2202,7 @@ mod tests {
     }
 
     // ========================================================================
+<<<<<<< HEAD
     // Sibling Context tests
     // ========================================================================
 
@@ -2357,5 +2394,190 @@ mod tests {
         assert!(user_message.contains("[this task depends on]"));
         // Unrelated task should not have a dependency marker
         assert!(user_message.contains("**unrelated** Unrelated task (working)"));
+=======
+    // Activity Log Deduplication tests
+    // ========================================================================
+
+    #[test]
+    fn test_deduplicate_activity_logs_empty_input() {
+        let logs: Vec<ActivityLogEntry> = vec![];
+        let result = deduplicate_activity_logs_by_stage(logs);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_deduplicate_activity_logs_single_stage() {
+        let logs = vec![
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 1,
+                content: "Log A".into(),
+            },
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 2,
+                content: "Log B".into(),
+            },
+        ];
+        let result = deduplicate_activity_logs_by_stage(logs);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].content, "Log B");
+    }
+
+    #[test]
+    fn test_deduplicate_activity_logs_multiple_stages() {
+        let logs = vec![
+            ActivityLogEntry {
+                stage: "plan".into(),
+                iteration_number: 1,
+                content: "Plan log".into(),
+            },
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 2,
+                content: "Work log".into(),
+            },
+        ];
+        let result = deduplicate_activity_logs_by_stage(logs);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_deduplicate_activity_logs_interleaved() {
+        // work(A) -> review(C) -> work(B) -> work(D)
+        // Review intervenes between A and B, so A is preserved.
+        // B and D are consecutive same-stage, so D replaces B.
+        let logs = vec![
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 1,
+                content: "A".into(),
+            },
+            ActivityLogEntry {
+                stage: "review".into(),
+                iteration_number: 2,
+                content: "C".into(),
+            },
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 3,
+                content: "B".into(),
+            },
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 4,
+                content: "D".into(),
+            },
+        ];
+        let result = deduplicate_activity_logs_by_stage(logs);
+        // Should have: work:A, review:C, work:D (B replaced by D since consecutive)
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].stage, "work");
+        assert_eq!(result[0].content, "A");
+        assert_eq!(result[1].stage, "review");
+        assert_eq!(result[1].content, "C");
+        assert_eq!(result[2].stage, "work");
+        assert_eq!(result[2].content, "D");
+    }
+
+    #[test]
+    fn test_deduplicate_activity_logs_preserves_intervening_stages() {
+        // work -> review -> check -> work
+        // The second work is NOT collapsed with the first because review and check intervened.
+        let logs = vec![
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 1,
+                content: "Work 1".into(),
+            },
+            ActivityLogEntry {
+                stage: "review".into(),
+                iteration_number: 2,
+                content: "Review".into(),
+            },
+            ActivityLogEntry {
+                stage: "check".into(),
+                iteration_number: 3,
+                content: "Check".into(),
+            },
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 4,
+                content: "Work 2".into(),
+            },
+        ];
+        let result = deduplicate_activity_logs_by_stage(logs);
+        // All 4 entries preserved because intervening stages prevent collapse
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0].stage, "work");
+        assert_eq!(result[0].content, "Work 1");
+        assert_eq!(result[1].stage, "review");
+        assert_eq!(result[2].stage, "check");
+        assert_eq!(result[3].stage, "work");
+        assert_eq!(result[3].content, "Work 2");
+    }
+
+    #[test]
+    fn test_deduplicate_activity_logs_empty_content() {
+        let logs = vec![
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 1,
+                content: "Valid".into(),
+            },
+            ActivityLogEntry {
+                stage: "plan".into(),
+                iteration_number: 2,
+                content: "  ".into(), // whitespace only
+            },
+        ];
+        let result = deduplicate_activity_logs_by_stage(logs);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].stage, "work");
+    }
+
+    #[test]
+    fn test_deduplicate_activity_logs_all_empty_content() {
+        let logs = vec![
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 1,
+                content: String::new(),
+            },
+            ActivityLogEntry {
+                stage: "plan".into(),
+                iteration_number: 2,
+                content: "\n\t  ".into(),
+            },
+        ];
+        let result = deduplicate_activity_logs_by_stage(logs);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_deduplicate_activity_logs_consecutive_same_stage() {
+        // Consecutive same-stage entries are collapsed (last wins)
+        let logs = vec![
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 1,
+                content: "Oldest".into(),
+            },
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 2,
+                content: "Middle".into(),
+            },
+            ActivityLogEntry {
+                stage: "work".into(),
+                iteration_number: 3,
+                content: "Latest".into(),
+            },
+        ];
+        let result = deduplicate_activity_logs_by_stage(logs);
+        assert_eq!(result.len(), 1);
+        // Should keep the last entry (latest) since all are consecutive
+        assert_eq!(result[0].content, "Latest");
+>>>>>>> 72d1eeb (Streamline activity log verbosity and deduplication)
     }
 }

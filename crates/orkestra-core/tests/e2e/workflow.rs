@@ -4604,3 +4604,464 @@ fn test_interrupt_message_in_resume_prompt() {
         "Task should be awaiting review after completion"
     );
 }
+
+// =============================================================================
+// Activity Log Deduplication and Formatting
+// =============================================================================
+
+/// Test that intervening stages preserve both activity log entries.
+///
+/// Scenario: work(A) → review(rejects) → work(B) → review(approves)
+/// Expected: Second review's full prompt contains BOTH work:A and work:B because
+/// the review stage intervened between them.
+///
+/// This tests that "intervening stage prevents deduplication" - only consecutive
+/// same-stage entries are collapsed; when a different stage appears in between,
+/// both entries are preserved.
+///
+/// Note: We use a NON-automated review stage so we can control the flow precisely
+/// and verify the second review's prompt content.
+#[test]
+fn test_activity_log_intervening_stage_preserves_entries() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+
+    // Build a simple workflow: work → review (non-automated, can reject back to work)
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+        // NOT .automated() - human approval required so we control the flow
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Test activity log overwrite",
+        "Verify same-stage logs are replaced in prompts",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // === First work iteration: produces Log A ===
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work v1".to_string(),
+            activity_log: Some("- Log A: first work attempt".to_string()),
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes work output
+
+    // Human approves work → advances to review
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline, enters review stage (Idle)
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("review"));
+
+    // === First review iteration: rejects back to work ===
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Needs more tests".to_string(),
+            activity_log: Some("- Log R: review feedback".to_string()),
+        },
+    );
+    ctx.advance(); // spawns reviewer
+    ctx.advance(); // processes rejection → AwaitingReview (pauses for human to confirm)
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("review"));
+    assert_eq!(
+        task.phase,
+        Phase::AwaitingReview,
+        "Non-automated review should pause for human confirmation"
+    );
+
+    // Human confirms the rejection (approve confirms it, sending task to rejection target)
+    // This moves the task to work stage in Idle phase (no advance needed)
+    let task = ctx.api().approve(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Should be back in work stage after confirming rejection"
+    );
+    assert_eq!(
+        task.phase,
+        Phase::Idle,
+        "Task should be Idle, ready for work agent"
+    );
+
+    // === Second work iteration: produces Log B ===
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work v2 - with tests".to_string(),
+            activity_log: Some("- Log B: second work attempt".to_string()),
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes work output
+
+    // Human approves work → advances to review again
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline, enters review stage
+
+    // === Second review iteration: verify the prompt ===
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Looks good now".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns reviewer
+
+    // NOW verify the reviewer's prompt contains BOTH Log A and Log B
+    // because review intervened between them (work → review → work)
+    let review_prompt = ctx.last_prompt();
+
+    // Should contain Log A (preserved because review intervened before Log B)
+    assert!(
+        review_prompt.contains("Log A"),
+        "Review prompt should contain Log A (review intervened, so not collapsed). Full prompt:\n{review_prompt}"
+    );
+
+    // Should contain Log B (second work iteration)
+    assert!(
+        review_prompt.contains("Log B"),
+        "Review prompt should contain Log B. Full prompt:\n{review_prompt}"
+    );
+
+    // Should contain Log R (review log from different stage)
+    assert!(
+        review_prompt.contains("Log R"),
+        "Review prompt should contain Log R (from first review). Full prompt:\n{review_prompt}"
+    );
+
+    // Should have TWO [work] sections (A and B preserved separately)
+    let work_tag_count = review_prompt.matches("[work]").count();
+    assert_eq!(
+        work_tag_count, 2,
+        "Should have TWO [work] activity log entries (review intervened). Full prompt:\n{review_prompt}"
+    );
+
+    // Should use [review] format
+    assert!(
+        review_prompt.contains("[review]"),
+        "Activity log should use [review] format. Full prompt:\n{review_prompt}"
+    );
+}
+
+/// Test that activity logs from different stages accumulate in full prompts.
+///
+/// Scenario: plan(P) → breakdown(B) → work
+/// Expected: Work stage's full prompt contains both planning and breakdown logs.
+///
+/// Note: Activity logs are only injected into FULL prompts (initial stage spawns),
+/// not into RESUME prompts (feedback after rejection). This test verifies
+/// accumulation across stages in full prompts.
+#[test]
+fn test_activity_log_keeps_different_stages() {
+    let workflow = test_default_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Test activity log multi-stage",
+        "Verify different-stage logs accumulate",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Planning produces log P
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The plan".to_string(),
+            activity_log: Some("- Log P: planning decisions".to_string()),
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan output
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline, advances to breakdown
+
+    // Breakdown produces log B
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "No subtasks needed".to_string(),
+            activity_log: Some("- Log B: breakdown analysis".to_string()),
+        },
+    );
+    ctx.advance(); // spawns breakdown
+
+    // Verify breakdown's full prompt contains planning log
+    let breakdown_prompt = ctx.last_prompt();
+    assert!(
+        breakdown_prompt.contains("Log P"),
+        "Breakdown prompt should contain planning log P. Full prompt:\n{breakdown_prompt}"
+    );
+
+    ctx.advance(); // processes breakdown output
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline, advances to work
+
+    // Work stage - check prompt BEFORE setting output
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation".to_string(),
+            activity_log: Some("- Log W: work done".to_string()),
+        },
+    );
+    ctx.advance(); // spawns worker
+
+    // Verify work's full prompt contains BOTH planning and breakdown logs
+    let work_prompt = ctx.last_prompt();
+    assert!(
+        work_prompt.contains("Log P"),
+        "Work prompt should contain planning log P. Full prompt:\n{work_prompt}"
+    );
+    assert!(
+        work_prompt.contains("Log B"),
+        "Work prompt should contain breakdown log B. Full prompt:\n{work_prompt}"
+    );
+
+    // Verify the format uses [stage] not ### stage
+    assert!(
+        work_prompt.contains("[planning]"),
+        "Activity log should use [planning] format. Full prompt:\n{work_prompt}"
+    );
+    assert!(
+        work_prompt.contains("[breakdown]"),
+        "Activity log should use [breakdown] format. Full prompt:\n{work_prompt}"
+    );
+}
+
+/// Test that activity logs use the new `[stage]` format in prompts.
+///
+/// Verifies:
+/// - Format is `[stage]` followed by content
+/// - Old `### stage` format is not used
+/// - Iteration numbers are not shown
+#[test]
+fn test_activity_log_format() {
+    let workflow = test_default_workflow();
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test activity log format", "Verify new format", None);
+    let task_id = task.id.clone();
+
+    // Planning produces an activity log
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The plan".to_string(),
+            activity_log: Some("- Made a key decision about architecture".to_string()),
+        },
+    );
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes plan output
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline, advances to breakdown
+
+    // Set breakdown output and verify the prompt format
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "Breakdown complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns breakdown
+
+    // Check the prompt sent to breakdown agent
+    let prompt = ctx.last_prompt();
+
+    // Should have Activity Log section
+    assert!(
+        prompt.contains("## Activity Log"),
+        "Prompt should contain Activity Log section"
+    );
+
+    // Should use [stage] format
+    assert!(
+        prompt.contains("[planning]"),
+        "Activity log should use [planning] tag. Full prompt:\n{prompt}"
+    );
+
+    // Should NOT use old ### format
+    assert!(
+        !prompt.contains("### planning"),
+        "Activity log should NOT use ### format. Full prompt:\n{prompt}"
+    );
+
+    // Should NOT include iteration numbers in the activity log section
+    // (iteration numbers were part of the old format)
+    let activity_section_start = prompt.find("## Activity Log").unwrap();
+    let activity_section = &prompt[activity_section_start..];
+    let section_end = activity_section
+        .find("\n##")
+        .unwrap_or(activity_section.len());
+    let activity_section = &activity_section[..section_end];
+
+    assert!(
+        !activity_section.contains("iteration #"),
+        "Activity log should not contain iteration numbers. Activity section:\n{activity_section}"
+    );
+    assert!(
+        !activity_section.contains("Iteration"),
+        "Activity log should not mention 'Iteration'. Activity section:\n{activity_section}"
+    );
+
+    // Content should be present
+    assert!(
+        prompt.contains("Made a key decision"),
+        "Activity log content should be present. Full prompt:\n{prompt}"
+    );
+}
+
+/// Test activity log handling with script stages and review rejection.
+///
+/// Scenario: work(A) → checks(script) → review(R, rejects) → work(B) → checks → review
+///
+/// Activity logs produced: work(A), review(R), work(B)
+/// Expected: All three entries preserved because review(R) intervenes between work(A) and work(B).
+///
+/// Note: Script stages don't produce activity logs, but they don't prevent other
+/// stages from intervening. The review stage DOES intervene, so both work logs
+/// are preserved.
+#[test]
+fn test_activity_log_with_script_and_review_rejection() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+
+    // Build workflow: work → checks(script) → review (can reject back to work)
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new_script("checks", "check_results", "echo ok")
+            .with_inputs(vec!["summary".into()]),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into(), "check_results".into()])
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+        // NOT .automated() - human approval required so we control the flow
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Test activity log dedup through script",
+        "Verify work logs deduplicate even with script stage in between",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // === First work iteration: produces Log A ===
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work v1".to_string(),
+            activity_log: Some("- Log A: first work attempt".to_string()),
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes work output
+
+    // Human approves work → advances to checks (script stage)
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline, runs script
+    ctx.advance(); // processes script output, enters review
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("review"));
+
+    // === Review rejects back to work ===
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Needs more error handling".to_string(),
+            activity_log: Some("- Log R: review requested changes".to_string()),
+        },
+    );
+    ctx.advance(); // spawns reviewer
+    ctx.advance(); // processes rejection → AwaitingReview
+
+    // Human confirms rejection
+    ctx.api().approve(&task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.current_stage(), Some("work"));
+
+    // === Second work iteration: produces Log B ===
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work v2 - with error handling".to_string(),
+            activity_log: Some("- Log B: second work attempt".to_string()),
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes work output
+
+    // Human approves work → advances through checks to review
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline, runs script
+    ctx.advance(); // processes script output, enters review
+
+    // === Second review: verify the prompt has only ONE work log ===
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Looks good now".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns reviewer
+
+    let review_prompt = ctx.last_prompt();
+
+    // Should contain Log A (review intervened, so not collapsed with Log B)
+    assert!(
+        review_prompt.contains("Log A"),
+        "Review prompt should contain Log A (review intervened between A and B). Full prompt:\n{review_prompt}"
+    );
+
+    // Should contain Log B (second work iteration)
+    assert!(
+        review_prompt.contains("Log B"),
+        "Review prompt should contain Log B. Full prompt:\n{review_prompt}"
+    );
+
+    // Should contain Log R (review log from different stage)
+    assert!(
+        review_prompt.contains("Log R"),
+        "Review prompt should contain Log R (from first review). Full prompt:\n{review_prompt}"
+    );
+
+    // Verify we have TWO [work] sections (review intervened, so both preserved)
+    let work_tag_count = review_prompt.matches("[work]").count();
+    assert_eq!(
+        work_tag_count, 2,
+        "Should have TWO [work] activity log entries (review intervened). Full prompt:\n{review_prompt}"
+    );
+}

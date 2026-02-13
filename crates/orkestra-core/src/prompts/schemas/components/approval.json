@@ -12,7 +12,7 @@
     },
     "activity_log": {
       "type": "string",
-      "description": "Terse bullet points (2-5) covering: what you did, what you skipped (with reason), key decisions. Be specific, not generic. Focus on decisions and outcomes, not process."
+      "description": "Terse bullet points (2-5) covering: decisions made and their rationale, significant findings that inform future stages, failed approaches ONLY when they informed a different decision. Do NOT include: routine exploration or tool use details, step-by-step implementation narrative, information already captured in the artifact content."
     }
   },
   "required": ["decision", "content"]

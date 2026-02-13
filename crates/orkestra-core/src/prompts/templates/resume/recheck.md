@@ -8,8 +8,7 @@ This stage is being re-run. Your previous feedback has been addressed and the ta
 Prior stages have recorded the following activity:
 
 {{#each activity_logs}}
-### {{this.stage}} (iteration #{{this.iteration_number}})
-
+[{{this.stage}}]
 {{this.content}}
 
 {{/each}}

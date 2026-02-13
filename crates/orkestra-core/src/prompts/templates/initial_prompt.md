@@ -48,8 +48,7 @@ This task is part of a breakdown. Here are your siblings:
 Prior stages have recorded the following activity:
 
 {{#each activity_logs}}
-### {{this.stage}} (iteration #{{this.iteration_number}})
-
+[{{this.stage}}]
 {{this.content}}
 
 {{/each}}

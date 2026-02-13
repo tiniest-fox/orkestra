@@ -447,7 +447,15 @@ fn test_subtask_integration_preserves_commits() {
     let parent_commits = get_commits_since_merge_base(parent_worktree, "main");
 
     // Subtask commits should be preserved (not squashed into one)
-    // We expect individual stage commits like "work: subtask-id"
+    // First, verify there are multiple commits (proves squashing did NOT happen)
+    assert!(
+        parent_commits.len() > 1,
+        "Subtask should have multiple commits preserved (not squashed), got: {} commits: {:?}",
+        parent_commits.len(),
+        parent_commits
+    );
+
+    // Then verify we have the expected work stage commit
     let has_work_commit = parent_commits.iter().any(|c| c.starts_with("work:"));
     assert!(
         has_work_commit,
@@ -582,13 +590,22 @@ fn test_conflict_recovery_squashes_all_commits() {
     ctx.api().approve(&task_id).unwrap();
     ctx.advance(); // commit + advance to review
 
+    // Verify task state at the recovery checkpoint
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("review"),
+        "Task should be in review stage after recovery approval"
+    );
+    assert!(!task.is_archived(), "Task should not be archived during recovery");
+
     // Verify we have commits on the branch after recovery
-    // Note: The branch may have been rebased/squashed during the failed integration attempt,
-    // so we just verify there are commits present (not comparing to pre-integration count)
+    // The squash happens during integration, so after conflict recovery but before re-integration,
+    // we verify commits exist on the branch (the exact count varies based on timing).
     let commits_after_recovery = count_commits_since_merge_base(worktree_path, "main");
     assert!(
         commits_after_recovery >= 1,
-        "Should have at least 1 commit after recovery, got: {commits_after_recovery}"
+        "Should have commits after recovery for subsequent squash, got: {commits_after_recovery}"
     );
 
     // Resolve conflict on main by reverting
@@ -628,5 +645,101 @@ fn test_conflict_recovery_squashes_all_commits() {
     assert_eq!(
         commits_on_main, 1,
         "Main should have exactly 1 squashed commit (including recovery commits), got: {commits_on_main}"
+    );
+}
+
+// =============================================================================
+// Test 5: Integration with No Commits Succeeds
+// =============================================================================
+
+/// Integration should succeed gracefully when there are no commits to squash.
+/// This exercises the `squash_commits` returning `Ok(false)` path.
+#[test]
+fn test_integration_with_no_commits_succeeds() {
+    let ctx = TestEnv::with_git(
+        &test_default_workflow(),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let initial_main_commit = get_main_commit_sha(ctx.repo_path());
+
+    let task = ctx.create_task("No-change task", "Task with no file modifications", None);
+    let task_id = task.id.clone();
+    let worktree_path = Path::new(task.worktree_path.as_ref().unwrap());
+
+    // Planning stage - NO file changes (just artifact output)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan that makes no file changes".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn planner
+    ctx.advance(); // process plan
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit (no-op) + advance to breakdown
+
+    // Breakdown stage - NO file changes
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "Breakdown with no file changes".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn breakdown
+    ctx.advance(); // process breakdown
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit (no-op) + advance to work
+
+    // Work stage - NO file changes
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation complete with no changes".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process summary
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit (no-op) + advance to review
+
+    // Verify no commits on task branch
+    let commits_before = count_commits_since_merge_base(worktree_path, "main");
+    assert_eq!(
+        commits_before, 0,
+        "Should have 0 commits when no file changes were made, got: {commits_before}"
+    );
+
+    // Review stage - triggers integration
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "LGTM".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn reviewer
+    ctx.advance(); // process approval -> Done -> integration (should succeed despite no commits)
+
+    // Task should be archived
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_archived(),
+        "Task should be Archived after integration (even with no commits), got: {:?}",
+        task.status
+    );
+
+    // Main should have 0 new commits (no squash happened because there was nothing to squash)
+    let commits_on_main = count_commits_on_main(ctx.repo_path(), &initial_main_commit);
+    assert_eq!(
+        commits_on_main, 0,
+        "Main should have 0 new commits when task had no changes, got: {commits_on_main}"
     );
 }

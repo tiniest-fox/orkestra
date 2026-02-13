@@ -194,12 +194,11 @@ fn format_diff_summary(diff: &crate::workflow::ports::TaskDiff) -> String {
             FileChangeType::Deleted => "deleted",
             FileChangeType::Renamed => "renamed",
         };
-        writeln!(
+        let _ = writeln!(
             summary,
             "- {} ({}, +{} -{})",
             file.path, change, file.additions, file.deletions
-        )
-        .unwrap();
+        );
     }
     if summary.is_empty() {
         "No file changes detected".to_string()

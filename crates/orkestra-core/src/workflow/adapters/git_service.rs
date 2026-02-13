@@ -267,6 +267,14 @@ impl Git2GitService {
             .output()
             .map_err(|e| GitError::IoError(format!("Failed to run git status: {e}")))?;
 
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::IoError(format!(
+                "Failed to check uncommitted changes in {}: {stderr}",
+                working_dir.display()
+            )));
+        }
+
         let status = String::from_utf8_lossy(&output.stdout);
         Ok(!status.trim().is_empty())
     }
@@ -472,6 +480,14 @@ impl GitService for Git2GitService {
             .current_dir(worktree_path)
             .output()
             .map_err(|e| GitError::IoError(format!("Failed to run git status: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::IoError(format!(
+                "Failed to check uncommitted changes in {}: {stderr}",
+                worktree_path.display()
+            )));
+        }
 
         let status = String::from_utf8_lossy(&output.stdout);
         Ok(!status.trim().is_empty())

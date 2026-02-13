@@ -639,6 +639,10 @@ fn handle_show_task_full(api: &WorkflowApi, id: &str, pretty: bool) {
             println!("Worktree: {worktree}");
         }
 
+        if let Some(pr_url) = &task.pr_url {
+            println!("PR: {pr_url}");
+        }
+
         if let Some(parent) = &task.parent_id {
             println!("Parent: {parent}");
         }

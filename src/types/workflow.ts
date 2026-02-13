@@ -319,6 +319,8 @@ export interface WorkflowTask {
   branch_name?: string;
   /** Git worktree path. */
   worktree_path?: string;
+  /** Pull request URL (if PR was created). */
+  pr_url?: string;
   /** The branch this task was created from (merge/rebase target). Always set at creation. */
   base_branch: string;
   /** Git commit SHA of the base branch at the time the worktree was created. */

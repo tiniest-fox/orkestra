@@ -784,11 +784,10 @@ impl OrchestratorLoop {
 
         // Safety-net commit — should be a no-op after the Finishing pipeline,
         // but catches stragglers from manual recovery or direct API calls.
-        // Uses "integration-safety" as stage name since this is a fallback path.
         if let Err(e) = super::commit_worktree::commit_worktree_changes(
             git.as_ref(),
             &task,
-            "integration-safety",
+            "integrating",
             None,
         ) {
             let error_msg = format!("Failed to commit pending changes: {e}");
@@ -871,10 +870,12 @@ impl OrchestratorLoop {
         let base_branch = task.base_branch.clone();
 
         // 1. Safety-net commit
-        // Uses "pr-safety" as stage name since this is a fallback path.
-        if let Err(e) =
-            super::commit_worktree::commit_worktree_changes(git.as_ref(), &task, "pr-safety", None)
-        {
+        if let Err(e) = super::commit_worktree::commit_worktree_changes(
+            git.as_ref(),
+            &task,
+            "integrating",
+            None,
+        ) {
             if let Ok(api) = api.lock() {
                 let _ = api.pr_creation_failed(&task_id, &format!("Commit failed: {e}"));
             }

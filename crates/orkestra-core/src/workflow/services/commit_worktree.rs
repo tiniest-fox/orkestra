@@ -191,13 +191,13 @@ mod tests {
     }
 
     #[test]
-    fn test_format_simple_commit_message_safety_net() {
-        // Safety-net commits during integration use a special stage name
-        let message = format_simple_commit_message("task-789", "integration-safety", None);
+    fn test_format_simple_commit_message_integrating_phase() {
+        // Safety-net commits during integration use the phase name
+        let message = format_simple_commit_message("task-789", "integrating", None);
 
         assert_eq!(
             message,
-            "integration-safety: task-789\n\nNo activity log recorded."
+            "integrating: task-789\n\nNo activity log recorded."
         );
     }
 }

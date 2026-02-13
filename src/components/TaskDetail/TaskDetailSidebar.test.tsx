@@ -241,7 +241,8 @@ describe("TaskDetailSidebar", () => {
 
     expect(screen.getByText("PR Creation Failed")).toBeInTheDocument();
     expect(screen.getByText("PR creation failed: auth error")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    // IntegrationPanel shows "Retry" button (distinct from DetailsTab's "Retry Task")
+    expect(screen.getByRole("button", { name: /^retry$/i })).toBeInTheDocument();
   });
 
   it("calls retryPr when Retry is clicked", async () => {
@@ -254,8 +255,9 @@ describe("TaskDetailSidebar", () => {
       render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
     });
 
+    // Click the IntegrationPanel's "Retry" button (exact match, not "Retry Task")
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+      fireEvent.click(screen.getByRole("button", { name: /^retry$/i }));
     });
 
     expect(mockRetryPr).toHaveBeenCalled();

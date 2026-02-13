@@ -29,6 +29,8 @@ pub enum ResumeMarkerType {
     RetryBlocked,
     /// Initial agent prompt (first spawn, not a resume).
     Initial,
+    /// User interrupted and resumed with optional guidance.
+    ManualResume,
 }
 
 impl ResumeMarkerType {
@@ -43,6 +45,7 @@ impl ResumeMarkerType {
             Self::RetryFailed => "retry_failed",
             Self::RetryBlocked => "retry_blocked",
             Self::Initial => "initial",
+            Self::ManualResume => "manual_resume",
         }
     }
 }
@@ -86,6 +89,7 @@ pub(crate) fn parse_resume_marker(text: &str) -> Option<ResumeMarker> {
                 "recheck" => ResumeMarkerType::Recheck,
                 "retry_failed" => ResumeMarkerType::RetryFailed,
                 "retry_blocked" => ResumeMarkerType::RetryBlocked,
+                "manual_resume" => ResumeMarkerType::ManualResume,
                 _ => return None,
             };
             Some(ResumeMarker {
@@ -468,6 +472,7 @@ mod tests {
         assert_eq!(ResumeMarkerType::RetryFailed.as_str(), "retry_failed");
         assert_eq!(ResumeMarkerType::RetryBlocked.as_str(), "retry_blocked");
         assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
+        assert_eq!(ResumeMarkerType::ManualResume.as_str(), "manual_resume");
     }
 
     #[test]
@@ -511,6 +516,17 @@ mod tests {
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::RetryBlocked);
         assert!(marker.content.contains("blocked"));
+    }
+
+    #[test]
+    fn test_parse_resume_marker_manual_resume() {
+        let marker = parse_resume_marker(
+            "<!orkestra:resume:work:manual_resume>\n\nMessage from the user:\n\nPlease fix the bug",
+        );
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::ManualResume);
+        assert!(marker.content.contains("Message from the user"));
     }
 
     #[test]

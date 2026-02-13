@@ -4497,3 +4497,110 @@ fn test_disallowed_tools_empty_no_flag() {
         );
     }
 }
+
+/// Test that interrupted user messages are sent to the agent via resume prompt.
+///
+/// When a user interrupts a running agent and resumes with a message, the message
+/// should be included in the resume prompt with `manual_resume` marker type.
+///
+/// The real `AgentRunner` parses this marker and logs it as a `UserMessage` log
+/// entry with `resume_type="manual_resume"`. Since `MockAgentRunner` doesn't emit
+/// `UserMessage` entries (that's an `AgentRunner` concern), this test verifies the
+/// prompt construction that makes that logging possible.
+///
+/// Flow:
+/// 1. Spawn agent with activity → completes → reject (creates session with activity)
+/// 2. Use `agent_started()` to simulate retry starting
+/// 3. Interrupt → Resume with message
+/// 4. Verify next spawn uses `manual_resume` marker with the message
+#[test]
+fn test_interrupt_message_in_resume_prompt() {
+    use orkestra_core::workflow::config::StageConfig;
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    let task = ctx.create_task(
+        "Test interrupt logging",
+        "Testing that interrupt messages are logged",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // Step 1: Spawn agent with activity, let it complete, then reject.
+    // This creates a session with has_activity=true, which is required for
+    // the orchestrator to use resume markers instead of fresh spawn.
+    ctx.set_output_with_activity(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial implementation".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // Spawns agent (with activity)
+    ctx.advance(); // Processes output → AwaitingReview
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AwaitingReview);
+
+    // Reject to trigger another iteration on the same stage
+    ctx.api()
+        .reject(&task_id, "Needs validation logic")
+        .unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.phase,
+        Phase::Idle,
+        "Task should be Idle after rejection"
+    );
+
+    // Step 2: Simulate the retry agent starting (without completing)
+    ctx.api().agent_started(&task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::AgentWorking);
+
+    // Step 3: Interrupt and resume with a message
+    ctx.api().interrupt(&task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::Interrupted);
+
+    let interrupt_message = "Please focus on the validation logic and add proper error handling";
+    ctx.api()
+        .resume(&task_id, Some(interrupt_message.to_string()))
+        .unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.phase, Phase::Idle);
+
+    // Step 4: Set output and advance to spawn the resumed agent
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Fixed validation with error handling".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // Spawns resumed agent
+
+    // Verify the resume prompt contains the manual_resume marker and the interrupt message.
+    // The real AgentRunner parses this marker and logs it as a UserMessage with
+    // resume_type="manual_resume". The MockAgentRunner doesn't emit UserMessage log entries,
+    // so we verify the prompt construction instead.
+    ctx.assert_resume_prompt_contains("manual_resume", &[interrupt_message]);
+
+    ctx.advance(); // Processes output
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.phase,
+        Phase::AwaitingReview,
+        "Task should be awaiting review after completion"
+    );
+}

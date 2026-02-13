@@ -491,6 +491,7 @@ export type ToolInput =
  * - "answers": Human provided answers to questions
  * - "retry_failed": Human retried a failed task
  * - "retry_blocked": Human retried a blocked task
+ * - "manual_resume": User interrupted and resumed with optional message
  * - "initial": Initial agent prompt (first spawn)
  */
 export type ResumeType =
@@ -498,8 +499,10 @@ export type ResumeType =
   | "feedback"
   | "integration"
   | "answers"
+  | "recheck"
   | "retry_failed"
   | "retry_blocked"
+  | "manual_resume"
   | "initial";
 
 /**
@@ -510,7 +513,7 @@ export type LogEntry =
   | { type: "text"; content: string }
   | {
       type: "user_message";
-      /** Type of resume: "continue", "feedback", or "integration". Defaults to "continue". */
+      /** Type of resume marker (e.g., "continue", "feedback", "manual_resume"). Defaults to "continue". */
       resume_type?: ResumeType;
       content: string;
     }

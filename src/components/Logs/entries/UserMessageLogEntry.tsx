@@ -38,6 +38,12 @@ const RESUME_STYLES: Record<
     bgColor: "bg-green-100 dark:bg-green-900/30",
     gradientTo: "to-green-100 dark:to-green-900/30",
   },
+  recheck: {
+    label: "RECHECKING",
+    textColor: "text-blue-600 dark:text-blue-400",
+    bgColor: "bg-blue-100 dark:bg-blue-900/30",
+    gradientTo: "to-blue-100 dark:to-blue-900/30",
+  },
   retry_failed: {
     label: "RETRYING",
     textColor: "text-orange-600 dark:text-orange-400",
@@ -49,6 +55,12 @@ const RESUME_STYLES: Record<
     textColor: "text-yellow-600 dark:text-yellow-400",
     bgColor: "bg-yellow-100 dark:bg-yellow-900/30",
     gradientTo: "to-yellow-100 dark:to-yellow-900/30",
+  },
+  manual_resume: {
+    label: "INTERRUPTED",
+    textColor: "text-cyan-600 dark:text-cyan-400",
+    bgColor: "bg-cyan-100 dark:bg-cyan-900/30",
+    gradientTo: "to-cyan-100 dark:to-cyan-900/30",
   },
   initial: {
     label: "INITIAL PROMPT",

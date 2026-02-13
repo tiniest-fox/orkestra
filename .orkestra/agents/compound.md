@@ -157,3 +157,4 @@ Make sure to handle sessions correctly.
 - Prefer updating existing files over creating new ones
 - Keep entries concise—future agents need quick answers
 - Delete or update stale documentation if you notice it
+- **Your worktree is your only workspace.** The worktree path in the "Worktree Context" section at the bottom of this prompt is YOUR authoritative working directory. All file edits must happen within this worktree—never navigate to or edit files in the main repo directory.

@@ -155,6 +155,7 @@ These docs trace operations that span multiple files. Read these instead of expl
 
 | Flow | Documentation | Key Files |
 |------|--------------|-----------|
+| **Workflow pipeline** (stages, capabilities, routing, phase transitions) | [`docs/flows/workflow-pipeline.md`](docs/flows/workflow-pipeline.md) | `stage.rs`, `agent_actions.rs`, `human_actions.rs`, `orchestrator.rs` |
 | **Stage execution** (orchestrator -> spawn -> prompt -> output) | [`docs/flows/stage-execution.md`](docs/flows/stage-execution.md) | `orchestrator.rs`, `stage_execution.rs`, `agent_execution.rs`, `provider_registry.rs`, `agent_actions.rs`, `prompt.rs` |
 | **Task integration** (merge, conflict recovery, cleanup) | [`docs/flows/task-integration.md`](docs/flows/task-integration.md) | `orchestrator.rs`, `integration.rs`, `git_service.rs` |
 | **Subtask lifecycle** (breakdown, creation, deps, parent advance) | [`docs/flows/subtask-lifecycle.md`](docs/flows/subtask-lifecycle.md) | `agent_actions.rs`, `human_actions.rs`, `subtask_service.rs`, `orchestrator.rs` |

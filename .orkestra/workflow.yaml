@@ -68,6 +68,7 @@ stages:
     icon: eye
     description: Review completed work for correctness
     artifact: verdict
+    inputs: [plan]
     prompt: reviewer.md
     model: opus
     restart_on_reentry: true

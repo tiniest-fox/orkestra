@@ -138,7 +138,11 @@ fn test_per_stage_commits_use_simple_format() {
 
     // Planning stage: produce plan with activity log
     // Create a file change so commit_worktree_changes has something to commit
-    create_file_in_worktree(worktree_path, "plan.md", "# Implementation Plan\n\nThis is the plan.");
+    create_file_in_worktree(
+        worktree_path,
+        "plan.md",
+        "# Implementation Plan\n\nThis is the plan.",
+    );
 
     ctx.set_output_with_activity(
         &task_id,
@@ -215,7 +219,11 @@ fn test_integration_squashes_commits_for_non_subtask() {
     ctx.advance(); // commit + advance to breakdown
 
     // Breakdown stage - create file change
-    create_file_in_worktree(worktree_path, "breakdown.md", "# Breakdown\n\nTask breakdown.");
+    create_file_in_worktree(
+        worktree_path,
+        "breakdown.md",
+        "# Breakdown\n\nTask breakdown.",
+    );
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -230,7 +238,11 @@ fn test_integration_squashes_commits_for_non_subtask() {
     ctx.advance(); // commit + advance to work
 
     // Work stage - create file change
-    create_file_in_worktree(worktree_path, "feature.txt", "Feature implementation complete.");
+    create_file_in_worktree(
+        worktree_path,
+        "feature.txt",
+        "Feature implementation complete.",
+    );
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -320,7 +332,11 @@ fn test_subtask_integration_preserves_commits() {
     ctx.advance(); // commit + advance to breakdown
 
     // Breakdown stage: produce a single subtask - create file change
-    create_file_in_worktree(parent_worktree, "breakdown.md", "# Breakdown\n\nSubtask design.");
+    create_file_in_worktree(
+        parent_worktree,
+        "breakdown.md",
+        "# Breakdown\n\nSubtask design.",
+    );
     ctx.set_output(
         &parent_id,
         MockAgentOutput::Subtasks {
@@ -364,7 +380,11 @@ fn test_subtask_integration_preserves_commits() {
     let parent_branch = parent.branch_name.clone().unwrap();
 
     // Work stage for subtask (subtask flow: work → review) - create file change
-    create_file_in_worktree(subtask_worktree, "subtask_work.txt", "Subtask implementation.");
+    create_file_in_worktree(
+        subtask_worktree,
+        "subtask_work.txt",
+        "Subtask implementation.",
+    );
     ctx.set_output(
         subtask_id,
         MockAgentOutput::Artifact {

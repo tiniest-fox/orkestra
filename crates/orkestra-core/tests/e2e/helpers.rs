@@ -819,6 +819,12 @@ pub fn disable_auto_merge(mut workflow: WorkflowConfig) -> WorkflowConfig {
     workflow
 }
 
+/// Enable `auto_merge` on a workflow config.
+pub fn enable_auto_merge(mut workflow: WorkflowConfig) -> WorkflowConfig {
+    workflow.integration.auto_merge = true;
+    workflow
+}
+
 // =============================================================================
 // Assistant Test Helpers
 // =============================================================================

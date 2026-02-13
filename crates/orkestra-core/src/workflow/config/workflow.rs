@@ -162,7 +162,7 @@ fn default_on_failure() -> String {
 }
 
 fn default_auto_merge() -> bool {
-    true
+    false
 }
 
 impl WorkflowConfig {
@@ -1082,7 +1082,7 @@ mod tests {
     fn test_integration_config_default() {
         let config = IntegrationConfig::default();
         assert_eq!(config.on_failure, "work");
-        assert!(config.auto_merge);
+        assert!(!config.auto_merge);
     }
 
     #[test]

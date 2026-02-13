@@ -13,7 +13,7 @@ use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::execution::SubtaskOutput;
 use orkestra_core::workflow::runtime::Phase;
 
-use super::helpers::{workflows, MockAgentOutput, TestEnv};
+use super::helpers::{enable_auto_merge, workflows, MockAgentOutput, TestEnv};
 
 // =============================================================================
 // Helper: Git Commit Inspection
@@ -241,7 +241,7 @@ fn test_per_stage_commits_use_simple_format() {
 #[test]
 fn test_integration_squashes_commits_for_non_subtask() {
     let ctx = TestEnv::with_git(
-        &test_default_workflow(),
+        &enable_auto_merge(test_default_workflow()),
         &["planner", "breakdown", "worker", "reviewer"],
     );
 
@@ -361,7 +361,7 @@ fn test_integration_squashes_commits_for_non_subtask() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_subtask_integration_preserves_commits() {
-    let workflow = workflows::with_subtasks();
+    let workflow = enable_auto_merge(workflows::with_subtasks());
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     // Create parent task
@@ -521,7 +521,7 @@ fn test_subtask_integration_preserves_commits() {
 #[allow(clippy::too_many_lines)]
 fn test_conflict_recovery_squashes_all_commits() {
     let ctx = TestEnv::with_git(
-        &test_default_workflow(),
+        &enable_auto_merge(test_default_workflow()),
         &["planner", "breakdown", "worker", "reviewer"],
     );
 
@@ -709,7 +709,7 @@ fn test_conflict_recovery_squashes_all_commits() {
 #[test]
 fn test_integration_with_no_commits_succeeds() {
     let ctx = TestEnv::with_git(
-        &test_default_workflow(),
+        &enable_auto_merge(test_default_workflow()),
         &["planner", "breakdown", "worker", "reviewer"],
     );
 

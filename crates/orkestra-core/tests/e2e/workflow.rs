@@ -25,7 +25,7 @@ use orkestra_core::workflow::{
     runtime::{Outcome, Phase},
 };
 
-use crate::helpers::{MockAgentOutput, TestEnv};
+use crate::helpers::{enable_auto_merge, MockAgentOutput, TestEnv};
 
 // =============================================================================
 // The Exhaustive E2E Test
@@ -53,7 +53,7 @@ use crate::helpers::{MockAgentOutput, TestEnv};
 #[allow(clippy::too_many_lines)] // Exhaustive e2e test is intentionally comprehensive
 fn test_exhaustive_workflow_flow() {
     let ctx = TestEnv::with_git(
-        &test_default_workflow(),
+        &enable_auto_merge(test_default_workflow()),
         &["planner", "breakdown", "worker", "reviewer"],
     );
 
@@ -1216,12 +1216,12 @@ fn test_recovery_archives_already_merged_task() {
 fn test_recovery_retries_unmerged_task() {
     use orkestra_core::workflow::{config::StageConfig, OrchestratorEvent};
 
-    let workflow = WorkflowConfig::new(vec![
+    let workflow = enable_auto_merge(WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .automated(),
-    ]);
+    ]));
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
     // Create task (worktree is created automatically)
@@ -2160,14 +2160,14 @@ fn test_rejection_review_override_then_approval() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
 
     // Non-automated review stage with approval capability (rejection → work)
-    let workflow = WorkflowConfig::new(vec![
+    let workflow = enable_auto_merge(WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .with_inputs(vec!["summary".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
         // Intentionally NOT .automated() — human review required
-    ]);
+    ]));
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
@@ -3098,7 +3098,10 @@ fn test_commit_message_generation_during_integration() {
                 )
                 .automated(),
         ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::default(),
+        integration: orkestra_core::workflow::config::IntegrationConfig {
+            auto_merge: true, // Explicitly enable to test integration flow
+            ..Default::default()
+        },
         flows: indexmap::IndexMap::new(),
     };
 

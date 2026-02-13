@@ -15,7 +15,7 @@ use std::path::Path;
 use orkestra_core::workflow::execution::SubtaskOutput;
 use orkestra_core::workflow::runtime::Phase;
 
-use super::helpers::{workflows, MockAgentOutput, TestEnv};
+use super::helpers::{enable_auto_merge, workflows, MockAgentOutput, TestEnv};
 
 // =============================================================================
 // Helper: Drive a parent through planning + breakdown + approval
@@ -274,7 +274,7 @@ fn test_breakdown_approval_creates_subtasks() {
 
 #[test]
 fn test_dependency_aware_orchestration() {
-    let workflow = workflows::with_subtasks();
+    let workflow = enable_auto_merge(workflows::with_subtasks());
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     let (parent_id, id_map) = setup_parent_with_subtasks(
@@ -357,7 +357,7 @@ fn test_dependency_aware_orchestration() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_parent_advances_when_all_subtasks_done() {
-    let workflow = workflows::with_subtasks();
+    let workflow = enable_auto_merge(workflows::with_subtasks());
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     let (parent_id, id_map) = setup_parent_with_subtasks(
@@ -457,7 +457,7 @@ fn test_parent_advances_when_all_subtasks_done() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_diamond_dependency_orchestration() {
-    let workflow = workflows::with_subtasks();
+    let workflow = enable_auto_merge(workflows::with_subtasks());
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     let (_parent_id, id_map) = setup_parent_with_subtasks(
@@ -768,7 +768,7 @@ fn test_subtask_worktrees_are_isolated() {
 
 #[test]
 fn test_subtask_integration_merges_to_parent_branch() {
-    let workflow = workflows::with_subtasks();
+    let workflow = enable_auto_merge(workflows::with_subtasks());
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     let (parent_id, id_map) = setup_parent_with_subtasks(
@@ -823,7 +823,7 @@ fn test_subtask_integration_merges_to_parent_branch() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_subtask_integration_conflict() {
-    let workflow = workflows::with_subtasks();
+    let workflow = enable_auto_merge(workflows::with_subtasks());
     let env = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     // Use a random base branch so hardcoded "main" can never pass the assertion.
@@ -987,7 +987,7 @@ fn test_subtask_integration_conflict() {
 #[allow(clippy::too_many_lines)]
 fn test_archived_subtasks_included_in_views_and_progress() {
     let env = TestEnv::with_git(
-        &workflows::with_subtasks(),
+        &enable_auto_merge(workflows::with_subtasks()),
         &["planner", "breakdown", "worker", "reviewer"],
     );
 

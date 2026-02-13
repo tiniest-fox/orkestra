@@ -94,10 +94,11 @@ fn auto_merge_disabled_pauses_done_tasks() {
     // Task should NOT be Archived (integration didn't happen)
 }
 
-/// When `auto_merge` is true (default), Done tasks are auto-integrated.
+/// When `auto_merge` is explicitly enabled, Done tasks are auto-integrated.
 #[test]
 fn auto_merge_enabled_integrates_normally() {
-    let workflow = test_default_workflow(); // auto_merge defaults to true
+    let mut workflow = test_default_workflow();
+    workflow.integration.auto_merge = true; // Explicitly enable auto_merge
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     let task = ctx.create_task("Test task", "Description", None);

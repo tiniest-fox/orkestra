@@ -13,11 +13,7 @@ const mockUseContentSettled = useContentSettled as ReturnType<typeof vi.fn>;
 
 // Create a mock container element with controllable scroll properties
 function createMockContainer(
-  props: {
-    scrollTop?: number;
-    scrollHeight?: number;
-    clientHeight?: number;
-  } = {},
+  props: { scrollTop?: number; scrollHeight?: number; clientHeight?: number } = {},
 ): HTMLDivElement {
   const container = document.createElement("div");
 

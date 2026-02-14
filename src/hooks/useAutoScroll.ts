@@ -65,6 +65,16 @@ export function useAutoScroll<T extends HTMLElement>(
     isAutoScrollEnabledRef.current = true;
   }, []);
 
+  // Single source of truth for scroll-to-bottom logic.
+  // All guards checked inside callback so RAF executes with current state.
+  const performScrollToBottom = useCallback(() => {
+    if (isActive && isAutoScrollEnabledRef.current && container) {
+      container.scrollTop = container.scrollHeight;
+      // Update lastScrollTop so next scroll event has correct baseline
+      lastScrollTopRef.current = container.scrollTop;
+    }
+  }, [isActive, container]);
+
   // Auto-scroll using MutationObserver - fires after DOM mutations
   // Combined with RAF to ensure scroll happens after layout completes
   // Defers scrolling when content animations are in progress
@@ -72,14 +82,6 @@ export function useAutoScroll<T extends HTMLElement>(
     if (!container) return;
 
     let rafId: number | null = null;
-
-    const scrollToBottom = () => {
-      if (isActive && isAutoScrollEnabledRef.current && container) {
-        container.scrollTop = container.scrollHeight;
-        // Update lastScrollTop so next scroll event has correct baseline
-        lastScrollTopRef.current = container.scrollTop;
-      }
-    };
 
     const observer = new MutationObserver(() => {
       // Cancel any pending RAF to avoid queuing multiple scrolls
@@ -92,7 +94,7 @@ export function useAutoScroll<T extends HTMLElement>(
         scrollDeferredRef.current = true;
       } else {
         // Animation complete, scroll immediately
-        rafId = requestAnimationFrame(scrollToBottom);
+        rafId = requestAnimationFrame(performScrollToBottom);
       }
     });
 
@@ -100,7 +102,7 @@ export function useAutoScroll<T extends HTMLElement>(
 
     // Initial scroll: also check if settled
     if (isContentSettled) {
-      rafId = requestAnimationFrame(scrollToBottom);
+      rafId = requestAnimationFrame(performScrollToBottom);
     } else {
       scrollDeferredRef.current = true;
     }
@@ -111,22 +113,15 @@ export function useAutoScroll<T extends HTMLElement>(
         cancelAnimationFrame(rafId);
       }
     };
-  }, [isActive, container, isContentSettled]);
+  }, [isActive, container, isContentSettled, performScrollToBottom]);
 
   // Execute deferred scroll when animation completes
   useEffect(() => {
     if (isContentSettled && scrollDeferredRef.current && container) {
       scrollDeferredRef.current = false;
-      if (isActive && isAutoScrollEnabledRef.current) {
-        requestAnimationFrame(() => {
-          if (container) {
-            container.scrollTop = container.scrollHeight;
-            lastScrollTopRef.current = container.scrollTop;
-          }
-        });
-      }
+      requestAnimationFrame(performScrollToBottom);
     }
-  }, [isContentSettled, isActive, container]);
+  }, [isContentSettled, container, performScrollToBottom]);
 
   return {
     containerRef,

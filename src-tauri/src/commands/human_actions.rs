@@ -1,7 +1,7 @@
 //! Human action commands: approve, reject, answer questions.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
-use orkestra_core::workflow::{spawn_merge_integration, QuestionAnswer, Task};
+use orkestra_core::workflow::{spawn_merge_integration, spawn_pr_creation, QuestionAnswer, Task};
 use tauri::{State, Window};
 
 /// Approve the current stage artifact.
@@ -134,7 +134,8 @@ pub fn workflow_merge_task(
 
 /// Create a pull request for a Done task's branch.
 ///
-/// Marks task as Integrating - the orchestrator will spawn PR creation in the background.
+/// Validates and marks the task as Integrating, then spawns PR creation
+/// (commit, push, gh pr create) on a background thread so the UI is not blocked.
 #[tauri::command]
 pub fn workflow_open_pr(
     registry: State<ProjectRegistry>,
@@ -142,7 +143,7 @@ pub fn workflow_open_pr(
     task_id: String,
 ) -> Result<Task, TauriError> {
     registry.with_project(window.label(), |state| {
-        state.api()?.begin_pr_creation(&task_id).map_err(Into::into)
+        spawn_pr_creation(state.api_arc(), &task_id).map_err(Into::into)
     })
 }
 

@@ -2,7 +2,7 @@
 //!
 //! This CLI provides read-only access to the workflow system for debugging purposes.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use std::fmt::Write as _;
 
@@ -14,6 +14,7 @@ use orkestra_core::{
     utility::UtilityRunner,
     workflow::{
         adapters::GhPrService,
+        create_pr_sync,
         domain::{IterationTrigger, LogEntry},
         load_workflow_for_project,
         runtime::Outcome,
@@ -198,6 +199,13 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         }
     };
 
+    // OpenPr needs Arc<Mutex<WorkflowApi>> for create_pr_sync — handle it before
+    // borrowing the api for the other branches.
+    if let TaskAction::OpenPr { id } = &action {
+        handle_open_pr_task(Arc::new(Mutex::new(api)), id, pretty);
+        return;
+    }
+
     match action {
         TaskAction::List {
             status,
@@ -226,7 +234,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         TaskAction::Approve { id } => handle_approve_task(&api, &id, pretty),
         TaskAction::Reject { id, feedback } => handle_reject_task(&api, &id, &feedback, pretty),
         TaskAction::Merge { id } => handle_merge_task(&api, &id, pretty),
-        TaskAction::OpenPr { id } => handle_open_pr_task(&api, &id, pretty),
+        TaskAction::OpenPr { .. } => unreachable!("handled above"),
         TaskAction::RetryPr { id } => handle_retry_pr_task(&api, &id, pretty),
     }
 }
@@ -828,22 +836,25 @@ fn handle_merge_task(api: &WorkflowApi, id: &str, pretty: bool) {
     }
 }
 
-fn handle_open_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
-    // For CLI, call begin_pr_creation to mark as Integrating
-    // The orchestrator (if running) would spawn the background thread,
-    // but CLI is typically used for inspection rather than running the full loop
-    let task = match api.begin_pr_creation(id) {
+#[allow(clippy::needless_pass_by_value)]
+fn handle_open_pr_task(api: Arc<Mutex<WorkflowApi>>, id: &str, pretty: bool) {
+    // Run the full PR pipeline synchronously (commit, push, gh pr create).
+    let task = match create_pr_sync(Arc::clone(&api), id) {
         Ok(task) => task,
         Err(e) => {
-            eprintln!("Error opening PR: {e}");
+            eprintln!("Error creating PR: {e}");
             std::process::exit(1);
         }
     };
 
     if pretty {
-        println!("Marked task {} for PR creation", task.id);
-        println!("Phase: {}", format_phase(task.phase));
-        println!("Note: PR creation will be spawned by the orchestrator");
+        if let Some(pr_url) = &task.pr_url {
+            println!("Created PR for task {}", task.id);
+            println!("PR: {pr_url}");
+        } else {
+            println!("Task {}: PR creation completed", task.id);
+        }
+        println!("Status: {}", format_status(&task.status));
     } else {
         output_json(&task);
     }

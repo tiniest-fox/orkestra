@@ -1,9 +1,9 @@
 //! E2E tests for the integration choice point (`auto_merge`, `merge_task`, `open_pr`, Failed state).
 
 use orkestra_core::testutil::fixtures::test_default_workflow;
-use orkestra_core::workflow::merge_task_sync;
 use orkestra_core::workflow::ports::{PrError, WorkflowError};
 use orkestra_core::workflow::runtime::{Phase, Status};
+use orkestra_core::workflow::{create_pr_sync, merge_task_sync};
 
 use super::helpers::{disable_auto_merge, MockAgentOutput, TestEnv};
 
@@ -424,9 +424,9 @@ fn retry_pr_rejects_non_failed_task() {
 // Orchestrator-Driven PR Creation Tests
 // =============================================================================
 
-/// Orchestrator detects Done+Integrating tasks with no `pr_url` and spawns PR creation.
+/// `create_pr_sync` runs the full PR pipeline (commit, push, create PR) synchronously.
 #[test]
-fn orchestrator_spawns_pr_creation() {
+fn create_pr_sync_completes_pr_creation() {
     let workflow = disable_auto_merge(test_default_workflow());
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
@@ -464,24 +464,10 @@ fn orchestrator_spawns_pr_creation() {
     ctx.pr_service()
         .set_next_result(Ok("https://github.com/test/repo/pull/42".to_string()));
 
-    // Begin PR creation (marks task as Integrating)
-    ctx.api().begin_pr_creation(&task_id).unwrap();
-
-    // Verify task is Integrating
-    let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should still be Done");
-    assert_eq!(
-        task.phase,
-        Phase::Integrating,
-        "Task should be in Integrating phase"
-    );
-    assert_eq!(task.pr_url, None, "PR URL should not be set yet");
-
-    // Advance orchestrator — should detect Done+Integrating+no_pr_url and spawn PR creation
-    ctx.advance();
+    // Call create_pr_sync directly — marks task as Integrating, runs the full pipeline inline
+    let task = create_pr_sync(ctx.api_arc(), &task_id).unwrap();
 
     // Verify PR creation completed (task has pr_url and returned to Idle)
-    let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.status, Status::Done, "Task should still be Done");
     assert_eq!(task.phase, Phase::Idle, "Task should return to Idle");
     assert_eq!(
@@ -491,9 +477,9 @@ fn orchestrator_spawns_pr_creation() {
     );
 }
 
-/// Orchestrator handles PR creation failures and transitions task to Failed.
+/// `create_pr_sync` handles PR creation failures and transitions task to Failed.
 #[test]
-fn orchestrator_handles_pr_creation_failure() {
+fn create_pr_sync_handles_failure() {
     let workflow = disable_auto_merge(test_default_workflow());
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
@@ -528,14 +514,10 @@ fn orchestrator_handles_pr_creation_failure() {
             "Failed to create pull request: authentication failed".to_string(),
         )));
 
-    // Begin PR creation
-    ctx.api().begin_pr_creation(&task_id).unwrap();
-
-    // Advance orchestrator — should detect Done+Integrating+no_pr_url and spawn PR creation
-    ctx.advance();
+    // Call create_pr_sync directly — records failure via pr_creation_failed
+    let task = create_pr_sync(ctx.api_arc(), &task_id).unwrap();
 
     // Verify task transitioned to Failed
-    let task = ctx.api().get_task(&task_id).unwrap();
     let Status::Failed { error } = &task.status else {
         panic!("Task should be in Failed state, got: {:?}", task.status)
     };

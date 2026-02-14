@@ -1,9 +1,11 @@
 /**
  * Hook for managing auto-scroll behavior.
  * Uses MutationObserver to detect DOM changes and scroll after layout completes.
+ * Uses scroll direction detection: scrolling UP disables, scrolling DOWN re-enables.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useContentSettled } from "../components/ui/ContentAnimation";
 
 interface UseAutoScrollResult<T extends HTMLElement> {
   /** Callback ref to attach to the scroll container. */
@@ -21,22 +23,36 @@ export function useAutoScroll<T extends HTMLElement>(
   // Track container element with state so effect re-runs when element changes
   const [container, setContainer] = useState<T | null>(null);
   const isAutoScrollEnabledRef = useRef(true);
+  const isContentSettled = useContentSettled();
+  const lastScrollTopRef = useRef(0);
+  const scrollDeferredRef = useRef(false);
 
   // Callback ref that updates state when container element changes
-  const containerRef = useCallback((node: T | null) => setContainer(node), []);
-
-  // Threshold in pixels - allows for minor scroll jitter
-  const SCROLL_THRESHOLD = 30;
-
-  const isAtBottom = useCallback((el: HTMLElement): boolean => {
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    return distanceFromBottom <= SCROLL_THRESHOLD;
+  const containerRef = useCallback((node: T | null) => {
+    setContainer(node);
+    scrollDeferredRef.current = false;
+    lastScrollTopRef.current = 0;
   }, []);
 
+  // Direction-based scroll detection:
+  // - Scrolling UP disables auto-scroll (user wants to read earlier content)
+  // - Scrolling DOWN re-enables auto-scroll (user wants to follow new content)
   const handleScroll = useCallback(() => {
     if (!container) return;
-    isAutoScrollEnabledRef.current = isAtBottom(container);
-  }, [container, isAtBottom]);
+
+    const currentScrollTop = container.scrollTop;
+    const scrolledUp = currentScrollTop < lastScrollTopRef.current;
+
+    if (scrolledUp) {
+      // User scrolled UP - disable auto-scroll
+      isAutoScrollEnabledRef.current = false;
+    } else {
+      // Scrolled DOWN or stayed same - re-enable auto-scroll
+      isAutoScrollEnabledRef.current = true;
+    }
+
+    lastScrollTopRef.current = currentScrollTop;
+  }, [container]);
 
   const resetAutoScroll = useCallback(() => {
     isAutoScrollEnabledRef.current = true;
@@ -44,6 +60,7 @@ export function useAutoScroll<T extends HTMLElement>(
 
   // Auto-scroll using MutationObserver - fires after DOM mutations
   // Combined with RAF to ensure scroll happens after layout completes
+  // Defers scrolling when content animations are in progress
   useEffect(() => {
     if (!container) return;
 
@@ -52,6 +69,8 @@ export function useAutoScroll<T extends HTMLElement>(
     const scrollToBottom = () => {
       if (isActive && isAutoScrollEnabledRef.current && container) {
         container.scrollTop = container.scrollHeight;
+        // Update lastScrollTop so next scroll event has correct baseline
+        lastScrollTopRef.current = container.scrollTop;
       }
     };
 
@@ -60,14 +79,24 @@ export function useAutoScroll<T extends HTMLElement>(
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
       }
-      // Schedule scroll after layout completes
-      rafId = requestAnimationFrame(scrollToBottom);
+
+      if (!isContentSettled) {
+        // Defer scrolling until animation completes
+        scrollDeferredRef.current = true;
+      } else {
+        // Animation complete, scroll immediately
+        rafId = requestAnimationFrame(scrollToBottom);
+      }
     });
 
     observer.observe(container, { childList: true, subtree: true });
 
-    // Initial scroll for content already present when observer connects
-    rafId = requestAnimationFrame(scrollToBottom);
+    // Initial scroll: also check if settled
+    if (isContentSettled) {
+      rafId = requestAnimationFrame(scrollToBottom);
+    } else {
+      scrollDeferredRef.current = true;
+    }
 
     return () => {
       observer.disconnect();
@@ -75,7 +104,22 @@ export function useAutoScroll<T extends HTMLElement>(
         cancelAnimationFrame(rafId);
       }
     };
-  }, [isActive, container]);
+  }, [isActive, container, isContentSettled]);
+
+  // Execute deferred scroll when animation completes
+  useEffect(() => {
+    if (isContentSettled && scrollDeferredRef.current && container) {
+      scrollDeferredRef.current = false;
+      if (isActive && isAutoScrollEnabledRef.current) {
+        requestAnimationFrame(() => {
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+            lastScrollTopRef.current = container.scrollTop;
+          }
+        });
+      }
+    }
+  }, [isContentSettled, isActive, container]);
 
   return {
     containerRef,

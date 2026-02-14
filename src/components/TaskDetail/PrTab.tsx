@@ -12,15 +12,30 @@ import {
   XCircle,
 } from "lucide-react";
 import { usePrStatus } from "../../providers";
-import type { PrCheck, PrReview } from "../../types/workflow";
+import type { PrCheck, PrComment, PrReview } from "../../types/workflow";
 import { Badge, FlexContainer, Link, Panel } from "../ui";
 
 interface PrTabProps {
   prUrl: string;
   taskId: string;
+  /** Currently selected comment IDs. */
+  selectedCommentIds?: Set<number>;
+  /** Callback when comment selection changes. */
+  onSelectionChange?: (ids: Set<number>) => void;
+  /** Current guidance text. */
+  guidance?: string;
+  /** Callback when guidance changes. */
+  onGuidanceChange?: (guidance: string) => void;
 }
 
-export function PrTab({ prUrl, taskId }: PrTabProps) {
+export function PrTab({
+  prUrl,
+  taskId,
+  selectedCommentIds,
+  onSelectionChange,
+  guidance,
+  onGuidanceChange,
+}: PrTabProps) {
   const { getPrStatus, isLoading } = usePrStatus();
   const status = getPrStatus(taskId);
   const loading = isLoading(taskId);
@@ -67,12 +82,57 @@ export function PrTab({ prUrl, taskId }: PrTabProps) {
         </Panel>
       )}
 
-      {/* Empty state for no checks/reviews */}
-      {status && status.checks.length === 0 && status.reviews.length === 0 && (
-        <div className="text-sm text-stone-500 dark:text-stone-400 text-center py-4">
-          No checks or reviews yet
-        </div>
+      {/* Comments section */}
+      {status?.comments && status.comments.length > 0 && (
+        <Panel autoFill={false} padded={true}>
+          <h4 className="text-sm font-medium mb-2 text-stone-700 dark:text-stone-300">
+            Comments ({status.comments.length})
+          </h4>
+          <div className="space-y-3">
+            {status.comments.map((comment) => (
+              <CommentRow
+                key={comment.id}
+                comment={comment}
+                selected={selectedCommentIds?.has(comment.id) ?? false}
+                onToggle={() => {
+                  const newSet = new Set(selectedCommentIds);
+                  if (newSet.has(comment.id)) {
+                    newSet.delete(comment.id);
+                  } else {
+                    newSet.add(comment.id);
+                  }
+                  onSelectionChange?.(newSet);
+                }}
+              />
+            ))}
+          </div>
+        </Panel>
       )}
+
+      {/* Guidance section */}
+      {status?.comments && status.comments.length > 0 && (
+        <Panel autoFill={false} padded={true}>
+          <h4 className="text-sm font-medium mb-2 text-stone-700 dark:text-stone-300">
+            Guidance (optional)
+          </h4>
+          <textarea
+            value={guidance ?? ""}
+            onChange={(e) => onGuidanceChange?.(e.target.value)}
+            placeholder="Add any additional context or instructions..."
+            className="w-full h-20 text-sm rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 p-2 resize-none"
+          />
+        </Panel>
+      )}
+
+      {/* Empty state for no checks/reviews/comments */}
+      {status &&
+        status.checks.length === 0 &&
+        status.reviews.length === 0 &&
+        (status.comments?.length ?? 0) === 0 && (
+          <div className="text-sm text-stone-500 dark:text-stone-400 text-center py-4">
+            No checks, reviews, or comments yet
+          </div>
+        )}
     </FlexContainer>
   );
 }
@@ -140,6 +200,39 @@ function ReviewRow({ review }: { review: PrReview }) {
       {icon}
       <span className="font-medium text-stone-700 dark:text-stone-300">{review.author}</span>
       <span className="text-stone-500 dark:text-stone-400">{stateLabel}</span>
+    </div>
+  );
+}
+
+function CommentRow({
+  comment,
+  selected,
+  onToggle,
+}: {
+  comment: PrComment;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex gap-2">
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={onToggle}
+        className="mt-1 rounded border-stone-300 dark:border-stone-600"
+      />
+      <div className="flex-1 text-sm border-l-2 border-stone-200 dark:border-stone-700 pl-3">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="font-medium text-stone-700 dark:text-stone-300">{comment.author}</span>
+          {comment.path && (
+            <span className="text-xs text-stone-500 dark:text-stone-400 font-mono">
+              {comment.path}
+              {comment.line ? `:${comment.line}` : ""}
+            </span>
+          )}
+        </div>
+        <div className="text-stone-600 dark:text-stone-400 whitespace-pre-wrap">{comment.body}</div>
+      </div>
     </div>
   );
 }

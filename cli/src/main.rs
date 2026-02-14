@@ -1039,6 +1039,21 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
             }
             s
         }
+        IterationTrigger::PrComments { comments, guidance } => {
+            let mut s = format!("PR comments ({} comments)", comments.len());
+            for c in comments {
+                let location = match (&c.path, c.line) {
+                    (Some(p), Some(l)) => format!(" ({p}:{l})"),
+                    (Some(p), None) => format!(" ({p})"),
+                    _ => String::new(),
+                };
+                write!(s, "\n    - @{}{}: {}", c.author, location, c.body).unwrap();
+            }
+            if let Some(g) = guidance {
+                write!(s, "\n    Guidance: {g}").unwrap();
+            }
+            s
+        }
     }
 }
 

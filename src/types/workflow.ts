@@ -246,6 +246,17 @@ export type WorkflowOutcome =
   | { type: "interrupted" };
 
 /**
+ * PR comment data stored in iteration trigger.
+ * Captured at action time and used for prompt building.
+ */
+export interface PrCommentData {
+  author: string;
+  body: string;
+  path: string | null;
+  line: number | null;
+}
+
+/**
  * Why an iteration was created - determines the resume prompt type.
  * Uses snake_case to match Rust's serde serialization.
  */
@@ -258,7 +269,8 @@ export type IterationTrigger =
   | { type: "script_failure"; from_stage: string; error: string }
   | { type: "retry_failed"; instructions?: string }
   | { type: "retry_blocked"; instructions?: string }
-  | { type: "manual_resume"; message?: string };
+  | { type: "manual_resume"; message?: string }
+  | { type: "pr_comments"; comments: PrCommentData[]; guidance?: string };
 
 /**
  * A single iteration within a stage (one agent run).
@@ -558,6 +570,8 @@ export interface PrStatus {
   checks: PrCheck[];
   /** Review statuses. */
   reviews: PrReview[];
+  /** Review comments on the PR. */
+  comments: PrComment[];
   /** Timestamp when this status was fetched (RFC3339). */
   fetched_at: string;
 }
@@ -582,6 +596,24 @@ export interface PrReview {
   author: string;
   /** Review state from GitHub (uppercase): "APPROVED", "CHANGES_REQUESTED", "COMMENTED", or "PENDING". */
   state: string;
+}
+
+/**
+ * A single PR review comment.
+ */
+export interface PrComment {
+  /** GitHub comment ID. */
+  id: number;
+  /** GitHub username of the commenter. */
+  author: string;
+  /** Comment body (markdown). */
+  body: string;
+  /** File path if this is a file-level or line-level comment. */
+  path?: string;
+  /** Line number if this is a line-level comment. */
+  line?: number;
+  /** When the comment was created (ISO 8601). */
+  created_at: string;
 }
 
 // =============================================================================

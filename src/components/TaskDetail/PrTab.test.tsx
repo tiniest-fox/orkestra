@@ -54,6 +54,7 @@ describe("PrTab", () => {
       state: "open",
       checks: [],
       reviews: [],
+      comments: [],
       fetched_at: new Date().toISOString(),
     });
 
@@ -68,6 +69,7 @@ describe("PrTab", () => {
       state: "merged",
       checks: [],
       reviews: [],
+      comments: [],
       fetched_at: new Date().toISOString(),
     });
 
@@ -82,6 +84,7 @@ describe("PrTab", () => {
       state: "closed",
       checks: [],
       reviews: [],
+      comments: [],
       fetched_at: new Date().toISOString(),
     });
 
@@ -100,6 +103,7 @@ describe("PrTab", () => {
         { name: "build", status: "pending" },
       ],
       reviews: [],
+      comments: [],
       fetched_at: new Date().toISOString(),
     });
 
@@ -121,6 +125,7 @@ describe("PrTab", () => {
         { author: "bob", state: "CHANGES_REQUESTED" },
         { author: "carol", state: "COMMENTED" },
       ],
+      comments: [],
       fetched_at: new Date().toISOString(),
     });
 
@@ -135,17 +140,70 @@ describe("PrTab", () => {
     expect(screen.getByText("commented")).toBeInTheDocument();
   });
 
+  it("shows comments with author and file context", () => {
+    mockStatuses.set("task-1", {
+      url: "https://github.com/test/repo/pull/42",
+      state: "open",
+      checks: [],
+      reviews: [],
+      comments: [
+        {
+          id: 1,
+          author: "alice",
+          body: "Looks good",
+          path: "src/main.rs",
+          line: 42,
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: 2,
+          author: "bob",
+          body: "Consider refactoring",
+          path: "src/lib.rs",
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: 3,
+          author: "carol",
+          body: "General comment",
+          created_at: new Date().toISOString(),
+        },
+      ],
+      fetched_at: new Date().toISOString(),
+    });
+
+    render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
+
+    // Comments section header with count
+    expect(screen.getByText("Comments (3)")).toBeInTheDocument();
+
+    // First comment: author, path with line, body
+    expect(screen.getByText("alice")).toBeInTheDocument();
+    expect(screen.getByText("src/main.rs:42")).toBeInTheDocument();
+    expect(screen.getByText("Looks good")).toBeInTheDocument();
+
+    // Second comment: author, path without line, body
+    expect(screen.getByText("bob")).toBeInTheDocument();
+    expect(screen.getByText("src/lib.rs")).toBeInTheDocument();
+    expect(screen.getByText("Consider refactoring")).toBeInTheDocument();
+
+    // Third comment: author, no path, body
+    expect(screen.getByText("carol")).toBeInTheDocument();
+    expect(screen.getByText("General comment")).toBeInTheDocument();
+  });
+
   it("shows empty state when no checks or reviews", () => {
     mockStatuses.set("task-1", {
       url: "https://github.com/test/repo/pull/42",
       state: "open",
       checks: [],
       reviews: [],
+      comments: [],
       fetched_at: new Date().toISOString(),
     });
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
 
-    expect(screen.getByText("No checks or reviews yet")).toBeInTheDocument();
+    expect(screen.getByText("No checks, reviews, or comments yet")).toBeInTheDocument();
   });
 });

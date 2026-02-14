@@ -69,6 +69,19 @@ function extractContextMessage(context: IterationTrigger): {
         label: "Your answers:",
         message: context.answers.map((qa) => `Q: ${qa.question}\nA: ${qa.answer}`).join("\n\n"),
       };
+    case "pr_comments": {
+      const commentSummary = context.comments
+        .map(
+          (c) =>
+            `@${c.author}: ${c.body}${c.path ? ` (${c.path}${c.line ? `:${c.line}` : ""})` : ""}`,
+        )
+        .join("\n");
+      const guidance = context.guidance ? `\n\nGuidance: ${context.guidance}` : "";
+      return {
+        label: "PR comments to address:",
+        message: `${commentSummary}${guidance}`,
+      };
+    }
     // Unit variant with no user-facing content
     case "interrupted":
       return null;

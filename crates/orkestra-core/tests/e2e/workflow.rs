@@ -5210,3 +5210,171 @@ fn test_archive_task_rejects_non_idle_phase() {
         "archive_task should fail for non-Idle phase, got: {result:?}"
     );
 }
+
+// =============================================================================
+// Address PR Comments E2E Tests
+// =============================================================================
+
+/// Test that a Done task can address PR comments.
+///
+/// This exercises the `address_pr_comments` API method for cases where a user
+/// wants to return to the work stage to address feedback from a PR review.
+#[test]
+fn test_address_pr_comments_returns_to_work_stage() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+    use orkestra_core::workflow::domain::{IterationTrigger, PrCommentData};
+
+    use crate::helpers::disable_auto_merge;
+
+    // Use git workflow with auto_merge disabled so task stays at Done
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    // Create a task
+    let task = ctx.create_task("Test PR comments", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance through all stages to Done
+    advance_to_done_no_integration(&ctx, &task_id);
+
+    // Verify task is Done and Idle
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.is_done(), "Task should be Done");
+    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+
+    // Create test comments
+    let comments = vec![
+        PrCommentData {
+            author: "reviewer1".to_string(),
+            body: "Fix formatting in main.rs".to_string(),
+            path: Some("src/main.rs".to_string()),
+            line: Some(42),
+        },
+        PrCommentData {
+            author: "reviewer2".to_string(),
+            body: "General feedback".to_string(),
+            path: None,
+            line: None,
+        },
+    ];
+
+    // Address PR comments
+    let result = ctx
+        .api()
+        .address_pr_comments(
+            &task_id,
+            comments,
+            Some("Please fix the formatting".to_string()),
+        )
+        .expect("address_pr_comments should succeed");
+
+    // Verify task is back in work stage
+    assert_eq!(
+        result.current_stage(),
+        Some("work"),
+        "Task should return to work stage"
+    );
+    assert_eq!(result.phase, Phase::Idle, "Task should be Idle");
+    assert!(
+        !result.is_done(),
+        "Task should no longer be Done after addressing PR comments"
+    );
+    assert!(
+        result.completed_at.is_none(),
+        "completed_at should be cleared"
+    );
+
+    // Verify iteration was created with correct trigger
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let last = iterations.last().expect("Should have iterations");
+
+    match &last.incoming_context {
+        Some(IterationTrigger::PrComments { comments, guidance }) => {
+            assert_eq!(comments.len(), 2);
+            // First comment with path and line
+            assert_eq!(comments[0].author, "reviewer1");
+            assert_eq!(comments[0].body, "Fix formatting in main.rs");
+            assert_eq!(
+                comments[0].path,
+                Some("src/main.rs".to_string()),
+                "path should be preserved"
+            );
+            assert_eq!(comments[0].line, Some(42), "line should be preserved");
+            // Second comment without path and line
+            assert_eq!(comments[1].author, "reviewer2");
+            assert_eq!(comments[1].body, "General feedback");
+            assert_eq!(
+                comments[1].path, None,
+                "path should be None for PR-level comment"
+            );
+            assert_eq!(
+                comments[1].line, None,
+                "line should be None for PR-level comment"
+            );
+            // Guidance
+            assert_eq!(guidance.as_deref(), Some("Please fix the formatting"));
+        }
+        other => panic!("Expected PrComments trigger, got {other:?}"),
+    }
+
+    // Set mock output for work stage agent - it needs to complete
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Addressed PR feedback".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance(); // spawns work agent with PR comments resume prompt
+
+    // VERIFY: PR comments reach the agent prompt
+    ctx.assert_resume_prompt_contains(
+        "pr_comments",
+        &[
+            "reviewer1",
+            "Fix formatting in main.rs",
+            "src/main.rs",
+            "line 42",
+            "reviewer2",
+            "General feedback",
+            "Please fix the formatting", // The guidance
+        ],
+    );
+}
+
+/// Test that `address_pr_comments` rejects empty comments.
+///
+/// At least one comment must be provided to address PR feedback.
+#[test]
+fn test_address_pr_comments_rejects_empty_comments() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+    use orkestra_core::workflow::WorkflowError;
+
+    use crate::helpers::disable_auto_merge;
+
+    // Use git workflow with auto_merge disabled so task stays at Done
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    // Create a task
+    let task = ctx.create_task("Test no comments", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance through all stages to Done
+    advance_to_done_no_integration(&ctx, &task_id);
+
+    // Verify task is Done and Idle
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.is_done(), "Task should be Done");
+    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+
+    // Attempt with empty comments should fail
+    let result = ctx.api().address_pr_comments(&task_id, vec![], None);
+
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "Expected InvalidTransition error for empty comments, got: {result:?}"
+    );
+}

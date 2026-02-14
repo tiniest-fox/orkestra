@@ -1,7 +1,7 @@
 //! Human/UI actions: approve, reject, answer questions, toggle auto mode.
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{IterationTrigger, QuestionAnswer, Task};
+use crate::workflow::domain::{IterationTrigger, PrCommentData, QuestionAnswer, Task};
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Outcome, Phase, Status};
 
@@ -503,6 +503,84 @@ impl WorkflowApi {
         // Transition to Idle so orchestrator picks it up
         let now = chrono::Utc::now().to_rfc3339();
         task.phase = Phase::Idle;
+        task.updated_at = now;
+
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
+    /// Address PR comments by returning to the work stage.
+    ///
+    /// This is similar to `integration_failed()` but triggered by user action
+    /// rather than a merge conflict. Creates a new iteration in the recovery
+    /// stage with PR comment context.
+    ///
+    /// # Arguments
+    ///
+    /// * `task_id` - The task ID
+    /// * `comments` - Selected PR comments to address (captured by the caller)
+    /// * `guidance` - Optional guidance from the user about how to address the comments
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if:
+    /// - No comments are provided (empty vec)
+    /// - The task is not in Done status
+    /// - The task is not in Idle phase
+    pub fn address_pr_comments(
+        &self,
+        task_id: &str,
+        comments: Vec<PrCommentData>,
+        guidance: Option<String>,
+    ) -> WorkflowResult<Task> {
+        // Validate at least one comment is provided
+        if comments.is_empty() {
+            return Err(WorkflowError::InvalidTransition(
+                "At least one comment must be selected".into(),
+            ));
+        }
+
+        let mut task = self.get_task(task_id)?;
+
+        // Validate task state
+        if !task.is_done() {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Task {task_id} is not done, cannot address PR comments"
+            )));
+        }
+        if task.phase != Phase::Idle {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Task {task_id} is not idle, cannot address PR comments"
+            )));
+        }
+
+        // Determine recovery stage (same as integration failures)
+        let recovery_stage = self
+            .integration_failure_stage(task.flow.as_deref())
+            .ok_or_else(|| {
+                WorkflowError::InvalidTransition("No recovery stage configured".into())
+            })?;
+
+        orkestra_debug!(
+            "action",
+            "address_pr_comments {}: returning to {} stage with {} comments",
+            task_id,
+            recovery_stage,
+            comments.len()
+        );
+
+        // Create new iteration with PR comments trigger
+        self.iteration_service.create_iteration(
+            task_id,
+            &recovery_stage,
+            Some(IterationTrigger::PrComments { comments, guidance }),
+        )?;
+
+        // Update task to recovery stage in Idle phase
+        let now = chrono::Utc::now().to_rfc3339();
+        task.status = Status::active(&recovery_stage);
+        task.phase = Phase::Idle;
+        task.completed_at = None;
         task.updated_at = now;
 
         self.store.save_task(&task)?;
@@ -1226,6 +1304,142 @@ mod tests {
         api.store.save_task(&task).unwrap();
 
         let result = api.archive_task(&task.id);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    // ========================================================================
+    // Address PR comments tests
+    // ========================================================================
+
+    /// Create an API with a task in Done status with a PR URL.
+    fn api_with_done_task_and_pr() -> (WorkflowApi, Task) {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+
+        // Set task to Done status with PR URL
+        task.status = Status::Done;
+        task.phase = Phase::Idle;
+        task.pr_url = Some("https://github.com/owner/repo/pull/123".to_string());
+        api.store.save_task(&task).unwrap();
+
+        (api, task)
+    }
+
+    fn test_comments() -> Vec<PrCommentData> {
+        vec![
+            PrCommentData {
+                author: "reviewer1".to_string(),
+                body: "Fix this formatting".to_string(),
+                path: Some("src/main.rs".to_string()),
+                line: Some(42),
+            },
+            PrCommentData {
+                author: "reviewer2".to_string(),
+                body: "PR-level comment".to_string(),
+                path: None,
+                line: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_address_pr_comments_success() {
+        let (api, task) = api_with_done_task_and_pr();
+
+        let result = api
+            .address_pr_comments(
+                &task.id,
+                test_comments(),
+                Some("Fix the formatting issues".to_string()),
+            )
+            .unwrap();
+
+        // Should return to work stage (integration recovery stage)
+        assert_eq!(result.current_stage(), Some("work"));
+        assert_eq!(result.phase, Phase::Idle);
+        assert!(result.completed_at.is_none());
+    }
+
+    #[test]
+    fn test_address_pr_comments_creates_iteration_with_trigger() {
+        let (api, task) = api_with_done_task_and_pr();
+
+        let _ = api
+            .address_pr_comments(
+                &task.id,
+                test_comments(),
+                Some("Address code review feedback".to_string()),
+            )
+            .unwrap();
+
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let last = iterations.last().unwrap();
+
+        match &last.incoming_context {
+            Some(IterationTrigger::PrComments { comments, guidance }) => {
+                assert_eq!(comments.len(), 2);
+                assert_eq!(comments[0].author, "reviewer1");
+                assert_eq!(comments[0].body, "Fix this formatting");
+                assert_eq!(guidance.as_deref(), Some("Address code review feedback"));
+            }
+            other => panic!("Expected PrComments trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_address_pr_comments_without_guidance() {
+        let (api, task) = api_with_done_task_and_pr();
+
+        let _ = api
+            .address_pr_comments(&task.id, test_comments(), None)
+            .unwrap();
+
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let last = iterations.last().unwrap();
+
+        match &last.incoming_context {
+            Some(IterationTrigger::PrComments { comments, guidance }) => {
+                assert_eq!(comments.len(), 2);
+                assert!(guidance.is_none());
+            }
+            other => panic!("Expected PrComments trigger, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_address_pr_comments_not_done() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description", None).unwrap();
+        // Task is in Active status, not Done
+
+        let result = api.address_pr_comments(&task.id, test_comments(), None);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_address_pr_comments_wrong_phase() {
+        let (api, mut task) = api_with_done_task_and_pr();
+
+        // Simulate task being in integrating phase
+        task.phase = Phase::Integrating;
+        api.store.save_task(&task).unwrap();
+
+        let result = api.address_pr_comments(&task.id, test_comments(), None);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_address_pr_comments_empty_comments() {
+        let (api, task) = api_with_done_task_and_pr();
+
+        // Empty comments should be rejected
+        let result = api.address_pr_comments(&task.id, vec![], None);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 }

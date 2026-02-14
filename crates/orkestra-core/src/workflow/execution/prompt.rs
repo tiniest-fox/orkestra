@@ -926,6 +926,24 @@ pub enum ResumeType {
     RetryBlocked { instructions: Option<String> },
     /// User interrupted and resumed with optional guidance.
     ManualResume { message: Option<String> },
+    /// User selected PR comments to address.
+    PrComments {
+        comments: Vec<PrComment>,
+        guidance: Option<String>,
+    },
+}
+
+/// A PR comment to address in the resume prompt.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PrComment {
+    /// The author of the comment.
+    pub author: String,
+    /// The file path the comment is on (empty for PR-level comments).
+    pub path: String,
+    /// The line number (if a line comment).
+    pub line: Option<u32>,
+    /// The comment body text.
+    pub body: String,
 }
 
 /// Owned question-answer pair for use in resume prompts.
@@ -944,6 +962,7 @@ const RESUME_RECHECK: &str = include_str!("../../prompts/templates/resume/rechec
 const RESUME_RETRY_FAILED: &str = include_str!("../../prompts/templates/resume/retry_failed.md");
 const RESUME_RETRY_BLOCKED: &str = include_str!("../../prompts/templates/resume/retry_blocked.md");
 const RESUME_MANUAL_RESUME: &str = include_str!("../../prompts/templates/resume/manual_resume.md");
+const RESUME_PR_COMMENTS: &str = include_str!("../../prompts/templates/resume/pr_comments.md");
 
 /// Load and render a resume prompt template.
 ///
@@ -987,6 +1006,10 @@ pub fn build_resume_prompt(
         ResumeType::ManualResume { message } => (
             RESUME_MANUAL_RESUME,
             serde_json::json!({ "message": message }),
+        ),
+        ResumeType::PrComments { comments, guidance } => (
+            RESUME_PR_COMMENTS,
+            serde_json::json!({ "comments": comments, "guidance": guidance }),
         ),
     };
 
@@ -1729,6 +1752,71 @@ mod tests {
         assert!(prompt.contains("JSON"));
         // Should not contain the message section when None
         assert!(!prompt.contains("Message from the user"));
+    }
+
+    #[test]
+    fn test_build_resume_prompt_pr_comments() {
+        let comments = vec![
+            PrComment {
+                author: "reviewer1".to_string(),
+                path: "src/main.rs".to_string(),
+                line: Some(42),
+                body: "This function needs error handling".to_string(),
+            },
+            PrComment {
+                author: "reviewer2".to_string(),
+                path: "src/lib.rs".to_string(),
+                line: None,
+                body: "Consider adding tests for this module".to_string(),
+            },
+        ];
+        let prompt = build_resume_prompt(
+            "work",
+            &ResumeType::PrComments {
+                comments,
+                guidance: Some("Focus on the error handling first".to_string()),
+            },
+            "main",
+            &[],
+            &[],
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:pr_comments>"));
+        assert!(prompt.contains("reviewer1"));
+        assert!(prompt.contains("src/main.rs"));
+        assert!(prompt.contains("line 42"));
+        assert!(prompt.contains("This function needs error handling"));
+        assert!(prompt.contains("reviewer2"));
+        assert!(prompt.contains("src/lib.rs"));
+        assert!(prompt.contains("Consider adding tests"));
+        assert!(prompt.contains("Focus on the error handling first"));
+    }
+
+    #[test]
+    fn test_build_resume_prompt_pr_comments_no_guidance() {
+        let comments = vec![PrComment {
+            author: "reviewer".to_string(),
+            path: "README.md".to_string(),
+            line: None,
+            body: "Typo in documentation".to_string(),
+        }];
+        let prompt = build_resume_prompt(
+            "work",
+            &ResumeType::PrComments {
+                comments,
+                guidance: None,
+            },
+            "main",
+            &[],
+            &[],
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:pr_comments>"));
+        assert!(prompt.contains("reviewer"));
+        assert!(prompt.contains("README.md"));
+        assert!(prompt.contains("Typo in documentation"));
+        // Should not contain guidance section when None
+        assert!(!prompt.contains("User guidance"));
     }
 
     #[test]

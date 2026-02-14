@@ -300,6 +300,7 @@ describe("TaskDetailSidebar", () => {
       state,
       checks: [],
       reviews: [],
+      comments: [],
       fetched_at: new Date().toISOString(),
     });
 

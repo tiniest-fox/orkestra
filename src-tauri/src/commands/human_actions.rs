@@ -1,7 +1,9 @@
 //! Human action commands: approve, reject, answer questions.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
-use orkestra_core::workflow::{spawn_merge_integration, spawn_pr_creation, QuestionAnswer, Task};
+use orkestra_core::workflow::{
+    spawn_merge_integration, spawn_pr_creation, PrCommentData, QuestionAnswer, Task,
+};
 use tauri::{State, Window};
 
 /// Approve the current stage artifact.
@@ -172,5 +174,25 @@ pub fn workflow_archive(
 ) -> Result<Task, TauriError> {
     registry.with_project(window.label(), |state| {
         state.api()?.archive_task(&task_id).map_err(Into::into)
+    })
+}
+
+/// Address PR comments by returning the task to the work stage.
+///
+/// This transitions a Done/Idle task back to the work stage,
+/// creating a new iteration with PR comment context for the agent.
+#[tauri::command]
+pub fn workflow_address_pr_comments(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    comments: Vec<PrCommentData>,
+    guidance: Option<String>,
+) -> Result<Task, TauriError> {
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .address_pr_comments(&task_id, comments, guidance)
+            .map_err(Into::into)
     })
 }

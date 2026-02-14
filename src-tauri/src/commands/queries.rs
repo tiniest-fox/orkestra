@@ -212,6 +212,8 @@ pub struct PrStatus {
     pub checks: Vec<PrCheck>,
     /// Review statuses.
     pub reviews: Vec<PrReview>,
+    /// Review comments on the PR.
+    pub comments: Vec<PrComment>,
     /// Timestamp when this status was fetched (RFC3339).
     pub fetched_at: String,
 }
@@ -236,6 +238,23 @@ pub struct PrReview {
     pub state: String,
 }
 
+/// A single PR review comment.
+#[derive(Serialize)]
+pub struct PrComment {
+    /// GitHub comment ID.
+    pub id: i64,
+    /// GitHub username of the commenter.
+    pub author: String,
+    /// Comment body (markdown).
+    pub body: String,
+    /// File path if this is a file-level or line-level comment.
+    pub path: Option<String>,
+    /// Line number if this is a line-level comment.
+    pub line: Option<u32>,
+    /// When the comment was created (ISO 8601).
+    pub created_at: String,
+}
+
 /// Raw JSON response from `gh pr view --json`.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -246,6 +265,8 @@ struct GhPrResponse {
     status_check_rollup: Vec<GhStatusCheck>,
     #[serde(default)]
     reviews: Vec<GhReview>,
+    #[serde(default)]
+    review_comments: Vec<GhComment>,
 }
 
 #[derive(Deserialize)]
@@ -264,6 +285,19 @@ struct GhReview {
 #[derive(Deserialize)]
 struct GhAuthor {
     login: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhComment {
+    #[serde(default)]
+    database_id: Option<i64>,
+    author: Option<GhAuthor>,
+    body: String,
+    path: Option<String>,
+    #[serde(default)]
+    line: Option<u32>,
+    created_at: String,
 }
 
 /// Convert GitHub's PR state to our normalized format.
@@ -310,7 +344,7 @@ pub fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
             "view",
             &pr_url,
             "--json",
-            "state,statusCheckRollup,reviews,url",
+            "state,statusCheckRollup,reviews,url,reviewComments",
         ])
         .output()
         .map_err(|e| {
@@ -360,11 +394,27 @@ pub fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
         })
         .collect();
 
+    let comments: Vec<PrComment> = response
+        .review_comments
+        .iter()
+        .filter_map(|c| {
+            Some(PrComment {
+                id: c.database_id?,
+                author: c.author.as_ref()?.login.clone(),
+                body: c.body.clone(),
+                path: c.path.clone(),
+                line: c.line,
+                created_at: c.created_at.clone(),
+            })
+        })
+        .collect();
+
     Ok(PrStatus {
         url: response.url,
         state: normalize_pr_state(&response.state).to_string(),
         checks,
         reviews,
+        comments,
         fetched_at: Utc::now().to_rfc3339(),
     })
 }
@@ -457,5 +507,121 @@ mod tests {
             "pending"
         );
         assert_eq!(normalize_check_status(Some("COMPLETED"), None), "pending");
+    }
+
+    #[test]
+    fn deserialize_gh_response_with_comments() {
+        let json = r#"{
+            "url": "https://github.com/owner/repo/pull/123",
+            "state": "OPEN",
+            "statusCheckRollup": [],
+            "reviews": [],
+            "reviewComments": [
+                {
+                    "databaseId": 42,
+                    "author": {"login": "reviewer"},
+                    "body": "Please fix this",
+                    "path": "src/main.rs",
+                    "line": 10,
+                    "createdAt": "2024-01-15T10:30:00Z"
+                },
+                {
+                    "databaseId": 43,
+                    "author": {"login": "reviewer2"},
+                    "body": "General comment",
+                    "path": null,
+                    "line": null,
+                    "createdAt": "2024-01-15T11:00:00Z"
+                }
+            ]
+        }"#;
+
+        let response: GhPrResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.review_comments.len(), 2);
+
+        let first = &response.review_comments[0];
+        assert_eq!(first.database_id, Some(42));
+        assert_eq!(first.author.as_ref().unwrap().login, "reviewer");
+        assert_eq!(first.body, "Please fix this");
+        assert_eq!(first.path, Some("src/main.rs".to_string()));
+        assert_eq!(first.line, Some(10));
+        assert_eq!(first.created_at, "2024-01-15T10:30:00Z");
+
+        let second = &response.review_comments[1];
+        assert_eq!(second.path, None);
+        assert_eq!(second.line, None);
+    }
+
+    #[test]
+    fn deserialize_gh_response_with_empty_comments() {
+        let json = r#"{
+            "url": "https://github.com/owner/repo/pull/123",
+            "state": "OPEN",
+            "statusCheckRollup": [],
+            "reviews": []
+        }"#;
+
+        let response: GhPrResponse = serde_json::from_str(json).unwrap();
+        assert!(response.review_comments.is_empty());
+    }
+
+    #[test]
+    fn comments_filter_out_incomplete_data() {
+        let json = r#"{
+            "url": "https://github.com/owner/repo/pull/123",
+            "state": "OPEN",
+            "statusCheckRollup": [],
+            "reviews": [],
+            "reviewComments": [
+                {
+                    "databaseId": 42,
+                    "author": {"login": "reviewer"},
+                    "body": "Valid comment",
+                    "path": "src/main.rs",
+                    "line": 10,
+                    "createdAt": "2024-01-15T10:30:00Z"
+                },
+                {
+                    "databaseId": null,
+                    "author": {"login": "reviewer"},
+                    "body": "Missing ID",
+                    "path": null,
+                    "line": null,
+                    "createdAt": "2024-01-15T10:30:00Z"
+                },
+                {
+                    "databaseId": 44,
+                    "author": null,
+                    "body": "Missing author",
+                    "path": null,
+                    "line": null,
+                    "createdAt": "2024-01-15T10:30:00Z"
+                }
+            ]
+        }"#;
+
+        let response: GhPrResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.review_comments.len(), 3);
+
+        // Map comments using the same filter_map logic as the command
+        let comments: Vec<PrComment> = response
+            .review_comments
+            .iter()
+            .filter_map(|c| {
+                Some(PrComment {
+                    id: c.database_id?,
+                    author: c.author.as_ref()?.login.clone(),
+                    body: c.body.clone(),
+                    path: c.path.clone(),
+                    line: c.line,
+                    created_at: c.created_at.clone(),
+                })
+            })
+            .collect();
+
+        // Only the valid comment should remain
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].id, 42);
+        assert_eq!(comments[0].author, "reviewer");
     }
 }

@@ -23,9 +23,9 @@ use crate::orkestra_debug;
 use crate::workflow::config::{ToolRestriction, WorkflowConfig};
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
-    build_resume_prompt, ActivityLogEntry, AgentConfigError, AgentRunnerTrait, ProviderRegistry,
-    RegistryError, ResumeQuestionAnswer, ResumeType, RunConfig, RunError, RunEvent,
-    SiblingTaskContext,
+    build_resume_prompt, ActivityLogEntry, AgentConfigError, AgentRunnerTrait, PrComment,
+    ProviderRegistry, RegistryError, ResumeQuestionAnswer, ResumeType, RunConfig, RunError,
+    RunEvent, SiblingTaskContext,
 };
 
 use super::prompt_service::PromptService;
@@ -618,6 +618,18 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
         Some(IterationTrigger::ManualResume { message }) => ResumeType::ManualResume {
             message: message.clone(),
         },
+        Some(IterationTrigger::PrComments { comments, guidance }) => ResumeType::PrComments {
+            comments: comments
+                .iter()
+                .map(|c| PrComment {
+                    author: c.author.clone(),
+                    body: c.body.clone(),
+                    path: c.path.clone().unwrap_or_default(),
+                    line: c.line,
+                })
+                .collect(),
+            guidance: guidance.clone(),
+        },
     }
 }
 
@@ -770,5 +782,49 @@ mod tests {
             final_user.contains(&format!("{system_prompt}\n\n{user_prompt}")),
             "Expected system prompt and user message joined with '\\n\\n' separator"
         );
+    }
+
+    #[test]
+    fn test_trigger_to_resume_type_pr_comments() {
+        use crate::workflow::domain::PrCommentData;
+
+        let trigger = IterationTrigger::PrComments {
+            comments: vec![
+                PrCommentData {
+                    author: "reviewer1".to_string(),
+                    body: "Fix this bug".to_string(),
+                    path: Some("src/main.rs".to_string()),
+                    line: Some(42),
+                },
+                PrCommentData {
+                    author: "reviewer2".to_string(),
+                    body: "PR-level comment".to_string(),
+                    path: None,
+                    line: None,
+                },
+            ],
+            guidance: Some("Focus on error handling".to_string()),
+        };
+
+        let resume = trigger_to_resume_type(Some(&trigger));
+
+        match resume {
+            ResumeType::PrComments { comments, guidance } => {
+                assert_eq!(comments.len(), 2);
+                // First comment with path and line
+                assert_eq!(comments[0].author, "reviewer1");
+                assert_eq!(comments[0].body, "Fix this bug");
+                assert_eq!(comments[0].path, "src/main.rs");
+                assert_eq!(comments[0].line, Some(42));
+                // Second comment without path/line (PR-level)
+                assert_eq!(comments[1].author, "reviewer2");
+                assert_eq!(comments[1].body, "PR-level comment");
+                assert_eq!(comments[1].path, ""); // None becomes empty string
+                assert_eq!(comments[1].line, None);
+                // Guidance
+                assert_eq!(guidance, Some("Focus on error handling".to_string()));
+            }
+            _ => panic!("Expected PrComments resume type"),
+        }
     }
 }

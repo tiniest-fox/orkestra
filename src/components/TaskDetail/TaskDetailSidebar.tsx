@@ -28,6 +28,7 @@ import { DetailsTab } from "./DetailsTab";
 import { IntegrationPanel } from "./IntegrationPanel";
 import { IterationsTab } from "./IterationsTab";
 import { LogsTab } from "./LogsTab";
+import { PrCommentsPanel } from "./PrCommentsPanel";
 import { PrTab } from "./PrTab";
 import { QuestionFormPanel } from "./QuestionFormPanel";
 import { ResumePanel } from "./ResumePanel";
@@ -85,6 +86,9 @@ export function TaskDetailSidebar({
   const [isRetrying, setIsRetrying] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [ghAvailable, setGhAvailable] = useState(false);
+  const [selectedCommentIds, setSelectedCommentIds] = useState<Set<number>>(new Set());
+  const [commentGuidance, setCommentGuidance] = useState<string>("");
+  const [isAddressingComments, setIsAddressingComments] = useState(false);
 
   useEffect(() => {
     invoke<ProjectInfo>("get_project_info").then(
@@ -101,6 +105,8 @@ export function TaskDetailSidebar({
     setActiveTab(smartDefaultTab(task, tabs));
     setConfirmingDelete(false);
     logsState.reset();
+    setSelectedCommentIds(new Set());
+    setCommentGuidance("");
   }, [task.id]);
 
   // Validate active tab exists
@@ -170,12 +176,26 @@ export function TaskDetailSidebar({
     task.phase === "idle" &&
     task.pr_url &&
     prStatus?.state === "merged";
+  // Show PR comments panel for Done+Idle tasks with PR and unaddressed comments
+  const showPrComments =
+    !showDelete &&
+    !showQuestions &&
+    !showResume &&
+    !showReview &&
+    !showIntegration &&
+    !showArchive &&
+    task.derived.is_done &&
+    task.phase === "idle" &&
+    task.pr_url &&
+    prStatus?.comments &&
+    prStatus.comments.length > 0;
   const showCompactFooter = !!(
     showDelete ||
     showReview ||
     showResume ||
     showIntegration ||
-    showArchive
+    showArchive ||
+    showPrComments
   );
 
   return (
@@ -242,7 +262,14 @@ export function TaskDetailSidebar({
                   )}
 
                   {activeTab === TaskDetailTabs.pr(task.id) && task.pr_url && (
-                    <PrTab prUrl={task.pr_url} taskId={task.id} />
+                    <PrTab
+                      prUrl={task.pr_url}
+                      taskId={task.id}
+                      selectedCommentIds={selectedCommentIds}
+                      onSelectionChange={setSelectedCommentIds}
+                      guidance={commentGuidance}
+                      onGuidanceChange={setCommentGuidance}
+                    />
                   )}
                 </TabbedPanel>
               </FlexContainer>
@@ -296,6 +323,21 @@ export function TaskDetailSidebar({
         )}
 
         {showArchive && <ArchivePanel onArchive={archiveTask} isSubmitting={isSubmitting} />}
+
+        {showPrComments && prStatus?.comments && (
+          <PrCommentsPanel
+            taskId={task.id}
+            allComments={prStatus.comments}
+            selectedCommentIds={selectedCommentIds}
+            guidance={commentGuidance}
+            onSuccess={() => {
+              setSelectedCommentIds(new Set());
+              setCommentGuidance("");
+            }}
+            isSubmitting={isAddressingComments}
+            setIsSubmitting={setIsAddressingComments}
+          />
+        )}
       </Slot>
     </PanelLayout>
   );

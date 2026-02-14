@@ -12,7 +12,7 @@ pub(crate) mod task;
 pub(crate) mod task_view;
 
 pub use assistant_session::AssistantSession;
-pub use iteration::{Iteration, IterationTrigger};
+pub use iteration::{Iteration, IterationTrigger, PrCommentData};
 pub use log_entry::{LogEntry, OrkAction, TodoItem, ToolInput};
 pub use question::{Question, QuestionAnswer, QuestionOption};
 pub use stage_session::{SessionState, StageSession};

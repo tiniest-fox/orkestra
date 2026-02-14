@@ -47,7 +47,7 @@ export function useAutoScroll<T extends HTMLElement>(
     const currentScrollTop = container.scrollTop;
     const scrolledUp = currentScrollTop < lastScrollTopRef.current;
     const isNearBottom =
-      container.scrollHeight - currentScrollTop - container.clientHeight < NEAR_BOTTOM_THRESHOLD;
+      container.scrollHeight - currentScrollTop - container.clientHeight <= NEAR_BOTTOM_THRESHOLD;
 
     if (scrolledUp) {
       // User scrolled UP - disable auto-scroll

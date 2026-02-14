@@ -231,7 +231,7 @@ describe("useAutoScroll", () => {
   });
 
   describe("resetAutoScroll", () => {
-    it("re-enables auto-scroll after being disabled", () => {
+    it("re-enables auto-scroll after being disabled", async () => {
       const container = createMockContainer({
         scrollTop: 100,
         scrollHeight: 1000,
@@ -244,7 +244,7 @@ describe("useAutoScroll", () => {
       });
 
       // Run initial RAF
-      act(() => {
+      await act(async () => {
         vi.runAllTimers();
       });
 
@@ -256,7 +256,7 @@ describe("useAutoScroll", () => {
 
       // Verify auto-scroll is disabled
       triggerMutation(container);
-      act(() => {
+      await act(async () => {
         vi.runAllTimers();
       });
       expect(container.scrollTop).toBe(50);
@@ -268,7 +268,7 @@ describe("useAutoScroll", () => {
 
       // Trigger mutation - auto-scroll should now be re-enabled
       triggerMutation(container);
-      act(() => {
+      await act(async () => {
         vi.runAllTimers();
       });
 
@@ -433,7 +433,7 @@ describe("useAutoScroll", () => {
       expect(container.scrollTop).toBe(449);
     });
 
-    it("re-enables when exactly 50px from bottom (at threshold)", () => {
+    it("re-enables when exactly 50px from bottom (at threshold)", async () => {
       const container = createMockContainer({
         scrollTop: 0,
         scrollHeight: 1000,
@@ -446,7 +446,7 @@ describe("useAutoScroll", () => {
       });
 
       // Run initial RAF
-      act(() => {
+      await act(async () => {
         vi.runAllTimers();
       });
 
@@ -468,7 +468,7 @@ describe("useAutoScroll", () => {
 
       // Trigger mutation - should be re-enabled (at threshold)
       triggerMutation(container);
-      act(() => {
+      await act(async () => {
         vi.runAllTimers();
       });
 

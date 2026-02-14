@@ -79,6 +79,10 @@ export function Slot({
     // Skip if we're in content-switching mode (handled separately)
     if (isSwitchingRef.current) return;
 
+    // Skip if visibility hasn't actually changed (initial mount)
+    // On initial mount, prevVisibleRef.current equals visible, so no transition needed
+    if (prevVisibleRef.current === visible) return;
+
     if (visible) {
       // Opening: entering → settled after animation duration
       setPhase("entering");

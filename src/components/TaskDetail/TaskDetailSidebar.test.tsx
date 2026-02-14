@@ -20,6 +20,7 @@ const mockRetryPr = vi.fn(() => Promise.resolve());
 const mockConfig = createMockWorkflowConfig();
 
 // Mock the providers
+const mockSetActivePoll = vi.fn();
 vi.mock("../../providers", () => ({
   useWorkflowConfig: () => mockConfig,
   useTasks: () => ({
@@ -52,6 +53,12 @@ vi.mock("../../providers", () => ({
     switchToArchive: vi.fn(),
     switchToActive: vi.fn(),
     navigateToTask: vi.fn(),
+  }),
+  usePrStatus: () => ({
+    getPrStatus: vi.fn(),
+    isLoading: vi.fn().mockReturnValue(false),
+    requestFetch: vi.fn(),
+    setActivePoll: mockSetActivePoll,
   }),
 }));
 
@@ -279,5 +286,114 @@ describe("TaskDetailSidebar", () => {
     });
 
     expect(mockRetryPr).toHaveBeenCalled();
+  });
+
+  describe("PR tab integration", () => {
+    beforeEach(() => {
+      mockSetActivePoll.mockClear();
+    });
+
+    it("shows PR tab for task with pr_url", async () => {
+      const task = createMockWorkflowTaskView({
+        status: { type: "done" },
+        phase: "idle",
+        pr_url: "https://github.com/test/repo/pull/1",
+        derived: { is_done: true },
+      });
+
+      await act(async () => {
+        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+      });
+
+      expect(screen.getByRole("button", { name: /^pr$/i })).toBeInTheDocument();
+    });
+
+    it("does not show PR tab for task without pr_url", async () => {
+      const task = createMockWorkflowTaskView({
+        status: { type: "done" },
+        phase: "idle",
+        derived: { is_done: true },
+      });
+
+      await act(async () => {
+        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+      });
+
+      expect(screen.queryByRole("button", { name: /^pr$/i })).not.toBeInTheDocument();
+    });
+
+    it("defaults to PR tab for done task with pr_url", async () => {
+      const task = createMockWorkflowTaskView({
+        status: { type: "done" },
+        phase: "idle",
+        pr_url: "https://github.com/test/repo/pull/1",
+        derived: { is_done: true },
+      });
+
+      await act(async () => {
+        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+      });
+
+      // PR tab content should be visible (View on GitHub link)
+      expect(screen.getByRole("link", { name: /view on github/i })).toBeInTheDocument();
+    });
+
+    it("defaults to PR tab for archived task with pr_url", async () => {
+      const task = createMockWorkflowTaskView({
+        status: { type: "archived" },
+        phase: "idle",
+        pr_url: "https://github.com/test/repo/pull/1",
+        derived: { is_archived: true },
+      });
+
+      await act(async () => {
+        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+      });
+
+      // PR tab content should be visible (View on GitHub link)
+      expect(screen.getByRole("link", { name: /view on github/i })).toBeInTheDocument();
+    });
+
+    it("activates PR polling when PR tab is opened", async () => {
+      const task = createMockWorkflowTaskView({
+        status: { type: "done" },
+        phase: "idle",
+        pr_url: "https://github.com/test/repo/pull/1",
+        derived: { is_done: true },
+      });
+
+      await act(async () => {
+        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+      });
+
+      // Since done+pr_url defaults to PR tab, active polling should be set
+      expect(mockSetActivePoll).toHaveBeenCalledWith(task.id);
+    });
+
+    it("clears active poll when switching away from PR tab", async () => {
+      const task = createMockWorkflowTaskView({
+        status: { type: "done" },
+        phase: "idle",
+        pr_url: "https://github.com/test/repo/pull/1",
+        artifacts: { plan: createMockArtifact("plan", "content") },
+        derived: { is_done: true },
+      });
+
+      await act(async () => {
+        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+      });
+
+      // Verify PR tab is active initially and setActivePoll was called with task.id
+      expect(mockSetActivePoll).toHaveBeenCalledWith(task.id);
+      mockSetActivePoll.mockClear();
+
+      // Click Details tab
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Details" }));
+      });
+
+      // Should clear active poll (call with null)
+      expect(mockSetActivePoll).toHaveBeenCalledWith(null);
+    });
   });
 });

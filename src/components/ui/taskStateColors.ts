@@ -57,6 +57,27 @@ export const taskStateColors = {
     badge: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
     icon: "bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300",
   },
+  // PR states
+  pr_open: {
+    bg: "bg-success-500 dark:bg-success-400",
+    badge: "bg-success-100 text-success-700 dark:bg-success-900 dark:text-success-300",
+    icon: "bg-success-100 dark:bg-success-900 text-success-600 dark:text-success-300",
+  },
+  pr_merged: {
+    bg: "bg-purple-500 dark:bg-purple-400",
+    badge: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
+    icon: "bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300",
+  },
+  pr_closed: {
+    bg: "bg-error-500 dark:bg-error-400",
+    badge: "bg-error-100 text-error-700 dark:bg-error-900 dark:text-error-300",
+    icon: "bg-error-100 dark:bg-error-900 text-error-600 dark:text-error-300",
+  },
+  pr_unknown: {
+    bg: "bg-stone-400 dark:bg-stone-500",
+    badge: "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300",
+    icon: "bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400",
+  },
 } as const;
 
 export type TaskState = keyof typeof taskStateColors;

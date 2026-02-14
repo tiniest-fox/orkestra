@@ -9,7 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import { useLogs } from "../../hooks/useLogs";
 import { useTaskDetail } from "../../hooks/useTaskDetail";
-import { useWorkflowConfig } from "../../providers";
+import { usePrStatus, useWorkflowConfig } from "../../providers";
 import type { ProjectInfo } from "../../types/project";
 import type { WorkflowTaskView } from "../../types/workflow";
 import {
@@ -61,6 +61,7 @@ export function TaskDetailSidebar({
 }: TaskDetailSidebarProps) {
   const isSubtask = !!task.parent_id;
   const config = useWorkflowConfig();
+  const { setActivePoll } = usePrStatus();
   const {
     currentStageDisplayName,
     isSubmitting,
@@ -106,6 +107,17 @@ export function TaskDetailSidebar({
       setActiveTab(TaskDetailTabs.details(task.id));
     }
   }, [tabs, activeTab, task.id]);
+
+  // Active polling for PR tab: trigger faster refresh when PR tab is open
+  const isPrTabActive = activeTab === TaskDetailTabs.pr(task.id);
+  useEffect(() => {
+    if (isPrTabActive && task.pr_url) {
+      setActivePoll(task.id);
+    } else {
+      setActivePoll(null);
+    }
+    return () => setActivePoll(null);
+  }, [isPrTabActive, task.id, task.pr_url, setActivePoll]);
 
   const handleRetry = async (instructions?: string) => {
     setIsRetrying(true);
@@ -210,7 +222,7 @@ export function TaskDetailSidebar({
                   )}
 
                   {activeTab === TaskDetailTabs.pr(task.id) && task.pr_url && (
-                    <PrTab prUrl={task.pr_url} />
+                    <PrTab prUrl={task.pr_url} taskId={task.id} />
                   )}
                 </TabbedPanel>
               </FlexContainer>

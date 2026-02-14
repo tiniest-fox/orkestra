@@ -10,6 +10,7 @@ import {
   GitBranch,
   GitCommitVertical,
   GitMerge,
+  GitPullRequest,
   Hand,
   Hourglass,
   Layers,
@@ -18,6 +19,7 @@ import {
   XCircle,
   Zap,
 } from "lucide-react";
+import { usePrStatus } from "../../providers";
 import { useWorkflowConfig } from "../../providers/WorkflowConfigProvider";
 import type { SubtaskProgress, WorkflowTaskView } from "../../types/workflow";
 import { Badge, Panel, taskStateColors } from "../ui";
@@ -91,7 +93,20 @@ export function TaskCard({
   dependencyNames,
 }: TaskCardProps) {
   const config = useWorkflowConfig();
+  const { getPrStatus } = usePrStatus();
   const { derived } = task;
+
+  // PR status for tasks with PR URLs
+  const prStatus = task.pr_url ? getPrStatus(task.id) : undefined;
+  const prIconColor = !task.pr_url
+    ? null
+    : !prStatus
+      ? taskStateColors.pr_unknown.icon
+      : prStatus.state === "open"
+        ? taskStateColors.pr_open.icon
+        : prStatus.state === "merged"
+          ? taskStateColors.pr_merged.icon
+          : taskStateColors.pr_closed.icon;
 
   // Build stage icons map from config
   const stageIcons: Record<string, string> = {};
@@ -240,6 +255,11 @@ export function TaskCard({
           {collapseDone && (
             <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.done.icon}`}>
               <CircleCheck className="w-4 h-4" />
+            </span>
+          )}
+          {prIconColor && (
+            <span className={`flex-shrink-0 p-1.5 rounded-md ${prIconColor}`}>
+              <GitPullRequest className="w-4 h-4" />
             </span>
           )}
           {derived.is_waiting_on_children &&

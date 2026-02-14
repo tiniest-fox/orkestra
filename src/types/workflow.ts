@@ -543,6 +543,48 @@ export type LogEntry =
   | { type: "script_exit"; code: number; success: boolean; timed_out: boolean };
 
 // =============================================================================
+// PR Status
+// =============================================================================
+
+/**
+ * Status of a pull request fetched from GitHub.
+ */
+export interface PrStatus {
+  /** The PR URL. */
+  url: string;
+  /** PR state: "open", "merged", or "closed". */
+  state: "open" | "merged" | "closed";
+  /** CI/CD check statuses. */
+  checks: PrCheck[];
+  /** Review statuses. */
+  reviews: PrReview[];
+  /** Timestamp when this status was fetched (RFC3339). */
+  fetched_at: string;
+}
+
+/**
+ * A single CI/CD check status.
+ */
+export interface PrCheck {
+  /** Name of the check (e.g., "tests", "lint"). */
+  name: string;
+  /** Status: "pending", "success", "failure", or "skipped". */
+  status: "pending" | "success" | "failure" | "skipped";
+  /** Conclusion if completed (e.g., "SUCCESS", "FAILURE"). */
+  conclusion?: string;
+}
+
+/**
+ * A single review status.
+ */
+export interface PrReview {
+  /** GitHub username of the reviewer. */
+  author: string;
+  /** Review state from GitHub (uppercase): "APPROVED", "CHANGES_REQUESTED", "COMMENTED", or "PENDING". */
+  state: string;
+}
+
+// =============================================================================
 // Branch List
 // =============================================================================
 

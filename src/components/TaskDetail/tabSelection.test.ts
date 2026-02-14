@@ -67,7 +67,18 @@ describe("buildTabs", () => {
 });
 
 describe("smartDefaultTab", () => {
-  it("returns Artifacts tab for done tasks", () => {
+  it("returns PR tab for done task with pr_url", () => {
+    const task = createMockWorkflowTaskView({
+      status: { type: "done" },
+      pr_url: "https://github.com/test/repo/pull/1",
+      artifacts: { plan: createMockArtifact("plan", "...") },
+    });
+    const tabs = buildTabs(task);
+    const defaultTab = smartDefaultTab(task, tabs);
+    expect(defaultTab).toContain("Pr");
+  });
+
+  it("returns Artifacts tab for done task without pr_url", () => {
     const task = createMockWorkflowTaskView({
       status: { type: "done" },
       artifacts: { plan: createMockArtifact("plan", "...") },
@@ -75,6 +86,17 @@ describe("smartDefaultTab", () => {
     const tabs = buildTabs(task);
     const defaultTab = smartDefaultTab(task, tabs);
     expect(defaultTab).toContain("Artifacts");
+  });
+
+  it("returns PR tab for archived task with pr_url", () => {
+    const task = createMockWorkflowTaskView({
+      status: { type: "archived" },
+      pr_url: "https://github.com/test/repo/pull/1",
+      artifacts: { plan: createMockArtifact("plan", "...") },
+    });
+    const tabs = buildTabs(task);
+    const defaultTab = smartDefaultTab(task, tabs);
+    expect(defaultTab).toContain("Pr");
   });
 
   it("returns Details tab for failed tasks", () => {

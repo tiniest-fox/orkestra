@@ -49,7 +49,8 @@ export function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
 
   let preferred: string;
   if (derived.is_done || task.status.type === "archived") {
-    preferred = TaskDetailTabs.artifacts(task.id);
+    // Default to PR tab if task has a PR, otherwise artifacts
+    preferred = task.pr_url ? TaskDetailTabs.pr(task.id) : TaskDetailTabs.artifacts(task.id);
   } else if (derived.is_failed || derived.is_blocked) {
     preferred = TaskDetailTabs.details(task.id);
   } else if (derived.is_interrupted) {

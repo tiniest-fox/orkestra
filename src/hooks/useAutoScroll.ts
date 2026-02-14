@@ -113,7 +113,7 @@ export function useAutoScroll<T extends HTMLElement>(
         cancelAnimationFrame(rafId);
       }
     };
-  }, [isActive, container, isContentSettled, performScrollToBottom]);
+  }, [container, isContentSettled, performScrollToBottom]);
 
   // Execute deferred scroll when animation completes
   useEffect(() => {

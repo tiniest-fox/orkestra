@@ -5065,3 +5065,148 @@ fn test_activity_log_with_script_and_review_rejection() {
         "Should have TWO [work] activity log entries (review intervened). Full prompt:\n{review_prompt}"
     );
 }
+
+// =============================================================================
+// Archive Task E2E Tests
+// =============================================================================
+
+/// Helper to advance a task through all stages to Done (with `auto_merge` disabled).
+fn advance_to_done_no_integration(ctx: &TestEnv, task_id: &str) {
+    // Planning stage
+    ctx.set_output(
+        task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Implementation plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn planner
+    ctx.advance(); // process plan
+    ctx.api().approve(task_id).unwrap();
+    ctx.advance(); // commit + advance to breakdown
+
+    // Breakdown stage
+    ctx.set_output(
+        task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "Task breakdown".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn breakdown
+    ctx.advance(); // process breakdown
+    ctx.api().approve(task_id).unwrap();
+    ctx.advance(); // commit + advance to work
+
+    // Work stage
+    ctx.set_output(
+        task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process summary
+    ctx.api().approve(task_id).unwrap();
+    ctx.advance(); // commit + advance to review
+
+    // Review stage
+    ctx.set_output(
+        task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "LGTM".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn reviewer
+    ctx.advance(); // process approval -> Done
+}
+
+/// Test that a Done task can be manually archived.
+///
+/// This exercises the `archive_task` API method for cases where a PR was merged
+/// externally and the user wants to mark the task complete.
+#[test]
+fn test_manual_archive_task() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+
+    use crate::helpers::disable_auto_merge;
+
+    // Use git workflow with auto_merge disabled so task stays at Done
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    // Create a task
+    let task = ctx.create_task("Test archive", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance through all stages to Done
+    advance_to_done_no_integration(&ctx, &task_id);
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_done(),
+        "Task should be Done after workflow completes"
+    );
+    assert_eq!(task.phase, Phase::Idle, "Task should be in Idle phase");
+
+    // Archive the task
+    let archived_task = ctx
+        .api()
+        .archive_task(&task_id)
+        .expect("archive_task should succeed");
+
+    assert!(archived_task.is_archived(), "Task should be Archived");
+    assert_eq!(archived_task.phase, Phase::Idle, "Phase should remain Idle");
+}
+
+/// Test that `archive_task` rejects tasks not in Idle phase.
+///
+/// Uses `begin_pr_creation` to put the task in Integrating phase, which is
+/// a realistic way to reach a non-Idle phase on a Done task.
+#[test]
+fn test_archive_task_rejects_non_idle_phase() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+
+    use crate::helpers::disable_auto_merge;
+
+    // Need git workflow to use begin_pr_creation
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test archive reject", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance to Done
+    advance_to_done_no_integration(&ctx, &task_id);
+
+    // Verify task is Done + Idle
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.is_done(), "Task should be Done");
+    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+
+    // Put task into Integrating phase via begin_pr_creation
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.phase,
+        Phase::Integrating,
+        "Task should be in Integrating phase"
+    );
+
+    // Attempt to archive should fail
+    let result = ctx.api().archive_task(&task_id);
+
+    assert!(
+        matches!(
+            result,
+            Err(orkestra_core::workflow::WorkflowError::InvalidTransition(_))
+        ),
+        "archive_task should fail for non-Idle phase, got: {result:?}"
+    );
+}

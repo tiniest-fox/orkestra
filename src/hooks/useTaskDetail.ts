@@ -38,6 +38,8 @@ interface UseTaskDetailResult {
   openPr: () => Promise<void>;
   /** Retry PR creation after a failure. */
   retryPr: () => Promise<void>;
+  /** Archive a Done task with a merged PR. */
+  archiveTask: () => Promise<void>;
 }
 
 export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
@@ -183,6 +185,18 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     }
   }, [task.id, refetch]);
 
+  const archiveTask = useCallback(async () => {
+    setIsSubmitting(true);
+    try {
+      await invoke<WorkflowTask>("workflow_archive", { taskId: task.id });
+      refetch();
+    } catch (err) {
+      console.error("Failed to archive task:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [task.id, refetch]);
+
   return {
     task,
     currentStageDisplayName,
@@ -197,5 +211,6 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     mergeTask,
     openPr,
     retryPr,
+    archiveTask,
   };
 }

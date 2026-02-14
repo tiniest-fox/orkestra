@@ -160,3 +160,17 @@ pub fn workflow_retry_pr(
         state.api()?.retry_pr_creation(&task_id).map_err(Into::into)
     })
 }
+
+/// Archive a Done task (marks it as complete after PR merge).
+///
+/// Validates the task is Done and Idle, then transitions to Archived.
+#[tauri::command]
+pub fn workflow_archive(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Task, TauriError> {
+    registry.with_project(window.label(), |state| {
+        state.api()?.archive_task(&task_id).map_err(Into::into)
+    })
+}

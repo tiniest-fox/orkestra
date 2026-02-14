@@ -509,6 +509,32 @@ impl WorkflowApi {
         Ok(task)
     }
 
+    /// Manually archive a Done task.
+    ///
+    /// This is used when a task's PR has been merged externally and the user
+    /// wants to mark it complete. Delegates to `integration_succeeded` for
+    /// the actual state transition.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if:
+    /// - The task is not in Done status
+    /// - The task is not in Idle phase (e.g., currently integrating)
+    pub fn archive_task(&self, task_id: &str) -> WorkflowResult<Task> {
+        let task = self.get_task(task_id)?;
+
+        // Validate phase to prevent race with orchestrator's auto-merge
+        if task.phase != Phase::Idle {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot archive task in phase {:?}",
+                task.phase
+            )));
+        }
+
+        // Delegate to existing archive logic
+        self.integration_succeeded(task_id)
+    }
+
     /// End the current iteration with `Approved` and enter the commit pipeline.
     ///
     /// Shared by auto-advance (agent actions), human approve, and auto-approve (`set_auto_mode`).
@@ -1145,6 +1171,61 @@ mod tests {
         api.store.save_task(&task).unwrap();
 
         let result = api.resume(&task.id, None);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    // ========================================================================
+    // Archive task tests
+    // ========================================================================
+
+    /// Create an API with a task in Done status at Idle phase.
+    fn api_with_done_task() -> (WorkflowApi, Task) {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+
+        // Set task to Done status in Idle phase
+        task.status = Status::Done;
+        task.phase = Phase::Idle;
+        api.store.save_task(&task).unwrap();
+
+        (api, task)
+    }
+
+    #[test]
+    fn test_archive_task_success() {
+        let (api, task) = api_with_done_task();
+
+        let result = api.archive_task(&task.id).unwrap();
+
+        assert!(result.is_archived());
+        assert_eq!(result.phase, Phase::Idle);
+    }
+
+    #[test]
+    fn test_archive_task_not_done() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let task = api.create_task("Test", "Description", None).unwrap();
+        // Task is in Active status, not Done
+
+        let result = api.archive_task(&task.id);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_archive_task_wrong_phase() {
+        let (api, mut task) = api_with_done_task();
+
+        // Simulate task being in integrating phase
+        task.phase = Phase::Integrating;
+        api.store.save_task(&task).unwrap();
+
+        let result = api.archive_task(&task.id);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 }

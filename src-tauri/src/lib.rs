@@ -470,6 +470,7 @@ pub fn run() {
             commands::workflow_merge_task,
             commands::workflow_open_pr,
             commands::workflow_retry_pr,
+            commands::workflow_archive,
             commands::workflow_retry,
             commands::workflow_set_auto_mode,
             commands::workflow_interrupt,

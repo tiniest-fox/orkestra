@@ -59,14 +59,14 @@ export const taskStateColors = {
   },
   // PR states
   pr_open: {
-    bg: "bg-success-500 dark:bg-success-400",
-    badge: "bg-success-100 text-success-700 dark:bg-success-900 dark:text-success-300",
-    icon: "bg-success-100 dark:bg-success-900 text-success-600 dark:text-success-300",
-  },
-  pr_merged: {
     bg: "bg-purple-500 dark:bg-purple-400",
     badge: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
     icon: "bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300",
+  },
+  pr_merged: {
+    bg: "bg-success-500 dark:bg-success-400",
+    badge: "bg-success-100 text-success-700 dark:bg-success-900 dark:text-success-300",
+    icon: "bg-success-100 dark:bg-success-900 text-success-600 dark:text-success-300",
   },
   pr_closed: {
     bg: "bg-error-500 dark:bg-error-400",

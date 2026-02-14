@@ -22,7 +22,7 @@ import { PanelHeader } from "./PanelHeader";
 import { PanelTitle } from "./PanelTitle";
 
 type PanelVariant = "default" | "elevated" | "flat";
-type PanelAccent = "none" | "info" | "warning" | "error";
+type PanelAccent = "none" | "info" | "warning" | "error" | "success";
 
 interface PanelBaseProps {
   children: ReactNode;
@@ -60,6 +60,8 @@ const accentStyles: Record<PanelAccent, string> = {
   warning:
     "bg-gradient-to-br from-warning-50 to-warning-100 dark:from-warning-950 dark:to-warning-900",
   error: "bg-gradient-to-br from-error-50 to-error-100 dark:from-error-950 dark:to-error-900",
+  success:
+    "bg-gradient-to-br from-success-50 to-success-100 dark:from-success-950 dark:to-success-900",
 };
 
 // Context to reset shadow suppression for nested panels

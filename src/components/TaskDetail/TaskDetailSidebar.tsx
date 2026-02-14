@@ -21,6 +21,7 @@ import {
   TabbedPanel,
   TaskDetailTabs,
 } from "../ui";
+import { ArchivePanel } from "./ArchivePanel";
 import { ArtifactsTab } from "./ArtifactsTab";
 import { DeleteConfirmPanel } from "./DeleteConfirmPanel";
 import { DetailsTab } from "./DetailsTab";
@@ -61,7 +62,7 @@ export function TaskDetailSidebar({
 }: TaskDetailSidebarProps) {
   const isSubtask = !!task.parent_id;
   const config = useWorkflowConfig();
-  const { setActivePoll } = usePrStatus();
+  const { setActivePoll, getPrStatus } = usePrStatus();
   const {
     currentStageDisplayName,
     isSubmitting,
@@ -75,6 +76,7 @@ export function TaskDetailSidebar({
     mergeTask,
     openPr,
     retryPr,
+    archiveTask,
   } = useTaskDetail(task);
 
   const tabs = useMemo(() => buildTabs(task), [task]);
@@ -156,7 +158,25 @@ export function TaskDetailSidebar({
     !showResume &&
     !showReview &&
     ((task.derived.is_done && task.phase === "idle" && !task.pr_url) || isPrCreationFailure);
-  const showCompactFooter = !!(showDelete || showReview || showResume || showIntegration);
+  // Show archive panel for Done+Idle tasks with merged PRs
+  const prStatus = task.pr_url ? getPrStatus(task.id) : undefined;
+  const showArchive =
+    !showDelete &&
+    !showQuestions &&
+    !showResume &&
+    !showReview &&
+    !showIntegration &&
+    task.derived.is_done &&
+    task.phase === "idle" &&
+    task.pr_url &&
+    prStatus?.state === "merged";
+  const showCompactFooter = !!(
+    showDelete ||
+    showReview ||
+    showResume ||
+    showIntegration ||
+    showArchive
+  );
 
   return (
     <PanelLayout direction="vertical">
@@ -274,6 +294,8 @@ export function TaskDetailSidebar({
             ghAvailable={ghAvailable}
           />
         )}
+
+        {showArchive && <ArchivePanel onArchive={archiveTask} isSubmitting={isSubmitting} />}
       </Slot>
     </PanelLayout>
   );

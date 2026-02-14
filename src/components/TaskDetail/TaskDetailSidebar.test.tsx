@@ -17,6 +17,8 @@ const mockRefetch = vi.fn(() => Promise.resolve());
 const mockMergeTask = vi.fn(() => Promise.resolve());
 const mockOpenPr = vi.fn(() => Promise.resolve());
 const mockRetryPr = vi.fn(() => Promise.resolve());
+const mockArchiveTask = vi.fn(() => Promise.resolve());
+const mockGetPrStatus = vi.fn();
 const mockConfig = createMockWorkflowConfig();
 
 // Mock the providers
@@ -55,7 +57,7 @@ vi.mock("../../providers", () => ({
     navigateToTask: vi.fn(),
   }),
   usePrStatus: () => ({
-    getPrStatus: vi.fn(),
+    getPrStatus: mockGetPrStatus,
     isLoading: vi.fn().mockReturnValue(false),
     requestFetch: vi.fn(),
     setActivePoll: mockSetActivePoll,
@@ -77,6 +79,7 @@ vi.mock("../../hooks/useTaskDetail", () => ({
     mergeTask: mockMergeTask,
     openPr: mockOpenPr,
     retryPr: mockRetryPr,
+    archiveTask: mockArchiveTask,
   }),
 }));
 
@@ -86,6 +89,8 @@ describe("TaskDetailSidebar", () => {
     mockMergeTask.mockClear();
     mockOpenPr.mockClear();
     mockRetryPr.mockClear();
+    mockArchiveTask.mockClear();
+    mockGetPrStatus.mockReset();
   });
 
   it("renders task in planning stage", async () => {
@@ -286,6 +291,88 @@ describe("TaskDetailSidebar", () => {
     });
 
     expect(mockRetryPr).toHaveBeenCalled();
+  });
+
+  describe("Archive panel", () => {
+    // Helper to create a complete PrStatus mock
+    const createMockPrStatus = (state: "open" | "merged" | "closed") => ({
+      url: "https://github.com/test/repo/pull/42",
+      state,
+      checks: [],
+      reviews: [],
+      fetched_at: new Date().toISOString(),
+    });
+
+    it("renders archive panel for Done+Idle task with merged PR", async () => {
+      mockGetPrStatus.mockReturnValue(createMockPrStatus("merged"));
+      const task = createMockWorkflowTaskView({
+        status: { type: "done" },
+        phase: "idle",
+        pr_url: "https://github.com/test/repo/pull/42",
+        derived: { is_done: true },
+      });
+
+      await act(async () => {
+        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+      });
+
+      expect(screen.getByText("PR Merged")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /archive/i })).toBeInTheDocument();
+    });
+
+    it("hides archive panel when PR is not merged", async () => {
+      mockGetPrStatus.mockReturnValue(createMockPrStatus("open"));
+      const task = createMockWorkflowTaskView({
+        status: { type: "done" },
+        phase: "idle",
+        pr_url: "https://github.com/test/repo/pull/42",
+        derived: { is_done: true },
+      });
+
+      await act(async () => {
+        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+      });
+
+      expect(screen.queryByText("PR Merged")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /archive/i })).not.toBeInTheDocument();
+    });
+
+    it("hides archive panel when PR status is not yet fetched", async () => {
+      mockGetPrStatus.mockReturnValue(undefined);
+      const task = createMockWorkflowTaskView({
+        status: { type: "done" },
+        phase: "idle",
+        pr_url: "https://github.com/test/repo/pull/42",
+        derived: { is_done: true },
+      });
+
+      await act(async () => {
+        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+      });
+
+      expect(screen.queryByText("PR Merged")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /archive/i })).not.toBeInTheDocument();
+    });
+
+    it("calls archiveTask when Archive is clicked", async () => {
+      mockGetPrStatus.mockReturnValue(createMockPrStatus("merged"));
+      const task = createMockWorkflowTaskView({
+        status: { type: "done" },
+        phase: "idle",
+        pr_url: "https://github.com/test/repo/pull/42",
+        derived: { is_done: true },
+      });
+
+      await act(async () => {
+        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /archive/i }));
+      });
+
+      expect(mockArchiveTask).toHaveBeenCalled();
+    });
   });
 
   describe("PR tab integration", () => {

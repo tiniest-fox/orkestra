@@ -108,6 +108,63 @@ No polling. No daemon. No event callbacks. Just a sequential function that reuse
 - **Integration is opt-out** — by default, merge the result back to base branch. `--no-integrate` skips this.
 - **Subtasks are serial** — parallel execution is a Phase 4 optimization. Serial is correct and simple.
 
+## Filesystem Artifact Materialization
+
+Decouple artifact availability from prompt injection. Today, "available to the agent" = "full content stuffed into the prompt." The goal: agents see a list of file paths for all artifacts and read what they need on demand, saving context window and removing the need to configure `inputs` per stage.
+
+### Problem
+
+- Artifacts are stored as JSON in the `workflow_tasks.artifacts` column and injected inline into agent prompts based on `StageConfig.inputs`
+- This forces you to decide at config time which artifacts each stage sees
+- Every selected artifact consumes context window regardless of whether the agent needs it
+- Large artifacts (check results, detailed plans) can blow up prompt size on retries
+
+### Approach: DB as source of truth, files as derived views
+
+Keep SQLite as the canonical store (atomic, testable, UI-friendly). Materialize artifacts as files in the worktree before each agent session. Change the prompt to list file paths instead of inlining content.
+
+**Materialization step** — before spawning an agent (in `stage_execution.rs`), write all task artifacts to `.orkestra-artifacts/{name}.md` in the worktree. One file per artifact, always overwritten (no timestamps). Write cost is sub-millisecond, negligible vs agent startup.
+
+**Prompt change** — replace the current `inputs`-based content injection with a universal artifact listing:
+
+```
+You have access to the following artifacts from this workflow:
+- Plan: .orkestra-artifacts/plan.md
+- Work Breakdown: .orkestra-artifacts/breakdown.md
+- Check Results: .orkestra-artifacts/checks.md
+```
+
+**Fallback** — if the file doesn't exist (materialization failed, edge case), the prompt builder falls back to inlining the content from the DB, same as today. This makes the change safe and incrementally rollable.
+
+**Gitignore** — add `.orkestra-artifacts/` to the worktree's `.gitignore` so agents don't commit or get confused by these files.
+
+### What changes
+
+| Component | Change |
+|-----------|--------|
+| `stage_execution.rs` | Write all `task.artifacts` to `.orkestra-artifacts/` before agent spawn |
+| `prompt.rs` | List artifact file paths instead of inlining content; fallback to inline if file missing |
+| `StageConfig.inputs` | Becomes optional/unnecessary — all artifacts always listed |
+| Worktree setup | Ensure `.orkestra-artifacts/` is gitignored |
+| `artifact.rs` | No changes — `Artifact` and `ArtifactStore` stay the same |
+| SQLite schema | No changes — DB remains source of truth |
+| Frontend / CLI | No changes — they still read from DB |
+
+### Key files
+
+- `crates/orkestra-core/src/workflow/execution/prompt.rs` — prompt building, artifact injection
+- `crates/orkestra-core/src/workflow/execution/stage_execution.rs` — agent session setup
+- `crates/orkestra-core/src/workflow/runtime/artifact.rs` — `Artifact`, `ArtifactStore` types
+- `crates/orkestra-core/src/workflow/config/stage.rs` — `StageConfig.inputs`
+
+### Key design decisions
+
+- **DB stays source of truth** — no consistency/atomicity concerns, no cleanup coordination, tests keep using `InMemoryWorkflowStore`
+- **Files are ephemeral** — re-materialized fresh before each agent session, so worktree cleanup/restarts are fine
+- **No `inputs` config needed** — every stage sees every artifact. The agent decides what's relevant.
+- **Fallback to inline** — graceful degradation if files aren't there. Also useful for providers without file-reading tools.
+- **No timestamps in filenames** — one file per artifact name, always overwritten. DB tracks metadata.
+
 ## UI Feature Ideas
 
 - [ ] **Icon stage history in task cards** - Display a visual timeline of completed stages using icons on task cards, allowing quick identification of a task's current position in the workflow without opening details.

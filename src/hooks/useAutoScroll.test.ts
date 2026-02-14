@@ -35,6 +35,12 @@ function createMockContainer(
   return container;
 }
 
+// Trigger a DOM mutation to fire the MutationObserver
+function triggerMutation(container: HTMLDivElement) {
+  const child = document.createElement("div");
+  container.appendChild(child);
+}
+
 describe("useAutoScroll", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -48,31 +54,40 @@ describe("useAutoScroll", () => {
 
   describe("initial baseline", () => {
     it("initializes lastScrollTop from container's actual scrollTop", () => {
-      const container = createMockContainer({ scrollTop: 100 });
+      // This test verifies the bug fix: with the old code, baseline was hardcoded to 0,
+      // so scrolling from 100 to 50 would be detected as "scrolling up" (50 < 0 is false,
+      // so it would be "scrolling down"). With the fix, baseline is 100, so 50 < 100 is
+      // correctly detected as scrolling up.
+      const container = createMockContainer({
+        scrollTop: 100,
+        scrollHeight: 1000,
+        clientHeight: 500,
+      });
       const { result } = renderHook(() => useAutoScroll<HTMLDivElement>(true));
 
-      // Attach container with scrollTop=100
       act(() => {
         result.current.containerRef(container);
       });
 
-      // Scroll to 120 (down by 20)
-      container.scrollTop = 120;
+      // Run initial RAF to complete setup
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      // Scroll from 100 to 50 - this is scrolling UP from the correct baseline of 100
+      container.scrollTop = 50;
       act(() => {
         result.current.handleScroll();
       });
 
-      // Verify we're near bottom by scrolling down to 450 (within 50px of bottom)
-      // scrollHeight=1000, clientHeight=500, so bottom is at 500
-      // If we scroll to 450, we're at 50px from bottom
-      container.scrollTop = 450;
+      // Auto-scroll should be disabled because we scrolled up
+      // Verify by triggering mutation - scrollTop should NOT be set to scrollHeight
+      triggerMutation(container);
       act(() => {
-        result.current.handleScroll();
+        vi.runAllTimers();
       });
 
-      // Auto-scroll should be enabled since we scrolled down to near bottom
-      // We verify this by checking if scrollToBottom would work (indirectly through MutationObserver)
-      // Since we can't directly access isAutoScrollEnabledRef, we verify behavior differently
+      expect(container.scrollTop).toBe(50); // Should stay at 50, not jump to 1000
     });
 
     it("uses 0 as baseline when container is null", () => {
@@ -90,11 +105,20 @@ describe("useAutoScroll", () => {
 
   describe("scroll direction detection", () => {
     it("disables auto-scroll when scrolling up", () => {
-      const container = createMockContainer({ scrollTop: 100 });
+      const container = createMockContainer({
+        scrollTop: 100,
+        scrollHeight: 1000,
+        clientHeight: 500,
+      });
       const { result } = renderHook(() => useAutoScroll<HTMLDivElement>(true));
 
       act(() => {
         result.current.containerRef(container);
+      });
+
+      // Run initial RAF
+      act(() => {
+        vi.runAllTimers();
       });
 
       // Scroll up from 100 to 50
@@ -103,20 +127,13 @@ describe("useAutoScroll", () => {
         result.current.handleScroll();
       });
 
-      // Verify auto-scroll is disabled by checking that scrolling down not-near-bottom
-      // doesn't re-enable it (since that would require being near bottom)
-      container.scrollTop = 100; // scroll down but not near bottom
+      // Trigger mutation - auto-scroll should be disabled, so scrollTop stays at 50
+      triggerMutation(container);
       act(() => {
-        result.current.handleScroll();
+        vi.runAllTimers();
       });
 
-      // Scroll down to near bottom (450 out of 500 max, within 50px)
-      container.scrollTop = 450;
-      act(() => {
-        result.current.handleScroll();
-      });
-
-      // Now auto-scroll should be re-enabled
+      expect(container.scrollTop).toBe(50);
     });
 
     it("re-enables auto-scroll when scrolling down AND near bottom", () => {
@@ -131,6 +148,11 @@ describe("useAutoScroll", () => {
         result.current.containerRef(container);
       });
 
+      // Run initial RAF
+      act(() => {
+        vi.runAllTimers();
+      });
+
       // Scroll up to disable auto-scroll
       container.scrollTop = 100;
       act(() => {
@@ -141,6 +163,13 @@ describe("useAutoScroll", () => {
         result.current.handleScroll();
       });
 
+      // Verify auto-scroll is disabled
+      triggerMutation(container);
+      act(() => {
+        vi.runAllTimers();
+      });
+      expect(container.scrollTop).toBe(50);
+
       // Now scroll down to near bottom (within 50px of max scroll position 500)
       // Max scroll = scrollHeight - clientHeight = 1000 - 500 = 500
       // Near bottom = within 50px of that, so scrollTop >= 450
@@ -149,7 +178,13 @@ describe("useAutoScroll", () => {
         result.current.handleScroll();
       });
 
-      // Auto-scroll should now be re-enabled
+      // Trigger mutation - auto-scroll should be re-enabled, so scrollTop jumps to scrollHeight
+      triggerMutation(container);
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(container.scrollTop).toBe(1000);
     });
 
     it("does NOT re-enable auto-scroll when scrolling down but NOT near bottom", () => {
@@ -162,6 +197,11 @@ describe("useAutoScroll", () => {
 
       act(() => {
         result.current.containerRef(container);
+      });
+
+      // Run initial RAF
+      act(() => {
+        vi.runAllTimers();
       });
 
       // Scroll up to disable auto-scroll
@@ -180,19 +220,32 @@ describe("useAutoScroll", () => {
         result.current.handleScroll();
       });
 
-      // Auto-scroll should still be disabled
-      // We verify by scrolling down again - if auto-scroll were enabled,
-      // new content would trigger scroll to bottom
+      // Trigger mutation - auto-scroll should still be disabled
+      triggerMutation(container);
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(container.scrollTop).toBe(200); // Should stay at 200, not jump to 1000
     });
   });
 
   describe("resetAutoScroll", () => {
     it("re-enables auto-scroll after being disabled", () => {
-      const container = createMockContainer({ scrollTop: 100 });
+      const container = createMockContainer({
+        scrollTop: 100,
+        scrollHeight: 1000,
+        clientHeight: 500,
+      });
       const { result } = renderHook(() => useAutoScroll<HTMLDivElement>(true));
 
       act(() => {
         result.current.containerRef(container);
+      });
+
+      // Run initial RAF
+      act(() => {
+        vi.runAllTimers();
       });
 
       // Scroll up to disable
@@ -201,12 +254,25 @@ describe("useAutoScroll", () => {
         result.current.handleScroll();
       });
 
+      // Verify auto-scroll is disabled
+      triggerMutation(container);
+      act(() => {
+        vi.runAllTimers();
+      });
+      expect(container.scrollTop).toBe(50);
+
       // Call resetAutoScroll
       act(() => {
         result.current.resetAutoScroll();
       });
 
-      // Auto-scroll should be re-enabled
+      // Trigger mutation - auto-scroll should now be re-enabled
+      triggerMutation(container);
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(container.scrollTop).toBe(1000);
     });
   });
 
@@ -225,8 +291,11 @@ describe("useAutoScroll", () => {
         result.current.containerRef(container);
       });
 
-      // Initial scrollTop should not have been changed to scrollHeight
-      // because content is not settled
+      // Run timers - scroll should NOT happen because content is not settled
+      act(() => {
+        vi.runAllTimers();
+      });
+
       expect(container.scrollTop).toBe(0);
 
       // Now settle the content
@@ -256,6 +325,9 @@ describe("useAutoScroll", () => {
       });
 
       // Scroll should be deferred
+      act(() => {
+        vi.runAllTimers();
+      });
       expect(container.scrollTop).toBe(0);
 
       // Settle content
@@ -316,7 +388,7 @@ describe("useAutoScroll", () => {
   });
 
   describe("near-bottom threshold", () => {
-    it("uses 50px threshold for near-bottom detection", () => {
+    it("does not re-enable when 51px from bottom (just outside threshold)", () => {
       const container = createMockContainer({
         scrollTop: 0,
         scrollHeight: 1000,
@@ -326,6 +398,11 @@ describe("useAutoScroll", () => {
 
       act(() => {
         result.current.containerRef(container);
+      });
+
+      // Run initial RAF
+      act(() => {
+        vi.runAllTimers();
       });
 
       // Disable auto-scroll by scrolling up
@@ -346,14 +423,56 @@ describe("useAutoScroll", () => {
       act(() => {
         result.current.handleScroll();
       });
-      // Should still be disabled (51px from bottom, just outside 50px threshold)
+
+      // Trigger mutation - should still be disabled (51px from bottom)
+      triggerMutation(container);
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(container.scrollTop).toBe(449);
+    });
+
+    it("re-enables when exactly 50px from bottom (at threshold)", () => {
+      const container = createMockContainer({
+        scrollTop: 0,
+        scrollHeight: 1000,
+        clientHeight: 500,
+      });
+      const { result } = renderHook(() => useAutoScroll<HTMLDivElement>(true));
+
+      act(() => {
+        result.current.containerRef(container);
+      });
+
+      // Run initial RAF
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      // Disable auto-scroll by scrolling up
+      container.scrollTop = 100;
+      act(() => {
+        result.current.handleScroll();
+      });
+      container.scrollTop = 50;
+      act(() => {
+        result.current.handleScroll();
+      });
 
       // Scroll to 450 (exactly at threshold - 50px from bottom)
       container.scrollTop = 450;
       act(() => {
         result.current.handleScroll();
       });
-      // Should now be re-enabled (50px from bottom, at threshold)
+
+      // Trigger mutation - should be re-enabled (at threshold)
+      triggerMutation(container);
+      act(() => {
+        vi.runAllTimers();
+      });
+
+      expect(container.scrollTop).toBe(1000);
     });
   });
 });

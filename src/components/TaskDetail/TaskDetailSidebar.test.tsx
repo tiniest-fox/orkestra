@@ -193,6 +193,23 @@ describe("TaskDetailSidebar", () => {
     expect(screen.getByRole("button", { name: /open pr/i })).toBeInTheDocument();
   });
 
+  it("hides integration panel for Done+Idle task with pr_url", async () => {
+    const task = createMockWorkflowTaskView({
+      status: { type: "done" },
+      phase: "idle",
+      pr_url: "https://github.com/test/repo/pull/42",
+      derived: { is_done: true },
+    });
+
+    await act(async () => {
+      render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+    });
+
+    expect(screen.queryByText("Integration")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /auto-merge/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /open pr/i })).not.toBeInTheDocument();
+  });
+
   it("calls mergeTask when Auto-merge is clicked", async () => {
     const task = createMockWorkflowTaskView({
       status: { type: "done" },

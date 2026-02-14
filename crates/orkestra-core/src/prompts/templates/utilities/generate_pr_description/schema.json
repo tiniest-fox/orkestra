@@ -7,7 +7,7 @@
     },
     "body": {
       "type": "string",
-      "description": "PR body in GitHub-flavored markdown with Summary and Test plan sections"
+      "description": "PR body in GitHub-flavored markdown with Summary, Decisions, and Verification sections"
     }
   },
   "required": ["title", "body"],

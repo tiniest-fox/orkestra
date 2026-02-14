@@ -32,6 +32,10 @@ export function buildTabs(task: WorkflowTaskView): Tab[] {
     tabs.push({ id: TaskDetailTabs.artifacts(task.id), label: "Artifacts" });
   }
 
+  if (task.pr_url) {
+    tabs.push({ id: TaskDetailTabs.pr(task.id), label: "PR" });
+  }
+
   return tabs;
 }
 

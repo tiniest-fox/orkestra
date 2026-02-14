@@ -17,9 +17,10 @@ use std::time::Duration;
 use super::periodic::PeriodicScheduler;
 
 use crate::orkestra_debug;
+use crate::pr_description::PrDescriptionGenerator;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{Task, TaskHeader, TickSnapshot};
-use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
 use super::stage_execution::{ExecutionComplete, ExecutionResult, StageExecutionService};
@@ -761,6 +762,127 @@ impl OrchestratorLoop {
         }
 
         Ok(events)
+    }
+
+    /// Background PR creation logic. Performs git push and PR creation, records the result.
+    /// Runs off the orchestrator's main thread.
+    #[allow(clippy::needless_pass_by_value)]
+    fn run_background_pr_creation(
+        git: Arc<dyn GitService>,
+        pr_service: Arc<dyn PrService>,
+        pr_description_generator: Arc<dyn PrDescriptionGenerator>,
+        api: Arc<Mutex<WorkflowApi>>,
+        task: Task,
+        model_names: Vec<String>,
+    ) {
+        let task_id = task.id.clone();
+        let branch = task.branch_name.clone().unwrap_or_default();
+        let base_branch = task.base_branch.clone();
+
+        // 1. Safety-net commit
+        if let Err(e) = super::commit_worktree::commit_worktree_changes(
+            git.as_ref(),
+            &task,
+            "integrating",
+            None,
+        ) {
+            if let Ok(api) = api.lock() {
+                let _ = api.pr_creation_failed(&task_id, &format!("Commit failed: {e}"));
+            }
+            return;
+        }
+
+        // 2. Push branch
+        if let Err(e) = git.push_branch(&branch) {
+            if let Ok(api) = api.lock() {
+                let _ = api.pr_creation_failed(&task_id, &e.to_string());
+            }
+            return;
+        }
+
+        // 3. Generate PR description (with fallback on failure)
+        let diff_summary = super::commit_worktree::build_diff_summary(git.as_ref(), &task);
+
+        // Get plan artifact if available for richer PR body
+        let plan_artifact = task.artifacts.get("plan").map(|a| a.content.as_str());
+
+        let (pr_title, pr_body) = pr_description_generator
+            .generate_pr_description(
+                &task.title,
+                &task.description,
+                plan_artifact,
+                &diff_summary,
+                &base_branch,
+                &model_names,
+            )
+            .unwrap_or_else(|_| {
+                // Fallback: use task title and basic body with new format + footer
+                let body = format!(
+                    "## Summary\n\n{}\n\n## Decisions\n\n_AI generation failed_\n\n## Verification\n\n_Manual verification required_{}",
+                    task.description,
+                    crate::pr_description::format_pr_footer(&model_names)
+                );
+                (task.title.clone(), body)
+            });
+
+        // 4. Create PR (idempotent — checks for existing PR first)
+        let repo_root = task
+            .worktree_path
+            .as_deref()
+            .map_or_else(|| std::path::Path::new("."), std::path::Path::new);
+        match pr_service.create_pull_request(repo_root, &branch, &base_branch, &pr_title, &pr_body)
+        {
+            Ok(pr_url) => {
+                if let Ok(api) = api.lock() {
+                    let _ = api.pr_creation_succeeded(&task_id, &pr_url);
+                }
+            }
+            Err(e) => {
+                if let Ok(api) = api.lock() {
+                    let _ = api.pr_creation_failed(&task_id, &e.to_string());
+                }
+            }
+        }
+    }
+
+    /// Spawn a background PR creation thread for a task that is already marked Integrating.
+    pub fn spawn_pr_creation(&self, task: &Task) -> WorkflowResult<()> {
+        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+        let task = task.clone();
+        let pr_description_generator = Arc::clone(&api.pr_description_generator);
+        let pr_service = api
+            .pr_service
+            .clone()
+            .ok_or_else(|| WorkflowError::GitError("No PR service configured".into()))?;
+
+        // Collect model names while we have the lock
+        let model_names =
+            crate::commit_message::collect_model_names(&api.workflow, task.flow.as_deref());
+        drop(api);
+
+        let git = self
+            .git_service
+            .clone()
+            .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
+        let api_clone = Arc::clone(&self.api);
+
+        let run = move || {
+            Self::run_background_pr_creation(
+                git,
+                pr_service,
+                pr_description_generator,
+                api_clone,
+                task,
+                model_names,
+            );
+        };
+
+        if self.sync_background {
+            run();
+        } else {
+            std::thread::spawn(run);
+        }
+        Ok(())
     }
 
     /// Start integrations for Done tasks that need merging.

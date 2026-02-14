@@ -27,6 +27,7 @@ import { DetailsTab } from "./DetailsTab";
 import { IntegrationPanel } from "./IntegrationPanel";
 import { IterationsTab } from "./IterationsTab";
 import { LogsTab } from "./LogsTab";
+import { PrTab } from "./PrTab";
 import { QuestionFormPanel } from "./QuestionFormPanel";
 import { ResumePanel } from "./ResumePanel";
 import { ReviewPanel } from "./ReviewPanel";
@@ -142,7 +143,7 @@ export function TaskDetailSidebar({
     !showQuestions &&
     !showResume &&
     !showReview &&
-    ((task.derived.is_done && task.phase === "idle") || isPrCreationFailure);
+    ((task.derived.is_done && task.phase === "idle" && !task.pr_url) || isPrCreationFailure);
   const showCompactFooter = !!(showDelete || showReview || showResume || showIntegration);
 
   return (
@@ -206,6 +207,10 @@ export function TaskDetailSidebar({
                       activeLogStage={logsState.activeLogStage}
                       onStageChange={logsState.setActiveLogStage}
                     />
+                  )}
+
+                  {activeTab === TaskDetailTabs.pr(task.id) && task.pr_url && (
+                    <PrTab prUrl={task.pr_url} />
                   )}
                 </TabbedPanel>
               </FlexContainer>

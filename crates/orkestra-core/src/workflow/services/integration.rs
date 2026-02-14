@@ -640,6 +640,7 @@ enum PrPreparation {
         git: Arc<dyn GitService>,
         pr_service: Arc<dyn PrService>,
         pr_description_generator: Arc<dyn PrDescriptionGenerator>,
+        model_names: Vec<String>,
     },
 }
 
@@ -661,11 +662,16 @@ fn prepare_pr_creation(api: &Mutex<WorkflowApi>, task_id: &str) -> WorkflowResul
         .ok_or_else(|| WorkflowError::GitError("No PR service configured".into()))?;
     let pr_description_generator = Arc::clone(&api.pr_description_generator);
 
+    // Collect model names for attribution footer
+    let model_names =
+        crate::commit_message::collect_model_names(&api.workflow, task.flow.as_deref());
+
     Ok(PrPreparation::NeedsPrWork {
         task: Box::new(task),
         git,
         pr_service,
         pr_description_generator,
+        model_names,
     })
 }
 
@@ -680,6 +686,7 @@ pub fn spawn_pr_creation(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> Workflo
         git,
         pr_service,
         pr_description_generator,
+        model_names,
     } = prepare_pr_creation(&api, task_id)?;
 
     let result_task = (*task).clone();
@@ -692,6 +699,7 @@ pub fn spawn_pr_creation(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> Workflo
             pr_description_generator,
             api_for_thread,
             *task,
+            model_names,
         );
     });
 
@@ -709,6 +717,7 @@ pub fn create_pr_sync(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> WorkflowRe
         git,
         pr_service,
         pr_description_generator,
+        model_names,
     } = prepare_pr_creation(&api, task_id)?;
 
     run_pr_creation(
@@ -717,6 +726,7 @@ pub fn create_pr_sync(api: Arc<Mutex<WorkflowApi>>, task_id: &str) -> WorkflowRe
         pr_description_generator,
         Arc::clone(&api),
         *task,
+        model_names,
     );
 
     // Re-read the task from the store to return the correct final state
@@ -734,6 +744,7 @@ fn run_pr_creation(
     pr_description_generator: Arc<dyn PrDescriptionGenerator>,
     api: Arc<Mutex<WorkflowApi>>,
     task: Task,
+    model_names: Vec<String>,
 ) {
     let task_id = task.id.clone();
     let branch = task.branch_name.clone().unwrap_or_default();
@@ -770,16 +781,16 @@ fn run_pr_creation(
             plan_artifact,
             &diff_summary,
             &base_branch,
+            &model_names,
         )
         .unwrap_or_else(|_| {
-            // Fallback: use task title and basic body
-            (
-                task.title.clone(),
-                format!(
-                    "## Summary\n\n{}\n\n## Test plan\n\n- [ ] Verify changes",
-                    task.description
-                ),
-            )
+            // Fallback: use task title and basic body with new format + footer
+            let body = format!(
+                "## Summary\n\n{}\n\n## Decisions\n\n_AI generation failed_\n\n## Verification\n\n_Manual verification required_{}",
+                task.description,
+                crate::pr_description::format_pr_footer(&model_names)
+            );
+            (task.title.clone(), body)
         });
 
     // 4. Create PR (idempotent — checks for existing PR first)

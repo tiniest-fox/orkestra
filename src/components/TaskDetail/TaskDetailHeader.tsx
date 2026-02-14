@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { useDisplayContext } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
-import { Badge, IconButton, Link, Panel } from "../ui";
+import { Badge, IconButton, Panel } from "../ui";
 
 interface TaskDetailHeaderProps {
   task: WorkflowTaskView;
@@ -258,11 +258,6 @@ export function TaskDetailHeader({
         {hasQuestions && <Badge variant="questions">Questions</Badge>}
         {needsReview && <Badge variant="review">Review</Badge>}
         {task.derived.is_interrupted && <Badge variant="interrupted">Interrupted</Badge>}
-        {task.pr_url && (
-          <Link href={task.pr_url} external className="text-sm">
-            PR
-          </Link>
-        )}
 
         <label className="flex items-center gap-1.5 ml-auto cursor-pointer select-none">
           <button

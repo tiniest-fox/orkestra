@@ -26,6 +26,7 @@ export const TaskDetailTabs = {
   iterations: (taskId: string) => `TaskDetailTabs.${taskId}.Iterations`,
   logs: (taskId: string) => `TaskDetailTabs.${taskId}.Logs`,
   artifacts: (taskId: string) => `TaskDetailTabs.${taskId}.Artifacts`,
+  pr: (taskId: string) => `TaskDetailTabs.${taskId}.Pr`,
 } as const;
 
 /** Task detail footer column (TaskDetailSidebar.tsx) */

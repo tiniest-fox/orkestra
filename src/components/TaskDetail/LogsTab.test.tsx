@@ -135,7 +135,11 @@ describe("LogsTab auto-scroll integration", () => {
       // Set up scroll dimensions
       Object.defineProperty(container, "scrollHeight", { value: 1000, configurable: true });
       Object.defineProperty(container, "clientHeight", { value: 200, configurable: true });
-      Object.defineProperty(container, "scrollTop", { value: 0, writable: true, configurable: true });
+      Object.defineProperty(container, "scrollTop", {
+        value: 0,
+        writable: true,
+        configurable: true,
+      });
 
       // Advance timers to process RAF
       await act(async () => {
@@ -201,7 +205,11 @@ describe("LogsTab auto-scroll integration", () => {
       Object.defineProperty(container, "scrollHeight", { value: 1000, configurable: true });
       Object.defineProperty(container, "clientHeight", { value: 200, configurable: true });
       // Start at bottom
-      Object.defineProperty(container, "scrollTop", { value: 800, writable: true, configurable: true });
+      Object.defineProperty(container, "scrollTop", {
+        value: 800,
+        writable: true,
+        configurable: true,
+      });
 
       // Process initial setup
       await act(async () => {

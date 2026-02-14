@@ -36,9 +36,12 @@ function createMockContainer(
 }
 
 // Trigger a DOM mutation to fire the MutationObserver
-function triggerMutation(container: HTMLDivElement) {
+// Returns a promise that resolves after the microtask queue is flushed
+async function triggerMutationAndFlush(container: HTMLDivElement): Promise<void> {
   const child = document.createElement("div");
   container.appendChild(child);
+  // Flush microtasks to ensure MutationObserver callback runs
+  await Promise.resolve();
 }
 
 describe("useAutoScroll", () => {
@@ -53,7 +56,7 @@ describe("useAutoScroll", () => {
   });
 
   describe("initial baseline", () => {
-    it("initializes lastScrollTop from container's actual scrollTop", () => {
+    it("initializes lastScrollTop from container's actual scrollTop", async () => {
       // This test verifies the bug fix: with the old code, baseline was hardcoded to 0,
       // so scrolling from 100 to 50 would be detected as "scrolling up" (50 < 0 is false,
       // so it would be "scrolling down"). With the fix, baseline is 100, so 50 < 100 is
@@ -82,7 +85,7 @@ describe("useAutoScroll", () => {
 
       // Auto-scroll should be disabled because we scrolled up
       // Verify by triggering mutation - scrollTop should NOT be set to scrollHeight
-      triggerMutation(container);
+      await triggerMutationAndFlush(container);
       act(() => {
         vi.runAllTimers();
       });
@@ -104,7 +107,7 @@ describe("useAutoScroll", () => {
   });
 
   describe("scroll direction detection", () => {
-    it("disables auto-scroll when scrolling up", () => {
+    it("disables auto-scroll when scrolling up", async () => {
       const container = createMockContainer({
         scrollTop: 100,
         scrollHeight: 1000,
@@ -128,7 +131,7 @@ describe("useAutoScroll", () => {
       });
 
       // Trigger mutation - auto-scroll should be disabled, so scrollTop stays at 50
-      triggerMutation(container);
+      await triggerMutationAndFlush(container);
       act(() => {
         vi.runAllTimers();
       });
@@ -136,7 +139,7 @@ describe("useAutoScroll", () => {
       expect(container.scrollTop).toBe(50);
     });
 
-    it("re-enables auto-scroll when scrolling down AND near bottom", () => {
+    it("re-enables auto-scroll when scrolling down AND near bottom", async () => {
       const container = createMockContainer({
         scrollTop: 0,
         scrollHeight: 1000,
@@ -149,7 +152,7 @@ describe("useAutoScroll", () => {
       });
 
       // Run initial RAF
-      act(() => {
+      await act(async () => {
         vi.runAllTimers();
       });
 
@@ -164,8 +167,8 @@ describe("useAutoScroll", () => {
       });
 
       // Verify auto-scroll is disabled
-      triggerMutation(container);
-      act(() => {
+      await triggerMutationAndFlush(container);
+      await act(async () => {
         vi.runAllTimers();
       });
       expect(container.scrollTop).toBe(50);
@@ -179,15 +182,15 @@ describe("useAutoScroll", () => {
       });
 
       // Trigger mutation - auto-scroll should be re-enabled, so scrollTop jumps to scrollHeight
-      triggerMutation(container);
-      act(() => {
+      await triggerMutationAndFlush(container);
+      await act(async () => {
         vi.runAllTimers();
       });
 
       expect(container.scrollTop).toBe(1000);
     });
 
-    it("does NOT re-enable auto-scroll when scrolling down but NOT near bottom", () => {
+    it("does NOT re-enable auto-scroll when scrolling down but NOT near bottom", async () => {
       const container = createMockContainer({
         scrollTop: 0,
         scrollHeight: 1000,
@@ -221,7 +224,7 @@ describe("useAutoScroll", () => {
       });
 
       // Trigger mutation - auto-scroll should still be disabled
-      triggerMutation(container);
+      await triggerMutationAndFlush(container);
       act(() => {
         vi.runAllTimers();
       });
@@ -255,7 +258,7 @@ describe("useAutoScroll", () => {
       });
 
       // Verify auto-scroll is disabled
-      triggerMutation(container);
+      await triggerMutationAndFlush(container);
       await act(async () => {
         vi.runAllTimers();
       });
@@ -267,7 +270,7 @@ describe("useAutoScroll", () => {
       });
 
       // Trigger mutation - auto-scroll should now be re-enabled
-      triggerMutation(container);
+      await triggerMutationAndFlush(container);
       await act(async () => {
         vi.runAllTimers();
       });
@@ -388,7 +391,7 @@ describe("useAutoScroll", () => {
   });
 
   describe("near-bottom threshold", () => {
-    it("does not re-enable when 51px from bottom (just outside threshold)", () => {
+    it("does not re-enable when 51px from bottom (just outside threshold)", async () => {
       const container = createMockContainer({
         scrollTop: 0,
         scrollHeight: 1000,
@@ -425,7 +428,7 @@ describe("useAutoScroll", () => {
       });
 
       // Trigger mutation - should still be disabled (51px from bottom)
-      triggerMutation(container);
+      await triggerMutationAndFlush(container);
       act(() => {
         vi.runAllTimers();
       });
@@ -467,7 +470,7 @@ describe("useAutoScroll", () => {
       });
 
       // Trigger mutation - should be re-enabled (at threshold)
-      triggerMutation(container);
+      await triggerMutationAndFlush(container);
       await act(async () => {
         vi.runAllTimers();
       });

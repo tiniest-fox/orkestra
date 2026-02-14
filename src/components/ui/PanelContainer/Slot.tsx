@@ -69,19 +69,18 @@ export function Slot({
     }
   }, [children, visible, contentKey]);
 
-  // Track visibility changes
-  useEffect(() => {
-    prevVisibleRef.current = visible;
-  }, [visible]);
-
   // Track visibility transitions for animation phase
   useEffect(() => {
     // Skip if we're in content-switching mode (handled separately)
     if (isSwitchingRef.current) return;
 
+    // Capture previous value BEFORE updating the ref to avoid race condition
+    // (Two effects on [visible] would update ref before check runs)
+    const wasVisible = prevVisibleRef.current;
+    prevVisibleRef.current = visible;
+
     // Skip if visibility hasn't actually changed (initial mount)
-    // On initial mount, prevVisibleRef.current equals visible, so no transition needed
-    if (prevVisibleRef.current === visible) return;
+    if (wasVisible === visible) return;
 
     if (visible) {
       // Opening: entering → settled after animation duration
@@ -122,6 +121,9 @@ export function Slot({
   }, [id, unregisterSlot]);
 
   // Handle content switching - close then open
+  // Phase is "entering" throughout the close-then-open animation. While semantically
+  // imprecise (slot collapses before expanding), this simplifies the logic and
+  // useContentSettled() only needs to know "animation in progress" vs "settled".
   useEffect(() => {
     const prevKey = prevContentKeyRef.current;
     const currKey = contentKey;

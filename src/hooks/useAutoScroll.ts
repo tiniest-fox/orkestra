@@ -7,6 +7,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useContentSettled } from "../components/ui/ContentAnimation";
 
+/** Threshold in pixels from bottom to re-enable auto-scroll when scrolling down. */
+const NEAR_BOTTOM_THRESHOLD = 50;
+
 interface UseAutoScrollResult<T extends HTMLElement> {
   /** Callback ref to attach to the scroll container. */
   containerRef: (node: T | null) => void;
@@ -31,25 +34,29 @@ export function useAutoScroll<T extends HTMLElement>(
   const containerRef = useCallback((node: T | null) => {
     setContainer(node);
     scrollDeferredRef.current = false;
-    lastScrollTopRef.current = 0;
+    lastScrollTopRef.current = node?.scrollTop ?? 0;
   }, []);
 
   // Direction-based scroll detection:
   // - Scrolling UP disables auto-scroll (user wants to read earlier content)
-  // - Scrolling DOWN re-enables auto-scroll (user wants to follow new content)
+  // - Scrolling DOWN AND near bottom re-enables auto-scroll
+  // - Scrolling DOWN but NOT near bottom leaves state unchanged (user is reading)
   const handleScroll = useCallback(() => {
     if (!container) return;
 
     const currentScrollTop = container.scrollTop;
     const scrolledUp = currentScrollTop < lastScrollTopRef.current;
+    const isNearBottom =
+      container.scrollHeight - currentScrollTop - container.clientHeight < NEAR_BOTTOM_THRESHOLD;
 
     if (scrolledUp) {
       // User scrolled UP - disable auto-scroll
       isAutoScrollEnabledRef.current = false;
-    } else {
-      // Scrolled DOWN or stayed same - re-enable auto-scroll
+    } else if (isNearBottom) {
+      // Scrolled DOWN and near bottom - re-enable auto-scroll
       isAutoScrollEnabledRef.current = true;
     }
+    // Scrolled DOWN but not near bottom - leave auto-scroll state unchanged
 
     lastScrollTopRef.current = currentScrollTop;
   }, [container]);

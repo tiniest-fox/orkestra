@@ -49,6 +49,12 @@ stages:
         message: "Linting runs automatically in the checks stage"
       - pattern: "Bash(cargo fmt*)"
         message: "Formatting runs automatically in the checks stage"
+      - pattern: "Bash(pnpm tauri*)"
+        message: "Never run the app — it spawns nested agent processes and causes errors"
+      - pattern: "Bash(pnpm dev*)"
+        message: "Never run the app dev server — it's not needed for implementation"
+      - pattern: "Bash(cargo run*)"
+        message: "Never run the app binary — it spawns nested agent processes and causes errors"
 
   # Checks: Automated quality gates (lint, test, type check)
   # Runs in the task's worktree, detects what changed, runs relevant checks

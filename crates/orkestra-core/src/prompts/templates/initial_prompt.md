@@ -32,6 +32,16 @@
 
 {{/each}}
 {{/if}}
+{{#if sibling_tasks}}
+## Sibling Subtasks
+
+This task is part of a breakdown. Here are your siblings:
+
+{{#each sibling_tasks}}
+- **{{this.short_id}}** {{this.title}}{{#if this.dependency_relationship}} [{{this.dependency_relationship}}]{{/if}} ({{this.status_display}})
+  {{this.description}}
+{{/each}}
+{{/if}}
 {{#if activity_logs}}
 ## Activity Log
 

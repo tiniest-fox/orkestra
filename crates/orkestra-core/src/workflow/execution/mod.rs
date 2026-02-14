@@ -21,9 +21,9 @@ pub use parser::{AgentParser, ClaudeAgentParser, OpenCodeAgentParser};
 pub use prompt::{
     build_complete_prompt, build_resume_prompt, build_system_prompt, build_user_message,
     determine_resume_type, get_agent_schema, load_agent_definition, resolve_stage_agent_config,
-    resolve_stage_agent_config_for, ActivityLogEntry, AgentConfigError, ArtifactContext,
-    FlowOverrides, IntegrationErrorContext, PromptBuilder, QuestionAnswerContext,
-    ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType, StagePromptContext,
+    resolve_stage_agent_config_for, sibling_status_display, ActivityLogEntry, AgentConfigError,
+    ArtifactContext, FlowOverrides, IntegrationErrorContext, PromptBuilder, QuestionAnswerContext,
+    ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType, SiblingTaskContext, StagePromptContext,
 };
 pub use provider_registry::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,

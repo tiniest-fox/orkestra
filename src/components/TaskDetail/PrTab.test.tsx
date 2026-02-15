@@ -154,10 +154,8 @@ describe("PrTab", () => {
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
 
-    // Reviews section is collapsed by default - expand it
-    const reviewsHeader = screen.getByRole("button", { name: /reviews/i });
-    expect(reviewsHeader).toBeInTheDocument();
-    await userEvent.click(reviewsHeader);
+    // Reviews section is expanded by default
+    expect(screen.getByRole("button", { name: /reviews/i })).toBeInTheDocument();
 
     expect(screen.getByText("alice")).toBeInTheDocument();
     expect(screen.getByText("approved")).toBeInTheDocument();
@@ -333,7 +331,7 @@ describe("PrTab", () => {
     expect(calledWith.has(456)).toBe(false);
   });
 
-  it("renders collapsible sections collapsed by default", () => {
+  it("renders sections with correct default expansion states", () => {
     mockStatuses.set("task-1", {
       url: "https://github.com/test/repo/pull/42",
       state: "open",
@@ -368,10 +366,12 @@ describe("PrTab", () => {
     expect(screen.getByRole("button", { name: /reviews/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /standalone comments/i })).toBeInTheDocument();
 
-    // Content inside sections should NOT be visible (collapsed)
+    // Checks and Standalone Comments are collapsed by default
     expect(screen.queryByText("tests")).not.toBeInTheDocument();
-    expect(screen.queryByText("alice")).not.toBeInTheDocument();
     expect(screen.queryByText("bob")).not.toBeInTheDocument();
+
+    // Reviews section is expanded by default
+    expect(screen.getByText("alice")).toBeInTheDocument();
   });
 
   describe("comment grouping", () => {
@@ -405,8 +405,7 @@ describe("PrTab", () => {
 
       render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
 
-      // Expand Reviews section
-      await userEvent.click(screen.getByRole("button", { name: /reviews/i }));
+      // Reviews section is expanded by default
 
       // Comment count shown on review row
       expect(screen.getByText("(1 comment)")).toBeInTheDocument();
@@ -498,8 +497,7 @@ describe("PrTab", () => {
 
       render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
 
-      // Expand Reviews section first
-      await userEvent.click(screen.getByRole("button", { name: /reviews/i }));
+      // Reviews section is expanded by default
 
       // Comments not visible initially (review row is collapsed)
       expect(screen.queryByText("First nested comment")).not.toBeInTheDocument();
@@ -570,8 +568,7 @@ describe("PrTab", () => {
         />,
       );
 
-      // Expand Reviews section
-      await userEvent.click(screen.getByRole("button", { name: /reviews/i }));
+      // Reviews section is expanded by default
 
       // Badge shows "2 selected" (review is collapsed by default)
       expect(screen.getByText("2 selected")).toBeInTheDocument();

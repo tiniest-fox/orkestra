@@ -159,3 +159,22 @@ When building a slide-in panel: wrap `Panel` inside `Slot`. For viewport overlay
 - Tests use Vitest + React Testing Library.
 - Test files sit alongside the component: `Component.test.tsx`.
 - **jsdom limitations**: The test environment doesn't implement all DOM APIs. If a component uses `scrollIntoView()`, `IntersectionObserver`, or other browser-specific APIs, mock the component in parent component tests to prevent runtime errors. See `Orkestra.test.tsx` for the pattern.
+
+### Default Expansion State Tests
+
+<!-- compound: modishly-courageous-beagle -->
+
+When changing `defaultExpanded` props on `CollapsibleSection` components, update test assertions comprehensively:
+
+1. **Remove obsolete user interactions**: If a section starts expanded, remove the `userEvent.click()` calls that previously expanded it.
+2. **Update visibility assertions**: Content that was previously `not.toBeInTheDocument()` should now use `toBeInTheDocument()`.
+3. **Check all test files**: Search for text content from the affected section (e.g., `getByText("alice")` for Reviews) to find ALL tests that assume the old state.
+
+Common mistake: Updating tests that directly interact with the changed section but missing tests that indirectly check visibility (like "renders sections collapsed by default" tests).
+
+**Example from task modishly-courageous-beagle:**
+- Changed Reviews section from collapsed → expanded by default
+- Required updating 5 tests across multiple test blocks
+- First iteration only updated 2 tests (direct interaction tests)
+- Second iteration updated 1 more test
+- Third iteration caught the remaining 2 tests

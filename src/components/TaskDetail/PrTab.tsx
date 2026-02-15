@@ -106,6 +106,7 @@ export function PrTab({
           title="Reviews"
           count={reviewsWithComments.length}
           className="flex-shrink-0"
+          defaultExpanded={true}
         >
           <Panel autoFill={false} padded={true}>
             <div className="space-y-3">

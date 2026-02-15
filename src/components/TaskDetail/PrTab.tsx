@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { usePrStatus } from "../../providers";
 import type { PrCheck, PrComment, PrReview } from "../../types/workflow";
-import { Badge, FlexContainer, Link, Panel } from "../ui";
+import { Badge, CollapsibleSection, FlexContainer, Link, Panel } from "../ui";
 
 interface PrTabProps {
   prUrl: string;
@@ -41,7 +41,7 @@ export function PrTab({
   const loading = isLoading(taskId);
 
   return (
-    <FlexContainer direction="vertical" padded={true} gap={12}>
+    <FlexContainer direction="vertical" padded={true} gap={12} scrolls={true}>
       {/* Header with state badge and link */}
       <Panel accent={stateToAccent(status?.state)} autoFill={false} padded={true}>
         <div className="flex items-center justify-between">
@@ -60,53 +60,54 @@ export function PrTab({
 
       {/* CI Checks section */}
       {status?.checks && status.checks.length > 0 && (
-        <Panel autoFill={false} padded={true}>
-          <h4 className="text-sm font-medium mb-2 text-stone-700 dark:text-stone-300">Checks</h4>
-          <div className="space-y-1">
-            {status.checks.map((check) => (
-              <CheckRow key={check.name} check={check} />
-            ))}
-          </div>
-        </Panel>
+        <CollapsibleSection title="Checks" count={status.checks.length}>
+          <Panel autoFill={false} padded={true}>
+            <div className="space-y-1">
+              {status.checks.map((check) => (
+                <CheckRow key={check.name} check={check} />
+              ))}
+            </div>
+          </Panel>
+        </CollapsibleSection>
       )}
 
       {/* Reviews section */}
       {status?.reviews && status.reviews.length > 0 && (
-        <Panel autoFill={false} padded={true}>
-          <h4 className="text-sm font-medium mb-2 text-stone-700 dark:text-stone-300">Reviews</h4>
-          <div className="space-y-1">
-            {status.reviews.map((review) => (
-              <ReviewRow key={review.author} review={review} />
-            ))}
-          </div>
-        </Panel>
+        <CollapsibleSection title="Reviews" count={status.reviews.length}>
+          <Panel autoFill={false} padded={true}>
+            <div className="space-y-1">
+              {status.reviews.map((review) => (
+                <ReviewRow key={review.author} review={review} />
+              ))}
+            </div>
+          </Panel>
+        </CollapsibleSection>
       )}
 
       {/* Comments section */}
       {status?.comments && status.comments.length > 0 && (
-        <Panel autoFill={false} padded={true}>
-          <h4 className="text-sm font-medium mb-2 text-stone-700 dark:text-stone-300">
-            Comments ({status.comments.length})
-          </h4>
-          <div className="space-y-3">
-            {status.comments.map((comment) => (
-              <CommentRow
-                key={comment.id}
-                comment={comment}
-                selected={selectedCommentIds?.has(comment.id) ?? false}
-                onToggle={() => {
-                  const newSet = new Set(selectedCommentIds);
-                  if (newSet.has(comment.id)) {
-                    newSet.delete(comment.id);
-                  } else {
-                    newSet.add(comment.id);
-                  }
-                  onSelectionChange?.(newSet);
-                }}
-              />
-            ))}
-          </div>
-        </Panel>
+        <CollapsibleSection title="Comments" count={status.comments.length}>
+          <Panel autoFill={false} padded={true}>
+            <div className="space-y-3">
+              {status.comments.map((comment) => (
+                <CommentRow
+                  key={comment.id}
+                  comment={comment}
+                  selected={selectedCommentIds?.has(comment.id) ?? false}
+                  onToggle={() => {
+                    const newSet = new Set(selectedCommentIds);
+                    if (newSet.has(comment.id)) {
+                      newSet.delete(comment.id);
+                    } else {
+                      newSet.add(comment.id);
+                    }
+                    onSelectionChange?.(newSet);
+                  }}
+                />
+              ))}
+            </div>
+          </Panel>
+        </CollapsibleSection>
       )}
 
       {/* Guidance section */}

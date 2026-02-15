@@ -17,6 +17,7 @@ export {
 export { Badge } from "./Badge";
 // Interactive components
 export { Button } from "./Button";
+export { CollapsibleSection } from "./CollapsibleSection";
 export { useContentAnimation, useContentSettled } from "./ContentAnimation";
 export { EmptyState } from "./EmptyState";
 export { ErrorState } from "./ErrorState";

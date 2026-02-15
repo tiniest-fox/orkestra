@@ -6,7 +6,8 @@ use orkestra_core::workflow::{
     Artifact, AutoTaskTemplate, Iteration, LogEntry, Question, WorkflowConfig,
 };
 use serde::{Deserialize, Serialize};
-use std::process::Command;
+use std::time::Duration;
+use tokio::process::Command;
 use tauri::{State, Window};
 
 /// Get the workflow configuration.
@@ -261,7 +262,6 @@ pub struct PrComment {
 struct GhPrResponse {
     url: String,
     state: String,
-    number: u64,
     #[serde(default)]
     status_check_rollup: Vec<GhStatusCheck>,
     #[serde(default)]
@@ -334,18 +334,34 @@ fn normalize_check_status(status: Option<&str>, conclusion: Option<&str>) -> &'s
     }
 }
 
+const GH_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Run a `gh` CLI command and return stdout on success.
-fn run_gh(args: &[&str]) -> Result<String, TauriError> {
-    let output = Command::new("gh").args(args).output().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            TauriError::new(
-                "GH_CLI_NOT_FOUND",
-                "GitHub CLI (gh) is not installed or not in PATH",
-            )
-        } else {
-            TauriError::new("GH_CLI_ERROR", format!("Failed to run gh: {e}"))
+async fn run_gh(args: &[&str]) -> Result<String, TauriError> {
+    let result = tokio::time::timeout(GH_TIMEOUT, Command::new("gh").args(args).output()).await;
+
+    let output = match result {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => {
+            return if e.kind() == std::io::ErrorKind::NotFound {
+                Err(TauriError::new(
+                    "GH_CLI_NOT_FOUND",
+                    "GitHub CLI (gh) is not installed or not in PATH",
+                ))
+            } else {
+                Err(TauriError::new(
+                    "GH_CLI_ERROR",
+                    format!("Failed to run gh: {e}"),
+                ))
+            };
         }
-    })?;
+        Err(_) => {
+            return Err(TauriError::new(
+                "GH_TIMEOUT",
+                "GitHub CLI timed out after 10 seconds",
+            ));
+        }
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -373,16 +389,31 @@ fn run_gh(args: &[&str]) -> Result<String, TauriError> {
 /// # Errors
 /// Returns error if `gh` CLI is not installed or the PR URL is invalid.
 #[tauri::command]
-pub fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
-    // 1. Fetch PR state, checks, and reviews via `gh pr view`
-    let stdout = run_gh(&[
+pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
+    // Parse URL upfront so we fail fast instead of silently returning empty comments.
+    let (owner, repo, number) = parse_pr_url(&pr_url).ok_or_else(|| {
+        TauriError::new(
+            "INVALID_PR_URL",
+            format!("Not a valid GitHub PR URL: {pr_url}"),
+        )
+    })?;
+
+    // Run both gh calls concurrently.
+    let api_path = format!("repos/{owner}/{repo}/pulls/{number}/comments");
+    let pr_view_args = [
         "pr",
         "view",
         &pr_url,
         "--json",
         "state,statusCheckRollup,reviews,url,number",
-    ])?;
+    ];
+    let comments_args: [&str; 2] = ["api", &api_path];
 
+    let (pr_view_result, comments_result) =
+        tokio::join!(run_gh(&pr_view_args), run_gh(&comments_args));
+
+    // PR view is required.
+    let stdout = pr_view_result?;
     let response: GhPrResponse = serde_json::from_str(&stdout).map_err(|e| {
         TauriError::new(
             "GH_PARSE_ERROR",
@@ -410,32 +441,26 @@ pub fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
         })
         .collect();
 
-    // 2. Fetch review comments via REST API (gh pr view doesn't expose them)
-    let comments = match parse_pr_url(&pr_url) {
-        Some((owner, repo, _number)) => {
-            let api_path = format!("repos/{owner}/{repo}/pulls/{}/comments", response.number);
-            match run_gh(&["api", &api_path]) {
-                Ok(api_stdout) => {
-                    let api_comments: Vec<GhApiReviewComment> =
-                        serde_json::from_str(&api_stdout).unwrap_or_default();
-                    api_comments
-                        .into_iter()
-                        .filter_map(|c| {
-                            Some(PrComment {
-                                id: c.id,
-                                author: c.user?.login,
-                                body: c.body,
-                                path: c.path,
-                                line: c.line,
-                                created_at: c.created_at,
-                            })
-                        })
-                        .collect()
-                }
-                Err(_) => Vec::new(), // Non-fatal: PR status still useful without comments
-            }
+    // Comments are non-fatal: PR status is still useful without them.
+    let comments = match comments_result {
+        Ok(api_stdout) => {
+            let api_comments: Vec<GhApiReviewComment> =
+                serde_json::from_str(&api_stdout).unwrap_or_default();
+            api_comments
+                .into_iter()
+                .filter_map(|c| {
+                    Some(PrComment {
+                        id: c.id,
+                        author: c.user?.login,
+                        body: c.body,
+                        path: c.path,
+                        line: c.line,
+                        created_at: c.created_at,
+                    })
+                })
+                .collect()
         }
-        None => Vec::new(),
+        Err(_) => Vec::new(),
     };
 
     Ok(PrStatus {
@@ -543,7 +568,6 @@ mod tests {
         let json = r#"{
             "url": "https://github.com/owner/repo/pull/123",
             "state": "OPEN",
-            "number": 123,
             "statusCheckRollup": [],
             "reviews": []
         }"#;
@@ -551,7 +575,6 @@ mod tests {
         let response: GhPrResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.url, "https://github.com/owner/repo/pull/123");
         assert_eq!(response.state, "OPEN");
-        assert_eq!(response.number, 123);
         assert!(response.status_check_rollup.is_empty());
         assert!(response.reviews.is_empty());
     }

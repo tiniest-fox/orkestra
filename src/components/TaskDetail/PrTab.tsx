@@ -43,7 +43,12 @@ export function PrTab({
   return (
     <FlexContainer direction="vertical" padded={true} gap={12} scrolls={true}>
       {/* Header with state badge and link */}
-      <Panel accent={stateToAccent(status?.state)} autoFill={false} padded={true}>
+      <Panel
+        accent={stateToAccent(status?.state)}
+        autoFill={false}
+        padded={true}
+        className="flex-shrink-0"
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <StateBadge state={status?.state} isLoading={loading && !status} />
@@ -60,7 +65,7 @@ export function PrTab({
 
       {/* CI Checks section */}
       {status?.checks && status.checks.length > 0 && (
-        <CollapsibleSection title="Checks" count={status.checks.length}>
+        <CollapsibleSection title="Checks" count={status.checks.length} className="flex-shrink-0">
           <Panel autoFill={false} padded={true}>
             <div className="space-y-1">
               {status.checks.map((check) => (
@@ -73,7 +78,7 @@ export function PrTab({
 
       {/* Reviews section */}
       {status?.reviews && status.reviews.length > 0 && (
-        <CollapsibleSection title="Reviews" count={status.reviews.length}>
+        <CollapsibleSection title="Reviews" count={status.reviews.length} className="flex-shrink-0">
           <Panel autoFill={false} padded={true}>
             <div className="space-y-1">
               {status.reviews.map((review) => (
@@ -86,7 +91,11 @@ export function PrTab({
 
       {/* Comments section */}
       {status?.comments && status.comments.length > 0 && (
-        <CollapsibleSection title="Comments" count={status.comments.length}>
+        <CollapsibleSection
+          title="Comments"
+          count={status.comments.length}
+          className="flex-shrink-0"
+        >
           <Panel autoFill={false} padded={true}>
             <div className="space-y-3">
               {status.comments.map((comment) => (
@@ -112,7 +121,7 @@ export function PrTab({
 
       {/* Guidance section */}
       {status?.comments && status.comments.length > 0 && (
-        <Panel autoFill={false} padded={true}>
+        <Panel autoFill={false} padded={true} className="flex-shrink-0">
           <h4 className="text-sm font-medium mb-2 text-stone-700 dark:text-stone-300">
             Guidance (optional)
           </h4>
@@ -130,7 +139,7 @@ export function PrTab({
         status.checks.length === 0 &&
         status.reviews.length === 0 &&
         (status.comments?.length ?? 0) === 0 && (
-          <div className="text-sm text-stone-500 dark:text-stone-400 text-center py-4">
+          <div className="flex-shrink-0 text-sm text-stone-500 dark:text-stone-400 text-center py-4">
             No checks, reviews, or comments yet
           </div>
         )}

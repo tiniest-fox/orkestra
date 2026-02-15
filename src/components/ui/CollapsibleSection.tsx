@@ -13,6 +13,7 @@ interface CollapsibleSectionProps {
   count?: number;
   defaultExpanded?: boolean;
   children: ReactNode;
+  className?: string;
 }
 
 export function CollapsibleSection({
@@ -20,11 +21,12 @@ export function CollapsibleSection({
   count,
   defaultExpanded = false,
   children,
+  className,
 }: CollapsibleSectionProps) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   return (
-    <div>
+    <div className={className}>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}

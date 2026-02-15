@@ -100,6 +100,21 @@ fn run_parallel_setup(
     base_branch: &str,
     description: Option<&str>,
 ) -> Result<(), String> {
+    // Sync base branch from remote (warn-and-continue on failure)
+    // Skip for task/* branches (subtask branches are never on origin)
+    if let Some(git) = git {
+        if !base_branch.is_empty() && !base_branch.starts_with("task/") {
+            if let Err(e) = git.sync_base_branch(base_branch) {
+                crate::orkestra_debug!(
+                    "setup",
+                    "WARNING: Failed to sync {} from origin: {}. Proceeding with local state.",
+                    base_branch,
+                    e
+                );
+            }
+        }
+    }
+
     thread::scope(|s| {
         // Phase 1: Create/ensure worktree exists (no setup script yet)
         let worktree_result = if let Some(git) = git {

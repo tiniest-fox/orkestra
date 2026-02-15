@@ -7,8 +7,8 @@ use orkestra_core::workflow::{
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tokio::process::Command;
 use tauri::{State, Window};
+use tokio::process::Command;
 
 /// Get the workflow configuration.
 ///

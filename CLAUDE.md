@@ -108,7 +108,7 @@ cargo test -p orkestra-core --test e2e
 
 **Test helpers** (`tests/e2e/helpers.rs`):
 
-- `TestEnv` — unified test environment. Two constructors: `with_workflow(wf)` for script-only tests (no git), `with_git(wf, agents)` for agent tests with real git repos and prompt files.
+- `TestEnv` — unified test environment. Three constructors: `with_workflow(wf)` for script-only tests (no git), `with_git(wf, agents)` for agent tests with real git repos and prompt files, `with_mock_git(wf, agents)` for tests that need to verify git service calls without requiring a real git remote.
 - `MockAgentOutput` — ergonomic builder for simulated agent responses (questions, artifacts, approvals, subtasks, failures, blocked).
 - `workflows` module — pre-built workflow configs for common test scenarios (`sleep_script`, `with_subtasks`, `instant_script`).
 - Helper methods for advancing the orchestrator, setting mock outputs, asserting on prompts, and querying state.

@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use orkestra_core::testutil::fixtures::test_default_workflow;
+use orkestra_core::workflow::ports::GitError;
 use orkestra_core::workflow::runtime::Phase;
 
 use crate::helpers::TestEnv;
@@ -250,5 +251,127 @@ fn test_empty_title_fallback() {
     assert_eq!(
         task.title, "Fix the login bug on the dashboard",
         "Title should fall back to description when title generation fails"
+    );
+}
+
+// =============================================================================
+// Base Branch Sync During Setup
+// =============================================================================
+
+/// Verify that `sync_base_branch()` is called during task setup with the correct branch.
+#[test]
+fn test_task_setup_syncs_base_branch() {
+    let ctx = TestEnv::with_mock_git(&test_default_workflow(), &["planner", "worker"]);
+
+    // Create a task with base_branch = "main"
+    let task = ctx.create_task(
+        "Test sync",
+        "Verify sync is called during setup",
+        Some("main"),
+    );
+
+    // Verify sync was called with "main"
+    let sync_calls = ctx.mock_git_service().get_sync_base_branch_calls();
+    assert!(
+        sync_calls.contains(&"main".to_string()),
+        "sync_base_branch should be called with 'main', got: {sync_calls:?}"
+    );
+
+    // Verify task setup succeeded
+    assert_eq!(
+        task.phase,
+        Phase::Idle,
+        "Task should be in Idle phase after setup"
+    );
+}
+
+/// Verify that sync failure logs warning but doesn't block task creation.
+#[test]
+fn test_task_setup_continues_on_sync_failure() {
+    let ctx = TestEnv::with_mock_git(&test_default_workflow(), &["planner", "worker"]);
+
+    // Configure mock to fail sync
+    ctx.mock_git_service()
+        .set_next_sync_result(Err(GitError::Other("Network error".to_string())));
+
+    // Create a task - should succeed despite sync failure
+    let task = ctx.create_task(
+        "Test sync failure",
+        "Should not block on sync error",
+        Some("main"),
+    );
+
+    // Verify task setup still succeeded despite sync failure
+    assert_eq!(
+        task.phase,
+        Phase::Idle,
+        "Task should be in Idle phase despite sync failure"
+    );
+    assert!(
+        !task.is_failed(),
+        "Task should not be Failed despite sync failure"
+    );
+}
+
+/// Verify that subtask branches (task/*) skip sync.
+#[test]
+fn test_subtask_setup_skips_sync() {
+    let ctx = TestEnv::with_mock_git(&test_default_workflow(), &["planner", "worker"]);
+
+    // Create a parent task first
+    let parent = ctx.create_task("Parent", "Parent task", Some("main"));
+    let parent_id = parent.id.clone();
+
+    // Clear sync calls to track only subtask setup
+    // The parent setup already called sync for "main"
+    let initial_sync_calls = ctx.mock_git_service().get_sync_base_branch_calls();
+    assert!(
+        initial_sync_calls.contains(&"main".to_string()),
+        "Parent setup should have synced 'main'"
+    );
+
+    // Create a subtask - its base_branch will be the parent's branch (task/*)
+    let subtask = ctx.create_subtask(&parent_id, "Subtask", "Should skip sync");
+
+    // Verify subtask base_branch is task/* pattern
+    assert!(
+        subtask.base_branch.starts_with("task/"),
+        "Subtask base_branch should be task/*, got: {}",
+        subtask.base_branch
+    );
+
+    // Since subtask base_branch starts with "task/", sync should have been skipped
+    // We can verify by checking that no additional sync calls were made for task/* branches
+    let sync_calls = ctx.mock_git_service().get_sync_base_branch_calls();
+    let task_branch_syncs: Vec<_> = sync_calls
+        .iter()
+        .filter(|b| b.starts_with("task/"))
+        .collect();
+    assert!(
+        task_branch_syncs.is_empty(),
+        "Should not sync task/* branches, found: {task_branch_syncs:?}"
+    );
+}
+
+/// Verify sync is called with custom base branch (not just "main").
+#[test]
+fn test_task_setup_syncs_custom_base_branch() {
+    let ctx = TestEnv::with_mock_git(&test_default_workflow(), &["planner", "worker"]);
+
+    // Create a task with a custom base branch
+    let task = ctx.create_task("Feature task", "Based on feature branch", Some("feature"));
+
+    // Verify sync was called with the custom branch
+    let sync_calls = ctx.mock_git_service().get_sync_base_branch_calls();
+    assert!(
+        sync_calls.contains(&"feature".to_string()),
+        "sync_base_branch should be called with 'feature', got: {sync_calls:?}"
+    );
+
+    // Verify task setup succeeded
+    assert_eq!(
+        task.phase,
+        Phase::Idle,
+        "Task should be in Idle phase after setup"
     );
 }

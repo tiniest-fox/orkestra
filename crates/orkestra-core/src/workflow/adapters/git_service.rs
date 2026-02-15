@@ -874,6 +874,44 @@ impl GitService for Git2GitService {
         Ok(())
     }
 
+    fn sync_base_branch(&self, branch: &str) -> Result<(), GitError> {
+        // Use atomic fetch that updates local branch ref without requiring checkout.
+        // Syntax: git fetch origin <remote_branch>:<local_branch>
+        // This fails if the local branch has diverged (not fast-forwardable).
+        let output = Command::new("git")
+            .args(["fetch", "origin", &format!("{branch}:{branch}")])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GitError::Other(format!("Failed to run git fetch: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Distinguish between different failure modes for better error messages
+            if stderr.contains("Could not resolve host") || stderr.contains("unable to access") {
+                return Err(GitError::Other(format!(
+                    "Network error syncing {branch}: {stderr}"
+                )));
+            }
+            if stderr.contains("Authentication failed") || stderr.contains("Permission denied") {
+                return Err(GitError::Other(format!(
+                    "Authentication error syncing {branch}: {stderr}"
+                )));
+            }
+            if stderr.contains("non-fast-forward") || stderr.contains("rejected") {
+                return Err(GitError::Other(format!(
+                    "Branch {branch} has diverged from origin (not fast-forwardable)"
+                )));
+            }
+            // Generic fallback for other errors (no remote, branch not found, etc.)
+            return Err(GitError::Other(format!(
+                "Failed to sync {branch} from origin: {stderr}"
+            )));
+        }
+
+        crate::orkestra_debug!("git", "Synced {branch} from origin");
+        Ok(())
+    }
+
     fn squash_commits(
         &self,
         worktree_path: &Path,
@@ -1774,5 +1812,239 @@ mod tests {
             .trim()
             .to_string();
         assert_eq!(message, "Squashed single");
+    }
+
+    /// Create a test git repository with a bare remote as "origin".
+    ///
+    /// Returns (`temp_dir_for_remote`, `temp_dir_for_clone`, `repo_path_of_clone`).
+    /// The clone is configured with the bare repo as origin, and is checked out
+    /// to a "task/test" branch (not main) so that `sync_base_branch("main`") can work.
+    fn create_test_repo_with_remote() -> (TempDir, TempDir, PathBuf) {
+        // Create bare "remote" repository
+        let remote_dir = TempDir::new().expect("Failed to create remote temp dir");
+        Command::new("git")
+            .args(["init", "--bare"])
+            .current_dir(remote_dir.path())
+            .output()
+            .expect("Failed to init bare repo");
+
+        // Create working repository (the "clone")
+        let clone_dir = TempDir::new().expect("Failed to create clone temp dir");
+        let repo_path = clone_dir.path().to_path_buf();
+
+        Command::new("git")
+            .args(["clone", remote_dir.path().to_str().unwrap(), "."])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to clone repo");
+
+        // Configure git user for commits
+        Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to configure git email");
+
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to configure git name");
+
+        // Create initial commit and push to origin
+        std::fs::write(repo_path.join("README.md"), "# Test Repo").expect("Failed to write file");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to add files");
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to commit");
+
+        // Rename branch to main and push
+        Command::new("git")
+            .args(["branch", "-M", "main"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to rename branch");
+        Command::new("git")
+            .args(["push", "-u", "origin", "main"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to push to origin");
+
+        // Create and checkout a task branch so main is not checked out.
+        // This is necessary because git fetch origin main:main fails if main is checked out.
+        Command::new("git")
+            .args(["checkout", "-b", "task/test"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to create task branch");
+
+        (remote_dir, clone_dir, repo_path)
+    }
+
+    #[test]
+    fn test_sync_base_branch_success() {
+        let (remote_dir, _clone_dir, repo_path) = create_test_repo_with_remote();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Add a commit to origin (simulate someone else pushing)
+        // We do this by cloning to a temp location, committing, and pushing
+        let other_clone = TempDir::new().expect("Failed to create other clone");
+        Command::new("git")
+            .args(["clone", remote_dir.path().to_str().unwrap(), "."])
+            .current_dir(other_clone.path())
+            .output()
+            .expect("Failed to clone");
+        Command::new("git")
+            .args(["config", "user.email", "other@example.com"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Other User"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        std::fs::write(other_clone.path().join("new_file.txt"), "new content")
+            .expect("Failed to write file");
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "New commit from other clone"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["push"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+
+        // Now our repo is behind origin. Sync should fast-forward.
+        git.sync_base_branch("main").expect("Sync should succeed");
+
+        // Verify main has the new commit (check the main branch, not HEAD which is task/test)
+        let log_output = Command::new("git")
+            .args(["log", "--oneline", "-1", "main"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to get log");
+        let log_text = String::from_utf8_lossy(&log_output.stdout);
+        assert!(
+            log_text.contains("New commit from other clone"),
+            "Should have fetched the new commit to main"
+        );
+    }
+
+    #[test]
+    fn test_sync_base_branch_no_remote() {
+        // Use create_test_repo() which has no remote configured
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Sync should fail gracefully (no remote)
+        let result = git.sync_base_branch("main");
+        assert!(result.is_err(), "Sync should fail with no remote");
+
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, GitError::Other(_)),
+            "Should be GitError::Other, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_sync_base_branch_diverged() {
+        let (remote_dir, _clone_dir, repo_path) = create_test_repo_with_remote();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Add a commit to origin (simulate someone else pushing)
+        let other_clone = TempDir::new().expect("Failed to create other clone");
+        Command::new("git")
+            .args(["clone", remote_dir.path().to_str().unwrap(), "."])
+            .current_dir(other_clone.path())
+            .output()
+            .expect("Failed to clone");
+        Command::new("git")
+            .args(["config", "user.email", "other@example.com"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Other User"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        std::fs::write(other_clone.path().join("other_file.txt"), "other content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Commit from other clone"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["push"])
+            .current_dir(other_clone.path())
+            .output()
+            .unwrap();
+
+        // Add a LOCAL commit to main (so our branch diverges from origin)
+        // First checkout main, add commit, then go back to task branch
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+        std::fs::write(repo_path.join("local_file.txt"), "local content").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "Local commit"])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "task/test"])
+            .current_dir(&repo_path)
+            .output()
+            .unwrap();
+
+        // Now main has diverged from origin. Sync should fail.
+        let result = git.sync_base_branch("main");
+        assert!(result.is_err(), "Sync should fail when branch has diverged");
+
+        let err = result.unwrap_err();
+        let err_str = err.to_string();
+        assert!(
+            err_str.contains("diverged")
+                || err_str.contains("non-fast-forward")
+                || err_str.contains("rejected"),
+            "Error should mention divergence or non-fast-forward, got: {err_str}"
+        );
+    }
+
+    #[test]
+    fn test_sync_base_branch_already_up_to_date() {
+        let (_remote_dir, _clone_dir, repo_path) = create_test_repo_with_remote();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        // Branch is already synced with origin. Sync should succeed (no-op).
+        git.sync_base_branch("main")
+            .expect("Sync should succeed when already up-to-date");
     }
 }

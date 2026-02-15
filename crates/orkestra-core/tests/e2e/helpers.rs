@@ -16,7 +16,7 @@ use orkestra_core::workflow::{
         claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
         ProviderRegistry, RunConfig, StageOutput,
     },
-    ports::{MockPrService, PrService},
+    ports::{GitService, MockGitService, MockPrService, PrService},
     runtime::Phase,
     MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService, WorkflowApi,
 };
@@ -73,14 +73,16 @@ fn test_provider_registry() -> Arc<ProviderRegistry> {
 
 /// Test environment with real `SQLite`, real orchestrator, and mock agent execution.
 ///
-/// Two constructors cover all current e2e patterns:
+/// Three constructors cover all current e2e patterns:
 /// - `with_workflow(wf)` — script-only tests (no git)
 /// - `with_git(wf, agents)` — agent tests with real git repo and prompt files
+/// - `with_mock_git(wf, agents)` — tests that need to verify git service calls
 pub struct TestEnv {
     api: Arc<Mutex<WorkflowApi>>,
     orchestrator: OrchestratorLoop,
     runner: Arc<MockAgentRunner>,
     pr_service: Arc<MockPrService>,
+    mock_git_service: Option<Arc<MockGitService>>,
     temp_dir: TempDir,
 }
 
@@ -140,6 +142,7 @@ impl TestEnv {
             orchestrator,
             runner,
             pr_service,
+            mock_git_service: None,
             temp_dir,
         }
     }
@@ -224,6 +227,7 @@ impl TestEnv {
             orchestrator,
             runner,
             pr_service,
+            mock_git_service: None,
             temp_dir,
         }
     }
@@ -307,6 +311,91 @@ impl TestEnv {
             orchestrator,
             runner,
             pr_service,
+            mock_git_service: None,
+            temp_dir,
+        }
+    }
+
+    /// Create a test env with a `MockGitService` for verifying git operations.
+    ///
+    /// Unlike `with_git`, this uses a mock git service that doesn't create real
+    /// worktrees but allows verifying that git operations (like `sync_base_branch`)
+    /// are called with the expected arguments.
+    pub fn with_mock_git(workflow: &WorkflowConfig, agents: &[&str]) -> Self {
+        use std::path::PathBuf;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+        // Create .orkestra directory structure
+        let orkestra_dir = temp_dir.path().join(".orkestra");
+        std::fs::create_dir_all(orkestra_dir.join(".database")).unwrap();
+
+        // Create agent definition files
+        let agents_dir = orkestra_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        for agent in agents {
+            std::fs::write(
+                agents_dir.join(format!("{agent}.md")),
+                format!("You are a {agent} agent."),
+            )
+            .unwrap();
+        }
+
+        // Save and reload workflow config
+        let workflow_path = orkestra_dir.join("workflow.yaml");
+        let yaml = serde_yaml::to_string(&workflow).unwrap();
+        std::fs::write(&workflow_path, yaml).unwrap();
+        let loaded_workflow = orkestra_core::workflow::config::load_workflow(&workflow_path)
+            .expect("Should load workflow");
+
+        // Real SQLite database
+        let db_path = orkestra_dir.join(".database/orkestra.db");
+        let db_conn = DatabaseConnection::open(&db_path).expect("Should open database");
+        let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
+            Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
+
+        // Mock git service for verifying calls
+        let mock_git = Arc::new(MockGitService::new());
+        let git_service: Arc<dyn GitService> = mock_git.clone();
+
+        let pr_service = Arc::new(MockPrService::new());
+        let api = WorkflowApi::with_git(
+            loaded_workflow.clone(),
+            Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
+            git_service,
+        )
+        .with_title_generator(Arc::new(MockTitleGenerator::succeeding()))
+        .with_commit_message_generator(Arc::new(MockCommitMessageGenerator::succeeding()))
+        .with_pr_service(pr_service.clone() as Arc<dyn PrService>)
+        .with_pr_description_generator(
+            Arc::new(MockPrDescriptionGenerator::succeeding()) as Arc<dyn PrDescriptionGenerator>
+        );
+
+        let api = Arc::new(Mutex::new(api));
+        let project_root = PathBuf::from(temp_dir.path());
+
+        let iteration_service = api.lock().unwrap().iteration_service().clone();
+        let runner = Arc::new(MockAgentRunner::new());
+
+        let stage_executor = Arc::new(StageExecutionService::with_runner(
+            loaded_workflow,
+            project_root,
+            store,
+            iteration_service,
+            runner.clone(),
+            test_provider_registry(),
+        ));
+
+        let mut orchestrator = OrchestratorLoop::new(api.clone(), stage_executor);
+        orchestrator.set_sync_background(true);
+        api.lock().unwrap().set_sync_setup(true);
+
+        Self {
+            api,
+            orchestrator,
+            runner,
+            pr_service,
+            mock_git_service: Some(mock_git),
             temp_dir,
         }
     }
@@ -328,6 +417,16 @@ impl TestEnv {
     /// Get the mock PR service for configuring test results.
     pub fn pr_service(&self) -> Arc<MockPrService> {
         Arc::clone(&self.pr_service)
+    }
+
+    /// Get the mock git service for verifying git operations.
+    ///
+    /// Only available when using `with_mock_git()`. Panics if called on
+    /// environments created with other constructors.
+    pub fn mock_git_service(&self) -> &Arc<MockGitService> {
+        self.mock_git_service
+            .as_ref()
+            .expect("mock_git_service only available with with_mock_git()")
     }
 
     /// Get the temp directory path for direct file/git operations.

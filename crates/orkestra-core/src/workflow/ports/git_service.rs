@@ -299,6 +299,18 @@ pub trait GitService: Send + Sync {
     /// or if the push is rejected.
     fn push_branch(&self, branch: &str) -> Result<(), GitError>;
 
+    /// Sync a local branch with its remote tracking branch.
+    ///
+    /// Fetches from origin and fast-forwards the local branch to match.
+    /// Uses `git fetch origin branch:branch` for atomic update without checkout.
+    ///
+    /// Returns `Ok(())` on success or if already up-to-date.
+    /// Returns `Err(GitError::Other)` if:
+    /// - No remote named "origin" is configured
+    /// - Network/authentication error during fetch
+    /// - Branch has diverged (local has commits not on remote)
+    fn sync_base_branch(&self, branch: &str) -> Result<(), GitError>;
+
     /// Squash all commits since merge-base into a single commit.
     ///
     /// Finds the merge-base of the current branch and `target_branch`, then:
@@ -341,9 +353,11 @@ pub mod mock {
         next_rebase_result: Mutex<Option<Result<(), GitError>>>,
         next_squash_result: Mutex<Option<Result<bool, GitError>>>,
         push_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
+        sync_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
         create_worktree_calls: Mutex<Vec<(String, Option<String>)>>,
         remove_worktree_calls: Mutex<Vec<(String, bool)>>,
         squash_calls: Mutex<Vec<(PathBuf, String, String)>>,
+        sync_base_branch_calls: Mutex<Vec<String>>,
         merged_branches: Mutex<HashMap<String, bool>>,
     }
 
@@ -358,9 +372,11 @@ pub mod mock {
                 next_rebase_result: Mutex::new(None),
                 next_squash_result: Mutex::new(None),
                 push_results: Mutex::new(std::collections::VecDeque::new()),
+                sync_results: Mutex::new(std::collections::VecDeque::new()),
                 create_worktree_calls: Mutex::new(Vec::new()),
                 remove_worktree_calls: Mutex::new(Vec::new()),
                 squash_calls: Mutex::new(Vec::new()),
+                sync_base_branch_calls: Mutex::new(Vec::new()),
                 merged_branches: Mutex::new(HashMap::new()),
             }
         }
@@ -416,6 +432,16 @@ pub mod mock {
         /// Get the list of `squash_commits` calls for verification.
         pub fn get_squash_calls(&self) -> Vec<(PathBuf, String, String)> {
             self.squash_calls.lock().unwrap().clone()
+        }
+
+        /// Set the result for the next `sync_base_branch` operation.
+        pub fn set_next_sync_result(&self, result: Result<(), GitError>) {
+            self.sync_results.lock().unwrap().push_back(result);
+        }
+
+        /// Get the list of `sync_base_branch` calls for verification.
+        pub fn get_sync_base_branch_calls(&self) -> Vec<String> {
+            self.sync_base_branch_calls.lock().unwrap().clone()
         }
     }
 
@@ -600,6 +626,18 @@ pub mod mock {
 
         fn push_branch(&self, _branch: &str) -> Result<(), GitError> {
             self.push_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(()))
+        }
+
+        fn sync_base_branch(&self, branch: &str) -> Result<(), GitError> {
+            self.sync_base_branch_calls
+                .lock()
+                .unwrap()
+                .push(branch.to_string());
+            self.sync_results
                 .lock()
                 .unwrap()
                 .pop_front()

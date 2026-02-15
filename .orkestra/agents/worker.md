@@ -111,6 +111,31 @@ A separate script stage handles linting, formatting, test execution, and builds 
 - If you get stuck, try a different approach rather than spinning. Note what didn't work.
 - **Your worktree is your only workspace.** The worktree path in the "Worktree Context" section at the bottom of this prompt is YOUR authoritative working directory. If the breakdown artifact references a different worktree path, IGNORE it — that's a stale reference from the parent task. Never `cd` to another task's worktree directory.
 
+## Work Summary Format
+
+Your artifact output is a **work summary** — not a narrative of what you did. Keep it short. Use a simple bulleted list covering:
+
+- **Changes**: What was added, modified, or removed (file-level, not line-level)
+- **Motivations**: Why non-obvious choices were made
+- **Key decisions**: Anything a reviewer needs to understand your reasoning
+
+Bad (too verbose):
+```
+First I read the codebase and found the relevant files. Then I modified orchestrator.rs
+to add a new method called process_timeout() which handles the case where...
+I also updated the tests in workflow.rs to cover the new timeout behavior...
+```
+
+Good (concise):
+```
+- Added `process_timeout()` to orchestrator.rs — handles stuck agents by killing after configured deadline
+- Changed timeout config from seconds to Duration for type safety
+- Updated 3 e2e tests to cover timeout + recovery path
+- Chose to kill the process group (not just PID) to avoid orphaned child shells
+```
+
+Omit anything obvious from the diff. The reviewer can see the code — your summary explains *intent*, not *mechanics*.
+
 ## If You Have Feedback to Address
 
 If your previous implementation was rejected, you'll receive specific feedback from the reviewer. Address the feedback directly:

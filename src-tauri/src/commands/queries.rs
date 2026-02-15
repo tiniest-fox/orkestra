@@ -261,12 +261,23 @@ pub struct PrComment {
 struct GhPrResponse {
     url: String,
     state: String,
+    number: u64,
     #[serde(default)]
     status_check_rollup: Vec<GhStatusCheck>,
     #[serde(default)]
     reviews: Vec<GhReview>,
+}
+
+/// Raw JSON response from `gh api` for review comments.
+#[derive(Deserialize)]
+struct GhApiReviewComment {
+    id: i64,
+    user: Option<GhAuthor>,
+    body: String,
+    path: Option<String>,
     #[serde(default)]
-    review_comments: Vec<GhComment>,
+    line: Option<u32>,
+    created_at: String,
 }
 
 #[derive(Deserialize)]
@@ -287,17 +298,17 @@ struct GhAuthor {
     login: String,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GhComment {
-    #[serde(default)]
-    database_id: Option<i64>,
-    author: Option<GhAuthor>,
-    body: String,
-    path: Option<String>,
-    #[serde(default)]
-    line: Option<u32>,
-    created_at: String,
+/// Parse a GitHub PR URL into `(owner, repo, number)`.
+///
+/// Accepts URLs like `https://github.com/owner/repo/pull/123`.
+fn parse_pr_url(url: &str) -> Option<(&str, &str, &str)> {
+    let path = url.strip_prefix("https://github.com/")?;
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() >= 4 && parts[2] == "pull" {
+        Some((parts[0], parts[1], parts[3]))
+    } else {
+        None
+    }
 }
 
 /// Convert GitHub's PR state to our normalized format.
@@ -323,54 +334,59 @@ fn normalize_check_status(status: Option<&str>, conclusion: Option<&str>) -> &'s
     }
 }
 
-/// Get PR status from GitHub.
-///
-/// Calls `gh pr view` to fetch the current state of a pull request,
-/// including CI checks and review status.
-///
-/// # Arguments
-/// * `pr_url` - The full GitHub PR URL (e.g., `https://github.com/owner/repo/pull/123`)
-///
-/// # Returns
-/// `PrStatus` with state, checks, and reviews.
-///
-/// # Errors
-/// Returns error if `gh` CLI is not installed or the PR URL is invalid.
-#[tauri::command]
-pub fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
-    let output = Command::new("gh")
-        .args([
-            "pr",
-            "view",
-            &pr_url,
-            "--json",
-            "state,statusCheckRollup,reviews,url,reviewComments",
-        ])
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                TauriError::new(
-                    "GH_CLI_NOT_FOUND",
-                    "GitHub CLI (gh) is not installed or not in PATH",
-                )
-            } else {
-                TauriError::new("GH_CLI_ERROR", format!("Failed to run gh pr view: {e}"))
-            }
-        })?;
+/// Run a `gh` CLI command and return stdout on success.
+fn run_gh(args: &[&str]) -> Result<String, TauriError> {
+    let output = Command::new("gh").args(args).output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            TauriError::new(
+                "GH_CLI_NOT_FOUND",
+                "GitHub CLI (gh) is not installed or not in PATH",
+            )
+        } else {
+            TauriError::new("GH_CLI_ERROR", format!("Failed to run gh: {e}"))
+        }
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(TauriError::new(
             "GH_CLI_ERROR",
-            format!("gh pr view failed: {stderr}"),
+            format!("gh command failed: {stderr}"),
         ));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Get PR status from GitHub.
+///
+/// Calls `gh pr view` for state/checks/reviews, then `gh api` for review comments
+/// (inline code comments). The `gh pr view` CLI doesn't expose review comments as
+/// a JSON field, so a separate REST API call is needed.
+///
+/// # Arguments
+/// * `pr_url` - The full GitHub PR URL (e.g., `https://github.com/owner/repo/pull/123`)
+///
+/// # Returns
+/// `PrStatus` with state, checks, reviews, and review comments.
+///
+/// # Errors
+/// Returns error if `gh` CLI is not installed or the PR URL is invalid.
+#[tauri::command]
+pub fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
+    // 1. Fetch PR state, checks, and reviews via `gh pr view`
+    let stdout = run_gh(&[
+        "pr",
+        "view",
+        &pr_url,
+        "--json",
+        "state,statusCheckRollup,reviews,url,number",
+    ])?;
+
     let response: GhPrResponse = serde_json::from_str(&stdout).map_err(|e| {
         TauriError::new(
             "GH_PARSE_ERROR",
-            format!("Failed to parse gh output: {e}\nRaw output: {stdout}"),
+            format!("Failed to parse gh pr view output: {e}\nRaw output: {stdout}"),
         )
     })?;
 
@@ -394,20 +410,33 @@ pub fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
         })
         .collect();
 
-    let comments: Vec<PrComment> = response
-        .review_comments
-        .iter()
-        .filter_map(|c| {
-            Some(PrComment {
-                id: c.database_id?,
-                author: c.author.as_ref()?.login.clone(),
-                body: c.body.clone(),
-                path: c.path.clone(),
-                line: c.line,
-                created_at: c.created_at.clone(),
-            })
-        })
-        .collect();
+    // 2. Fetch review comments via REST API (gh pr view doesn't expose them)
+    let comments = match parse_pr_url(&pr_url) {
+        Some((owner, repo, _number)) => {
+            let api_path = format!("repos/{owner}/{repo}/pulls/{}/comments", response.number);
+            match run_gh(&["api", &api_path]) {
+                Ok(api_stdout) => {
+                    let api_comments: Vec<GhApiReviewComment> =
+                        serde_json::from_str(&api_stdout).unwrap_or_default();
+                    api_comments
+                        .into_iter()
+                        .filter_map(|c| {
+                            Some(PrComment {
+                                id: c.id,
+                                author: c.user?.login,
+                                body: c.body,
+                                path: c.path,
+                                line: c.line,
+                                created_at: c.created_at,
+                            })
+                        })
+                        .collect()
+                }
+                Err(_) => Vec::new(), // Non-fatal: PR status still useful without comments
+            }
+        }
+        None => Vec::new(),
+    };
 
     Ok(PrStatus {
         url: response.url,
@@ -510,118 +539,109 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_gh_response_with_comments() {
+    fn deserialize_gh_pr_response() {
         let json = r#"{
             "url": "https://github.com/owner/repo/pull/123",
             "state": "OPEN",
-            "statusCheckRollup": [],
-            "reviews": [],
-            "reviewComments": [
-                {
-                    "databaseId": 42,
-                    "author": {"login": "reviewer"},
-                    "body": "Please fix this",
-                    "path": "src/main.rs",
-                    "line": 10,
-                    "createdAt": "2024-01-15T10:30:00Z"
-                },
-                {
-                    "databaseId": 43,
-                    "author": {"login": "reviewer2"},
-                    "body": "General comment",
-                    "path": null,
-                    "line": null,
-                    "createdAt": "2024-01-15T11:00:00Z"
-                }
-            ]
-        }"#;
-
-        let response: GhPrResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.review_comments.len(), 2);
-
-        let first = &response.review_comments[0];
-        assert_eq!(first.database_id, Some(42));
-        assert_eq!(first.author.as_ref().unwrap().login, "reviewer");
-        assert_eq!(first.body, "Please fix this");
-        assert_eq!(first.path, Some("src/main.rs".to_string()));
-        assert_eq!(first.line, Some(10));
-        assert_eq!(first.created_at, "2024-01-15T10:30:00Z");
-
-        let second = &response.review_comments[1];
-        assert_eq!(second.path, None);
-        assert_eq!(second.line, None);
-    }
-
-    #[test]
-    fn deserialize_gh_response_with_empty_comments() {
-        let json = r#"{
-            "url": "https://github.com/owner/repo/pull/123",
-            "state": "OPEN",
+            "number": 123,
             "statusCheckRollup": [],
             "reviews": []
         }"#;
 
         let response: GhPrResponse = serde_json::from_str(json).unwrap();
-        assert!(response.review_comments.is_empty());
+        assert_eq!(response.url, "https://github.com/owner/repo/pull/123");
+        assert_eq!(response.state, "OPEN");
+        assert_eq!(response.number, 123);
+        assert!(response.status_check_rollup.is_empty());
+        assert!(response.reviews.is_empty());
     }
 
     #[test]
-    fn comments_filter_out_incomplete_data() {
-        let json = r#"{
-            "url": "https://github.com/owner/repo/pull/123",
-            "state": "OPEN",
-            "statusCheckRollup": [],
-            "reviews": [],
-            "reviewComments": [
-                {
-                    "databaseId": 42,
-                    "author": {"login": "reviewer"},
-                    "body": "Valid comment",
-                    "path": "src/main.rs",
-                    "line": 10,
-                    "createdAt": "2024-01-15T10:30:00Z"
-                },
-                {
-                    "databaseId": null,
-                    "author": {"login": "reviewer"},
-                    "body": "Missing ID",
-                    "path": null,
-                    "line": null,
-                    "createdAt": "2024-01-15T10:30:00Z"
-                },
-                {
-                    "databaseId": 44,
-                    "author": null,
-                    "body": "Missing author",
-                    "path": null,
-                    "line": null,
-                    "createdAt": "2024-01-15T10:30:00Z"
-                }
-            ]
-        }"#;
+    fn deserialize_api_review_comments() {
+        let json = r#"[
+            {
+                "id": 42,
+                "user": {"login": "reviewer"},
+                "body": "Please fix this",
+                "path": "src/main.rs",
+                "line": 10,
+                "created_at": "2024-01-15T10:30:00Z"
+            },
+            {
+                "id": 43,
+                "user": {"login": "reviewer2"},
+                "body": "General comment",
+                "path": null,
+                "line": null,
+                "created_at": "2024-01-15T11:00:00Z"
+            }
+        ]"#;
 
-        let response: GhPrResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.review_comments.len(), 3);
+        let comments: Vec<GhApiReviewComment> = serde_json::from_str(json).unwrap();
+        assert_eq!(comments.len(), 2);
 
-        // Map comments using the same filter_map logic as the command
-        let comments: Vec<PrComment> = response
-            .review_comments
-            .iter()
+        assert_eq!(comments[0].id, 42);
+        assert_eq!(comments[0].user.as_ref().unwrap().login, "reviewer");
+        assert_eq!(comments[0].body, "Please fix this");
+        assert_eq!(comments[0].path, Some("src/main.rs".to_string()));
+        assert_eq!(comments[0].line, Some(10));
+
+        assert_eq!(comments[1].id, 43);
+        assert_eq!(comments[1].path, None);
+        assert_eq!(comments[1].line, None);
+    }
+
+    #[test]
+    fn api_comments_filter_out_missing_user() {
+        let json = r#"[
+            {
+                "id": 42,
+                "user": {"login": "reviewer"},
+                "body": "Valid comment",
+                "path": "src/main.rs",
+                "line": 10,
+                "created_at": "2024-01-15T10:30:00Z"
+            },
+            {
+                "id": 44,
+                "user": null,
+                "body": "Missing author",
+                "path": null,
+                "line": null,
+                "created_at": "2024-01-15T10:30:00Z"
+            }
+        ]"#;
+
+        let api_comments: Vec<GhApiReviewComment> = serde_json::from_str(json).unwrap();
+        let comments: Vec<PrComment> = api_comments
+            .into_iter()
             .filter_map(|c| {
                 Some(PrComment {
-                    id: c.database_id?,
-                    author: c.author.as_ref()?.login.clone(),
-                    body: c.body.clone(),
-                    path: c.path.clone(),
+                    id: c.id,
+                    author: c.user?.login,
+                    body: c.body,
+                    path: c.path,
                     line: c.line,
-                    created_at: c.created_at.clone(),
+                    created_at: c.created_at,
                 })
             })
             .collect();
 
-        // Only the valid comment should remain
         assert_eq!(comments.len(), 1);
         assert_eq!(comments[0].id, 42);
         assert_eq!(comments[0].author, "reviewer");
+    }
+
+    #[test]
+    fn parse_pr_url_valid() {
+        let result = parse_pr_url("https://github.com/owner/repo/pull/123");
+        assert_eq!(result, Some(("owner", "repo", "123")));
+    }
+
+    #[test]
+    fn parse_pr_url_invalid() {
+        assert!(parse_pr_url("https://github.com/owner/repo").is_none());
+        assert!(parse_pr_url("https://gitlab.com/owner/repo/pull/123").is_none());
+        assert!(parse_pr_url("not a url").is_none());
     }
 }

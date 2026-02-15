@@ -257,7 +257,6 @@ pub struct ActivityLogEntry {
     pub content: String,
 }
 
-<<<<<<< HEAD
 /// Context for a sibling subtask in the prompt.
 #[derive(Debug, Clone, Serialize)]
 pub struct SiblingTaskContext {
@@ -286,7 +285,8 @@ pub fn sibling_status_display(status: &Status, phase: Phase) -> &'static str {
             _ => "pending",
         },
     }
-=======
+}
+
 /// Consolidate activity logs, collapsing only consecutive same-stage entries.
 ///
 /// Uses "intervening stage prevents deduplication" semantics: consecutive entries from
@@ -320,7 +320,6 @@ pub fn deduplicate_activity_logs_by_stage(logs: Vec<ActivityLogEntry>) -> Vec<Ac
     }
 
     result
->>>>>>> 72d1eeb (Streamline activity log verbosity and deduplication)
 }
 
 /// Flow-specific overrides for agent configuration.
@@ -2290,7 +2289,6 @@ mod tests {
     }
 
     // ========================================================================
-<<<<<<< HEAD
     // Sibling Context tests
     // ========================================================================
 
@@ -2482,7 +2480,9 @@ mod tests {
         assert!(user_message.contains("[this task depends on]"));
         // Unrelated task should not have a dependency marker
         assert!(user_message.contains("**unrelated** Unrelated task (working)"));
-=======
+    }
+
+    // ========================================================================
     // Activity Log Deduplication tests
     // ========================================================================
 
@@ -2666,6 +2666,5 @@ mod tests {
         assert_eq!(result.len(), 1);
         // Should keep the last entry (latest) since all are consecutive
         assert_eq!(result[0].content, "Latest");
->>>>>>> 72d1eeb (Streamline activity log verbosity and deduplication)
     }
 }

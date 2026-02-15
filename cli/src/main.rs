@@ -146,6 +146,14 @@ enum TaskAction {
         /// Task ID to retry
         id: String,
     },
+    /// Retry a failed or blocked task (recovers to Idle phase)
+    Retry {
+        /// Task ID
+        id: String,
+        /// Optional instructions for the agent
+        #[arg(short, long)]
+        instructions: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -236,6 +244,9 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         TaskAction::Merge { id } => handle_merge_task(&api, &id, pretty),
         TaskAction::OpenPr { .. } => unreachable!("handled above"),
         TaskAction::RetryPr { id } => handle_retry_pr_task(&api, &id, pretty),
+        TaskAction::Retry { id, instructions } => {
+            handle_retry_task(&api, &id, instructions.as_deref(), pretty);
+        }
     }
 }
 
@@ -873,6 +884,27 @@ fn handle_retry_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
         println!("Reset task {} to Done+Idle", task.id);
         println!("Status: {}", format_status(&task.status));
         println!("You can now retry merge or PR creation");
+    } else {
+        output_json(&task);
+    }
+}
+
+fn handle_retry_task(api: &WorkflowApi, id: &str, instructions: Option<&str>, pretty: bool) {
+    let task = match api.retry(id, instructions) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error retrying task: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        println!("Retried task {}", task.id);
+        println!("Stage: {}", task.current_stage().unwrap_or("-"));
+        println!("Phase: {}", format_phase(task.phase));
+        if instructions.is_some() {
+            println!("Instructions provided to agent");
+        }
     } else {
         output_json(&task);
     }

@@ -592,10 +592,16 @@ export interface PrCheck {
  * A single review status.
  */
 export interface PrReview {
+  /** GitHub review ID. */
+  id: number;
   /** GitHub username of the reviewer. */
   author: string;
   /** Review state from GitHub (uppercase): "APPROVED", "CHANGES_REQUESTED", "COMMENTED", or "PENDING". */
   state: string;
+  /** Review body text. Null if the review has no body. */
+  body: string | null;
+  /** When the review was submitted (ISO 8601). */
+  submitted_at: string;
 }
 
 /**
@@ -608,12 +614,14 @@ export interface PrComment {
   author: string;
   /** Comment body (markdown). */
   body: string;
-  /** File path if this is a file-level or line-level comment. */
-  path?: string;
-  /** Line number if this is a line-level comment. */
-  line?: number;
+  /** File path for file-level or line-level comments. Null for general comments. */
+  path: string | null;
+  /** Line number for line-level comments. Null for file-level or general comments. */
+  line: number | null;
   /** When the comment was created (ISO 8601). */
   created_at: string;
+  /** Parent review ID if this comment belongs to a review. Null for standalone comments. */
+  review_id: number | null;
 }
 
 // =============================================================================

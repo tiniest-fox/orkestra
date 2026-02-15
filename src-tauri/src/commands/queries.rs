@@ -233,10 +233,16 @@ pub struct PrCheck {
 /// A single review status.
 #[derive(Serialize)]
 pub struct PrReview {
+    /// GitHub review ID (numeric, from REST API).
+    pub id: i64,
     /// GitHub username of the reviewer.
     pub author: String,
     /// Review state: "APPROVED", "`CHANGES_REQUESTED`", "COMMENTED", or "PENDING".
     pub state: String,
+    /// Review body (markdown), may be empty.
+    pub body: Option<String>,
+    /// When the review was submitted (ISO 8601). Empty for pending reviews.
+    pub submitted_at: String,
 }
 
 /// A single PR review comment.
@@ -254,6 +260,8 @@ pub struct PrComment {
     pub line: Option<u32>,
     /// When the comment was created (ISO 8601).
     pub created_at: String,
+    /// Review ID this comment belongs to (null for standalone comments).
+    pub review_id: Option<i64>,
 }
 
 /// Raw JSON response from `gh pr view --json`.
@@ -264,8 +272,6 @@ struct GhPrResponse {
     state: String,
     #[serde(default)]
     status_check_rollup: Vec<GhStatusCheck>,
-    #[serde(default)]
-    reviews: Vec<GhReview>,
 }
 
 /// Raw JSON response from `gh api` for review comments.
@@ -278,6 +284,17 @@ struct GhApiReviewComment {
     #[serde(default)]
     line: Option<u32>,
     created_at: String,
+    pull_request_review_id: Option<i64>,
+}
+
+/// Raw JSON response from `gh api` for reviews.
+#[derive(Deserialize)]
+struct GhApiReview {
+    id: i64,
+    user: Option<GhAuthor>,
+    body: Option<String>,
+    state: String,
+    submitted_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -285,12 +302,6 @@ struct GhStatusCheck {
     name: String,
     status: Option<String>,
     conclusion: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct GhReview {
-    author: GhAuthor,
-    state: String,
 }
 
 #[derive(Deserialize)]
@@ -398,19 +409,24 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
         )
     })?;
 
-    // Run both gh calls concurrently.
-    let api_path = format!("repos/{owner}/{repo}/pulls/{number}/comments");
+    // Run all gh calls concurrently.
+    let reviews_path = format!("repos/{owner}/{repo}/pulls/{number}/reviews");
+    let comments_path = format!("repos/{owner}/{repo}/pulls/{number}/comments");
     let pr_view_args = [
         "pr",
         "view",
         &pr_url,
         "--json",
-        "state,statusCheckRollup,reviews,url,number",
+        "state,statusCheckRollup,url,number",
     ];
-    let comments_args: [&str; 2] = ["api", &api_path];
+    let reviews_args: [&str; 2] = ["api", &reviews_path];
+    let comments_args: [&str; 2] = ["api", &comments_path];
 
-    let (pr_view_result, comments_result) =
-        tokio::join!(run_gh(&pr_view_args), run_gh(&comments_args));
+    let (pr_view_result, reviews_result, comments_result) = tokio::join!(
+        run_gh(&pr_view_args),
+        run_gh(&reviews_args),
+        run_gh(&comments_args)
+    );
 
     // PR view is required.
     let stdout = pr_view_result?;
@@ -432,14 +448,26 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
         })
         .collect();
 
-    let reviews: Vec<PrReview> = response
-        .reviews
-        .iter()
-        .map(|review| PrReview {
-            author: review.author.login.clone(),
-            state: review.state.clone(),
-        })
-        .collect();
+    // Reviews are non-fatal: PR status is still useful without them.
+    let reviews = match reviews_result {
+        Ok(api_stdout) => {
+            let api_reviews: Vec<GhApiReview> =
+                serde_json::from_str(&api_stdout).unwrap_or_default();
+            api_reviews
+                .into_iter()
+                .filter_map(|r| {
+                    Some(PrReview {
+                        id: r.id,
+                        author: r.user?.login,
+                        state: r.state,
+                        body: r.body,
+                        submitted_at: r.submitted_at.unwrap_or_default(),
+                    })
+                })
+                .collect()
+        }
+        Err(_) => Vec::new(),
+    };
 
     // Comments are non-fatal: PR status is still useful without them.
     let comments = match comments_result {
@@ -456,6 +484,7 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
                         path: c.path,
                         line: c.line,
                         created_at: c.created_at,
+                        review_id: c.pull_request_review_id,
                     })
                 })
                 .collect()
@@ -568,15 +597,13 @@ mod tests {
         let json = r#"{
             "url": "https://github.com/owner/repo/pull/123",
             "state": "OPEN",
-            "statusCheckRollup": [],
-            "reviews": []
+            "statusCheckRollup": []
         }"#;
 
         let response: GhPrResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.url, "https://github.com/owner/repo/pull/123");
         assert_eq!(response.state, "OPEN");
         assert!(response.status_check_rollup.is_empty());
-        assert!(response.reviews.is_empty());
     }
 
     #[test]
@@ -588,7 +615,8 @@ mod tests {
                 "body": "Please fix this",
                 "path": "src/main.rs",
                 "line": 10,
-                "created_at": "2024-01-15T10:30:00Z"
+                "created_at": "2024-01-15T10:30:00Z",
+                "pull_request_review_id": 999
             },
             {
                 "id": 43,
@@ -596,7 +624,8 @@ mod tests {
                 "body": "General comment",
                 "path": null,
                 "line": null,
-                "created_at": "2024-01-15T11:00:00Z"
+                "created_at": "2024-01-15T11:00:00Z",
+                "pull_request_review_id": null
             }
         ]"#;
 
@@ -608,10 +637,12 @@ mod tests {
         assert_eq!(comments[0].body, "Please fix this");
         assert_eq!(comments[0].path, Some("src/main.rs".to_string()));
         assert_eq!(comments[0].line, Some(10));
+        assert_eq!(comments[0].pull_request_review_id, Some(999));
 
         assert_eq!(comments[1].id, 43);
         assert_eq!(comments[1].path, None);
         assert_eq!(comments[1].line, None);
+        assert_eq!(comments[1].pull_request_review_id, None);
     }
 
     #[test]
@@ -623,7 +654,8 @@ mod tests {
                 "body": "Valid comment",
                 "path": "src/main.rs",
                 "line": 10,
-                "created_at": "2024-01-15T10:30:00Z"
+                "created_at": "2024-01-15T10:30:00Z",
+                "pull_request_review_id": 999
             },
             {
                 "id": 44,
@@ -631,7 +663,8 @@ mod tests {
                 "body": "Missing author",
                 "path": null,
                 "line": null,
-                "created_at": "2024-01-15T10:30:00Z"
+                "created_at": "2024-01-15T10:30:00Z",
+                "pull_request_review_id": null
             }
         ]"#;
 
@@ -646,6 +679,7 @@ mod tests {
                     path: c.path,
                     line: c.line,
                     created_at: c.created_at,
+                    review_id: c.pull_request_review_id,
                 })
             })
             .collect();
@@ -653,6 +687,55 @@ mod tests {
         assert_eq!(comments.len(), 1);
         assert_eq!(comments[0].id, 42);
         assert_eq!(comments[0].author, "reviewer");
+        assert_eq!(comments[0].review_id, Some(999));
+    }
+
+    #[test]
+    fn deserialize_api_reviews() {
+        let json = r#"[
+            {
+                "id": 999,
+                "user": {"login": "reviewer"},
+                "body": "LGTM!",
+                "state": "APPROVED",
+                "submitted_at": "2024-01-15T10:30:00Z"
+            },
+            {
+                "id": 1000,
+                "user": {"login": "reviewer2"},
+                "body": null,
+                "state": "CHANGES_REQUESTED",
+                "submitted_at": "2024-01-15T11:00:00Z"
+            },
+            {
+                "id": 1001,
+                "user": {"login": "reviewer3"},
+                "body": "",
+                "state": "PENDING",
+                "submitted_at": null
+            }
+        ]"#;
+
+        let reviews: Vec<GhApiReview> = serde_json::from_str(json).unwrap();
+        assert_eq!(reviews.len(), 3);
+
+        assert_eq!(reviews[0].id, 999);
+        assert_eq!(reviews[0].user.as_ref().unwrap().login, "reviewer");
+        assert_eq!(reviews[0].body, Some("LGTM!".to_string()));
+        assert_eq!(reviews[0].state, "APPROVED");
+        assert_eq!(
+            reviews[0].submitted_at,
+            Some("2024-01-15T10:30:00Z".to_string())
+        );
+
+        assert_eq!(reviews[1].id, 1000);
+        assert_eq!(reviews[1].body, None);
+        assert_eq!(reviews[1].state, "CHANGES_REQUESTED");
+
+        assert_eq!(reviews[2].id, 1001);
+        assert_eq!(reviews[2].body, Some(String::new()));
+        assert_eq!(reviews[2].state, "PENDING");
+        assert_eq!(reviews[2].submitted_at, None);
     }
 
     #[test]

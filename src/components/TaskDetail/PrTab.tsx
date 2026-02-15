@@ -5,15 +5,19 @@
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Circle,
   ExternalLink,
   Loader2,
   MessageCircle,
   XCircle,
 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { usePrStatus } from "../../providers";
 import type { PrCheck, PrComment, PrReview } from "../../types/workflow";
 import { Badge, CollapsibleSection, FlexContainer, Link, Panel } from "../ui";
+import { groupCommentsByReview } from "./groupCommentsByReview";
 
 interface PrTabProps {
   prUrl: string;
@@ -39,6 +43,26 @@ export function PrTab({
   const { getPrStatus, isLoading } = usePrStatus();
   const status = getPrStatus(taskId);
   const loading = isLoading(taskId);
+
+  // Manage expansion state for each review
+  const [expandedReviews, setExpandedReviews] = useState<Set<number>>(new Set());
+
+  const toggleReview = (id: number) => {
+    setExpandedReviews((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const { reviewsWithComments, standaloneComments } = useMemo(
+    () => groupCommentsByReview(status?.reviews ?? [], status?.comments ?? []),
+    [status?.reviews, status?.comments],
+  );
+
+  const hasAnyComments =
+    standaloneComments.length > 0 || reviewsWithComments.some((r) => r.comments.length > 0);
 
   return (
     <FlexContainer direction="vertical" padded={true} gap={12} scrolls={true}>
@@ -76,40 +100,27 @@ export function PrTab({
         </CollapsibleSection>
       )}
 
-      {/* Reviews section */}
-      {status?.reviews && status.reviews.length > 0 && (
-        <CollapsibleSection title="Reviews" count={status.reviews.length} className="flex-shrink-0">
-          <Panel autoFill={false} padded={true}>
-            <div className="space-y-1">
-              {status.reviews.map((review) => (
-                <ReviewRow key={review.author} review={review} />
-              ))}
-            </div>
-          </Panel>
-        </CollapsibleSection>
-      )}
-
-      {/* Comments section */}
-      {status?.comments && status.comments.length > 0 && (
+      {/* Reviews section with nested comments */}
+      {reviewsWithComments.length > 0 && (
         <CollapsibleSection
-          title="Comments"
-          count={status.comments.length}
+          title="Reviews"
+          count={reviewsWithComments.length}
           className="flex-shrink-0"
         >
           <Panel autoFill={false} padded={true}>
             <div className="space-y-3">
-              {status.comments.map((comment) => (
-                <CommentRow
-                  key={comment.id}
-                  comment={comment}
-                  selected={selectedCommentIds?.has(comment.id) ?? false}
-                  onToggle={() => {
+              {reviewsWithComments.map(({ review, comments }) => (
+                <ReviewRow
+                  key={review.id}
+                  review={review}
+                  comments={comments}
+                  expanded={expandedReviews.has(review.id)}
+                  onToggle={() => toggleReview(review.id)}
+                  selectedCommentIds={selectedCommentIds}
+                  onCommentToggle={(id) => {
                     const newSet = new Set(selectedCommentIds);
-                    if (newSet.has(comment.id)) {
-                      newSet.delete(comment.id);
-                    } else {
-                      newSet.add(comment.id);
-                    }
+                    if (newSet.has(id)) newSet.delete(id);
+                    else newSet.add(id);
                     onSelectionChange?.(newSet);
                   }}
                 />
@@ -119,8 +130,35 @@ export function PrTab({
         </CollapsibleSection>
       )}
 
-      {/* Guidance section */}
-      {status?.comments && status.comments.length > 0 && (
+      {/* Standalone Comments section */}
+      {standaloneComments.length > 0 && (
+        <CollapsibleSection
+          title="Standalone Comments"
+          count={standaloneComments.length}
+          className="flex-shrink-0"
+        >
+          <Panel autoFill={false} padded={true}>
+            <div className="space-y-3">
+              {standaloneComments.map((comment) => (
+                <CommentRow
+                  key={comment.id}
+                  comment={comment}
+                  selected={selectedCommentIds?.has(comment.id) ?? false}
+                  onToggle={() => {
+                    const newSet = new Set(selectedCommentIds);
+                    if (newSet.has(comment.id)) newSet.delete(comment.id);
+                    else newSet.add(comment.id);
+                    onSelectionChange?.(newSet);
+                  }}
+                />
+              ))}
+            </div>
+          </Panel>
+        </CollapsibleSection>
+      )}
+
+      {/* Guidance section - show when there are any comments */}
+      {hasAnyComments && (
         <Panel autoFill={false} padded={true} className="flex-shrink-0">
           <h4 className="text-sm font-medium mb-2 text-stone-700 dark:text-stone-300">
             Guidance (optional)
@@ -129,7 +167,7 @@ export function PrTab({
             value={guidance ?? ""}
             onChange={(e) => onGuidanceChange?.(e.target.value)}
             placeholder="Add any additional context or instructions..."
-            className="w-full h-20 text-sm rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 p-2 resize-none"
+            className="w-full h-20 text-sm rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 placeholder:text-stone-400 dark:placeholder:text-stone-500 p-2 resize-none"
           />
         </Panel>
       )}
@@ -137,8 +175,8 @@ export function PrTab({
       {/* Empty state for no checks/reviews/comments */}
       {status &&
         status.checks.length === 0 &&
-        status.reviews.length === 0 &&
-        (status.comments?.length ?? 0) === 0 && (
+        reviewsWithComments.length === 0 &&
+        standaloneComments.length === 0 && (
           <div className="flex-shrink-0 text-sm text-stone-500 dark:text-stone-400 text-center py-4">
             No checks, reviews, or comments yet
           </div>
@@ -183,7 +221,26 @@ function CheckRow({ check }: { check: PrCheck }) {
   );
 }
 
-function ReviewRow({ review }: { review: PrReview }) {
+function ReviewRow({
+  review,
+  comments,
+  expanded,
+  onToggle,
+  selectedCommentIds,
+  onCommentToggle,
+}: {
+  review: PrReview;
+  comments?: PrComment[];
+  expanded?: boolean;
+  onToggle?: () => void;
+  selectedCommentIds?: Set<number>;
+  onCommentToggle?: (id: number) => void;
+}) {
+  const hasComments = comments && comments.length > 0;
+  const selectedCount = hasComments
+    ? comments.filter((c) => selectedCommentIds?.has(c.id)).length
+    : 0;
+
   const normalizedState = review.state.toLowerCase();
   const icon =
     normalizedState === "approved" ? (
@@ -206,10 +263,47 @@ function ReviewRow({ review }: { review: PrReview }) {
           : "pending";
 
   return (
-    <div className="flex items-center gap-2 text-sm">
-      {icon}
-      <span className="font-medium text-stone-700 dark:text-stone-300">{review.author}</span>
-      <span className="text-stone-500 dark:text-stone-400">{stateLabel}</span>
+    <div>
+      <div className="flex items-center gap-2 text-sm">
+        {hasComments && (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={expanded ? "Collapse comments" : "Expand comments"}
+            className="p-0.5 rounded hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-500 dark:text-stone-400"
+          >
+            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+        )}
+        {icon}
+        <span className="font-medium text-stone-700 dark:text-stone-300">{review.author}</span>
+        <span className="text-stone-500 dark:text-stone-400">{stateLabel}</span>
+        {hasComments && (
+          <span className="text-xs text-stone-500 dark:text-stone-400">
+            ({comments.length} comment{comments.length !== 1 ? "s" : ""})
+          </span>
+        )}
+        {!expanded && selectedCount > 0 && (
+          <span className="text-xs text-info-500">{selectedCount} selected</span>
+        )}
+      </div>
+      {review.body && (
+        <div className="text-sm text-stone-600 dark:text-stone-400 mt-1 ml-6 whitespace-pre-wrap">
+          {review.body}
+        </div>
+      )}
+      {expanded && hasComments && (
+        <div className="ml-6 mt-2 border-l-2 border-stone-200 dark:border-stone-700 pl-3 space-y-3">
+          {comments.map((comment) => (
+            <CommentRow
+              key={comment.id}
+              comment={comment}
+              selected={selectedCommentIds?.has(comment.id) ?? false}
+              onToggle={() => onCommentToggle?.(comment.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

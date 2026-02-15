@@ -126,9 +126,27 @@ describe("PrTab", () => {
       state: "open",
       checks: [],
       reviews: [
-        { author: "alice", state: "APPROVED" },
-        { author: "bob", state: "CHANGES_REQUESTED" },
-        { author: "carol", state: "COMMENTED" },
+        {
+          id: 1,
+          author: "alice",
+          state: "APPROVED",
+          body: null,
+          submitted_at: new Date().toISOString(),
+        },
+        {
+          id: 2,
+          author: "bob",
+          state: "CHANGES_REQUESTED",
+          body: null,
+          submitted_at: new Date().toISOString(),
+        },
+        {
+          id: 3,
+          author: "carol",
+          state: "COMMENTED",
+          body: null,
+          submitted_at: new Date().toISOString(),
+        },
       ],
       comments: [],
       fetched_at: new Date().toISOString(),
@@ -149,7 +167,7 @@ describe("PrTab", () => {
     expect(screen.getByText("commented")).toBeInTheDocument();
   });
 
-  it("shows comments with author and file context", async () => {
+  it("shows standalone comments with author and file context", async () => {
     mockStatuses.set("task-1", {
       url: "https://github.com/test/repo/pull/42",
       state: "open",
@@ -163,19 +181,25 @@ describe("PrTab", () => {
           path: "src/main.rs",
           line: 42,
           created_at: new Date().toISOString(),
+          review_id: null,
         },
         {
           id: 2,
           author: "bob",
           body: "Consider refactoring",
           path: "src/lib.rs",
+          line: null,
           created_at: new Date().toISOString(),
+          review_id: null,
         },
         {
           id: 3,
           author: "carol",
           body: "General comment",
+          path: null,
+          line: null,
           created_at: new Date().toISOString(),
+          review_id: null,
         },
       ],
       fetched_at: new Date().toISOString(),
@@ -183,8 +207,8 @@ describe("PrTab", () => {
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
 
-    // Comments section is collapsed by default - expand it
-    const commentsHeader = screen.getByRole("button", { name: /comments/i });
+    // Standalone Comments section is collapsed by default - expand it
+    const commentsHeader = screen.getByRole("button", { name: /standalone comments/i });
     expect(commentsHeader).toBeInTheDocument();
     await userEvent.click(commentsHeader);
 
@@ -230,7 +254,10 @@ describe("PrTab", () => {
           id: 123,
           author: "alice",
           body: "Test comment",
+          path: null,
+          line: null,
           created_at: new Date().toISOString(),
+          review_id: null,
         },
       ],
       fetched_at: new Date().toISOString(),
@@ -245,8 +272,8 @@ describe("PrTab", () => {
       />,
     );
 
-    // Expand comments section
-    const commentsHeader = screen.getByRole("button", { name: /comments/i });
+    // Expand standalone comments section
+    const commentsHeader = screen.getByRole("button", { name: /standalone comments/i });
     await userEvent.click(commentsHeader);
 
     // Click the checkbox
@@ -272,7 +299,10 @@ describe("PrTab", () => {
           id: 456,
           author: "bob",
           body: "Another comment",
+          path: null,
+          line: null,
           created_at: new Date().toISOString(),
+          review_id: null,
         },
       ],
       fetched_at: new Date().toISOString(),
@@ -287,8 +317,8 @@ describe("PrTab", () => {
       />,
     );
 
-    // Expand comments section
-    const commentsHeader = screen.getByRole("button", { name: /comments/i });
+    // Expand standalone comments section
+    const commentsHeader = screen.getByRole("button", { name: /standalone comments/i });
     await userEvent.click(commentsHeader);
 
     // Click the checkbox to deselect
@@ -308,13 +338,24 @@ describe("PrTab", () => {
       url: "https://github.com/test/repo/pull/42",
       state: "open",
       checks: [{ name: "tests", status: "success" }],
-      reviews: [{ author: "alice", state: "APPROVED" }],
+      reviews: [
+        {
+          id: 1,
+          author: "alice",
+          state: "APPROVED",
+          body: null,
+          submitted_at: new Date().toISOString(),
+        },
+      ],
       comments: [
         {
           id: 1,
           author: "bob",
           body: "Test",
+          path: null,
+          line: null,
           created_at: new Date().toISOString(),
+          review_id: null,
         },
       ],
       fetched_at: new Date().toISOString(),
@@ -325,11 +366,215 @@ describe("PrTab", () => {
     // Section headers should be visible
     expect(screen.getByRole("button", { name: /checks/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reviews/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /comments/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /standalone comments/i })).toBeInTheDocument();
 
     // Content inside sections should NOT be visible (collapsed)
     expect(screen.queryByText("tests")).not.toBeInTheDocument();
     expect(screen.queryByText("alice")).not.toBeInTheDocument();
     expect(screen.queryByText("bob")).not.toBeInTheDocument();
+  });
+
+  describe("comment grouping", () => {
+    it("nests comments under their parent review", async () => {
+      mockStatuses.set("task-1", {
+        url: "https://github.com/test/repo/pull/42",
+        state: "open",
+        checks: [],
+        reviews: [
+          {
+            id: 100,
+            author: "alice",
+            state: "APPROVED",
+            body: null,
+            submitted_at: new Date().toISOString(),
+          },
+        ],
+        comments: [
+          {
+            id: 1,
+            author: "alice",
+            body: "Nested comment",
+            path: "src/main.rs",
+            line: 10,
+            created_at: new Date().toISOString(),
+            review_id: 100, // Matches alice's review
+          },
+        ],
+        fetched_at: new Date().toISOString(),
+      });
+
+      render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
+
+      // Expand Reviews section
+      await userEvent.click(screen.getByRole("button", { name: /reviews/i }));
+
+      // Comment count shown on review row
+      expect(screen.getByText("(1 comment)")).toBeInTheDocument();
+
+      // Comment NOT visible until review expanded
+      expect(screen.queryByText("Nested comment")).not.toBeInTheDocument();
+
+      // No standalone comments section (all comments nested)
+      expect(
+        screen.queryByRole("button", { name: /standalone comments/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows orphaned comments in standalone section", async () => {
+      mockStatuses.set("task-1", {
+        url: "https://github.com/test/repo/pull/42",
+        state: "open",
+        checks: [],
+        reviews: [
+          {
+            id: 100,
+            author: "alice",
+            state: "APPROVED",
+            body: null,
+            submitted_at: new Date().toISOString(),
+          },
+        ],
+        comments: [
+          {
+            id: 1,
+            author: "bob",
+            body: "Orphaned comment",
+            path: null,
+            line: null,
+            created_at: new Date().toISOString(),
+            review_id: 999, // Points to non-existent review
+          },
+        ],
+        fetched_at: new Date().toISOString(),
+      });
+
+      render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
+
+      // Expand Standalone Comments section
+      const standaloneHeader = screen.getByRole("button", { name: /standalone comments/i });
+      expect(standaloneHeader).toBeInTheDocument();
+      await userEvent.click(standaloneHeader);
+
+      // Orphaned comment appears in standalone section
+      expect(screen.getByText("Orphaned comment")).toBeInTheDocument();
+    });
+
+    it("expands review to show nested comments", async () => {
+      mockStatuses.set("task-1", {
+        url: "https://github.com/test/repo/pull/42",
+        state: "open",
+        checks: [],
+        reviews: [
+          {
+            id: 100,
+            author: "alice",
+            state: "COMMENTED",
+            body: null,
+            submitted_at: new Date().toISOString(),
+          },
+        ],
+        comments: [
+          {
+            id: 1,
+            author: "alice",
+            body: "First nested comment",
+            path: "src/lib.rs",
+            line: 5,
+            created_at: new Date().toISOString(),
+            review_id: 100,
+          },
+          {
+            id: 2,
+            author: "alice",
+            body: "Second nested comment",
+            path: "src/lib.rs",
+            line: 10,
+            created_at: new Date().toISOString(),
+            review_id: 100,
+          },
+        ],
+        fetched_at: new Date().toISOString(),
+      });
+
+      render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
+
+      // Expand Reviews section first
+      await userEvent.click(screen.getByRole("button", { name: /reviews/i }));
+
+      // Comments not visible initially (review row is collapsed)
+      expect(screen.queryByText("First nested comment")).not.toBeInTheDocument();
+
+      // The review row shows the comment count - find the row containing it and click the chevron
+      const commentCountText = screen.getByText("(2 comments)");
+      // The comment count is in a span inside the flex row div
+      const flexRow = commentCountText.closest("div");
+      expect(flexRow).not.toBeNull();
+
+      // The chevron button is inside the flex row
+      const chevronButton = flexRow?.querySelector("button");
+      expect(chevronButton).not.toBeNull();
+      if (chevronButton) {
+        await userEvent.click(chevronButton);
+      }
+
+      // Now comments are visible
+      expect(screen.getByText("First nested comment")).toBeInTheDocument();
+      expect(screen.getByText("Second nested comment")).toBeInTheDocument();
+    });
+
+    it("shows selected count badge when review is collapsed with selected comments", async () => {
+      const onSelectionChange = vi.fn();
+      mockStatuses.set("task-1", {
+        url: "https://github.com/test/repo/pull/42",
+        state: "open",
+        checks: [],
+        reviews: [
+          {
+            id: 100,
+            author: "alice",
+            state: "COMMENTED",
+            body: null,
+            submitted_at: new Date().toISOString(),
+          },
+        ],
+        comments: [
+          {
+            id: 1,
+            author: "alice",
+            body: "Comment one",
+            path: null,
+            line: null,
+            created_at: new Date().toISOString(),
+            review_id: 100,
+          },
+          {
+            id: 2,
+            author: "alice",
+            body: "Comment two",
+            path: null,
+            line: null,
+            created_at: new Date().toISOString(),
+            review_id: 100,
+          },
+        ],
+        fetched_at: new Date().toISOString(),
+      });
+
+      // Render with 2 comments pre-selected
+      render(
+        <PrTab
+          prUrl="https://github.com/test/repo/pull/42"
+          taskId="task-1"
+          selectedCommentIds={new Set([1, 2])}
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+
+      // Expand Reviews section
+      await userEvent.click(screen.getByRole("button", { name: /reviews/i }));
+
+      // Badge shows "2 selected" (review is collapsed by default)
+      expect(screen.getByText("2 selected")).toBeInTheDocument();
+    });
   });
 });

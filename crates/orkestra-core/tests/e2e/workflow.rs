@@ -847,6 +847,175 @@ fn test_custom_integration_on_failure() {
     );
 }
 
+/// Test that flow `on_failure` override is used for integration failure recovery.
+///
+/// When a task using a flow with `on_failure` override encounters integration failure,
+/// it should return to the flow's override stage, not the global `integration.on_failure`.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn test_integration_failure_uses_flow_on_failure_override() {
+    use indexmap::IndexMap;
+    use orkestra_core::workflow::config::{
+        FlowConfig, FlowStageEntry, IntegrationConfig, StageCapabilities, StageConfig,
+    };
+
+    // Build workflow where:
+    // - Global integration.on_failure = "work"
+    // - Flow "quick" has on_failure = "planning"
+    let mut flows = IndexMap::new();
+    flows.insert(
+        "quick".to_string(),
+        FlowConfig {
+            description: "Quick flow with custom recovery".to_string(),
+            icon: None,
+            stages: vec![
+                FlowStageEntry {
+                    stage_name: "planning".to_string(),
+                    overrides: None,
+                },
+                FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: None,
+                },
+                FlowStageEntry {
+                    stage_name: "review".to_string(),
+                    overrides: None,
+                },
+            ],
+            on_failure: Some("planning".to_string()), // Override!
+        },
+    );
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_inputs(vec!["plan".into()]),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_inputs(vec!["summary".into()])
+            .automated(),
+    ])
+    .with_integration(IntegrationConfig {
+        on_failure: "work".to_string(), // Global setting
+        auto_merge: true,               // Enable auto-merge to trigger integration
+    })
+    .with_flows(flows);
+
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
+
+    // Create task with the "quick" flow
+    let task = ctx
+        .api()
+        .create_task_with_options(
+            "Test flow override",
+            "Test description",
+            None,
+            false,
+            Some("quick"),
+        )
+        .unwrap();
+    let task_id = task.id.clone();
+
+    // Planning stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // setup → spawns planner
+    ctx.advance(); // processes plan
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline → advance to work
+
+    // Work stage: commit a file in the worktree so there's something to merge
+    let worktree_path = ctx.api().get_task(&task_id).unwrap().worktree_path.unwrap();
+    std::fs::write(
+        std::path::Path::new(&worktree_path).join("conflict.txt"),
+        "Task's version",
+    )
+    .unwrap();
+    std::process::Command::new("git")
+        .args(["add", "."])
+        .current_dir(&worktree_path)
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["commit", "-m", "Add conflict file"])
+        .current_dir(&worktree_path)
+        .output()
+        .unwrap();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Summary".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes work output
+    ctx.api().approve(&task_id).unwrap();
+
+    // Create a conflict on base branch BEFORE the review completes, so auto-integration fails
+    let base_branch = ctx.api().get_task(&task_id).unwrap().base_branch.clone();
+    orkestra_core::testutil::create_and_commit_file_on_branch(
+        ctx.repo_path(),
+        &base_branch,
+        "conflict.txt",
+        "Base branch's conflicting version",
+        "Add conflicting file on base branch",
+    )
+    .unwrap();
+
+    // Review stage (auto-approves to Done → auto-integration fails → recovery to planning)
+    // Queue both: verdict for the review agent, then plan for the recovery planning agent
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
+            content: "LGTM".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Recovery plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns reviewer
+    ctx.advance(); // processes review → auto-approve → Done → integration fails → recovers to planning → spawns planner
+    ctx.advance(); // processes planner output
+
+    // Verify task is in PLANNING stage (flow's on_failure), not work (global on_failure)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.current_stage(),
+        Some("planning"),
+        "Task should recover to flow's on_failure stage 'planning', not global 'work'. Got: {:?}",
+        task.current_stage()
+    );
+
+    // Verify integration failure was recorded
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let integration_failure = iterations
+        .iter()
+        .find(|i| matches!(i.outcome.as_ref(), Some(Outcome::IntegrationFailed { .. })));
+    assert!(
+        integration_failure.is_some(),
+        "Should have integration failure iteration"
+    );
+}
+
 /// Test script stage execution with failure recovery.
 ///
 /// Flow:
@@ -4415,6 +4584,7 @@ fn test_disallowed_tools_flow_override() {
                     disallowed_tools: Some(vec![]), // Explicitly no restrictions
                 }),
             }],
+            on_failure: None,
         },
     );
 

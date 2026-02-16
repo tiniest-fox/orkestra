@@ -207,18 +207,20 @@ impl WorkflowApi {
 
     /// Get the stage to return to on integration failure.
     ///
-    /// Uses the workflow's integration config, but validates the configured
-    /// `on_failure` stage exists in the task's flow. Falls back to the first
-    /// stage in the flow if the configured stage is not available.
+    /// Uses the flow's `on_failure` override if set, otherwise the global
+    /// `integration.on_failure`. Falls back to the first stage in the flow
+    /// if the configured stage is not available (defensive, should not
+    /// happen with properly validated configs).
     pub fn integration_failure_stage(&self, flow: Option<&str>) -> Option<String> {
-        let configured = &self.workflow.integration.on_failure;
+        let configured = self.workflow.effective_integration_on_failure(flow);
 
         // Validate the configured stage exists in this task's flow
         if self.workflow.stage_in_flow(configured, flow) {
-            return Some(configured.clone());
+            return Some(configured.to_string());
         }
 
         // Fallback: use the first stage in the flow
+        // This should not happen with validated configs, but provides runtime resilience
         self.workflow
             .first_stage_in_flow(flow)
             .map(|s| s.name.clone())
@@ -383,8 +385,11 @@ impl WorkflowApi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::config::{StageCapabilities, StageConfig};
+    use crate::workflow::config::{
+        FlowConfig, FlowStageEntry, IntegrationConfig, StageCapabilities, StageConfig,
+    };
     use crate::workflow::InMemoryWorkflowStore;
+    use indexmap::IndexMap;
     use std::sync::Arc;
 
     fn test_workflow() -> WorkflowConfig {
@@ -467,6 +472,60 @@ mod tests {
         assert_eq!(
             api.integration_failure_stage(None),
             Some("work".to_string())
+        );
+    }
+
+    #[test]
+    fn test_integration_failure_stage_with_flow_override() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".to_string(),
+            FlowConfig {
+                description: "Quick flow".to_string(),
+                icon: None,
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "planning".to_string(),
+                        overrides: None,
+                    },
+                    FlowStageEntry {
+                        stage_name: "work".to_string(),
+                        overrides: None,
+                    },
+                ],
+                on_failure: Some("planning".to_string()),
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan")
+                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("breakdown", "subtasks"),
+            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("review", "verdict")
+                .with_inputs(vec!["plan".into(), "summary".into()])
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+                .automated(),
+        ])
+        .with_integration(IntegrationConfig {
+            on_failure: "work".to_string(),
+            auto_merge: false,
+        })
+        .with_flows(flows);
+
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        // Default flow uses global
+        assert_eq!(
+            api.integration_failure_stage(None),
+            Some("work".to_string())
+        );
+
+        // Flow with override uses override
+        assert_eq!(
+            api.integration_failure_stage(Some("quick")),
+            Some("planning".to_string())
         );
     }
 

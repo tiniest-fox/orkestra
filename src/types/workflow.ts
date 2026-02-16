@@ -104,6 +104,8 @@ export interface FlowConfig {
   icon?: string;
   /** Ordered list of stages in this flow. */
   stages: FlowStageEntry[];
+  /** Override for integration.on_failure — stage to return to after integration failure. */
+  on_failure?: string;
 }
 
 /**

@@ -44,6 +44,11 @@ pub struct FlowConfig {
     /// Each entry is either a stage name (string) or a map with one key
     /// (stage name) whose value contains overrides.
     pub stages: Vec<FlowStageEntry>,
+
+    /// Override for `integration.on_failure` — stage to return to after integration failure.
+    /// When absent, inherits global `integration.on_failure`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_failure: Option<String>,
 }
 
 /// A stage entry in a flow definition.
@@ -417,6 +422,20 @@ impl WorkflowConfig {
         self.flows.get(name)
     }
 
+    /// Get the effective integration `on_failure` stage for a flow.
+    ///
+    /// Returns the flow's override if set, otherwise the global `integration.on_failure`.
+    pub fn effective_integration_on_failure(&self, flow: Option<&str>) -> &str {
+        if let Some(flow_name) = flow {
+            if let Some(flow_config) = self.flows.get(flow_name) {
+                if let Some(ref on_failure) = flow_config.on_failure {
+                    return on_failure.as_str();
+                }
+            }
+        }
+        &self.integration.on_failure
+    }
+
     /// Validate the workflow configuration.
     /// Returns a list of validation errors, empty if valid.
     pub fn validate(&self) -> Vec<String> {
@@ -722,6 +741,26 @@ impl WorkflowConfig {
                             }
                         }
                     }
+                }
+            }
+
+            // Validate flow on_failure (if set) references a stage in this flow
+            if let Some(ref on_failure) = flow.on_failure {
+                if !flow_stage_names.contains(on_failure.as_str()) {
+                    errors.push(format!(
+                        "Flow \"{flow_name}\" has on_failure=\"{on_failure}\", but \"{on_failure}\" is not in flow \"{flow_name}\""
+                    ));
+                }
+            }
+
+            // Validate global integration.on_failure is in flow (unless flow overrides it)
+            if flow.on_failure.is_none() {
+                let global_on_failure = &self.integration.on_failure;
+                if !flow_stage_names.contains(global_on_failure.as_str()) {
+                    errors.push(format!(
+                        "Flow \"{flow_name}\" does not include global integration.on_failure stage \"{global_on_failure}\" and has no override. \
+                         Either add \"{global_on_failure}\" to the flow's stages or set on_failure on the flow."
+                    ));
                 }
             }
         }
@@ -1442,6 +1481,7 @@ integration:
                         overrides: None,
                     },
                 ],
+                on_failure: None,
             },
         );
 
@@ -1480,6 +1520,7 @@ integration:
                         overrides: None,
                     },
                 ],
+                on_failure: None,
             },
         );
 
@@ -1553,6 +1594,7 @@ integration:
                         disallowed_tools: Some(flow_tools),
                     }),
                 }],
+                on_failure: None,
             },
         );
 
@@ -1584,6 +1626,7 @@ integration:
                     stage_name: "work".to_string(),
                     overrides: None,
                 }],
+                on_failure: None,
             },
         );
 
@@ -1621,6 +1664,7 @@ integration:
                         disallowed_tools: Some(vec![]),
                     }),
                 }],
+                on_failure: None,
             },
         );
 
@@ -1727,6 +1771,7 @@ integration:
                         ]),
                     }),
                 }],
+                on_failure: None,
             },
         );
 
@@ -1802,6 +1847,7 @@ integration:
                     stage_name: "work".to_string(),
                     overrides: None,
                 }],
+                on_failure: None,
             },
         );
         let workflow =
@@ -1811,6 +1857,307 @@ integration:
         assert_eq!(
             workflow.effective_model("work", Some("simple")),
             Some("opus".to_string())
+        );
+    }
+
+    // ========================================================================
+    // Flow integration on_failure tests
+    // ========================================================================
+
+    #[test]
+    fn test_effective_integration_on_failure_no_flow() {
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+        ])
+        .with_integration(IntegrationConfig {
+            on_failure: "planning".to_string(),
+            auto_merge: false,
+        });
+
+        assert_eq!(workflow.effective_integration_on_failure(None), "planning");
+    }
+
+    #[test]
+    fn test_effective_integration_on_failure_flow_with_override() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".to_string(),
+            FlowConfig {
+                description: "Quick flow".to_string(),
+                icon: None,
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "planning".to_string(),
+                        overrides: None,
+                    },
+                    FlowStageEntry {
+                        stage_name: "work".to_string(),
+                        overrides: None,
+                    },
+                ],
+                on_failure: Some("planning".to_string()),
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+        ])
+        .with_integration(IntegrationConfig {
+            on_failure: "work".to_string(),
+            auto_merge: false,
+        })
+        .with_flows(flows);
+
+        // Flow override takes precedence
+        assert_eq!(
+            workflow.effective_integration_on_failure(Some("quick")),
+            "planning"
+        );
+        // Default flow uses global
+        assert_eq!(workflow.effective_integration_on_failure(None), "work");
+    }
+
+    #[test]
+    fn test_effective_integration_on_failure_flow_without_override() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".to_string(),
+            FlowConfig {
+                description: "Quick flow".to_string(),
+                icon: None,
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "planning".to_string(),
+                        overrides: None,
+                    },
+                    FlowStageEntry {
+                        stage_name: "work".to_string(),
+                        overrides: None,
+                    },
+                ],
+                on_failure: None, // No override
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+        ])
+        .with_integration(IntegrationConfig {
+            on_failure: "work".to_string(),
+            auto_merge: false,
+        })
+        .with_flows(flows);
+
+        // No flow override → falls back to global
+        assert_eq!(
+            workflow.effective_integration_on_failure(Some("quick")),
+            "work"
+        );
+    }
+
+    #[test]
+    fn test_effective_integration_on_failure_nonexistent_flow() {
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")])
+            .with_integration(IntegrationConfig {
+                on_failure: "work".to_string(),
+                auto_merge: false,
+            });
+
+        // Nonexistent flow → falls back to global
+        assert_eq!(
+            workflow.effective_integration_on_failure(Some("nonexistent")),
+            "work"
+        );
+    }
+
+    #[test]
+    fn test_flow_on_failure_yaml_round_trip() {
+        let yaml = r"
+version: 1
+stages:
+  - name: planning
+    artifact: plan
+  - name: work
+    artifact: summary
+integration:
+  on_failure: work
+flows:
+  quick:
+    description: Quick flow
+    on_failure: planning
+    stages:
+      - planning
+      - work
+";
+        let workflow: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            workflow.flows.get("quick").unwrap().on_failure,
+            Some("planning".to_string())
+        );
+
+        // Round-trip
+        let serialized = serde_yaml::to_string(&workflow).unwrap();
+        assert!(serialized.contains("on_failure: planning"));
+
+        let reparsed: WorkflowConfig = serde_yaml::from_str(&serialized).unwrap();
+        assert_eq!(
+            reparsed.flows.get("quick").unwrap().on_failure,
+            Some("planning".to_string())
+        );
+    }
+
+    // ========================================================================
+    // Flow on_failure validation tests
+    // ========================================================================
+
+    #[test]
+    fn test_validate_flow_on_failure_not_in_flow() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".to_string(),
+            FlowConfig {
+                description: "Quick flow".to_string(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: None,
+                }],
+                on_failure: Some("planning".to_string()), // Not in flow!
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+        ])
+        .with_integration(IntegrationConfig {
+            on_failure: "work".to_string(),
+            auto_merge: false,
+        })
+        .with_flows(flows);
+
+        let errors = workflow.validate();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("quick") && e.contains("on_failure") && e.contains("planning")),
+            "Expected error about flow on_failure not in flow. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_validate_flow_global_on_failure_not_in_flow_no_override() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".to_string(),
+            FlowConfig {
+                description: "Quick flow".to_string(),
+                icon: None,
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "planning".to_string(),
+                        overrides: None,
+                    },
+                    // Missing "work" which is global on_failure
+                ],
+                on_failure: None, // No override
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+        ])
+        .with_integration(IntegrationConfig {
+            on_failure: "work".to_string(), // Not in quick flow!
+            auto_merge: false,
+        })
+        .with_flows(flows);
+
+        let errors = workflow.validate();
+        assert!(
+            errors.iter().any(|e| e.contains("quick")
+                && e.contains("integration.on_failure")
+                && e.contains("work")),
+            "Expected error about global on_failure not in flow. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_validate_flow_global_on_failure_not_in_flow_with_override_valid() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".to_string(),
+            FlowConfig {
+                description: "Quick flow".to_string(),
+                icon: None,
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "planning".to_string(),
+                        overrides: None,
+                    },
+                    // Missing "work" which is global on_failure, but flow has override
+                ],
+                on_failure: Some("planning".to_string()), // Override present and valid
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+        ])
+        .with_integration(IntegrationConfig {
+            on_failure: "work".to_string(), // Not in quick flow, but overridden
+            auto_merge: false,
+        })
+        .with_flows(flows);
+
+        let errors = workflow.validate();
+        assert!(
+            errors.is_empty(),
+            "Flow with valid on_failure override should be valid even if global on_failure is not in flow. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_validate_flow_with_global_on_failure_in_flow_valid() {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".to_string(),
+            FlowConfig {
+                description: "Quick flow".to_string(),
+                icon: None,
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "planning".to_string(),
+                        overrides: None,
+                    },
+                    FlowStageEntry {
+                        stage_name: "work".to_string(),
+                        overrides: None,
+                    },
+                ],
+                on_failure: None, // No override, but global is in flow
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary"),
+        ])
+        .with_integration(IntegrationConfig {
+            on_failure: "work".to_string(), // In quick flow
+            auto_merge: false,
+        })
+        .with_flows(flows);
+
+        let errors = workflow.validate();
+        assert!(
+            errors.is_empty(),
+            "Flow containing global on_failure should be valid. Got: {errors:?}"
         );
     }
 }

@@ -858,6 +858,7 @@ pub mod workflows {
                         }),
                     },
                 ],
+                on_failure: None,
             },
         );
 

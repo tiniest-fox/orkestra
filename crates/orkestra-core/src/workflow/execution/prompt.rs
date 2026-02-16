@@ -2144,6 +2144,7 @@ mod tests {
                         overrides: None,
                     },
                 ],
+                on_failure: None,
             },
         );
 
@@ -2244,6 +2245,7 @@ mod tests {
                         overrides: None,
                     },
                 ],
+                on_failure: None,
             },
         );
 

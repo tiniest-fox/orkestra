@@ -1,0 +1,21 @@
+[package]
+name = "orkestra-store"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+testutil = []
+
+[dependencies]
+orkestra-types = { path = "../orkestra-types" }
+serde_json = "1"
+thiserror = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+refinery = { version = "0.8", features = ["rusqlite"] }
+petname = "2"
+uuid = { version = "1", features = ["v4"] }
+chrono = "0.4"

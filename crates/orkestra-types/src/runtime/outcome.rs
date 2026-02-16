@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::workflow::domain::Question;
+use crate::domain::Question;
 
 /// How a work loop or iteration ended.
 ///

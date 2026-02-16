@@ -38,7 +38,9 @@ pub mod runtime;
 pub mod services;
 
 // Re-export main types for convenience
-pub use adapters::{Git2GitService, InMemoryWorkflowStore, SqliteWorkflowStore};
+pub use adapters::{Git2GitService, SqliteWorkflowStore};
+#[cfg(any(test, feature = "testutil"))]
+pub use adapters::InMemoryWorkflowStore;
 pub use config::{
     load_auto_task_templates, load_workflow, load_workflow_for_project, AutoTaskTemplate,
     FlowConfig, FlowStageEntry, FlowStageOverride, IntegrationConfig, LoadError, StageCapabilities,

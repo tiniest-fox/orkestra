@@ -6,10 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::question::Question;
-use super::stage_session::StageSession;
-use super::task::Task;
-use crate::workflow::domain::Iteration;
+use crate::workflow::domain::{Iteration, Question, StageSession, Task};
 use crate::workflow::runtime::{Outcome, Phase};
 
 /// A task with pre-joined data and derived state for the frontend.
@@ -269,8 +266,7 @@ fn extract_pending_rejection(task: &Task, iterations: &[Iteration]) -> Option<Pe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::domain::stage_session::SessionState;
-    use crate::workflow::domain::Question;
+    use crate::workflow::domain::{Question, SessionState};
     use crate::workflow::runtime::{Phase, Status};
 
     fn make_task(stage: &str) -> Task {

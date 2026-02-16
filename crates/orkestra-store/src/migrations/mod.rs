@@ -6,21 +6,25 @@
 use refinery::embed_migrations;
 use rusqlite::Connection;
 
-use crate::error::Result;
+use crate::interface::{WorkflowError, WorkflowResult};
 
 // Embed all SQL migration files from this directory
-embed_migrations!("src/adapters/sqlite/migrations");
+embed_migrations!("src/migrations");
 
 /// Run all pending migrations on the connection.
 ///
 /// This is called automatically when opening a database connection.
 /// It's safe to call multiple times - already-applied migrations are skipped.
-pub fn run(conn: &mut Connection) -> Result<()> {
+pub fn run(conn: &mut Connection) -> WorkflowResult<()> {
     migrations::runner()
         .run(conn)
-        .map_err(|e| crate::error::OrkestraError::InvalidInput(format!("Migration error: {e}")))?;
+        .map_err(|e| WorkflowError::Storage(format!("Migration error: {e}")))?;
     Ok(())
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {

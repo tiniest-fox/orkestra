@@ -3,12 +3,5 @@
 //! These types are used during task execution to track state and outcomes.
 //! They are stage-agnostic and work with any workflow configuration.
 
-mod artifact;
-mod markdown;
-mod outcome;
-mod status;
-
-pub use artifact::{Artifact, ArtifactStore};
-pub use markdown::markdown_to_html;
-pub use outcome::Outcome;
-pub use status::{Phase, Status};
+// Re-export all runtime types from orkestra-types
+pub use orkestra_types::runtime::*;

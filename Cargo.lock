@@ -2954,10 +2954,8 @@ dependencies = [
  "orkestra-core",
  "orkestra-git",
  "orkestra-process",
- "petname",
- "pulldown-cmark",
- "refinery",
- "rusqlite",
+ "orkestra-store",
+ "orkestra-types",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2986,6 +2984,30 @@ dependencies = [
  "libc",
  "orkestra-process",
  "serde_json",
+]
+
+[[package]]
+name = "orkestra-store"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "orkestra-types",
+ "petname",
+ "refinery",
+ "rusqlite",
+ "serde_json",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
+name = "orkestra-types"
+version = "0.1.0"
+dependencies = [
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]

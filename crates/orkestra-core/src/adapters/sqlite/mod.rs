@@ -1,9 +1,10 @@
-//! `SQLite` database connection and migrations.
+//! SQLite database connection and migrations.
 //!
-//! This module provides:
-//! - `DatabaseConnection` - Shared connection wrapper with migration support
+//! Re-exports from `orkestra-store`.
 
-mod connection;
-pub mod migrations;
+pub use orkestra_store::DatabaseConnection;
 
-pub use connection::DatabaseConnection;
+/// Migrations re-exported for external access.
+pub mod migrations {
+    pub use orkestra_store::migrations::run;
+}

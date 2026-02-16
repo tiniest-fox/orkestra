@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::workflow::runtime::Outcome;
+use crate::runtime::Outcome;
 
 use super::question::QuestionAnswer;
 

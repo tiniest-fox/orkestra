@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::workflow::runtime::{ArtifactStore, Phase, Status};
+use crate::runtime::{ArtifactStore, Phase, Status};
 
 /// A task in the workflow system.
 ///
@@ -431,7 +431,7 @@ pub fn extract_short_id(task_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::runtime::Artifact;
+    use crate::runtime::Artifact;
 
     #[test]
     fn test_task_new() {

@@ -36,9 +36,6 @@ pub enum OrkestraError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
-    #[error("Database error: {0}")]
-    Database(#[from] rusqlite::Error),
-
     #[error("Git error: {0}")]
     GitError(String),
 

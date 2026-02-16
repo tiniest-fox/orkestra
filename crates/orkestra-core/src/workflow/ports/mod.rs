@@ -22,4 +22,6 @@ pub use orkestra_git::MockGitService;
 #[cfg(any(test, feature = "testutil"))]
 pub use orkestra_process::MockProcessSpawner;
 #[cfg(any(test, feature = "testutil"))]
+pub use orkestra_store::InMemoryWorkflowStore;
+#[cfg(any(test, feature = "testutil"))]
 pub use pr_service::mock::MockPrService;

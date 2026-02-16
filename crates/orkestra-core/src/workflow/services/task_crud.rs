@@ -1,7 +1,7 @@
 //! Task CRUD operations.
 
 use crate::orkestra_debug;
-use crate::workflow::domain::task::extract_short_id;
+use crate::workflow::domain::extract_short_id;
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::Phase;

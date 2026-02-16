@@ -7,8 +7,11 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-use crate::workflow::domain::{AssistantSession, Iteration, LogEntry, StageSession, Task};
-use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
+use orkestra_types::domain::{
+    AssistantSession, Iteration, LogEntry, SessionState, StageSession, Task,
+};
+
+use crate::interface::{WorkflowError, WorkflowResult, WorkflowStore};
 
 /// In-memory implementation of `WorkflowStore` for testing.
 pub struct InMemoryWorkflowStore {
@@ -194,7 +197,6 @@ impl WorkflowStore for InMemoryWorkflowStore {
         task_id: &str,
         stage: &str,
     ) -> WorkflowResult<Option<StageSession>> {
-        use crate::workflow::domain::SessionState;
         let sessions = self
             .stage_sessions
             .lock()
@@ -436,10 +438,14 @@ impl WorkflowStore for InMemoryWorkflowStore {
     }
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::runtime::{Outcome, Phase};
+    use orkestra_types::runtime::{Outcome, Phase};
 
     #[test]
     fn test_task_crud() {

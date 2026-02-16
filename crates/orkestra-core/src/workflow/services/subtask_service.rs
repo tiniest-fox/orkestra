@@ -4,7 +4,7 @@
 //! to markdown artifacts, and creating Task records from approved breakdowns.
 
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::task::extract_short_id;
+use crate::workflow::domain::extract_short_id;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::SubtaskOutput;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};

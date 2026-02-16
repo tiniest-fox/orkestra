@@ -1,4 +1,4 @@
-//! Convert a SQLite row to a `Task` or `TaskHeader`.
+//! Convert a `SQLite` row to a `Task` or `TaskHeader`.
 
 use orkestra_types::domain::{Task, TaskHeader};
 use orkestra_types::runtime::Status;
@@ -8,9 +8,9 @@ use crate::types::parse_phase;
 /// Convert a full task row (19 columns) to a `Task`.
 ///
 /// Column order: id, title, description, status, phase, artifacts,
-/// parent_id, depends_on, branch_name, worktree_path, auto_mode,
-/// created_at, updated_at, completed_at, base_branch, flow, short_id,
-/// base_commit, pr_url
+/// `parent_id`, `depends_on`, `branch_name`, `worktree_path`, `auto_mode`,
+/// `created_at`, `updated_at`, `completed_at`, `base_branch`, flow, `short_id`,
+/// `base_commit`, `pr_url`
 pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
     let status_json: String = row.get(3)?;
     let phase_str: String = row.get(4)?;
@@ -46,9 +46,9 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
 /// Convert a header row (18 columns, no artifacts) to a `TaskHeader`.
 ///
 /// Column order: id, title, description, status, phase,
-/// parent_id, depends_on, branch_name, worktree_path,
-/// auto_mode, created_at, updated_at, completed_at,
-/// base_branch, flow, short_id, base_commit, pr_url
+/// `parent_id`, `depends_on`, `branch_name`, `worktree_path`,
+/// `auto_mode`, `created_at`, `updated_at`, `completed_at`,
+/// `base_branch`, flow, `short_id`, `base_commit`, `pr_url`
 pub fn execute_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
     let status_json: String = row.get(3)?;
     let phase_str: String = row.get(4)?;

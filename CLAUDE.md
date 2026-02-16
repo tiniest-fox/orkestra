@@ -24,15 +24,17 @@ Listed in priority order. When principles conflict, earlier ones win.
 
 ### Module Structure
 
-Every module that owns a domain concern follows this layered structure. This applies whether the module is a standalone crate, a directory inside a crate, or any unit of code that provides a capability through a trait.
+Modules are organized using building blocks from this toolkit. Assemble the pieces your module needs — not every module requires all layers.
 
-| Layer | File(s) | Role | Visibility |
-|-------|---------|------|------------|
-| **Interface** | `interface.rs` | Trait defining the contract. What can this module do? | `pub` |
-| **Types** | `types.rs` | Module-specific types (errors, results, domain models) | `pub` |
-| **Service** | `service.rs` | Production implementation of the trait. Thin dispatcher — each trait method delegates to one interaction. | `pub` |
-| **Interactions** | `interactions/{domain}/*.rs` | Grouped by domain. One file per operation, one `execute()` entry point per file. | `pub` (called by service) |
-| **Mock** | `mock.rs` | Test double implementing the trait. Behind `testutil` feature flag. | `pub` (feature-gated) |
+| Building Block | File(s) | When to Use |
+|----------------|---------|-------------|
+| **Interactions** | `interactions/{domain}/*.rs` | Always — this is where business logic lives. One file per operation, one `execute()` entry point per file. |
+| **Types** | `types.rs` | When the module has its own error types or domain models. |
+| **Interface** (trait) | `interface.rs` | When you need polymorphism: multiple implementations, mocking, or dependency injection. |
+| **Service** | `service.rs` | When you need to group interactions behind a trait with shared state (connections, config). Thin dispatcher — delegates each method to one interaction. |
+| **Mock** | `mock.rs` | When callers need a test double. Behind `testutil` feature flag. |
+
+A module with pure functions and no polymorphism (like `orkestra-schema`) only needs types + logic files. A module with I/O and test doubles (like `orkestra-git`) uses all five layers.
 
 **Rules:**
 
@@ -45,7 +47,7 @@ Every module that owns a domain concern follows this layered structure. This app
 - **Small files are intentional.** A 12-line interaction that wraps a single git command is correct. Predictability and findability beat conciseness.
 - **Errors propagate, not swallow.** Interactions return `Result` and use `?`. Only swallow errors when there's an obvious fallback the caller wouldn't care about (e.g., file-not-found → `Ok(None)`).
 
-**Exemplar:** `crates/orkestra-git/` is the reference implementation of this pattern. When building a new module, use it as the template.
+**Exemplars:** `crates/orkestra-git/` demonstrates all five layers (trait + service + mock). `crates/orkestra-schema/` demonstrates a simpler module (pure functions, types only, no trait).
 
 ### File Structure Conventions
 

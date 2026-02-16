@@ -1,6 +1,6 @@
 //! Database connection wrapper for shared access.
 //!
-//! Provides thread-safe access to a SQLite connection that can be shared
+//! Provides thread-safe access to a `SQLite` connection that can be shared
 //! across multiple repositories.
 
 use std::path::Path;
@@ -12,7 +12,7 @@ use crate::interface::{WorkflowError, WorkflowResult};
 
 /// Shared database connection wrapper.
 ///
-/// Provides thread-safe access to the SQLite connection. All repositories
+/// Provides thread-safe access to the `SQLite` connection. All repositories
 /// hold a clone of the `Arc<Mutex<Connection>>` to share the same connection.
 pub struct DatabaseConnection {
     conn: Arc<Mutex<Connection>>,
@@ -29,8 +29,7 @@ impl DatabaseConnection {
                 .map_err(|e| WorkflowError::Storage(format!("Failed to create directory: {e}")))?;
         }
 
-        let mut conn = Connection::open(path)
-            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        let mut conn = Connection::open(path).map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
         // Enable WAL mode for better concurrent access and crash safety.
         // WAL ensures readers never block writers and incomplete transactions
@@ -56,8 +55,8 @@ impl DatabaseConnection {
     ///
     /// Runs all migrations to ensure schema is initialized.
     pub fn in_memory() -> WorkflowResult<Self> {
-        let mut conn = Connection::open_in_memory()
-            .map_err(|e| WorkflowError::Storage(e.to_string()))?;
+        let mut conn =
+            Connection::open_in_memory().map_err(|e| WorkflowError::Storage(e.to_string()))?;
 
         // Run migrations
         crate::migrations::run(&mut conn)?;

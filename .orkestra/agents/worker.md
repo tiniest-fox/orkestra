@@ -28,17 +28,19 @@ Follow these principles when writing code (in priority order):
 
 When principles conflict, earlier ones take precedence.
 
-## Standard Module Structure
+## Module Structure Toolkit
 
-When creating or extending modules, follow this 5-layer structure:
+When creating or extending modules, assemble the building blocks your module needs:
 
-| Layer | File | Purpose | Visibility |
-|-------|------|---------|------------|
-| Interface | `interface.rs` | Trait defining the contract | `pub` |
-| Types | `types.rs` | Module-specific errors and models | `pub` |
-| Service | `service.rs` | Thin dispatcher: receives calls, delegates to interactions | `pub` |
-| Interactions | `interactions/{domain}/*.rs` | Nested by domain. One `execute()` per file. All dependencies as parameters. | `pub` |
-| Mock | `mock.rs` | Test double implementing the interface trait | `pub` (feature-gated) |
+| Building Block | File | When to Use |
+|----------------|------|-------------|
+| Interactions | `interactions/{domain}/*.rs` | Always — business logic lives here. One `execute()` per file. | `pub` |
+| Types | `types.rs` | When the module has its own error types or domain models | `pub` |
+| Interface (trait) | `interface.rs` | When you need polymorphism (multiple impls, mocking, DI) | `pub` |
+| Service | `service.rs` | When grouping interactions behind a trait with shared state | `pub` |
+| Mock | `mock.rs` | When callers need a test double | `pub` (feature-gated) |
+
+Not every module needs all pieces. A pure-logic module (like `orkestra-schema`) only needs types + logic files. A module with I/O and test doubles (like `orkestra-git`) uses all five.
 
 **Key rules:**
 - One `execute()` per interaction file — private helpers within the file are fine
@@ -46,7 +48,7 @@ When creating or extending modules, follow this 5-layer structure:
 - Shared helpers are private functions inside the interaction that owns them — no separate utilities layer
 - The service is a thin dispatcher; multi-step orchestration stays in the caller
 
-**Reference implementation:** Study `crates/orkestra-git/` before creating new modules — it's the exemplar for this pattern.
+**Reference implementations:** `crates/orkestra-git/` (full trait+service+mock), `crates/orkestra-schema/` (pure functions, no trait).
 
 ## Implementation Mindset
 

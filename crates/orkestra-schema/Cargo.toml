@@ -1,0 +1,11 @@
+[package]
+name = "orkestra-schema"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde_json = "1"
+jsonschema = "0.26"

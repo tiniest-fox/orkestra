@@ -1,4 +1,4 @@
-//! Convert a SQLite row to a `StageSession`.
+//! Convert a `SQLite` row to a `StageSession`.
 
 use orkestra_types::domain::StageSession;
 
@@ -6,8 +6,8 @@ use crate::types::parse_session_state;
 
 /// Convert a row to a `StageSession`.
 ///
-/// Column order: id, task_id, stage, claude_session_id, agent_pid,
-/// spawn_count, session_state, created_at, updated_at, has_activity
+/// Column order: id, `task_id`, stage, `claude_session_id`, `agent_pid`,
+/// `spawn_count`, `session_state`, `created_at`, `updated_at`, `has_activity`
 #[allow(clippy::cast_sign_loss)]
 pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<StageSession> {
     let agent_pid: Option<i32> = row.get(4)?;

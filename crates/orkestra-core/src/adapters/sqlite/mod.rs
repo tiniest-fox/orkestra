@@ -1,4 +1,4 @@
-//! SQLite database connection and migrations.
+//! `SQLite` database connection and migrations.
 //!
 //! Re-exports from `orkestra-store`.
 

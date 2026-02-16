@@ -28,17 +28,19 @@ Your technical design should follow these principles (in priority order):
 8. **Small Components Are Fine** — Twenty-line files are valid if the concept is distinct.
 9. **Precise Naming** — No `process`, `handle`, `data`, `utils`.
 
-## Standard Module Structure
+## Module Structure Toolkit
 
-When designing subtasks that create or extend modules, use this 5-layer structure:
+When designing subtasks that create or extend modules, assemble the building blocks your module needs:
 
-| Layer | File | Purpose | Visibility |
-|-------|------|---------|------------|
-| Interface | `interface.rs` | Trait defining the contract | `pub` |
-| Types | `types.rs` | Module-specific errors and models | `pub` |
-| Service | `service.rs` | Thin dispatcher: receives calls, delegates to interactions | `pub` |
-| Interactions | `interactions/{domain}/*.rs` | Nested by domain. One `execute()` per file. All dependencies as parameters. | `pub` |
-| Mock | `mock.rs` | Test double implementing the interface trait | `pub` (feature-gated) |
+| Building Block | File | When to Use |
+|----------------|------|-------------|
+| Interactions | `interactions/{domain}/*.rs` | Always — business logic lives here. One `execute()` per file. | `pub` |
+| Types | `types.rs` | When the module has its own error types or domain models | `pub` |
+| Interface (trait) | `interface.rs` | When you need polymorphism (multiple impls, mocking, DI) | `pub` |
+| Service | `service.rs` | When grouping interactions behind a trait with shared state | `pub` |
+| Mock | `mock.rs` | When callers need a test double | `pub` (feature-gated) |
+
+Not every module needs all pieces. A pure-logic module (like `orkestra-schema`) only needs types + logic files. A module with I/O and test doubles (like `orkestra-git`) uses all five.
 
 **Key rules:**
 - One `execute()` per interaction file — this is the only public entry point
@@ -46,9 +48,9 @@ When designing subtasks that create or extend modules, use this 5-layer structur
 - Private helpers stay inside the interaction file that needs them — no separate utilities layer
 - The service is a thin dispatcher; multi-step orchestration stays in the caller
 
-**Reference implementation:** `crates/orkestra-git/` — study it before designing new modules.
+**Reference implementations:** `crates/orkestra-git/` (full trait+service+mock), `crates/orkestra-schema/` (pure functions, no trait).
 
-When specifying subtasks that create or extend modules, include this structure in the subtask instructions so workers know the expected layout.
+When specifying subtasks that create or extend modules, include the relevant building blocks in the subtask instructions so workers know the expected layout.
 
 ## Research Phase
 

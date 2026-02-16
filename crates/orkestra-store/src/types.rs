@@ -1,7 +1,7 @@
 //! SQL serialization helpers for domain enums.
 //!
 //! Converts between Rust domain types and their string representations
-//! used in SQLite columns.
+//! used in `SQLite` columns.
 
 use orkestra_types::domain::SessionState;
 use orkestra_types::runtime::Phase;

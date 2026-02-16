@@ -1,11 +1,11 @@
 //! Workflow persistence layer for the Orkestra system.
 //!
-//! Provides the `WorkflowStore` trait and implementations for SQLite and
+//! Provides the `WorkflowStore` trait and implementations for `SQLite` and
 //! in-memory storage backends.
 
 mod connection;
-mod interface;
 pub mod interactions;
+mod interface;
 pub mod migrations;
 mod service;
 mod types;

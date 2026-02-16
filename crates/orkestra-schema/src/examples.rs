@@ -89,6 +89,8 @@ pub fn questions_output_example(questions: &[Value]) -> String {
     serde_json::to_string(&example).unwrap()
 }
 
+// -- Helpers --
+
 /// Validate a value against a schema, panicking with helpful error if invalid.
 fn validate_against_schema(value: &Value, schema: &Value, name: &str) {
     let validator = Validator::new(schema).expect("schema should be valid");
@@ -105,6 +107,10 @@ fn validate_against_schema(value: &Value, schema: &Value, name: &str) {
         errors.join("; ")
     );
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {

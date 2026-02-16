@@ -21,7 +21,7 @@ This is a Tauri desktop application with:
 - **Process management** — spawning and managing CLI agent processes (Claude Code, OpenCode)
 - **Git worktrees** — each task gets an isolated worktree
 - **Trait-based DI** — traits live in dedicated crates (e.g., `orkestra-git/src/interface.rs`) with re-exports through `workflow/ports/`
-- **Standard module structure** — new modules follow a 5-layer pattern (interface → types → service → interactions → mock). `orkestra-git` is the reference implementation.
+- **Module structure toolkit** — modules are organized using building blocks (interactions, types, traits, services, mocks) assembled based on the module's needs. `orkestra-git` (full trait+service) and `orkestra-schema` (pure functions) are reference implementations.
 - **Async runtime** — Tauri uses tokio under the hood
 
 ## Your Mission

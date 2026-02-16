@@ -1,7 +1,7 @@
 //! Workflow store port for persistence operations.
 //!
 //! This trait abstracts over storage backends, allowing the workflow system
-//! to work with SQLite, in-memory stores for testing, or other backends.
+//! to work with `SQLite`, in-memory stores for testing, or other backends.
 
 use orkestra_types::domain::{
     AssistantSession, Iteration, LogEntry, StageSession, Task, TaskHeader,
@@ -61,7 +61,7 @@ pub type WorkflowResult<T> = Result<T, WorkflowError>;
 /// Persistence abstraction for workflow entities.
 ///
 /// This trait defines the contract for storing and retrieving workflow
-/// domain objects. Implementations can use SQLite, in-memory storage,
+/// domain objects. Implementations can use `SQLite`, in-memory storage,
 /// or any other backend.
 pub trait WorkflowStore: Send + Sync {
     // -- Task --
@@ -81,7 +81,7 @@ pub trait WorkflowStore: Send + Sync {
     /// Used by the orchestrator for per-tick categorization where artifact
     /// content is not needed.
     ///
-    /// Default implementation maps `list_tasks()` results. The SQLite store
+    /// Default implementation maps `list_tasks()` results. The `SQLite` store
     /// overrides this with a query that skips the `artifacts` column entirely.
     fn list_task_headers(&self) -> WorkflowResult<Vec<TaskHeader>> {
         let tasks = self.list_tasks()?;
@@ -122,7 +122,7 @@ pub trait WorkflowStore: Send + Sync {
     /// word as a readable short display ID.
     ///
     /// Default implementation delegates to `next_task_id()` without sibling checks.
-    /// The SQLite store overrides this with sibling-aware generation.
+    /// The `SQLite` store overrides this with sibling-aware generation.
     fn next_subtask_id(&self, _parent_id: &str) -> WorkflowResult<String> {
         self.next_task_id()
     }
@@ -247,7 +247,7 @@ pub trait WorkflowStore: Send + Sync {
     ///
     /// More efficient than `list_all_iterations()` when only a subset of tasks
     /// is needed (e.g., active tasks for the UI). Default implementation queries
-    /// per-task; the SQLite store uses a single `IN` clause query.
+    /// per-task; the `SQLite` store uses a single `IN` clause query.
     fn list_iterations_for_tasks(&self, task_ids: &[&str]) -> WorkflowResult<Vec<Iteration>> {
         let mut all = Vec::new();
         for id in task_ids {
@@ -259,7 +259,7 @@ pub trait WorkflowStore: Send + Sync {
     /// List stage sessions scoped to a set of task IDs.
     ///
     /// More efficient than `list_all_stage_sessions()` when only a subset of tasks
-    /// is needed. Default implementation queries per-task; the SQLite store uses
+    /// is needed. Default implementation queries per-task; the `SQLite` store uses
     /// a single `IN` clause query.
     fn list_stage_sessions_for_tasks(
         &self,
@@ -275,7 +275,7 @@ pub trait WorkflowStore: Send + Sync {
     /// List archived subtasks for multiple parent IDs in one query.
     ///
     /// Returns subtasks that are archived and belong to any of the given parent IDs.
-    /// Default implementation queries per-parent and filters; the SQLite store uses
+    /// Default implementation queries per-parent and filters; the `SQLite` store uses
     /// a single `IN` clause query.
     fn list_archived_subtasks_by_parents(&self, parent_ids: &[&str]) -> WorkflowResult<Vec<Task>> {
         let mut all = Vec::new();

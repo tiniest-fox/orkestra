@@ -151,7 +151,7 @@ SQLite and in-memory implementations of the WorkflowStore trait. The "ORM" layer
 
 Generates JSON schemas dynamically from stage configuration. Tells agents what output format to produce.
 
-**Dependencies**: orkestra-types (for StageCapabilities), serde_json
+**Dependencies**: serde_json, jsonschema (no orkestra-types — `SchemaConfig` uses plain booleans)
 
 **Why standalone**: Pure logic, zero I/O. Schema generation is a distinct concern from prompt rendering. Tests validate schema correctness without needing templates or handlebars.
 
@@ -319,12 +319,13 @@ Both depend only on orkestra-types. Can be done simultaneously.
 
 ### Phase 4: Extract `orkestra-schema` and `orkestra-parser` (parallel)
 
-**orkestra-schema:**
-- [ ] Create `crates/orkestra-schema/Cargo.toml` with deps: orkestra-types, serde_json
-- [ ] Move `prompts/mod.rs` → `orkestra-schema/src/lib.rs` (schema generation functions)
-- [ ] Move `prompts/examples.rs` → `orkestra-schema/src/examples.rs`
-- [ ] Move embedded JSON schema files
-- [ ] `cargo test -p orkestra-schema` — unit tests pass
+**orkestra-schema:** ✅ DONE
+- [x] Create `crates/orkestra-schema/Cargo.toml` with deps: serde_json, jsonschema
+- [x] Move schema generation → `generate_schema.rs`, types → `types.rs`, examples → `examples.rs`
+- [x] Move embedded JSON schema files
+- [x] `SchemaConfig` uses plain booleans (no orkestra-types dependency needed)
+- [x] orkestra-core re-exports via `prompts/mod.rs` — zero import changes for callers
+- [x] `cargo test -p orkestra-schema` — 12 tests pass
 
 **orkestra-parser:**
 - [ ] Create `crates/orkestra-parser/Cargo.toml` with deps: orkestra-types, jsonschema, serde_json, strip-ansi-escapes

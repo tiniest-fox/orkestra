@@ -1,4 +1,4 @@
-//! Convert a SQLite row to an `AssistantSession`.
+//! Convert a `SQLite` row to an `AssistantSession`.
 
 use orkestra_types::domain::AssistantSession;
 
@@ -6,8 +6,8 @@ use crate::types::parse_session_state;
 
 /// Convert a row to an `AssistantSession`.
 ///
-/// Column order: id, claude_session_id, title, agent_pid,
-/// spawn_count, session_state, created_at, updated_at
+/// Column order: id, `claude_session_id`, title, `agent_pid`,
+/// `spawn_count`, `session_state`, `created_at`, `updated_at`
 #[allow(clippy::cast_sign_loss)]
 pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<AssistantSession> {
     let agent_pid: Option<i32> = row.get(3)?;

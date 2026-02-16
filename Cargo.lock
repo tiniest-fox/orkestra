@@ -2954,6 +2954,7 @@ dependencies = [
  "orkestra-core",
  "orkestra-git",
  "orkestra-process",
+ "orkestra-schema",
  "orkestra-store",
  "orkestra-types",
  "serde",
@@ -2983,6 +2984,14 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "orkestra-process",
+ "serde_json",
+]
+
+[[package]]
+name = "orkestra-schema"
+version = "0.1.0"
+dependencies = [
+ "jsonschema",
  "serde_json",
 ]
 

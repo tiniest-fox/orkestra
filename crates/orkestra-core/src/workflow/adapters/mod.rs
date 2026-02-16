@@ -12,6 +12,6 @@ pub use opencode_process::OpenCodeProcessSpawner;
 pub use orkestra_git::Git2GitService;
 
 // Store types re-exported from orkestra-store
-pub use orkestra_store::SqliteWorkflowStore;
 #[cfg(any(test, feature = "testutil"))]
 pub use orkestra_store::InMemoryWorkflowStore;
+pub use orkestra_store::SqliteWorkflowStore;

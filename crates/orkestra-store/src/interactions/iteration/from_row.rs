@@ -1,12 +1,12 @@
-//! Convert a SQLite row to an `Iteration`.
+//! Convert a `SQLite` row to an `Iteration`.
 
 use orkestra_types::domain::Iteration;
 
 /// Convert a row to an `Iteration`.
 ///
-/// Column order: id, task_id, stage, iteration_number, started_at,
-/// ended_at, outcome, stage_session_id, incoming_context,
-/// trigger_delivered, activity_log
+/// Column order: id, `task_id`, stage, `iteration_number`, `started_at`,
+/// `ended_at`, outcome, `stage_session_id`, `incoming_context`,
+/// `trigger_delivered`, `activity_log`
 #[allow(clippy::cast_sign_loss)]
 pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Iteration> {
     let iteration_number: i32 = row.get(3)?;

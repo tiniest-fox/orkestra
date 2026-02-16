@@ -1,4 +1,4 @@
-//! List all assistant sessions, ordered by created_at descending.
+//! List all assistant sessions, ordered by `created_at` descending.
 
 use orkestra_types::domain::AssistantSession;
 use rusqlite::Connection;

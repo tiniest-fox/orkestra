@@ -64,10 +64,11 @@ If a function name contains "and" (e.g., `validate_and_save`), that's a signal t
 - Is there a clean narrative at each level?
 
 ### Module Structure Compliance
-- New modules should follow the 5-layer structure: interface → types → service → interactions → mock
+- New modules should use the appropriate building blocks: interactions for logic, types for domain models, traits where polymorphism is needed, services to group interactions behind a trait
+- Not every module needs all layers — pure-logic modules may only need types + logic files (see `orkestra-schema`), while I/O modules need the full trait+service+mock setup (see `orkestra-git`)
 - Flag `utilities/` directories or `pub(crate)` helper modules — shared logic should be private functions inside interactions, or extracted into their own interaction
 - Flag missing `interface.rs` trait when a module has a service
-- Reference implementation: `crates/orkestra-git/`
+- Reference implementations: `crates/orkestra-git/` (full), `crates/orkestra-schema/` (minimal)
 
 ### Overlap with Other Reviewers
 Your focus is **inter-module** boundaries: are the interfaces between modules clean? The simplicity reviewer handles **intra-module** complexity. The dependency reviewer handles whether dependencies are explicit. If you spot issues in those domains, note the overlap briefly rather than writing a full finding.

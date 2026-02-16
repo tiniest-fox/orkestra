@@ -1,4 +1,4 @@
-//! SQLite implementation of `WorkflowStore`.
+//! `SQLite` implementation of `WorkflowStore`.
 //!
 //! Thin dispatcher — each trait method acquires the connection lock
 //! and delegates to one interaction's `execute()`.
@@ -13,7 +13,7 @@ use rusqlite::Connection;
 use crate::interactions;
 use crate::interface::{WorkflowError, WorkflowResult, WorkflowStore};
 
-/// SQLite implementation of `WorkflowStore`.
+/// `SQLite` implementation of `WorkflowStore`.
 ///
 /// Uses the `workflow_tasks` and `workflow_iterations` tables.
 pub struct SqliteWorkflowStore {
@@ -175,10 +175,7 @@ impl WorkflowStore for SqliteWorkflowStore {
         interactions::session::list_for_tasks::execute(&conn, task_ids)
     }
 
-    fn list_archived_subtasks_by_parents(
-        &self,
-        parent_ids: &[&str],
-    ) -> WorkflowResult<Vec<Task>> {
+    fn list_archived_subtasks_by_parents(&self, parent_ids: &[&str]) -> WorkflowResult<Vec<Task>> {
         let conn = self.lock_conn()?;
         interactions::task::list_archived_by_parents::execute(&conn, parent_ids)
     }

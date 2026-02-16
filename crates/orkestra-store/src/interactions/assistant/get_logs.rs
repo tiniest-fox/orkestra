@@ -5,10 +5,7 @@ use rusqlite::{params, Connection};
 
 use crate::interface::{WorkflowError, WorkflowResult};
 
-pub fn execute(
-    conn: &Connection,
-    assistant_session_id: &str,
-) -> WorkflowResult<Vec<LogEntry>> {
+pub fn execute(conn: &Connection, assistant_session_id: &str) -> WorkflowResult<Vec<LogEntry>> {
     let mut stmt = conn
         .prepare(
             "SELECT content FROM log_entries

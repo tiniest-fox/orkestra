@@ -5,11 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::interface::{WorkflowError, WorkflowResult};
 
-pub fn execute(
-    conn: &Connection,
-    task_id: &str,
-    stage: &str,
-) -> WorkflowResult<Option<Iteration>> {
+pub fn execute(conn: &Connection, task_id: &str, stage: &str) -> WorkflowResult<Option<Iteration>> {
     conn.query_row(
         "SELECT id, task_id, stage, iteration_number, started_at, ended_at, outcome, stage_session_id, incoming_context, trigger_delivered, activity_log
          FROM workflow_iterations

@@ -22,6 +22,7 @@ indexmap = { version = "2", features = ["serde"] }
 thiserror = "1"
 orkestra-git = { path = "../orkestra-git", features = ["testutil"] }
 orkestra-process = { path = "../orkestra-process", features = ["testutil"] }
+orkestra-schema = { path = "../orkestra-schema" }
 orkestra-store = { path = "../orkestra-store", features = ["testutil"] }
 orkestra-types = { path = "../orkestra-types" }
 tempfile = { version = "3", optional = true }

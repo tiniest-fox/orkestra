@@ -5,11 +5,7 @@ use rusqlite::{params, Connection};
 
 use crate::interface::{WorkflowError, WorkflowResult};
 
-pub fn execute(
-    conn: &Connection,
-    stage_session_id: &str,
-    entry: &LogEntry,
-) -> WorkflowResult<()> {
+pub fn execute(conn: &Connection, stage_session_id: &str, entry: &LogEntry) -> WorkflowResult<()> {
     let content_json =
         serde_json::to_string(entry).map_err(|e| WorkflowError::Storage(e.to_string()))?;
 

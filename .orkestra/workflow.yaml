@@ -116,6 +116,8 @@ flows:
               rejection_stage: work
       - compound:
           inputs: [plan, summary, check_results, verdict]
+    integration:
+      on_failure: work
 
   # Hotfix flow: Straight to work, minimal overhead
   hotfix:
@@ -129,6 +131,8 @@ flows:
           capabilities:
             approval:
               rejection_stage: work
+    integration:
+      on_failure: work
 
   # Micro flow: Single work stage using lightweight model for extremely targeted changes
   micro:
@@ -138,6 +142,8 @@ flows:
       - work:
           model: sonnet
       - check
+    integration:
+      on_failure: work
 
 integration:
   on_failure: task

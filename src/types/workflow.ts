@@ -645,6 +645,17 @@ export interface BranchList {
 }
 
 /**
+ * Sync status relative to origin for the current branch.
+ * Returned by workflow_git_sync_status.
+ */
+export interface SyncStatus {
+  /** Commits ahead of origin (need to push). */
+  ahead: number;
+  /** Commits behind origin (need to pull). */
+  behind: number;
+}
+
+/**
  * Commit metadata returned by workflow_get_commit_log.
  */
 export interface CommitInfo {

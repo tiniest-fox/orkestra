@@ -126,6 +126,15 @@ pub struct TaskDiff {
     pub files: Vec<FileDiff>,
 }
 
+/// Sync status relative to remote tracking branch.
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncStatus {
+    /// Commits ahead of origin (need to push).
+    pub ahead: u32,
+    /// Commits behind origin (need to pull).
+    pub behind: u32,
+}
+
 /// Metadata for a single git commit.
 #[derive(Debug, Clone, Serialize)]
 pub struct CommitInfo {
@@ -330,6 +339,22 @@ pub trait GitService: Send + Sync {
         target_branch: &str,
         message: &str,
     ) -> Result<bool, GitError>;
+
+    /// Get sync status relative to origin for the current branch.
+    ///
+    /// Returns `Ok(None)` if:
+    /// - No remote named "origin" is configured
+    /// - The branch doesn't exist on origin
+    /// - In detached HEAD state
+    ///
+    /// Uses explicit `origin/{branch}` refs (not `@{upstream}`) for consistency.
+    fn sync_status(&self) -> Result<Option<SyncStatus>, GitError>;
+
+    /// Pull changes from origin into the current branch.
+    ///
+    /// Performs `git pull --ff-only origin {branch}` to fetch and fast-forward.
+    /// Fails if local branch has diverged from origin (not fast-forwardable).
+    fn pull_branch(&self) -> Result<(), GitError>;
 }
 
 // =============================================================================
@@ -338,7 +363,9 @@ pub trait GitService: Send + Sync {
 
 #[cfg(any(test, feature = "testutil"))]
 pub mod mock {
-    use super::{GitError, GitService, MergeResult, Path, PathBuf, TaskDiff, WorktreeCreated};
+    use super::{
+        GitError, GitService, MergeResult, Path, PathBuf, SyncStatus, TaskDiff, WorktreeCreated,
+    };
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -360,6 +387,8 @@ pub mod mock {
         sync_base_branch_calls: Mutex<Vec<String>>,
         push_branch_calls: Mutex<Vec<String>>,
         merged_branches: Mutex<HashMap<String, bool>>,
+        sync_status: Mutex<Option<SyncStatus>>,
+        pull_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
     }
 
     impl MockGitService {
@@ -380,6 +409,8 @@ pub mod mock {
                 sync_base_branch_calls: Mutex::new(Vec::new()),
                 push_branch_calls: Mutex::new(Vec::new()),
                 merged_branches: Mutex::new(HashMap::new()),
+                sync_status: Mutex::new(None),
+                pull_results: Mutex::new(std::collections::VecDeque::new()),
             }
         }
 
@@ -449,6 +480,16 @@ pub mod mock {
         /// Get the list of `push_branch` calls for verification.
         pub fn get_push_branch_calls(&self) -> Vec<String> {
             self.push_branch_calls.lock().unwrap().clone()
+        }
+
+        /// Set the sync status to return from `sync_status()`.
+        pub fn set_sync_status(&self, status: Option<SyncStatus>) {
+            *self.sync_status.lock().unwrap() = status;
+        }
+
+        /// Set the result for the next `pull_branch` operation.
+        pub fn set_next_pull_result(&self, result: Result<(), GitError>) {
+            self.pull_results.lock().unwrap().push_back(result);
         }
     }
 
@@ -674,6 +715,18 @@ pub mod mock {
             // Default: assume squash succeeded with commits to squash
             Ok(true)
         }
+
+        fn sync_status(&self) -> Result<Option<SyncStatus>, GitError> {
+            Ok(self.sync_status.lock().unwrap().clone())
+        }
+
+        fn pull_branch(&self) -> Result<(), GitError> {
+            self.pull_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(Ok(()))
+        }
     }
 
     #[cfg(test)]
@@ -762,6 +815,66 @@ pub mod mock {
                 .squash_commits(&worktree_path, "main", "msg")
                 .unwrap_err();
             assert!(matches!(err, GitError::Other(_)));
+        }
+
+        #[test]
+        fn test_mock_sync_status_default() {
+            let mock = MockGitService::new();
+
+            // Default: returns None
+            let result = mock.sync_status().unwrap();
+            assert!(result.is_none(), "Default should return None");
+        }
+
+        #[test]
+        fn test_mock_sync_status_configured() {
+            let mock = MockGitService::new();
+
+            // Set sync status
+            mock.set_sync_status(Some(SyncStatus {
+                ahead: 2,
+                behind: 3,
+            }));
+            let result = mock.sync_status().unwrap();
+            assert!(result.is_some(), "Should return configured status");
+            let status = result.unwrap();
+            assert_eq!(status.ahead, 2);
+            assert_eq!(status.behind, 3);
+
+            // Set back to None
+            mock.set_sync_status(None);
+            let result = mock.sync_status().unwrap();
+            assert!(result.is_none(), "Should return None after clearing");
+        }
+
+        #[test]
+        fn test_mock_pull_branch_default() {
+            let mock = MockGitService::new();
+
+            // Default: returns Ok(())
+            let result = mock.pull_branch();
+            assert!(result.is_ok(), "Default should succeed");
+        }
+
+        #[test]
+        fn test_mock_pull_branch_configured() {
+            let mock = MockGitService::new();
+
+            // Configure an error
+            mock.set_next_pull_result(Err(GitError::Other("pull failed".into())));
+            let err = mock.pull_branch().unwrap_err();
+            assert!(matches!(err, GitError::Other(_)));
+
+            // Queue multiple results
+            mock.set_next_pull_result(Ok(()));
+            mock.set_next_pull_result(Err(GitError::Other("second pull failed".into())));
+
+            // First call succeeds
+            assert!(mock.pull_branch().is_ok());
+            // Second call fails
+            assert!(mock.pull_branch().is_err());
+            // Third call returns default (Ok)
+            assert!(mock.pull_branch().is_ok());
         }
     }
 }

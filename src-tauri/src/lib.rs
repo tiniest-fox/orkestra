@@ -494,6 +494,10 @@ pub fn run() {
             commands::workflow_get_commit_log,
             commands::workflow_get_batch_file_counts,
             commands::workflow_get_commit_diff,
+            // Git sync commands
+            commands::workflow_git_sync_status,
+            commands::workflow_git_push,
+            commands::workflow_git_pull,
             commands::open_in_terminal,
             commands::open_in_editor,
             commands::detect_external_tools,

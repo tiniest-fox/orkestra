@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use git2::{Oid, Repository};
 
-use crate::workflow::ports::{GitError, GitService, MergeResult, WorktreeCreated};
+use crate::workflow::ports::{GitError, GitService, MergeResult, SyncStatus, WorktreeCreated};
 
 /// Git service implementation using git2 and git CLI.
 ///
@@ -985,6 +985,103 @@ impl GitService for Git2GitService {
         );
 
         Ok(true)
+    }
+
+    fn sync_status(&self) -> Result<Option<SyncStatus>, GitError> {
+        // Get current branch
+        let branch = self.current_branch()?;
+
+        // In detached HEAD state, return None
+        if branch == "HEAD" {
+            return Ok(None);
+        }
+
+        // Check if origin/{branch} exists
+        let verify_output = Command::new("git")
+            .args(["rev-parse", "--verify", &format!("origin/{branch}")])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GitError::IoError(format!("Failed to run git rev-parse: {e}")))?;
+
+        if !verify_output.status.success() {
+            // Branch doesn't exist on origin
+            return Ok(None);
+        }
+
+        // Get ahead/behind counts using rev-list --left-right
+        let output = Command::new("git")
+            .args([
+                "rev-list",
+                "--count",
+                "--left-right",
+                &format!("origin/{branch}...{branch}"),
+            ])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GitError::IoError(format!("Failed to run git rev-list: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(GitError::Other(format!(
+                "Failed to get sync status: {stderr}"
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parts: Vec<&str> = stdout.trim().split('\t').collect();
+
+        if parts.len() != 2 {
+            return Err(GitError::Other(format!(
+                "Unexpected rev-list output format: {stdout}"
+            )));
+        }
+
+        let behind: u32 = parts[0].parse().map_err(|_| {
+            GitError::Other(format!("Failed to parse behind count from: {}", parts[0]))
+        })?;
+
+        let ahead: u32 = parts[1].parse().map_err(|_| {
+            GitError::Other(format!("Failed to parse ahead count from: {}", parts[1]))
+        })?;
+
+        Ok(Some(SyncStatus { ahead, behind }))
+    }
+
+    fn pull_branch(&self) -> Result<(), GitError> {
+        // Get current branch
+        let branch = self.current_branch()?;
+
+        // In detached HEAD state, fail
+        if branch == "HEAD" {
+            return Err(GitError::Other(
+                "Cannot pull: in detached HEAD state".to_string(),
+            ));
+        }
+
+        // Run git pull --ff-only origin {branch}
+        let output = Command::new("git")
+            .args(["pull", "--ff-only", "origin", &branch])
+            .current_dir(&self.repo_path)
+            .output()
+            .map_err(|e| GitError::Other(format!("Failed to run git pull: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            // Provide clear error message for diverged branches
+            if stderr.contains("non-fast-forward")
+                || stderr.contains("Not possible to fast-forward")
+            {
+                return Err(GitError::Other(format!(
+                    "Cannot pull: local branch has diverged from origin/{branch}"
+                )));
+            }
+
+            return Err(GitError::Other(format!("git pull failed: {stderr}")));
+        }
+
+        crate::orkestra_debug!("git", "Pulled {} from origin", branch);
+        Ok(())
     }
 }
 

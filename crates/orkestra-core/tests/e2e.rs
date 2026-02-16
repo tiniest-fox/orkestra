@@ -15,6 +15,8 @@ mod helpers;
 mod assistant;
 #[path = "e2e/cleanup.rs"]
 mod cleanup;
+#[path = "e2e/git_sync.rs"]
+mod git_sync;
 #[path = "e2e/integration.rs"]
 mod integration;
 #[path = "e2e/multi_project.rs"]

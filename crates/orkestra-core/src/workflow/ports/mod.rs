@@ -9,7 +9,7 @@ mod process_spawner;
 mod store;
 
 pub use git_service::{
-    CommitInfo, FileChangeType, FileDiff, GitError, GitService, MergeResult, TaskDiff,
+    CommitInfo, FileChangeType, FileDiff, GitError, GitService, MergeResult, SyncStatus, TaskDiff,
     WorktreeCreated,
 };
 pub use pr_service::{PrError, PrService};

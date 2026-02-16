@@ -6,12 +6,14 @@
 //! - `queries`: Read-only queries for iterations, artifacts, config
 //! - `external_tools`: Open worktrees in terminal emulators and code editors
 //! - `diff`: Git diff operations with syntax highlighting
+//! - `git_actions`: Git sync operations (push, pull, sync status)
 //! - `assistant`: Project-level assistant chat panel commands
 //! - Startup: Get startup status (always available)
 
 mod assistant;
 mod diff;
 mod external_tools;
+mod git_actions;
 mod human_actions;
 mod project;
 mod queries;
@@ -21,6 +23,7 @@ mod task_crud;
 pub use assistant::*;
 pub use diff::*;
 pub use external_tools::*;
+pub use git_actions::*;
 pub use human_actions::*;
 pub use project::*;
 pub use queries::*;

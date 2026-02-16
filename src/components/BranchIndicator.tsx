@@ -1,13 +1,25 @@
 import { useDisplayContext, useGitHistory } from "../providers";
+import { SyncActionButton, SyncStatusIndicator } from "./SyncStatus";
 
 export function BranchIndicator() {
-  const { commits, currentBranch } = useGitHistory();
+  const {
+    commits,
+    currentBranch,
+    syncStatus,
+    pushLoading,
+    pullLoading,
+    pushToOrigin,
+    pullFromOrigin,
+    operationError,
+    canPush,
+    canPull,
+    showSyncStatus,
+  } = useGitHistory();
   const { layout, toggleGitHistory } = useDisplayContext();
 
   if (!currentBranch) return null;
 
   const latestCommitMessage = commits[0]?.message ?? null;
-
   const isActive = layout.preset === "GitHistory" || layout.preset === "GitCommit";
 
   const handleClick = () => {
@@ -15,24 +27,57 @@ export function BranchIndicator() {
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className={`inline-flex shrink items-center gap-1.5 text-xs rounded px-2 py-1 transition-colors overflow-hidden min-w-0 ${
-        isActive
-          ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
-          : "text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800"
-      }`}
-    >
-      <BranchIcon />
-      <span>{currentBranch}</span>
-      {latestCommitMessage && (
-        <>
-          <span className="text-stone-400 dark:text-stone-500 flex-shrink-0">/</span>
-          <span className="truncate min-w-0 shrink">{latestCommitMessage}</span>
-        </>
+    <div className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        onClick={handleClick}
+        className={`inline-flex shrink items-center gap-1.5 text-xs rounded px-2 py-1 transition-colors overflow-hidden min-w-0 ${
+          isActive
+            ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400"
+            : "text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800"
+        }`}
+      >
+        <BranchIcon />
+        <span>{currentBranch}</span>
+        {latestCommitMessage && (
+          <>
+            <span className="text-stone-400 dark:text-stone-500 flex-shrink-0">/</span>
+            <span className="truncate min-w-0 shrink">{latestCommitMessage}</span>
+          </>
+        )}
+      </button>
+
+      {/* Sync status indicators */}
+      {showSyncStatus && syncStatus && (
+        <SyncStatusIndicator ahead={syncStatus.ahead} behind={syncStatus.behind} size="sm" />
       )}
-    </button>
+
+      {/* Push button */}
+      {canPush && (
+        <SyncActionButton
+          type="push"
+          loading={pushLoading}
+          hasError={operationError?.type === "push"}
+          onClick={() => {
+            pushToOrigin();
+          }}
+          size="sm"
+        />
+      )}
+
+      {/* Pull button */}
+      {canPull && (
+        <SyncActionButton
+          type="pull"
+          loading={pullLoading}
+          hasError={operationError?.type === "pull"}
+          onClick={() => {
+            pullFromOrigin();
+          }}
+          size="sm"
+        />
+      )}
+    </div>
   );
 }
 

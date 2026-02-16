@@ -5,7 +5,7 @@
 - One exported component per file, named to match the file (PascalCase).
 - Small subcomponents that only serve one parent are fine in their own file alongside it.
 - Nest component directories to reflect hierarchy. If `TaskDetail` contains `ArtifactsTab`, `DetailsTab`, etc., those live in `components/TaskDetail/`.
-- Import sibling components directly (`import { ArtifactsTab } from "./ArtifactsTab"`), not through barrel exports. Barrel exports (`index.ts`) are only for the `ui/` design system.
+- Import sibling components directly (`import { ArtifactsTab } from "./ArtifactsTab"`), not through barrel exports. Barrel exports (`index.ts`) are used for the `ui/` design system and component groupings with multiple related exports (e.g., `SyncStatus/`, `Kanban/`).
 
 ## Logic and Hooks
 

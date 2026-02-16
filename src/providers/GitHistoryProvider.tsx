@@ -11,18 +11,37 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
-import type { BranchList, CommitInfo } from "../types/workflow";
+import type { BranchList, CommitInfo, SyncStatus } from "../types/workflow";
 
-interface GitHistoryContextValue {
+interface OperationError {
+  type: "push" | "pull";
+  message: string;
+}
+
+interface SyncControls {
+  isDetachedHead: boolean;
+  showSyncStatus: boolean;
+  canPush: boolean;
+  canPull: boolean;
+}
+
+interface GitHistoryContextValue extends SyncControls {
   commits: CommitInfo[];
   fileCounts: Map<string, number>;
   currentBranch: string | null;
   branches: string[];
   loading: boolean;
   error: string | null;
+  syncStatus: SyncStatus | null;
+  operationError: OperationError | null;
+  pushLoading: boolean;
+  pullLoading: boolean;
+  pushToOrigin: () => Promise<void>;
+  pullFromOrigin: () => Promise<void>;
 }
 
 const GitHistoryContext = createContext<GitHistoryContextValue | null>(null);
@@ -49,22 +68,68 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const [branches, setBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pullLoading, setPullLoading] = useState(false);
+  const [operationError, setOperationError] = useState<OperationError | null>(null);
   const requestedHashesRef = useRef<Set<string>>(new Set());
 
   const fetchCommits = useCallback(async () => {
     try {
-      const [commitResult, branchResult] = await Promise.all([
+      const [commitResult, branchResult, syncResult] = await Promise.all([
         invoke<CommitInfo[]>("workflow_get_commit_log"),
         invoke<BranchList>("workflow_list_branches"),
+        invoke<SyncStatus | null>("workflow_git_sync_status"),
       ]);
       setCommits(commitResult);
       setCurrentBranch(branchResult.current);
       setBranches(branchResult.branches);
+      setSyncStatus(syncResult);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const pushToOrigin = useCallback(async () => {
+    setPushLoading(true);
+    setOperationError(null);
+    try {
+      await invoke("workflow_git_push");
+      const status = await invoke<SyncStatus | null>("workflow_git_sync_status");
+      setSyncStatus(status);
+    } catch (err) {
+      console.error("Push failed:", err);
+      setOperationError({
+        type: "push",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setPushLoading(false);
+    }
+  }, []);
+
+  const pullFromOrigin = useCallback(async () => {
+    setPullLoading(true);
+    setOperationError(null);
+    try {
+      await invoke("workflow_git_pull");
+      const [commitResult, status] = await Promise.all([
+        invoke<CommitInfo[]>("workflow_get_commit_log"),
+        invoke<SyncStatus | null>("workflow_git_sync_status"),
+      ]);
+      setCommits(commitResult);
+      setSyncStatus(status);
+    } catch (err) {
+      console.error("Pull failed:", err);
+      setOperationError({
+        type: "pull",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setPullLoading(false);
     }
   }, []);
 
@@ -103,6 +168,17 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
       });
   }, [commits]);
 
+  const syncControls = useMemo((): SyncControls => {
+    const isDetachedHead = currentBranch === "HEAD";
+    const showSyncStatus = syncStatus !== null && !isDetachedHead;
+    return {
+      isDetachedHead,
+      showSyncStatus,
+      canPush: showSyncStatus && syncStatus.ahead > 0,
+      canPull: showSyncStatus && syncStatus.behind > 0,
+    };
+  }, [currentBranch, syncStatus]);
+
   const value: GitHistoryContextValue = {
     commits,
     fileCounts,
@@ -110,6 +186,13 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     branches,
     loading,
     error,
+    syncStatus,
+    operationError,
+    pushLoading,
+    pullLoading,
+    pushToOrigin,
+    pullFromOrigin,
+    ...syncControls,
   };
 
   return <GitHistoryContext.Provider value={value}>{children}</GitHistoryContext.Provider>;

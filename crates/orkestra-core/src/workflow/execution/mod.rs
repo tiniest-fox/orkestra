@@ -10,9 +10,6 @@
 //! - **parser**: Agent output parsing with provider-specific extraction
 
 mod prompt;
-mod provider_registry;
-mod runner;
-mod script_runner;
 
 pub use orkestra_parser::{
     AgentParser, ClaudeParserService as ClaudeAgentParser,
@@ -26,14 +23,15 @@ pub use prompt::{
     IntegrationErrorContext, PrComment, PromptBuilder, QuestionAnswerContext, ResolvedAgentConfig,
     ResumeQuestionAnswer, ResumeType, SiblingTaskContext, StagePromptContext,
 };
-pub use provider_registry::{
+
+// Re-exports from orkestra-agent (backward-compatible aliases)
+pub use orkestra_agent::AgentRunner as AgentRunnerTrait;
+pub use orkestra_agent::ProcessAgentRunner as AgentRunner;
+pub use orkestra_agent::{
     claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
-    ProviderCapabilities, ProviderRegistry, RegistryError, ResolvedProvider,
+    ProviderCapabilities, ProviderRegistry, RegistryError, ResolvedProvider, RunConfig, RunError,
+    RunEvent, RunResult, ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult,
 };
-pub use runner::{AgentRunner, AgentRunnerTrait, RunConfig, RunError, RunEvent, RunResult};
-pub use script_runner::{ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult};
 
 #[cfg(any(test, feature = "testutil"))]
-pub use provider_registry::default_test_registry;
-#[cfg(any(test, feature = "testutil"))]
-pub use runner::mock::MockAgentRunner;
+pub use orkestra_agent::{default_test_registry, MockAgentRunner};

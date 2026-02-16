@@ -1,7 +1,4 @@
 //! Claude Code process spawner adapter.
-//!
-//! This adapter implements the `ProcessSpawner` trait for spawning
-//! actual Claude Code CLI processes.
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -9,19 +6,15 @@ use std::process::{Child, Command, Stdio};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
-use crate::process::prepare_path_env;
-use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
+use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
+
+use super::cli_path::prepare_path_env;
 
 // ============================================================================
 // Process Spawning
 // ============================================================================
 
 /// Spawns a Claude Code process with the given configuration.
-///
-/// # Arguments
-/// * `working_dir` - Working directory for the process
-/// * `path_env` - PATH environment variable value
-/// * `config` - Process configuration (session, schema, model, prompts, tool restrictions)
 fn spawn_claude_process(
     working_dir: &Path,
     path_env: &str,
@@ -138,6 +131,10 @@ impl ProcessSpawner for ClaudeProcessSpawner {
     }
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,7 +146,4 @@ mod tests {
         // but we can verify the struct is created
         let _ = spawner;
     }
-
-    // Integration test would require actual claude CLI installed
-    // For now, these are tested via the higher-level E2E tests
 }

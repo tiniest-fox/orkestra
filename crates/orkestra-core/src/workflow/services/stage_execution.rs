@@ -277,8 +277,7 @@ impl StageExecutionService {
         );
 
         let registry = Arc::new(registry);
-        let runner: Arc<dyn AgentRunnerTrait> =
-            Arc::new(AgentRunner::new_with_registry(Arc::clone(&registry)));
+        let runner: Arc<dyn AgentRunnerTrait> = Arc::new(AgentRunner::new(Arc::clone(&registry)));
 
         Self::with_runner(
             workflow,

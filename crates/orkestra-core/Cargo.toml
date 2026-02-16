@@ -20,6 +20,7 @@ dirs = "6"
 libc = "0.2"
 indexmap = { version = "2", features = ["serde"] }
 thiserror = "1"
+orkestra-agent = { path = "../orkestra-agent", features = ["testutil"] }
 orkestra-git = { path = "../orkestra-git", features = ["testutil"] }
 orkestra-parser = { path = "../orkestra-parser" }
 orkestra-prompt = { path = "../orkestra-prompt" }

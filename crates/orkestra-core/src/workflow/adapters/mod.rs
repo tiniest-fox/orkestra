@@ -2,14 +2,14 @@
 //!
 //! Adapters implement the port traits for specific backends.
 
-mod claude_process;
 mod gh_pr_service;
-mod opencode_process;
 
-pub use claude_process::ClaudeProcessSpawner;
 pub use gh_pr_service::GhPrService;
-pub use opencode_process::OpenCodeProcessSpawner;
 pub use orkestra_git::Git2GitService;
+
+// ProcessSpawner adapters re-exported from orkestra-agent
+pub use orkestra_agent::interactions::spawner::claude::ClaudeProcessSpawner;
+pub use orkestra_agent::interactions::spawner::opencode::OpenCodeProcessSpawner;
 
 // Store types re-exported from orkestra-store
 #[cfg(any(test, feature = "testutil"))]

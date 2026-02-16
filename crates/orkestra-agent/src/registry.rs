@@ -15,7 +15,7 @@ use orkestra_parser::{
     OpenCodeParserService as OpenCodeAgentParser,
 };
 
-use crate::workflow::ports::ProcessSpawner;
+use orkestra_process::ProcessSpawner;
 
 // ============================================================================
 // Provider Capabilities
@@ -198,9 +198,7 @@ impl ProviderRegistry {
         }
     }
 
-    // ========================================================================
-    // Internal resolution
-    // ========================================================================
+    // -- Internal resolution --
 
     /// Resolve with no model spec — return the default provider with no model ID.
     fn resolve_default(&self) -> Result<ResolvedProvider, RegistryError> {
@@ -357,7 +355,7 @@ pub fn opencode_capabilities() -> ProviderCapabilities {
 /// `supports_json_schema`) when building prompts.
 #[cfg(any(test, feature = "testutil"))]
 pub fn default_test_registry() -> ProviderRegistry {
-    use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
+    use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
     use std::path::Path;
 
     /// Stub spawner that never spawns real processes. Used in tests where
@@ -399,7 +397,7 @@ pub fn default_test_registry() -> ProviderRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::ports::ProcessConfig;
+    use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle};
     use std::path::Path;
 
     /// Minimal spawner for tests — never actually spawns.
@@ -420,9 +418,8 @@ mod tests {
             &self,
             _working_dir: &Path,
             _config: ProcessConfig,
-        ) -> Result<crate::workflow::ports::ProcessHandle, crate::workflow::ports::ProcessError>
-        {
-            Err(crate::workflow::ports::ProcessError::SpawnFailed(format!(
+        ) -> Result<ProcessHandle, ProcessError> {
+            Err(ProcessError::SpawnFailed(format!(
                 "StubSpawner({}) does not spawn real processes",
                 self.name
             )))
@@ -446,9 +443,7 @@ mod tests {
         registry
     }
 
-    // ========================================================================
-    // Explicit provider/model resolution
-    // ========================================================================
+    // -- Explicit provider/model resolution --
 
     #[test]
     fn resolve_claudecode_sonnet_alias() {
@@ -517,9 +512,7 @@ mod tests {
         assert_eq!(resolved.model_id, Some("some-custom-model".to_string()));
     }
 
-    // ========================================================================
-    // Shorthand resolution (no provider prefix)
-    // ========================================================================
+    // -- Shorthand resolution (no provider prefix) --
 
     #[test]
     fn resolve_shorthand_sonnet() {
@@ -554,9 +547,7 @@ mod tests {
         assert!(resolved.capabilities.supports_json_schema);
     }
 
-    // ========================================================================
-    // No model spec (None)
-    // ========================================================================
+    // -- No model spec (None) --
 
     #[test]
     fn resolve_none_uses_default_provider() {
@@ -568,9 +559,7 @@ mod tests {
         assert!(resolved.capabilities.supports_sessions);
     }
 
-    // ========================================================================
-    // Error cases
-    // ========================================================================
+    // -- Error cases --
 
     #[test]
     fn resolve_unknown_provider_returns_error() {
@@ -592,9 +581,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // ========================================================================
-    // Registry API
-    // ========================================================================
+    // -- Registry API --
 
     #[test]
     fn has_provider_returns_true_for_registered() {
@@ -638,9 +625,7 @@ mod tests {
         assert_eq!(names, vec!["claudecode", "opencode"]);
     }
 
-    // ========================================================================
-    // Alias table tests
-    // ========================================================================
+    // -- Alias table tests --
 
     #[test]
     fn claudecode_aliases_are_correct() {

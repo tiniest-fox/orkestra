@@ -2927,6 +2927,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "orkestra-agent"
+version = "0.1.0"
+dependencies = [
+ "orkestra-agent",
+ "orkestra-parser",
+ "orkestra-process",
+ "orkestra-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "orkestra-cli"
 version = "0.1.0"
 dependencies = [
@@ -2951,6 +2964,7 @@ dependencies = [
  "jsonschema",
  "libc",
  "once_cell",
+ "orkestra-agent",
  "orkestra-core",
  "orkestra-git",
  "orkestra-parser",

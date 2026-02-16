@@ -13,6 +13,8 @@ use std::time::{Duration, Instant};
 
 use orkestra_process::kill_process_tree;
 
+use crate::agent_debug;
+
 /// Environment variables to pass to script execution.
 ///
 /// These provide task context to scripts so they can make intelligent decisions
@@ -256,14 +258,14 @@ impl ScriptHandle {
             self.killed = true;
             let pid = self.child.id();
             if let Err(e) = kill_process_tree(pid) {
-                crate::orkestra_debug!("script", "Warning: failed to kill process tree {pid}: {e}");
+                agent_debug!("script", "Warning: failed to kill process tree {pid}: {e}");
             }
         }
     }
 
+    // -- Helpers --
+
     /// Collect available output from reader threads without blocking.
-    ///
-    /// Returns any new lines received since the last call, or None if no new output.
     fn collect_available_output(&mut self) -> Option<String> {
         let mut new_lines = Vec::new();
 
@@ -320,6 +322,10 @@ impl Drop for ScriptHandle {
         }
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {

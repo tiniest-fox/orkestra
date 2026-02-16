@@ -1,4 +1,9 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type AnimationPhase,
+  ContentAnimationContext,
+  useContentAnimation,
+} from "../ContentAnimation";
 import {
   ANIMATION_CONFIG,
   PanelContainerContext,
@@ -40,6 +45,9 @@ export function Slot({
   const [isContentSwitching, setIsContentSwitching] = useState(false);
   const [displayedContent, setDisplayedContent] = useState(children);
 
+  // Animation phase tracking for ContentAnimationContext
+  const [phase, setPhase] = useState<AnimationPhase>(visible ? "settled" : "hidden");
+
   // Store children in a ref so we can access latest without retriggering effects
   const childrenRef = useRef(children);
   useEffect(() => {
@@ -61,9 +69,30 @@ export function Slot({
     }
   }, [children, visible, contentKey]);
 
-  // Track visibility changes
+  // Track visibility transitions for animation phase
   useEffect(() => {
+    // Skip if we're in content-switching mode (handled separately)
+    if (isSwitchingRef.current) return;
+
+    // Capture previous value BEFORE updating the ref to avoid race condition
+    // (Two effects on [visible] would update ref before check runs)
+    const wasVisible = prevVisibleRef.current;
     prevVisibleRef.current = visible;
+
+    // Skip if visibility hasn't actually changed (initial mount)
+    if (wasVisible === visible) return;
+
+    if (visible) {
+      // Opening: entering → settled after animation duration
+      setPhase("entering");
+      const timer = setTimeout(() => {
+        setPhase("settled");
+      }, ANIMATION_CONFIG.duration * 1000);
+      return () => clearTimeout(timer);
+    } else {
+      // Closing: mark as exiting (content cleanup handled by transitionend)
+      setPhase("exiting");
+    }
   }, [visible]);
 
   // Cleanup content when fade-out transition completes
@@ -92,6 +121,9 @@ export function Slot({
   }, [id, unregisterSlot]);
 
   // Handle content switching - close then open
+  // Phase is "entering" throughout the close-then-open animation. While semantically
+  // imprecise (slot collapses before expanding), this simplifies the logic and
+  // useContentSettled() only needs to know "animation in progress" vs "settled".
   useEffect(() => {
     const prevKey = prevContentKeyRef.current;
     const currKey = contentKey;
@@ -102,6 +134,7 @@ export function Slot({
     // - Keys are different
     if (visible && prevKey && currKey && prevKey !== currKey) {
       // Mark switching immediately (ref updates synchronously)
+      setPhase("entering");
       isSwitchingRef.current = true;
       setIsContentSwitching(true);
 
@@ -111,6 +144,7 @@ export function Slot({
         setDisplayedContent(childrenRef.current);
         setIsContentSwitching(false);
         isSwitchingRef.current = false;
+        setPhase("settled");
       }, ANIMATION_CONFIG.duration * 1000);
 
       prevContentKeyRef.current = currKey;
@@ -125,6 +159,14 @@ export function Slot({
 
   // Determine if content should be shown
   const shouldShowContent = visible && !isContentSwitching;
+
+  // Merge parent animation state with this slot's phase
+  const parentAnimation = useContentAnimation();
+  const mergedState = useMemo(() => {
+    const phases = { ...parentAnimation.phases };
+    phases[id] = phase;
+    return { phases };
+  }, [parentAnimation, id, phase]);
 
   // Visual styling classes (shadow, rounded corners, background) - skip if plain
   const visualClasses = plain ? "" : "shadow-panel rounded-panel bg-white dark:bg-stone-900";
@@ -147,10 +189,14 @@ export function Slot({
       <div className={`flex-1 min-h-0 flex flex-col ${visualClasses} ${className}`}>
         {plain ? (
           <PanelContainerContext.Provider value={{ inContainer: false }}>
-            {content}
+            <ContentAnimationContext.Provider value={mergedState}>
+              {content}
+            </ContentAnimationContext.Provider>
           </PanelContainerContext.Provider>
         ) : (
-          content
+          <ContentAnimationContext.Provider value={mergedState}>
+            {content}
+          </ContentAnimationContext.Provider>
         )}
       </div>
     </div>

@@ -8,7 +8,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::workflow::WorkflowConfig;
+use super::WorkflowConfig;
 
 /// A parsed auto-task template ready for the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,13 +135,12 @@ mod tests {
     use tempfile::tempdir;
 
     fn minimal_config() -> WorkflowConfig {
-        use crate::workflow::config::stage::StageConfig;
+        use crate::workflow::config::StageConfig;
         WorkflowConfig::new(vec![StageConfig::new("work", "summary")])
     }
 
     fn config_with_quick_flow() -> WorkflowConfig {
-        use crate::workflow::config::stage::StageConfig;
-        use crate::workflow::config::workflow::{FlowConfig, FlowStageEntry};
+        use crate::workflow::config::{FlowConfig, FlowStageEntry, StageConfig};
         use indexmap::IndexMap;
 
         let mut flows = IndexMap::new();

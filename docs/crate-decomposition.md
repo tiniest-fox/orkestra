@@ -338,11 +338,13 @@ Both depend only on orkestra-types. Can be done simultaneously.
 
 ### Phase 5: Extract `orkestra-prompt` and `orkestra-agent` (parallel)
 
-**orkestra-prompt:**
-- [ ] Create `crates/orkestra-prompt/Cargo.toml` with deps: orkestra-types, orkestra-schema, handlebars
-- [ ] Move `workflow/execution/prompt.rs` → `orkestra-prompt/src/prompt.rs`
-- [ ] Move `workflow/services/prompt_service.rs` → `orkestra-prompt/src/service.rs`
-- [ ] `cargo test -p orkestra-prompt` — unit tests pass
+**orkestra-prompt:** ✅ DONE
+- [x] Create `crates/orkestra-prompt/Cargo.toml` with deps: orkestra-types, orkestra-schema, handlebars
+- [x] Extract pure prompt logic from `prompt.rs` into orkestra-prompt (interactions/build/, interactions/resume/, service, types)
+- [x] Slim orkestra-core `prompt.rs` to I/O wrapper + re-exports
+- [x] `cargo test -p orkestra-prompt` — 31 unit tests pass
+- [x] `cargo test -p orkestra-core` — all 346+138 tests pass
+- [x] `cargo clippy --workspace` — zero warnings
 
 **orkestra-agent:**
 - [ ] Create `crates/orkestra-agent/Cargo.toml` with deps: orkestra-types, orkestra-process, orkestra-parser

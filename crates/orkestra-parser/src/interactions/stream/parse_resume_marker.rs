@@ -66,8 +66,7 @@ mod tests {
         assert_eq!(marker.marker_type, ResumeMarkerType::Feedback);
         assert_eq!(marker.content, "Please fix this bug");
 
-        let marker =
-            execute("<!orkestra:resume:work:integration>\n\nMerge conflict in file.rs");
+        let marker = execute("<!orkestra:resume:work:integration>\n\nMerge conflict in file.rs");
         assert!(marker.is_some());
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::Integration);
@@ -107,9 +106,7 @@ mod tests {
 
     #[test]
     fn test_parse_resume_marker_spawn() {
-        let marker = execute(
-            "<!orkestra:spawn:review>\n\n# Reviewer Agent\n\nYou review code...",
-        );
+        let marker = execute("<!orkestra:spawn:review>\n\n# Reviewer Agent\n\nYou review code...");
         assert!(marker.is_some());
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::Initial);
@@ -118,8 +115,7 @@ mod tests {
 
     #[test]
     fn test_parse_resume_marker_recheck() {
-        let marker =
-            execute("<!orkestra:resume:review:recheck>\n\nThis stage is being re-run.");
+        let marker = execute("<!orkestra:resume:review:recheck>\n\nThis stage is being re-run.");
         assert!(marker.is_some());
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::Recheck);
@@ -128,9 +124,8 @@ mod tests {
 
     #[test]
     fn test_parse_resume_marker_retry_failed() {
-        let marker = execute(
-            "<!orkestra:resume:work:retry_failed>\n\nRetrying after task failure.",
-        );
+        let marker =
+            execute("<!orkestra:resume:work:retry_failed>\n\nRetrying after task failure.");
         assert!(marker.is_some());
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::RetryFailed);
@@ -139,9 +134,8 @@ mod tests {
 
     #[test]
     fn test_parse_resume_marker_retry_blocked() {
-        let marker = execute(
-            "<!orkestra:resume:work:retry_blocked>\n\nRetrying after task was blocked.",
-        );
+        let marker =
+            execute("<!orkestra:resume:work:retry_blocked>\n\nRetrying after task was blocked.");
         assert!(marker.is_some());
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::RetryBlocked);

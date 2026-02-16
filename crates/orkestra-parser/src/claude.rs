@@ -45,11 +45,7 @@ impl ClaudeParserService {
     }
 
     /// Track Task tool completion for subagent association.
-    fn track_task_agent(
-        &mut self,
-        tool_use_result: &serde_json::Value,
-        entry: &serde_json::Value,
-    ) {
+    fn track_task_agent(&mut self, tool_use_result: &serde_json::Value, entry: &serde_json::Value) {
         let Some(agent_id) = tool_use_result.get("agentId").and_then(|a| a.as_str()) else {
             return;
         };

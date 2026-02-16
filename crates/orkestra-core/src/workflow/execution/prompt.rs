@@ -1,594 +1,30 @@
-//! Stage-agnostic prompt builder.
+//! Prompt building — I/O layer.
 //!
-//! Generates prompts for any stage based on workflow configuration
-//! and available artifacts.
+//! Pure prompt logic lives in `orkestra-prompt`. This module provides the
+//! filesystem I/O needed to load agent definitions and schemas, and wraps
+//! the pure logic for backward compatibility.
 
-use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use handlebars::Handlebars;
-use serde::Serialize;
-
-use crate::prompts::examples::{
-    question_example, questions_output_example, subtask_example, subtasks_output_example,
-};
 use crate::workflow::config::{StageConfig, WorkflowConfig};
-use crate::workflow::domain::{QuestionAnswer, Task};
-use crate::workflow::runtime::{Phase, Status};
+use crate::workflow::domain::Task;
 
-// =============================================================================
-// Workflow Stage Entry (for prompt rendering)
-// =============================================================================
+// Re-export everything from orkestra-prompt for backward compatibility.
+pub use orkestra_prompt::{
+    deduplicate_activity_logs_by_stage, sibling_status_display, ActivityLogEntry, AgentConfigError,
+    ArtifactContext, FlowOverrides, IntegrationErrorContext, PrComment, PromptBuilder,
+    PromptService as PromptRenderer, QuestionAnswerContext, ResolvedAgentConfig,
+    ResumeQuestionAnswer, ResumeType, SiblingTaskContext, StagePromptContext,
+};
 
-/// A stage entry for the workflow overview in agent prompts.
-/// Contains the stage name, description, and whether it's the current stage.
-#[derive(Debug, Clone, Serialize)]
-pub struct WorkflowStageEntry {
-    /// Stage name (e.g., "plan", "work").
-    pub name: String,
-    /// Human-readable description of what this stage does.
-    pub description: String,
-    /// Whether this is the current stage being executed.
-    pub is_current: bool,
-}
-
-/// Build workflow stage entries for the prompt overview.
-///
-/// Returns a list of all stages in the given flow (or default flow if None),
-/// with their names, descriptions, and a flag indicating the current stage.
-pub fn build_workflow_stage_entries(
-    workflow: &WorkflowConfig,
-    current_stage: &str,
-    flow: Option<&str>,
-) -> Vec<WorkflowStageEntry> {
-    workflow
-        .stages_in_flow(flow)
-        .into_iter()
-        .map(|stage| WorkflowStageEntry {
-            name: stage.name.clone(),
-            description: stage.description.clone().unwrap_or_else(|| stage.display()),
-            is_current: stage.name == current_stage,
-        })
-        .collect()
-}
-
-// =============================================================================
-// Template Loading
-// =============================================================================
-
-const OUTPUT_FORMAT_TEMPLATE: &str = include_str!("../../prompts/templates/output_format.md");
-const INITIAL_PROMPT_TEMPLATE: &str = include_str!("../../prompts/templates/initial_prompt.md");
-const SYSTEM_PROMPT_TEMPLATE: &str = include_str!("../../prompts/templates/system_prompt.md");
-
-static TEMPLATES: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
-    let mut hb = Handlebars::new();
-    hb.register_escape_fn(handlebars::no_escape);
-    hb.register_template_string("output_format", OUTPUT_FORMAT_TEMPLATE)
-        .expect("output_format template should be valid");
-    hb.register_template_string("initial_prompt", INITIAL_PROMPT_TEMPLATE)
-        .expect("initial_prompt template should be valid");
-    hb.register_template_string("system_prompt", SYSTEM_PROMPT_TEMPLATE)
-        .expect("system_prompt template should be valid");
-    hb
-});
-
-/// Context for rendering the output format template.
-#[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
-struct OutputFormatContext {
-    artifact_name: String,
-    can_ask_questions: bool,
-    questions_example: Option<String>,
-    can_produce_subtasks: bool,
-    subtasks_example: Option<String>,
-    skip_example: Option<String>,
-    has_approval: bool,
-    show_direct_structured_output_hint: bool,
-}
-
-/// Build the output format context with schema-validated examples.
-fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatContext {
-    let questions_example = if ctx.stage.capabilities.ask_questions {
-        let examples = vec![question_example(
-            "Which approach should we take?",
-            &["Option A", "Option B"],
-        )];
-        Some(questions_output_example(&examples))
-    } else {
-        None
-    };
-
-    let (subtasks_example, skip_example) = if ctx.stage.capabilities.produces_subtasks() {
-        let examples = vec![
-            subtask_example(
-                "First task",
-                "What needs to be done first",
-                "Detailed implementation brief for the first task...",
-                &[],
-            ),
-            subtask_example(
-                "Second task",
-                "Depends on first task",
-                "Detailed implementation brief for the second task...",
-                &[0],
-            ),
-        ];
-        (
-            Some(subtasks_output_example(
-                &examples,
-                None,
-                "# Technical Design\\n\\nYour detailed analysis and design content here...",
-            )),
-            Some(subtasks_output_example(
-                &[],
-                Some("Task is simple enough to complete directly"),
-                "# Analysis\\n\\nBrief analysis of why this task doesn't need breakdown...",
-            )),
-        )
-    } else {
-        (None, None)
-    };
-
-    OutputFormatContext {
-        artifact_name: ctx.stage.artifact.clone(),
-        can_ask_questions: ctx.stage.capabilities.ask_questions,
-        questions_example,
-        can_produce_subtasks: ctx.stage.capabilities.produces_subtasks(),
-        subtasks_example,
-        skip_example,
-        has_approval: ctx.stage.capabilities.has_approval(),
-        show_direct_structured_output_hint: ctx.show_direct_structured_output_hint,
-    }
-}
-
-/// Render the output format section using the template.
-fn render_output_format(ctx: &StagePromptContext<'_>) -> String {
-    let format_ctx = build_output_format_context(ctx);
-    TEMPLATES
-        .render("output_format", &format_ctx)
-        .expect("output_format template should render")
-}
-
-/// Build the system prompt from agent definition and output format.
-///
-/// This renders the `system_prompt.md` template with agent definition and output format.
-/// The system prompt contains instructions that survive session compaction.
-pub fn build_system_prompt(agent_definition: &str, output_format: &str) -> String {
-    #[derive(Serialize)]
-    struct SystemPromptContext<'a> {
-        agent_definition: &'a str,
-        output_format: &'a str,
-    }
-
-    let ctx = SystemPromptContext {
-        agent_definition,
-        output_format,
-    };
-
-    TEMPLATES
-        .render("system_prompt", &ctx)
-        .expect("system_prompt template should render")
-}
-
-/// Context for building a stage prompt.
-#[derive(Debug, Clone, Serialize)]
-pub struct StagePromptContext<'a> {
-    /// Stage configuration.
-    pub stage: &'a StageConfig,
-
-    /// Task information.
-    pub task_id: &'a str,
-    pub title: &'a str,
-    pub description: &'a str,
-
-    /// Available artifacts from previous stages.
-    pub artifacts: Vec<ArtifactContext<'a>>,
-
-    /// Question history (if stage can ask questions).
-    pub question_history: Vec<QuestionAnswerContext<'a>>,
-
-    /// Feedback from rejection (if retrying).
-    pub feedback: Option<&'a str>,
-
-    /// Integration error (if resuming after merge conflict).
-    pub integration_error: Option<IntegrationErrorContext<'a>>,
-
-    /// Worktree path (for git worktree isolation).
-    pub worktree_path: Option<&'a str>,
-
-    /// Base branch this task was created from.
-    pub base_branch: &'a str,
-
-    /// Git commit SHA of the base branch at worktree creation time.
-    pub base_commit: &'a str,
-
-    /// Whether to show instructions for direct `StructuredOutput` usage (Claude Code specific).
-    pub show_direct_structured_output_hint: bool,
-
-    /// Activity logs from prior completed iterations.
-    pub activity_logs: Vec<ActivityLogEntry>,
-
-    /// Workflow stage entries for the overview section.
-    pub workflow_stages: Vec<WorkflowStageEntry>,
-
-    /// Sibling subtasks (for subtasks only, empty for non-subtasks).
-    pub sibling_tasks: Vec<SiblingTaskContext>,
-}
-
-/// Context for an artifact available to the stage.
-#[derive(Debug, Clone, Serialize)]
-pub struct ArtifactContext<'a> {
-    /// Artifact name.
-    pub name: &'a str,
-    /// Artifact content.
-    pub content: &'a str,
-}
-
-/// Context for a question-answer pair.
-#[derive(Debug, Clone, Serialize)]
-pub struct QuestionAnswerContext<'a> {
-    /// The question that was asked.
-    pub question: &'a str,
-    /// The user's answer.
-    pub answer: &'a str,
-}
-
-/// Context for an integration error.
-#[derive(Debug, Clone, Serialize)]
-pub struct IntegrationErrorContext<'a> {
-    /// Error message.
-    pub message: &'a str,
-    /// Files with conflicts.
-    pub conflict_files: Vec<&'a str>,
-    /// Base branch to rebase onto.
-    pub base_branch: &'a str,
-}
-
-/// Context for an activity log entry from a prior iteration.
-#[derive(Debug, Clone, Serialize)]
-pub struct ActivityLogEntry {
-    /// Stage that produced this log (e.g., "planning", "work").
-    pub stage: String,
-    /// Iteration number within the stage.
-    pub iteration_number: u32,
-    /// The activity log content.
-    pub content: String,
-}
-
-/// Context for a sibling subtask in the prompt.
-#[derive(Debug, Clone, Serialize)]
-pub struct SiblingTaskContext {
-    /// Short display ID (e.g., "bird").
-    pub short_id: String,
-    /// Subtask title.
-    pub title: String,
-    /// Brief description (from breakdown, not `detailed_instructions`).
-    pub description: String,
-    /// Dependency relationship to current task: "depends on this task", "this task depends on", or None.
-    pub dependency_relationship: Option<String>,
-    /// User-friendly status display ("pending", "working", "done", etc.).
-    pub status_display: String,
-}
-
-/// Convert Status and Phase to a user-friendly display string for sibling context.
-pub fn sibling_status_display(status: &Status, phase: Phase) -> &'static str {
-    match status {
-        Status::Done | Status::Archived => "done",
-        Status::Failed { .. } => "failed",
-        Status::Blocked { .. } => "blocked",
-        Status::WaitingOnChildren { .. } => "waiting",
-        Status::Active { .. } => match phase {
-            Phase::AgentWorking => "working",
-            Phase::AwaitingReview => "reviewing",
-            _ => "pending",
-        },
-    }
-}
-
-/// Consolidate activity logs, collapsing only consecutive same-stage entries.
-///
-/// Uses "intervening stage prevents deduplication" semantics: consecutive entries from
-/// the same stage are collapsed (last wins), but if a different stage appears in between,
-/// both entries are preserved.
-///
-/// Example: `work(A) → review(C) → work(B)` produces 3 entries (A, C, B) because
-/// review intervened. But `work(A) → work(B)` produces 1 entry (B) because they're
-/// consecutive.
-///
-/// **Important**: Callers must provide logs in chronological order (by `started_at`).
-///
-/// Empty or whitespace-only logs are filtered out.
-pub fn deduplicate_activity_logs_by_stage(logs: Vec<ActivityLogEntry>) -> Vec<ActivityLogEntry> {
-    let mut result: Vec<ActivityLogEntry> = Vec::new();
-
-    for log in logs {
-        // Skip empty/whitespace-only logs
-        if log.content.trim().is_empty() {
-            continue;
-        }
-
-        // Only collapse if the immediately previous entry was from the same stage
-        if result.last().is_some_and(|prev| prev.stage == log.stage) {
-            // Consecutive same-stage: replace previous entry
-            *result.last_mut().unwrap() = log;
-        } else {
-            // Different stage (or first entry): keep both
-            result.push(log);
-        }
-    }
-
-    result
-}
-
-/// Flow-specific overrides for agent configuration.
-///
-/// When a task uses a named flow, the flow may override the prompt path,
-/// capabilities, and/or inputs for specific stages.
-#[derive(Debug, Default, Clone)]
-pub struct FlowOverrides<'a> {
-    /// Override the prompt template path.
-    pub prompt: Option<&'a str>,
-    /// Override the stage capabilities.
-    pub capabilities: Option<&'a crate::workflow::config::StageCapabilities>,
-    /// Override the stage inputs.
-    pub inputs: Option<Vec<String>>,
-}
-
-/// Builder for stage prompts.
-///
-/// Takes workflow configuration and task state to generate
-/// prompts for any stage.
-pub struct PromptBuilder<'a> {
-    workflow: &'a WorkflowConfig,
-}
-
-impl<'a> PromptBuilder<'a> {
-    /// Create a new prompt builder.
-    pub fn new(workflow: &'a WorkflowConfig) -> Self {
-        Self { workflow }
-    }
-
-    /// Build prompt context for a stage.
-    ///
-    /// This provides all the context needed to render a prompt template.
-    #[allow(clippy::too_many_arguments)]
-    pub fn build_context(
-        &self,
-        stage_name: &'a str,
-        task: &'a Task,
-        feedback: Option<&'a str>,
-        integration_error: Option<IntegrationErrorContext<'a>>,
-        show_direct_structured_output_hint: bool,
-        activity_logs: Vec<ActivityLogEntry>,
-        sibling_tasks: Vec<SiblingTaskContext>,
-    ) -> Option<StagePromptContext<'a>> {
-        let stage = self.workflow.stage(stage_name)?;
-
-        // Gather artifacts that this stage needs as inputs
-        let artifacts: Vec<ArtifactContext<'a>> = stage
-            .inputs
-            .iter()
-            .filter_map(|input_name| {
-                task.artifacts
-                    .get(input_name)
-                    .map(|artifact| ArtifactContext {
-                        name: &artifact.name,
-                        content: &artifact.content,
-                    })
-            })
-            .collect();
-
-        // Question history is now passed via resume prompts (IterationTrigger::Answers)
-        // Initial prompts don't include question history since no questions have been asked yet
-        let question_history = Vec::new();
-
-        let workflow_stages =
-            build_workflow_stage_entries(self.workflow, stage_name, task.flow.as_deref());
-
-        Some(StagePromptContext {
-            stage,
-            task_id: &task.id,
-            title: &task.title,
-            description: &task.description,
-            artifacts,
-            question_history,
-            feedback,
-            integration_error,
-            worktree_path: task.worktree_path.as_deref(),
-            base_branch: task.base_branch.as_str(),
-            base_commit: task.base_commit.as_str(),
-            show_direct_structured_output_hint,
-            activity_logs,
-            workflow_stages,
-            sibling_tasks,
-        })
-    }
-
-    /// Build context for a stage using an explicit stage config (for flow overrides).
-    ///
-    /// This is like `build_context` but accepts the stage directly instead of
-    /// looking it up by name. Used when capabilities have been overridden by a flow.
-    #[allow(clippy::too_many_arguments)]
-    pub fn build_context_with_stage(
-        &self,
-        stage: &'a StageConfig,
-        task: &'a Task,
-        feedback: Option<&'a str>,
-        integration_error: Option<IntegrationErrorContext<'a>>,
-        show_direct_structured_output_hint: bool,
-        activity_logs: Vec<ActivityLogEntry>,
-        sibling_tasks: Vec<SiblingTaskContext>,
-    ) -> Option<StagePromptContext<'a>> {
-        let artifacts: Vec<ArtifactContext<'a>> = stage
-            .inputs
-            .iter()
-            .filter_map(|input_name| {
-                task.artifacts
-                    .get(input_name)
-                    .map(|artifact| ArtifactContext {
-                        name: &artifact.name,
-                        content: &artifact.content,
-                    })
-            })
-            .collect();
-
-        let question_history = Vec::new();
-
-        let workflow_stages =
-            build_workflow_stage_entries(self.workflow, &stage.name, task.flow.as_deref());
-
-        Some(StagePromptContext {
-            stage,
-            task_id: &task.id,
-            title: &task.title,
-            description: &task.description,
-            artifacts,
-            question_history,
-            feedback,
-            integration_error,
-            worktree_path: task.worktree_path.as_deref(),
-            base_branch: task.base_branch.as_str(),
-            base_commit: task.base_commit.as_str(),
-            show_direct_structured_output_hint,
-            activity_logs,
-            workflow_stages,
-            sibling_tasks,
-        })
-    }
-
-    /// Build a simple text prompt for a stage.
-    ///
-    /// This generates a basic prompt without using templates.
-    /// For production use, you'd use Handlebars templates.
-    pub fn build_simple_prompt(
-        &self,
-        stage_name: &'a str,
-        task: &'a Task,
-        feedback: Option<&'a str>,
-    ) -> Option<String> {
-        let ctx = self.build_context(
-            stage_name,
-            task,
-            feedback,
-            None,
-            false,
-            Vec::new(),
-            Vec::new(),
-        )?;
-
-        let mut prompt = String::new();
-
-        // Header
-        let display_name = ctx.stage.display_name.as_deref().unwrap_or(&ctx.stage.name);
-        let _ = write!(prompt, "# Stage: {display_name}\n\n");
-
-        // Task info
-        prompt.push_str("## Task\n\n");
-        let _ = writeln!(prompt, "**ID:** {}", ctx.task_id);
-        let _ = writeln!(prompt, "**Title:** {}", ctx.title);
-        let _ = write!(prompt, "\n{}\n\n", ctx.description);
-
-        // Input artifacts
-        if !ctx.artifacts.is_empty() {
-            prompt.push_str("## Input Artifacts\n\n");
-            for artifact in &ctx.artifacts {
-                let _ = write!(prompt, "### {}\n\n", artifact.name);
-                let _ = write!(prompt, "{}\n\n", artifact.content);
-            }
-        }
-
-        // Question history
-        if !ctx.question_history.is_empty() {
-            prompt.push_str("## Previous Questions & Answers\n\n");
-            for qa in &ctx.question_history {
-                let _ = writeln!(prompt, "**Q:** {}", qa.question);
-                let _ = writeln!(prompt, "**A:** {}\n", qa.answer);
-            }
-        }
-
-        // Feedback
-        if let Some(fb) = ctx.feedback {
-            prompt.push_str("## Feedback to Address\n\n");
-            let _ = write!(prompt, "{fb}\n\n");
-        }
-
-        // Expected output
-        prompt.push_str("## Expected Output\n\n");
-        let _ = writeln!(
-            prompt,
-            "Produce the `{}` artifact for this stage.",
-            ctx.stage.artifact
-        );
-
-        // Capabilities
-        if ctx.stage.capabilities.ask_questions {
-            prompt.push_str("\nYou may ask clarifying questions if needed.\n");
-        }
-        if ctx.stage.capabilities.produces_subtasks() {
-            prompt.push_str("\nYou may break this down into subtasks if appropriate.\n");
-        }
-        if ctx.stage.capabilities.has_approval() {
-            prompt.push_str("\nYou must produce an approval decision (approve or reject).\n");
-        }
-
-        Some(prompt)
-    }
-}
-
-/// Helper to convert `QuestionAnswer` to context.
-impl<'a> From<&'a QuestionAnswer> for QuestionAnswerContext<'a> {
-    fn from(qa: &'a QuestionAnswer) -> Self {
-        Self {
-            question: &qa.question,
-            answer: &qa.answer,
-        }
-    }
-}
+/// Lazy-initialized prompt renderer (owns pre-compiled Handlebars templates).
+static RENDERER: LazyLock<PromptRenderer> = LazyLock::new(PromptRenderer::new);
 
 // ============================================================================
-// Agent Configuration Resolution
+// I/O Functions (stay in orkestra-core)
 // ============================================================================
-
-/// Resolved configuration for spawning an agent.
-#[derive(Debug, Clone)]
-pub struct ResolvedAgentConfig {
-    /// The system prompt (agent definition + output format).
-    pub system_prompt: String,
-    /// The user message prompt (task context).
-    pub prompt: String,
-    /// JSON schema for structured output (required).
-    pub json_schema: String,
-    /// Session type identifier (e.g., "planning", "work").
-    pub session_type: String,
-}
-
-/// Error type for agent configuration resolution.
-#[derive(Debug, Clone)]
-pub enum AgentConfigError {
-    /// Task is not in an active stage.
-    NotInActiveStage,
-    /// Stage not found in workflow.
-    UnknownStage(String),
-    /// Agent definition file not found.
-    DefinitionNotFound(String),
-    /// Failed to build prompt.
-    PromptBuildError(String),
-}
-
-impl std::fmt::Display for AgentConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NotInActiveStage => write!(f, "Task is not in an active stage"),
-            Self::UnknownStage(name) => write!(f, "Unknown stage: {name}"),
-            Self::DefinitionNotFound(msg) => write!(f, "Agent definition not found: {msg}"),
-            Self::PromptBuildError(msg) => write!(f, "Failed to build prompt: {msg}"),
-        }
-    }
-}
-
-impl std::error::Error for AgentConfigError {}
 
 /// Load an agent definition from the agents directory.
 ///
@@ -678,6 +114,10 @@ pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>)
     Some(crate::prompts::generate_stage_schema(&schema_config))
 }
 
+// ============================================================================
+// Agent Configuration Resolution (I/O wrappers)
+// ============================================================================
+
 /// Resolve complete agent configuration for a stage.
 ///
 /// This is the main entry point for the orchestrator to get everything
@@ -689,7 +129,6 @@ pub fn resolve_stage_agent_config(
     feedback: Option<&str>,
     integration_error: Option<IntegrationErrorContext<'_>>,
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
-    // Get current stage
     let stage_name = task
         .current_stage()
         .ok_or(AgentConfigError::NotInActiveStage)?;
@@ -701,17 +140,17 @@ pub fn resolve_stage_agent_config(
         project_root,
         feedback,
         integration_error,
-        FlowOverrides::default(),
-        false,      // Default to false for backward compatibility
-        Vec::new(), // activity_logs - convenience wrapper doesn't use them
-        Vec::new(), // sibling_tasks - convenience wrapper doesn't use them
+        &FlowOverrides::default(),
+        false,
+        Vec::new(),
+        Vec::new(),
     )
 }
 
 /// Resolve agent configuration for a specific stage with optional overrides.
 ///
-/// Allows flow-specific prompt and capability overrides. When overrides
-/// are `None`, the stage's own configuration is used.
+/// Loads the agent definition and JSON schema from disk, then delegates
+/// to orkestra-prompt for pure assembly.
 #[allow(clippy::too_many_arguments)]
 pub fn resolve_stage_agent_config_for(
     workflow: &WorkflowConfig,
@@ -720,7 +159,7 @@ pub fn resolve_stage_agent_config_for(
     project_root: Option<&Path>,
     feedback: Option<&str>,
     integration_error: Option<IntegrationErrorContext<'_>>,
-    flow_overrides: FlowOverrides<'_>,
+    flow_overrides: &FlowOverrides<'_>,
     show_direct_structured_output_hint: bool,
     activity_logs: Vec<ActivityLogEntry>,
     sibling_tasks: Vec<SiblingTaskContext>,
@@ -734,7 +173,22 @@ pub fn resolve_stage_agent_config_for(
         return Err(AgentConfigError::NotInActiveStage);
     }
 
-    // Resolve prompt path: override > stage.prompt_path()
+    // Resolve effective stage for schema generation (apply flow overrides)
+    let effective_stage =
+        if flow_overrides.capabilities.is_some() || flow_overrides.inputs.is_some() {
+            let mut s = stage.clone();
+            if let Some(caps) = flow_overrides.capabilities {
+                s.capabilities = caps.clone();
+            }
+            if let Some(ref inputs) = flow_overrides.inputs {
+                s.inputs.clone_from(inputs);
+            }
+            s
+        } else {
+            stage.clone()
+        };
+
+    // I/O: Load agent definition from disk
     let definition_path = flow_overrides
         .prompt
         .map(String::from)
@@ -744,231 +198,77 @@ pub fn resolve_stage_agent_config_for(
     let agent_def = load_agent_definition(project_root, &definition_path)
         .map_err(|e| AgentConfigError::DefinitionNotFound(e.to_string()))?;
 
-    // Build effective stage config (with capability/input overrides for flows)
-    let overridden_stage;
-    let effective_stage =
-        if flow_overrides.capabilities.is_some() || flow_overrides.inputs.is_some() {
-            overridden_stage = {
-                let mut s = stage.clone();
-                if let Some(caps) = flow_overrides.capabilities {
-                    s.capabilities = caps.clone();
-                }
-                if let Some(inputs) = flow_overrides.inputs {
-                    s.inputs = inputs;
-                }
-                s
-            };
-            &overridden_stage
-        } else {
-            stage
-        };
-
-    // Build prompt context
-    let builder = PromptBuilder::new(workflow);
-    let ctx = builder
-        .build_context_with_stage(
-            effective_stage,
-            task,
-            feedback,
-            integration_error,
-            show_direct_structured_output_hint,
-            activity_logs,
-            sibling_tasks,
-        )
-        .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;
-
-    // Render agent definition (may contain Handlebars templates)
-    let rendered_definition = render_agent_definition(&agent_def, &ctx);
-
-    // Render output format
-    let output_format = render_output_format(&ctx);
-
-    // Build system prompt (agent definition + output format)
-    let system_prompt = build_system_prompt(&rendered_definition, &output_format);
-
-    // Build user message (task context only - no agent def or output format)
-    let user_message = build_user_message(&ctx);
-
-    // Get JSON schema
-    let json_schema = get_agent_schema(effective_stage, project_root).ok_or_else(|| {
+    // I/O: Get JSON schema (may load custom schema from disk)
+    let json_schema = get_agent_schema(&effective_stage, project_root).ok_or_else(|| {
         AgentConfigError::PromptBuildError(format!("No schema for agent stage '{stage_name}'"))
     })?;
 
-    Ok(ResolvedAgentConfig {
-        system_prompt,
-        prompt: user_message,
-        json_schema,
-        session_type: stage_name.to_string(),
-    })
+    // Pure: delegate to orkestra-prompt for assembly
+    RENDERER.build_agent_config(
+        workflow,
+        task,
+        stage_name,
+        &agent_def,
+        &json_schema,
+        feedback,
+        integration_error,
+        flow_overrides,
+        show_direct_structured_output_hint,
+        activity_logs,
+        sibling_tasks,
+    )
 }
 
-/// Context for rendering the user message template (`initial_prompt.md`).
-#[derive(Debug, Serialize)]
-struct UserMessageContext<'a> {
-    stage_name: &'a str,
-    task_id: &'a str,
-    title: &'a str,
-    description: &'a str,
-    artifacts: &'a [ArtifactContext<'a>],
-    question_history: &'a [QuestionAnswerContext<'a>],
-    feedback: Option<&'a str>,
-    integration_error: Option<&'a IntegrationErrorContext<'a>>,
-    worktree_path: Option<&'a str>,
-    base_branch: &'a str,
-    base_commit: &'a str,
-    activity_logs: &'a [ActivityLogEntry],
-    workflow_stages: &'a [WorkflowStageEntry],
-    sibling_tasks: &'a [SiblingTaskContext],
-}
+// ============================================================================
+// Backward-Compatible Free Functions
+// ============================================================================
 
-/// Context available to agent definition Handlebars templates.
-#[derive(Debug, Serialize)]
-struct AgentDefinitionContext<'a> {
-    stage_name: &'a str,
-    task_id: &'a str,
-    feedback: Option<&'a str>,
-    has_artifacts: bool,
-    artifact_names: Vec<&'a str>,
-}
-
-/// Render an agent definition as a Handlebars template.
-///
-/// If the definition contains no `{{` sequences, returns it unchanged (fast path).
-/// On template errors, returns the raw definition with a warning logged.
-fn render_agent_definition(template: &str, ctx: &StagePromptContext<'_>) -> String {
-    if !template.contains("{{") {
-        return template.to_string();
+/// Build the system prompt from agent definition and output format.
+pub fn build_system_prompt(agent_definition: &str, output_format: &str) -> String {
+    // This is a simple template render — delegate to the lazy-initialized renderer.
+    // The original used TEMPLATES static directly; now we use the renderer's templates.
+    #[derive(serde::Serialize)]
+    struct Ctx<'a> {
+        agent_definition: &'a str,
+        output_format: &'a str,
     }
+    // Access the renderer's internals is not possible via the public API, so we
+    // keep a small standalone handlebars for this backward-compat function.
+    static COMPAT_TEMPLATES: LazyLock<handlebars::Handlebars<'static>> = LazyLock::new(|| {
+        let mut hb = handlebars::Handlebars::new();
+        hb.register_escape_fn(handlebars::no_escape);
+        hb.register_template_string(
+            "system_prompt",
+            include_str!("../../prompts/templates/system_prompt.md"),
+        )
+        .expect("system_prompt template should be valid");
+        hb
+    });
 
-    let def_ctx = AgentDefinitionContext {
-        stage_name: &ctx.stage.name,
-        task_id: ctx.task_id,
-        feedback: ctx.feedback,
-        has_artifacts: !ctx.artifacts.is_empty(),
-        artifact_names: ctx.artifacts.iter().map(|a| a.name).collect(),
-    };
-
-    let mut hb = Handlebars::new();
-    hb.register_escape_fn(handlebars::no_escape);
-    hb.render_template(template, &def_ctx).unwrap_or_else(|e| {
-        eprintln!("Warning: agent definition template error: {e}");
-        template.to_string()
-    })
+    COMPAT_TEMPLATES
+        .render(
+            "system_prompt",
+            &Ctx {
+                agent_definition,
+                output_format,
+            },
+        )
+        .expect("system_prompt template should render")
 }
 
 /// Build a user message from task context.
-///
-/// This renders the `initial_prompt.md` template with only task context
-/// (no agent definition or output format - those go in the system prompt).
 pub fn build_user_message(ctx: &StagePromptContext<'_>) -> String {
-    let template_ctx = UserMessageContext {
-        stage_name: &ctx.stage.name,
-        task_id: ctx.task_id,
-        title: ctx.title,
-        description: ctx.description,
-        artifacts: &ctx.artifacts,
-        question_history: &ctx.question_history,
-        feedback: ctx.feedback,
-        integration_error: ctx.integration_error.as_ref(),
-        worktree_path: ctx.worktree_path,
-        base_branch: ctx.base_branch,
-        base_commit: ctx.base_commit,
-        activity_logs: &ctx.activity_logs,
-        workflow_stages: &ctx.workflow_stages,
-        sibling_tasks: &ctx.sibling_tasks,
-    };
-
-    TEMPLATES
-        .render("initial_prompt", &template_ctx)
-        .expect("initial_prompt template should render")
+    RENDERER.build_user_message(ctx)
 }
 
 /// Build a complete prompt by combining agent definition with context.
 ///
-/// DEPRECATED: This function is kept for backward compatibility with existing tests.
-/// New code should use `build_system_prompt()` and `build_user_message()` separately.
+/// DEPRECATED: Use `build_system_prompt()` and `build_user_message()` separately.
 pub fn build_complete_prompt(agent_definition: &str, ctx: &StagePromptContext<'_>) -> String {
-    let rendered_definition = render_agent_definition(agent_definition, ctx);
-    let output_format = render_output_format(ctx);
-    let system_prompt = build_system_prompt(&rendered_definition, &output_format);
-    let user_message = build_user_message(ctx);
-
-    // Combine them in the old format for backward compatibility
-    format!("{system_prompt}\n\n{user_message}")
+    RENDERER.build_complete_prompt(agent_definition, ctx)
 }
 
-// ============================================================================
-// Resume Prompts
-// ============================================================================
-
-/// Type of resume prompt to use.
-///
-/// When resuming a session (via Claude Code's --resume), we send a SHORT prompt
-/// since Claude already remembers the full task context. The resume type determines
-/// what the short prompt should say.
-#[derive(Debug, Clone)]
-pub enum ResumeType {
-    /// Agent was interrupted, continue from where left off.
-    Continue,
-    /// Human provided feedback to address.
-    Feedback { feedback: String },
-    /// Integration failed with merge conflict.
-    Integration {
-        message: String,
-        conflict_files: Vec<String>,
-    },
-    /// Human provided answers to questions the agent asked.
-    Answers { answers: Vec<ResumeQuestionAnswer> },
-    /// Stage is being re-run after the full cycle completed (untriggered re-entry).
-    Recheck,
-    /// Human retried a failed task, optionally with instructions.
-    RetryFailed { instructions: Option<String> },
-    /// Human retried a blocked task, optionally with instructions.
-    RetryBlocked { instructions: Option<String> },
-    /// User interrupted and resumed with optional guidance.
-    ManualResume { message: Option<String> },
-    /// User selected PR comments to address.
-    PrComments {
-        comments: Vec<PrComment>,
-        guidance: Option<String>,
-    },
-}
-
-/// A PR comment to address in the resume prompt.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct PrComment {
-    /// The author of the comment.
-    pub author: String,
-    /// The file path the comment is on (empty for PR-level comments).
-    pub path: String,
-    /// The line number (if a line comment).
-    pub line: Option<u32>,
-    /// The comment body text.
-    pub body: String,
-}
-
-/// Owned question-answer pair for use in resume prompts.
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ResumeQuestionAnswer {
-    pub question: String,
-    pub answer: String,
-}
-
-// Resume prompt templates (compiled in from prompts/templates/resume/)
-const RESUME_CONTINUE: &str = include_str!("../../prompts/templates/resume/continue.md");
-const RESUME_FEEDBACK: &str = include_str!("../../prompts/templates/resume/feedback.md");
-const RESUME_INTEGRATION: &str = include_str!("../../prompts/templates/resume/integration.md");
-const RESUME_ANSWERS: &str = include_str!("../../prompts/templates/resume/answers.md");
-const RESUME_RECHECK: &str = include_str!("../../prompts/templates/resume/recheck.md");
-const RESUME_RETRY_FAILED: &str = include_str!("../../prompts/templates/resume/retry_failed.md");
-const RESUME_RETRY_BLOCKED: &str = include_str!("../../prompts/templates/resume/retry_blocked.md");
-const RESUME_MANUAL_RESUME: &str = include_str!("../../prompts/templates/resume/manual_resume.md");
-const RESUME_PR_COMMENTS: &str = include_str!("../../prompts/templates/resume/pr_comments.md");
-
-/// Load and render a resume prompt template.
-///
-/// This loads the appropriate template for the resume type and renders it
-/// with any required context (feedback, error details, etc.).
+/// Build a resume prompt for session continuation.
 pub fn build_resume_prompt(
     stage: &str,
     resume_type: &ResumeType,
@@ -976,110 +276,21 @@ pub fn build_resume_prompt(
     artifacts: &[(String, String)],
     activity_logs: &[ActivityLogEntry],
 ) -> Result<String, AgentConfigError> {
-    let (template, mut context) = match &resume_type {
-        ResumeType::Continue => (RESUME_CONTINUE, serde_json::json!({})),
-        ResumeType::Feedback { feedback } => {
-            (RESUME_FEEDBACK, serde_json::json!({ "feedback": feedback }))
-        }
-        ResumeType::Integration {
-            message,
-            conflict_files,
-        } => (
-            RESUME_INTEGRATION,
-            serde_json::json!({
-                "error_message": message,
-                "conflict_files": conflict_files,
-                "base_branch": base_branch,
-            }),
-        ),
-        ResumeType::Answers { answers } => {
-            (RESUME_ANSWERS, serde_json::json!({ "answers": answers }))
-        }
-        ResumeType::Recheck => (RESUME_RECHECK, serde_json::json!({})),
-        ResumeType::RetryFailed { instructions } => (
-            RESUME_RETRY_FAILED,
-            serde_json::json!({ "instructions": instructions }),
-        ),
-        ResumeType::RetryBlocked { instructions } => (
-            RESUME_RETRY_BLOCKED,
-            serde_json::json!({ "instructions": instructions }),
-        ),
-        ResumeType::ManualResume { message } => (
-            RESUME_MANUAL_RESUME,
-            serde_json::json!({ "message": message }),
-        ),
-        ResumeType::PrComments { comments, guidance } => (
-            RESUME_PR_COMMENTS,
-            serde_json::json!({ "comments": comments, "guidance": guidance }),
-        ),
-    };
-
-    // All resume templates need the stage name for the marker
-    context["stage_name"] = serde_json::json!(stage);
-
-    // Inject artifacts if present
-    if !artifacts.is_empty() {
-        let artifact_values: Vec<serde_json::Value> = artifacts
-            .iter()
-            .map(|(name, content)| serde_json::json!({"name": name, "content": content}))
-            .collect();
-        context["artifacts"] = serde_json::json!(artifact_values);
-    }
-
-    // Inject activity logs for Recheck resume type
-    if matches!(resume_type, ResumeType::Recheck) && !activity_logs.is_empty() {
-        context["activity_logs"] = serde_json::json!(activity_logs);
-    }
-
-    render_template(template, &context)
-}
-
-/// Render a Handlebars template with the given context.
-fn render_template(
-    template: &str,
-    context: &serde_json::Value,
-) -> Result<String, AgentConfigError> {
-    let reg = handlebars::Handlebars::new();
-    reg.render_template(template, context)
-        .map_err(|e| AgentConfigError::PromptBuildError(e.to_string()))
+    RENDERER.build_resume_prompt(stage, resume_type, base_branch, artifacts, activity_logs)
 }
 
 /// Determine the resume type from context.
-///
-/// This is used by `TaskExecutionService` to decide which resume prompt to use.
-/// Priority: `integration_error` > feedback > answers > continue
 pub fn determine_resume_type(
     feedback: Option<&str>,
     integration_error: Option<&IntegrationErrorContext<'_>>,
     question_history: &[crate::workflow::domain::QuestionAnswer],
 ) -> ResumeType {
-    if let Some(err) = integration_error {
-        ResumeType::Integration {
-            message: err.message.to_string(),
-            conflict_files: err
-                .conflict_files
-                .iter()
-                .map(|s| (*s).to_string())
-                .collect(),
-        }
-    } else if let Some(fb) = feedback {
-        ResumeType::Feedback {
-            feedback: fb.to_string(),
-        }
-    } else if !question_history.is_empty() {
-        ResumeType::Answers {
-            answers: question_history
-                .iter()
-                .map(|qa| ResumeQuestionAnswer {
-                    question: qa.question.clone(),
-                    answer: qa.answer.clone(),
-                })
-                .collect(),
-        }
-    } else {
-        ResumeType::Continue
-    }
+    RENDERER.determine_resume_type(feedback, integration_error, question_history)
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -1106,6 +317,8 @@ mod tests {
         ])
     }
 
+    // -- PromptBuilder tests (validate the orkestra-prompt integration) --
+
     #[test]
     fn test_build_context_planning() {
         let workflow = test_workflow();
@@ -1126,7 +339,7 @@ mod tests {
         assert_eq!(ctx.stage.name, "planning");
         assert_eq!(ctx.task_id, "task-1");
         assert_eq!(ctx.title, "Implement login");
-        assert!(ctx.artifacts.is_empty()); // Planning has no inputs
+        assert!(ctx.artifacts.is_empty());
         assert!(ctx.feedback.is_none());
     }
 
@@ -1309,8 +522,6 @@ mod tests {
 
     #[test]
     fn test_context_question_history_is_empty() {
-        // Question history is now passed via resume prompts (IterationTrigger::Answers),
-        // not in the initial prompt context. So question_history is always empty.
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
@@ -1322,34 +533,26 @@ mod tests {
         assert!(ctx.question_history.is_empty());
     }
 
-    // ========================================================================
-    // Agent Configuration Resolution tests
-    // ========================================================================
+    // -- Schema generation tests (I/O) --
 
     #[test]
     fn test_get_agent_schema_generates_dynamically() {
-        // Planning stage with questions capability
         let planning = StageConfig::new("planning", "plan")
             .with_capabilities(StageCapabilities::with_questions());
         let schema = get_agent_schema(&planning, None).unwrap();
-        // Should contain the artifact name in the type enum
         assert!(schema.contains("\"plan\""));
-        // Should have questions capability
         assert!(schema.contains("\"questions\""));
 
-        // Work stage without questions
         let work = StageConfig::new("work", "summary");
         let schema = get_agent_schema(&work, None).unwrap();
         assert!(schema.contains("\"summary\""));
-        // Should NOT have questions (no capability)
         assert!(!schema.contains("\"questions\""));
 
-        // Review stage with approval capability
         let review = StageConfig::new("review", "verdict")
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())));
         let schema = get_agent_schema(&review, None).unwrap();
-        assert!(schema.contains("\"approval\"")); // approval type
-        assert!(!schema.contains("\"verdict\"")); // artifact name excluded
+        assert!(schema.contains("\"approval\""));
+        assert!(!schema.contains("\"verdict\""));
     }
 
     #[test]
@@ -1357,6 +560,8 @@ mod tests {
         let script_stage = StageConfig::new_script("checks", "check_results", "./run.sh");
         assert!(get_agent_schema(&script_stage, None).is_none());
     }
+
+    // -- Template rendering tests (via orkestra-prompt) --
 
     #[test]
     fn test_build_complete_prompt() {
@@ -1383,13 +588,9 @@ mod tests {
         let agent_def = "You are a worker agent. Implement the plan.";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Combined prompt (for backward compat) contains both system and user sections
-        // System prompt section:
         assert!(prompt.contains("You are a worker agent"));
         assert!(prompt.contains("Output Format"));
-        assert!(prompt.contains("summary")); // The stage artifact
-
-        // User message section:
+        assert!(prompt.contains("summary"));
         assert!(prompt.contains("<!orkestra:spawn:work>"));
         assert!(prompt.contains("Task ID"));
         assert!(prompt.contains("task-1"));
@@ -1473,7 +674,6 @@ mod tests {
         let agent_def = "Planner agent";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Planning stage has ask_questions capability
         assert!(prompt.contains("Ask clarifying questions"));
         assert!(prompt.contains("questions"));
     }
@@ -1496,7 +696,6 @@ mod tests {
         let agent_def = "Reviewer agent";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Review stage has approval capability
         assert!(prompt.contains("Approve or reject"));
         assert!(prompt.contains("approval"));
     }
@@ -1518,7 +717,6 @@ mod tests {
         let agent_def = "Planner agent";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Should contain worktree note with base branch
         assert!(prompt.contains("Worktree Context"));
         assert!(prompt.contains("/path/to/worktree/task-1"));
         assert!(prompt.contains("branched from `main`"));
@@ -1532,7 +730,6 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
-        // No worktree set
 
         let ctx = builder
             .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
@@ -1541,7 +738,6 @@ mod tests {
         let agent_def = "Planner agent";
         let prompt = build_complete_prompt(agent_def, &ctx);
 
-        // Should NOT contain worktree note
         assert!(!prompt.contains("Worktree Context"));
     }
 
@@ -1557,9 +753,7 @@ mod tests {
         assert!(err.to_string().contains("missing.md"));
     }
 
-    // ========================================================================
-    // Resume Prompt tests
-    // ========================================================================
+    // -- Resume prompt tests --
 
     #[test]
     fn test_build_resume_prompt_continue() {
@@ -1751,7 +945,6 @@ mod tests {
         assert!(prompt.starts_with("<!orkestra:resume:review:manual_resume>"));
         assert!(prompt.contains("interrupted by the user"));
         assert!(prompt.contains("JSON"));
-        // Should not contain the message section when None
         assert!(!prompt.contains("Message from the user"));
     }
 
@@ -1816,9 +1009,10 @@ mod tests {
         assert!(prompt.contains("reviewer"));
         assert!(prompt.contains("README.md"));
         assert!(prompt.contains("Typo in documentation"));
-        // Should not contain guidance section when None
         assert!(!prompt.contains("User guidance"));
     }
+
+    // -- Determine resume type tests --
 
     #[test]
     fn test_determine_resume_type_integration_takes_priority() {
@@ -1830,7 +1024,6 @@ mod tests {
         };
         let answers = vec![QuestionAnswer::new("What?", "Something", "now")];
         let result = determine_resume_type(Some("feedback"), Some(&error), &answers);
-        // Integration error takes priority over everything
         assert!(matches!(result, ResumeType::Integration { .. }));
     }
 
@@ -1839,7 +1032,6 @@ mod tests {
         use crate::workflow::domain::QuestionAnswer;
         let answers = vec![QuestionAnswer::new("What?", "Something", "now")];
         let result = determine_resume_type(Some("please fix"), None, &answers);
-        // Feedback takes priority over answers
         match result {
             ResumeType::Feedback { feedback } => assert_eq!(feedback, "please fix"),
             _ => panic!("Expected Feedback variant"),
@@ -1870,89 +1062,7 @@ mod tests {
         assert!(matches!(result, ResumeType::Continue));
     }
 
-    // ========================================================================
-    // Agent Definition Handlebars Rendering tests
-    // ========================================================================
-
-    #[test]
-    fn test_render_agent_definition_passthrough() {
-        let workflow = test_workflow();
-        let builder = PromptBuilder::new(&workflow);
-        let task = Task::new("task-1", "Test", "Description", "planning", "now");
-        let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
-            .unwrap();
-
-        // No {{ markers — should pass through unchanged
-        let input = "You are a planner agent. Do planning.";
-        let result = render_agent_definition(input, &ctx);
-        assert_eq!(result, input);
-    }
-
-    #[test]
-    fn test_render_agent_definition_with_feedback_conditional() {
-        let workflow = test_workflow();
-        let builder = PromptBuilder::new(&workflow);
-        let task = Task::new("task-1", "Test", "Description", "planning", "now");
-
-        // With feedback
-        let ctx = builder
-            .build_context(
-                "planning",
-                &task,
-                Some("Fix this"),
-                None,
-                false,
-                Vec::new(),
-                Vec::new(),
-            )
-            .unwrap();
-        let template = "Base instructions.\n\n{{#if feedback}}\nFEEDBACK_SECTION\n{{/if}}";
-        let result = render_agent_definition(template, &ctx);
-        assert!(result.contains("FEEDBACK_SECTION"));
-        assert!(result.contains("Base instructions."));
-
-        // Without feedback
-        let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
-            .unwrap();
-        let result = render_agent_definition(template, &ctx);
-        assert!(!result.contains("FEEDBACK_SECTION"));
-        assert!(result.contains("Base instructions."));
-    }
-
-    #[test]
-    fn test_render_agent_definition_template_error_fallback() {
-        let workflow = test_workflow();
-        let builder = PromptBuilder::new(&workflow);
-        let task = Task::new("task-1", "Test", "Description", "planning", "now");
-        let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
-            .unwrap();
-
-        // Invalid template — should return raw definition
-        let bad_template = "Start {{#if}} missing close";
-        let result = render_agent_definition(bad_template, &ctx);
-        assert_eq!(result, bad_template);
-    }
-
-    #[test]
-    fn test_render_agent_definition_context_variables() {
-        let workflow = test_workflow();
-        let builder = PromptBuilder::new(&workflow);
-        let task = Task::new("task-1", "Test", "Description", "planning", "now");
-        let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
-            .unwrap();
-
-        let template = "Stage: {{stage_name}}, Task: {{task_id}}";
-        let result = render_agent_definition(template, &ctx);
-        assert_eq!(result, "Stage: planning, Task: task-1");
-    }
-
-    // ========================================================================
-    // System Prompt Split tests
-    // ========================================================================
+    // -- System prompt tests --
 
     #[test]
     fn test_build_system_prompt() {
@@ -1972,7 +1082,6 @@ mod tests {
         let workflow = test_workflow();
         let temp_dir = TempDir::new().unwrap();
 
-        // Create a minimal agent definition file
         let agents_dir = temp_dir.path().join(".orkestra/agents");
         std::fs::create_dir_all(&agents_dir).unwrap();
         std::fs::write(
@@ -1984,7 +1093,6 @@ mod tests {
         let mut task = Task::new("task-1", "Test", "Description", "planning", "now");
         task.worktree_path = Some(temp_dir.path().to_string_lossy().to_string());
 
-        // Resolve agent config
         let config = resolve_stage_agent_config_for(
             &workflow,
             &task,
@@ -1992,33 +1100,26 @@ mod tests {
             Some(temp_dir.path()),
             None,
             None,
-            FlowOverrides::default(),
+            &FlowOverrides::default(),
             false,
             Vec::new(),
             Vec::new(),
         )
         .unwrap();
 
-        // ASSERT: system_prompt field is populated
         assert!(
             !config.system_prompt.is_empty(),
             "system_prompt should not be empty"
         );
-
-        // ASSERT: system_prompt contains agent definition
         assert!(
             config.system_prompt.contains("planning agent"),
             "system_prompt should contain agent definition"
         );
-
-        // ASSERT: system_prompt contains output format
         assert!(
             config.system_prompt.contains("Output Format")
                 || config.system_prompt.contains("output format"),
             "system_prompt should contain output format instructions"
         );
-
-        // ASSERT: system_prompt contains artifact name
         assert!(
             config.system_prompt.contains("plan"),
             "system_prompt should reference the artifact name 'plan'"
@@ -2050,11 +1151,8 @@ mod tests {
 
         let user_message = build_user_message(&ctx);
 
-        // User message should NOT contain output format or agent definition
         assert!(!user_message.contains("Output Format"));
         assert!(!user_message.contains("worker agent"));
-
-        // But it should contain task context
         assert!(user_message.contains("Task ID"));
         assert!(user_message.contains("task-1"));
         assert!(user_message.contains("Implement login"));
@@ -2085,7 +1183,6 @@ mod tests {
 
         let user_message = build_user_message(&ctx);
 
-        // Should contain all task context elements
         assert!(user_message.contains("task-1"));
         assert!(user_message.contains("Implement feature"));
         assert!(user_message.contains("Add new feature"));
@@ -2097,13 +1194,12 @@ mod tests {
     fn test_resume_prompt_has_no_system_prompt() {
         let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[], &[]).unwrap();
 
-        // Resume prompts are just short user messages
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
-
-        // Should NOT contain system prompt elements
         assert!(!prompt.contains("Output Format"));
         assert!(!prompt.contains("agent definition"));
     }
+
+    // -- Workflow overview tests --
 
     #[test]
     fn test_workflow_overview_in_prompt() {
@@ -2121,7 +1217,6 @@ mod tests {
 
         let user_message = build_user_message(&ctx);
 
-        // Should contain workflow overview section
         assert!(user_message.contains("## Your Workflow"));
         assert!(user_message.contains("[plan] — Create a plan"));
         assert!(user_message.contains("[work] ← YOU ARE HERE — Implement the plan"));
@@ -2168,220 +1263,14 @@ mod tests {
 
         let user_message = build_user_message(&ctx);
 
-        // Should only show stages in the quick flow
         assert!(user_message.contains("## Your Workflow"));
         assert!(user_message.contains("[plan] — Create a plan"));
         assert!(user_message.contains("[work] ← YOU ARE HERE — Implement the plan"));
-
-        // Should NOT contain stages not in the flow
         assert!(!user_message.contains("[task]"));
         assert!(!user_message.contains("[review]"));
     }
 
-    #[test]
-    fn test_workflow_overview_description_fallback() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"), // No description, should use display()
-            StageConfig::new("work", "summary").with_display_name("Work Stage"),
-        ]);
-        let builder = PromptBuilder::new(&workflow);
-
-        let task = Task::new("task-1", "Test", "Description", "work", "now");
-        let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
-            .unwrap();
-
-        let user_message = build_user_message(&ctx);
-
-        // Should use display() fallback for stages without description
-        assert!(user_message.contains("[planning] — Planning"));
-        assert!(user_message.contains("[work] ← YOU ARE HERE — Work Stage"));
-    }
-
-    // ========================================================================
-    // build_workflow_stage_entries tests
-    // ========================================================================
-
-    #[test]
-    fn test_build_workflow_stage_entries_default_flow() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("plan", "plan").with_description("Create a plan"),
-            StageConfig::new("work", "summary").with_description("Implement the plan"),
-            StageConfig::new("review", "verdict"),
-        ]);
-
-        let entries = build_workflow_stage_entries(&workflow, "work", None);
-        assert_eq!(entries.len(), 3);
-
-        // Check first stage
-        assert_eq!(entries[0].name, "plan");
-        assert_eq!(entries[0].description, "Create a plan");
-        assert!(!entries[0].is_current);
-
-        // Check current stage
-        assert_eq!(entries[1].name, "work");
-        assert_eq!(entries[1].description, "Implement the plan");
-        assert!(entries[1].is_current);
-
-        // Check stage without description (should use display())
-        assert_eq!(entries[2].name, "review");
-        assert_eq!(entries[2].description, "Review");
-        assert!(!entries[2].is_current);
-    }
-
-    #[test]
-    fn test_build_workflow_stage_entries_with_flow() {
-        let mut flows = IndexMap::new();
-        flows.insert(
-            "quick".into(),
-            FlowConfig {
-                description: "Skip breakdown".into(),
-                icon: Some("zap".into()),
-                stages: vec![
-                    FlowStageEntry {
-                        stage_name: "plan".into(),
-                        overrides: None,
-                    },
-                    FlowStageEntry {
-                        stage_name: "work".into(),
-                        overrides: None,
-                    },
-                ],
-                integration: None,
-            },
-        );
-
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("plan", "plan").with_description("Create a plan"),
-            StageConfig::new("task", "breakdown"),
-            StageConfig::new("work", "summary").with_description("Implement the plan"),
-            StageConfig::new("review", "verdict"),
-        ])
-        .with_flows(flows);
-
-        let entries = build_workflow_stage_entries(&workflow, "work", Some("quick"));
-        assert_eq!(entries.len(), 2);
-
-        // Should only include plan and work, not task or review
-        assert_eq!(entries[0].name, "plan");
-        assert_eq!(entries[0].description, "Create a plan");
-        assert!(!entries[0].is_current);
-
-        assert_eq!(entries[1].name, "work");
-        assert_eq!(entries[1].description, "Implement the plan");
-        assert!(entries[1].is_current);
-    }
-
-    #[test]
-    fn test_build_workflow_stage_entries_nonexistent_flow() {
-        let workflow = WorkflowConfig::new(vec![StageConfig::new("plan", "plan")]);
-
-        let entries = build_workflow_stage_entries(&workflow, "plan", Some("nonexistent"));
-        assert!(entries.is_empty());
-    }
-
-    #[test]
-    fn test_build_workflow_stage_entries_description_fallback() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"), // No display_name, should fall back to "Planning"
-            StageConfig::new("work", "summary").with_display_name("Work Stage"), // Should fall back to "Work Stage"
-        ]);
-
-        let entries = build_workflow_stage_entries(&workflow, "work", None);
-        assert_eq!(entries[0].description, "Planning");
-        assert_eq!(entries[1].description, "Work Stage");
-    }
-
-    // ========================================================================
-    // Sibling Context tests
-    // ========================================================================
-
-    #[test]
-    fn test_sibling_status_display_done() {
-        assert_eq!(sibling_status_display(&Status::Done, Phase::Idle), "done");
-        assert_eq!(
-            sibling_status_display(&Status::Archived, Phase::Idle),
-            "done"
-        );
-    }
-
-    #[test]
-    fn test_sibling_status_display_failed() {
-        assert_eq!(
-            sibling_status_display(
-                &Status::Failed {
-                    error: Some("error".into())
-                },
-                Phase::Idle
-            ),
-            "failed"
-        );
-        assert_eq!(
-            sibling_status_display(&Status::Failed { error: None }, Phase::Idle),
-            "failed"
-        );
-    }
-
-    #[test]
-    fn test_sibling_status_display_blocked() {
-        assert_eq!(
-            sibling_status_display(
-                &Status::Blocked {
-                    reason: Some("reason".into())
-                },
-                Phase::Idle
-            ),
-            "blocked"
-        );
-        assert_eq!(
-            sibling_status_display(&Status::Blocked { reason: None }, Phase::Idle),
-            "blocked"
-        );
-    }
-
-    #[test]
-    fn test_sibling_status_display_waiting() {
-        assert_eq!(
-            sibling_status_display(
-                &Status::WaitingOnChildren {
-                    stage: "work".into()
-                },
-                Phase::Idle
-            ),
-            "waiting"
-        );
-    }
-
-    #[test]
-    fn test_sibling_status_display_active_phases() {
-        let active = Status::Active {
-            stage: "work".into(),
-        };
-
-        // AgentWorking -> "working"
-        assert_eq!(
-            sibling_status_display(&active, Phase::AgentWorking),
-            "working"
-        );
-
-        // AwaitingReview -> "reviewing"
-        assert_eq!(
-            sibling_status_display(&active, Phase::AwaitingReview),
-            "reviewing"
-        );
-
-        // Other phases -> "pending"
-        assert_eq!(sibling_status_display(&active, Phase::Idle), "pending");
-        assert_eq!(
-            sibling_status_display(&active, Phase::Integrating),
-            "pending"
-        );
-        assert_eq!(sibling_status_display(&active, Phase::SettingUp), "pending");
-        assert_eq!(
-            sibling_status_display(&active, Phase::AwaitingSetup),
-            "pending"
-        );
-    }
+    // -- Sibling context tests --
 
     #[test]
     fn test_build_user_message_with_siblings() {
@@ -2413,7 +1302,6 @@ mod tests {
 
         let user_message = build_user_message(&ctx);
 
-        // Should contain sibling section
         assert!(user_message.contains("## Sibling Subtasks"));
         assert!(user_message.contains("This task is part of a breakdown"));
         assert!(user_message.contains("**bird** First subtask"));
@@ -2437,58 +1325,11 @@ mod tests {
 
         let user_message = build_user_message(&ctx);
 
-        // Should NOT contain sibling section when empty
         assert!(!user_message.contains("## Sibling Subtasks"));
         assert!(!user_message.contains("This task is part of a breakdown"));
     }
 
-    #[test]
-    fn test_sibling_dependency_relationship_display() {
-        let workflow = test_workflow();
-        let builder = PromptBuilder::new(&workflow);
-
-        let task = Task::new("task-1", "Test", "Description", "planning", "now");
-
-        let siblings = vec![
-            SiblingTaskContext {
-                short_id: "dep".into(),
-                title: "Dependent task".into(),
-                description: "Depends on current".into(),
-                dependency_relationship: Some("depends on this task".into()),
-                status_display: "pending".into(),
-            },
-            SiblingTaskContext {
-                short_id: "prereq".into(),
-                title: "Prerequisite task".into(),
-                description: "Current depends on this".into(),
-                dependency_relationship: Some("this task depends on".into()),
-                status_display: "done".into(),
-            },
-            SiblingTaskContext {
-                short_id: "unrelated".into(),
-                title: "Unrelated task".into(),
-                description: "No dependency".into(),
-                dependency_relationship: None,
-                status_display: "working".into(),
-            },
-        ];
-
-        let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), siblings)
-            .unwrap();
-
-        let user_message = build_user_message(&ctx);
-
-        // Check dependency markers appear correctly
-        assert!(user_message.contains("[depends on this task]"));
-        assert!(user_message.contains("[this task depends on]"));
-        // Unrelated task should not have a dependency marker
-        assert!(user_message.contains("**unrelated** Unrelated task (working)"));
-    }
-
-    // ========================================================================
-    // Activity Log Deduplication tests
-    // ========================================================================
+    // -- Activity log dedup tests --
 
     #[test]
     fn test_deduplicate_activity_logs_empty_input() {
@@ -2517,28 +1358,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deduplicate_activity_logs_multiple_stages() {
-        let logs = vec![
-            ActivityLogEntry {
-                stage: "plan".into(),
-                iteration_number: 1,
-                content: "Plan log".into(),
-            },
-            ActivityLogEntry {
-                stage: "work".into(),
-                iteration_number: 2,
-                content: "Work log".into(),
-            },
-        ];
-        let result = deduplicate_activity_logs_by_stage(logs);
-        assert_eq!(result.len(), 2);
-    }
-
-    #[test]
     fn test_deduplicate_activity_logs_interleaved() {
-        // work(A) -> review(C) -> work(B) -> work(D)
-        // Review intervenes between A and B, so A is preserved.
-        // B and D are consecutive same-stage, so D replaces B.
         let logs = vec![
             ActivityLogEntry {
                 stage: "work".into(),
@@ -2562,113 +1382,9 @@ mod tests {
             },
         ];
         let result = deduplicate_activity_logs_by_stage(logs);
-        // Should have: work:A, review:C, work:D (B replaced by D since consecutive)
         assert_eq!(result.len(), 3);
-        assert_eq!(result[0].stage, "work");
         assert_eq!(result[0].content, "A");
-        assert_eq!(result[1].stage, "review");
         assert_eq!(result[1].content, "C");
-        assert_eq!(result[2].stage, "work");
         assert_eq!(result[2].content, "D");
-    }
-
-    #[test]
-    fn test_deduplicate_activity_logs_preserves_intervening_stages() {
-        // work -> review -> check -> work
-        // The second work is NOT collapsed with the first because review and check intervened.
-        let logs = vec![
-            ActivityLogEntry {
-                stage: "work".into(),
-                iteration_number: 1,
-                content: "Work 1".into(),
-            },
-            ActivityLogEntry {
-                stage: "review".into(),
-                iteration_number: 2,
-                content: "Review".into(),
-            },
-            ActivityLogEntry {
-                stage: "check".into(),
-                iteration_number: 3,
-                content: "Check".into(),
-            },
-            ActivityLogEntry {
-                stage: "work".into(),
-                iteration_number: 4,
-                content: "Work 2".into(),
-            },
-        ];
-        let result = deduplicate_activity_logs_by_stage(logs);
-        // All 4 entries preserved because intervening stages prevent collapse
-        assert_eq!(result.len(), 4);
-        assert_eq!(result[0].stage, "work");
-        assert_eq!(result[0].content, "Work 1");
-        assert_eq!(result[1].stage, "review");
-        assert_eq!(result[2].stage, "check");
-        assert_eq!(result[3].stage, "work");
-        assert_eq!(result[3].content, "Work 2");
-    }
-
-    #[test]
-    fn test_deduplicate_activity_logs_empty_content() {
-        let logs = vec![
-            ActivityLogEntry {
-                stage: "work".into(),
-                iteration_number: 1,
-                content: "Valid".into(),
-            },
-            ActivityLogEntry {
-                stage: "plan".into(),
-                iteration_number: 2,
-                content: "  ".into(), // whitespace only
-            },
-        ];
-        let result = deduplicate_activity_logs_by_stage(logs);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].stage, "work");
-    }
-
-    #[test]
-    fn test_deduplicate_activity_logs_all_empty_content() {
-        let logs = vec![
-            ActivityLogEntry {
-                stage: "work".into(),
-                iteration_number: 1,
-                content: String::new(),
-            },
-            ActivityLogEntry {
-                stage: "plan".into(),
-                iteration_number: 2,
-                content: "\n\t  ".into(),
-            },
-        ];
-        let result = deduplicate_activity_logs_by_stage(logs);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_deduplicate_activity_logs_consecutive_same_stage() {
-        // Consecutive same-stage entries are collapsed (last wins)
-        let logs = vec![
-            ActivityLogEntry {
-                stage: "work".into(),
-                iteration_number: 1,
-                content: "Oldest".into(),
-            },
-            ActivityLogEntry {
-                stage: "work".into(),
-                iteration_number: 2,
-                content: "Middle".into(),
-            },
-            ActivityLogEntry {
-                stage: "work".into(),
-                iteration_number: 3,
-                content: "Latest".into(),
-            },
-        ];
-        let result = deduplicate_activity_logs_by_stage(logs);
-        assert_eq!(result.len(), 1);
-        // Should keep the last entry (latest) since all are consecutive
-        assert_eq!(result[0].content, "Latest");
     }
 }

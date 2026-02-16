@@ -1,0 +1,147 @@
+//! Prompt service.
+//!
+//! Thin dispatcher that owns the Handlebars template registry
+//! and delegates to interactions.
+
+use handlebars::Handlebars;
+
+use orkestra_types::config::WorkflowConfig;
+use orkestra_types::domain::{QuestionAnswer, Task};
+
+use crate::interactions;
+use crate::types::{
+    ActivityLogEntry, AgentConfigError, FlowOverrides, IntegrationErrorContext,
+    ResolvedAgentConfig, ResumeType, SiblingTaskContext, StagePromptContext,
+};
+
+// ============================================================================
+// Template Constants
+// ============================================================================
+
+const OUTPUT_FORMAT_TEMPLATE: &str = include_str!("templates/output_format.md");
+const INITIAL_PROMPT_TEMPLATE: &str = include_str!("templates/initial_prompt.md");
+const SYSTEM_PROMPT_TEMPLATE: &str = include_str!("templates/system_prompt.md");
+
+// ============================================================================
+// PromptService
+// ============================================================================
+
+/// Service for building agent prompts.
+///
+/// Owns the pre-compiled Handlebars template registry and dispatches
+/// to interaction functions for each operation.
+pub struct PromptService {
+    templates: Handlebars<'static>,
+}
+
+impl PromptService {
+    /// Create a new prompt service with all templates pre-compiled.
+    pub fn new() -> Self {
+        let mut hb = Handlebars::new();
+        hb.register_escape_fn(handlebars::no_escape);
+        hb.register_template_string("output_format", OUTPUT_FORMAT_TEMPLATE)
+            .expect("output_format template should be valid");
+        hb.register_template_string("initial_prompt", INITIAL_PROMPT_TEMPLATE)
+            .expect("initial_prompt template should be valid");
+        hb.register_template_string("system_prompt", SYSTEM_PROMPT_TEMPLATE)
+            .expect("system_prompt template should be valid");
+        Self { templates: hb }
+    }
+
+    // -- Build --
+
+    /// Build a complete agent configuration from pre-loaded inputs.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_agent_config(
+        &self,
+        workflow: &WorkflowConfig,
+        task: &Task,
+        stage_name: &str,
+        agent_definition: &str,
+        json_schema: &str,
+        feedback: Option<&str>,
+        integration_error: Option<IntegrationErrorContext<'_>>,
+        flow_overrides: &FlowOverrides<'_>,
+        show_direct_structured_output_hint: bool,
+        activity_logs: Vec<ActivityLogEntry>,
+        sibling_tasks: Vec<SiblingTaskContext>,
+    ) -> Result<ResolvedAgentConfig, AgentConfigError> {
+        interactions::build::agent_config::execute(
+            &self.templates,
+            workflow,
+            task,
+            stage_name,
+            agent_definition,
+            json_schema,
+            feedback,
+            integration_error,
+            flow_overrides,
+            show_direct_structured_output_hint,
+            activity_logs,
+            sibling_tasks,
+        )
+    }
+
+    /// Build the system prompt from agent definition and context.
+    pub fn build_system_prompt(
+        &self,
+        agent_definition: &str,
+        ctx: &StagePromptContext<'_>,
+    ) -> String {
+        interactions::build::system_prompt::execute(&self.templates, agent_definition, ctx)
+    }
+
+    /// Build a user message from task context.
+    pub fn build_user_message(&self, ctx: &StagePromptContext<'_>) -> String {
+        interactions::build::user_message::execute(&self.templates, ctx)
+    }
+
+    /// Build a complete prompt (system + user) for backward compatibility.
+    pub fn build_complete_prompt(
+        &self,
+        agent_definition: &str,
+        ctx: &StagePromptContext<'_>,
+    ) -> String {
+        interactions::build::agent_config::build_complete_prompt(
+            &self.templates,
+            agent_definition,
+            ctx,
+        )
+    }
+
+    // -- Resume --
+
+    /// Build a resume prompt for session continuation.
+    pub fn build_resume_prompt(
+        &self,
+        stage: &str,
+        resume_type: &ResumeType,
+        base_branch: &str,
+        artifacts: &[(String, String)],
+        activity_logs: &[ActivityLogEntry],
+    ) -> Result<String, AgentConfigError> {
+        interactions::resume::build_prompt::execute(
+            stage,
+            resume_type,
+            base_branch,
+            artifacts,
+            activity_logs,
+        )
+    }
+
+    /// Determine the resume type from context.
+    pub fn determine_resume_type(
+        &self,
+        feedback: Option<&str>,
+        integration_error: Option<&IntegrationErrorContext<'_>>,
+        question_history: &[QuestionAnswer],
+    ) -> ResumeType {
+        interactions::resume::determine_type::execute(feedback, integration_error, question_history)
+    }
+}
+
+impl Default for PromptService {
+    fn default() -> Self {
+        Self::new()
+    }
+}

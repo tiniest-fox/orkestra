@@ -114,6 +114,23 @@ cargo test
 cargo test -p orkestra-core
 ```
 
+## Verification
+
+Before considering any code change complete, run the full verification suite. All commands must pass with **zero warnings and zero errors**.
+
+```bash
+cargo fmt --all -- --check   # Formatting (fix with: cargo fmt --all)
+cargo clippy --workspace     # Lints — zero warnings required
+cargo test --workspace       # All tests pass
+```
+
+When working on a single crate, run crate-level checks first for faster feedback, then the full workspace suite before finishing:
+
+```bash
+cargo test -p orkestra-core          # Fast: single crate
+cargo test --workspace               # Full: before declaring done
+```
+
 ## CLI Usage During Development
 
 Run `ork` commands during development using the wrapper script:

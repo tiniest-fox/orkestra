@@ -97,7 +97,7 @@ impl PromptService {
             Some(&self.project_root),
             feedback,
             integration_error,
-            flow_overrides,
+            &flow_overrides,
             show_direct_structured_output_hint,
             activity_logs,
             sibling_tasks,

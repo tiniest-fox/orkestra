@@ -2,9 +2,7 @@
 
 use jsonschema::Validator;
 
-use crate::types::{
-    QuestionJson, StageOutput, StageOutputError, SubtaskOutput,
-};
+use crate::types::{QuestionJson, StageOutput, StageOutputError, SubtaskOutput};
 
 /// Parse and validate stage output against a JSON schema.
 ///
@@ -70,9 +68,8 @@ fn parse_from_json(value: &serde_json::Value) -> Result<StageOutput, StageOutput
                 .ok_or_else(|| StageOutputError::MissingField("content".into()))?
                 .to_string();
 
-            let subtasks: Vec<SubtaskOutput> =
-                serde_json::from_value(value["subtasks"].clone())
-                    .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
+            let subtasks: Vec<SubtaskOutput> = serde_json::from_value(value["subtasks"].clone())
+                .map_err(|_| StageOutputError::MissingField("subtasks".into()))?;
 
             let skip_reason = value["skip_reason"].as_str().map(String::from);
             let activity_log = value["activity_log"].as_str().map(String::from);

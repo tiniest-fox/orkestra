@@ -953,8 +953,59 @@ impl WorkflowConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::fixtures::test_default_workflow;
-    use crate::workflow::config::stage::StageConfig;
+    use crate::config::stage::{
+        ApprovalCapabilities, ScriptStageConfig, StageCapabilities, StageConfig,
+        SubtaskCapabilities, ToolRestriction,
+    };
+
+    /// Standard 4-stage workflow used by most tests.
+    fn test_default_workflow() -> WorkflowConfig {
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "subtask".to_string(),
+            FlowConfig {
+                description: "Simplified pipeline for subtasks (work → review)".to_string(),
+                icon: Some("git-branch".to_string()),
+                stages: vec![
+                    FlowStageEntry {
+                        stage_name: "work".to_string(),
+                        overrides: None,
+                    },
+                    FlowStageEntry {
+                        stage_name: "review".to_string(),
+                        overrides: None,
+                    },
+                ],
+                integration: None,
+            },
+        );
+
+        WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan")
+                .with_display_name("Planning")
+                .with_prompt("planner.md")
+                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("breakdown", "breakdown")
+                .with_display_name("Breaking Down")
+                .with_prompt("breakdown.md")
+                .with_inputs(vec!["plan".into()])
+                .with_capabilities(StageCapabilities {
+                    subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
+                    ..Default::default()
+                }),
+            StageConfig::new("work", "summary")
+                .with_display_name("Working")
+                .with_prompt("worker.md")
+                .with_inputs(vec!["plan".into()]),
+            StageConfig::new("review", "verdict")
+                .with_display_name("Reviewing")
+                .with_prompt("reviewer.md")
+                .with_inputs(vec!["plan".into(), "summary".into()])
+                .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+                .automated(),
+        ])
+        .with_flows(flows)
+    }
 
     #[test]
     fn test_workflow_new() {
@@ -1111,8 +1162,6 @@ mod tests {
 
     #[test]
     fn test_workflow_validation_invalid_approval_target() {
-        use crate::workflow::config::stage::StageCapabilities;
-
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("review", "verdict")
@@ -1126,8 +1175,6 @@ mod tests {
 
     #[test]
     fn test_workflow_validation_valid_approval_target() {
-        use crate::workflow::config::stage::StageCapabilities;
-
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
@@ -1273,8 +1320,6 @@ integration:
 
     #[test]
     fn test_script_stage_with_valid_on_failure() {
-        use crate::workflow::config::stage::ScriptStageConfig;
-
         let mut stage = StageConfig::new_script("checks", "check_results", "./run.sh");
         stage.script = Some(ScriptStageConfig::new("./run.sh").with_on_failure("work"));
 
@@ -1286,8 +1331,6 @@ integration:
 
     #[test]
     fn test_script_stage_with_invalid_on_failure() {
-        use crate::workflow::config::stage::ScriptStageConfig;
-
         let mut stage = StageConfig::new_script("checks", "check_results", "./run.sh");
         stage.script = Some(ScriptStageConfig::new("./run.sh").with_on_failure("nonexistent"));
 
@@ -1301,8 +1344,6 @@ integration:
 
     #[test]
     fn test_script_stage_cannot_have_ask_questions() {
-        use crate::workflow::config::stage::StageCapabilities;
-
         let stage = StageConfig::new_script("checks", "check_results", "./run.sh")
             .with_capabilities(StageCapabilities::with_questions());
 
@@ -1316,8 +1357,6 @@ integration:
 
     #[test]
     fn test_script_stage_cannot_have_subtask_capabilities() {
-        use crate::workflow::config::stage::StageCapabilities;
-
         let stage = StageConfig::new_script("checks", "check_results", "./run.sh")
             .with_capabilities(StageCapabilities::with_subtasks());
 
@@ -1331,8 +1370,6 @@ integration:
 
     #[test]
     fn test_stage_cannot_have_both_prompt_and_script() {
-        use crate::workflow::config::stage::ScriptStageConfig;
-
         let mut stage = StageConfig::new("checks", "check_results");
         stage.prompt = Some("worker.md".to_string());
         stage.script = Some(ScriptStageConfig::new("./run.sh"));
@@ -1406,8 +1443,6 @@ integration:
 
     #[test]
     fn test_subtask_flow_references_existing_flow() {
-        use crate::workflow::config::stage::{StageCapabilities, SubtaskCapabilities};
-
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("breakdown", "breakdown").with_capabilities(StageCapabilities {
@@ -1425,8 +1460,6 @@ integration:
 
     #[test]
     fn test_completion_stage_references_existing_stage() {
-        use crate::workflow::config::stage::{StageCapabilities, SubtaskCapabilities};
-
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("breakdown", "breakdown").with_capabilities(StageCapabilities {
                 subtasks: Some(SubtaskCapabilities::default().with_completion_stage("nonexistent")),
@@ -1580,8 +1613,6 @@ integration:
 
     #[test]
     fn test_effective_disallowed_tools_no_flow() {
-        use crate::workflow::config::stage::ToolRestriction;
-
         let tools = vec![ToolRestriction {
             pattern: "Bash(cargo *)".to_string(),
             message: Some("Use checks stage".to_string()),
@@ -1597,8 +1628,6 @@ integration:
 
     #[test]
     fn test_effective_disallowed_tools_flow_override() {
-        use crate::workflow::config::stage::ToolRestriction;
-
         let global_tools = vec![ToolRestriction {
             pattern: "Bash(cargo *)".to_string(),
             message: Some("Global restriction".to_string()),
@@ -1640,8 +1669,6 @@ integration:
 
     #[test]
     fn test_effective_disallowed_tools_flow_no_override() {
-        use crate::workflow::config::stage::ToolRestriction;
-
         let global_tools = vec![ToolRestriction {
             pattern: "Bash(cargo *)".to_string(),
             message: Some("Global restriction".to_string()),
@@ -1672,8 +1699,6 @@ integration:
 
     #[test]
     fn test_effective_disallowed_tools_flow_empty_override() {
-        use crate::workflow::config::stage::ToolRestriction;
-
         let global_tools = vec![ToolRestriction {
             pattern: "Bash(cargo *)".to_string(),
             message: Some("Global restriction".to_string()),
@@ -1709,8 +1734,6 @@ integration:
 
     #[test]
     fn test_validate_disallowed_tools_on_script_stage() {
-        use crate::workflow::config::stage::ToolRestriction;
-
         let mut script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
         script_stage.disallowed_tools = vec![ToolRestriction {
             pattern: "Edit".to_string(),
@@ -1730,8 +1753,6 @@ integration:
 
     #[test]
     fn test_validate_disallowed_tools_empty_pattern() {
-        use crate::workflow::config::stage::ToolRestriction;
-
         let stage = StageConfig::new("work", "summary").with_disallowed_tools(vec![
             ToolRestriction {
                 pattern: "Bash(cargo *)".to_string(),
@@ -1756,8 +1777,6 @@ integration:
 
     #[test]
     fn test_validate_disallowed_tools_on_agent_stage_valid() {
-        use crate::workflow::config::stage::ToolRestriction;
-
         let stage =
             StageConfig::new("work", "summary").with_disallowed_tools(vec![ToolRestriction {
                 pattern: "Bash(cargo *)".to_string(),
@@ -1775,8 +1794,6 @@ integration:
 
     #[test]
     fn test_validate_disallowed_tools_empty_pattern_in_flow_override() {
-        use crate::workflow::config::stage::ToolRestriction;
-
         let stage = StageConfig::new("work", "summary");
 
         let mut flows = IndexMap::new();
@@ -1821,8 +1838,6 @@ integration:
 
     #[test]
     fn test_flow_stage_override_disallowed_tools_serialization() {
-        use crate::workflow::config::stage::ToolRestriction;
-
         let tools = vec![ToolRestriction {
             pattern: "Edit".to_string(),
             message: Some("Read-only".to_string()),

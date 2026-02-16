@@ -1028,7 +1028,8 @@ mod tests {
 
             // MockAgentRunner doesn't emit the UserMessage (it's an AgentRunner concern),
             // so test parse_resume_marker directly to verify the runner logic works.
-            let marker = orkestra_parser::interactions::stream::parse_resume_marker::execute(prompt);
+            let marker =
+                orkestra_parser::interactions::stream::parse_resume_marker::execute(prompt);
             assert!(marker.is_some());
             let marker = marker.unwrap();
             assert_eq!(marker.marker_type.as_str(), "feedback");

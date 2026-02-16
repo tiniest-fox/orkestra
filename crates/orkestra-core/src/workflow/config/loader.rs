@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use super::workflow::WorkflowConfig;
+use super::WorkflowConfig;
 
 /// Error type for workflow loading.
 #[derive(Debug, thiserror::Error)]

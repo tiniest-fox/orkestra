@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { RecentProject } from "../../types/project";
 import { Button } from "../ui/Button";
 import { EmptyState } from "../ui/EmptyState";
+import { ErrorState } from "../ui/ErrorState";
 import { LoadingState } from "../ui/LoadingState";
 import { Panel } from "../ui/Panel";
 
@@ -14,7 +15,7 @@ interface ProjectPickerProps {
 export function ProjectPicker({ errorMessage: initialError }: ProjectPickerProps) {
   const [recents, setRecents] = useState<RecentProject[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | undefined>(initialError);
+  const [error, setError] = useState<unknown>(initialError ?? null);
 
   const loadRecents = useCallback(async () => {
     try {
@@ -22,7 +23,7 @@ export function ProjectPicker({ errorMessage: initialError }: ProjectPickerProps
       setRecents(projects);
     } catch (err) {
       console.error("Failed to load recent projects:", err);
-      setError(`Failed to load recent projects: ${String(err)}`);
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -41,7 +42,7 @@ export function ProjectPicker({ errorMessage: initialError }: ProjectPickerProps
       }
     } catch (err) {
       console.error("Failed to open project:", err);
-      setError(`Failed to open project: ${String(err)}`);
+      setError(err);
     }
   }
 
@@ -51,7 +52,7 @@ export function ProjectPicker({ errorMessage: initialError }: ProjectPickerProps
       // The command will create a new window or focus existing
     } catch (err) {
       console.error("Failed to open project:", err);
-      setError(`Failed to open ${project.display_name}: ${String(err)}`);
+      setError(err);
       // Reload recents in case path is no longer valid
       loadRecents();
     }
@@ -66,7 +67,7 @@ export function ProjectPicker({ errorMessage: initialError }: ProjectPickerProps
       setRecents(updated);
     } catch (err) {
       console.error("Failed to remove recent project:", err);
-      setError(`Failed to remove ${project.display_name}: ${String(err)}`);
+      setError(err);
     }
   }
 
@@ -77,9 +78,9 @@ export function ProjectPicker({ errorMessage: initialError }: ProjectPickerProps
           <Panel.Title>Open Project</Panel.Title>
         </Panel.Header>
         <Panel.Body>
-          {error && (
-            <div className="mb-4 rounded-md bg-error/10 px-4 py-3 text-sm text-error dark:bg-error/20">
-              {error}
+          {error != null && (
+            <div className="mb-4">
+              <ErrorState error={error} />
             </div>
           )}
 

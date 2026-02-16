@@ -5,6 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { ErrorState } from "../components/ui";
 import type { WorkflowConfig } from "../types/workflow";
 
 const WorkflowConfigContext = createContext<WorkflowConfig | null>(null);
@@ -26,22 +27,16 @@ interface WorkflowConfigProviderProps {
 
 export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps) {
   const [config, setConfig] = useState<WorkflowConfig | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    invoke<WorkflowConfig>("workflow_get_config")
-      .then(setConfig)
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
-      });
+    invoke<WorkflowConfig>("workflow_get_config").then(setConfig).catch(setError);
   }, []);
 
-  if (error) {
+  if (error != null) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="text-error-700 dark:text-error-300 text-sm">
-          Failed to load workflow config: {error}
-        </div>
+        <ErrorState message="Failed to load workflow config" error={error} />
       </div>
     );
   }

@@ -12,7 +12,7 @@ import { type GroupedLogEntry, useGroupedLogs } from "./useGroupedLogs";
 interface LogListProps {
   logs: LogEntry[];
   isLoading?: boolean;
-  error?: string | null;
+  error?: unknown;
 }
 
 function renderLogEntry(entry: GroupedLogEntry, index: number) {
@@ -33,10 +33,10 @@ export function LogList({ logs, isLoading, error }: LogListProps) {
   // Call hooks unconditionally at the top
   const groupedLogs = useGroupedLogs(logs);
 
-  if (error) {
+  if (error != null) {
     return (
       <div className="flex items-center justify-center h-full">
-        <ErrorState message={error} />
+        <ErrorState message="Failed to load logs" error={error} />
       </div>
     );
   }

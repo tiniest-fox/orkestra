@@ -25,7 +25,7 @@ import { DiffPanel } from "./Diff";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
-import { Button, Panel, PanelLayout, Slot } from "./ui";
+import { Button, ErrorState, Panel, PanelLayout, Slot } from "./ui";
 
 export function Orkestra() {
   useNotificationPermission();
@@ -220,9 +220,9 @@ export function Orkestra() {
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 p-4 bg-error-50 dark:bg-error-950 border border-error-200 dark:border-error-800 rounded-panel text-error-700 dark:text-error-300">
-          Error loading tasks: {error}
+      {error != null && (
+        <div className="mb-4">
+          <ErrorState message="Failed to load tasks" error={error} />
         </div>
       )}
 

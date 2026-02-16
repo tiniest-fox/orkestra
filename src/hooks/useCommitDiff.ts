@@ -5,13 +5,13 @@ import type { HighlightedTaskDiff } from "./useDiff";
 interface UseCommitDiffResult {
   diff: HighlightedTaskDiff | null;
   loading: boolean;
-  error: string | null;
+  error: unknown;
 }
 
 export function useCommitDiff(commitHash: string | null): UseCommitDiffResult {
   const [diff, setDiff] = useState<HighlightedTaskDiff | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!commitHash) {
@@ -29,7 +29,7 @@ export function useCommitDiff(commitHash: string | null): UseCommitDiffResult {
         if (!cancelled) setDiff(result);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(err);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

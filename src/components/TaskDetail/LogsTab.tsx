@@ -13,7 +13,7 @@ interface LogsTabProps {
   task: WorkflowTaskView;
   logs: LogEntry[];
   isLoading: boolean;
-  error: string | null;
+  error: unknown;
   stagesWithLogs: string[];
   activeLogStage: string | null;
   onStageChange: (stage: string) => void;

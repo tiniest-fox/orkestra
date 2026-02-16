@@ -16,6 +16,7 @@ import {
   useState,
 } from "react";
 import type { BranchList, CommitInfo, SyncStatus } from "../types/workflow";
+import { extractErrorMessage } from "../utils/errors";
 
 interface OperationError {
   type: "push" | "pull";
@@ -35,7 +36,7 @@ interface GitHistoryContextValue extends SyncControls {
   currentBranch: string | null;
   branches: string[];
   loading: boolean;
-  error: string | null;
+  error: unknown;
   syncStatus: SyncStatus | null;
   operationError: OperationError | null;
   pushLoading: boolean;
@@ -67,7 +68,7 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [pushLoading, setPushLoading] = useState(false);
   const [pullLoading, setPullLoading] = useState(false);
@@ -87,7 +88,7 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
       setSyncStatus(syncResult);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -102,10 +103,7 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
       setSyncStatus(status);
     } catch (err) {
       console.error("Push failed:", err);
-      setOperationError({
-        type: "push",
-        message: err instanceof Error ? err.message : String(err),
-      });
+      setOperationError({ type: "push", message: extractErrorMessage(err) });
     } finally {
       setPushLoading(false);
     }
@@ -124,10 +122,7 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
       setSyncStatus(status);
     } catch (err) {
       console.error("Pull failed:", err);
-      setOperationError({
-        type: "pull",
-        message: err instanceof Error ? err.message : String(err),
-      });
+      setOperationError({ type: "pull", message: extractErrorMessage(err) });
     } finally {
       setPullLoading(false);
     }

@@ -15,8 +15,8 @@ interface UseLogsResult {
   logs: LogEntry[];
   /** Whether logs are currently loading. */
   isLoading: boolean;
-  /** Error message if loading failed. */
-  error: string | null;
+  /** Error if loading failed. */
+  error: unknown;
   /** Stages that have logs available. */
   stagesWithLogs: string[];
   /** Currently selected stage. */
@@ -44,7 +44,7 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
   const [logs, setLogs] = useState<LogEntry[]>([]);
   // Start loading if we have an initial stage selected (fetch will fire on mount)
   const [isLoading, setIsLoading] = useState(() => activeLogStage !== null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const setActiveLogStage = useCallback(
     (stage: string | null) => {
@@ -93,7 +93,7 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
       console.error("Failed to fetch logs:", err);
       if (activeLogStageRef.current === stageToFetch) {
         setLogs([]);
-        setError("Failed to load session logs");
+        setError(err);
       }
     } finally {
       setIsLoading(false);

@@ -16,13 +16,13 @@ export interface SyntaxCss {
 interface UseSyntaxCssResult {
   css: SyntaxCss | null;
   loading: boolean;
-  error: string | null;
+  error: unknown;
 }
 
 export function useSyntaxCss(): UseSyntaxCssResult {
   const [css, setCss] = useState<SyntaxCss | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +40,7 @@ export function useSyntaxCss(): UseSyntaxCssResult {
       } catch (err) {
         if (!cancelled) {
           console.error("Failed to fetch syntax CSS:", err);
-          setError(err instanceof Error ? err.message : String(err));
+          setError(err);
         }
       } finally {
         if (!cancelled) {

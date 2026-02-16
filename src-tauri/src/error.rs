@@ -14,11 +14,14 @@
 //!
 //! # Frontend Usage
 //!
+//! Tauri 2 delivers the serialized error as a JS object (not a JSON string):
+//!
 //! ```typescript
 //! try {
 //!   const task = await invoke('workflow_approve', { taskId: 'my-task' });
 //! } catch (error) {
-//!   const { code, message } = JSON.parse(error);
+//!   // error is already { code: string, message: string }
+//!   const { code, message } = error as { code: string; message: string };
 //!   if (code === 'INVALID_TRANSITION') {
 //!     // Handle invalid state transition
 //!   }

@@ -41,13 +41,13 @@ export interface HighlightedTaskDiff {
 interface UseDiffResult {
   diff: HighlightedTaskDiff | null;
   loading: boolean;
-  error: string | null;
+  error: unknown;
 }
 
 export function useDiff(taskId: string | null): UseDiffResult {
   const [diff, setDiff] = useState<HighlightedTaskDiff | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!taskId) {
@@ -71,7 +71,7 @@ export function useDiff(taskId: string | null): UseDiffResult {
       } catch (err) {
         if (!cancelled) {
           console.error("Failed to fetch diff:", err);
-          setError(err instanceof Error ? err.message : String(err));
+          setError(err);
         }
       } finally {
         if (!cancelled) {

@@ -22,7 +22,7 @@ interface TasksContextValue {
   tasks: WorkflowTaskView[];
   archivedTasks: WorkflowTaskView[];
   loading: boolean;
-  error: string | null;
+  error: unknown;
   createTask: (
     title: string,
     description: string,
@@ -56,7 +56,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
   const [tasks, setTasks] = useState<WorkflowTaskView[]>([]);
   const [archivedTasks, setArchivedTasks] = useState<WorkflowTaskView[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   // Track task IDs with pending deletes so polling doesn't re-add them
   const deletingIdsRef = useRef<Set<string>>(new Set());
@@ -78,7 +78,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
       }
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err);
     } finally {
       setLoading(false);
     }

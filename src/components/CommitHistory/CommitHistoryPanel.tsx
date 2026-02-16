@@ -1,7 +1,7 @@
 import { GitCommit } from "lucide-react";
 import { useGitHistory } from "../../providers";
 import { SyncActionButton, SyncStatusIndicator } from "../SyncStatus";
-import { EmptyState, Panel } from "../ui";
+import { EmptyState, ErrorState, Panel } from "../ui";
 import { CommitEntry } from "./CommitEntry";
 import { CommitHistorySkeleton } from "./CommitHistorySkeleton";
 
@@ -78,16 +78,12 @@ export function CommitHistoryPanel({
       </Panel.Header>
       <Panel.Body className="flex-1 overflow-y-auto pt-0">
         {loading && <CommitHistorySkeleton />}
-        {error && (
-          <div className="flex items-center justify-center h-32 text-error-600 dark:text-error-400">
-            Error: {error}
-          </div>
-        )}
-        {!loading && !error && commits.length === 0 && (
+        {error != null && <ErrorState message="Failed to load commits" error={error} />}
+        {!loading && error == null && commits.length === 0 && (
           <EmptyState icon={GitCommit} message="No commits found" />
         )}
         {!loading &&
-          !error &&
+          error == null &&
           commits.map((commit) => (
             <CommitEntry
               key={commit.hash}

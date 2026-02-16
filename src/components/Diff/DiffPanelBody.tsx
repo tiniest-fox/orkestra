@@ -1,7 +1,7 @@
 import { FileText } from "lucide-react";
 import type { HighlightedFileDiff, HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
-import { EmptyState, FlexContainer, Panel } from "../ui";
+import { EmptyState, ErrorState, FlexContainer, Panel } from "../ui";
 import { DiffContent } from "./DiffContent";
 import { DiffFileList } from "./DiffFileList";
 import { DiffSkeleton } from "./DiffSkeleton";
@@ -9,7 +9,7 @@ import { DiffSkeleton } from "./DiffSkeleton";
 interface DiffPanelBodyProps {
   diff: HighlightedTaskDiff | null;
   loading: boolean;
-  error: string | null;
+  error: unknown;
   emptyMessage: string;
   selectedFile: HighlightedFileDiff | null;
   onSelectFile: (file: HighlightedFileDiff) => void;
@@ -32,8 +32,8 @@ export function DiffPanelBody({
   if (loading && !diff) {
     bodyContent = <DiffSkeleton />;
     bodyClassName = "flex-1 flex pt-0";
-  } else if (error) {
-    bodyContent = <span className="text-error-600 dark:text-error-400">Error: {error}</span>;
+  } else if (error != null) {
+    bodyContent = <ErrorState message="Failed to load diff" error={error} />;
     bodyClassName = "flex-1 flex items-center justify-center";
   } else if (!diff || diff.files.length === 0) {
     bodyContent = <EmptyState icon={FileText} message={emptyMessage} />;

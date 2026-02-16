@@ -43,7 +43,7 @@ All commands are re-exported from `commands/mod.rs` and registered in `lib.rs`'s
 
 - `TauriError` (`error.rs`) wraps `WorkflowError` with structured `{ code, message }` JSON
 - Error codes: `TASK_NOT_FOUND`, `INVALID_TRANSITION`, `STORAGE_ERROR`, `LOCK_ERROR`, etc.
-- Frontend parses these via `JSON.parse(error)` in catch blocks
+- Frontend receives these as JS objects in catch blocks (Tauri 2 delivers them pre-parsed)
 
 ## Key Files
 

@@ -1,13 +1,50 @@
-//! Process spawner port.
-//!
-//! This trait abstracts over process spawning, allowing the workflow system
-//! to work with different process backends (real Claude CLI, mocks for testing).
+//! Process management types.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::Path;
 use std::process::{ChildStderr, ChildStdin, ChildStdout};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::process::ProcessGuard;
+// ============================================================================
+// Process Guard
+// ============================================================================
+
+/// RAII guard that ensures a spawned process is killed when dropped.
+/// This provides defense-in-depth: if code panics or takes an unexpected path,
+/// the process will still be cleaned up.
+///
+/// Call `disarm()` when the process exits normally to prevent killing on drop.
+pub struct ProcessGuard {
+    pid: u32,
+    disarmed: AtomicBool,
+}
+
+impl ProcessGuard {
+    /// Create a new process guard for the given PID.
+    pub fn new(pid: u32) -> Self {
+        Self {
+            pid,
+            disarmed: AtomicBool::new(false),
+        }
+    }
+
+    /// Disarm the guard to prevent killing the process on drop.
+    /// Call this when the process exits normally.
+    pub fn disarm(&self) {
+        self.disarmed.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        if !self.disarmed.load(Ordering::Relaxed) {
+            eprintln!(
+                "[ProcessGuard] Killing orphaned process {} on drop",
+                self.pid
+            );
+            let _ = crate::interactions::tree::kill::execute(self.pid);
+        }
+    }
+}
 
 // ============================================================================
 // Process Configuration
@@ -180,123 +217,21 @@ impl std::fmt::Display for ProcessError {
 impl std::error::Error for ProcessError {}
 
 // ============================================================================
-// Process Spawner Trait
+// Parsed Stream Event
 // ============================================================================
 
-/// Port for spawning agent processes.
-///
-/// This trait abstracts over the actual process spawning mechanism,
-/// allowing different implementations:
-/// - `ClaudeProcessSpawner`: Spawns real `claude` CLI processes
-/// - `OpenCodeProcessSpawner`: Spawns real `opencode` CLI processes
-/// - `MockProcessSpawner`: Returns canned output for testing
-pub trait ProcessSpawner: Send + Sync {
-    /// Spawn an agent process.
-    ///
-    /// # Arguments
-    /// * `working_dir` - Working directory for the process
-    /// * `config` - Process configuration (resume session, JSON schema)
-    ///
-    /// # Returns
-    /// A handle to the spawned process with access to stdin/stdout.
-    fn spawn(
-        &self,
-        working_dir: &Path,
-        config: ProcessConfig,
-    ) -> Result<ProcessHandle, ProcessError>;
+/// Result from parsing a stream event.
+#[derive(Debug, Default)]
+pub struct ParsedStreamEvent {
+    /// Session ID if this event contains one (from system init).
+    pub session_id: Option<String>,
+    /// True if this event indicates new content was written to the session file.
+    pub has_new_content: bool,
 }
 
 // ============================================================================
-// Mock Process Spawner (for testing)
+// Tests
 // ============================================================================
-
-#[cfg(any(test, feature = "testutil"))]
-pub mod mock {
-    use super::{Path, ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
-    use std::collections::VecDeque;
-    use std::sync::{Arc, Mutex};
-
-    /// Recorded spawn call.
-    #[derive(Debug, Clone)]
-    pub struct SpawnCall {
-        pub working_dir: std::path::PathBuf,
-        pub config: ProcessConfig,
-    }
-
-    /// Mock process spawner for testing.
-    ///
-    /// Doesn't spawn real processes - returns configured mock output.
-    pub struct MockProcessSpawner {
-        calls: Arc<Mutex<Vec<SpawnCall>>>,
-        outputs: Arc<Mutex<VecDeque<String>>>,
-        next_pid: Arc<Mutex<u32>>,
-    }
-
-    impl Default for MockProcessSpawner {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    impl MockProcessSpawner {
-        /// Create a new mock spawner.
-        pub fn new() -> Self {
-            Self {
-                calls: Arc::new(Mutex::new(Vec::new())),
-                outputs: Arc::new(Mutex::new(VecDeque::new())),
-                next_pid: Arc::new(Mutex::new(10000)),
-            }
-        }
-
-        /// Add an output to return for the next spawn.
-        pub fn add_output(&self, output: impl Into<String>) {
-            self.outputs.lock().unwrap().push_back(output.into());
-        }
-
-        /// Get recorded spawn calls.
-        pub fn calls(&self) -> Vec<SpawnCall> {
-            self.calls.lock().unwrap().clone()
-        }
-
-        /// Clear recorded calls.
-        pub fn clear_calls(&self) {
-            self.calls.lock().unwrap().clear();
-        }
-    }
-
-    impl ProcessSpawner for MockProcessSpawner {
-        fn spawn(
-            &self,
-            working_dir: &Path,
-            config: ProcessConfig,
-        ) -> Result<ProcessHandle, ProcessError> {
-            // Record the call
-            self.calls.lock().unwrap().push(SpawnCall {
-                working_dir: working_dir.to_path_buf(),
-                config: config.clone(),
-            });
-
-            // Get next PID
-            let pid = {
-                let mut next = self.next_pid.lock().unwrap();
-                let pid = *next;
-                *next += 1;
-                pid
-            };
-
-            // Get output (or empty string)
-            let output = self.outputs.lock().unwrap().pop_front().unwrap_or_default();
-
-            // Create mock handle
-            // Note: This is a simplified mock - real implementation would need
-            // proper mock streams. For now we return an error since we can't
-            // easily mock ChildStdin/ChildStdout.
-            Err(ProcessError::SpawnFailed(format!(
-                "MockProcessSpawner cannot create real handles. PID would be {pid}, output: {output}"
-            )))
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {

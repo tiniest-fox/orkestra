@@ -36,7 +36,7 @@ Every module that owns a domain concern follows this layered structure. This app
 
 **Rules:**
 
-- **One `execute()` per interaction.** This is the only public entry point. Private helpers within the file are fine for readability.
+- **One `execute()` per interaction.** This is the only public entry point. `execute()` is always the first function in the file. Private helpers go below it in a `// -- Helpers --` subsection.
 - **Interactions are nested by domain.** Navigate with: "What kind of thing am I operating on?" → directory. "What action?" → file. Within the same domain, compose via `super::action::execute()`. Across domains, use `crate::interactions::domain::action::execute()`.
 - **Interactions can compose other interactions.** Shared logic that doesn't warrant its own interaction stays as a private function inside the file that needs it.
 - **The service is a thin dispatcher.** It holds shared state (connections, config) and delegates each trait method to exactly one interaction's `execute()`. No business logic in the service layer.

@@ -27,7 +27,7 @@ use std::os::unix::process::CommandExt;
 use handlebars::Handlebars;
 use serde_json::Value;
 
-use crate::process::{spawn_stderr_reader, ProcessGuard};
+use orkestra_process::{spawn_stderr_reader, ProcessGuard};
 
 /// Shared output format template for all utility tasks.
 const OUTPUT_FORMAT_TEMPLATE: &str =

@@ -1,0 +1,20 @@
+[package]
+name = "orkestra-process"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+testutil = []
+
+[dependencies]
+serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+orkestra-process = { path = ".", features = ["testutil"] }

@@ -7,8 +7,8 @@
 
 use std::path::Path;
 
-use crate::process::{is_process_running, kill_process_tree};
 use crate::workflow::ports::WorkflowResult;
+use orkestra_process::{is_process_running, kill_process_tree};
 
 use super::WorkflowApi;
 

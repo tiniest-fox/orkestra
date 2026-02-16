@@ -327,7 +327,7 @@ impl StageExecutionService {
             .map(|agent| agent.handle.pid);
 
         if let Some(pid) = pid {
-            if let Err(e) = crate::process::kill_process_tree(pid) {
+            if let Err(e) = orkestra_process::kill_process_tree(pid) {
                 crate::orkestra_debug!("interrupt", "Failed to kill process tree {}: {}", pid, e);
             }
             return Some(pid);

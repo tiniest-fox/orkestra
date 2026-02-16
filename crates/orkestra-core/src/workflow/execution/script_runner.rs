@@ -11,7 +11,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use crate::process::kill_process_tree;
+use orkestra_process::kill_process_tree;
 
 /// Environment variables to pass to script execution.
 ///

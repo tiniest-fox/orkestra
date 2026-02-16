@@ -14,11 +14,11 @@ use std::sync::Arc;
 use std::thread;
 
 use crate::orkestra_debug;
-use crate::process::{is_process_running, kill_process_tree, ProcessGuard};
 use crate::title::{generate_fallback_title, generate_title_sync};
 use crate::workflow::domain::{AssistantSession, LogEntry};
 use crate::workflow::execution::{AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
+use orkestra_process::{is_process_running, kill_process_tree, ProcessGuard};
 
 // ============================================================================
 // AssistantService

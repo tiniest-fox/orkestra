@@ -4,7 +4,6 @@
 //! different implementations (databases, file systems, etc.) and enable testing.
 
 mod pr_service;
-mod process_spawner;
 mod store;
 
 // Git types re-exported from orkestra-git
@@ -13,12 +12,14 @@ pub use orkestra_git::{
     WorktreeCreated,
 };
 pub use pr_service::{PrError, PrService};
-pub use process_spawner::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
 pub use store::{WorkflowError, WorkflowResult, WorkflowStore};
+
+// Process types re-exported from orkestra-process
+pub use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
 
 #[cfg(any(test, feature = "testutil"))]
 pub use orkestra_git::MockGitService;
 #[cfg(any(test, feature = "testutil"))]
-pub use pr_service::mock::MockPrService;
+pub use orkestra_process::MockProcessSpawner;
 #[cfg(any(test, feature = "testutil"))]
-pub use process_spawner::mock::MockProcessSpawner;
+pub use pr_service::mock::MockPrService;

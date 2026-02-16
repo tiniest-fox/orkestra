@@ -2953,6 +2953,7 @@ dependencies = [
  "once_cell",
  "orkestra-core",
  "orkestra-git",
+ "orkestra-process",
  "petname",
  "pulldown-cmark",
  "refinery",
@@ -2976,6 +2977,15 @@ dependencies = [
  "serde",
  "tempfile",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "orkestra-process"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "orkestra-process",
+ "serde_json",
 ]
 
 [[package]]

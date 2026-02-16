@@ -24,14 +24,15 @@ pub fn execute(
     // Implementation
 }
 
-// Private helpers below — never `pub`
+// -- Helpers --
+
 fn helper(...) { ... }
 ```
 
 ## Rules
 
 1. **One `pub fn execute()` per file.** This is the only public function. No exceptions — if you need a second public entry point, create a second interaction file.
-2. **Private helpers are fine.** Functions below `execute()` that break up complex logic. Never `pub`, never exported.
+2. **`execute()` is always first.** Private helpers go below it in a `// -- Helpers --` subsection. Never `pub`, never exported.
 3. **Small files are correct.** A 12-line wrapper around a single git command is right. Don't pad files for length.
 4. **If it grows beyond ~120 lines**, consider splitting into composed interactions.
 

@@ -57,6 +57,8 @@ describe("PrTab", () => {
       reviews: [],
       comments: [],
       fetched_at: new Date().toISOString(),
+      mergeable: true,
+      merge_state_status: "CLEAN",
     });
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -72,6 +74,8 @@ describe("PrTab", () => {
       reviews: [],
       comments: [],
       fetched_at: new Date().toISOString(),
+      mergeable: null,
+      merge_state_status: null,
     });
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -87,6 +91,8 @@ describe("PrTab", () => {
       reviews: [],
       comments: [],
       fetched_at: new Date().toISOString(),
+      mergeable: null,
+      merge_state_status: null,
     });
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -106,6 +112,8 @@ describe("PrTab", () => {
       reviews: [],
       comments: [],
       fetched_at: new Date().toISOString(),
+      mergeable: true,
+      merge_state_status: "CLEAN",
     });
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -150,6 +158,8 @@ describe("PrTab", () => {
       ],
       comments: [],
       fetched_at: new Date().toISOString(),
+      mergeable: true,
+      merge_state_status: "CLEAN",
     });
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -201,6 +211,8 @@ describe("PrTab", () => {
         },
       ],
       fetched_at: new Date().toISOString(),
+      mergeable: true,
+      merge_state_status: "CLEAN",
     });
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -233,6 +245,8 @@ describe("PrTab", () => {
       reviews: [],
       comments: [],
       fetched_at: new Date().toISOString(),
+      mergeable: true,
+      merge_state_status: "CLEAN",
     });
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -259,6 +273,8 @@ describe("PrTab", () => {
         },
       ],
       fetched_at: new Date().toISOString(),
+      mergeable: true,
+      merge_state_status: "CLEAN",
     });
 
     render(
@@ -304,6 +320,8 @@ describe("PrTab", () => {
         },
       ],
       fetched_at: new Date().toISOString(),
+      mergeable: true,
+      merge_state_status: "CLEAN",
     });
 
     render(
@@ -357,6 +375,8 @@ describe("PrTab", () => {
         },
       ],
       fetched_at: new Date().toISOString(),
+      mergeable: true,
+      merge_state_status: "CLEAN",
     });
 
     render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -401,6 +421,8 @@ describe("PrTab", () => {
           },
         ],
         fetched_at: new Date().toISOString(),
+        mergeable: true,
+        merge_state_status: "CLEAN",
       });
 
       render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -445,6 +467,8 @@ describe("PrTab", () => {
           },
         ],
         fetched_at: new Date().toISOString(),
+        mergeable: true,
+        merge_state_status: "CLEAN",
       });
 
       render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -493,6 +517,8 @@ describe("PrTab", () => {
           },
         ],
         fetched_at: new Date().toISOString(),
+        mergeable: true,
+        merge_state_status: "CLEAN",
       });
 
       render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
@@ -556,6 +582,8 @@ describe("PrTab", () => {
           },
         ],
         fetched_at: new Date().toISOString(),
+        mergeable: true,
+        merge_state_status: "CLEAN",
       });
 
       // Render with 2 comments pre-selected
@@ -572,6 +600,94 @@ describe("PrTab", () => {
 
       // Badge shows "2 selected" (review is collapsed by default)
       expect(screen.getByText("2 selected")).toBeInTheDocument();
+    });
+  });
+
+  describe("Conflicts section", () => {
+    it("shows conflicts section when merge_state_status is DIRTY", async () => {
+      mockStatuses.set("task-1", {
+        url: "https://github.com/test/repo/pull/42",
+        state: "open",
+        checks: [],
+        reviews: [],
+        comments: [],
+        fetched_at: new Date().toISOString(),
+        mergeable: true, // mergeable can still be true when state is DIRTY
+        merge_state_status: "DIRTY",
+      });
+
+      render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
+
+      // Conflicts section header should be visible
+      const conflictsHeader = screen.getByRole("button", { name: /conflicts/i });
+      expect(conflictsHeader).toBeInTheDocument();
+
+      // Expand and verify content
+      await userEvent.click(conflictsHeader);
+      expect(
+        screen.getByText("This PR has merge conflicts with the base branch"),
+      ).toBeInTheDocument();
+    });
+
+    it("shows conflicts section when mergeable is false", async () => {
+      mockStatuses.set("task-1", {
+        url: "https://github.com/test/repo/pull/42",
+        state: "open",
+        checks: [],
+        reviews: [],
+        comments: [],
+        fetched_at: new Date().toISOString(),
+        mergeable: false,
+        merge_state_status: "BLOCKED",
+      });
+
+      render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
+
+      // Conflicts section header should be visible
+      const conflictsHeader = screen.getByRole("button", { name: /conflicts/i });
+      expect(conflictsHeader).toBeInTheDocument();
+
+      // Expand and verify content
+      await userEvent.click(conflictsHeader);
+      expect(
+        screen.getByText("This PR has merge conflicts with the base branch"),
+      ).toBeInTheDocument();
+    });
+
+    it("does not show conflicts section when no conflicts exist", () => {
+      mockStatuses.set("task-1", {
+        url: "https://github.com/test/repo/pull/42",
+        state: "open",
+        checks: [],
+        reviews: [],
+        comments: [],
+        fetched_at: new Date().toISOString(),
+        mergeable: true,
+        merge_state_status: "CLEAN",
+      });
+
+      render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
+
+      // Conflicts section should NOT be visible
+      expect(screen.queryByRole("button", { name: /conflicts/i })).not.toBeInTheDocument();
+    });
+
+    it("does not show conflicts section when mergeable is null (unknown state)", () => {
+      mockStatuses.set("task-1", {
+        url: "https://github.com/test/repo/pull/42",
+        state: "open",
+        checks: [],
+        reviews: [],
+        comments: [],
+        fetched_at: new Date().toISOString(),
+        mergeable: null,
+        merge_state_status: null,
+      });
+
+      render(<PrTab prUrl="https://github.com/test/repo/pull/42" taskId="task-1" />);
+
+      // Conflicts section should NOT be visible when state is unknown
+      expect(screen.queryByRole("button", { name: /conflicts/i })).not.toBeInTheDocument();
     });
   });
 });

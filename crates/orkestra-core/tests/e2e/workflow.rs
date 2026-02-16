@@ -5378,3 +5378,139 @@ fn test_address_pr_comments_rejects_empty_comments() {
         "Expected InvalidTransition error for empty comments, got: {result:?}"
     );
 }
+
+// =============================================================================
+// Address PR Conflicts E2E Tests
+// =============================================================================
+
+/// Test that a Done task can address PR conflicts.
+///
+/// This exercises the `address_pr_conflicts` API method for cases where a PR
+/// has merge conflicts and the user wants to return to the work stage to
+/// resolve them.
+#[test]
+fn test_address_pr_conflicts_returns_to_work_stage() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    use crate::helpers::disable_auto_merge;
+
+    // Use git workflow with auto_merge disabled so task stays at Done
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    // Create a task
+    let task = ctx.create_task("Test PR conflicts", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance through all stages to Done
+    advance_to_done_no_integration(&ctx, &task_id);
+
+    // Verify task is Done and Idle
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.is_done(), "Task should be Done");
+    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+
+    // Address PR conflicts
+    let base_branch = "origin/main";
+    let result = ctx
+        .api()
+        .address_pr_conflicts(&task_id, base_branch)
+        .expect("address_pr_conflicts should succeed");
+
+    // Verify task is back in work stage
+    assert_eq!(
+        result.current_stage(),
+        Some("work"),
+        "Task should return to work stage"
+    );
+    assert_eq!(result.phase, Phase::Idle, "Task should be Idle");
+    assert!(
+        !result.is_done(),
+        "Task should no longer be Done after addressing PR conflicts"
+    );
+    assert!(
+        result.completed_at.is_none(),
+        "completed_at should be cleared"
+    );
+
+    // Verify iteration was created with correct trigger
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let last = iterations.last().expect("Should have iterations");
+
+    assert_eq!(last.stage, "work", "Iteration should be in work stage");
+    match &last.incoming_context {
+        Some(IterationTrigger::Integration {
+            message,
+            conflict_files,
+        }) => {
+            assert!(
+                message.contains(base_branch),
+                "Message should contain base branch: {message}"
+            );
+            assert!(
+                conflict_files.is_empty(),
+                "Conflict files should be empty (discovered on rebase)"
+            );
+        }
+        other => panic!("Expected Integration trigger, got {other:?}"),
+    }
+
+    // Set mock output for the work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Resolved conflicts".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Advance orchestrator to spawn the agent
+    ctx.advance();
+
+    // Verify the prompt contains the base branch context
+    let prompt = ctx.last_prompt_for(&task_id);
+    assert!(
+        prompt.contains(base_branch),
+        "Prompt should contain base branch '{}', got prompt:\n{}",
+        base_branch,
+        &prompt[..prompt.len().min(500)]
+    );
+    assert!(
+        prompt.contains("conflict") || prompt.contains("rebase"),
+        "Prompt should mention conflict resolution, got prompt:\n{}",
+        &prompt[..prompt.len().min(500)]
+    );
+}
+
+/// Test that `address_pr_conflicts` rejects tasks not in Done status.
+///
+/// Only Done tasks can have their PR conflicts addressed.
+#[test]
+fn test_address_pr_conflicts_requires_done_status() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+    use orkestra_core::workflow::WorkflowError;
+
+    use crate::helpers::disable_auto_merge;
+
+    // Use git workflow with auto_merge disabled
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    // Create a task (starts in Active status, not Done)
+    let task = ctx.create_task("Test not done", "Description", None);
+    let task_id = task.id.clone();
+
+    // Verify task is not Done
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(!task.is_done(), "Task should not be Done yet");
+
+    // Attempt to address conflicts should fail
+    let result = ctx.api().address_pr_conflicts(&task_id, "origin/main");
+
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(ref msg)) if msg.contains("not done")),
+        "Expected InvalidTransition error mentioning 'not done', got: {result:?}"
+    );
+}

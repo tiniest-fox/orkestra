@@ -472,6 +472,7 @@ pub fn run() {
             commands::workflow_retry_pr,
             commands::workflow_archive,
             commands::workflow_address_pr_comments,
+            commands::workflow_address_pr_conflicts,
             commands::workflow_retry,
             commands::workflow_set_auto_mode,
             commands::workflow_interrupt,

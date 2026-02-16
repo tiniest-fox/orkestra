@@ -574,6 +574,10 @@ export interface PrStatus {
   comments: PrComment[];
   /** Timestamp when this status was fetched (RFC3339). */
   fetched_at: string;
+  /** Whether the PR can be merged (false if conflicts exist). */
+  mergeable: boolean | null;
+  /** GitHub merge state status. "DIRTY" indicates conflicts. */
+  merge_state_status: string | null;
 }
 
 /**

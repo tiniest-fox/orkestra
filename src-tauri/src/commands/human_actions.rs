@@ -196,3 +196,22 @@ pub fn workflow_address_pr_comments(
             .map_err(Into::into)
     })
 }
+
+/// Address PR merge conflicts by returning to the work stage.
+///
+/// Creates a new iteration with integration failure context that instructs
+/// the agent to rebase and resolve conflicts.
+#[tauri::command]
+pub fn workflow_address_pr_conflicts(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    base_branch: String,
+) -> Result<Task, TauriError> {
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .address_pr_conflicts(&task_id, &base_branch)
+            .map_err(Into::into)
+    })
+}

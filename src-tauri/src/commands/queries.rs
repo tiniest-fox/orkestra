@@ -217,6 +217,11 @@ pub struct PrStatus {
     pub comments: Vec<PrComment>,
     /// Timestamp when this status was fetched (RFC3339).
     pub fetched_at: String,
+    /// Whether the PR can be merged (false if conflicts exist).
+    pub mergeable: Option<bool>,
+    /// GitHub merge state: "BEHIND", "BLOCKED", "CLEAN", "DIRTY", "DRAFT", "`HAS_HOOKS`", "UNKNOWN", "UNSTABLE".
+    /// "DIRTY" indicates merge conflicts.
+    pub merge_state_status: Option<String>,
 }
 
 /// A single CI/CD check status.
@@ -272,6 +277,12 @@ struct GhPrResponse {
     state: String,
     #[serde(default)]
     status_check_rollup: Vec<GhStatusCheck>,
+    /// GitHub returns "MERGEABLE", "CONFLICTING", or "UNKNOWN".
+    #[serde(default)]
+    mergeable: Option<String>,
+    /// Merge state: "BEHIND", "BLOCKED", "CLEAN", "DIRTY", "DRAFT", "`HAS_HOOKS`", "UNKNOWN", "UNSTABLE".
+    #[serde(default)]
+    merge_state_status: Option<String>,
 }
 
 /// Raw JSON response from `gh api` for review comments.
@@ -417,7 +428,7 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
         "view",
         &pr_url,
         "--json",
-        "state,statusCheckRollup,url,number",
+        "state,statusCheckRollup,url,number,mergeable,mergeStateStatus",
     ];
     let reviews_args: [&str; 2] = ["api", &reviews_path];
     let comments_args: [&str; 2] = ["api", &comments_path];
@@ -492,6 +503,13 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
         Err(_) => Vec::new(),
     };
 
+    // Convert mergeable enum to boolean: "MERGEABLE" -> true, "CONFLICTING" -> false, "UNKNOWN" -> None
+    let mergeable = response.mergeable.as_deref().and_then(|m| match m {
+        "MERGEABLE" => Some(true),
+        "CONFLICTING" => Some(false),
+        _ => None, // "UNKNOWN" or unexpected values
+    });
+
     Ok(PrStatus {
         url: response.url,
         state: normalize_pr_state(&response.state).to_string(),
@@ -499,6 +517,8 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
         reviews,
         comments,
         fetched_at: Utc::now().to_rfc3339(),
+        mergeable,
+        merge_state_status: response.merge_state_status,
     })
 }
 
@@ -604,6 +624,62 @@ mod tests {
         assert_eq!(response.url, "https://github.com/owner/repo/pull/123");
         assert_eq!(response.state, "OPEN");
         assert!(response.status_check_rollup.is_empty());
+        assert!(response.mergeable.is_none());
+        assert!(response.merge_state_status.is_none());
+    }
+
+    #[test]
+    fn deserialize_gh_pr_response_with_merge_fields() {
+        let json = r#"{
+            "url": "https://github.com/owner/repo/pull/123",
+            "state": "OPEN",
+            "statusCheckRollup": [],
+            "mergeable": "CONFLICTING",
+            "mergeStateStatus": "DIRTY"
+        }"#;
+
+        let response: GhPrResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.mergeable, Some("CONFLICTING".to_string()));
+        assert_eq!(response.merge_state_status, Some("DIRTY".to_string()));
+    }
+
+    #[test]
+    fn mergeable_conversion() {
+        // MERGEABLE -> true
+        let mergeable_str = Some("MERGEABLE");
+        let result = mergeable_str.and_then(|m| match m {
+            "MERGEABLE" => Some(true),
+            "CONFLICTING" => Some(false),
+            _ => None,
+        });
+        assert_eq!(result, Some(true));
+
+        // CONFLICTING -> false
+        let conflicting_str = Some("CONFLICTING");
+        let result = conflicting_str.and_then(|m| match m {
+            "MERGEABLE" => Some(true),
+            "CONFLICTING" => Some(false),
+            _ => None,
+        });
+        assert_eq!(result, Some(false));
+
+        // UNKNOWN -> None
+        let unknown_str = Some("UNKNOWN");
+        let result = unknown_str.and_then(|m| match m {
+            "MERGEABLE" => Some(true),
+            "CONFLICTING" => Some(false),
+            _ => None,
+        });
+        assert_eq!(result, None);
+
+        // None -> None
+        let none_str: Option<&str> = None;
+        let result = none_str.and_then(|m| match m {
+            "MERGEABLE" => Some(true),
+            "CONFLICTING" => Some(false),
+            _ => None,
+        });
+        assert_eq!(result, None);
     }
 
     #[test]

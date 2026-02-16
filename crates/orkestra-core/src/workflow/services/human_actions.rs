@@ -587,6 +587,73 @@ impl WorkflowApi {
         Ok(task)
     }
 
+    /// Address PR merge conflicts by returning to the work stage.
+    ///
+    /// Similar to `address_pr_comments()` but for merge conflicts. Creates a new
+    /// iteration in the recovery stage with integration failure context that
+    /// instructs the agent to rebase and resolve conflicts.
+    ///
+    /// # Arguments
+    ///
+    /// * `task_id` - The task ID
+    /// * `base_branch` - The branch to rebase onto (typically `origin/{task.base_branch}`)
+    ///
+    /// # Errors
+    ///
+    /// Returns `InvalidTransition` if:
+    /// - The task is not in Done status
+    /// - The task is not in Idle phase
+    pub fn address_pr_conflicts(&self, task_id: &str, base_branch: &str) -> WorkflowResult<Task> {
+        let mut task = self.get_task(task_id)?;
+
+        // Validate task state
+        if !task.is_done() {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Task {task_id} is not done, cannot address PR conflicts"
+            )));
+        }
+        if task.phase != Phase::Idle {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Task {task_id} is not idle, cannot address PR conflicts"
+            )));
+        }
+
+        // Determine recovery stage (same as integration failures)
+        let recovery_stage = self
+            .integration_failure_stage(task.flow.as_deref())
+            .ok_or_else(|| {
+                WorkflowError::InvalidTransition("No recovery stage configured".into())
+            })?;
+
+        orkestra_debug!(
+            "action",
+            "address_pr_conflicts {}: returning to {} stage to resolve conflicts with {}",
+            task_id,
+            recovery_stage,
+            base_branch
+        );
+
+        // Create new iteration with Integration trigger (reuses existing variant)
+        self.iteration_service.create_iteration(
+            task_id,
+            &recovery_stage,
+            Some(IterationTrigger::Integration {
+                message: format!("PR has merge conflicts with {base_branch}"),
+                conflict_files: vec![], // GitHub doesn't expose file list; agent discovers on rebase
+            }),
+        )?;
+
+        // Update task to recovery stage in Idle phase
+        let now = chrono::Utc::now().to_rfc3339();
+        task.status = Status::active(&recovery_stage);
+        task.phase = Phase::Idle;
+        task.completed_at = None;
+        task.updated_at = now;
+
+        self.store.save_task(&task)?;
+        Ok(task)
+    }
+
     /// Manually archive a Done task.
     ///
     /// This is used when a task's PR has been merged externally and the user

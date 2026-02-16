@@ -28,8 +28,8 @@ import { DetailsTab } from "./DetailsTab";
 import { IntegrationPanel } from "./IntegrationPanel";
 import { IterationsTab } from "./IterationsTab";
 import { LogsTab } from "./LogsTab";
-import { PrCommentsPanel } from "./PrCommentsPanel";
-import { PrTab } from "./PrTab";
+import { PrIssuesPanel } from "./PrIssuesPanel";
+import { hasConflicts, PrTab } from "./PrTab";
 import { QuestionFormPanel } from "./QuestionFormPanel";
 import { ResumePanel } from "./ResumePanel";
 import { ReviewPanel } from "./ReviewPanel";
@@ -176,8 +176,9 @@ export function TaskDetailSidebar({
     task.phase === "idle" &&
     task.pr_url &&
     prStatus?.state === "merged";
-  // Show PR comments panel for Done+Idle tasks with PR and unaddressed comments
-  const showPrComments =
+  // Show PR issues panel for Done+Idle tasks with PR and conflicts or comments
+  const conflictsDetected = prStatus ? hasConflicts(prStatus) : false;
+  const showPrIssues =
     !showDelete &&
     !showQuestions &&
     !showResume &&
@@ -187,15 +188,14 @@ export function TaskDetailSidebar({
     task.derived.is_done &&
     task.phase === "idle" &&
     task.pr_url &&
-    prStatus?.comments &&
-    prStatus.comments.length > 0;
+    (conflictsDetected || (prStatus?.comments && prStatus.comments.length > 0));
   const showCompactFooter = !!(
     showDelete ||
     showReview ||
     showResume ||
     showIntegration ||
     showArchive ||
-    showPrComments
+    showPrIssues
   );
 
   return (
@@ -324,10 +324,12 @@ export function TaskDetailSidebar({
 
         {showArchive && <ArchivePanel onArchive={archiveTask} isSubmitting={isSubmitting} />}
 
-        {showPrComments && prStatus?.comments && (
-          <PrCommentsPanel
+        {showPrIssues && prStatus && (
+          <PrIssuesPanel
             taskId={task.id}
-            allComments={prStatus.comments}
+            baseBranch={task.base_branch}
+            hasConflicts={conflictsDetected}
+            allComments={prStatus.comments ?? []}
             selectedCommentIds={selectedCommentIds}
             guidance={commentGuidance}
             onSuccess={() => {

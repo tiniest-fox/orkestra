@@ -9,13 +9,14 @@ import {
   ChevronRight,
   Circle,
   ExternalLink,
+  GitMerge,
   Loader2,
   MessageCircle,
   XCircle,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { usePrStatus } from "../../providers";
-import type { PrCheck, PrComment, PrReview } from "../../types/workflow";
+import type { PrCheck, PrComment, PrReview, PrStatus } from "../../types/workflow";
 import { Badge, CollapsibleSection, FlexContainer, Link, Panel } from "../ui";
 import { groupCommentsByReview } from "./groupCommentsByReview";
 
@@ -100,6 +101,20 @@ export function PrTab({
         </CollapsibleSection>
       )}
 
+      {/* Conflicts section */}
+      {status && hasConflicts(status) && (
+        <CollapsibleSection title="Conflicts" count={1} className="flex-shrink-0">
+          <Panel accent="warning" autoFill={false} padded={true}>
+            <div className="flex items-center gap-2 text-sm">
+              <GitMerge className="w-4 h-4 text-warning-500" />
+              <span className="text-stone-700 dark:text-stone-300">
+                This PR has merge conflicts with the base branch
+              </span>
+            </div>
+          </Panel>
+        </CollapsibleSection>
+      )}
+
       {/* Reviews section with nested comments */}
       {reviewsWithComments.length > 0 && (
         <CollapsibleSection
@@ -168,7 +183,7 @@ export function PrTab({
             value={guidance ?? ""}
             onChange={(e) => onGuidanceChange?.(e.target.value)}
             placeholder="Add any additional context or instructions..."
-            className="w-full h-20 text-sm rounded border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 placeholder:text-stone-400 dark:placeholder:text-stone-500 p-2 resize-none"
+            className="w-full h-20 text-sm rounded-panel-sm border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 placeholder:text-stone-400 dark:placeholder:text-stone-500 p-2 resize-none"
           />
         </Panel>
       )}
@@ -340,4 +355,11 @@ function CommentRow({
       </div>
     </div>
   );
+}
+
+/**
+ * Check if a PR has merge conflicts.
+ */
+export function hasConflicts(status: PrStatus): boolean {
+  return status.merge_state_status === "DIRTY" || status.mergeable === false;
 }

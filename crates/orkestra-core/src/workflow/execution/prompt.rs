@@ -2144,7 +2144,7 @@ mod tests {
                         overrides: None,
                     },
                 ],
-                on_failure: None,
+                integration: None,
             },
         );
 
@@ -2245,7 +2245,7 @@ mod tests {
                         overrides: None,
                     },
                 ],
-                on_failure: None,
+                integration: None,
             },
         );
 

@@ -29,7 +29,7 @@ fn test_workflow_with_flow() -> WorkflowConfig {
                 stage_name: "work".to_string(),
                 overrides: None,
             }],
-            on_failure: None,
+            integration: None,
         },
     );
 

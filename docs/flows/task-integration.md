@@ -44,7 +44,7 @@ Done + Idle ──[mark_integrating]──> Done + Integrating ──[merge succ
 When rebase or merge fails with conflicts:
 
 1. `integration_failed()` creates a pseudo-iteration in stage "integration" with `Outcome::IntegrationFailed { error, conflict_files }`
-2. Determines recovery stage from `workflow.integration.on_failure` config (default: last agent stage, typically "work")
+2. Determines recovery stage via `effective_integration_on_failure(task.flow)` — checks flow's `integration.on_failure` override first, then falls back to global `workflow.integration.on_failure` (default: "work")
 3. Sets task status to `Active(recovery_stage)`, clears `completed_at`
 4. Creates new iteration in recovery stage with `IterationTrigger::Integration { message, conflict_files }`
 5. Orchestrator picks up the task on next tick, spawns agent with integration resume prompt telling it to run `git rebase main` and resolve conflicts

@@ -14,5 +14,6 @@ pub use stage::{
     ScriptStageConfig, StageCapabilities, StageConfig, SubtaskCapabilities, ToolRestriction,
 };
 pub use workflow::{
-    FlowConfig, FlowStageEntry, FlowStageOverride, IntegrationConfig, WorkflowConfig,
+    FlowConfig, FlowIntegrationOverride, FlowStageEntry, FlowStageOverride, IntegrationConfig,
+    WorkflowConfig,
 };

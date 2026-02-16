@@ -45,8 +45,17 @@ pub struct FlowConfig {
     /// (stage name) whose value contains overrides.
     pub stages: Vec<FlowStageEntry>,
 
-    /// Override for `integration.on_failure` — stage to return to after integration failure.
-    /// When absent, inherits global `integration.on_failure`.
+    /// Per-flow integration overrides. Unset fields inherit from global `integration`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration: Option<FlowIntegrationOverride>,
+}
+
+/// Per-flow overrides for integration configuration.
+///
+/// All fields are optional — unset fields inherit from the global `IntegrationConfig`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FlowIntegrationOverride {
+    /// Override for global `integration.on_failure`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_failure: Option<String>,
 }
@@ -428,8 +437,12 @@ impl WorkflowConfig {
     pub fn effective_integration_on_failure(&self, flow: Option<&str>) -> &str {
         if let Some(flow_name) = flow {
             if let Some(flow_config) = self.flows.get(flow_name) {
-                if let Some(ref on_failure) = flow_config.on_failure {
-                    return on_failure.as_str();
+                if let Some(on_failure) = flow_config
+                    .integration
+                    .as_ref()
+                    .and_then(|i| i.on_failure.as_deref())
+                {
+                    return on_failure;
                 }
             }
         }
@@ -744,24 +757,44 @@ impl WorkflowConfig {
                 }
             }
 
-            // Validate flow on_failure (if set) references a stage in this flow
-            if let Some(ref on_failure) = flow.on_failure {
-                if !flow_stage_names.contains(on_failure.as_str()) {
-                    errors.push(format!(
-                        "Flow \"{flow_name}\" has on_failure=\"{on_failure}\", but \"{on_failure}\" is not in flow \"{flow_name}\""
-                    ));
-                }
-            }
+            self.validate_flow_integration_on_failure(flow_name, flow, &flow_stage_names, errors);
+        }
+    }
 
-            // Validate global integration.on_failure is in flow (unless flow overrides it)
-            if flow.on_failure.is_none() {
-                let global_on_failure = &self.integration.on_failure;
-                if !flow_stage_names.contains(global_on_failure.as_str()) {
-                    errors.push(format!(
-                        "Flow \"{flow_name}\" does not include global integration.on_failure stage \"{global_on_failure}\" and has no override. \
-                         Either add \"{global_on_failure}\" to the flow's stages or set on_failure on the flow."
-                    ));
-                }
+    /// Validate integration `on_failure` for a single flow.
+    fn validate_flow_integration_on_failure(
+        &self,
+        flow_name: &str,
+        flow: &FlowConfig,
+        flow_stage_names: &std::collections::HashSet<&str>,
+        errors: &mut Vec<String>,
+    ) {
+        // Validate flow integration.on_failure (if set) references a stage in this flow
+        if let Some(on_failure) = flow
+            .integration
+            .as_ref()
+            .and_then(|i| i.on_failure.as_ref())
+        {
+            if !flow_stage_names.contains(on_failure.as_str()) {
+                errors.push(format!(
+                    "Flow \"{flow_name}\" has on_failure=\"{on_failure}\", but \"{on_failure}\" is not in flow \"{flow_name}\""
+                ));
+            }
+        }
+
+        // Validate global integration.on_failure is in flow (unless flow overrides it)
+        if flow
+            .integration
+            .as_ref()
+            .and_then(|i| i.on_failure.as_ref())
+            .is_none()
+        {
+            let global_on_failure = &self.integration.on_failure;
+            if !flow_stage_names.contains(global_on_failure.as_str()) {
+                errors.push(format!(
+                    "Flow \"{flow_name}\" does not include global integration.on_failure stage \"{global_on_failure}\" and has no override. \
+                     Either add \"{global_on_failure}\" to the flow's stages or set integration.on_failure on the flow."
+                ));
             }
         }
     }
@@ -1481,7 +1514,7 @@ integration:
                         overrides: None,
                     },
                 ],
-                on_failure: None,
+                integration: None,
             },
         );
 
@@ -1520,7 +1553,7 @@ integration:
                         overrides: None,
                     },
                 ],
-                on_failure: None,
+                integration: None,
             },
         );
 
@@ -1594,7 +1627,7 @@ integration:
                         disallowed_tools: Some(flow_tools),
                     }),
                 }],
-                on_failure: None,
+                integration: None,
             },
         );
 
@@ -1626,7 +1659,7 @@ integration:
                     stage_name: "work".to_string(),
                     overrides: None,
                 }],
-                on_failure: None,
+                integration: None,
             },
         );
 
@@ -1664,7 +1697,7 @@ integration:
                         disallowed_tools: Some(vec![]),
                     }),
                 }],
-                on_failure: None,
+                integration: None,
             },
         );
 
@@ -1771,7 +1804,7 @@ integration:
                         ]),
                     }),
                 }],
-                on_failure: None,
+                integration: None,
             },
         );
 
@@ -1847,7 +1880,7 @@ integration:
                     stage_name: "work".to_string(),
                     overrides: None,
                 }],
-                on_failure: None,
+                integration: None,
             },
         );
         let workflow =
@@ -1896,7 +1929,9 @@ integration:
                         overrides: None,
                     },
                 ],
-                on_failure: Some("planning".to_string()),
+                integration: Some(FlowIntegrationOverride {
+                    on_failure: Some("planning".to_string()),
+                }),
             },
         );
 
@@ -1937,7 +1972,7 @@ integration:
                         overrides: None,
                     },
                 ],
-                on_failure: None, // No override
+                integration: None, // No override
             },
         );
 
@@ -1987,15 +2022,22 @@ integration:
 flows:
   quick:
     description: Quick flow
-    on_failure: planning
+    integration:
+      on_failure: planning
     stages:
       - planning
       - work
 ";
         let workflow: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(
-            workflow.flows.get("quick").unwrap().on_failure,
-            Some("planning".to_string())
+            workflow
+                .flows
+                .get("quick")
+                .unwrap()
+                .integration
+                .as_ref()
+                .and_then(|i| i.on_failure.as_deref()),
+            Some("planning")
         );
 
         // Round-trip
@@ -2004,8 +2046,14 @@ flows:
 
         let reparsed: WorkflowConfig = serde_yaml::from_str(&serialized).unwrap();
         assert_eq!(
-            reparsed.flows.get("quick").unwrap().on_failure,
-            Some("planning".to_string())
+            reparsed
+                .flows
+                .get("quick")
+                .unwrap()
+                .integration
+                .as_ref()
+                .and_then(|i| i.on_failure.as_deref()),
+            Some("planning")
         );
     }
 
@@ -2025,7 +2073,9 @@ flows:
                     stage_name: "work".to_string(),
                     overrides: None,
                 }],
-                on_failure: Some("planning".to_string()), // Not in flow!
+                integration: Some(FlowIntegrationOverride {
+                    on_failure: Some("planning".to_string()),
+                }), // Not in flow!
             },
         );
 
@@ -2063,7 +2113,7 @@ flows:
                     },
                     // Missing "work" which is global on_failure
                 ],
-                on_failure: None, // No override
+                integration: None, // No override
             },
         );
 
@@ -2101,7 +2151,9 @@ flows:
                     },
                     // Missing "work" which is global on_failure, but flow has override
                 ],
-                on_failure: Some("planning".to_string()), // Override present and valid
+                integration: Some(FlowIntegrationOverride {
+                    on_failure: Some("planning".to_string()),
+                }), // Override present and valid
             },
         );
 
@@ -2140,7 +2192,7 @@ flows:
                         overrides: None,
                     },
                 ],
-                on_failure: None, // No override, but global is in flow
+                integration: None, // No override, but global is in flow
             },
         );
 

@@ -386,7 +386,8 @@ impl WorkflowApi {
 mod tests {
     use super::*;
     use crate::workflow::config::{
-        FlowConfig, FlowStageEntry, IntegrationConfig, StageCapabilities, StageConfig,
+        FlowConfig, FlowIntegrationOverride, FlowStageEntry, IntegrationConfig, StageCapabilities,
+        StageConfig,
     };
     use crate::workflow::InMemoryWorkflowStore;
     use indexmap::IndexMap;
@@ -493,7 +494,9 @@ mod tests {
                         overrides: None,
                     },
                 ],
-                on_failure: Some("planning".to_string()),
+                integration: Some(FlowIntegrationOverride {
+                    on_failure: Some("planning".to_string()),
+                }),
             },
         );
 

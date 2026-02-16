@@ -95,6 +95,14 @@ export type FlowStageEntryObject = Record<string, FlowStageOverride>;
 export type FlowStageEntry = string | FlowStageEntryObject;
 
 /**
+ * Per-flow overrides for integration configuration.
+ */
+export interface FlowIntegrationOverride {
+  /** Override for global integration.on_failure. */
+  on_failure?: string;
+}
+
+/**
  * Configuration for an alternate flow (shortened pipeline).
  */
 export interface FlowConfig {
@@ -104,8 +112,8 @@ export interface FlowConfig {
   icon?: string;
   /** Ordered list of stages in this flow. */
   stages: FlowStageEntry[];
-  /** Override for integration.on_failure — stage to return to after integration failure. */
-  on_failure?: string;
+  /** Per-flow integration overrides. Unset fields inherit from global integration. */
+  integration?: FlowIntegrationOverride;
 }
 
 /**

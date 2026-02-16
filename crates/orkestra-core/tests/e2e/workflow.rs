@@ -856,7 +856,8 @@ fn test_custom_integration_on_failure() {
 fn test_integration_failure_uses_flow_on_failure_override() {
     use indexmap::IndexMap;
     use orkestra_core::workflow::config::{
-        FlowConfig, FlowStageEntry, IntegrationConfig, StageCapabilities, StageConfig,
+        FlowConfig, FlowIntegrationOverride, FlowStageEntry, IntegrationConfig, StageCapabilities,
+        StageConfig,
     };
 
     // Build workflow where:
@@ -882,7 +883,9 @@ fn test_integration_failure_uses_flow_on_failure_override() {
                     overrides: None,
                 },
             ],
-            on_failure: Some("planning".to_string()), // Override!
+            integration: Some(FlowIntegrationOverride {
+                on_failure: Some("planning".to_string()),
+            }), // Override!
         },
     );
 
@@ -4584,7 +4587,7 @@ fn test_disallowed_tools_flow_override() {
                     disallowed_tools: Some(vec![]), // Explicitly no restrictions
                 }),
             }],
-            on_failure: None,
+            integration: None,
         },
     );
 

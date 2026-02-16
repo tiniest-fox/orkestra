@@ -436,7 +436,7 @@ mod tests {
                         overrides: None,
                     },
                 ],
-                on_failure: None,
+                integration: None,
             },
         );
 

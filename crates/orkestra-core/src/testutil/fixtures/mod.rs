@@ -46,7 +46,7 @@ pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
                     overrides: None,
                 },
             ],
-            on_failure: None,
+            integration: None,
         },
     );
 

@@ -145,6 +145,7 @@ For every file you review, ask:
 - Are dependencies explicit? Can I see what this needs to work?
 - Is validation happening at boundaries?
 - Is pure logic separated from I/O?
+- If this creates or extends a module, does it follow the standard module structure (interface → types → service → interactions → mock)?
 
 **The holistic check:** After reviewing all changed files, step back and ask: "Would I be confident maintaining this code in 6 months? Would I be comfortable if this became the template that future code is modeled after?" If the answer to either is no, something needs to be flagged — even if you can't point to a specific principle violation. Trust your instinct and classify what feels wrong.
 

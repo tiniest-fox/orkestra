@@ -22,6 +22,65 @@ Listed in priority order. When principles conflict, earlier ones win.
 
 **Conflict resolution:** Clear Boundaries > Single Source of Truth > Fail Fast. Readability overrides theoretical purity — if following a principle makes code harder to understand, reconsider.
 
+### Module Structure
+
+Every module that owns a domain concern follows this layered structure. This applies whether the module is a standalone crate, a directory inside a crate, or any unit of code that provides a capability through a trait.
+
+| Layer | File(s) | Role | Visibility |
+|-------|---------|------|------------|
+| **Interface** | `interface.rs` | Trait defining the contract. What can this module do? | `pub` |
+| **Types** | `types.rs` | Module-specific types (errors, results, domain models) | `pub` |
+| **Service** | `service.rs` | Production implementation of the trait. Thin dispatcher — each trait method delegates to one interaction. | `pub` |
+| **Interactions** | `interactions/{domain}/*.rs` | Grouped by domain. One file per operation, one `execute()` entry point per file. | `pub` (called by service) |
+| **Mock** | `mock.rs` | Test double implementing the trait. Behind `testutil` feature flag. | `pub` (feature-gated) |
+
+**Rules:**
+
+- **One `execute()` per interaction.** This is the only public entry point. Private helpers within the file are fine for readability.
+- **Interactions are nested by domain.** Navigate with: "What kind of thing am I operating on?" → directory. "What action?" → file. Within the same domain, compose via `super::action::execute()`. Across domains, use `crate::interactions::domain::action::execute()`.
+- **Interactions can compose other interactions.** Shared logic that doesn't warrant its own interaction stays as a private function inside the file that needs it.
+- **The service is a thin dispatcher.** It holds shared state (connections, config) and delegates each trait method to exactly one interaction's `execute()`. No business logic in the service layer.
+- **Multi-step orchestration stays in the caller.** If a workflow requires calling `rebase()` then `merge()` then `push()`, the caller (e.g., `integration.rs` in orkestra-core) owns that sequence and its domain-specific error handling. Don't push composed workflows into the module.
+- **No separate utilities layer.** There is no `utilities/` directory. If multiple interactions need the same logic, either one interaction calls the other, or the logic is extracted into its own interaction.
+- **Small files are intentional.** A 12-line interaction that wraps a single git command is correct. Predictability and findability beat conciseness.
+- **Errors propagate, not swallow.** Interactions return `Result` and use `?`. Only swallow errors when there's an obvious fallback the caller wouldn't care about (e.g., file-not-found → `Ok(None)`).
+
+**Exemplar:** `crates/orkestra-git/` is the reference implementation of this pattern. When building a new module, use it as the template.
+
+### File Structure Conventions
+
+Three levels of visual structure keep files scannable without being noisy:
+
+| Level | Syntax | Use for | Skip when |
+|-------|--------|---------|-----------|
+| File header | `//!` | Every file — one sentence purpose | Never skip |
+| Section | `// ====` (76 chars total) | Major divisions: types, impl blocks, tests | File has one concern |
+| Subsection | `// -- Name --` | Grouping methods by domain within an impl/trait | <6 methods in block |
+
+**File header** (`//!`) — Every file opens with a doc comment. One sentence for the purpose, optional paragraph for context. This is idiomatic Rust.
+
+**Sections** (`// ====`) — Major structural divisions within a file. Use when a file has multiple distinct concerns (types + impl, helpers + main struct, public API + internals). Tests always get their own section:
+
+```rust
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+```
+
+**Subsections** (`// --`) — Lightweight grouping within an impl block or trait. Use when methods naturally cluster by domain. Trait definitions and their impls should use matching subsections:
+
+```rust
+    // -- Worktree --
+
+    fn create_worktree(...) { ... }
+    fn ensure_worktree(...) { ... }
+```
+
+**Exemplar:** `crates/orkestra-git/src/interface.rs`, `service.rs`, and `mock.rs` demonstrate all three levels.
+
 ## Build & Development Commands
 
 ```bash
@@ -157,7 +216,7 @@ These docs trace operations that span multiple files. Read these instead of expl
 |------|--------------|-----------|
 | **Workflow pipeline** (stages, capabilities, routing, phase transitions) | [`docs/flows/workflow-pipeline.md`](docs/flows/workflow-pipeline.md) | `stage.rs`, `agent_actions.rs`, `human_actions.rs`, `orchestrator.rs` |
 | **Stage execution** (orchestrator -> spawn -> prompt -> output) | [`docs/flows/stage-execution.md`](docs/flows/stage-execution.md) | `orchestrator.rs`, `stage_execution.rs`, `agent_execution.rs`, `provider_registry.rs`, `agent_actions.rs`, `prompt.rs` |
-| **Task integration** (merge, conflict recovery, cleanup) | [`docs/flows/task-integration.md`](docs/flows/task-integration.md) | `orchestrator.rs`, `integration.rs`, `git_service.rs` |
+| **Task integration** (merge, conflict recovery, cleanup) | [`docs/flows/task-integration.md`](docs/flows/task-integration.md) | `orchestrator.rs`, `integration.rs`, `orkestra-git` |
 | **Subtask lifecycle** (breakdown, creation, deps, parent advance) | [`docs/flows/subtask-lifecycle.md`](docs/flows/subtask-lifecycle.md) | `agent_actions.rs`, `human_actions.rs`, `subtask_service.rs`, `orchestrator.rs` |
 
 ## Architecture Overview
@@ -167,6 +226,7 @@ Orkestra is a task orchestration system that spawns AI coding agents (Claude Cod
 ### Workspace Structure
 
 - **`crates/orkestra-core/`** - Core library containing task management, agent spawning, and domain logic
+- **`crates/orkestra-git/`** - Git operations crate (worktrees, branches, merging, diffs). Reference implementation of the module structure pattern.
 - **`cli/`** - CLI binary (`ork`) for task management
 - **`src-tauri/`** - Tauri desktop application backend. **Read `src-tauri/CLAUDE.md` before making changes in this directory.**
 - **`src/`** - React/TypeScript frontend (Kanban board UI). **Read `src/CLAUDE.md` before making changes in this directory.**
@@ -182,11 +242,11 @@ Orkestra is a task orchestration system that spawns AI coding agents (Claude Cod
 
 The core library is organized around the `workflow/` module, which provides a configurable workflow system:
 
-- **`workflow/adapters/`** - Storage and process implementations (`SqliteWorkflowStore`, `InMemoryWorkflowStore`, `Git2GitService`, `ClaudeProcessSpawner`, `OpenCodeProcessSpawner`)
+- **`workflow/adapters/`** - Storage and process implementations (`SqliteWorkflowStore`, `InMemoryWorkflowStore`, `ClaudeProcessSpawner`, `OpenCodeProcessSpawner`)
 - **`workflow/config/`** - Workflow configuration loading and stage definitions
 - **`workflow/domain/`** - Core domain models (`Task`, `Iteration`, `Question`, `LogEntry`, `StageSession`)
 - **`workflow/execution/`** - Agent execution logic (`AgentRunner`, `ProviderRegistry`, `PromptBuilder`, `StageOutput`)
-- **`workflow/ports/`** - Trait interfaces (`WorkflowStore`, `GitService`, `ProcessSpawner`)
+- **`workflow/ports/`** - Trait interfaces (`WorkflowStore`, `ProcessSpawner`). Git types and `GitService` trait are re-exported from `orkestra-git`.
 - **`workflow/runtime/`** - Runtime state management (`Artifact`, `ArtifactStore`, `Phase`, `Status`, `Transition`)
 - **`workflow/services/`** - Business logic (`WorkflowApi`, `TaskExecutionService`, `OrchestratorLoop`)
 
@@ -195,6 +255,16 @@ Other top-level modules:
 - **`prompts/`** - JSON schemas for agent outputs and prompt templates
 - **`process.rs`** - Process spawning and management
 - **`project.rs`** - Project root detection
+
+### Git Operations (`crates/orkestra-git/`)
+
+Git operations live in the `orkestra-git` crate, following the standard module structure. orkestra-core depends on it and re-exports its types through `workflow::ports`.
+
+- **`interface.rs`** - `GitService` trait
+- **`service.rs`** - `Git2GitService` (delegates to interactions)
+- **`interactions/`** - Individual operations nested by domain: `branch/`, `commit/`, `diff/`, `merge/`, `remote/`, `stash/`, `worktree/`.
+- **`types.rs`** - `GitError`, `TaskDiff`, `MergeResult`, `CommitInfo`, etc.
+- **`mock.rs`** - `MockGitService` (behind `testutil` feature)
 
 ### Database Schema
 

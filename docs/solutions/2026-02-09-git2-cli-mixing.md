@@ -45,5 +45,5 @@ Both operations now use the same in-process repository handle, eliminating metad
 - If you must mix git2 and CLI: flush/sync the repository state before CLI calls (though this is error-prone)
 
 ## Related Code
-- `crates/orkestra-core/src/workflow/adapters/git_service.rs:621-638` - Fixed implementation
-- `crates/orkestra-core/src/workflow/adapters/git_service.rs:1083-1135` - Integration test
+- `crates/orkestra-git/src/interactions/delete_branch.rs` - Fixed implementation (uses `git2::Branch::delete()` instead of CLI)
+- `crates/orkestra-git/src/service.rs` - Service tests covering worktree + branch cleanup

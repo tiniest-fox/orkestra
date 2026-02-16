@@ -64,7 +64,7 @@ No polling. No daemon. No event callbacks. Just a sequential function that reuse
 - **ProcessSpawner** (ClaudeProcessSpawner, OpenCodeProcessSpawner) — spawns agent CLIs
 - **StageOutput parsing** — JSON output → artifacts, questions, subtasks, approvals
 - **Auto-mode logic** (`agent_actions.rs`) — auto-approve, auto-answer questions
-- **Git operations** (Git2GitService) — worktree setup, commit, rebase, merge
+- **Git operations** (`orkestra-git` crate) — worktree setup, commit, rebase, merge
 - **WorkflowConfig** — stage ordering, flow resolution, capability flags
 - **SubtaskService** — subtask creation with dependencies and flow assignment
 

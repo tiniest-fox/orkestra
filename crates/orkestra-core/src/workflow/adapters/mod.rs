@@ -3,16 +3,14 @@
 //! Adapters implement the port traits for specific backends.
 
 mod claude_process;
-mod diff;
 mod gh_pr_service;
-mod git_service;
 mod memory;
 mod opencode_process;
 mod sqlite;
 
 pub use claude_process::ClaudeProcessSpawner;
 pub use gh_pr_service::GhPrService;
-pub use git_service::Git2GitService;
 pub use memory::InMemoryWorkflowStore;
 pub use opencode_process::OpenCodeProcessSpawner;
+pub use orkestra_git::Git2GitService;
 pub use sqlite::SqliteWorkflowStore;

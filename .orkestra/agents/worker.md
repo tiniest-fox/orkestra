@@ -28,6 +28,26 @@ Follow these principles when writing code (in priority order):
 
 When principles conflict, earlier ones take precedence.
 
+## Standard Module Structure
+
+When creating or extending modules, follow this 5-layer structure:
+
+| Layer | File | Purpose | Visibility |
+|-------|------|---------|------------|
+| Interface | `interface.rs` | Trait defining the contract | `pub` |
+| Types | `types.rs` | Module-specific errors and models | `pub` |
+| Service | `service.rs` | Thin dispatcher: receives calls, delegates to interactions | `pub` |
+| Interactions | `interactions/{domain}/*.rs` | Nested by domain. One `execute()` per file. All dependencies as parameters. | `pub` |
+| Mock | `mock.rs` | Test double implementing the interface trait | `pub` (feature-gated) |
+
+**Key rules:**
+- One `execute()` per interaction file — private helpers within the file are fine
+- Interactions are nested by domain (e.g., `branch/`, `commit/`, `diff/`). Within the same domain, compose via `super::action::execute()`. Across domains, use `crate::interactions::domain::action::execute()`
+- Shared helpers are private functions inside the interaction that owns them — no separate utilities layer
+- The service is a thin dispatcher; multi-step orchestration stays in the caller
+
+**Reference implementation:** Study `crates/orkestra-git/` before creating new modules — it's the exemplar for this pattern.
+
 ## Implementation Mindset
 
 ### Follow Existing Patterns

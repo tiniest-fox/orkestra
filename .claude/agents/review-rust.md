@@ -20,7 +20,8 @@ This is a Tauri desktop application with:
 - **SQLite** for persistence (via `rusqlite`)
 - **Process management** — spawning and managing CLI agent processes (Claude Code, OpenCode)
 - **Git worktrees** — each task gets an isolated worktree
-- **Trait-based DI** — traits in `workflow/ports/` define boundaries per architectural principle #3
+- **Trait-based DI** — traits live in dedicated crates (e.g., `orkestra-git/src/interface.rs`) with re-exports through `workflow/ports/`
+- **Standard module structure** — new modules follow a 5-layer pattern (interface → types → service → interactions → mock). `orkestra-git` is the reference implementation.
 - **Async runtime** — Tauri uses tokio under the hood
 
 ## Your Mission
@@ -54,7 +55,7 @@ Review the changed Rust code and identify unidiomatic patterns, performance anti
 - Overly complex generic signatures
 - Missing opportunities for `impl Trait` return types
 - Derived traits that could be manual for clarity
-- **Exception:** Traits with a single implementor are correct when used for dependency injection boundaries. The traits in `workflow/ports/` (`WorkflowStore`, `GitService`, `ProcessSpawner`) exist per CLAUDE.md principle #3 (Explicit Dependencies) — they enable testing with mock implementations. Only flag single-impl traits in domain logic where a concrete type would suffice and no testing boundary is needed.
+- **Exception:** Traits with a single implementor are correct when used for dependency injection boundaries. The traits in `workflow/ports/` (`WorkflowStore`, `GitService`, `ProcessSpawner`) and `interface.rs` traits in extracted crates exist per CLAUDE.md principle #3 (Explicit Dependencies) — they enable testing with mock implementations. Only flag single-impl traits in domain logic where a concrete type would suffice and no testing boundary is needed.
 
 ### Pattern Matching
 - Exhaustive match arms (don't use `_` to silence warnings)

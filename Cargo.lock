@@ -2946,13 +2946,13 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dirs",
- "git2",
  "handlebars",
  "indexmap 2.13.0",
  "jsonschema",
  "libc",
  "once_cell",
  "orkestra-core",
+ "orkestra-git",
  "petname",
  "pulldown-cmark",
  "refinery",
@@ -2964,6 +2964,18 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "uuid",
+]
+
+[[package]]
+name = "orkestra-git"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "git2",
+ "orkestra-git",
+ "serde",
+ "tempfile",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

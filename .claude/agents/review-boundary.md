@@ -63,6 +63,12 @@ If a function name contains "and" (e.g., `validate_and_save`), that's a signal t
 - Can implementation details be pushed down to helpers?
 - Is there a clean narrative at each level?
 
+### Module Structure Compliance
+- New modules should follow the 5-layer structure: interface → types → service → interactions → mock
+- Flag `utilities/` directories or `pub(crate)` helper modules — shared logic should be private functions inside interactions, or extracted into their own interaction
+- Flag missing `interface.rs` trait when a module has a service
+- Reference implementation: `crates/orkestra-git/`
+
 ### Overlap with Other Reviewers
 Your focus is **inter-module** boundaries: are the interfaces between modules clean? The simplicity reviewer handles **intra-module** complexity. The dependency reviewer handles whether dependencies are explicit. If you spot issues in those domains, note the overlap briefly rather than writing a full finding.
 

@@ -10,11 +10,11 @@ How a completed task's branch gets merged back to its base branch — covering t
 | `workflow/services/api.rs` | `get_tasks_needing_integration()`: filters for Done + Idle + has worktree + not subtask. `mark_integrating()`: sets phase to Integrating |
 | `workflow/services/integration.rs` | `integrate_task()`: commit, rebase, merge. `integration_succeeded()`: Done -> Archived. `integration_failed()`: routes to recovery stage |
 | `workflow/services/iteration_service.rs` | Creates pseudo-iteration for integration failures, creates recovery stage iteration with trigger |
-| `workflow/ports/git_service.rs` | `GitService` trait: `commit_pending_changes`, `rebase_on_branch`, `merge_to_branch`, `remove_worktree`, `abort_merge`, `is_branch_merged` |
-| `workflow/adapters/git_service.rs` | `Git2GitService`: production implementation using git2 crate + CLI for merge/rebase |
+| `orkestra-git/src/interface.rs` | `GitService` trait: `commit_pending_changes`, `rebase_on_branch`, `merge_to_branch`, `remove_worktree`, `is_branch_merged` |
+| `orkestra-git/src/service.rs` | `Git2GitService`: production implementation using git2 + CLI, delegates to `interactions/` |
 | `workflow/services/task_setup.rs` | `spawn_setup()`: creates worktree and branch during task creation (upstream of integration) |
 
-All paths relative to `crates/orkestra-core/src/`.
+Orchestration paths relative to `crates/orkestra-core/src/`. Git operations in `crates/orkestra-git/src/`.
 
 ## Step Summary
 

@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "cli", "crates/orkestra-core"]
+members = ["src-tauri", "cli", "crates/orkestra-core", "crates/orkestra-git"]
 resolver = "2"
 
 [workspace.lints.clippy]

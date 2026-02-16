@@ -116,22 +116,15 @@ Low-level process spawning, killing, and lifecycle management. Zero domain knowl
 
 ---
 
-### 3. `orkestra-git` — Git operations
+### 3. `orkestra-git` — Git operations ✅ COMPLETE
 
-Worktree management, branching, merging, rebasing, and diff computation. Knows about git concepts, not workflow concepts.
+**Extracted.** First crate to follow the standard module structure (interface → service → interactions → utilities → types → mock). See `crates/orkestra-git/` and the Module Structure section in `CLAUDE.md`.
 
-**Dependencies**: orkestra-types (for GitService trait), git2
-
-**Why standalone**: git2 compiles libgit2 from C (~2-3s). Isolating it means this cost only hits when git logic changes. Also independently testable — you can test worktree operations without any workflow knowledge.
-
-#### File inventory
-
-| File | Lines | Current location |
-|------|-------|-----------------|
-| `git_service.rs` | 1328 | `workflow/adapters/` |
-| `diff.rs` | 621 | `workflow/adapters/` |
-
-Implements the `GitService` trait from orkestra-types.
+- 24 interactions, each a single `execute()` leaf operation
+- Shared helpers in `utilities/` (stash, diff parsing, git2 helpers, CLI resolution)
+- `MockGitService` behind `testutil` feature
+- orkestra-core re-exports types via `workflow::ports` — no downstream breakage
+- 16 unit tests in crate, all 868 orkestra-core tests pass
 
 ---
 
@@ -312,11 +305,7 @@ Small, quick extraction.
 
 Both depend only on orkestra-types. Can be done simultaneously.
 
-**orkestra-git:**
-- [ ] Create `crates/orkestra-git/Cargo.toml` with deps: orkestra-types, git2
-- [ ] Move `workflow/adapters/git_service.rs` → `orkestra-git/src/git_service.rs`
-- [ ] Move `workflow/adapters/diff.rs` → `orkestra-git/src/diff.rs`
-- [ ] `cargo test -p orkestra-git` — unit tests pass
+**orkestra-git:** ✅ COMPLETE — extracted with 5-layer module structure (interface, service, interactions, utilities, types, mock)
 
 **orkestra-store:**
 - [ ] Create `crates/orkestra-store/Cargo.toml` with deps: orkestra-types, rusqlite (bundled), refinery, petname, serde_json

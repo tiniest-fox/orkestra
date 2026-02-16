@@ -22,7 +22,7 @@ indexmap = { version = "2", features = ["serde"] }
 thiserror = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 refinery = { version = "0.8", features = ["rusqlite"] }
-git2 = "0.18"
+orkestra-git = { path = "../orkestra-git", features = ["testutil"] }
 tempfile = { version = "3", optional = true }
 handlebars = "6"
 jsonschema = "0.26"

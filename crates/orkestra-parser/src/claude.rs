@@ -1,14 +1,15 @@
-//! Claude Code agent parser.
+//! Claude Code parser service.
 //!
-//! Handles both stream parsing (JSONL events → `LogEntry`) and output extraction
-//! (`structured_output` → raw JSON string).
+//! Holds stream parsing state and delegates to interactions.
 
 use std::collections::{HashMap, HashSet};
 
-use crate::workflow::domain::LogEntry;
-use crate::workflow::services::session_logs::{extract_tool_result_content, parse_tool_input};
+use orkestra_types::domain::LogEntry;
 
-use super::{check_for_api_error, extract_from_jsonl, AgentParser, ParsedUpdate};
+use crate::interactions::claude::{parse_assistant_content, parse_tool_result_event};
+use crate::interactions::output::{check_api_error, extract_from_jsonl};
+use crate::interface::AgentParser;
+use crate::types::ParsedUpdate;
 
 /// Claude Code agent parser.
 ///
@@ -18,19 +19,19 @@ use super::{check_for_api_error, extract_from_jsonl, AgentParser, ParsedUpdate};
 /// - `tool_use_map`: maps `tool_use_id` → `tool_name` for result correlation
 /// - `task_tool_ids`: tracks Task tool invocations for subagent detection
 /// - `task_agent_map`: maps Task `tool_use_id` → agentId
-pub struct ClaudeAgentParser {
+pub struct ClaudeParserService {
     tool_use_map: HashMap<String, String>,
     task_tool_ids: HashSet<String>,
     task_agent_map: HashMap<String, String>,
 }
 
-impl Default for ClaudeAgentParser {
+impl Default for ClaudeParserService {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl ClaudeAgentParser {
+impl ClaudeParserService {
     pub fn new() -> Self {
         Self {
             tool_use_map: HashMap::new(),
@@ -43,103 +44,12 @@ impl ClaudeAgentParser {
         parent_id.is_some_and(|id| self.task_tool_ids.contains(id))
     }
 
-    fn parse_text(item: &serde_json::Value, is_subagent: bool) -> Option<LogEntry> {
-        if is_subagent {
-            return None;
-        }
-        let text = item.get("text").and_then(|t| t.as_str())?;
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-        Some(LogEntry::Text {
-            content: trimmed.to_string(),
-        })
-    }
-
-    fn parse_tool_use(
-        &mut self,
-        item: &serde_json::Value,
-        is_subagent: bool,
-        parent_id: Option<&String>,
-    ) -> LogEntry {
-        let tool_name = item
-            .get("name")
-            .and_then(|n| n.as_str())
-            .unwrap_or("unknown")
-            .to_string();
-        let tool_id = item
-            .get("id")
-            .and_then(|i| i.as_str())
-            .unwrap_or("")
-            .to_string();
-        let input = item.get("input").cloned().unwrap_or(serde_json::json!({}));
-
-        self.tool_use_map.insert(tool_id.clone(), tool_name.clone());
-        if tool_name == "Task" {
-            self.task_tool_ids.insert(tool_id.clone());
-        }
-
-        let tool_input = parse_tool_input(&tool_name, &input);
-
-        if is_subagent {
-            LogEntry::SubagentToolUse {
-                tool: tool_name,
-                id: tool_id,
-                input: tool_input,
-                parent_task_id: parent_id.cloned().unwrap_or_default(),
-            }
-        } else {
-            LogEntry::ToolUse {
-                tool: tool_name,
-                id: tool_id,
-                input: tool_input,
-            }
-        }
-    }
-
-    fn parse_tool_result(
-        &self,
-        item: &serde_json::Value,
-        is_subagent: bool,
-        parent_id: Option<&String>,
-    ) -> Option<LogEntry> {
-        let tool_use_id = item
-            .get("tool_use_id")
-            .and_then(|i| i.as_str())
-            .unwrap_or("")
-            .to_string();
-        let tool_name = self
-            .tool_use_map
-            .get(&tool_use_id)
-            .cloned()
-            .unwrap_or_else(|| "unknown".to_string());
-        let content_str = extract_tool_result_content(item);
-
-        if content_str.trim().is_empty() {
-            return None;
-        }
-
-        if is_subagent {
-            Some(LogEntry::SubagentToolResult {
-                tool: tool_name,
-                tool_use_id,
-                content: content_str,
-                parent_task_id: parent_id.cloned().unwrap_or_default(),
-            })
-        } else if tool_name == "Task" {
-            Some(LogEntry::ToolResult {
-                tool: tool_name,
-                tool_use_id,
-                content: content_str,
-            })
-        } else {
-            None
-        }
-    }
-
     /// Track Task tool completion for subagent association.
-    fn track_task_agent(&mut self, tool_use_result: &serde_json::Value, entry: &serde_json::Value) {
+    fn track_task_agent(
+        &mut self,
+        tool_use_result: &serde_json::Value,
+        entry: &serde_json::Value,
+    ) {
         let Some(agent_id) = tool_use_result.get("agentId").and_then(|a| a.as_str()) else {
             return;
         };
@@ -188,55 +98,40 @@ impl ClaudeAgentParser {
             self.track_task_agent(tool_use_result, &v);
         }
 
-        let mut entries = Vec::new();
-
         if msg_type == "assistant" {
             if let Some(content) = v
                 .get("message")
                 .and_then(|m| m.get("content"))
                 .and_then(|c| c.as_array())
             {
-                for item in content {
-                    match item.get("type").and_then(|t| t.as_str()) {
-                        Some("text") => {
-                            if let Some(entry) = Self::parse_text(item, is_subagent) {
-                                entries.push(entry);
-                            }
-                        }
-                        Some("tool_use") => {
-                            entries.push(self.parse_tool_use(
-                                item,
-                                is_subagent,
-                                parent_id.as_ref(),
-                            ));
-                        }
-                        _ => {}
-                    }
-                }
+                return parse_assistant_content::execute(
+                    content,
+                    is_subagent,
+                    parent_id.as_deref(),
+                    &mut self.tool_use_map,
+                    &mut self.task_tool_ids,
+                );
             }
         } else if msg_type == "user" {
-            if let Some(arr) = v
+            if let Some(content) = v
                 .get("message")
                 .and_then(|m| m.get("content"))
                 .and_then(|c| c.as_array())
             {
-                for item in arr {
-                    if item.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
-                        if let Some(entry) =
-                            self.parse_tool_result(item, is_subagent, parent_id.as_ref())
-                        {
-                            entries.push(entry);
-                        }
-                    }
-                }
+                return parse_tool_result_event::execute(
+                    content,
+                    is_subagent,
+                    parent_id.as_deref(),
+                    &self.tool_use_map,
+                );
             }
         }
 
-        entries
+        Vec::new()
     }
 }
 
-impl AgentParser for ClaudeAgentParser {
+impl AgentParser for ClaudeParserService {
     fn parse_line(&mut self, line: &str) -> ParsedUpdate {
         let log_entries = self.parse_line_entries(line);
         // Claude Code doesn't generate session IDs from the stream —
@@ -262,13 +157,13 @@ impl AgentParser for ClaudeAgentParser {
 
         // Check for API error in the last line
         if let Some(last_line) = trimmed.lines().next_back() {
-            if let Some(error_msg) = check_for_api_error(last_line.trim()) {
+            if let Some(error_msg) = check_api_error::execute(last_line.trim()) {
                 return Err(format!("API error: {error_msg}"));
             }
         }
 
         // Use shared JSONL extraction
-        extract_from_jsonl(trimmed).ok_or_else(|| {
+        extract_from_jsonl::execute(trimmed).ok_or_else(|| {
             format!(
                 "Failed to parse agent output: no structured output found in {} bytes of output",
                 trimmed.len()
@@ -284,7 +179,7 @@ impl AgentParser for ClaudeAgentParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow::domain::ToolInput;
+    use orkestra_types::domain::ToolInput;
 
     fn assistant_text(text: &str) -> String {
         serde_json::json!({
@@ -354,13 +249,11 @@ mod tests {
         .to_string()
     }
 
-    // ========================================================================
-    // Stream parsing tests
-    // ========================================================================
+    // -- Stream parsing tests --
 
     #[test]
     fn parses_assistant_text() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
         let update = parser.parse_line(&assistant_text("Hello world"));
         assert_eq!(update.log_entries.len(), 1);
         assert_eq!(
@@ -374,27 +267,27 @@ mod tests {
 
     #[test]
     fn skips_empty_text() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
         let update = parser.parse_line(&assistant_text("   "));
         assert!(update.log_entries.is_empty());
     }
 
     #[test]
     fn skips_empty_lines() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
         assert!(parser.parse_line("").log_entries.is_empty());
         assert!(parser.parse_line("   ").log_entries.is_empty());
     }
 
     #[test]
     fn skips_invalid_json() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
         assert!(parser.parse_line("not json at all").log_entries.is_empty());
     }
 
     #[test]
     fn parses_tool_use() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
         let line = assistant_tool_use(
             "Read",
             "tu_123",
@@ -419,9 +312,8 @@ mod tests {
 
     #[test]
     fn parses_tool_result_for_task() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
 
-        // First register a Task tool use so results are captured
         let tool_line = assistant_tool_use(
             "Task",
             "tu_task_1",
@@ -448,9 +340,8 @@ mod tests {
 
     #[test]
     fn skips_non_task_tool_results() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
 
-        // Register a Read tool use
         let tool_line = assistant_tool_use(
             "Read",
             "tu_read_1",
@@ -458,7 +349,6 @@ mod tests {
         );
         parser.parse_line(&tool_line);
 
-        // Result for Read should be skipped (only Task results are captured)
         let result_line = user_tool_result("tu_read_1", "file contents here");
         let update = parser.parse_line(&result_line);
         assert!(update.log_entries.is_empty());
@@ -466,9 +356,8 @@ mod tests {
 
     #[test]
     fn detects_subagent_events() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
 
-        // Register a Task tool use
         let task_line = assistant_tool_use(
             "Task",
             "tu_task_1",
@@ -476,7 +365,6 @@ mod tests {
         );
         parser.parse_line(&task_line);
 
-        // Subagent tool use with parent_tool_use_id pointing to the Task
         let subagent_line = subagent_tool_use(
             "Edit",
             "tu_sub_1",
@@ -508,9 +396,8 @@ mod tests {
 
     #[test]
     fn subagent_text_is_skipped() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
 
-        // Register Task tool
         let task_line = assistant_tool_use(
             "Task",
             "tu_task_1",
@@ -518,7 +405,6 @@ mod tests {
         );
         parser.parse_line(&task_line);
 
-        // Subagent text event should be skipped
         let subagent_text = serde_json::json!({
             "type": "assistant",
             "parent_tool_use_id": "tu_task_1",
@@ -535,9 +421,8 @@ mod tests {
 
     #[test]
     fn tracks_task_agent_mapping() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
 
-        // Register Task tool
         let task_line = assistant_tool_use(
             "Task",
             "tu_task_1",
@@ -545,7 +430,6 @@ mod tests {
         );
         parser.parse_line(&task_line);
 
-        // toolUseResult event with agentId
         let result_event = serde_json::json!({
             "type": "user",
             "toolUseResult": {"agentId": "agent-abc"},
@@ -570,13 +454,13 @@ mod tests {
 
     #[test]
     fn finalize_returns_empty() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
         assert!(parser.finalize().is_empty());
     }
 
     #[test]
     fn mixed_content_in_single_message() {
-        let mut parser = ClaudeAgentParser::new();
+        let mut parser = ClaudeParserService::new();
         let line = serde_json::json!({
             "type": "assistant",
             "message": {
@@ -601,13 +485,11 @@ mod tests {
         assert!(matches!(&update.log_entries[1], LogEntry::ToolUse { tool, .. } if tool == "Read"));
     }
 
-    // ========================================================================
-    // Output extraction tests
-    // ========================================================================
+    // -- Output extraction tests --
 
     #[test]
     fn extract_structured_output() {
-        let parser = ClaudeAgentParser::new();
+        let parser = ClaudeParserService::new();
         let output = r#"{"type":"system","subtype":"init","session_id":"abc"}
 {"structured_output":{"type":"summary","content":"Work done"}}"#;
         let result = parser.extract_output(output);
@@ -618,7 +500,7 @@ mod tests {
 
     #[test]
     fn extract_stream_json_unwraps() {
-        let parser = ClaudeAgentParser::new();
+        let parser = ClaudeParserService::new();
         let output = r#"{"type":"result","structured_output":{"content":"{\"type\":\"questions\",\"questions\":[{\"question\":\"What?\"}]}","type":"plan"}}"#;
         let result = parser.extract_output(output);
         assert!(result.is_ok(), "Failed: {result:?}");
@@ -628,7 +510,7 @@ mod tests {
 
     #[test]
     fn extract_api_error() {
-        let parser = ClaudeAgentParser::new();
+        let parser = ClaudeParserService::new();
         let output = r#"{"type":"assistant","error":"invalid_request","message":{"content":[{"type":"text","text":"Rate limit exceeded"}]}}"#;
         let result = parser.extract_output(output);
         assert!(result.is_err());
@@ -637,7 +519,7 @@ mod tests {
 
     #[test]
     fn extract_empty_output() {
-        let parser = ClaudeAgentParser::new();
+        let parser = ClaudeParserService::new();
         let result = parser.extract_output("");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("no output"));

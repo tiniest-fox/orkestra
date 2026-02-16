@@ -21,6 +21,7 @@ libc = "0.2"
 indexmap = { version = "2", features = ["serde"] }
 thiserror = "1"
 orkestra-git = { path = "../orkestra-git", features = ["testutil"] }
+orkestra-parser = { path = "../orkestra-parser" }
 orkestra-process = { path = "../orkestra-process", features = ["testutil"] }
 orkestra-schema = { path = "../orkestra-schema" }
 orkestra-store = { path = "../orkestra-store", features = ["testutil"] }

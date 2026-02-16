@@ -18,11 +18,12 @@ use std::thread;
 
 use crate::orkestra_debug;
 
-use super::output::StageOutput;
-use super::parser::{check_for_api_error, parse_completion, AgentParser};
+use orkestra_parser::interactions::output::check_api_error;
+use orkestra_parser::interactions::stream::parse_resume_marker;
+use orkestra_parser::{parse_completion, AgentParser, StageOutput};
+
 use crate::workflow::domain::LogEntry;
 use crate::workflow::ports::{ProcessConfig, ProcessError, ProcessSpawner};
-use crate::workflow::services::session_logs::parse_resume_marker;
 
 use super::provider_registry::ProviderRegistry;
 
@@ -451,7 +452,7 @@ impl AgentRunnerTrait for AgentRunner {
 
         // Emit the prompt as a UserMessage log entry (before streaming starts).
         // This is provider-agnostic — every provider gets the user message logged.
-        if let Some(marker) = parse_resume_marker(&prompt) {
+        if let Some(marker) = parse_resume_marker::execute(&prompt) {
             let _ = tx.send(RunEvent::LogLine(LogEntry::UserMessage {
                 resume_type: marker.marker_type.as_str().to_string(),
                 content: marker.content,
@@ -473,7 +474,7 @@ impl AgentRunnerTrait for AgentRunner {
 /// (e.g. model not found, rate limits). Without detection, the stop hook
 /// retries infinitely. Returns the error message text if found.
 fn extract_stream_error(line: &str) -> Option<String> {
-    check_for_api_error(line)
+    check_api_error::execute(line)
 }
 
 /// Join the stderr reader thread and return collected lines.
@@ -1027,7 +1028,7 @@ mod tests {
 
             // MockAgentRunner doesn't emit the UserMessage (it's an AgentRunner concern),
             // so test parse_resume_marker directly to verify the runner logic works.
-            let marker = crate::workflow::services::session_logs::parse_resume_marker(prompt);
+            let marker = orkestra_parser::interactions::stream::parse_resume_marker::execute(prompt);
             assert!(marker.is_some());
             let marker = marker.unwrap();
             assert_eq!(marker.marker_type.as_str(), "feedback");

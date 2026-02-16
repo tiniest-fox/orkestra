@@ -10,7 +10,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::parser::{AgentParser, ClaudeAgentParser, OpenCodeAgentParser};
+use orkestra_parser::{
+    AgentParser, ClaudeParserService as ClaudeAgentParser,
+    OpenCodeParserService as OpenCodeAgentParser,
+};
+
 use crate::workflow::ports::ProcessSpawner;
 
 // ============================================================================

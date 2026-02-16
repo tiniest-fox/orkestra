@@ -9,15 +9,15 @@
 //! - **`ProviderRegistry`**: Maps provider names to `ProcessSpawner` implementations
 //! - **parser**: Agent output parsing with provider-specific extraction
 
-mod output;
-pub mod parser;
 mod prompt;
 mod provider_registry;
 mod runner;
 mod script_runner;
 
-pub use output::{StageOutput, StageOutputError, SubtaskOutput};
-pub use parser::{AgentParser, ClaudeAgentParser, OpenCodeAgentParser};
+pub use orkestra_parser::{
+    AgentParser, ClaudeParserService as ClaudeAgentParser,
+    OpenCodeParserService as OpenCodeAgentParser, StageOutput, StageOutputError, SubtaskOutput,
+};
 pub use prompt::{
     build_complete_prompt, build_resume_prompt, build_system_prompt, build_user_message,
     deduplicate_activity_logs_by_stage, determine_resume_type, get_agent_schema,

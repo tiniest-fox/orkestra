@@ -2953,6 +2953,7 @@ dependencies = [
  "once_cell",
  "orkestra-core",
  "orkestra-git",
+ "orkestra-parser",
  "orkestra-process",
  "orkestra-schema",
  "orkestra-store",
@@ -2975,6 +2976,17 @@ dependencies = [
  "orkestra-git",
  "serde",
  "tempfile",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "orkestra-parser"
+version = "0.1.0"
+dependencies = [
+ "jsonschema",
+ "orkestra-types",
+ "serde",
+ "serde_json",
  "thiserror 1.0.69",
 ]
 

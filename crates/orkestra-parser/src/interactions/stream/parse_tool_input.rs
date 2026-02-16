@@ -1,155 +1,12 @@
-//! Session log parsing helpers.
-//!
-//! This module provides parsing utilities for Claude Code and other agent
-//! session events. Used by the stream parsers in `stream_parser.rs` to
-//! convert raw JSON events into structured `LogEntry` values.
+//! Parse tool input JSON into structured `ToolInput`.
 
-use crate::workflow::domain::{OrkAction, TodoItem, ToolInput};
-
-// ============================================================================
-// Resume Marker Types
-// ============================================================================
-
-/// Types of session resumption.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResumeMarkerType {
-    /// Agent was interrupted, continue from where left off.
-    Continue,
-    /// Human provided feedback to address.
-    Feedback,
-    /// Integration failed with merge conflict.
-    Integration,
-    /// Human provided answers to questions.
-    Answers,
-    /// Stage is being re-run after full cycle (untriggered re-entry).
-    Recheck,
-    /// Human retried a failed task.
-    RetryFailed,
-    /// Human retried a blocked task.
-    RetryBlocked,
-    /// Initial agent prompt (first spawn, not a resume).
-    Initial,
-    /// User interrupted and resumed with optional guidance.
-    ManualResume,
-}
-
-impl ResumeMarkerType {
-    /// Get the string representation for serialization.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Continue => "continue",
-            Self::Feedback => "feedback",
-            Self::Integration => "integration",
-            Self::Answers => "answers",
-            Self::Recheck => "recheck",
-            Self::RetryFailed => "retry_failed",
-            Self::RetryBlocked => "retry_blocked",
-            Self::Initial => "initial",
-            Self::ManualResume => "manual_resume",
-        }
-    }
-}
-
-/// Parsed resume marker from a user message.
-#[derive(Debug, Clone)]
-pub struct ResumeMarker {
-    /// Type of resume (continue, feedback, integration).
-    pub marker_type: ResumeMarkerType,
-    /// Content after the marker.
-    pub content: String,
-}
-
-/// Parse a marker from a user message.
-///
-/// Returns `Some(ResumeMarker)` if this is an orkestra prompt, `None` otherwise.
-/// Recognises `<!orkestra:spawn:STAGE>` (initial) and `<!orkestra:resume:STAGE:TYPE>` (resume).
-pub(crate) fn parse_resume_marker(text: &str) -> Option<ResumeMarker> {
-    let trimmed = text.trim();
-
-    // All orkestra markers start with <!orkestra:
-    let rest = trimmed.strip_prefix("<!orkestra:")?;
-    let end_idx = rest.find('>')?;
-    let tag = &rest[..end_idx];
-    let content = rest[end_idx + 1..].trim().to_string();
-
-    // Split tag by ':' → ["spawn", stage] or ["resume", stage, type]
-    let parts: Vec<&str> = tag.splitn(3, ':').collect();
-
-    match parts.as_slice() {
-        ["spawn", _stage] => Some(ResumeMarker {
-            marker_type: ResumeMarkerType::Initial,
-            content,
-        }),
-        ["resume", _stage, resume_type] => {
-            let marker_type = match *resume_type {
-                "continue" => ResumeMarkerType::Continue,
-                "feedback" => ResumeMarkerType::Feedback,
-                "integration" => ResumeMarkerType::Integration,
-                "answers" => ResumeMarkerType::Answers,
-                "recheck" => ResumeMarkerType::Recheck,
-                "retry_failed" => ResumeMarkerType::RetryFailed,
-                "retry_blocked" => ResumeMarkerType::RetryBlocked,
-                "manual_resume" => ResumeMarkerType::ManualResume,
-                _ => return None,
-            };
-            Some(ResumeMarker {
-                marker_type,
-                content,
-            })
-        }
-        _ => None,
-    }
-}
-
-// ============================================================================
-// Tool Input Parsing
-// ============================================================================
-
-/// Extract text content from a `tool_result` item.
-pub(crate) fn extract_tool_result_content(item: &serde_json::Value) -> String {
-    match item.get("content") {
-        Some(serde_json::Value::String(s)) => s.clone(),
-        Some(serde_json::Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|item| {
-                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                    item.get("text").and_then(|t| t.as_str()).map(String::from)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => String::new(),
-    }
-}
-
-/// Helper to extract a string field from JSON input.
-fn get_str_field(input: &serde_json::Value, field: &str) -> String {
-    input
-        .get(field)
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string()
-}
-
-/// Get a string field, trying `snake_case` first then `camelCase`.
-///
-/// Claude Code uses `file_path`; `OpenCode` uses `filePath`.
-fn get_str_field_flexible(input: &serde_json::Value, snake: &str, camel: &str) -> String {
-    input
-        .get(snake)
-        .or_else(|| input.get(camel))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string()
-}
+use orkestra_types::domain::{OrkAction, TodoItem, ToolInput};
 
 /// Parses a tool input JSON into a structured `ToolInput`.
 ///
 /// Tool names are matched case-insensitively: Claude Code uses `PascalCase` ("Bash"),
 /// while `OpenCode` emits lowercase ("bash").
-pub(crate) fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> ToolInput {
+pub fn execute(tool_name: &str, input: &serde_json::Value) -> ToolInput {
     let normalized = tool_name.to_ascii_lowercase();
     match normalized.as_str() {
         "bash" => {
@@ -197,6 +54,29 @@ pub(crate) fn parse_tool_input(tool_name: &str, input: &serde_json::Value) -> To
             summary: summarize_input(input),
         },
     }
+}
+
+// -- Helpers --
+
+/// Helper to extract a string field from JSON input.
+fn get_str_field(input: &serde_json::Value, field: &str) -> String {
+    input
+        .get(field)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Get a string field, trying `snake_case` first then `camelCase`.
+///
+/// Claude Code uses `file_path`; `OpenCode` uses `filePath`.
+fn get_str_field_flexible(input: &serde_json::Value, snake: &str, camel: &str) -> String {
+    input
+        .get(snake)
+        .or_else(|| input.get(camel))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 /// Parse todo items from `TodoWrite` input.
@@ -393,6 +273,10 @@ fn extract_flag_value(args: &[&str], flag: &str) -> Option<String> {
     None
 }
 
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,120 +303,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_resume_marker_typed() {
-        // Test continue marker
-        let marker = parse_resume_marker("<!orkestra:resume:work:continue>\n\nContinue working");
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Continue);
-        assert_eq!(marker.content, "Continue working");
-
-        // Test feedback marker
-        let marker =
-            parse_resume_marker("<!orkestra:resume:review:feedback>\n\nPlease fix this bug");
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Feedback);
-        assert_eq!(marker.content, "Please fix this bug");
-
-        // Test integration marker
-        let marker =
-            parse_resume_marker("<!orkestra:resume:work:integration>\n\nMerge conflict in file.rs");
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Integration);
-        assert_eq!(marker.content, "Merge conflict in file.rs");
-    }
-
-    #[test]
-    fn test_parse_resume_marker_unrecognized_returns_none() {
-        assert!(parse_resume_marker("Fix the bug please").is_none());
-        assert!(parse_resume_marker("# Worker Agent\nDo stuff").is_none());
-        assert!(parse_resume_marker("").is_none());
-    }
-
-    #[test]
-    fn test_parse_resume_marker_answers() {
-        let marker = parse_resume_marker(
-            "<!orkestra:resume:planning:answers>\n\nHere are the answers:\n\nQ: What? A: Something",
-        );
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Answers);
-        assert!(marker.content.contains("answers"));
-    }
-
-    #[test]
-    fn test_resume_marker_type_as_str() {
-        assert_eq!(ResumeMarkerType::Continue.as_str(), "continue");
-        assert_eq!(ResumeMarkerType::Feedback.as_str(), "feedback");
-        assert_eq!(ResumeMarkerType::Integration.as_str(), "integration");
-        assert_eq!(ResumeMarkerType::Answers.as_str(), "answers");
-        assert_eq!(ResumeMarkerType::Recheck.as_str(), "recheck");
-        assert_eq!(ResumeMarkerType::RetryFailed.as_str(), "retry_failed");
-        assert_eq!(ResumeMarkerType::RetryBlocked.as_str(), "retry_blocked");
-        assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
-        assert_eq!(ResumeMarkerType::ManualResume.as_str(), "manual_resume");
-    }
-
-    #[test]
-    fn test_parse_resume_marker_spawn() {
-        let marker = parse_resume_marker(
-            "<!orkestra:spawn:review>\n\n# Reviewer Agent\n\nYou review code...",
-        );
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Initial);
-        assert!(marker.content.starts_with("# Reviewer Agent"));
-    }
-
-    #[test]
-    fn test_parse_resume_marker_recheck() {
-        let marker =
-            parse_resume_marker("<!orkestra:resume:review:recheck>\n\nThis stage is being re-run.");
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Recheck);
-        assert!(marker.content.contains("re-run"));
-    }
-
-    #[test]
-    fn test_parse_resume_marker_retry_failed() {
-        let marker = parse_resume_marker(
-            "<!orkestra:resume:work:retry_failed>\n\nRetrying after task failure.",
-        );
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::RetryFailed);
-        assert!(marker.content.contains("failure"));
-    }
-
-    #[test]
-    fn test_parse_resume_marker_retry_blocked() {
-        let marker = parse_resume_marker(
-            "<!orkestra:resume:work:retry_blocked>\n\nRetrying after task was blocked.",
-        );
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::RetryBlocked);
-        assert!(marker.content.contains("blocked"));
-    }
-
-    #[test]
-    fn test_parse_resume_marker_manual_resume() {
-        let marker = parse_resume_marker(
-            "<!orkestra:resume:work:manual_resume>\n\nMessage from the user:\n\nPlease fix the bug",
-        );
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::ManualResume);
-        assert!(marker.content.contains("Message from the user"));
-    }
-
-    #[test]
     fn test_parse_tool_input_websearch() {
         let input = serde_json::json!({"query": "rust syntect themes"});
-        let result = parse_tool_input("WebSearch", &input);
+        let result = execute("WebSearch", &input);
         assert_eq!(
             result,
             ToolInput::WebSearch {
@@ -545,10 +318,9 @@ mod tests {
     fn test_parse_tool_input_websearch_case_insensitive() {
         let input = serde_json::json!({"query": "search query"});
 
-        // All these should parse to WebSearch
         let variations = ["websearch", "WebSearch", "WEBSEARCH", "Websearch"];
         for tool_name in variations {
-            let result = parse_tool_input(tool_name, &input);
+            let result = execute(tool_name, &input);
             assert!(
                 matches!(result, ToolInput::WebSearch { .. }),
                 "{tool_name} should parse to WebSearch"
@@ -559,7 +331,7 @@ mod tests {
     #[test]
     fn test_parse_tool_input_webfetch() {
         let input = serde_json::json!({"url": "https://example.com", "prompt": "extract info"});
-        let result = parse_tool_input("WebFetch", &input);
+        let result = execute("WebFetch", &input);
         assert_eq!(
             result,
             ToolInput::WebFetch {
@@ -572,10 +344,9 @@ mod tests {
     fn test_parse_tool_input_webfetch_case_insensitive() {
         let input = serde_json::json!({"url": "https://example.com"});
 
-        // All these should parse to WebFetch
         let variations = ["webfetch", "WebFetch", "WEBFETCH", "Webfetch"];
         for tool_name in variations {
-            let result = parse_tool_input(tool_name, &input);
+            let result = execute(tool_name, &input);
             assert!(
                 matches!(result, ToolInput::WebFetch { .. }),
                 "{tool_name} should parse to WebFetch"
@@ -586,7 +357,7 @@ mod tests {
     #[test]
     fn test_parse_tool_input_unknown_tool_fallback() {
         let input = serde_json::json!({"some_field": "some_value"});
-        let result = parse_tool_input("UnknownTool", &input);
+        let result = execute("UnknownTool", &input);
         assert!(
             matches!(result, ToolInput::Other { .. }),
             "Unknown tools should fall through to Other"

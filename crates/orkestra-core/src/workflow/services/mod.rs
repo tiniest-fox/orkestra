@@ -44,7 +44,6 @@ mod periodic;
 mod prompt_service;
 mod queries;
 mod script_execution;
-pub(crate) mod session_logs;
 mod session_service;
 mod stage_execution;
 mod subtask_service;
@@ -76,7 +75,7 @@ pub use log_service::LogService;
 pub use orchestrator::{OrchestratorError, OrchestratorEvent, OrchestratorLoop};
 pub use prompt_service::PromptService;
 // Note: ScriptExecutionService is internal to StageExecutionService
-pub use session_logs::{ResumeMarker, ResumeMarkerType};
+pub use orkestra_parser::{ResumeMarker, ResumeMarkerType};
 pub use session_service::{SessionService, SessionSpawnContext};
 pub use stage_execution::{
     ExecutionComplete, ExecutionResult, SpawnError, SpawnResult, StageExecutionService,

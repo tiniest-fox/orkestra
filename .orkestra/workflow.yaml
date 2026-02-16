@@ -140,4 +140,4 @@ flows:
       - check
 
 integration:
-  on_failure: work
+  on_failure: task

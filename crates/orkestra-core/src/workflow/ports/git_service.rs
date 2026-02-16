@@ -358,6 +358,7 @@ pub mod mock {
         remove_worktree_calls: Mutex<Vec<(String, bool)>>,
         squash_calls: Mutex<Vec<(PathBuf, String, String)>>,
         sync_base_branch_calls: Mutex<Vec<String>>,
+        push_branch_calls: Mutex<Vec<String>>,
         merged_branches: Mutex<HashMap<String, bool>>,
     }
 
@@ -377,6 +378,7 @@ pub mod mock {
                 remove_worktree_calls: Mutex::new(Vec::new()),
                 squash_calls: Mutex::new(Vec::new()),
                 sync_base_branch_calls: Mutex::new(Vec::new()),
+                push_branch_calls: Mutex::new(Vec::new()),
                 merged_branches: Mutex::new(HashMap::new()),
             }
         }
@@ -442,6 +444,11 @@ pub mod mock {
         /// Get the list of `sync_base_branch` calls for verification.
         pub fn get_sync_base_branch_calls(&self) -> Vec<String> {
             self.sync_base_branch_calls.lock().unwrap().clone()
+        }
+
+        /// Get the list of `push_branch` calls for verification.
+        pub fn get_push_branch_calls(&self) -> Vec<String> {
+            self.push_branch_calls.lock().unwrap().clone()
         }
     }
 
@@ -624,7 +631,11 @@ pub mod mock {
             Ok(TaskDiff { files: vec![] })
         }
 
-        fn push_branch(&self, _branch: &str) -> Result<(), GitError> {
+        fn push_branch(&self, branch: &str) -> Result<(), GitError> {
+            self.push_branch_calls
+                .lock()
+                .unwrap()
+                .push(branch.to_string());
             self.push_results
                 .lock()
                 .unwrap()

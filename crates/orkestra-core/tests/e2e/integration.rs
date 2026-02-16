@@ -530,3 +530,238 @@ fn create_pr_sync_handles_failure() {
     assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
     assert_eq!(task.pr_url, None, "PR URL should not be set on failure");
 }
+
+// =============================================================================
+// Remote Sync Tests
+// =============================================================================
+
+/// Integration syncs base branch from remote before rebase and pushes after merge.
+#[test]
+fn integration_syncs_and_pushes_for_non_task_branches() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    // Verify task has base_branch = "main" (not starting with "task/")
+    assert_eq!(task.base_branch, "main");
+
+    // Clear any sync calls from task creation
+    let pre_integration_sync_calls = ctx.mock_git_service().get_sync_base_branch_calls();
+    let pre_integration_push_calls = ctx.mock_git_service().get_push_branch_calls();
+
+    advance_to_done(&ctx, &task_id);
+
+    // User triggers merge
+    merge_task_sync(ctx.api_arc(), &task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(task.status, Status::Archived, "Task should be Archived");
+
+    // Verify sync_base_branch was called with "main" during integration
+    let post_integration_sync_calls = ctx.mock_git_service().get_sync_base_branch_calls();
+    let integration_sync_calls: Vec<_> = post_integration_sync_calls
+        .iter()
+        .skip(pre_integration_sync_calls.len())
+        .collect();
+    assert!(
+        integration_sync_calls.contains(&&"main".to_string()),
+        "sync_base_branch should be called with 'main' during integration, got: {integration_sync_calls:?}"
+    );
+
+    // Verify push_branch was called with "main" during integration
+    let post_integration_push_calls = ctx.mock_git_service().get_push_branch_calls();
+    let integration_push_calls: Vec<_> = post_integration_push_calls
+        .iter()
+        .skip(pre_integration_push_calls.len())
+        .collect();
+    assert!(
+        integration_push_calls.contains(&&"main".to_string()),
+        "push_branch should be called with 'main' during integration, got: {integration_push_calls:?}"
+    );
+}
+
+/// Helper to advance two tasks through a single stage together.
+/// Sets mock outputs for both, advances orchestrator, and approves both if needed.
+fn advance_both_through_stage(
+    ctx: &TestEnv,
+    task1_id: &str,
+    task2_id: &str,
+    artifact_name: &str,
+    is_approval_stage: bool,
+) {
+    if is_approval_stage {
+        ctx.set_output(
+            task1_id,
+            MockAgentOutput::Approval {
+                decision: "approve".to_string(),
+                content: "LGTM".to_string(),
+                activity_log: None,
+            },
+        );
+        ctx.set_output(
+            task2_id,
+            MockAgentOutput::Approval {
+                decision: "approve".to_string(),
+                content: "LGTM".to_string(),
+                activity_log: None,
+            },
+        );
+    } else {
+        ctx.set_output(
+            task1_id,
+            MockAgentOutput::Artifact {
+                name: artifact_name.to_string(),
+                content: format!("Content for {artifact_name}"),
+                activity_log: None,
+            },
+        );
+        ctx.set_output(
+            task2_id,
+            MockAgentOutput::Artifact {
+                name: artifact_name.to_string(),
+                content: format!("Content for {artifact_name}"),
+                activity_log: None,
+            },
+        );
+    }
+    ctx.advance(); // spawn agents
+    ctx.advance(); // process outputs
+
+    // Approve if tasks need review (non-automated stages)
+    if !is_approval_stage {
+        if ctx.api().get_task(task1_id).unwrap().needs_review() {
+            ctx.api().approve(task1_id).unwrap();
+        }
+        if ctx.api().get_task(task2_id).unwrap().needs_review() {
+            ctx.api().approve(task2_id).unwrap();
+        }
+        ctx.advance(); // commit + advance
+    }
+}
+
+/// Integration succeeds even when `sync_base_branch` fails (network/auth issues).
+#[test]
+fn integration_succeeds_when_sync_fails() {
+    use super::helpers::workflows;
+    use orkestra_core::workflow::ports::GitError;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Configure sync to fail before integration
+    ctx.mock_git_service()
+        .set_next_sync_result(Err(GitError::Other("Network error".to_string())));
+
+    // User triggers merge - should succeed despite sync failure
+    merge_task_sync(ctx.api_arc(), &task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.status,
+        Status::Archived,
+        "Task should be Archived despite sync failure"
+    );
+}
+
+/// Integration succeeds even when `push_branch` fails (network/auth issues).
+#[test]
+fn integration_succeeds_when_push_fails() {
+    use super::helpers::workflows;
+    use orkestra_core::workflow::ports::GitError;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Configure push to fail after merge
+    ctx.mock_git_service()
+        .set_next_push_result(Err(GitError::Other("Auth expired".to_string())));
+
+    // User triggers merge - should succeed despite push failure
+    merge_task_sync(ctx.api_arc(), &task_id).unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.status,
+        Status::Archived,
+        "Task should be Archived despite push failure"
+    );
+}
+
+/// Integration skips sync and push for task/* branches (subtask integration).
+#[test]
+fn integration_skips_sync_and_push_for_task_branches() {
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    // Create parent task (stays Active - we'll set mock outputs for both)
+    let parent = ctx.create_task("Parent task", "Description", None);
+    let parent_id = parent.id.clone();
+
+    // Create subtask - its base_branch will be task/{parent_id}
+    let subtask = ctx.create_subtask(&parent_id, "Subtask", "Child task");
+    let subtask_id = subtask.id.clone();
+
+    // Verify subtask has task/* base_branch
+    assert!(
+        subtask.base_branch.starts_with("task/"),
+        "Subtask base_branch should start with 'task/', got: {}",
+        subtask.base_branch
+    );
+
+    // Capture call counts before subtask integration
+    let pre_integration_sync_calls = ctx.mock_git_service().get_sync_base_branch_calls();
+    let pre_integration_push_calls = ctx.mock_git_service().get_push_branch_calls();
+
+    // Advance both tasks through all stages to get subtask to Done
+    advance_both_through_stage(&ctx, &parent_id, &subtask_id, "plan", false);
+    advance_both_through_stage(&ctx, &parent_id, &subtask_id, "breakdown", false);
+    advance_both_through_stage(&ctx, &parent_id, &subtask_id, "summary", false);
+    advance_both_through_stage(&ctx, &parent_id, &subtask_id, "verdict", true);
+
+    // Subtasks auto-integrate after review approval (they merge to parent's branch, not main)
+    // So the subtask should already be Archived - no need to call merge_task_sync
+    let subtask = ctx.api().get_task(&subtask_id).unwrap();
+    assert_eq!(
+        subtask.status,
+        Status::Archived,
+        "Subtask should be Archived after auto-integration"
+    );
+
+    // Verify sync_base_branch was NOT called with task/* branch during integration
+    let post_integration_sync_calls = ctx.mock_git_service().get_sync_base_branch_calls();
+    let integration_sync_calls: Vec<_> = post_integration_sync_calls
+        .iter()
+        .skip(pre_integration_sync_calls.len())
+        .filter(|b| b.starts_with("task/"))
+        .collect();
+    assert!(
+        integration_sync_calls.is_empty(),
+        "sync_base_branch should NOT be called for task/* branches, got: {integration_sync_calls:?}"
+    );
+
+    // Verify push_branch was NOT called with task/* branch during integration
+    let post_integration_push_calls = ctx.mock_git_service().get_push_branch_calls();
+    let integration_push_calls: Vec<_> = post_integration_push_calls
+        .iter()
+        .skip(pre_integration_push_calls.len())
+        .filter(|b| b.starts_with("task/"))
+        .collect();
+    assert!(
+        integration_push_calls.is_empty(),
+        "push_branch should NOT be called for task/* branches, got: {integration_push_calls:?}"
+    );
+}

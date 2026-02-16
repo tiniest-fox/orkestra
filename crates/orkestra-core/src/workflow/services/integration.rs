@@ -118,6 +118,27 @@ fn perform_git_integration(
                 "completed {}: merge succeeded",
                 params.task_id
             );
+
+            // Push updated base branch to remote (skip for subtask branches)
+            if !params.target_branch.starts_with("task/") {
+                if let Err(e) = git.push_branch(&params.target_branch) {
+                    orkestra_debug!(
+                        "integration",
+                        "failed to push {} after merge for {}: {} (continuing anyway)",
+                        params.target_branch,
+                        params.task_id,
+                        e
+                    );
+                } else {
+                    orkestra_debug!(
+                        "integration",
+                        "pushed {} to remote after merge for {}",
+                        params.target_branch,
+                        params.task_id
+                    );
+                }
+            }
+
             IntegrationGitResult::Success
         }
         Err(e) => {
@@ -570,6 +591,26 @@ fn commit_squash_rebase_merge(
             task.id
         ));
     };
+
+    // Sync base branch from remote (skip for subtask branches on parent's local branch)
+    if !task.base_branch.starts_with("task/") {
+        if let Err(e) = git.sync_base_branch(&task.base_branch) {
+            orkestra_debug!(
+                "integration",
+                "failed to sync {} before rebase for {}: {} (continuing anyway)",
+                task.base_branch,
+                task_id,
+                e
+            );
+        } else {
+            orkestra_debug!(
+                "integration",
+                "synced {} from remote before rebase for {}",
+                task.base_branch,
+                task_id
+            );
+        }
+    }
 
     let params = IntegrationParams {
         task_id: task_id.clone(),

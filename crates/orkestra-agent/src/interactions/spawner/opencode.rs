@@ -8,7 +8,7 @@ use std::os::unix::process::CommandExt;
 
 use orkestra_process::{ProcessConfig, ProcessError, ProcessHandle, ProcessSpawner};
 
-use crate::agent_debug;
+use crate::orkestra_debug;
 
 // ============================================================================
 // OpenCode Process Spawner
@@ -51,7 +51,7 @@ impl ProcessSpawner for OpenCodeProcessSpawner {
         // already happened in agent_execution.rs, so config.system_prompt will be None.
         // We simply ignore the field here as per the design.
         if config.system_prompt.is_some() {
-            agent_debug!(
+            orkestra_debug!(
                 "opencode",
                 "WARNING: system_prompt is Some but OpenCode does not support it; ignoring"
             );
@@ -61,7 +61,7 @@ impl ProcessSpawner for OpenCodeProcessSpawner {
         // The restriction messages are injected into the system prompt upstream,
         // but CLI-level enforcement (like Claude Code's --disallowedTools) is not available.
         if !config.disallowed_tools.is_empty() {
-            agent_debug!(
+            orkestra_debug!(
                 "opencode",
                 "WARNING: disallowed_tools configured but OpenCode does not support --disallowedTools flag; relying on prompt-level restrictions only"
             );

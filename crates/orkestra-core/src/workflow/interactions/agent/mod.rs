@@ -1,9 +1,7 @@
-//! Agent output processing interactions.
-//!
-//! Handles all agent/script output: artifacts, questions, subtasks,
-//! approvals, failures, and script results.
+//! Agent execution interactions: output processing, completion dispatch.
 
 pub mod agent_started;
+pub mod dispatch_completion;
 pub mod fail_execution;
 pub mod handle_approval;
 pub mod handle_artifact;

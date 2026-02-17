@@ -2931,6 +2931,7 @@ name = "orkestra-agent"
 version = "0.1.0"
 dependencies = [
  "orkestra-agent",
+ "orkestra-debug",
  "orkestra-parser",
  "orkestra-process",
  "orkestra-types",
@@ -2964,6 +2965,7 @@ dependencies = [
  "libc",
  "orkestra-agent",
  "orkestra-core",
+ "orkestra-debug",
  "orkestra-git",
  "orkestra-parser",
  "orkestra-process",
@@ -2979,6 +2981,13 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "uuid",
+]
+
+[[package]]
+name = "orkestra-debug"
+version = "0.1.0"
+dependencies = [
+ "chrono",
 ]
 
 [[package]]

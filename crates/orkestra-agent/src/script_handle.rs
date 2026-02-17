@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use orkestra_process::kill_process_tree;
 
-use crate::agent_debug;
+use crate::orkestra_debug;
 
 /// Environment variables to pass to script execution.
 ///
@@ -258,7 +258,7 @@ impl ScriptHandle {
             self.killed = true;
             let pid = self.child.id();
             if let Err(e) = kill_process_tree(pid) {
-                agent_debug!("script", "Warning: failed to kill process tree {pid}: {e}");
+                orkestra_debug!("script", "Warning: failed to kill process tree {pid}: {e}");
             }
         }
     }

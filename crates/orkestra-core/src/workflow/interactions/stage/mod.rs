@@ -1,9 +1,10 @@
-//! Shared stage transition logic.
-//!
-//! Cross-cutting operations used by agent, human, and integration actions.
+//! Stage transition logic: advancement, commit pipeline, recovery.
 
+pub mod advance_all_committed;
 pub mod advance_parent;
 pub mod auto_advance_or_review;
+pub mod check_parent_completions;
+pub mod collect_commit_jobs;
 pub mod commit_failed;
 pub mod commit_succeeded;
 pub mod create_subtasks;
@@ -12,3 +13,4 @@ pub mod enter_commit_pipeline;
 pub mod execute_rejection;
 pub mod finalize_advancement;
 pub mod pending_rejection_review;
+pub mod recover_stale_commits;

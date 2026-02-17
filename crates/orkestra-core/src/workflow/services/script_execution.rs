@@ -268,6 +268,14 @@ impl ScriptExecutionService {
         self.active_scripts.lock().map(|s| s.len()).unwrap_or(0)
     }
 
+    /// Get the set of task IDs with active script executions.
+    pub fn active_script_task_ids(&self) -> std::collections::HashSet<String> {
+        self.active_scripts
+            .lock()
+            .map(|s| s.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// Build environment variables for script execution.
     ///
     /// These variables provide task context so scripts can make intelligent

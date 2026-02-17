@@ -10,7 +10,7 @@ use orkestra_parser::{parse_completion, AgentParser, StageOutput};
 use orkestra_process::ProcessHandle;
 use orkestra_types::domain::LogEntry;
 
-use crate::agent_debug;
+use crate::orkestra_debug;
 use crate::registry::ProviderRegistry;
 use crate::types::{RunConfig, RunError, RunEvent};
 
@@ -21,7 +21,7 @@ pub fn execute(
     registry: &Arc<ProviderRegistry>,
     config: RunConfig,
 ) -> Result<(u32, Receiver<RunEvent>), RunError> {
-    agent_debug!(
+    orkestra_debug!(
         "runner",
         "run_async: session_id={:?}, is_resume={}, model={:?}",
         config.session_id,
@@ -54,7 +54,7 @@ pub fn execute(
 
     let pid = handle.pid;
 
-    agent_debug!("runner", "run_async: spawned pid={}", pid);
+    orkestra_debug!("runner", "run_async: spawned pid={}", pid);
 
     // Write prompt to stdin
     handle
@@ -96,7 +96,7 @@ fn read_output_and_send_events(
             let reader = std::io::BufReader::new(stderr);
             let mut lines = Vec::new();
             for line in reader.lines().map_while(Result::ok) {
-                agent_debug!("runner", "stderr: {}", line);
+                orkestra_debug!("runner", "stderr: {}", line);
                 lines.push(line);
             }
             lines
@@ -144,7 +144,7 @@ fn stream_stdout_lines(
                 line_count += 1;
 
                 if let Some(error_msg) = check_api_error::execute(&line) {
-                    agent_debug!("runner", "Agent error detected: {}", error_msg);
+                    orkestra_debug!("runner", "Agent error detected: {}", error_msg);
                     let _ = tx.send(RunEvent::Completed(Err(error_msg)));
                     return None;
                 }
@@ -152,7 +152,7 @@ fn stream_stdout_lines(
                 let update = parser.parse_line(&line);
 
                 if let Some(sid) = update.session_id {
-                    agent_debug!("runner", "Extracted session ID: {}", sid);
+                    orkestra_debug!("runner", "Extracted session ID: {}", sid);
                     if tx.send(RunEvent::SessionId(sid)).is_err() {
                         return None;
                     }
@@ -168,7 +168,7 @@ fn stream_stdout_lines(
                 full_output.push('\n');
             }
             Err(e) => {
-                agent_debug!("runner", "Error reading stdout: {}", e);
+                orkestra_debug!("runner", "Error reading stdout: {}", e);
                 let _ = tx.send(RunEvent::Completed(Err(format!(
                     "Failed to read agent output: {e}"
                 ))));
@@ -183,7 +183,7 @@ fn stream_stdout_lines(
 /// Flush any buffered entries from the parser's `finalize()` as log events.
 fn flush_finalized_entries(parser: &mut dyn AgentParser, tx: &Sender<RunEvent>) {
     let finalized = parser.finalize();
-    agent_debug!("runner", "finalize produced {} entries", finalized.len());
+    orkestra_debug!("runner", "finalize produced {} entries", finalized.len());
     for entry in finalized {
         if tx.send(RunEvent::LogLine(entry)).is_err() {
             return;
@@ -202,7 +202,7 @@ fn send_completion(
 ) {
     let stderr_lines = collect_stderr(stderr_handle);
 
-    agent_debug!(
+    orkestra_debug!(
         "runner",
         "stream ended: {} lines, output_len={}",
         line_count,
@@ -211,7 +211,7 @@ fn send_completion(
 
     if line_count == 0 {
         let error_msg = stderr_error_message(&stderr_lines);
-        agent_debug!("runner", "Zero stdout lines — agent crashed: {}", error_msg);
+        orkestra_debug!("runner", "Zero stdout lines — agent crashed: {}", error_msg);
         let _ = tx.send(RunEvent::Completed(Err(error_msg)));
         return;
     }
@@ -222,9 +222,9 @@ fn send_completion(
             StageOutput::parse_unvalidated(&json_str).map_err(|e| e.to_string())
         }),
     };
-    agent_debug!("runner", "parse result: {:?}", result.is_ok());
+    orkestra_debug!("runner", "parse result: {:?}", result.is_ok());
 
     if tx.send(RunEvent::Completed(result)).is_err() {
-        agent_debug!("runner", "Channel closed before completion could be sent");
+        orkestra_debug!("runner", "Channel closed before completion could be sent");
     }
 }

@@ -15,6 +15,9 @@ pub mod title;
 pub mod utility;
 pub mod workflow;
 
+// Re-export the orkestra_debug! macro so internal `crate::orkestra_debug!` callsites still work
+pub use orkestra_debug::orkestra_debug;
+
 // Test utilities (available for integration tests)
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;

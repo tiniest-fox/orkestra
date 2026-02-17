@@ -1,12 +1,17 @@
 //! Stage-agnostic orchestrator loop.
 //!
-//! The orchestrator is a reconciliation loop that:
-//! 1. Polls for tasks needing execution
-//! 2. Spawns executions (agents or scripts) via `StageExecutionService`
-//! 3. Processes output when executions complete
+//! The orchestrator is a thin sequencer that runs a reconciliation loop:
+//! 1. Dispatches to domain interactions for business logic decisions
+//! 2. Handles I/O plumbing: lock management, thread spawning, event collection
+//! 3. Does not contain business logic itself — that lives in interactions
 //!
-//! It is driven by the workflow configuration and is stage-agnostic -
-//! it doesn't know about specific stages like "planning" or "work".
+//! Each tick phase delegates to an interaction in the appropriate domain:
+//! - `task::setup_awaiting` — set up tasks whose deps are satisfied
+//! - `stage::check_parent_completions` — advance parents when subtasks done
+//! - `agent::dispatch_completion` — route completed executions
+//! - `stage::collect_commit_jobs` / `advance_all_committed` — commit pipeline
+//! - `task::find_spawn_candidates` — filter tasks ready for agents
+//! - `integration::find_next_candidate` — pick next task to integrate
 
 mod commit_pipeline;
 mod recovery;
@@ -20,13 +25,13 @@ use std::time::Duration;
 use super::periodic::PeriodicScheduler;
 
 use crate::orkestra_debug;
-use crate::pr_description::PrDescriptionGenerator;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{Task, TickSnapshot};
-use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::domain::{Task, TaskHeader, TickSnapshot};
+use crate::workflow::interactions;
+use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
-use super::stage_execution::{ExecutionComplete, ExecutionResult, StageExecutionService};
+use super::stage_execution::StageExecutionService;
 use super::WorkflowApi;
 
 // ============================================================================
@@ -124,10 +129,8 @@ impl std::error::Error for OrchestratorError {}
 
 /// The main orchestration loop.
 ///
-/// This orchestrator delegates all execution to `StageExecutionService`,
-/// which handles both agent and script stages uniformly.
-///
-/// It handles scheduling and event routing.
+/// A thin sequencer that dispatches to domain interactions for decisions
+/// and handles I/O plumbing: lock management, thread spawning, event collection.
 pub struct OrchestratorLoop {
     api: Arc<Mutex<WorkflowApi>>,
     /// Unified stage execution service.
@@ -214,49 +217,6 @@ impl OrchestratorLoop {
         self.stop_flag.store(true, Ordering::Relaxed);
     }
 
-    /// Run all startup recovery steps (stale tasks, orphaned worktrees, stuck integrations).
-    ///
-    /// Called automatically at the start of `run()`, but also available for testing
-    /// recovery behavior without starting the full orchestration loop.
-    pub fn run_startup_recovery(&self) -> Vec<OrchestratorEvent> {
-        // Load all task headers once for all recovery methods
-        let headers = {
-            let Ok(api) = self.api.lock() else {
-                orkestra_debug!(
-                    "recovery",
-                    "Failed to acquire API lock for startup recovery"
-                );
-                return vec![];
-            };
-            match api.store.list_task_headers() {
-                Ok(h) => h,
-                Err(e) => {
-                    orkestra_debug!(
-                        "recovery",
-                        "Failed to list task headers for startup recovery: {}",
-                        e
-                    );
-                    return vec![];
-                }
-            }
-        };
-
-        // Recover stale setup tasks on startup (tasks stuck in SettingUp phase)
-        self.recover_stale_setup_tasks(&headers);
-
-        // Recover stale agent working tasks on startup (tasks stuck in AgentWorking phase)
-        self.recover_stale_agent_working_tasks(&headers);
-
-        // Recover stale committing tasks (background thread died — reset to Finishing)
-        self.recover_stale_committing_tasks(&headers);
-
-        // Clean up orphaned worktrees (from deleted tasks where git cleanup was deferred)
-        self.cleanup_orphaned_worktrees();
-
-        // Recover stale integrations on startup (tasks stuck in Integrating phase)
-        self.recover_stale_integrations(&headers)
-    }
-
     /// Run the orchestration loop.
     ///
     /// This blocks the current thread and runs until `stop()` is called.
@@ -292,36 +252,48 @@ impl OrchestratorLoop {
 
     /// Run a single tick of the orchestration loop.
     ///
-    /// Loads all task headers once, builds a `TickSnapshot`, and dispatches
-    /// to phase methods that filter from the snapshot instead of querying
-    /// the store independently.
-    ///
-    /// Phases that can create new candidates for later phases (e.g.,
-    /// `advance_committed_stages` creating Done tasks for integration)
-    /// trigger a snapshot refresh before those later phases run.
+    /// Each phase delegates to a domain interaction for business logic,
+    /// then the orchestrator handles I/O plumbing (locks, threads, events).
     pub fn tick(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
         let mut events = Vec::new();
-
-        // Track tasks that should not have agents started this tick.
-        // Includes tasks just set up (sync setup completes inline) and tasks
-        // that just advanced via the commit pipeline (advance_committed_stages).
-        // This gives the next tick a chance to inspect state before spawning.
         let mut defer_spawn_ids = HashSet::new();
 
         // Load + categorize once
         let snapshot = self.build_snapshot()?;
 
-        // Core phases — run unconditionally every tick
-        defer_spawn_ids.extend(self.setup_awaiting_tasks(&snapshot)?);
-        events.extend(self.check_parent_completions(&snapshot)?);
-        events.extend(self.process_completed_executions()?);
+        // Setup tasks whose dependencies are satisfied
+        {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            defer_spawn_ids.extend(interactions::task::setup_awaiting::execute(
+                api.store.as_ref(),
+                &api.setup_service,
+                &snapshot,
+            )?);
+        }
+
+        // Advance parents whose subtasks all completed
+        {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            events.extend(interactions::stage::check_parent_completions::execute(
+                &api, &snapshot,
+            )?);
+        }
+
+        // Process completed agent/script executions
+        for exec in self.stage_executor.poll_active() {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            events.push(interactions::agent::dispatch_completion::execute(
+                &api, exec,
+            )?);
+        }
 
         // Commit pipeline: queries DB directly (not snapshot) because
-        // process_completed_executions can create Finishing tasks, and
-        // spawn_pending_commits bg threads create Finished tasks — both
-        // after the snapshot was built.
+        // process_completed_executions can create Finishing tasks after snapshot
         self.spawn_pending_commits()?;
-        let advance_events = self.advance_committed_stages()?;
+        let advance_events = {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            interactions::stage::advance_all_committed::execute(&api, api.store.as_ref())?
+        };
         let state_changed = !advance_events.is_empty();
         for event in &advance_events {
             if let OrchestratorEvent::OutputProcessed { task_id, .. } = event {
@@ -330,16 +302,32 @@ impl OrchestratorLoop {
         }
         events.extend(advance_events);
 
-        // Refresh snapshot if the commit pipeline mutated state (e.g., tasks
-        // became Done or Active), so later phases see the updated candidates.
+        // Refresh snapshot if the commit pipeline mutated state
         let snapshot = if state_changed {
             self.build_snapshot()?
         } else {
             snapshot
         };
 
-        events.extend(self.start_new_executions(&snapshot, &defer_spawn_ids)?);
-        events.extend(self.start_integrations(&snapshot)?);
+        // Start agents/scripts for ready tasks
+        let active_task_ids = self.stage_executor.active_task_ids();
+        let candidates = interactions::task::find_spawn_candidates::execute(
+            &snapshot,
+            &defer_spawn_ids,
+            &active_task_ids,
+        );
+        self.spawn_executions(&candidates, &mut events)?;
+
+        // Integrate next done task (one at a time)
+        let auto_merge = {
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            api.workflow.integration.auto_merge
+        };
+        if let Some(candidate) =
+            interactions::integration::find_next_candidate::execute(&snapshot, auto_merge)
+        {
+            self.start_integration(candidate, &mut events)?;
+        }
 
         // Periodic maintenance
         let due = {
@@ -348,24 +336,30 @@ impl OrchestratorLoop {
         };
         for name in due {
             if name == "cleanup_worktrees" {
-                self.cleanup_orphaned_worktrees();
+                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+                if let Some(ref git) = api.git_service {
+                    interactions::task::cleanup_orphaned_worktrees::execute(
+                        api.store.as_ref(),
+                        git.as_ref(),
+                    );
+                }
             }
         }
 
-        // In sync mode, drain any active executions (scripts) so they complete
-        // within this tick. Mock agents already complete synchronously; this
-        // handles real script processes used in tests.
+        // In sync mode, drain any active executions so they complete within this tick
         if self.sync_background {
             for exec in self.stage_executor.drain_active() {
-                events.push(self.handle_execution_complete(exec)?);
+                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+                events.push(interactions::agent::dispatch_completion::execute(
+                    &api, exec,
+                )?);
             }
-            // Drained executions may set tasks to Finishing (auto-advance) — run
-            // the commit and advancement phases so the full pipeline completes in one tick.
-            // These query the DB directly (not snapshot) so they see the latest state.
-            // Note: integration is NOT run here — it stays in the main tick phases to
-            // avoid advancing subtask pipelines faster than tests expect.
             self.spawn_pending_commits()?;
-            events.extend(self.advance_committed_stages()?);
+            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            events.extend(interactions::stage::advance_all_committed::execute(
+                &api,
+                api.store.as_ref(),
+            )?);
         }
 
         Ok(events)
@@ -376,7 +370,7 @@ impl OrchestratorLoop {
         self.stage_executor.active_count()
     }
 
-    // -- Tick Phases --
+    // -- Plumbing --
 
     /// Build a `TickSnapshot` from the current store state.
     fn build_snapshot(&self) -> WorkflowResult<TickSnapshot> {
@@ -385,305 +379,26 @@ impl OrchestratorLoop {
         Ok(TickSnapshot::build(headers))
     }
 
-    /// Set up tasks in `AwaitingSetup` phase whose dependencies are satisfied.
+    /// Spawn executions for ready candidates.
     ///
-    /// Handles both parent tasks and subtasks. For subtasks, setup is deferred
-    /// from creation time to allow dependent subtasks to branch from the parent
-    /// after predecessors' changes have been merged back. This ensures subtask B
-    /// (which depends on A) sees A's code in its worktree.
-    ///
-    /// Parent tasks (no dependencies) and subtasks with no dependencies are set up
-    /// on the first tick after creation.
-    ///
-    /// Returns the set of task IDs that were set up during this call.
-    /// Used by `tick()` to prevent `start_new_executions` from immediately
-    /// spawning agents for tasks that just completed synchronous setup.
-    fn setup_awaiting_tasks(&self, snapshot: &TickSnapshot) -> WorkflowResult<HashSet<String>> {
-        if snapshot.awaiting_setup.is_empty() {
-            return Ok(HashSet::new());
-        }
-
-        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-        let mut just_set_up = HashSet::new();
-
-        for header in &snapshot.awaiting_setup {
-            // For subtasks: check all dependencies are satisfied (fully integrated)
-            if header.parent_id.is_some()
-                && !header
-                    .depends_on
-                    .iter()
-                    .all(|dep| snapshot.integrated_ids.contains(dep))
-            {
-                continue;
-            }
-
-            orkestra_debug!(
-                "orchestrator",
-                "Setting up task {} (deps satisfied)",
-                header.id
-            );
-
-            // Load full task to save (save_task needs Task, not TaskHeader)
-            let Some(mut task) = api.store.get_task(&header.id)? else {
-                continue;
-            };
-
-            // Transition to SettingUp BEFORE spawning (prevents double-spawn)
-            task.phase = Phase::SettingUp;
-            api.store.save_task(&task)?;
-
-            just_set_up.insert(task.id.clone());
-
-            // Spawn setup (handles worktree creation and title generation)
-            let needs_title = task.title.trim().is_empty() && !task.description.trim().is_empty();
-            api.setup_service.spawn_setup(
-                task.id.clone(),
-                task.base_branch.clone(),
-                if needs_title {
-                    Some(task.description.clone())
-                } else {
-                    None
-                },
-            );
-        }
-
-        Ok(just_set_up)
-    }
-
-    /// Check if any `WaitingOnChildren` parents can advance because all subtasks are merged.
-    ///
-    /// Uses snapshot data to filter subtasks by `parent_id` (eliminates N+1 query).
-    fn check_parent_completions(
+    /// Loads full tasks, marks them as working, and spawns via the stage executor.
+    fn spawn_executions(
         &self,
-        snapshot: &TickSnapshot,
-    ) -> WorkflowResult<Vec<OrchestratorEvent>> {
-        if snapshot.waiting_parents.is_empty() {
-            return Ok(Vec::new());
+        candidates: &[&TaskHeader],
+        events: &mut Vec<OrchestratorEvent>,
+    ) -> WorkflowResult<()> {
+        if candidates.is_empty() {
+            return Ok(());
         }
 
-        let mut events = Vec::new();
-
-        for parent in &snapshot.waiting_parents {
-            // Find subtasks of this parent from the snapshot
-            let subtasks: Vec<&_> = snapshot
-                .all
-                .iter()
-                .filter(|t| t.parent_id.as_deref() == Some(&parent.id))
-                .collect();
-
-            if subtasks.is_empty() {
-                continue;
-            }
-
-            // Subtasks must be Archived (merged back to parent branch), not just Done.
-            // Failed subtasks can be retried independently, so parent stays in WaitingOnChildren.
-            let all_archived = subtasks.iter().all(|t| t.is_archived());
-
-            if all_archived {
-                let subtask_count = subtasks.len();
-
-                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                match api.advance_parent(&parent.id) {
-                    Ok(_) => {
-                        orkestra_debug!(
-                            "orchestrator",
-                            "Parent {} advanced: all {} subtasks done",
-                            parent.id,
-                            subtask_count
-                        );
-                        events.push(OrchestratorEvent::ParentAdvanced {
-                            task_id: parent.id.clone(),
-                            subtask_count,
-                        });
-                    }
-                    Err(e) => {
-                        orkestra_debug!(
-                            "orchestrator",
-                            "Failed to advance parent {}: {}",
-                            parent.id,
-                            e
-                        );
-                        events.push(OrchestratorEvent::Error {
-                            task_id: Some(parent.id.clone()),
-                            error: e.to_string(),
-                        });
-                    }
-                }
-            }
-        }
-
-        Ok(events)
-    }
-
-    /// Process completed executions (both agents and scripts) via the unified service.
-    fn process_completed_executions(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
-        let mut events = Vec::new();
-        let completed = self.stage_executor.poll_active();
-
-        for exec in completed {
-            let event = self.handle_execution_complete(exec)?;
-            events.push(event);
-        }
-
-        Ok(events)
-    }
-
-    /// Handle a completed execution.
-    fn handle_execution_complete(
-        &self,
-        exec: ExecutionComplete,
-    ) -> WorkflowResult<OrchestratorEvent> {
-        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-
-        match exec.result {
-            ExecutionResult::AgentSuccess(stage_output) => {
-                let output_type = stage_output.type_label().to_string();
-                orkestra_debug!(
-                    "orchestrator",
-                    "agent completed {}/{}: type={}, processing output",
-                    exec.task_id,
-                    exec.stage,
-                    output_type
-                );
-                // Process output directly — sets AwaitingReview or Finishing
-                // depending on auto-advance. If Finishing, the commit pipeline
-                // runs on the next tick (or inline in sync mode).
-                match api.process_agent_output(&exec.task_id, stage_output) {
-                    Ok(_) => Ok(OrchestratorEvent::OutputProcessed {
-                        task_id: exec.task_id,
-                        stage: exec.stage,
-                        output_type,
-                    }),
-                    Err(e) => {
-                        orkestra_debug!(
-                            "orchestrator",
-                            "Failed to process agent output for {}: {}",
-                            exec.task_id,
-                            e
-                        );
-                        if let Err(fe) = api.fail_agent_execution(
-                            &exec.task_id,
-                            &format!("Output processing failed: {e}"),
-                        ) {
-                            orkestra_debug!(
-                                "orchestrator",
-                                "Failed to record output failure for {}: {}",
-                                exec.task_id,
-                                fe
-                            );
-                        }
-                        Ok(OrchestratorEvent::Error {
-                            task_id: Some(exec.task_id),
-                            error: e.to_string(),
-                        })
-                    }
-                }
-            }
-            ExecutionResult::AgentFailed(error) | ExecutionResult::PollError { error } => {
-                // Failed agents don't need commits — process directly via dedicated failure path.
-                if let Err(e) =
-                    api.fail_agent_execution(&exec.task_id, &format!("Agent error: {error}"))
-                {
-                    orkestra_debug!(
-                        "orchestrator",
-                        "Failed to record agent failure for {}: {}",
-                        exec.task_id,
-                        e
-                    );
-                }
-                Ok(OrchestratorEvent::Error {
-                    task_id: Some(exec.task_id),
-                    error,
-                })
-            }
-            ExecutionResult::ScriptSuccess { output } => {
-                match api.process_script_success(&exec.task_id, &output) {
-                    Ok(_) => Ok(OrchestratorEvent::ScriptCompleted {
-                        task_id: exec.task_id,
-                        stage: exec.stage,
-                    }),
-                    Err(e) => Ok(OrchestratorEvent::Error {
-                        task_id: Some(exec.task_id),
-                        error: e.to_string(),
-                    }),
-                }
-            }
-            ExecutionResult::ScriptFailed { output, timed_out } => {
-                let error_msg = if timed_out {
-                    format!("Script timed out:\n{output}")
-                } else {
-                    format!("Script failed:\n{output}")
-                };
-
-                match api.process_script_failure(
-                    &exec.task_id,
-                    &error_msg,
-                    exec.recovery_stage.as_deref(),
-                ) {
-                    Ok(_) => Ok(OrchestratorEvent::ScriptFailed {
-                        task_id: exec.task_id,
-                        stage: exec.stage,
-                        error: error_msg,
-                        recovery_stage: exec.recovery_stage,
-                    }),
-                    Err(e) => Ok(OrchestratorEvent::Error {
-                        task_id: Some(exec.task_id),
-                        error: e.to_string(),
-                    }),
-                }
-            }
-        }
-    }
-
-    /// Start new executions for tasks needing agents or scripts.
-    ///
-    /// Uses `snapshot.idle_active` (Idle + Active tasks) and `snapshot.done_ids`
-    /// for dependency checking instead of calling `get_tasks_needing_agents()`.
-    /// Loads the full task (with artifacts) only for tasks that will actually spawn.
-    fn start_new_executions(
-        &self,
-        snapshot: &TickSnapshot,
-        defer_spawn_ids: &HashSet<String>,
-    ) -> WorkflowResult<Vec<OrchestratorEvent>> {
-        if snapshot.idle_active.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut events = Vec::new();
-
-        // Filter candidates from snapshot (same logic as get_tasks_needing_agents)
-        let candidates: Vec<&_> = snapshot
-            .idle_active
-            .iter()
-            .filter(|h| {
-                h.depends_on
-                    .iter()
-                    .all(|dep| snapshot.done_ids.contains(dep))
-            })
-            .collect();
-
-        if !candidates.is_empty() {
-            orkestra_debug!(
-                "orchestrator",
-                "start_new_executions: {} tasks needing execution, {} active",
-                candidates.len(),
-                self.stage_executor.active_count()
-            );
-        }
+        orkestra_debug!(
+            "orchestrator",
+            "start_new_executions: {} tasks needing execution, {} active",
+            candidates.len(),
+            self.stage_executor.active_count()
+        );
 
         for header in candidates {
-            // Skip tasks that were just set up this tick (sync setup completes
-            // inline, so the task is Idle before start_new_executions runs).
-            // Let the next tick start agents, so tests can inspect post-setup state.
-            if defer_spawn_ids.contains(&header.id) {
-                continue;
-            }
-
-            // Skip if we already have an active execution for this task
-            if self.stage_executor.has_active_execution(&header.id) {
-                continue;
-            }
-
             let current_stage = header.current_stage().unwrap_or("unknown");
             orkestra_debug!(
                 "orchestrator",
@@ -692,7 +407,7 @@ impl OrchestratorLoop {
                 header.current_stage()
             );
 
-            // Load full task (with artifacts) for spawning — needs artifacts for prompt building
+            // Load full task (with artifacts) for spawning
             let task = {
                 let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
                 match api.store.get_task(&header.id)? {
@@ -701,10 +416,7 @@ impl OrchestratorLoop {
                 }
             };
 
-            // Get incoming context from active iteration (for agent stages).
-            // If the trigger was already delivered to the agent on a previous spawn,
-            // skip it so crash recovery uses "session interrupted" instead of replaying
-            // stale context (e.g., script failure details the agent already received).
+            // Get incoming context from active iteration
             let trigger = {
                 let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
                 api.store
@@ -761,92 +473,10 @@ impl OrchestratorLoop {
             }
         }
 
-        Ok(events)
+        Ok(())
     }
 
     // -- PR Creation --
-
-    /// Background PR creation logic. Performs git push and PR creation, records the result.
-    /// Runs off the orchestrator's main thread.
-    #[allow(clippy::needless_pass_by_value)]
-    fn run_background_pr_creation(
-        git: Arc<dyn GitService>,
-        pr_service: Arc<dyn PrService>,
-        pr_description_generator: Arc<dyn PrDescriptionGenerator>,
-        api: Arc<Mutex<WorkflowApi>>,
-        task: Task,
-        model_names: Vec<String>,
-    ) {
-        let task_id = task.id.clone();
-        let branch = task.branch_name.clone().unwrap_or_default();
-        let base_branch = task.base_branch.clone();
-
-        // 1. Safety-net commit
-        if let Err(e) = crate::workflow::services::commit_worktree::commit_worktree_changes(
-            git.as_ref(),
-            &task,
-            "integrating",
-            None,
-        ) {
-            if let Ok(api) = api.lock() {
-                let _ = api.pr_creation_failed(&task_id, &format!("Commit failed: {e}"));
-            }
-            return;
-        }
-
-        // 2. Push branch
-        if let Err(e) = git.push_branch(&branch) {
-            if let Ok(api) = api.lock() {
-                let _ = api.pr_creation_failed(&task_id, &e.to_string());
-            }
-            return;
-        }
-
-        // 3. Generate PR description (with fallback on failure)
-        let diff_summary =
-            crate::workflow::services::commit_worktree::build_diff_summary(git.as_ref(), &task);
-
-        // Get plan artifact if available for richer PR body
-        let plan_artifact = task.artifacts.get("plan").map(|a| a.content.as_str());
-
-        let (pr_title, pr_body) = pr_description_generator
-            .generate_pr_description(
-                &task.title,
-                &task.description,
-                plan_artifact,
-                &diff_summary,
-                &base_branch,
-                &model_names,
-            )
-            .unwrap_or_else(|_| {
-                // Fallback: use task title and basic body with new format + footer
-                let body = format!(
-                    "## Summary\n\n{}\n\n## Decisions\n\n_AI generation failed_\n\n## Verification\n\n_Manual verification required_{}",
-                    task.description,
-                    crate::pr_description::format_pr_footer(&model_names)
-                );
-                (task.title.clone(), body)
-            });
-
-        // 4. Create PR (idempotent — checks for existing PR first)
-        let repo_root = task
-            .worktree_path
-            .as_deref()
-            .map_or_else(|| std::path::Path::new("."), std::path::Path::new);
-        match pr_service.create_pull_request(repo_root, &branch, &base_branch, &pr_title, &pr_body)
-        {
-            Ok(pr_url) => {
-                if let Ok(api) = api.lock() {
-                    let _ = api.pr_creation_succeeded(&task_id, &pr_url);
-                }
-            }
-            Err(e) => {
-                if let Ok(api) = api.lock() {
-                    let _ = api.pr_creation_failed(&task_id, &e.to_string());
-                }
-            }
-        }
-    }
 
     /// Spawn a background PR creation thread for a task that is already marked Integrating.
     pub fn spawn_pr_creation(&self, task: &Task) -> WorkflowResult<()> {
@@ -858,7 +488,6 @@ impl OrchestratorLoop {
             .clone()
             .ok_or_else(|| WorkflowError::GitError("No PR service configured".into()))?;
 
-        // Collect model names while we have the lock
         let model_names =
             crate::commit_message::collect_model_names(&api.workflow, task.flow.as_deref());
         drop(api);
@@ -870,7 +499,7 @@ impl OrchestratorLoop {
         let api_clone = Arc::clone(&self.api);
 
         let run = move || {
-            Self::run_background_pr_creation(
+            crate::workflow::services::integration::run_pr_creation(
                 git,
                 pr_service,
                 pr_description_generator,
@@ -890,59 +519,31 @@ impl OrchestratorLoop {
 
     // -- Integration --
 
-    /// Start integrations for Done tasks that need merging.
+    /// Start integration for a candidate task.
     ///
-    /// Only one integration runs at a time — if any task is already in
-    /// `Phase::Integrating`, this is a no-op. The git work runs on a
-    /// background thread so the API lock is not held during rebase/merge.
-    ///
-    /// Flow:
-    /// 1. Acquire lock, find candidate, mark `Phase::Integrating`, read params, release lock
-    /// 2. Spawn background thread: git commit/rebase/merge (no lock)
-    /// 3. Background thread acquires lock briefly to record result
-    fn start_integrations(
+    /// Marks the task as integrating, then either records immediate success
+    /// (no git) or spawns a background thread for git merge.
+    fn start_integration(
         &self,
-        snapshot: &TickSnapshot,
-    ) -> WorkflowResult<Vec<OrchestratorEvent>> {
-        let mut events = Vec::new();
-
-        // One integration at a time — skip if any task is already integrating
-        if snapshot.has_integrating {
-            return Ok(events);
-        }
-
-        // Find the first integration candidate.
-        // Subtasks always auto-merge (they merge into their parent branch, not main).
-        // Top-level tasks respect the auto_merge config — when false, the user must
-        // trigger merge or PR creation explicitly.
-        let auto_merge = {
-            let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-            api.workflow.integration.auto_merge
-        };
-
-        let Some(header) = snapshot
-            .idle_done_with_worktree
-            .iter()
-            .find(|h| h.parent_id.is_some() || auto_merge)
-        else {
-            return Ok(events);
-        };
-
+        header: &TaskHeader,
+        events: &mut Vec<OrchestratorEvent>,
+    ) -> WorkflowResult<()> {
         let task_id = header.id.clone();
         let branch = header.branch_name.clone().unwrap_or_default();
 
         // Acquire lock to mark as integrating and read full task
         let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
         let Some(task) = api.store.get_task(&task_id)? else {
-            return Ok(events);
+            return Ok(());
         };
 
         // Mark as integrating (requires Phase::Idle, prevents double-processing)
         if let Err(e) = api.mark_integrating(&task_id) {
-            return Ok(vec![OrchestratorEvent::Error {
+            events.push(OrchestratorEvent::Error {
                 task_id: Some(task_id),
                 error: format!("Failed to mark task as integrating: {e}"),
-            }]);
+            });
+            return Ok(());
         }
 
         // If no git service, record success immediately (no background work needed)
@@ -963,12 +564,10 @@ impl OrchestratorLoop {
                     conflict_files: vec![],
                 }),
             }
-            return Ok(events);
+            return Ok(());
         }
 
-        // Read params while we have the lock
         if task.base_branch.is_empty() {
-            // Reset phase since we can't proceed
             let mut reset_task = api.get_task(&task_id)?;
             reset_task.phase = Phase::Idle;
             if let Err(e) = api.store.save_task(&reset_task) {
@@ -979,10 +578,11 @@ impl OrchestratorLoop {
                     e
                 );
             }
-            return Ok(vec![OrchestratorEvent::Error {
+            events.push(OrchestratorEvent::Error {
                 task_id: Some(task_id),
                 error: "Task has no base_branch set — cannot determine merge target".into(),
-            }]);
+            });
+            return Ok(());
         }
 
         // Gather inputs for background thread while holding lock
@@ -1017,7 +617,7 @@ impl OrchestratorLoop {
             std::thread::spawn(run_integration);
         }
 
-        Ok(events)
+        Ok(())
     }
 }
 

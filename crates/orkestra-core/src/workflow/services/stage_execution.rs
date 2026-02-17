@@ -311,6 +311,17 @@ impl StageExecutionService {
         agent_count + self.script_service.active_count()
     }
 
+    /// Get the set of task IDs with active executions (agents + scripts).
+    pub fn active_task_ids(&self) -> std::collections::HashSet<String> {
+        let mut ids: std::collections::HashSet<String> = self
+            .active_agents
+            .lock()
+            .map(|agents| agents.keys().cloned().collect())
+            .unwrap_or_default();
+        ids.extend(self.script_service.active_script_task_ids());
+        ids
+    }
+
     /// Kill the active agent for a task and remove it from tracking.
     ///
     /// Returns the PID that was killed, or None if no active agent was found.

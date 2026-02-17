@@ -11,6 +11,7 @@ default = []
 testutil = []
 
 [dependencies]
+orkestra-debug = { path = "../orkestra-debug" }
 orkestra-types = { path = "../orkestra-types" }
 orkestra-process = { path = "../orkestra-process" }
 orkestra-parser = { path = "../orkestra-parser" }

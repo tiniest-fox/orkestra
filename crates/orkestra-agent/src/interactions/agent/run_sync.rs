@@ -6,13 +6,13 @@ use std::thread;
 use orkestra_parser::interactions::output::check_api_error;
 use orkestra_parser::{parse_completion, StageOutput};
 
-use crate::agent_debug;
+use crate::orkestra_debug;
 use crate::registry::ProviderRegistry;
 use crate::types::{RunConfig, RunError, RunResult};
 
 /// Run an agent synchronously (blocking).
 pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<RunResult, RunError> {
-    agent_debug!(
+    orkestra_debug!(
         "runner",
         "run_sync: session_id={:?}, is_resume={}, model={:?}",
         config.session_id,
@@ -43,7 +43,7 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
         .spawn(&working_dir, process_config)
         .map_err(RunError::from)?;
 
-    agent_debug!("runner", "run_sync: spawned process");
+    orkestra_debug!("runner", "run_sync: spawned process");
 
     // Capture stderr in a background thread so we can use it for error messages
     let stderr_handle = handle.take_stderr().map(|stderr| {
@@ -52,7 +52,7 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
             let reader = std::io::BufReader::new(stderr);
             let mut lines = Vec::new();
             for line in reader.lines().map_while(Result::ok) {
-                agent_debug!("runner", "stderr: {}", line);
+                orkestra_debug!("runner", "stderr: {}", line);
                 lines.push(line);
             }
             lines
@@ -96,7 +96,7 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
     // Collect stderr
     let stderr_lines = collect_stderr(stderr_handle);
 
-    agent_debug!("runner", "run_sync: output_len={}", full_output.len());
+    orkestra_debug!("runner", "run_sync: output_len={}", full_output.len());
 
     // If stdout produced nothing, the agent likely crashed. Use stderr for the error.
     if line_count == 0 {
@@ -113,7 +113,7 @@ pub fn execute(registry: &Arc<ProviderRegistry>, config: RunConfig) -> Result<Ru
     }
     .map_err(RunError::ParseFailed)?;
 
-    agent_debug!("runner", "run_sync: parsed output successfully");
+    orkestra_debug!("runner", "run_sync: parsed output successfully");
 
     Ok(RunResult {
         raw_output: full_output,
@@ -136,9 +136,9 @@ pub(crate) fn collect_stderr(handle: Option<thread::JoinHandle<Vec<String>>>) ->
     match handle.join() {
         Ok(lines) => {
             if !lines.is_empty() {
-                agent_debug!("runner", "stderr ({} lines):", lines.len());
+                orkestra_debug!("runner", "stderr ({} lines):", lines.len());
                 for line in &lines {
-                    agent_debug!("runner", "  stderr: {}", line);
+                    orkestra_debug!("runner", "  stderr: {}", line);
                 }
             }
             lines

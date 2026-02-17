@@ -13,20 +13,8 @@ mod types;
 #[cfg(any(test, feature = "testutil"))]
 mod mock;
 
-// -- Debug macro --
-
-/// Debug logging macro for orkestra-agent.
-///
-/// Checks `ORKESTRA_DEBUG=1` env var and writes to stderr. Replaces the
-/// `orkestra_debug!` macro from orkestra-core for use within this crate.
-macro_rules! agent_debug {
-    ($component:expr, $($arg:tt)*) => {
-        if std::env::var("ORKESTRA_DEBUG").is_ok() {
-            eprintln!("[orkestra:{}] {}", $component, format!($($arg)*));
-        }
-    };
-}
-pub(crate) use agent_debug;
+// Re-export the unified debug macro for use within this crate
+pub(crate) use orkestra_debug::orkestra_debug;
 
 // -- Public API --
 

@@ -965,6 +965,7 @@ fn format_state(state: &TaskState) -> String {
         TaskState::AgentWorking { stage } => format!("Working({stage})"),
         TaskState::Finishing { stage } => format!("Finishing({stage})"),
         TaskState::Committing { stage } => format!("Committing({stage})"),
+        TaskState::Committed { stage } => format!("Committed({stage})"),
         TaskState::Integrating => "Integrating".to_string(),
         TaskState::AwaitingApproval { stage } => format!("AwaitingApproval({stage})"),
         TaskState::AwaitingQuestionAnswer { stage } => format!("AwaitingQuestions({stage})"),

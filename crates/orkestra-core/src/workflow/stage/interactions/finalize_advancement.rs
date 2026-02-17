@@ -17,9 +17,9 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if !matches!(task.state, TaskState::Finishing { .. }) {
+    if !matches!(task.state, TaskState::Committed { .. }) {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot finalize stage advancement in state {} (expected Finishing)",
+            "Cannot finalize stage advancement in state {} (expected Committed)",
             task.state
         )));
     }

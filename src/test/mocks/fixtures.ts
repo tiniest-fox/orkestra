@@ -114,7 +114,7 @@ export function createMockWorkflowTaskView(
     derivedDefaults.phase_icon = "integrating";
     derivedDefaults.is_system_active = true;
   }
-  if (state.type === "finishing") {
+  if (state.type === "finishing" || state.type === "committed") {
     derivedDefaults.phase_icon = "system_busy";
     derivedDefaults.is_system_active = true;
   }

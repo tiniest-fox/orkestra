@@ -14,7 +14,7 @@ pub struct CommitJob {
     pub git: Arc<dyn GitService>,
 }
 
-/// Find Finishing tasks, transition them to Committing (or Finished if no git),
+/// Find Finishing tasks, transition them to Committing (or Committed if no git),
 /// and return the commit jobs to spawn.
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -53,7 +53,7 @@ pub fn execute(
             if git_service.is_some() {
                 "Committing"
             } else {
-                "Finished"
+                "Committed"
             }
         );
 
@@ -70,7 +70,8 @@ pub fn execute(
                 git: Arc::clone(g),
             });
         } else {
-            // No git service — skip commit, stay in Finishing (advance_all_committed picks up)
+            // No git service — skip commit, transition directly to Committed
+            task.state = TaskState::committed(&stage);
             task.updated_at = chrono::Utc::now().to_rfc3339();
             store.save_task(&task)?;
         }

@@ -146,6 +146,7 @@ export type TaskState =
   | { type: "agent_working"; stage: string }
   | { type: "finishing"; stage: string }
   | { type: "committing"; stage: string }
+  | { type: "committed"; stage: string }
   | { type: "integrating" }
   | { type: "awaiting_approval"; stage: string }
   | { type: "awaiting_question_answer"; stage: string }

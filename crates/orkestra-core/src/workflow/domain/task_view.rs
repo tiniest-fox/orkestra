@@ -178,7 +178,9 @@ fn compute_phase_icon(task: &Task) -> Option<String> {
         TaskState::Integrating => Some("integrating".to_string()),
         TaskState::SettingUp { .. } => Some("setting_up".to_string()),
         TaskState::AwaitingSetup { .. } => Some("awaiting_setup".to_string()),
-        TaskState::Finishing { .. } => Some("system_busy".to_string()),
+        TaskState::Finishing { .. } | TaskState::Committed { .. } => {
+            Some("system_busy".to_string())
+        }
         TaskState::Queued { .. } => Some("waiting_for_orchestrator".to_string()),
         // Human-facing, agent-active, parent, and terminal states don't show phase icons
         TaskState::AgentWorking { .. }

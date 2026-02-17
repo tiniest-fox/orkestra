@@ -18,7 +18,7 @@ import type { WorkflowTaskView } from "../types/workflow";
  * - 3: Has questions (or parent with subtask questions)
  * - 4: Needs review (or parent with subtask needing review)
  * - 5: Working (agent currently running)
- * - 6: System active (committing, integrating, finishing)
+ * - 6: System active (committing, committed, integrating, finishing)
  * - 7: Idle/waiting (everything else active)
  *
  * Tiers 8-9 apply to terminal tasks (used in subtask lists, filtered out in kanban):
@@ -41,7 +41,7 @@ function getPriority(task: WorkflowTaskView): number {
   if (d.needs_review || (sp && sp.needs_review > 0)) return 4;
   // Working (agent currently running)
   if (d.is_working) return 5;
-  // System active (committing, integrating, finishing — no agent, but system busy)
+  // System active (committing, committed, integrating, finishing — no agent, but system busy)
   if (d.is_system_active) return 6;
   // Done (terminal state)
   if (d.is_done) return 8;

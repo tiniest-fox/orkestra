@@ -41,8 +41,8 @@ impl WorkflowApi {
         agent::fail_execution::execute(self.store.as_ref(), &self.iteration_service, task_id, error)
     }
 
-    /// Record a successful commit. Transitions phase from Committing to Finished.
-    pub(crate) fn commit_succeeded(&self, task_id: &str) -> WorkflowResult<Task> {
+    /// Record a successful commit. Transitions Committing → Committed.
+    pub fn commit_succeeded(&self, task_id: &str) -> WorkflowResult<Task> {
         stage::commit_succeeded::execute(self.store.as_ref(), task_id)
     }
 
@@ -617,7 +617,7 @@ mod tests {
         api.store.save_task(&task).unwrap();
 
         let task = api.commit_succeeded(&task.id).unwrap();
-        assert!(matches!(task.state, TaskState::Finishing { .. }));
+        assert!(matches!(task.state, TaskState::Committed { .. }));
     }
 
     #[test]

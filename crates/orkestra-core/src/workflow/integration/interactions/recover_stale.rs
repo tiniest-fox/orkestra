@@ -41,35 +41,14 @@ pub fn execute(api: &WorkflowApi, headers: &[TaskHeader]) -> Vec<OrchestratorEve
 // -- Helpers --
 
 /// Attempt to recover a single task stuck in `Integrating` phase.
+///
+/// Always retries integration regardless of `auto_merge` setting — the task was
+/// already being integrated when the crash happened, so we finish what we started.
 fn recover_stale_task(api: &WorkflowApi, task: &Task) -> OrchestratorEvent {
     if is_branch_already_merged(api.git_service.as_ref(), task) {
         return archive_already_merged_task(api, task);
     }
 
-    // auto_merge disabled — return to choice point for user to retry.
-    if !api.workflow.integration.auto_merge {
-        orkestra_debug!(
-            "recovery",
-            "Task {} stuck in Integrating (auto_merge=false) — resetting to Done for retry",
-            task.id
-        );
-        let mut reset_task = task.clone();
-        reset_task.state = TaskState::Done;
-        if let Err(e) = api.store.save_task(&reset_task) {
-            orkestra_debug!(
-                "recovery",
-                "Failed to reset task {} to Done: {}",
-                task.id,
-                e
-            );
-        }
-        return OrchestratorEvent::Error {
-            task_id: Some(task.id.clone()),
-            error: "Task was stuck in Integrating state — reset to Done".into(),
-        };
-    }
-
-    // Regular merge attempt — retry integration
     reattempt_integration(api, task)
 }
 

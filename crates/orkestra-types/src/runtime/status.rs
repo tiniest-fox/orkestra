@@ -37,6 +37,9 @@ pub enum TaskState {
     /// Background commit thread is running.
     Committing { stage: String },
 
+    /// Commit pipeline complete. Ready for `advance_all_committed` to pick up.
+    Committed { stage: String },
+
     /// Integration (merge) is in progress.
     Integrating,
 
@@ -118,6 +121,12 @@ impl TaskState {
         }
     }
 
+    pub fn committed(stage: impl Into<String>) -> Self {
+        Self::Committed {
+            stage: stage.into(),
+        }
+    }
+
     pub fn awaiting_approval(stage: impl Into<String>) -> Self {
         Self::AwaitingApproval {
             stage: stage.into(),
@@ -175,6 +184,7 @@ impl TaskState {
             | Self::AgentWorking { stage }
             | Self::Finishing { stage }
             | Self::Committing { stage }
+            | Self::Committed { stage }
             | Self::AwaitingApproval { stage }
             | Self::AwaitingQuestionAnswer { stage }
             | Self::AwaitingRejectionConfirmation { stage }
@@ -217,7 +227,10 @@ impl TaskState {
     pub fn is_system_active(&self) -> bool {
         matches!(
             self,
-            Self::Finishing { .. } | Self::Committing { .. } | Self::Integrating
+            Self::Finishing { .. }
+                | Self::Committing { .. }
+                | Self::Committed { .. }
+                | Self::Integrating
         )
     }
 
@@ -265,6 +278,7 @@ impl fmt::Display for TaskState {
             Self::AgentWorking { stage } => write!(f, "agent_working ({stage})"),
             Self::Finishing { stage } => write!(f, "finishing ({stage})"),
             Self::Committing { stage } => write!(f, "committing ({stage})"),
+            Self::Committed { stage } => write!(f, "committed ({stage})"),
             Self::Integrating => write!(f, "integrating"),
             Self::AwaitingApproval { stage } => write!(f, "awaiting_approval ({stage})"),
             Self::AwaitingQuestionAnswer { stage } => {

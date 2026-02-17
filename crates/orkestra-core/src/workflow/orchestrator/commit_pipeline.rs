@@ -1,4 +1,4 @@
-//! Finishing → Committing → Finishing pipeline.
+//! Finishing → Committing → Committed pipeline.
 //!
 //! Spawns background git commit threads. Business logic (which tasks need
 //! committing, phase transitions) lives in `stage_interactions::collect_commit_jobs`.

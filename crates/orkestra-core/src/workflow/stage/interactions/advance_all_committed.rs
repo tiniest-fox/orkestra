@@ -24,7 +24,7 @@ pub fn execute(
     let finished: Vec<_> = store
         .list_task_headers()?
         .into_iter()
-        .filter(|h| matches!(&h.state, TaskState::Finishing { .. }))
+        .filter(|h| matches!(&h.state, TaskState::Committed { .. }))
         .collect();
 
     if finished.is_empty() {

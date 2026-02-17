@@ -1216,47 +1216,36 @@ fn test_script_stage_with_recovery() {
 
 /// Helper: advance a task through a simple work → review(automated) workflow to Done.
 ///
-/// Drives the task through the API directly (without orchestrator ticks) to avoid
-/// triggering auto-integration. The task will be in Done state.
-///
-/// After `approve()` and auto-advance, the task enters `Finishing` phase.
-/// We call `finalize_stage_advancement()` to simulate the commit pipeline completing,
-/// which advances the stage without running the orchestrator.
+/// Uses the orchestrator loop (set_output + advance) so the commit pipeline runs
+/// naturally within each tick. The task will be in Done state.
 fn advance_to_done(ctx: &TestEnv, task_id: &str) {
-    use orkestra_core::workflow::execution::StageOutput;
-
-    let api = ctx.api();
-
-    // Work stage: mark as working, process output
-    api.agent_started(task_id).unwrap();
-    api.process_agent_output(
+    // Work stage
+    ctx.set_output(
         task_id,
-        StageOutput::Artifact {
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
             content: "Implementation complete".to_string(),
             activity_log: None,
         },
-    )
-    .unwrap();
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process output → AwaitingReview
+    ctx.api().approve(task_id).unwrap(); // → Finishing
+    ctx.advance(); // commit → advance to review
 
-    // Approve work → enters Finishing. Simulate commit pipeline completion.
-    api.approve(task_id).unwrap();
-    api.finalize_stage_advancement(task_id).unwrap();
-
-    // Review stage (automated): mark as working, process output → auto-approve → Finishing
-    api.agent_started(task_id).unwrap();
-    api.process_agent_output(
+    // Review stage (automated — auto-approves)
+    ctx.set_output(
         task_id,
-        StageOutput::Artifact {
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
             content: "Approved".to_string(),
             activity_log: None,
         },
-    )
-    .unwrap();
+    );
+    ctx.advance(); // spawn reviewer
+    ctx.advance(); // process output → auto-approve → commit → Done
 
-    // Auto-approved review enters Finishing. Simulate commit pipeline completion → Done.
-    api.finalize_stage_advancement(task_id).unwrap();
-
-    let task = api.get_task(task_id).unwrap();
+    let task = ctx.api().get_task(task_id).unwrap();
     assert!(
         task.is_done(),
         "Task should be Done after review auto-approves, but state is {:?}",
@@ -1386,12 +1375,12 @@ fn test_recovery_archives_already_merged_task() {
 fn test_recovery_retries_unmerged_task() {
     use orkestra_core::workflow::{config::StageConfig, OrchestratorEvent};
 
-    let workflow = enable_auto_merge(WorkflowConfig::new(vec![
+    let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .automated(),
-    ]));
+    ]);
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
     // Create task (worktree is created automatically)

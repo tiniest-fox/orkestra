@@ -284,27 +284,63 @@ fi
 # Categorize changes
 # =============================================================================
 
+# All workspace crates (update when adding new crates)
+ALL_CRATES=(
+    orkestra-types orkestra-schema orkestra-debug orkestra-process
+    orkestra-parser orkestra-store orkestra-git orkestra-prompt
+    orkestra-utility orkestra-agent orkestra-core
+)
+
+# Helper: check if array contains a value
+array_contains() {
+    local needle="$1"; shift
+    for item in "$@"; do [ "$item" = "$needle" ] && return 0; done
+    return 1
+}
+
+# Transitive reverse dependency map.
+# Given a changed crate, returns all crates whose tests could be affected.
+# Hardcoded for speed — update when inter-crate dependencies change.
+#
+# Dependency graph (leaf → root):
+#   types, schema, debug, process, git  (leaves)
+#   parser(types), store(types), prompt(schema,types), utility(process,types)
+#   agent(debug, parser, process, types)
+#   core(ALL above)
+reverse_deps_of() {
+    case "$1" in
+        orkestra-types)   echo "orkestra-parser orkestra-store orkestra-prompt orkestra-utility orkestra-agent orkestra-core" ;;
+        orkestra-schema)  echo "orkestra-prompt orkestra-core" ;;
+        orkestra-debug)   echo "orkestra-agent orkestra-core" ;;
+        orkestra-process) echo "orkestra-utility orkestra-agent orkestra-core" ;;
+        orkestra-parser)  echo "orkestra-agent orkestra-core" ;;
+        orkestra-store)   echo "orkestra-core" ;;
+        orkestra-git)     echo "orkestra-core" ;;
+        orkestra-prompt)  echo "orkestra-core" ;;
+        orkestra-utility) echo "orkestra-core" ;;
+        orkestra-agent)   echo "orkestra-core" ;;
+    esac
+}
+
 # Initialize flags (may be overridden by --all or force flags)
 HAS_FRONTEND=false
 HAS_TAURI=false
 HAS_CLI=false
-HAS_CORE=false
 HAS_RUST_CONFIG=false
+CHANGED_CRATES=()
 
 # Handle force flags
 if $FORCE_ALL; then
     HAS_FRONTEND=true
     HAS_TAURI=true
     HAS_CLI=true
-    HAS_CORE=true
+    CHANGED_CRATES=("${ALL_CRATES[@]}")
 else
-    if $FORCE_FRONTEND; then
-        HAS_FRONTEND=true
-    fi
+    $FORCE_FRONTEND && HAS_FRONTEND=true
     if $FORCE_RUST; then
         HAS_TAURI=true
         HAS_CLI=true
-        HAS_CORE=true
+        CHANGED_CRATES=("${ALL_CRATES[@]}")
     fi
 
     # Parse changed files (skip if CHANGED_FILES is "(all)")
@@ -320,8 +356,13 @@ else
                 cli/*)
                     HAS_CLI=true
                     ;;
-                crates/orkestra-core/*)
-                    HAS_CORE=true
+                crates/*/*)
+                    # Extract crate name: crates/orkestra-foo/... → orkestra-foo
+                    crate_name="${file#crates/}"
+                    crate_name="${crate_name%%/*}"
+                    if ! array_contains "$crate_name" "${CHANGED_CRATES[@]}"; then
+                        CHANGED_CRATES+=("$crate_name")
+                    fi
                     ;;
                 Cargo.toml|Cargo.lock|clippy.toml|rustfmt.toml|.cargo/*)
                     HAS_RUST_CONFIG=true
@@ -335,13 +376,33 @@ fi
 if $HAS_RUST_CONFIG; then
     HAS_TAURI=true
     HAS_CLI=true
-    HAS_CORE=true
+    CHANGED_CRATES=("${ALL_CRATES[@]}")
 fi
+
+# Expand changed crates to include transitive reverse dependencies.
+# If orkestra-types changed, we also need to test orkestra-parser, orkestra-store, etc.
+AFFECTED_CRATES=()
+for crate in "${CHANGED_CRATES[@]}"; do
+    if ! array_contains "$crate" "${AFFECTED_CRATES[@]}"; then
+        AFFECTED_CRATES+=("$crate")
+    fi
+    for dep in $(reverse_deps_of "$crate"); do
+        if ! array_contains "$dep" "${AFFECTED_CRATES[@]}"; then
+            AFFECTED_CRATES+=("$dep")
+        fi
+    done
+done
 
 # Determine if any Rust changed
 HAS_RUST=false
-if $HAS_TAURI || $HAS_CLI || $HAS_CORE; then
+if $HAS_TAURI || $HAS_CLI || [ ${#CHANGED_CRATES[@]} -gt 0 ]; then
     HAS_RUST=true
+fi
+
+# Always run core e2e tests when any Rust changes — they exercise
+# the full system across crate boundaries
+if $HAS_RUST && ! array_contains "orkestra-core" "${AFFECTED_CRATES[@]}"; then
+    AFFECTED_CRATES+=("orkestra-core")
 fi
 
 if $VERBOSE; then
@@ -349,7 +410,8 @@ if $VERBOSE; then
     echo "  Frontend (src/):        $HAS_FRONTEND"
     echo "  Tauri (src-tauri/):     $HAS_TAURI"
     echo "  CLI (cli/):             $HAS_CLI"
-    echo "  Core (crates/):         $HAS_CORE"
+    echo "  Changed crates:         ${CHANGED_CRATES[*]:-none}"
+    echo "  Affected crates:        ${AFFECTED_CRATES[*]:-none}"
     echo "  Rust config:            $HAS_RUST_CONFIG"
     echo ""
 fi
@@ -420,7 +482,9 @@ if $HAS_RUST; then
     # another worktree can compile between our touch and our cargo run, making its
     # binary newer than our touched source — cargo then sees "Fresh" and serves stale code.
     if [ -L "target" ]; then
-        $HAS_CORE && touch crates/orkestra-core/src/lib.rs
+        for crate in "${AFFECTED_CRATES[@]}"; do
+            touch "crates/$crate/src/lib.rs"
+        done
         $HAS_CLI && touch cli/src/main.rs
         $HAS_TAURI && touch src-tauri/src/main.rs
     fi
@@ -430,17 +494,17 @@ if $HAS_RUST; then
     run_check "Cargo clippy fix" "cargo clippy --fix --workspace --all-targets --allow-dirty --allow-staged"
     run_check "Cargo clippy verify" "cargo clippy --workspace --all-targets -- -D warnings"
 
-    # Run tests for specific crates that changed
-    if $HAS_CORE; then
-        run_check "Core tests" "cargo test -p orkestra-core"
-    fi
+    # Run tests for affected crates (changed crates + their reverse deps)
+    for crate in "${AFFECTED_CRATES[@]}"; do
+        run_check "$crate tests" "cargo test -p $crate"
+    done
 
     if $HAS_CLI; then
-        run_check "CLI tests" "cargo test -p orkestra-cli"
+        run_check "orkestra-cli tests" "cargo test -p orkestra-cli"
     fi
 
     if $HAS_TAURI; then
-        run_check "Tauri tests" "cargo test -p orkestra"
+        run_check "orkestra (tauri) tests" "cargo test -p orkestra"
     fi
 
     # Build check (ensures everything compiles)

@@ -41,6 +41,7 @@ mod tests {
     use crate::workflow::adapters::InMemoryWorkflowStore;
     use crate::workflow::iteration::IterationService;
     use crate::workflow::ports::WorkflowStore;
+    use crate::workflow::query::interactions::sessions as query_sessions;
 
     use super::super::interactions::session;
 
@@ -50,6 +51,13 @@ mod tests {
             Arc::clone(&store) as Arc<dyn WorkflowStore>
         ));
         (store, iteration_service)
+    }
+
+    /// Simulate agent exit: clear PID and save session.
+    fn simulate_agent_exit(store: &InMemoryWorkflowStore, task_id: &str, stage: &str) {
+        let mut s = store.get_stage_session(task_id, stage).unwrap().unwrap();
+        s.agent_finished("now");
+        store.save_stage_session(&s).unwrap();
     }
 
     #[test]
@@ -85,7 +93,7 @@ mod tests {
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
 
         // Agent exits
-        session::on_agent_exited::execute(store.as_ref(), "task-1", "planning").unwrap();
+        simulate_agent_exit(&store, "task-1", "planning");
 
         // Simulate agent activity (normally done by persist_activity_flags in poll_agents)
         let mut s = store
@@ -158,7 +166,7 @@ mod tests {
         session::on_spawn_starting::execute(store.as_ref(), &iter_svc, "task-1", "planning", None)
             .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
-        session::on_agent_exited::execute(store.as_ref(), "task-1", "planning").unwrap();
+        simulate_agent_exit(&store, "task-1", "planning");
 
         let ctx = session::on_spawn_starting::execute(
             store.as_ref(),
@@ -197,9 +205,9 @@ mod tests {
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-2", "planning", 12346).unwrap();
-        session::on_agent_exited::execute(store.as_ref(), "task-2", "planning").unwrap();
+        simulate_agent_exit(&store, "task-2", "planning");
 
-        let running = session::get_running_agents::execute(store.as_ref()).unwrap();
+        let running = query_sessions::get_running_agent_pids(store.as_ref()).unwrap();
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].0, "task-1");
         assert_eq!(running[0].2, 12345);
@@ -253,7 +261,7 @@ mod tests {
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
-        session::on_agent_exited::execute(store.as_ref(), "task-1", "planning").unwrap();
+        simulate_agent_exit(&store, "task-1", "planning");
 
         session::on_spawn_starting::execute(
             store.as_ref(),
@@ -383,7 +391,7 @@ mod tests {
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "review", 12345).unwrap();
-        session::on_agent_exited::execute(store.as_ref(), "task-1", "review").unwrap();
+        simulate_agent_exit(&store, "task-1", "review");
 
         let mut s = store
             .get_stage_session("task-1", "review")
@@ -428,7 +436,7 @@ mod tests {
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "review", 12345).unwrap();
-        session::on_agent_exited::execute(store.as_ref(), "task-1", "review").unwrap();
+        simulate_agent_exit(&store, "task-1", "review");
 
         let mut s = store
             .get_stage_session("task-1", "review")
@@ -480,7 +488,7 @@ mod tests {
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "review", 12345).unwrap();
-        session::on_agent_exited::execute(store.as_ref(), "task-1", "review").unwrap();
+        simulate_agent_exit(&store, "task-1", "review");
 
         let mut s = store
             .get_stage_session("task-1", "review")
@@ -622,7 +630,7 @@ mod tests {
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
-        session::on_agent_exited::execute(store.as_ref(), "task-1", "planning").unwrap();
+        simulate_agent_exit(&store, "task-1", "planning");
 
         let s = store
             .get_stage_session("task-1", "planning")
@@ -660,7 +668,7 @@ mod tests {
         )
         .unwrap();
         session::on_agent_spawned::execute(store.as_ref(), "task-1", "work", 12345).unwrap();
-        session::on_agent_exited::execute(store.as_ref(), "task-1", "work").unwrap();
+        simulate_agent_exit(&store, "task-1", "work");
 
         let s = store.get_stage_session("task-1", "work").unwrap().unwrap();
         assert_eq!(s.session_state, SessionState::Active);

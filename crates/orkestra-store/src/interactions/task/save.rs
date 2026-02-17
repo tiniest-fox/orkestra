@@ -4,12 +4,11 @@ use orkestra_types::domain::Task;
 use rusqlite::{params, Connection};
 
 use crate::interface::{WorkflowError, WorkflowResult};
-use crate::types::phase_to_str;
 
 pub fn execute(conn: &Connection, task: &Task) -> WorkflowResult<()> {
     let status_json =
         serde_json::to_string(&task.status).map_err(|e| WorkflowError::Storage(e.to_string()))?;
-    let phase_str = phase_to_str(task.phase);
+    let phase_str = task.phase.as_str();
     let artifacts_json = serde_json::to_string(&task.artifacts)
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
     let depends_json = serde_json::to_string(&task.depends_on)

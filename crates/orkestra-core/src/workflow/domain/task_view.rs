@@ -174,11 +174,11 @@ fn compute_phase_icon(task: &Task) -> Option<String> {
         return None;
     }
     match task.phase {
-        Phase::Committing => Some("committing".to_string()),
-        Phase::Integrating => Some("integrating".to_string()),
+        Phase::Committing
+        | Phase::Integrating
+        | Phase::SettingUp
+        | Phase::AwaitingSetup => Some(task.phase.to_string()),
         Phase::Finishing => Some("system_busy".to_string()),
-        Phase::SettingUp => Some("setting_up".to_string()),
-        Phase::AwaitingSetup => Some("awaiting_setup".to_string()),
         Phase::Idle | Phase::Finished if !task.status.is_waiting_on_children() => {
             Some("waiting_for_orchestrator".to_string())
         }

@@ -3,6 +3,9 @@
 //! Status represents the current state of a task in the workflow.
 //! Active tasks are in a named stage; terminal states are fixed.
 
+use std::fmt;
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 
 /// Current status of a task in the workflow.
@@ -121,8 +124,8 @@ impl Status {
 // depends on the workflow configuration. Use `Status::active(workflow.first_stage().name)`
 // to create the initial status for a task.
 
-impl std::fmt::Display for Status {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Status {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Status::Active { stage } => write!(f, "{stage}"),
             Status::WaitingOnChildren { stage } => {
@@ -148,19 +151,61 @@ impl std::fmt::Display for Status {
     }
 }
 
-impl std::fmt::Display for Phase {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Phase {
+    /// Canonical string representation of this phase.
+    ///
+    /// This is the single source of truth for phase-to-string mapping.
+    /// Used by `Display`, `FromStr`, database serialization, and frontend icons.
+    pub fn as_str(&self) -> &'static str {
         match self {
-            Phase::AwaitingSetup => write!(f, "awaiting_setup"),
-            Phase::SettingUp => write!(f, "setting_up"),
-            Phase::Idle => write!(f, "idle"),
-            Phase::AgentWorking => write!(f, "agent_working"),
-            Phase::AwaitingReview => write!(f, "awaiting_review"),
-            Phase::Interrupted => write!(f, "interrupted"),
-            Phase::Integrating => write!(f, "integrating"),
-            Phase::Finishing => write!(f, "finishing"),
-            Phase::Committing => write!(f, "committing"),
-            Phase::Finished => write!(f, "finished"),
+            Phase::AwaitingSetup => "awaiting_setup",
+            Phase::SettingUp => "setting_up",
+            Phase::Idle => "idle",
+            Phase::AgentWorking => "agent_working",
+            Phase::AwaitingReview => "awaiting_review",
+            Phase::Interrupted => "interrupted",
+            Phase::Integrating => "integrating",
+            Phase::Finishing => "finishing",
+            Phase::Committing => "committing",
+            Phase::Finished => "finished",
+        }
+    }
+}
+
+impl fmt::Display for Phase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Error returned when parsing an unknown phase string.
+#[derive(Debug, Clone)]
+pub struct ParsePhaseError(pub String);
+
+impl fmt::Display for ParsePhaseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "unknown phase: '{}'", self.0)
+    }
+}
+
+impl std::error::Error for ParsePhaseError {}
+
+impl FromStr for Phase {
+    type Err = ParsePhaseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "awaiting_setup" => Ok(Phase::AwaitingSetup),
+            "setting_up" => Ok(Phase::SettingUp),
+            "idle" => Ok(Phase::Idle),
+            "agent_working" => Ok(Phase::AgentWorking),
+            "awaiting_review" => Ok(Phase::AwaitingReview),
+            "interrupted" => Ok(Phase::Interrupted),
+            "integrating" => Ok(Phase::Integrating),
+            "finishing" => Ok(Phase::Finishing),
+            "committing" => Ok(Phase::Committing),
+            "finished" => Ok(Phase::Finished),
+            _ => Err(ParsePhaseError(s.to_string())),
         }
     }
 }

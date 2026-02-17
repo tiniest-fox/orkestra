@@ -1,9 +1,9 @@
 //! Convert a `SQLite` row to a `Task` or `TaskHeader`.
 
-use orkestra_types::domain::{Task, TaskHeader};
-use orkestra_types::runtime::Status;
+use std::str::FromStr;
 
-use crate::types::parse_phase;
+use orkestra_types::domain::{Task, TaskHeader};
+use orkestra_types::runtime::{Phase, Status};
 
 /// Convert a full task row (19 columns) to a `Task`.
 ///
@@ -25,7 +25,9 @@ pub fn execute(row: &rusqlite::Row) -> rusqlite::Result<Task> {
         title: row.get(1)?,
         description: row.get(2)?,
         status: serde_json::from_str(&status_json).unwrap_or(Status::active("unknown")),
-        phase: parse_phase(&phase_str)?,
+        phase: Phase::from_str(&phase_str).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, e.into())
+        })?,
         artifacts: serde_json::from_str(&artifacts_json).unwrap_or_default(),
         parent_id: row.get(6)?,
         short_id: row.get(16)?,
@@ -62,7 +64,9 @@ pub fn execute_header(row: &rusqlite::Row) -> rusqlite::Result<TaskHeader> {
         title: row.get(1)?,
         description: row.get(2)?,
         status: serde_json::from_str(&status_json).unwrap_or(Status::active("unknown")),
-        phase: parse_phase(&phase_str)?,
+        phase: Phase::from_str(&phase_str).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, e.into())
+        })?,
         parent_id: row.get(5)?,
         short_id: row.get(15)?,
         depends_on: serde_json::from_str(&depends_json).unwrap_or_default(),

@@ -71,7 +71,7 @@ When the task is complex enough to decompose (the common case):
 
 **`content` field**: Write a task summary (2-3 sentences: what the task is, why it matters, key constraints) followed by the full technical design. This becomes the `breakdown` artifact on the parent task.
 
-**`subtasks` array**: Break the work into 3-7 subtasks, including at least one dedicated verification subtask (see Verification Strategy). Each subtask's `detailed_instructions` is a **self-contained implementation brief** that becomes the worker's primary context. Include:
+**`subtasks` array**: Break the work into subtasks, including at least one dedicated verification subtask (see Verification Strategy). Each subtask's `detailed_instructions` is a **self-contained implementation brief** that becomes the worker's primary context. Include:
 
 1. **Task Summary** (2-3 sentences) — What the overarching task is, so the worker can make design decisions in context
 2. **What this subtask accomplishes** — The specific goal and acceptance criteria

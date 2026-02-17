@@ -131,43 +131,31 @@ export interface WorkflowConfig {
 }
 
 // =============================================================================
-// Task Status and Phase
+// Task State
 // =============================================================================
 
 /**
- * Task status - where the task is in the workflow.
- * Uses snake_case for type field to match Rust's serde serialization.
- *
- * - active: Task is in a specific stage
- * - waiting_on_children: Task is waiting for subtasks to complete
- * - done: Task completed successfully
- * - archived: Task completed and integrated (branch merged)
- * - failed: Task failed with an error
- * - blocked: Task is blocked waiting for something
+ * Unified task state - replaces the old Status + Phase split.
+ * Each variant has exactly one meaning. Uses snake_case type field
+ * to match Rust's `#[serde(tag = "type", rename_all = "snake_case")]`.
  */
-export type WorkflowTaskStatus =
-  | { type: "active"; stage: string }
-  | { type: "waiting_on_children" }
+export type TaskState =
+  | { type: "awaiting_setup"; stage: string }
+  | { type: "setting_up"; stage: string }
+  | { type: "queued"; stage: string }
+  | { type: "agent_working"; stage: string }
+  | { type: "finishing"; stage: string }
+  | { type: "committing"; stage: string }
+  | { type: "integrating" }
+  | { type: "awaiting_approval"; stage: string }
+  | { type: "awaiting_question_answer"; stage: string }
+  | { type: "awaiting_rejection_confirmation"; stage: string }
+  | { type: "interrupted"; stage: string }
+  | { type: "waiting_on_children"; stage: string }
   | { type: "done" }
   | { type: "archived" }
   | { type: "failed"; error?: string }
   | { type: "blocked"; reason?: string };
-
-/**
- * Task phase - what's happening right now.
- * Uses snake_case to match Rust's serde serialization.
- */
-export type WorkflowTaskPhase =
-  | "awaiting_setup"
-  | "setting_up"
-  | "idle"
-  | "agent_working"
-  | "awaiting_review"
-  | "integrating"
-  | "interrupted"
-  | "finishing"
-  | "committing"
-  | "finished";
 
 // =============================================================================
 // Artifacts
@@ -325,10 +313,8 @@ export interface WorkflowTask {
   title: string;
   /** Task description. */
   description: string;
-  /** Current status (which stage, or terminal state). */
-  status: WorkflowTaskStatus;
-  /** Current phase (what's happening now). */
-  phase: WorkflowTaskPhase;
+  /** Unified task state (replaces old status + phase). */
+  state: TaskState;
   /** Artifacts produced so far, keyed by artifact name. */
   artifacts: Record<string, WorkflowArtifact>;
   /** Parent task ID (for subtasks). */

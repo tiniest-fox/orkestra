@@ -11,8 +11,7 @@ export function createMockWorkflowTask(overrides?: Partial<WorkflowTask>): Workf
     id: "test-task-123",
     title: "Test Task",
     description: "A test task description",
-    status: { type: "active", stage: "planning" },
-    phase: "idle",
+    state: { type: "queued", stage: "planning" },
     artifacts: {},
     depends_on: [],
     base_branch: "main",
@@ -56,54 +55,73 @@ export function createMockWorkflowTaskView(
   const { derived: derivedOverrides, ...taskOverrides } = overrides ?? {};
   const task = createMockWorkflowTask(taskOverrides);
 
-  // Infer derived state from task status/phase when not explicitly overridden
-  const status = task.status;
+  // Infer derived state from task state when not explicitly overridden
+  const { state } = task;
   const derivedDefaults: Partial<DerivedTaskState> = {};
-  if (status.type === "active" && "stage" in status) {
-    derivedDefaults.current_stage = status.stage;
+
+  // Extract stage from state (most variants carry a stage)
+  if ("stage" in state) {
+    derivedDefaults.current_stage = state.stage;
   }
-  if (status.type === "done") {
+
+  // Terminal states
+  if (state.type === "done") {
     derivedDefaults.is_done = true;
     derivedDefaults.is_terminal = true;
     derivedDefaults.current_stage = null;
   }
-  if (status.type === "archived") {
+  if (state.type === "archived") {
     derivedDefaults.is_archived = true;
     derivedDefaults.is_terminal = true;
     derivedDefaults.current_stage = null;
   }
-  if (status.type === "failed") {
+  if (state.type === "failed") {
     derivedDefaults.is_failed = true;
     derivedDefaults.is_terminal = true;
     derivedDefaults.current_stage = null;
   }
-  if (status.type === "blocked") {
+  if (state.type === "blocked") {
     derivedDefaults.is_blocked = true;
     derivedDefaults.is_terminal = true;
     derivedDefaults.current_stage = null;
   }
-  if (task.phase === "awaiting_review") {
+
+  // Active states
+  if (
+    state.type === "awaiting_approval" ||
+    state.type === "awaiting_question_answer" ||
+    state.type === "awaiting_rejection_confirmation"
+  ) {
     derivedDefaults.needs_review = true;
   }
-  if (task.phase === "agent_working") {
+  if (state.type === "awaiting_question_answer") {
+    derivedDefaults.has_questions = true;
+  }
+  if (state.type === "agent_working") {
     derivedDefaults.is_working = true;
   }
-  if (task.phase === "committing") {
+  if (state.type === "interrupted") {
+    derivedDefaults.is_interrupted = true;
+  }
+  if (state.type === "waiting_on_children") {
+    derivedDefaults.is_waiting_on_children = true;
+  }
+  if (state.type === "committing") {
     derivedDefaults.phase_icon = "committing";
     derivedDefaults.is_system_active = true;
   }
-  if (task.phase === "integrating") {
+  if (state.type === "integrating") {
     derivedDefaults.phase_icon = "integrating";
     derivedDefaults.is_system_active = true;
   }
-  if (task.phase === "finishing") {
+  if (state.type === "finishing") {
     derivedDefaults.phase_icon = "system_busy";
     derivedDefaults.is_system_active = true;
   }
-  if (task.phase === "setting_up") {
+  if (state.type === "setting_up") {
     derivedDefaults.phase_icon = "setting_up";
   }
-  if (task.phase === "awaiting_setup") {
+  if (state.type === "awaiting_setup") {
     derivedDefaults.phase_icon = "awaiting_setup";
   }
 

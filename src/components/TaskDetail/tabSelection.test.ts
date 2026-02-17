@@ -69,7 +69,7 @@ describe("buildTabs", () => {
 describe("smartDefaultTab", () => {
   it("returns PR tab for done task with pr_url", () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "done" },
+      state: { type: "done" },
       pr_url: "https://github.com/test/repo/pull/1",
       artifacts: { plan: createMockArtifact("plan", "...") },
     });
@@ -80,7 +80,7 @@ describe("smartDefaultTab", () => {
 
   it("returns Artifacts tab for done task without pr_url", () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "done" },
+      state: { type: "done" },
       artifacts: { plan: createMockArtifact("plan", "...") },
     });
     const tabs = buildTabs(task);
@@ -90,7 +90,7 @@ describe("smartDefaultTab", () => {
 
   it("returns PR tab for archived task with pr_url", () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "archived" },
+      state: { type: "archived" },
       pr_url: "https://github.com/test/repo/pull/1",
       artifacts: { plan: createMockArtifact("plan", "...") },
     });
@@ -101,7 +101,7 @@ describe("smartDefaultTab", () => {
 
   it("returns Details tab for failed tasks", () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "failed", error: "Something went wrong" },
+      state: { type: "failed", error: "Something went wrong" },
     });
     const tabs = buildTabs(task);
     const defaultTab = smartDefaultTab(task, tabs);
@@ -110,7 +110,7 @@ describe("smartDefaultTab", () => {
 
   it("returns Subtasks tab for waiting_on_children tasks", () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "waiting_on_children" },
+      state: { type: "waiting_on_children", stage: "planning" },
       derived: {
         subtask_progress: {
           total: 3,
@@ -132,8 +132,7 @@ describe("smartDefaultTab", () => {
 
   it("returns Logs tab for working tasks", () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "active", stage: "work" },
-      phase: "agent_working",
+      state: { type: "agent_working", stage: "work" },
     });
     const tabs = buildTabs(task);
     const defaultTab = smartDefaultTab(task, tabs);
@@ -142,7 +141,7 @@ describe("smartDefaultTab", () => {
 
   it("falls back to Details if preferred tab not in list", () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "done" },
+      state: { type: "done" },
       artifacts: {}, // No artifacts, so Artifacts tab won't exist
     });
     const tabs = buildTabs(task);

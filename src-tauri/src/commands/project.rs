@@ -343,7 +343,7 @@ fn handle_orchestrator_event(
             if let Ok(task) = registry.with_project(window_label, |state| {
                 state.api()?.get_task(task_id).map_err(Into::into)
             }) {
-                if task.phase.needs_human_action() {
+                if task.state.needs_human_action() {
                     let notifier = TaskNotifier::new(app_handle, window_label);
                     notifier.stage_review_needed(task_id, &task.title, stage, output_type);
 

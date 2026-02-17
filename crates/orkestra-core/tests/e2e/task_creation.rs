@@ -8,7 +8,7 @@ use std::path::Path;
 
 use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::ports::GitError;
-use orkestra_core::workflow::runtime::Phase;
+use orkestra_core::workflow::runtime::TaskState;
 
 use crate::helpers::TestEnv;
 
@@ -99,10 +99,10 @@ fn test_task_starts_in_setting_up() {
         .create_task("Phase test", "Verify initial phase", None)
         .expect("Should create task");
 
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingSetup,
-        "Task should start in AwaitingSetup phase"
+    assert!(
+        matches!(task.state, TaskState::AwaitingSetup { .. }),
+        "Task should start in AwaitingSetup state, got: {:?}",
+        task.state
     );
 }
 
@@ -156,8 +156,8 @@ fn test_setup_script_failure_fails_task() {
 
     assert!(
         task.is_failed(),
-        "Task should be failed when setup script exits with error, got status: {:?}",
-        task.status
+        "Task should be failed when setup script exits with error, got state: {:?}",
+        task.state
     );
 }
 
@@ -278,10 +278,10 @@ fn test_task_setup_syncs_base_branch() {
     );
 
     // Verify task setup succeeded
-    assert_eq!(
-        task.phase,
-        Phase::Idle,
-        "Task should be in Idle phase after setup"
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued after setup, got: {:?}",
+        task.state
     );
 }
 
@@ -302,10 +302,10 @@ fn test_task_setup_continues_on_sync_failure() {
     );
 
     // Verify task setup still succeeded despite sync failure
-    assert_eq!(
-        task.phase,
-        Phase::Idle,
-        "Task should be in Idle phase despite sync failure"
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued despite sync failure, got: {:?}",
+        task.state
     );
     assert!(
         !task.is_failed(),
@@ -369,9 +369,9 @@ fn test_task_setup_syncs_custom_base_branch() {
     );
 
     // Verify task setup succeeded
-    assert_eq!(
-        task.phase,
-        Phase::Idle,
-        "Task should be in Idle phase after setup"
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued after setup, got: {:?}",
+        task.state
     );
 }

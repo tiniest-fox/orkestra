@@ -5,7 +5,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Artifact, Phase};
+use crate::workflow::runtime::{Artifact, TaskState};
 use crate::workflow::stage::interactions as stage;
 
 pub fn execute(
@@ -19,10 +19,10 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if task.phase != Phase::AgentWorking {
+    if !matches!(task.state, TaskState::AgentWorking { .. }) {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot process script output in phase {:?}",
-            task.phase
+            "Cannot process script output in state {} (expected AgentWorking)",
+            task.state
         )));
     }
 
@@ -59,10 +59,9 @@ pub fn execute(
 
     orkestra_debug!(
         "action",
-        "process_script_success {} complete: phase={:?}, status={:?}",
+        "process_script_success {} complete: state={}",
         task_id,
-        task.phase,
-        task.status
+        task.state
     );
 
     store.save_task(&task)?;

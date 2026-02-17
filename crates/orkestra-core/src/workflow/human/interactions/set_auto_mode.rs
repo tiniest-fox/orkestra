@@ -6,7 +6,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, QuestionAnswer, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Outcome, Phase};
+use crate::workflow::runtime::{Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
 
 #[allow(clippy::too_many_lines)]
@@ -32,7 +32,7 @@ pub fn execute(
     task.auto_mode = auto_mode;
 
     // When enabling auto mode, handle immediate side effects
-    if auto_mode && task.phase == Phase::AwaitingReview {
+    if auto_mode && task.is_awaiting_review() {
         if let Some(current_stage) = task.current_stage().map(String::from) {
             // Check if there are pending questions
             let has_pending_questions = store
@@ -63,7 +63,7 @@ pub fn execute(
                     &current_stage,
                     Some(IterationTrigger::Answers { answers }),
                 )?;
-                task.phase = Phase::Idle;
+                task.state = TaskState::queued(&current_stage);
                 task.updated_at = now;
             } else if let Some((from_stage, target, feedback)) =
                 stage::pending_rejection_review::execute(store, &task.id, &current_stage)?

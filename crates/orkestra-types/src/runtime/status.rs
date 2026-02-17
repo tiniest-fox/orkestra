@@ -1,146 +1,290 @@
-//! Generic task status.
+//! Task state — unified enum replacing the old Status + Phase pair.
 //!
-//! Status represents the current state of a task in the workflow.
-//! Active tasks are in a named stage; terminal states are fixed.
+//! `TaskState` is the single source of truth for what a task is doing.
+//! Each variant has exactly one meaning. No more cross-referencing
+//! Status + Phase to determine the actual situation.
 
 use std::fmt;
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-/// Current status of a task in the workflow.
+/// The complete state of a task in the workflow.
 ///
-/// This is a stage-agnostic version of task status. Instead of having
-/// `Planning`, `Working`, etc., we have `Active { stage }` with the
-/// stage name as a field.
+/// Every non-terminal variant (except `Integrating`) carries the stage name.
+/// Terminal variants carry optional context (error message, block reason).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum Status {
-    /// Task is actively being worked on in a specific stage.
-    Active {
-        /// The current stage name (e.g., "planning", "work").
-        stage: String,
-    },
+pub enum TaskState {
+    // -- Setup --
+    /// Task waiting for setup to be triggered by orchestrator.
+    /// For subtasks, waits until dependencies are satisfied.
+    AwaitingSetup { stage: String },
 
-    /// Task is waiting for child tasks to complete.
-    ///
-    /// Retains the stage the parent will resume from once children finish,
-    /// so the kanban board can display it in the correct column.
-    WaitingOnChildren {
-        /// The stage the parent is logically in while waiting (typically the
-        /// stage after the breakdown stage, e.g. "work").
-        stage: String,
-    },
+    /// Setup actively in progress (worktree creation, setup script).
+    SettingUp { stage: String },
 
-    /// Task completed successfully.
+    // -- Queued --
+    /// Ready for orchestrator to spawn an agent. Waiting in line.
+    Queued { stage: String },
+
+    // -- Active work --
+    /// Agent is currently working on this task.
+    AgentWorking { stage: String },
+
+    /// Agent completed, output stored. Checking if commit needed.
+    Finishing { stage: String },
+
+    /// Background commit thread is running.
+    Committing { stage: String },
+
+    /// Integration (merge) is in progress.
+    Integrating,
+
+    // -- Awaiting human --
+    /// Stage output ready for human approval.
+    AwaitingApproval { stage: String },
+
+    /// Agent asked questions that need human answers.
+    AwaitingQuestionAnswer { stage: String },
+
+    /// Reviewer agent rejected; awaiting human confirmation of rejection.
+    AwaitingRejectionConfirmation { stage: String },
+
+    /// Agent was interrupted by the user. Awaiting resume.
+    Interrupted { stage: String },
+
+    // -- Parent --
+    /// Waiting for child tasks to complete before advancing.
+    WaitingOnChildren { stage: String },
+
+    // -- Terminal --
+    /// Task completed successfully (all stages done).
     Done,
 
-    /// Task was completed and integrated (branch merged).
-    /// This is a terminal state - archived tasks are hidden from the main view.
+    /// Task completed and integrated (branch merged).
     Archived,
 
     /// Task failed and cannot continue.
     Failed {
-        /// Error message describing the failure.
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
 
     /// Task is blocked on external dependency.
     Blocked {
-        /// Reason for blocking.
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
 }
 
-impl Status {
-    /// Create an active status in the given stage.
-    pub fn active(stage: impl Into<String>) -> Self {
-        Self::Active {
+// ============================================================================
+// Constructors
+// ============================================================================
+
+impl TaskState {
+    pub fn awaiting_setup(stage: impl Into<String>) -> Self {
+        Self::AwaitingSetup {
             stage: stage.into(),
         }
     }
 
-    /// Create a failed status with an error message.
-    pub fn failed(error: impl Into<String>) -> Self {
-        Self::Failed {
-            error: Some(error.into()),
+    pub fn setting_up(stage: impl Into<String>) -> Self {
+        Self::SettingUp {
+            stage: stage.into(),
         }
     }
 
-    /// Create a blocked status with a reason.
-    pub fn blocked(reason: impl Into<String>) -> Self {
-        Self::Blocked {
-            reason: Some(reason.into()),
+    pub fn queued(stage: impl Into<String>) -> Self {
+        Self::Queued {
+            stage: stage.into(),
         }
     }
 
-    /// Create a waiting-on-children status in the given stage.
+    pub fn agent_working(stage: impl Into<String>) -> Self {
+        Self::AgentWorking {
+            stage: stage.into(),
+        }
+    }
+
+    pub fn finishing(stage: impl Into<String>) -> Self {
+        Self::Finishing {
+            stage: stage.into(),
+        }
+    }
+
+    pub fn committing(stage: impl Into<String>) -> Self {
+        Self::Committing {
+            stage: stage.into(),
+        }
+    }
+
+    pub fn awaiting_approval(stage: impl Into<String>) -> Self {
+        Self::AwaitingApproval {
+            stage: stage.into(),
+        }
+    }
+
+    pub fn awaiting_question_answer(stage: impl Into<String>) -> Self {
+        Self::AwaitingQuestionAnswer {
+            stage: stage.into(),
+        }
+    }
+
+    pub fn awaiting_rejection_confirmation(stage: impl Into<String>) -> Self {
+        Self::AwaitingRejectionConfirmation {
+            stage: stage.into(),
+        }
+    }
+
+    pub fn interrupted(stage: impl Into<String>) -> Self {
+        Self::Interrupted {
+            stage: stage.into(),
+        }
+    }
+
     pub fn waiting_on_children(stage: impl Into<String>) -> Self {
         Self::WaitingOnChildren {
             stage: stage.into(),
         }
     }
 
-    /// Get the current stage name, if active or waiting on children.
-    pub fn stage(&self) -> Option<&str> {
-        match self {
-            Status::Active { stage } | Status::WaitingOnChildren { stage } => Some(stage),
-            _ => None,
+    pub fn failed(error: impl Into<String>) -> Self {
+        Self::Failed {
+            error: Some(error.into()),
         }
     }
 
-    /// Check if this is a terminal status (task is done/archived/failed/blocked).
+    pub fn blocked(reason: impl Into<String>) -> Self {
+        Self::Blocked {
+            reason: Some(reason.into()),
+        }
+    }
+}
+
+// ============================================================================
+// Query methods
+// ============================================================================
+
+impl TaskState {
+    /// Get the current stage name, if not terminal or integrating.
+    pub fn stage(&self) -> Option<&str> {
+        match self {
+            Self::AwaitingSetup { stage }
+            | Self::SettingUp { stage }
+            | Self::Queued { stage }
+            | Self::AgentWorking { stage }
+            | Self::Finishing { stage }
+            | Self::Committing { stage }
+            | Self::AwaitingApproval { stage }
+            | Self::AwaitingQuestionAnswer { stage }
+            | Self::AwaitingRejectionConfirmation { stage }
+            | Self::Interrupted { stage }
+            | Self::WaitingOnChildren { stage } => Some(stage),
+            Self::Integrating
+            | Self::Done
+            | Self::Archived
+            | Self::Failed { .. }
+            | Self::Blocked { .. } => None,
+        }
+    }
+
+    /// Check if this is a terminal state (task will not progress further).
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
-            Status::Done | Status::Archived | Status::Failed { .. } | Status::Blocked { .. }
+            Self::Done | Self::Archived | Self::Failed { .. } | Self::Blocked { .. }
         )
     }
 
-    /// Check if the task is archived (completed and integrated).
-    pub fn is_archived(&self) -> bool {
-        matches!(self, Status::Archived)
+    /// Check if a human action is needed to proceed.
+    pub fn needs_human_action(&self) -> bool {
+        matches!(
+            self,
+            Self::AwaitingApproval { .. }
+                | Self::AwaitingQuestionAnswer { .. }
+                | Self::AwaitingRejectionConfirmation { .. }
+                | Self::Interrupted { .. }
+        )
     }
 
-    /// Check if this is an active status (task is in a stage).
+    /// Check if an agent is currently working.
+    pub fn has_active_agent(&self) -> bool {
+        matches!(self, Self::AgentWorking { .. })
+    }
+
+    /// Returns true for states where the system is doing background work
+    /// (finishing, committing, integrating) but no agent is running.
+    pub fn is_system_active(&self) -> bool {
+        matches!(
+            self,
+            Self::Finishing { .. } | Self::Committing { .. } | Self::Integrating
+        )
+    }
+
+    pub fn is_done(&self) -> bool {
+        matches!(self, Self::Done)
+    }
+
+    pub fn is_archived(&self) -> bool {
+        matches!(self, Self::Archived)
+    }
+
+    pub fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed { .. })
+    }
+
+    pub fn is_blocked(&self) -> bool {
+        matches!(self, Self::Blocked { .. })
+    }
+
+    pub fn is_waiting_on_children(&self) -> bool {
+        matches!(self, Self::WaitingOnChildren { .. })
+    }
+
+    /// Check if the task is in an active stage (not terminal, not waiting on children).
     pub fn is_active(&self) -> bool {
-        matches!(self, Status::Active { .. })
+        !self.is_terminal() && !self.is_waiting_on_children()
     }
 
     /// Check if the task can transition to a new stage.
     pub fn can_transition(&self) -> bool {
         !self.is_terminal()
     }
-
-    /// Check if the task is waiting for children.
-    pub fn is_waiting_on_children(&self) -> bool {
-        matches!(self, Status::WaitingOnChildren { .. })
-    }
 }
 
-// Note: Status deliberately does not implement Default because the first stage
-// depends on the workflow configuration. Use `Status::active(workflow.first_stage().name)`
-// to create the initial status for a task.
+// ============================================================================
+// Display
+// ============================================================================
 
-impl fmt::Display for Status {
+impl fmt::Display for TaskState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Status::Active { stage } => write!(f, "{stage}"),
-            Status::WaitingOnChildren { stage } => {
-                write!(f, "waiting_on_children ({stage})")
+            Self::AwaitingSetup { stage } => write!(f, "awaiting_setup ({stage})"),
+            Self::SettingUp { stage } => write!(f, "setting_up ({stage})"),
+            Self::Queued { stage } => write!(f, "queued ({stage})"),
+            Self::AgentWorking { stage } => write!(f, "agent_working ({stage})"),
+            Self::Finishing { stage } => write!(f, "finishing ({stage})"),
+            Self::Committing { stage } => write!(f, "committing ({stage})"),
+            Self::Integrating => write!(f, "integrating"),
+            Self::AwaitingApproval { stage } => write!(f, "awaiting_approval ({stage})"),
+            Self::AwaitingQuestionAnswer { stage } => {
+                write!(f, "awaiting_question_answer ({stage})")
             }
-            Status::Done => write!(f, "done"),
-            Status::Archived => write!(f, "archived"),
-            Status::Failed { error } => {
+            Self::AwaitingRejectionConfirmation { stage } => {
+                write!(f, "awaiting_rejection_confirmation ({stage})")
+            }
+            Self::Interrupted { stage } => write!(f, "interrupted ({stage})"),
+            Self::WaitingOnChildren { stage } => write!(f, "waiting_on_children ({stage})"),
+            Self::Done => write!(f, "done"),
+            Self::Archived => write!(f, "archived"),
+            Self::Failed { error } => {
                 if let Some(err) = error {
                     write!(f, "failed: {err}")
                 } else {
                     write!(f, "failed")
                 }
             }
-            Status::Blocked { reason } => {
+            Self::Blocked { reason } => {
                 if let Some(r) = reason {
                     write!(f, "blocked: {r}")
                 } else {
@@ -151,240 +295,129 @@ impl fmt::Display for Status {
     }
 }
 
-impl Phase {
-    /// Canonical string representation of this phase.
-    ///
-    /// This is the single source of truth for phase-to-string mapping.
-    /// Used by `Display`, `FromStr`, database serialization, and frontend icons.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Phase::AwaitingSetup => "awaiting_setup",
-            Phase::SettingUp => "setting_up",
-            Phase::Idle => "idle",
-            Phase::AgentWorking => "agent_working",
-            Phase::AwaitingReview => "awaiting_review",
-            Phase::Interrupted => "interrupted",
-            Phase::Integrating => "integrating",
-            Phase::Finishing => "finishing",
-            Phase::Committing => "committing",
-            Phase::Finished => "finished",
-        }
-    }
-}
-
-impl fmt::Display for Phase {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// Error returned when parsing an unknown phase string.
-#[derive(Debug, Clone)]
-pub struct ParsePhaseError(pub String);
-
-impl fmt::Display for ParsePhaseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "unknown phase: '{}'", self.0)
-    }
-}
-
-impl std::error::Error for ParsePhaseError {}
-
-impl FromStr for Phase {
-    type Err = ParsePhaseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "awaiting_setup" => Ok(Phase::AwaitingSetup),
-            "setting_up" => Ok(Phase::SettingUp),
-            "idle" => Ok(Phase::Idle),
-            "agent_working" => Ok(Phase::AgentWorking),
-            "awaiting_review" => Ok(Phase::AwaitingReview),
-            "interrupted" => Ok(Phase::Interrupted),
-            "integrating" => Ok(Phase::Integrating),
-            "finishing" => Ok(Phase::Finishing),
-            "committing" => Ok(Phase::Committing),
-            "finished" => Ok(Phase::Finished),
-            _ => Err(ParsePhaseError(s.to_string())),
-        }
-    }
-}
-
-/// Phase within a stage - what the task is currently doing.
-///
-/// This is orthogonal to Status and tracks the sub-state within a stage.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum Phase {
-    /// Task waiting for setup to be triggered by orchestrator.
-    /// For subtasks, waits until dependencies are satisfied.
-    AwaitingSetup,
-
-    /// Setup actively in progress (worktree creation, setup script).
-    /// Orchestrator will not pick up tasks in this phase.
-    SettingUp,
-
-    /// No active work - waiting to start or between operations.
-    #[default]
-    Idle,
-
-    /// Agent is currently working.
-    AgentWorking,
-
-    /// Output is ready for human review.
-    AwaitingReview,
-
-    /// Agent was interrupted by the user. Awaiting resume.
-    Interrupted,
-
-    /// Integration (merge) is in progress.
-    Integrating,
-
-    /// Agent completed, output stored on iteration. Check if commit needed.
-    Finishing,
-
-    /// Background commit thread is running. Tick skips these.
-    Committing,
-
-    /// Stage complete — output ready to be processed, advance to next stage.
-    Finished,
-}
-
-impl Phase {
-    /// Check if a human action is needed.
-    pub fn needs_human_action(&self) -> bool {
-        matches!(self, Phase::AwaitingReview | Phase::Interrupted)
-    }
-
-    /// Check if an agent is currently working.
-    pub fn has_active_agent(&self) -> bool {
-        matches!(self, Phase::AgentWorking)
-    }
-
-    /// Returns true for phases where the system is doing background work
-    /// (committing, integrating, finishing) but no agent is running.
-    pub fn is_system_active(&self) -> bool {
-        matches!(
-            self,
-            Phase::Committing | Phase::Integrating | Phase::Finishing
-        )
-    }
-}
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_active_status() {
-        let status = Status::active("planning");
-        assert_eq!(status.stage(), Some("planning"));
-        assert!(status.is_active());
-        assert!(!status.is_terminal());
-        assert!(status.can_transition());
+    fn test_queued_state() {
+        let state = TaskState::queued("planning");
+        assert_eq!(state.stage(), Some("planning"));
+        assert!(state.is_active());
+        assert!(!state.is_terminal());
+        assert!(state.can_transition());
     }
 
     #[test]
-    fn test_terminal_statuses() {
-        assert!(Status::Done.is_terminal());
-        assert!(Status::Archived.is_terminal());
-        assert!(Status::failed("error").is_terminal());
-        assert!(Status::blocked("reason").is_terminal());
+    fn test_terminal_states() {
+        assert!(TaskState::Done.is_terminal());
+        assert!(TaskState::Archived.is_terminal());
+        assert!(TaskState::failed("error").is_terminal());
+        assert!(TaskState::blocked("reason").is_terminal());
 
-        assert!(!Status::Done.can_transition());
-        assert!(!Status::Archived.can_transition());
+        assert!(!TaskState::Done.can_transition());
+        assert!(!TaskState::Archived.can_transition());
     }
 
     #[test]
-    fn test_archived_status() {
-        let status = Status::Archived;
-        assert!(status.is_archived());
-        assert!(status.is_terminal());
-        assert!(!status.is_active());
-        assert!(!status.can_transition());
-        assert_eq!(status.to_string(), "archived");
-
-        // Test serialization
-        let json = serde_json::to_string(&status).unwrap();
-        assert!(json.contains("\"type\":\"archived\""));
-
-        let parsed: Status = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, status);
+    fn test_archived_state() {
+        let state = TaskState::Archived;
+        assert!(state.is_archived());
+        assert!(state.is_terminal());
+        assert!(!state.is_active());
+        assert!(!state.can_transition());
+        assert!(state.to_string().contains("archived"));
     }
 
     #[test]
     fn test_waiting_on_children() {
-        let status = Status::waiting_on_children("work");
-        assert!(!status.is_active());
-        assert!(!status.is_terminal());
-        assert!(status.is_waiting_on_children());
-        assert_eq!(status.stage(), Some("work"));
+        let state = TaskState::waiting_on_children("work");
+        assert!(!state.is_active());
+        assert!(!state.is_terminal());
+        assert!(state.is_waiting_on_children());
+        assert_eq!(state.stage(), Some("work"));
     }
 
     #[test]
-    fn test_status_serialization() {
-        let status = Status::active("work");
-        let json = serde_json::to_string(&status).unwrap();
-
-        assert!(json.contains("\"type\":\"active\""));
+    fn test_serialization() {
+        let state = TaskState::agent_working("work");
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"type\":\"agent_working\""));
         assert!(json.contains("\"stage\":\"work\""));
 
-        let parsed: Status = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, status);
+        let parsed: TaskState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, state);
     }
 
     #[test]
-    fn test_failed_status() {
-        let status = Status::failed("Something went wrong");
-        match status {
-            Status::Failed { error } => {
-                assert_eq!(error, Some("Something went wrong".into()));
-            }
-            _ => panic!("Expected Failed variant"),
-        }
+    fn test_done_serialization() {
+        let state = TaskState::Done;
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"type\":\"done\""));
+
+        let parsed: TaskState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, state);
     }
 
     #[test]
-    fn test_phase_default() {
-        let phase = Phase::default();
-        assert_eq!(phase, Phase::Idle);
-        assert!(!phase.needs_human_action());
-        assert!(!phase.has_active_agent());
+    fn test_failed_serialization() {
+        let state = TaskState::failed("Something went wrong");
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"type\":\"failed\""));
+        assert!(json.contains("\"error\":\"Something went wrong\""));
+
+        let parsed: TaskState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, state);
     }
 
     #[test]
-    fn test_phase_states() {
-        assert!(Phase::AwaitingReview.needs_human_action());
-        assert!(Phase::AgentWorking.has_active_agent());
-        assert!(!Phase::Idle.needs_human_action());
-        assert!(!Phase::Integrating.has_active_agent());
+    fn test_failed_no_error_serialization() {
+        let state = TaskState::Failed { error: None };
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(!json.contains("error"));
+
+        let parsed: TaskState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, state);
     }
 
     #[test]
-    fn test_phase_serialization() {
-        let phase = Phase::AwaitingReview;
-        let json = serde_json::to_string(&phase).unwrap();
-        assert_eq!(json, "\"awaiting_review\"");
-
-        let parsed: Phase = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, phase);
+    fn test_integrating_no_stage() {
+        let state = TaskState::Integrating;
+        assert!(state.stage().is_none());
+        assert!(state.is_system_active());
+        assert!(!state.is_terminal());
     }
 
     #[test]
-    fn test_phase_interrupted() {
-        let phase = Phase::Interrupted;
-        assert!(phase.needs_human_action());
-        assert!(!phase.has_active_agent());
-        assert_eq!(phase.to_string(), "interrupted");
+    fn test_needs_human_action() {
+        assert!(TaskState::awaiting_approval("review").needs_human_action());
+        assert!(TaskState::awaiting_question_answer("planning").needs_human_action());
+        assert!(TaskState::awaiting_rejection_confirmation("review").needs_human_action());
+        assert!(TaskState::interrupted("work").needs_human_action());
+
+        assert!(!TaskState::agent_working("work").needs_human_action());
+        assert!(!TaskState::queued("work").needs_human_action());
+        assert!(!TaskState::Done.needs_human_action());
     }
 
     #[test]
-    fn test_phase_interrupted_serialization() {
-        let phase = Phase::Interrupted;
-        let json = serde_json::to_string(&phase).unwrap();
-        assert_eq!(json, "\"interrupted\"");
+    fn test_system_active() {
+        assert!(TaskState::finishing("work").is_system_active());
+        assert!(TaskState::committing("work").is_system_active());
+        assert!(TaskState::Integrating.is_system_active());
 
-        let parsed: Phase = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, phase);
+        assert!(!TaskState::agent_working("work").is_system_active());
+        assert!(!TaskState::queued("work").is_system_active());
+    }
+
+    #[test]
+    fn test_has_active_agent() {
+        assert!(TaskState::agent_working("work").has_active_agent());
+        assert!(!TaskState::queued("work").has_active_agent());
+        assert!(!TaskState::finishing("work").has_active_agent());
     }
 }

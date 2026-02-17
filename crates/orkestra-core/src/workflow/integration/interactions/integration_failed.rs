@@ -4,7 +4,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Outcome, Phase, Status};
+use crate::workflow::runtime::{Outcome, TaskState};
 
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -18,9 +18,9 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if !task.is_done() {
+    if !task.is_done() && !matches!(task.state, TaskState::Integrating) {
         return Err(WorkflowError::InvalidTransition(
-            "Can only fail integration on Done task".into(),
+            "Can only fail integration on Done or Integrating task".into(),
         ));
     }
 
@@ -42,8 +42,7 @@ pub fn execute(
 
     // Move task back to recovery stage
     let now = chrono::Utc::now().to_rfc3339();
-    task.status = Status::active(&recovery_stage);
-    task.phase = Phase::Idle;
+    task.state = TaskState::queued(&recovery_stage);
     task.completed_at = None;
     task.updated_at = now;
 

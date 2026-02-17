@@ -59,7 +59,7 @@ fn compute_sibling_contexts(
                 title: sibling.title.clone(),
                 description: sibling.description.clone(),
                 dependency_relationship,
-                status_display: sibling_status_display(&sibling.status, sibling.phase).to_string(),
+                status_display: sibling_status_display(&sibling.state).to_string(),
             }
         })
         .collect()

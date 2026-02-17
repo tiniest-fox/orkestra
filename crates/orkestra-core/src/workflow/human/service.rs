@@ -122,7 +122,7 @@ mod tests {
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::domain::{IterationTrigger, Question};
     use crate::workflow::ports::WorkflowError;
-    use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
+    use crate::workflow::runtime::{Artifact, Outcome, TaskState};
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
 
@@ -149,14 +149,12 @@ mod tests {
         // Unit tests don't have an orchestrator to run setup, so we manually
         // transition the task. This is fine because these tests are testing
         // human actions (approve/reject), not setup behavior.
-        task.phase = Phase::Idle;
-        api.store.save_task(&task).unwrap();
 
         // Simulate agent producing artifact and going to review
         let now = chrono::Utc::now().to_rfc3339();
         task.artifacts
             .set(Artifact::new("plan", "The plan", "planning", &now));
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_approval("planning");
         api.store.save_task(&task).unwrap();
 
         (api, task)
@@ -170,7 +168,7 @@ mod tests {
 
         // Approve enters commit pipeline — actual advancement happens in finalize_stage_advancement
         assert_eq!(task.current_stage(), Some("planning"));
-        assert_eq!(task.phase, Phase::Finishing);
+        assert!(matches!(task.state, TaskState::Finishing { .. }));
     }
 
     #[test]
@@ -181,13 +179,8 @@ mod tests {
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
-        // Unit tests don't have an orchestrator, so manually complete setup
-        task.phase = Phase::Idle;
-        api.store.save_task(&task).unwrap();
-
         // Move to review stage
-        task.status = Status::active("review");
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_approval("review");
         let now = chrono::Utc::now().to_rfc3339();
         task.artifacts
             .set(Artifact::new("verdict", "Approved", "review", &now));
@@ -197,7 +190,7 @@ mod tests {
 
         // Approve enters commit pipeline — actual advancement happens in finalize_stage_advancement
         assert_eq!(task.current_stage(), Some("review"));
-        assert_eq!(task.phase, Phase::Finishing);
+        assert!(matches!(task.state, TaskState::Finishing { .. }));
     }
 
     #[test]
@@ -220,7 +213,7 @@ mod tests {
         let task = api.reject(&task.id, "Please add more detail").unwrap();
 
         assert_eq!(task.current_stage(), Some("planning"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
 
         // Rejection should preserve the original agent artifact, not overwrite with feedback
         assert!(task.artifacts.get("plan").is_some());
@@ -277,7 +270,7 @@ mod tests {
         ));
         iter.ended_at = Some(chrono::Utc::now().to_rfc3339());
         api.store.save_iteration(&iter).unwrap();
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_question_answer("planning");
         api.store.save_task(&task).unwrap();
 
         let answers = vec![QuestionAnswer::new(
@@ -303,7 +296,7 @@ mod tests {
             _ => panic!("Expected Answers context"),
         }
 
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
     }
 
     #[test]
@@ -327,9 +320,8 @@ mod tests {
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Simulate setup completion + agent failure
-        task.phase = Phase::Idle;
         task.worktree_path = Some("/tmp/fake-worktree".into());
-        task.status = Status::failed("Something went wrong");
+        task.state = TaskState::failed("Something went wrong");
         api.store.save_task(&task).unwrap();
 
         (api, task)
@@ -344,9 +336,8 @@ mod tests {
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Simulate setup completion + agent blocked
-        task.phase = Phase::Idle;
         task.worktree_path = Some("/tmp/fake-worktree".into());
-        task.status = Status::blocked("Waiting on external service");
+        task.state = TaskState::blocked("Waiting on external service");
         api.store.save_task(&task).unwrap();
 
         (api, task)
@@ -359,8 +350,7 @@ mod tests {
         let task = api.retry(&task.id, None).unwrap();
 
         assert_eq!(task.current_stage(), Some("planning"));
-        assert_eq!(task.phase, Phase::Idle);
-        assert!(matches!(task.status, Status::Active { .. }));
+        assert!(matches!(task.state, TaskState::Queued { .. }));
 
         let iterations = api.get_iterations(&task.id).unwrap();
         let last = iterations.last().unwrap();
@@ -381,7 +371,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(task.current_stage(), Some("planning"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
 
         let iterations = api.get_iterations(&task.id).unwrap();
         let last = iterations.last().unwrap();
@@ -405,7 +395,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(task.current_stage(), Some("planning"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
 
         let iterations = api.get_iterations(&task.id).unwrap();
         let last = iterations.last().unwrap();
@@ -461,12 +451,9 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.phase = Phase::Idle;
-        api.store.save_task(&task).unwrap();
 
         // Advance to review stage with AgentWorking (simulating agent producing output)
-        task.status = Status::active("review");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
         api.iteration_service
             .create_iteration(&task.id, "review", None)
@@ -480,8 +467,11 @@ mod tests {
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        // Verify precondition: should be paused at AwaitingReview
-        assert_eq!(task.phase, Phase::AwaitingReview);
+        // Verify precondition: should be paused at AwaitingRejectionConfirmation
+        assert!(matches!(
+            task.state,
+            TaskState::AwaitingRejectionConfirmation { .. }
+        ));
         assert_eq!(task.current_stage(), Some("review"));
 
         (api, task)
@@ -495,7 +485,7 @@ mod tests {
         let task = api.approve(&task.id).unwrap();
 
         assert_eq!(task.current_stage(), Some("work"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
 
         // Should have created a rejection iteration in the work stage
         let iterations = api.store.get_iterations(&task.id).unwrap();
@@ -526,7 +516,7 @@ mod tests {
 
         // Should stay in review stage with Idle phase (ready for new agent run)
         assert_eq!(task.current_stage(), Some("review"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
 
         // A new iteration should be created in the review stage with Feedback trigger
         let iterations = api.store.get_iterations(&task.id).unwrap();
@@ -553,7 +543,7 @@ mod tests {
         let task = api.set_auto_mode(&task.id, true).unwrap();
 
         assert_eq!(task.current_stage(), Some("work"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
         assert!(task.auto_mode);
     }
 
@@ -568,7 +558,7 @@ mod tests {
             .reject(&task.id, "Please re-evaluate, the tests actually pass")
             .unwrap();
         assert_eq!(task.current_stage(), Some("review"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
 
         // Step 2: Agent starts again in review stage
         api.agent_started(&task.id).unwrap();
@@ -582,12 +572,12 @@ mod tests {
         let task = api.process_agent_output(&task.id, output).unwrap();
 
         // Step 4: Should pause at AwaitingReview (standard approval review, non-automated stage)
-        assert_eq!(task.phase, Phase::AwaitingReview);
+        assert!(matches!(task.state, TaskState::AwaitingApproval { .. }));
         assert_eq!(task.current_stage(), Some("review"));
 
         // Step 5: Human approves → enters commit pipeline (advancement happens in finalize_stage_advancement)
         let task = api.approve(&task.id).unwrap();
-        assert_eq!(task.phase, Phase::Finishing);
+        assert!(matches!(task.state, TaskState::Finishing { .. }));
     }
 
     // ========================================================================
@@ -603,7 +593,7 @@ mod tests {
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Simulate agent started
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("planning");
         api.store.save_task(&task).unwrap();
 
         (api, task)
@@ -615,7 +605,7 @@ mod tests {
 
         let task = api.interrupt(&task.id).unwrap();
 
-        assert_eq!(task.phase, Phase::Interrupted);
+        assert!(matches!(task.state, TaskState::Interrupted { .. }));
 
         // Verify iteration was ended with Interrupted outcome
         let iterations = api.get_iterations(&task.id).unwrap();
@@ -633,7 +623,7 @@ mod tests {
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Set task to AwaitingReview instead of AgentWorking
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_approval("planning");
         api.store.save_task(&task).unwrap();
 
         let result = api.interrupt(&task.id);
@@ -649,7 +639,7 @@ mod tests {
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Simulate interrupted state
-        task.phase = Phase::Interrupted;
+        task.state = TaskState::interrupted("planning");
         api.store.save_task(&task).unwrap();
 
         // End the current iteration with Interrupted outcome
@@ -677,7 +667,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
         assert_eq!(task.current_stage(), Some("planning"));
 
         // Verify new iteration was created with ManualResume trigger
@@ -702,7 +692,7 @@ mod tests {
 
         let task = api.resume(&task.id, None).unwrap();
 
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
 
         // Verify new iteration has ManualResume with None message
         let iterations = api.get_iterations(&task.id).unwrap();
@@ -724,7 +714,7 @@ mod tests {
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Set task to AgentWorking instead of Interrupted
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("planning");
         api.store.save_task(&task).unwrap();
 
         let result = api.resume(&task.id, None);
@@ -735,7 +725,7 @@ mod tests {
     // Archive task tests
     // ========================================================================
 
-    /// Create an API with a task in Done status at Idle phase.
+    /// Create an API with a task in Done state.
     fn api_with_done_task() -> (WorkflowApi, Task) {
         let workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
@@ -743,9 +733,7 @@ mod tests {
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
-        // Set task to Done status in Idle phase
-        task.status = Status::Done;
-        task.phase = Phase::Idle;
+        task.state = TaskState::Done;
         api.store.save_task(&task).unwrap();
 
         (api, task)
@@ -758,7 +746,6 @@ mod tests {
         let result = api.archive_task(&task.id).unwrap();
 
         assert!(result.is_archived());
-        assert_eq!(result.phase, Phase::Idle);
     }
 
     #[test]
@@ -768,18 +755,18 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let task = api.create_task("Test", "Description", None).unwrap();
-        // Task is in Active status, not Done
+        // Task is in Queued state, not Done
 
         let result = api.archive_task(&task.id);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 
     #[test]
-    fn test_archive_task_wrong_phase() {
+    fn test_archive_task_wrong_state() {
         let (api, mut task) = api_with_done_task();
 
-        // Simulate task being in integrating phase
-        task.phase = Phase::Integrating;
+        // Simulate task being in integrating state
+        task.state = TaskState::Integrating;
         api.store.save_task(&task).unwrap();
 
         let result = api.archive_task(&task.id);
@@ -798,9 +785,8 @@ mod tests {
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
-        // Set task to Done status with PR URL
-        task.status = Status::Done;
-        task.phase = Phase::Idle;
+        // Set task to Done state with PR URL
+        task.state = TaskState::Done;
         task.pr_url = Some("https://github.com/owner/repo/pull/123".to_string());
         api.store.save_task(&task).unwrap();
 
@@ -838,7 +824,7 @@ mod tests {
 
         // Should return to work stage (integration recovery stage)
         assert_eq!(result.current_stage(), Some("work"));
-        assert_eq!(result.phase, Phase::Idle);
+        assert!(matches!(result.state, TaskState::Queued { .. }));
         assert!(result.completed_at.is_none());
     }
 
@@ -902,11 +888,11 @@ mod tests {
     }
 
     #[test]
-    fn test_address_pr_comments_wrong_phase() {
+    fn test_address_pr_comments_wrong_state() {
         let (api, mut task) = api_with_done_task_and_pr();
 
-        // Simulate task being in integrating phase
-        task.phase = Phase::Integrating;
+        // Simulate task being in integrating state
+        task.state = TaskState::Integrating;
         api.store.save_task(&task).unwrap();
 
         let result = api.address_pr_comments(&task.id, test_comments(), None);

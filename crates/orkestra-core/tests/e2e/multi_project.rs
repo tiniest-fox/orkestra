@@ -5,7 +5,7 @@
 
 use super::helpers::{MockAgentOutput, TestEnv};
 use orkestra_core::testutil::fixtures::test_default_workflow;
-use orkestra_core::workflow::runtime::Phase;
+use orkestra_core::workflow::runtime::TaskState;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -194,8 +194,14 @@ fn test_phase_state_isolation() {
     let task1 = env1.api().get_task(&task1_id).expect("Should get task 1");
     let task2 = env2.api().get_task(&task2_id).expect("Should get task 2");
 
-    assert_eq!(task1.phase, Phase::Idle, "Task 1 should start as Idle");
-    assert_eq!(task2.phase, Phase::Idle, "Task 2 should start as Idle");
+    assert!(
+        matches!(task1.state, TaskState::Queued { .. }),
+        "Task 1 should start as Queued"
+    );
+    assert!(
+        matches!(task2.state, TaskState::Queued { .. }),
+        "Task 2 should start as Queued"
+    );
 
     // Queue agent output for task1 only
     env1.set_output(
@@ -218,12 +224,12 @@ fn test_phase_state_isolation() {
     let task2_after = env2.api().get_task(&task2_id).expect("Should get task 2");
 
     assert!(
-        task1_after.phase == Phase::AwaitingReview || task1_after.artifacts.contains("plan"),
+        matches!(task1_after.state, TaskState::AwaitingApproval { .. })
+            || task1_after.artifacts.contains("plan"),
         "Task 1 should have progressed"
     );
-    assert_eq!(
-        task2_after.phase,
-        Phase::Idle,
+    assert!(
+        matches!(task2_after.state, TaskState::Queued { .. }),
         "Task 2 should remain unchanged"
     );
 }

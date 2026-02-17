@@ -35,7 +35,7 @@ describe("ArchiveTaskDetailView", () => {
 
   it("renders task details without action buttons", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "archived" },
+      state: { type: "archived" },
       derived: { is_archived: true },
     });
 
@@ -53,7 +53,7 @@ describe("ArchiveTaskDetailView", () => {
 
   it("shows all tabs", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "archived" },
+      state: { type: "archived" },
       artifacts: {
         plan: createMockArtifact("plan", "Plan content"),
         summary: createMockArtifact("summary", "Summary content"),
@@ -74,7 +74,7 @@ describe("ArchiveTaskDetailView", () => {
 
   it("renders tabs correctly", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "archived" },
+      state: { type: "archived" },
       artifacts: {
         plan: createMockArtifact("plan", "Plan content"),
       },
@@ -103,7 +103,7 @@ describe("ArchiveTaskDetailView", () => {
 
   it("calls onClose when close button clicked", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "archived" },
+      state: { type: "archived" },
       derived: { is_archived: true },
     });
     const onClose = vi.fn();

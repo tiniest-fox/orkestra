@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use crate::orkestra_debug;
 use crate::workflow::domain::TickSnapshot;
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 use crate::workflow::task::setup::TaskSetupService;
 
 /// Set up tasks whose dependencies are satisfied.
@@ -51,7 +51,8 @@ pub fn execute(
         };
 
         // Transition to SettingUp BEFORE spawning (prevents double-spawn)
-        task.phase = Phase::SettingUp;
+        let stage = task.current_stage().unwrap_or("unknown").to_string();
+        task.state = TaskState::setting_up(stage);
         store.save_task(&task)?;
 
         just_set_up.insert(task.id.clone());

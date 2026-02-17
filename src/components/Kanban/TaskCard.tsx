@@ -154,10 +154,10 @@ export function TaskCard({
               : "";
 
   const errorText =
-    task.status.type === "failed"
-      ? task.status.error
-      : task.status.type === "blocked"
-        ? task.status.reason
+    task.state.type === "failed"
+      ? task.state.error
+      : task.state.type === "blocked"
+        ? task.state.reason
         : undefined;
 
   return (

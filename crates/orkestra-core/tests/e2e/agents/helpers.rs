@@ -12,7 +12,7 @@ use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
     config::{IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig},
     domain::{LogEntry, Question, StageSession, Task},
-    runtime::Phase,
+    runtime::TaskState,
     Git2GitService, GitService, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService,
     WorkflowApi,
 };
@@ -164,8 +164,11 @@ impl AgentTestEnv {
                 .unwrap()
                 .get_task(&task_id)
                 .expect("get task");
-            if t.phase != Phase::AwaitingSetup && t.phase != Phase::SettingUp {
-                println!("Task setup complete: phase={:?}", t.phase);
+            if !matches!(
+                t.state,
+                TaskState::AwaitingSetup { .. } | TaskState::SettingUp { .. }
+            ) {
+                println!("Task setup complete: state={:?}", t.state);
                 return task_id;
             }
             assert!(
@@ -193,34 +196,27 @@ impl AgentTestEnv {
                 .get_task(task_id)
                 .expect("get task");
             println!(
-                "  [{:.1}s] phase={:?} stage={:?}",
+                "  [{:.1}s] state={:?} stage={:?}",
                 start.elapsed().as_secs_f64(),
-                t.phase,
+                t.state,
                 t.current_stage()
             );
 
-            match t.phase {
-                Phase::AwaitingReview => {
-                    println!("Task reached AwaitingReview!");
-                    return t;
-                }
-                Phase::Idle
-                    if matches!(
-                        t.status,
-                        orkestra_core::workflow::runtime::Status::Failed { .. }
-                    ) =>
-                {
-                    panic!("Task failed: {:?}", t.status);
-                }
-                _ => {}
+            if matches!(t.state, TaskState::AwaitingApproval { .. }) {
+                println!("Task reached AwaitingApproval!");
+                return t;
+            }
+
+            if matches!(t.state, TaskState::Failed { .. }) {
+                panic!("Task failed: {:?}", t.state);
             }
 
             if start.elapsed() > timeout {
                 self.dump_debug_log();
                 panic!(
-                    "Timed out after {:.0}s waiting for task completion (phase={:?})",
+                    "Timed out after {:.0}s waiting for task completion (state={:?})",
                     timeout.as_secs_f64(),
-                    t.phase
+                    t.state
                 );
             }
         }
@@ -244,14 +240,13 @@ impl AgentTestEnv {
                 .get_task(task_id)
                 .expect("get task");
             println!(
-                "  [{:.1}s] phase={:?} stage={:?} status={:?}",
+                "  [{:.1}s] state={:?} stage={:?}",
                 start.elapsed().as_secs_f64(),
-                t.phase,
-                t.current_stage(),
-                t.status
+                t.state,
+                t.current_stage()
             );
 
-            if let orkestra_core::workflow::runtime::Status::Failed { error } = &t.status {
+            if let TaskState::Failed { error } = &t.state {
                 let msg = error
                     .clone()
                     .unwrap_or_else(|| "unknown failure".to_string());
@@ -259,7 +254,7 @@ impl AgentTestEnv {
                 return msg;
             }
 
-            if t.phase == Phase::AwaitingReview {
+            if matches!(t.state, TaskState::AwaitingApproval { .. }) {
                 self.dump_debug_log();
                 panic!("Task succeeded unexpectedly — expected failure");
             }
@@ -267,10 +262,9 @@ impl AgentTestEnv {
             if start.elapsed() > timeout {
                 self.dump_debug_log();
                 panic!(
-                    "Timed out after {:.0}s waiting for task failure (phase={:?}, status={:?})",
+                    "Timed out after {:.0}s waiting for task failure (state={:?})",
                     timeout.as_secs_f64(),
-                    t.phase,
-                    t.status
+                    t.state
                 );
             }
         }
@@ -437,14 +431,13 @@ impl AgentTestEnv {
                 .get_task(task_id)
                 .expect("get task");
             println!(
-                "  [{:.1}s] phase={:?} stage={:?} status={:?}",
+                "  [{:.1}s] state={:?} stage={:?}",
                 start.elapsed().as_secs_f64(),
-                t.phase,
-                t.current_stage(),
-                t.status
+                t.state,
+                t.current_stage()
             );
 
-            if let orkestra_core::workflow::runtime::Status::Blocked { reason } = &t.status {
+            if let TaskState::Blocked { reason } = &t.state {
                 let msg = reason
                     .clone()
                     .unwrap_or_else(|| "unknown block reason".to_string());
@@ -452,12 +445,12 @@ impl AgentTestEnv {
                 return msg;
             }
 
-            if let orkestra_core::workflow::runtime::Status::Failed { error } = &t.status {
+            if let TaskState::Failed { error } = &t.state {
                 self.dump_debug_log();
                 panic!("Task failed unexpectedly — expected blocked. Error: {error:?}");
             }
 
-            if t.phase == Phase::AwaitingReview {
+            if matches!(t.state, TaskState::AwaitingApproval { .. }) {
                 self.dump_debug_log();
                 panic!("Task succeeded unexpectedly — expected blocked");
             }
@@ -465,10 +458,9 @@ impl AgentTestEnv {
             if start.elapsed() > timeout {
                 self.dump_debug_log();
                 panic!(
-                    "Timed out after {:.0}s waiting for task to be blocked (phase={:?}, status={:?})",
+                    "Timed out after {:.0}s waiting for task to be blocked (state={:?})",
                     timeout.as_secs_f64(),
-                    t.phase,
-                    t.status
+                    t.state
                 );
             }
         }

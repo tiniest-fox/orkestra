@@ -4,7 +4,7 @@ use crate::orkestra_debug;
 use crate::workflow::domain::{IterationTrigger, QuestionAnswer, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Outcome, Phase};
+use crate::workflow::runtime::{Outcome, TaskState};
 
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -52,8 +52,8 @@ pub fn execute(
         Some(IterationTrigger::Answers { answers }),
     )?;
 
-    // Task stays in same stage, phase goes back to Idle so agent can resume
-    task.phase = Phase::Idle;
+    // Task stays in same stage, go back to Queued so agent can resume
+    task.state = TaskState::queued(&current_stage);
     task.updated_at = now;
 
     store.save_task(&task)?;

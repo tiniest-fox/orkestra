@@ -4,7 +4,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Artifact, Outcome, Phase};
+use crate::workflow::runtime::{Artifact, Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
 
 #[allow(clippy::too_many_arguments)]
@@ -88,7 +88,7 @@ pub fn execute(
                     task,
                     Outcome::awaiting_rejection_review(current_stage, &target, content),
                 )?;
-                task.phase = Phase::AwaitingReview;
+                task.state = TaskState::awaiting_rejection_confirmation(current_stage.to_string());
                 task.updated_at = now.to_string();
             }
             Ok(())

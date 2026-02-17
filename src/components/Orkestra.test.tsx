@@ -205,13 +205,13 @@ describe("Orkestra - View Toggle", () => {
       createMockWorkflowTaskView({
         id: "active-1",
         title: "Active Task 1",
-        status: { type: "active", stage: "planning" },
+        state: { type: "queued", stage: "planning" },
         derived: { is_archived: false },
       }),
       createMockWorkflowTaskView({
         id: "active-2",
         title: "Active Task 2",
-        status: { type: "active", stage: "work" },
+        state: { type: "queued", stage: "work" },
         derived: { is_archived: false },
       }),
     ];
@@ -245,13 +245,13 @@ describe("Orkestra - View Toggle", () => {
       createMockWorkflowTaskView({
         id: "archived-1",
         title: "Archived Task 1",
-        status: { type: "archived" },
+        state: { type: "archived" },
         derived: { is_archived: true },
       }),
       createMockWorkflowTaskView({
         id: "archived-2",
         title: "Archived Task 2",
-        status: { type: "archived" },
+        state: { type: "archived" },
         derived: { is_archived: true },
       }),
     ];
@@ -308,19 +308,19 @@ describe("Orkestra - View Toggle", () => {
       createMockWorkflowTaskView({
         id: "active-1",
         title: "Active Task 1",
-        status: { type: "active", stage: "planning" },
+        state: { type: "queued", stage: "planning" },
         derived: { is_archived: false },
       }),
       createMockWorkflowTaskView({
         id: "active-2",
         title: "Active Task 2",
-        status: { type: "active", stage: "work" },
+        state: { type: "queued", stage: "work" },
         derived: { is_archived: false },
       }),
       createMockWorkflowTaskView({
         id: "active-3",
         title: "Active Task 3",
-        status: { type: "active", stage: "work" },
+        state: { type: "queued", stage: "work" },
         derived: { is_archived: false },
       }),
     ];
@@ -329,13 +329,13 @@ describe("Orkestra - View Toggle", () => {
       createMockWorkflowTaskView({
         id: "archived-1",
         title: "Archived Task 1",
-        status: { type: "archived" },
+        state: { type: "archived" },
         derived: { is_archived: true },
       }),
       createMockWorkflowTaskView({
         id: "archived-2",
         title: "Archived Task 2",
-        status: { type: "archived" },
+        state: { type: "archived" },
         derived: { is_archived: true },
       }),
     ];
@@ -369,8 +369,7 @@ describe("Orkestra - View Toggle", () => {
     const activeTask = createMockWorkflowTaskView({
       id: "active-1",
       title: "Active Task",
-      status: { type: "active", stage: "planning" },
-      phase: "awaiting_review",
+      state: { type: "awaiting_approval", stage: "planning" },
       artifacts: { plan: createMockArtifact("plan", "Plan content") },
       derived: {
         is_archived: false,
@@ -419,7 +418,7 @@ describe("Orkestra - View Toggle", () => {
     const archivedTask = createMockWorkflowTaskView({
       id: "archived-1",
       title: "Archived Task",
-      status: { type: "archived" },
+      state: { type: "archived" },
       artifacts: { plan: createMockArtifact("plan", "Plan content") },
       derived: { is_archived: true },
     });

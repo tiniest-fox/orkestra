@@ -2,7 +2,7 @@
 
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 
 pub fn execute(store: &dyn WorkflowStore, task_id: &str) -> WorkflowResult<Task> {
     let mut task = store
@@ -14,19 +14,13 @@ pub fn execute(store: &dyn WorkflowStore, task_id: &str) -> WorkflowResult<Task>
             "Can only merge Done tasks".into(),
         ));
     }
-    if task.phase != Phase::Idle {
-        return Err(WorkflowError::InvalidTransition(format!(
-            "Task must be Idle to merge, but is {:?}",
-            task.phase
-        )));
-    }
     if task.has_open_pr() {
         return Err(WorkflowError::InvalidTransition(
             "Task already has an open PR".into(),
         ));
     }
 
-    task.phase = Phase::Integrating;
+    task.state = TaskState::Integrating;
     task.updated_at = chrono::Utc::now().to_rfc3339();
     store.save_task(&task)?;
     Ok(task)

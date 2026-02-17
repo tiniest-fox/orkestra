@@ -2,9 +2,9 @@
 
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 
-/// Get tasks that need agents spawned (in Idle phase with Active status).
+/// Get tasks that need agents spawned (in Queued state).
 ///
 /// Filters out subtasks whose dependencies haven't completed yet.
 pub fn execute(store: &dyn WorkflowStore) -> WorkflowResult<Vec<Task>> {
@@ -20,8 +20,7 @@ pub fn execute(store: &dyn WorkflowStore) -> WorkflowResult<Vec<Task>> {
     Ok(all_tasks
         .into_iter()
         .filter(|t| {
-            t.phase == Phase::Idle
-                && t.status.is_active()
+            matches!(t.state, TaskState::Queued { .. })
                 && t.depends_on.iter().all(|dep| done_ids.contains(dep))
         })
         .collect())

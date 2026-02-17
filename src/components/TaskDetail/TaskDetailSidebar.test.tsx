@@ -95,8 +95,7 @@ describe("TaskDetailSidebar", () => {
 
   it("renders task in planning stage", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "active", stage: "planning" },
-      phase: "idle",
+      state: { type: "queued", stage: "planning" },
     });
 
     await act(async () => {
@@ -109,8 +108,7 @@ describe("TaskDetailSidebar", () => {
 
   it("renders task awaiting review with approve button", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "active", stage: "planning" },
-      phase: "awaiting_review",
+      state: { type: "awaiting_approval", stage: "planning" },
       artifacts: { plan: createMockArtifact("plan", "Plan content") },
       derived: { needs_review: true, current_stage: "planning" },
     });
@@ -124,8 +122,7 @@ describe("TaskDetailSidebar", () => {
 
   it("renders done task with Done status", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "done" },
-      phase: "idle",
+      state: { type: "done" },
       artifacts: {
         plan: createMockArtifact("plan", "Plan"),
         summary: createMockArtifact("summary", "Summary"),
@@ -142,8 +139,7 @@ describe("TaskDetailSidebar", () => {
 
   it("renders failed task with error message", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "failed", error: "Something went wrong" },
-      phase: "idle",
+      state: { type: "failed", error: "Something went wrong" },
     });
 
     await act(async () => {
@@ -156,8 +152,7 @@ describe("TaskDetailSidebar", () => {
 
   it("renders blocked task with reason", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "blocked", reason: "Waiting for dependencies" },
-      phase: "idle",
+      state: { type: "blocked", reason: "Waiting for dependencies" },
     });
 
     await act(async () => {
@@ -171,8 +166,7 @@ describe("TaskDetailSidebar", () => {
 
   it("renders artifact tabs when task has artifacts", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "active", stage: "work" },
-      phase: "idle",
+      state: { type: "queued", stage: "work" },
       artifacts: {
         plan: createMockArtifact("plan", "Plan content"),
       },
@@ -191,8 +185,7 @@ describe("TaskDetailSidebar", () => {
 
   it("renders integration panel for Done+Idle task", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "done" },
-      phase: "idle",
+      state: { type: "done" },
       derived: { is_done: true },
     });
 
@@ -207,8 +200,7 @@ describe("TaskDetailSidebar", () => {
 
   it("hides integration panel for Done+Idle task with pr_url", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "done" },
-      phase: "idle",
+      state: { type: "done" },
       pr_url: "https://github.com/test/repo/pull/42",
       derived: { is_done: true },
     });
@@ -224,8 +216,7 @@ describe("TaskDetailSidebar", () => {
 
   it("calls mergeTask when Auto-merge is clicked", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "done" },
-      phase: "idle",
+      state: { type: "done" },
       derived: { is_done: true },
     });
 
@@ -242,8 +233,7 @@ describe("TaskDetailSidebar", () => {
 
   it("calls openPr when Open PR is clicked", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "done" },
-      phase: "idle",
+      state: { type: "done" },
       derived: { is_done: true },
     });
 
@@ -260,8 +250,7 @@ describe("TaskDetailSidebar", () => {
 
   it("renders retry panel for PR creation failure", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "failed", error: "PR creation failed: auth error" },
-      phase: "idle",
+      state: { type: "failed", error: "PR creation failed: auth error" },
     });
 
     await act(async () => {
@@ -277,8 +266,7 @@ describe("TaskDetailSidebar", () => {
 
   it("calls retryPr when Retry is clicked", async () => {
     const task = createMockWorkflowTaskView({
-      status: { type: "failed", error: "PR creation failed: auth error" },
-      phase: "idle",
+      state: { type: "failed", error: "PR creation failed: auth error" },
     });
 
     await act(async () => {
@@ -307,8 +295,7 @@ describe("TaskDetailSidebar", () => {
     it("renders archive panel for Done+Idle task with merged PR", async () => {
       mockGetPrStatus.mockReturnValue(createMockPrStatus("merged"));
       const task = createMockWorkflowTaskView({
-        status: { type: "done" },
-        phase: "idle",
+        state: { type: "done" },
         pr_url: "https://github.com/test/repo/pull/42",
         derived: { is_done: true },
       });
@@ -324,8 +311,7 @@ describe("TaskDetailSidebar", () => {
     it("hides archive panel when PR is not merged", async () => {
       mockGetPrStatus.mockReturnValue(createMockPrStatus("open"));
       const task = createMockWorkflowTaskView({
-        status: { type: "done" },
-        phase: "idle",
+        state: { type: "done" },
         pr_url: "https://github.com/test/repo/pull/42",
         derived: { is_done: true },
       });
@@ -341,8 +327,7 @@ describe("TaskDetailSidebar", () => {
     it("hides archive panel when PR status is not yet fetched", async () => {
       mockGetPrStatus.mockReturnValue(undefined);
       const task = createMockWorkflowTaskView({
-        status: { type: "done" },
-        phase: "idle",
+        state: { type: "done" },
         pr_url: "https://github.com/test/repo/pull/42",
         derived: { is_done: true },
       });
@@ -358,8 +343,7 @@ describe("TaskDetailSidebar", () => {
     it("calls archiveTask when Archive is clicked", async () => {
       mockGetPrStatus.mockReturnValue(createMockPrStatus("merged"));
       const task = createMockWorkflowTaskView({
-        status: { type: "done" },
-        phase: "idle",
+        state: { type: "done" },
         pr_url: "https://github.com/test/repo/pull/42",
         derived: { is_done: true },
       });
@@ -383,8 +367,7 @@ describe("TaskDetailSidebar", () => {
 
     it("shows PR tab for task with pr_url", async () => {
       const task = createMockWorkflowTaskView({
-        status: { type: "done" },
-        phase: "idle",
+        state: { type: "done" },
         pr_url: "https://github.com/test/repo/pull/1",
         derived: { is_done: true },
       });
@@ -398,8 +381,7 @@ describe("TaskDetailSidebar", () => {
 
     it("does not show PR tab for task without pr_url", async () => {
       const task = createMockWorkflowTaskView({
-        status: { type: "done" },
-        phase: "idle",
+        state: { type: "done" },
         derived: { is_done: true },
       });
 
@@ -412,8 +394,7 @@ describe("TaskDetailSidebar", () => {
 
     it("defaults to PR tab for done task with pr_url", async () => {
       const task = createMockWorkflowTaskView({
-        status: { type: "done" },
-        phase: "idle",
+        state: { type: "done" },
         pr_url: "https://github.com/test/repo/pull/1",
         derived: { is_done: true },
       });
@@ -428,8 +409,7 @@ describe("TaskDetailSidebar", () => {
 
     it("defaults to PR tab for archived task with pr_url", async () => {
       const task = createMockWorkflowTaskView({
-        status: { type: "archived" },
-        phase: "idle",
+        state: { type: "archived" },
         pr_url: "https://github.com/test/repo/pull/1",
         derived: { is_archived: true },
       });
@@ -444,8 +424,7 @@ describe("TaskDetailSidebar", () => {
 
     it("activates PR polling when PR tab is opened", async () => {
       const task = createMockWorkflowTaskView({
-        status: { type: "done" },
-        phase: "idle",
+        state: { type: "done" },
         pr_url: "https://github.com/test/repo/pull/1",
         derived: { is_done: true },
       });
@@ -460,8 +439,7 @@ describe("TaskDetailSidebar", () => {
 
     it("clears active poll when switching away from PR tab", async () => {
       const task = createMockWorkflowTaskView({
-        status: { type: "done" },
-        phase: "idle",
+        state: { type: "done" },
         pr_url: "https://github.com/test/repo/pull/1",
         artifacts: { plan: createMockArtifact("plan", "content") },
         derived: { is_done: true },

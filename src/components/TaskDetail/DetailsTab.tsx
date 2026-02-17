@@ -30,14 +30,14 @@ export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
         </p>
       )}
 
-      {task.status.type === "failed" && (
+      {task.state.type === "failed" && (
         <div className="mt-3 space-y-3">
-          {task.status.error && (
+          {task.state.error && (
             <div className="p-3 bg-error-50 dark:bg-error-950 border border-error-200 dark:border-error-800 rounded-panel-sm">
               <div className="text-xs font-medium text-error-700 dark:text-error-300 mb-1">
                 Error
               </div>
-              <p className="text-sm text-error-800 dark:text-error-200">{task.status.error}</p>
+              <p className="text-sm text-error-800 dark:text-error-200">{task.state.error}</p>
             </div>
           )}
           {onRetry && (
@@ -62,14 +62,14 @@ export function DetailsTab({ task, onRetry, isRetrying }: DetailsTabProps) {
         </div>
       )}
 
-      {task.status.type === "blocked" && (
+      {task.state.type === "blocked" && (
         <div className="mt-3 space-y-3">
-          {task.status.reason && (
+          {task.state.reason && (
             <div className="p-3 bg-warning-50 dark:bg-warning-950 border border-warning-200 dark:border-warning-800 rounded-panel-sm">
               <div className="text-xs font-medium text-warning-700 dark:text-warning-300 mb-1">
                 Blocked
               </div>
-              <p className="text-sm text-warning-800 dark:text-warning-200">{task.status.reason}</p>
+              <p className="text-sm text-warning-800 dark:text-warning-200">{task.state.reason}</p>
             </div>
           )}
           {onRetry && (

@@ -337,26 +337,26 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_next_status() {
-        use crate::workflow::stage::interactions::finalize_advancement::compute_next_status_on_approve;
+    fn test_compute_next_state() {
+        use crate::workflow::stage::interactions::finalize_advancement::compute_next_state_on_approve;
 
         let workflow = test_workflow();
 
         // Planning goes to breakdown (default flow)
-        let status = compute_next_status_on_approve(&workflow, "planning", None);
-        assert_eq!(status.stage(), Some("breakdown"));
+        let state = compute_next_state_on_approve(&workflow, "planning", None);
+        assert_eq!(state.stage(), Some("breakdown"));
 
         // Breakdown goes to work
-        let status = compute_next_status_on_approve(&workflow, "breakdown", None);
-        assert_eq!(status.stage(), Some("work"));
+        let state = compute_next_state_on_approve(&workflow, "breakdown", None);
+        assert_eq!(state.stage(), Some("work"));
 
         // Work goes to review
-        let status = compute_next_status_on_approve(&workflow, "work", None);
-        assert_eq!(status.stage(), Some("review"));
+        let state = compute_next_state_on_approve(&workflow, "work", None);
+        assert_eq!(state.stage(), Some("review"));
 
         // Review goes to Done
-        let status = compute_next_status_on_approve(&workflow, "review", None);
-        assert_eq!(status, crate::workflow::runtime::Status::Done);
+        let state = compute_next_state_on_approve(&workflow, "review", None);
+        assert_eq!(state, crate::workflow::runtime::TaskState::Done);
     }
 
     #[test]

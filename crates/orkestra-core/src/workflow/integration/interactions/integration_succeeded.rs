@@ -2,23 +2,22 @@
 
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Phase, Status};
+use crate::workflow::runtime::TaskState;
 
 pub fn execute(store: &dyn WorkflowStore, task_id: &str) -> WorkflowResult<Task> {
     let mut task = store
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if !task.is_done() {
+    if !task.is_done() && !matches!(task.state, TaskState::Integrating) {
         return Err(WorkflowError::InvalidTransition(
-            "Cannot integrate task that is not Done".into(),
+            "Cannot archive task that is not Done or Integrating".into(),
         ));
     }
 
-    // Transition from Done to Archived
+    // Transition from Done/Integrating to Archived
     // Keep worktree_path for log access even though physical worktree is removed
-    task.status = Status::Archived;
-    task.phase = Phase::Idle;
+    task.state = TaskState::Archived;
     task.updated_at = chrono::Utc::now().to_rfc3339();
     store.save_task(&task)?;
 

@@ -5,7 +5,7 @@ use crate::workflow::api::AgentKiller;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Outcome, Phase};
+use crate::workflow::runtime::{Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
 
 pub fn execute(
@@ -18,12 +18,15 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if task.phase != Phase::AgentWorking {
-        return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot interrupt task in phase {:?}",
-            task.phase
-        )));
-    }
+    let stage = match &task.state {
+        TaskState::AgentWorking { stage } => stage.clone(),
+        _ => {
+            return Err(WorkflowError::InvalidTransition(format!(
+                "Cannot interrupt task in state {} (expected AgentWorking)",
+                task.state
+            )));
+        }
+    };
 
     // Kill agent if configured
     if let Some(killer) = agent_killer {
@@ -45,9 +48,9 @@ pub fn execute(
     // End current iteration with Interrupted outcome
     stage::end_iteration::execute(iteration_service, &task, Outcome::Interrupted)?;
 
-    // Transition to Interrupted phase
+    // Transition to Interrupted state
     let now = chrono::Utc::now().to_rfc3339();
-    task.phase = Phase::Interrupted;
+    task.state = TaskState::interrupted(stage);
     task.updated_at = now;
 
     store.save_task(&task)?;

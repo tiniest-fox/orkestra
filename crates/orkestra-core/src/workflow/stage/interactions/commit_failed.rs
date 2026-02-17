@@ -3,7 +3,7 @@
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Outcome, Phase, Status};
+use crate::workflow::runtime::{Outcome, TaskState};
 
 /// Record a commit failure, create a `CommitFailed` iteration, and mark the task as failed.
 pub fn execute(
@@ -16,14 +16,14 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if task.phase != Phase::Committing {
+    if !matches!(task.state, TaskState::Committing { .. }) {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot mark commit failed in phase {:?} (expected Committing)",
-            task.phase
+            "Cannot mark commit failed in state {} (expected Committing)",
+            task.state
         )));
     }
 
-    // Read current stage BEFORE changing status (stage is lost after Status::failed)
+    // Read current stage BEFORE changing state (stage is lost after TaskState::failed)
     let stage_name = task.current_stage().map(String::from);
 
     // Record failure via iteration (create + end, matching integration_failed pattern)
@@ -38,8 +38,7 @@ pub fn execute(
         )?;
     }
 
-    task.status = Status::failed(error);
-    task.phase = Phase::Idle;
+    task.state = TaskState::failed(error);
     task.updated_at = chrono::Utc::now().to_rfc3339();
     store.save_task(&task)?;
     Ok(task)

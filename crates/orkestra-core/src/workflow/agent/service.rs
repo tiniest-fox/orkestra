@@ -106,15 +106,15 @@ mod tests {
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use crate::workflow::domain::{IterationTrigger, Question};
     use crate::workflow::ports::WorkflowError;
-    use crate::workflow::runtime::{Outcome, Phase, Status};
+    use crate::workflow::runtime::{Outcome, TaskState};
     use crate::workflow::InMemoryWorkflowStore;
 
     use super::*;
 
-    /// Create a task ready for agent work (in Idle phase).
+    /// Create a task ready for agent work (in Queued state).
     fn create_task_ready(api: &WorkflowApi, title: &str, desc: &str) -> Task {
         let mut task = api.create_task(title, desc, None).unwrap();
-        task.phase = Phase::Idle;
+        task.state = TaskState::queued("planning");
         api.store.save_task(&task).unwrap();
         task
     }
@@ -140,7 +140,7 @@ mod tests {
         let task = create_task_ready(&api, "Test", "Description");
         let task = api.agent_started(&task.id).unwrap();
 
-        assert_eq!(task.phase, Phase::AgentWorking);
+        assert!(matches!(task.state, TaskState::AgentWorking { .. }));
     }
 
     #[test]
@@ -150,7 +150,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = create_task_ready(&api, "Test", "Description");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("planning");
         api.store.save_task(&task).unwrap();
 
         let result = api.agent_started(&task.id);
@@ -172,7 +172,7 @@ mod tests {
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        assert_eq!(task.phase, Phase::AwaitingReview);
+        assert!(matches!(task.state, TaskState::AwaitingApproval { .. }));
         assert!(task.artifacts.get("plan").is_some());
     }
 
@@ -190,7 +190,10 @@ mod tests {
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        assert_eq!(task.phase, Phase::AwaitingReview);
+        assert!(matches!(
+            task.state,
+            TaskState::AwaitingQuestionAnswer { .. }
+        ));
 
         // Questions are now stored in iteration outcome, not on task
         let questions = api.get_pending_questions(&task.id).unwrap();
@@ -206,8 +209,7 @@ mod tests {
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Move to review stage
-        task.status = Status::active("review");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
 
         let output = StageOutput::Approval {
@@ -218,7 +220,7 @@ mod tests {
         let task = api.process_agent_output(&task.id, output).unwrap();
 
         assert_eq!(task.current_stage(), Some("work"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
 
         // Rejection should create an artifact with the rejection content
         assert!(task.artifacts.get("verdict").is_some());
@@ -242,8 +244,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.status = Status::active("review");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
         api.iteration_service
             .create_iteration(&task.id, "review", None)
@@ -256,9 +257,12 @@ mod tests {
         };
         let task = api.process_agent_output(&task.id, output).unwrap();
 
-        // Should pause at AwaitingReview, NOT move to work stage
+        // Should pause at AwaitingRejectionConfirmation, NOT move to work stage
         assert_eq!(task.current_stage(), Some("review"));
-        assert_eq!(task.phase, Phase::AwaitingReview);
+        assert!(matches!(
+            task.state,
+            TaskState::AwaitingRejectionConfirmation { .. }
+        ));
 
         // Rejection content stored as artifact
         assert_eq!(
@@ -298,8 +302,7 @@ mod tests {
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
         task.auto_mode = true;
-        task.status = Status::active("review");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
         api.iteration_service
             .create_iteration(&task.id, "review", None)
@@ -314,7 +317,7 @@ mod tests {
 
         // Should auto-execute rejection — move to work stage
         assert_eq!(task.current_stage(), Some("work"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
     }
 
     #[test]
@@ -326,8 +329,7 @@ mod tests {
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Move to review stage (automated)
-        task.status = Status::active("review");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
 
         let output = StageOutput::Approval {
@@ -338,7 +340,7 @@ mod tests {
         let task = api.process_agent_output(&task.id, output).unwrap();
 
         // Should enter commit pipeline (automated stage auto-advances via Finishing)
-        assert_eq!(task.phase, Phase::Finishing);
+        assert!(matches!(task.state, TaskState::Finishing { .. }));
         assert_eq!(task.current_stage(), Some("review"));
         // Content should be stored as artifact
         assert!(task.artifacts.get("verdict").is_some());
@@ -385,7 +387,6 @@ mod tests {
         let task = api.process_agent_output(&task.id, output).unwrap();
 
         assert!(task.is_failed());
-        assert_eq!(task.phase, Phase::Idle);
     }
 
     #[test]
@@ -403,7 +404,6 @@ mod tests {
         let task = api.process_agent_output(&task.id, output).unwrap();
 
         assert!(task.is_blocked());
-        assert_eq!(task.phase, Phase::Idle);
     }
 
     #[test]
@@ -415,8 +415,7 @@ mod tests {
         let mut task = api.create_task("Test", "Description", None).unwrap();
 
         // Move to review stage (automated)
-        task.status = Status::active("review");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("review");
         api.store.save_task(&task).unwrap();
 
         let output = StageOutput::Artifact {
@@ -426,7 +425,7 @@ mod tests {
         let task = api.process_agent_output(&task.id, output).unwrap();
 
         // Should enter commit pipeline (automated stage auto-advances via Finishing)
-        assert_eq!(task.phase, Phase::Finishing);
+        assert!(matches!(task.state, TaskState::Finishing { .. }));
         assert_eq!(task.current_stage(), Some("review"));
     }
 
@@ -442,7 +441,7 @@ mod tests {
         let _ = api.agent_started(&task2.id).unwrap(); // Now working
 
         let mut task3 = create_task_ready(&api, "Task 3", "Done");
-        task3.status = Status::Done;
+        task3.state = TaskState::Done;
         api.store.save_task(&task3).unwrap();
 
         let needing_agents = api.get_tasks_needing_agents().unwrap();
@@ -478,8 +477,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.status = Status::active("checks");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("checks");
         api.store.save_task(&task).unwrap();
 
         let task = api
@@ -487,7 +485,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(task.current_stage(), Some("checks"));
-        assert_eq!(task.phase, Phase::Finishing);
+        assert!(matches!(task.state, TaskState::Finishing { .. }));
         assert!(task.artifacts.get("check_results").is_some());
         assert!(task
             .artifacts
@@ -504,8 +502,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.status = Status::active("checks");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("checks");
         api.store.save_task(&task).unwrap();
 
         let task = api
@@ -517,7 +514,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(task.current_stage(), Some("work"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
         assert!(!task.is_failed());
     }
 
@@ -528,8 +525,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.status = Status::active("checks");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("checks");
         api.store.save_task(&task).unwrap();
 
         let task = api
@@ -537,7 +533,6 @@ mod tests {
             .unwrap();
 
         assert!(task.is_failed());
-        assert_eq!(task.phase, Phase::Idle);
     }
 
     #[test]
@@ -547,8 +542,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.status = Status::active("checks");
-        task.phase = Phase::Idle; // Not AgentWorking
+        task.state = TaskState::queued("checks"); // Not AgentWorking
         api.store.save_task(&task).unwrap();
 
         let result = api.process_script_success(&task.id, "output");
@@ -562,8 +556,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.status = Status::active("checks");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("checks");
         api.store.save_task(&task).unwrap();
 
         let colored_output =
@@ -585,8 +578,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.status = Status::active("checks");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("checks");
         api.store.save_task(&task).unwrap();
 
         let colored_error =
@@ -621,11 +613,11 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = create_task_ready(&api, "Test", "Description");
-        task.phase = Phase::Committing;
+        task.state = TaskState::committing("planning");
         api.store.save_task(&task).unwrap();
 
         let task = api.commit_succeeded(&task.id).unwrap();
-        assert_eq!(task.phase, Phase::Finished);
+        assert!(matches!(task.state, TaskState::Finishing { .. }));
     }
 
     #[test]
@@ -647,12 +639,11 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = create_task_ready(&api, "Test", "Description");
-        task.phase = Phase::Committing;
+        task.state = TaskState::committing("planning");
         api.store.save_task(&task).unwrap();
 
         let task = api.commit_failed(&task.id, "git commit error").unwrap();
         assert!(task.is_failed());
-        assert_eq!(task.phase, Phase::Idle);
 
         let iterations = api.store.get_iterations(&task.id).unwrap();
         let commit_iter = iterations

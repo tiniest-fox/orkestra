@@ -9,55 +9,55 @@ describe("taskOrdering", () => {
       const tasks = [
         createMockWorkflowTaskView({
           id: "archived-task",
-          status: { type: "archived" },
+          state: { type: "archived" },
           created_at: "2025-01-09T00:00:00Z",
           derived: { is_archived: true },
         }),
         createMockWorkflowTaskView({
           id: "idle-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-06T00:00:00Z",
           derived: {},
         }),
         createMockWorkflowTaskView({
           id: "working-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-05T00:00:00Z",
           derived: { is_working: true },
         }),
         createMockWorkflowTaskView({
           id: "review-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-04T00:00:00Z",
           derived: { needs_review: true },
         }),
         createMockWorkflowTaskView({
           id: "questions-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-03T00:00:00Z",
           derived: { has_questions: true },
         }),
         createMockWorkflowTaskView({
           id: "interrupted-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-02T00:00:00Z",
           derived: { is_interrupted: true },
         }),
         createMockWorkflowTaskView({
           id: "blocked-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-01T00:00:00Z",
           derived: { is_blocked: true },
         }),
         createMockWorkflowTaskView({
           id: "failed-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-07T00:00:00Z", // Newest, but should still be first
           derived: { is_failed: true },
         }),
         createMockWorkflowTaskView({
           id: "done-task",
-          status: { type: "done" },
+          state: { type: "done" },
           created_at: "2025-01-08T00:00:00Z",
           derived: { is_done: true },
         }),
@@ -82,13 +82,13 @@ describe("taskOrdering", () => {
       const tasks = [
         createMockWorkflowTaskView({
           id: "done-task",
-          status: { type: "done" },
+          state: { type: "done" },
           created_at: "2025-01-01T00:00:00Z", // Oldest
           derived: { is_done: true },
         }),
         createMockWorkflowTaskView({
           id: "idle-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-02T00:00:00Z",
           derived: {},
         }),
@@ -104,13 +104,13 @@ describe("taskOrdering", () => {
       const tasks = [
         createMockWorkflowTaskView({
           id: "archived-task",
-          status: { type: "archived" },
+          state: { type: "archived" },
           created_at: "2025-01-01T00:00:00Z", // Oldest
           derived: { is_archived: true },
         }),
         createMockWorkflowTaskView({
           id: "done-task",
-          status: { type: "done" },
+          state: { type: "done" },
           created_at: "2025-01-02T00:00:00Z",
           derived: { is_done: true },
         }),
@@ -139,13 +139,13 @@ describe("taskOrdering", () => {
         const tasks = [
           createMockWorkflowTaskView({
             id: "blocked-task",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-01T00:00:00Z",
             derived: { is_blocked: true },
           }),
           createMockWorkflowTaskView({
             id: "parent-with-failed-subtask",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-02T00:00:00Z",
             derived: { subtask_progress: subtaskProgress },
           }),
@@ -173,13 +173,13 @@ describe("taskOrdering", () => {
         const tasks = [
           createMockWorkflowTaskView({
             id: "interrupted-task",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-01T00:00:00Z",
             derived: { is_interrupted: true },
           }),
           createMockWorkflowTaskView({
             id: "parent-with-blocked-subtask",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-02T00:00:00Z",
             derived: { subtask_progress: subtaskProgress },
           }),
@@ -207,13 +207,13 @@ describe("taskOrdering", () => {
         const tasks = [
           createMockWorkflowTaskView({
             id: "questions-task",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-01T00:00:00Z",
             derived: { has_questions: true },
           }),
           createMockWorkflowTaskView({
             id: "parent-with-interrupted-subtask",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-02T00:00:00Z",
             derived: { subtask_progress: subtaskProgress },
           }),
@@ -241,13 +241,13 @@ describe("taskOrdering", () => {
         const tasks = [
           createMockWorkflowTaskView({
             id: "review-task",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-01T00:00:00Z",
             derived: { needs_review: true },
           }),
           createMockWorkflowTaskView({
             id: "parent-with-question-subtask",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-02T00:00:00Z",
             derived: { subtask_progress: subtaskProgress },
           }),
@@ -275,13 +275,13 @@ describe("taskOrdering", () => {
         const tasks = [
           createMockWorkflowTaskView({
             id: "working-task",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-01T00:00:00Z",
             derived: { is_working: true },
           }),
           createMockWorkflowTaskView({
             id: "parent-with-review-subtask",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-02T00:00:00Z",
             derived: { subtask_progress: subtaskProgress },
           }),
@@ -299,19 +299,19 @@ describe("taskOrdering", () => {
         const tasks = [
           createMockWorkflowTaskView({
             id: "newer-review",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-03T00:00:00Z",
             derived: { needs_review: true },
           }),
           createMockWorkflowTaskView({
             id: "oldest-review",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-01T00:00:00Z",
             derived: { needs_review: true },
           }),
           createMockWorkflowTaskView({
             id: "middle-review",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-02T00:00:00Z",
             derived: { needs_review: true },
           }),
@@ -327,39 +327,39 @@ describe("taskOrdering", () => {
           // Done tier
           createMockWorkflowTaskView({
             id: "newer-done",
-            status: { type: "done" },
+            state: { type: "done" },
             created_at: "2025-01-06T00:00:00Z",
             derived: { is_done: true },
           }),
           createMockWorkflowTaskView({
             id: "older-done",
-            status: { type: "done" },
+            state: { type: "done" },
             created_at: "2025-01-05T00:00:00Z",
             derived: { is_done: true },
           }),
           // Archived tier
           createMockWorkflowTaskView({
             id: "newer-archived",
-            status: { type: "archived" },
+            state: { type: "archived" },
             created_at: "2025-01-08T00:00:00Z",
             derived: { is_archived: true },
           }),
           createMockWorkflowTaskView({
             id: "older-archived",
-            status: { type: "archived" },
+            state: { type: "archived" },
             created_at: "2025-01-07T00:00:00Z",
             derived: { is_archived: true },
           }),
           // Idle tier (higher priority)
           createMockWorkflowTaskView({
             id: "newer-idle",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-04T00:00:00Z",
             derived: {},
           }),
           createMockWorkflowTaskView({
             id: "older-idle",
-            status: { type: "active", stage: "planning" },
+            state: { type: "queued", stage: "planning" },
             created_at: "2025-01-03T00:00:00Z",
             derived: {},
           }),
@@ -384,13 +384,13 @@ describe("taskOrdering", () => {
       const tasks = [
         createMockWorkflowTaskView({
           id: "idle-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-02T00:00:00Z",
           derived: {},
         }),
         createMockWorkflowTaskView({
           id: "failed-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-01T00:00:00Z",
           derived: { is_failed: true },
         }),
@@ -409,31 +409,31 @@ describe("taskOrdering", () => {
       const tasks = [
         createMockWorkflowTaskView({
           id: "archived-task",
-          status: { type: "archived" },
+          state: { type: "archived" },
           created_at: "2025-01-05T00:00:00Z",
           derived: { is_archived: true },
         }),
         createMockWorkflowTaskView({
           id: "working-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-03T00:00:00Z",
           derived: { is_working: true },
         }),
         createMockWorkflowTaskView({
           id: "done-task",
-          status: { type: "done" },
+          state: { type: "done" },
           created_at: "2025-01-04T00:00:00Z",
           derived: { is_done: true },
         }),
         createMockWorkflowTaskView({
           id: "failed-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-01T00:00:00Z",
           derived: { is_failed: true },
         }),
         createMockWorkflowTaskView({
           id: "idle-task",
-          status: { type: "active", stage: "planning" },
+          state: { type: "queued", stage: "planning" },
           created_at: "2025-01-02T00:00:00Z",
           derived: {},
         }),

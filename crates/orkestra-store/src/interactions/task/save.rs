@@ -6,9 +6,8 @@ use rusqlite::{params, Connection};
 use crate::interface::{WorkflowError, WorkflowResult};
 
 pub fn execute(conn: &Connection, task: &Task) -> WorkflowResult<()> {
-    let status_json =
-        serde_json::to_string(&task.status).map_err(|e| WorkflowError::Storage(e.to_string()))?;
-    let phase_str = task.phase.as_str();
+    let state_json =
+        serde_json::to_string(&task.state).map_err(|e| WorkflowError::Storage(e.to_string()))?;
     let artifacts_json = serde_json::to_string(&task.artifacts)
         .map_err(|e| WorkflowError::Storage(e.to_string()))?;
     let depends_json = serde_json::to_string(&task.depends_on)
@@ -16,17 +15,16 @@ pub fn execute(conn: &Connection, task: &Task) -> WorkflowResult<()> {
 
     conn.execute(
         "INSERT OR REPLACE INTO workflow_tasks (
-            id, title, description, status, phase, artifacts,
+            id, title, description, state, artifacts,
             parent_id, depends_on, branch_name, worktree_path,
             auto_mode, created_at, updated_at, completed_at,
             base_branch, flow, short_id, base_commit, pr_url
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             task.id,
             task.title,
             task.description,
-            status_json,
-            phase_str,
+            state_json,
             artifacts_json,
             task.parent_id,
             depends_json,

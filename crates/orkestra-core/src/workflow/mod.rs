@@ -101,7 +101,7 @@ pub use ports::{
     CommitInfo, GitError, GitService, MergeResult, WorkflowError, WorkflowResult, WorkflowStore,
     WorktreeCreated,
 };
-pub use runtime::{Artifact, ArtifactStore, Outcome, Phase, Status};
+pub use runtime::{Artifact, ArtifactStore, Outcome, TaskState};
 
 // Service re-exports (from new locations)
 pub use api::{AgentKiller, WorkflowApi};

@@ -5,7 +5,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Phase, Status};
+use crate::workflow::runtime::TaskState;
 
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -17,10 +17,10 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if !matches!(task.phase, Phase::Finishing | Phase::Finished) {
+    if !matches!(task.state, TaskState::Finishing { .. }) {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot finalize stage advancement in phase {:?} (expected Finishing or Finished)",
-            task.phase
+            "Cannot finalize stage advancement in state {} (expected Finishing)",
+            task.state
         )));
     }
 
@@ -50,12 +50,11 @@ pub fn execute(
                 task.id,
                 created.len()
             );
-            let next_stage = compute_next_status_on_approve(workflow, &stage, task.flow.as_deref())
+            let next_stage = compute_next_state_on_approve(workflow, &stage, task.flow.as_deref())
                 .stage()
                 .unwrap_or(&stage)
                 .to_string();
-            task.status = Status::waiting_on_children(next_stage);
-            task.phase = Phase::Idle;
+            task.state = TaskState::waiting_on_children(next_stage);
         }
     } else {
         advance_task(workflow, iteration_service, &mut task, &stage, &now)?;
@@ -76,14 +75,15 @@ fn advance_task(
     stage: &str,
     now: &str,
 ) -> WorkflowResult<()> {
-    let next_status = compute_next_status_on_approve(workflow, stage, task.flow.as_deref());
-    task.status = next_status.clone();
-    task.phase = Phase::Idle;
+    let next_state = compute_next_state_on_approve(workflow, stage, task.flow.as_deref());
 
-    if let Some(new_stage) = next_status.stage() {
+    if let Some(new_stage) = next_state.stage() {
         iteration_service.create_iteration(&task.id, new_stage, None)?;
     }
-    if task.is_done() {
+    let is_done = next_state.is_done();
+    task.state = next_state;
+
+    if is_done {
         task.completed_at = Some(now.to_string());
     }
     Ok(())
@@ -113,14 +113,14 @@ pub(crate) fn artifact_name_for_stage(
         .map_or_else(|| default.to_string(), |s| s.artifact.clone())
 }
 
-/// Compute the next status after approving the current stage.
-pub(crate) fn compute_next_status_on_approve(
+/// Compute the next state after approving the current stage.
+pub(crate) fn compute_next_state_on_approve(
     workflow: &WorkflowConfig,
     current_stage: &str,
     flow: Option<&str>,
-) -> Status {
+) -> TaskState {
     match workflow.next_stage_in_flow(current_stage, flow) {
-        Some(stage) => Status::active(&stage.name),
-        None => Status::Done,
+        Some(stage) => TaskState::queued(&stage.name),
+        None => TaskState::Done,
     }
 }

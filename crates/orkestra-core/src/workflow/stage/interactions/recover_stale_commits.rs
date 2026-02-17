@@ -3,17 +3,18 @@
 use crate::orkestra_debug;
 use crate::workflow::domain::TaskHeader;
 use crate::workflow::ports::WorkflowStore;
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 
-/// Recover tasks stuck in Committing phase.
+/// Recover tasks stuck in Committing state.
 ///
 /// Reset to Finishing so the next tick re-checks for uncommitted changes
 /// and re-spawns the commit thread. The commit is idempotent.
 pub fn execute(store: &dyn WorkflowStore, headers: &[TaskHeader]) {
     for header in headers {
-        if header.phase != Phase::Committing {
-            continue;
-        }
+        let stage = match &header.state {
+            TaskState::Committing { stage } => stage.clone(),
+            _ => continue,
+        };
 
         orkestra_debug!("recovery", "Found stale Committing task: {}", header.id);
 
@@ -26,7 +27,7 @@ pub fn execute(store: &dyn WorkflowStore, headers: &[TaskHeader]) {
             continue;
         };
 
-        task.phase = Phase::Finishing;
+        task.state = TaskState::finishing(stage);
 
         if let Err(e) = store.save_task(&task) {
             orkestra_debug!(

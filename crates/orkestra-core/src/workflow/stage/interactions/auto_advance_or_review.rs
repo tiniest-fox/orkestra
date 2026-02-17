@@ -4,7 +4,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::WorkflowResult;
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 
 pub fn execute(
     iteration_service: &IterationService,
@@ -16,7 +16,7 @@ pub fn execute(
     if should_auto_advance(task, stage, workflow) {
         super::enter_commit_pipeline::execute(iteration_service, task, now)?;
     } else {
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_approval(stage);
         task.updated_at = now.to_string();
     }
     Ok(())

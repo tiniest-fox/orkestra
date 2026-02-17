@@ -5,7 +5,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Phase, Status};
+use crate::workflow::runtime::TaskState;
 
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
@@ -38,8 +38,7 @@ pub fn execute(
         }
     }
 
-    task.status = Status::active(target);
-    task.phase = Phase::Idle;
+    task.state = TaskState::queued(target);
     task.updated_at = now.to_string();
 
     iteration_service.create_iteration(

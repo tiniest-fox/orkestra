@@ -13,7 +13,7 @@
 use std::path::Path;
 
 use orkestra_core::workflow::execution::SubtaskOutput;
-use orkestra_core::workflow::runtime::Phase;
+use orkestra_core::workflow::runtime::TaskState;
 
 use super::helpers::{enable_auto_merge, workflows, MockAgentOutput, TestEnv};
 
@@ -101,11 +101,10 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
     // 2. Approve all (work stage is non-automated → AwaitingReview)
     for &id in subtask_ids {
         let task = env.api().get_task(id).unwrap();
-        assert_eq!(
-            task.phase,
-            Phase::AwaitingReview,
-            "Subtask {id} should be AwaitingReview after work stage, got: {:?}",
-            task.phase
+        assert!(
+            matches!(task.state, TaskState::AwaitingApproval { .. }),
+            "Subtask {id} should be AwaitingApproval after work stage, got: {:?}",
+            task.state
         );
         env.api().approve(id).expect("Should approve work stage");
     }
@@ -131,7 +130,7 @@ fn complete_subtasks(env: &TestEnv, subtask_ids: &[&str]) {
         assert!(
             task.is_done() || task.is_archived(),
             "Subtask {id} should be Done or Archived after work+review, got: {:?}",
-            task.status
+            task.state
         );
     }
 }
@@ -209,9 +208,9 @@ fn test_breakdown_approval_creates_subtasks() {
     env.advance(); // commit pipeline: Finishing → Finished → advance (creates subtasks)
     let parent = env.api().get_task(&parent.id).unwrap();
     assert!(
-        parent.status.is_waiting_on_children(),
+        parent.state.is_waiting_on_children(),
         "Parent should be WaitingOnChildren, got: {:?}",
-        parent.status
+        parent.state
     );
 
     // Verify subtasks were created
@@ -232,10 +231,10 @@ fn test_breakdown_approval_creates_subtasks() {
     // All subtasks start in AwaitingSetup (setup is deferred to orchestrator tick)
     for subtask in &subtasks {
         assert_eq!(subtask.current_stage(), Some("work"));
-        assert_eq!(
-            subtask.phase,
-            Phase::AwaitingSetup,
-            "Subtask should start in AwaitingSetup (deferred setup)"
+        assert!(
+            matches!(subtask.state, TaskState::AwaitingSetup { .. }),
+            "Subtask should start in AwaitingSetup (deferred setup), got: {:?}",
+            subtask.state
         );
     }
 
@@ -310,10 +309,10 @@ fn test_dependency_aware_orchestration() {
     env.advance(); // setup_awaiting_tasks: sets up first (no deps), skips second
 
     let second = env.api().get_task(&second_id).unwrap();
-    assert_eq!(
-        second.phase,
-        Phase::AwaitingSetup,
-        "Second subtask should still be in AwaitingSetup (dep not met)"
+    assert!(
+        matches!(second.state, TaskState::AwaitingSetup { .. }),
+        "Second subtask should still be in AwaitingSetup (dep not met), got: {:?}",
+        second.state
     );
 
     // First should be eligible for agents, second should NOT
@@ -336,9 +335,9 @@ fn test_dependency_aware_orchestration() {
     // Second should now be active and eligible
     let second = env.api().get_task(&second_id).unwrap();
     assert!(
-        second.status.is_active(),
+        second.state.is_active(),
         "Second subtask should be active after dep satisfied and setup complete, got: {:?}",
-        second.status
+        second.state
     );
 
     // Verify second subtask got its own worktree
@@ -435,8 +434,8 @@ fn test_parent_advances_when_all_subtasks_done() {
     assert_eq!(
         parent.current_stage(),
         Some("work"),
-        "Parent should advance to 'work' stage after all subtasks are Archived. Status: {:?}",
-        parent.status
+        "Parent should advance to 'work' stage after all subtasks are Archived. State: {:?}",
+        parent.state
     );
 
     // Verify both subtask files are visible in the parent worktree (no manual git reset needed)
@@ -538,11 +537,11 @@ fn test_diamond_dependency_orchestration() {
     // B, C, D should all still be in AwaitingSetup
     for id in [&id_b, &id_c, &id_d] {
         let task = env.api().get_task(id).unwrap();
-        assert_eq!(
-            task.phase,
-            Phase::AwaitingSetup,
-            "Task {} should be in AwaitingSetup",
-            task.title
+        assert!(
+            matches!(task.state, TaskState::AwaitingSetup { .. }),
+            "Task {} should be in AwaitingSetup, got: {:?}",
+            task.title,
+            task.state
         );
     }
 
@@ -555,22 +554,22 @@ fn test_diamond_dependency_orchestration() {
     let b = env.api().get_task(&id_b).unwrap();
     let c = env.api().get_task(&id_c).unwrap();
     assert!(
-        b.status.is_active(),
+        b.state.is_active(),
         "B should be active after A done, got: {:?}",
-        b.status
+        b.state
     );
     assert!(
-        c.status.is_active(),
+        c.state.is_active(),
         "C should be active after A done, got: {:?}",
-        c.status
+        c.state
     );
 
     // D should still be in AwaitingSetup (B and C not done yet)
     let d = env.api().get_task(&id_d).unwrap();
-    assert_eq!(
-        d.phase,
-        Phase::AwaitingSetup,
-        "D should still be in AwaitingSetup (B,C not done)"
+    assert!(
+        matches!(d.state, TaskState::AwaitingSetup { .. }),
+        "D should still be in AwaitingSetup (B,C not done), got: {:?}",
+        d.state
     );
 
     // --- Phase 3: Complete B and C in parallel → D unblocks ---
@@ -583,9 +582,9 @@ fn test_diamond_dependency_orchestration() {
     // D should be active
     let d = env.api().get_task(&id_d).unwrap();
     assert!(
-        d.status.is_active(),
+        d.state.is_active(),
         "D should be active after B and C done, got: {:?}",
-        d.status
+        d.state
     );
 }
 
@@ -683,9 +682,9 @@ fn test_subtask_failure_parent_stays_waiting() {
     // Parent should stay in WaitingOnChildren (subtask can be retried)
     let parent = env.api().get_task(&parent_id).unwrap();
     assert!(
-        parent.status.is_waiting_on_children(),
+        parent.state.is_waiting_on_children(),
         "Parent should stay in WaitingOnChildren when subtask fails, got: {:?}",
-        parent.status
+        parent.state
     );
 
     // Subtask should be Failed but can be retried
@@ -693,7 +692,7 @@ fn test_subtask_failure_parent_stays_waiting() {
     assert!(
         subtask.is_failed(),
         "Subtask should be Failed, got: {:?}",
-        subtask.status
+        subtask.state
     );
 }
 
@@ -802,7 +801,7 @@ fn test_subtask_integration_merges_to_parent_branch() {
     assert!(
         subtask.is_archived(),
         "Subtask should be Archived after integration, got: {:?}",
-        subtask.status
+        subtask.state
     );
 
     // Verify the file was merged to the parent's branch:
@@ -897,10 +896,10 @@ fn test_subtask_integration_conflict() {
 
     for id in [&id_a, &id_b] {
         let task = env.api().get_task(id).unwrap();
-        assert_eq!(
-            task.phase,
-            Phase::AwaitingReview,
-            "Subtask {id} should be AwaitingReview"
+        assert!(
+            matches!(task.state, TaskState::AwaitingApproval { .. }),
+            "Subtask {id} should be AwaitingApproval, got: {:?}",
+            task.state
         );
         env.api().approve(id).expect("Should approve work stage");
     }
@@ -946,8 +945,8 @@ fn test_subtask_integration_conflict() {
         &id_a
     } else {
         panic!(
-            "Expected one task to be Archived. A: {:?}/{:?}, B: {:?}/{:?}",
-            a_task.status, a_task.phase, b_task.status, b_task.phase
+            "Expected one task to be Archived. A: {:?}, B: {:?}",
+            a_task.state, b_task.state
         );
     };
 
@@ -957,12 +956,12 @@ fn test_subtask_integration_conflict() {
         conflict_task.current_stage(),
         Some("work"),
         "Conflicting subtask should be moved to recovery stage, got: {:?}",
-        conflict_task.status
+        conflict_task.state
     );
     assert!(
-        conflict_task.status.is_active(),
+        conflict_task.state.is_active(),
         "Conflicting subtask should be active after recovery, got: {:?}",
-        conflict_task.status
+        conflict_task.state
     );
 
     // VERIFY: The recovery prompt must tell the agent to rebase on the parent's branch,
@@ -1179,10 +1178,10 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
     env.advance(); // processes breakdown output
 
     let task = env.api().get_task(&parent.id).unwrap();
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
-        "Should be awaiting review after breakdown"
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
+        "Should be awaiting approval after breakdown, got: {:?}",
+        task.state
     );
 
     // Reject breakdown → stays in breakdown stage, new iteration
@@ -1204,10 +1203,10 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
     env.advance(); // processes breakdown output
 
     let task = env.api().get_task(&parent.id).unwrap();
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
-        "Should be awaiting review after second breakdown"
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
+        "Should be awaiting approval after second breakdown, got: {:?}",
+        task.state
     );
 
     // Approve → should NOT create subtasks, should advance to work stage
@@ -1227,10 +1226,10 @@ fn rerun_breakdown_with_no_subtasks_clears_stale_structured_artifact() {
         "work",
         "Task should advance to work stage, not WaitingOnChildren"
     );
-    assert_eq!(
-        task.phase,
-        Phase::Idle,
-        "Task should be Idle (ready for work agent)"
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued (ready for work agent), got: {:?}",
+        task.state
     );
 }
 

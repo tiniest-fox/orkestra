@@ -5,7 +5,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
@@ -52,7 +52,7 @@ pub fn execute(
     task.flow = flow.map(String::from);
 
     // Start in AwaitingSetup - orchestrator will pick this up and trigger setup
-    task.phase = Phase::AwaitingSetup;
+    task.state = TaskState::awaiting_setup(&first_stage.name);
 
     // Save task immediately (non-blocking UI)
     store.save_task(&task)?;
@@ -62,10 +62,9 @@ pub fn execute(
 
     orkestra_debug!(
         "task",
-        "Created {}: phase={:?}, status={:?}, stage={}",
+        "Created {}: state={}, stage={}",
         task.id,
-        task.phase,
-        task.status,
+        task.state,
         first_stage.name
     );
 

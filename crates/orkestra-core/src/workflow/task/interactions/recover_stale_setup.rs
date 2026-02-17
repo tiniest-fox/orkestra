@@ -3,9 +3,9 @@
 use crate::orkestra_debug;
 use crate::workflow::domain::TaskHeader;
 use crate::workflow::ports::{GitService, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 
-/// Recover tasks stuck in `SettingUp` phase.
+/// Recover tasks stuck in `SettingUp` state.
 ///
 /// Transitions them back to `AwaitingSetup`. The orchestrator will pick them
 /// up on the next tick. Cleans up any partial worktree/branch before transitioning.
@@ -15,9 +15,10 @@ pub fn execute(
     headers: &[TaskHeader],
 ) {
     for header in headers {
-        if header.phase != Phase::SettingUp {
-            continue;
-        }
+        let stage = match &header.state {
+            TaskState::SettingUp { stage } => stage.clone(),
+            _ => continue,
+        };
 
         orkestra_debug!("recovery", "Recovering stale setup task: {}", header.id);
 
@@ -46,7 +47,7 @@ pub fn execute(
             continue;
         };
 
-        task.phase = Phase::AwaitingSetup;
+        task.state = TaskState::awaiting_setup(stage.clone());
         task.worktree_path = None;
         task.branch_name = None;
         if let Err(e) = store.save_task(&task) {

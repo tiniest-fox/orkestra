@@ -445,7 +445,7 @@ impl WorkflowStore for InMemoryWorkflowStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orkestra_types::runtime::{Outcome, Phase};
+    use orkestra_types::runtime::{Outcome, TaskState};
 
     #[test]
     fn test_task_crud() {
@@ -458,11 +458,11 @@ mod tests {
         assert_eq!(loaded.title, "Test");
 
         let mut updated = loaded;
-        updated.phase = Phase::AgentWorking;
+        updated.state = TaskState::agent_working("planning");
         store.save_task(&updated).unwrap();
 
         let loaded = store.get_task("task-1").unwrap().unwrap();
-        assert_eq!(loaded.phase, Phase::AgentWorking);
+        assert_eq!(loaded.state, TaskState::agent_working("planning"));
 
         store.delete_task("task-1").unwrap();
         assert!(store.get_task("task-1").unwrap().is_none());

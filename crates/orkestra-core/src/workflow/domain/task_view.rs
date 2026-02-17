@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::workflow::domain::{Iteration, Question, StageSession, Task};
-use crate::workflow::runtime::{Outcome, Phase};
+use crate::workflow::runtime::{Outcome, TaskState};
 
 /// A task with pre-joined data and derived state for the frontend.
 ///
@@ -26,7 +26,7 @@ pub struct TaskView {
 ///
 /// Centralizes business logic in the backend so the frontend
 /// is a thin render layer. Each field delegates to canonical
-/// predicates on Task/Status/Phase — no duplicated logic.
+/// predicates on `TaskState` — no duplicated logic.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DerivedTaskState {
@@ -98,16 +98,16 @@ impl DerivedTaskState {
 
         Self {
             current_stage: task.current_stage().map(str::to_string),
-            is_working: !task.is_terminal() && task.phase.has_active_agent(),
-            is_system_active: !task.is_terminal() && task.phase.is_system_active(),
+            is_working: !task.is_terminal() && task.state.has_active_agent(),
+            is_system_active: !task.is_terminal() && task.state.is_system_active(),
             phase_icon: compute_phase_icon(task),
-            is_interrupted: task.phase == Phase::Interrupted,
+            is_interrupted: matches!(task.state, TaskState::Interrupted { .. }),
             is_failed: task.is_failed(),
             is_blocked: task.is_blocked(),
             is_done: task.is_done(),
             is_archived: task.is_archived(),
             is_terminal: task.is_terminal(),
-            is_waiting_on_children: task.status.is_waiting_on_children(),
+            is_waiting_on_children: task.state.is_waiting_on_children(),
             needs_review: task.needs_review(),
             has_questions: !pending_questions.is_empty(),
             pending_questions,
@@ -173,20 +173,24 @@ fn compute_phase_icon(task: &Task) -> Option<String> {
     if task.is_terminal() {
         return None;
     }
-    match task.phase {
-        Phase::Committing
-        | Phase::Integrating
-        | Phase::SettingUp
-        | Phase::AwaitingSetup => Some(task.phase.to_string()),
-        Phase::Finishing => Some("system_busy".to_string()),
-        Phase::Idle | Phase::Finished if !task.status.is_waiting_on_children() => {
-            Some("waiting_for_orchestrator".to_string())
-        }
-        // Explicit arms so the compiler catches new Phase variants
-        Phase::Idle | Phase::Finished // waiting_on_children case (guard failed above)
-        | Phase::AgentWorking
-        | Phase::AwaitingReview
-        | Phase::Interrupted => None,
+    match &task.state {
+        TaskState::Committing { .. } => Some("committing".to_string()),
+        TaskState::Integrating => Some("integrating".to_string()),
+        TaskState::SettingUp { .. } => Some("setting_up".to_string()),
+        TaskState::AwaitingSetup { .. } => Some("awaiting_setup".to_string()),
+        TaskState::Finishing { .. } => Some("system_busy".to_string()),
+        TaskState::Queued { .. } => Some("waiting_for_orchestrator".to_string()),
+        // Human-facing, agent-active, parent, and terminal states don't show phase icons
+        TaskState::AgentWorking { .. }
+        | TaskState::AwaitingApproval { .. }
+        | TaskState::AwaitingQuestionAnswer { .. }
+        | TaskState::AwaitingRejectionConfirmation { .. }
+        | TaskState::Interrupted { .. }
+        | TaskState::WaitingOnChildren { .. }
+        | TaskState::Done
+        | TaskState::Archived
+        | TaskState::Failed { .. }
+        | TaskState::Blocked { .. } => None,
     }
 }
 
@@ -267,7 +271,7 @@ fn extract_pending_rejection(task: &Task, iterations: &[Iteration]) -> Option<Pe
 mod tests {
     use super::*;
     use crate::workflow::domain::{Question, SessionState};
-    use crate::workflow::runtime::{Phase, Status};
+    use crate::workflow::runtime::TaskState;
 
     fn make_task(stage: &str) -> Task {
         Task::new(
@@ -300,7 +304,7 @@ mod tests {
     #[test]
     fn test_derived_state_working() {
         let mut task = make_task("planning");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("planning");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert!(derived.is_working);
@@ -310,7 +314,7 @@ mod tests {
     #[test]
     fn test_derived_state_needs_review() {
         let mut task = make_task("planning");
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_approval("planning");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert!(derived.needs_review);
@@ -318,13 +322,12 @@ mod tests {
     }
 
     #[test]
-    fn test_derived_state_review_requires_active_status() {
+    fn test_derived_state_done_not_needs_review() {
         let mut task = make_task("planning");
-        task.phase = Phase::AwaitingReview;
-        task.status = Status::Done;
+        task.state = TaskState::Done;
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
-        // Done + AwaitingReview should not count as needs_review
+        // Done tasks should not count as needs_review
         assert!(!derived.needs_review);
     }
 
@@ -332,18 +335,18 @@ mod tests {
     fn test_derived_state_terminal_states() {
         let mut task = make_task("planning");
 
-        task.status = Status::Done;
+        task.state = TaskState::Done;
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(derived.is_done);
         assert!(derived.is_terminal);
         assert!(derived.current_stage.is_none());
 
-        task.status = Status::failed("error");
+        task.state = TaskState::failed("error");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(derived.is_failed);
         assert!(derived.is_terminal);
 
-        task.status = Status::blocked("reason");
+        task.state = TaskState::blocked("reason");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(derived.is_blocked);
         assert!(derived.is_terminal);
@@ -427,18 +430,18 @@ mod tests {
     #[test]
     fn test_derived_state_with_subtask_progress() {
         let mut parent = make_task("breakdown");
-        parent.status = Status::waiting_on_children("work");
+        parent.state = TaskState::waiting_on_children("work");
 
         // Build derived states for subtasks
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
-        sub1.status = Status::Done;
+        sub1.state = TaskState::Done;
         let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[]);
 
         let sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
         let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[]);
 
         let mut sub3 = Task::new("sub-3", "Sub 3", "Desc", "work", "now");
-        sub3.status = Status::failed("error");
+        sub3.state = TaskState::failed("error");
         let sub3_derived = DerivedTaskState::build(&sub3, &[], &[], &[]);
 
         let derived = DerivedTaskState::build(
@@ -463,7 +466,7 @@ mod tests {
     #[test]
     fn test_subtask_progress_aggregate_flags() {
         let mut parent = make_task("breakdown");
-        parent.status = Status::waiting_on_children("work");
+        parent.state = TaskState::waiting_on_children("work");
 
         // Subtask with questions
         let sub_q = Task::new("sub-q", "Q", "Desc", "work", "now");
@@ -477,12 +480,12 @@ mod tests {
 
         // Subtask awaiting review
         let mut sub_r = Task::new("sub-r", "R", "Desc", "work", "now");
-        sub_r.phase = Phase::AwaitingReview;
+        sub_r.state = TaskState::awaiting_approval("work");
         let derived_review = DerivedTaskState::build(&sub_r, &[], &[], &[]);
 
         // Subtask working
         let mut sub_w = Task::new("sub-w", "W", "Desc", "work", "now");
-        sub_w.phase = Phase::AgentWorking;
+        sub_w.state = TaskState::agent_working("work");
         let derived_working = DerivedTaskState::build(&sub_w, &[], &[], &[]);
 
         let derived = DerivedTaskState::build(
@@ -501,16 +504,16 @@ mod tests {
     #[test]
     fn test_subtask_progress_includes_archived() {
         let mut parent = make_task("breakdown");
-        parent.status = Status::waiting_on_children("work");
+        parent.state = TaskState::waiting_on_children("work");
 
         // Done subtask
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
-        sub1.status = Status::Done;
+        sub1.state = TaskState::Done;
         let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[]);
 
         // Archived subtask (completed and integrated)
         let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
-        sub2.status = Status::Archived;
+        sub2.state = TaskState::Archived;
         let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[]);
 
         // Active subtask
@@ -537,7 +540,7 @@ mod tests {
     #[test]
     fn test_derived_state_archived() {
         let mut task = make_task("work");
-        task.status = Status::Archived;
+        task.state = TaskState::Archived;
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert!(derived.is_archived);
@@ -550,7 +553,7 @@ mod tests {
     #[test]
     fn test_derived_state_pending_rejection() {
         let mut task = make_task("review");
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_rejection_confirmation("review");
 
         let mut iter = Iteration::new("iter-1", "task-1", "review", 1, "now");
         iter.outcome = Some(Outcome::awaiting_rejection_review(
@@ -572,7 +575,7 @@ mod tests {
     #[test]
     fn test_derived_state_no_pending_rejection_for_standard_review() {
         let mut task = make_task("review");
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_approval("review");
 
         // Standard approval — no pending rejection
         let iter = Iteration::new("iter-1", "task-1", "review", 1, "now");
@@ -603,7 +606,7 @@ mod tests {
     #[test]
     fn test_derived_state_interrupted() {
         let mut task = make_task("work");
-        task.phase = Phase::Interrupted;
+        task.state = TaskState::interrupted("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert!(derived.is_interrupted);
@@ -617,21 +620,21 @@ mod tests {
     #[test]
     fn test_subtask_progress_interrupted() {
         let mut parent = make_task("breakdown");
-        parent.status = Status::waiting_on_children("work");
+        parent.state = TaskState::waiting_on_children("work");
 
         // One interrupted subtask
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
-        sub1.phase = Phase::Interrupted;
+        sub1.state = TaskState::interrupted("work");
         let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[]);
 
         // One working subtask
         let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
-        sub2.phase = Phase::AgentWorking;
+        sub2.state = TaskState::agent_working("work");
         let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[]);
 
         // One blocked subtask
         let mut sub3 = Task::new("sub-3", "Sub 3", "Desc", "work", "now");
-        sub3.status = Status::blocked("waiting");
+        sub3.state = TaskState::blocked("waiting");
         let sub3_derived = DerivedTaskState::build(&sub3, &[], &[], &[]);
 
         let derived = DerivedTaskState::build(
@@ -656,7 +659,7 @@ mod tests {
     #[test]
     fn test_derived_state_system_active_committing() {
         let mut task = make_task("work");
-        task.phase = Phase::Committing;
+        task.state = TaskState::committing("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert!(derived.is_system_active);
@@ -667,7 +670,7 @@ mod tests {
     #[test]
     fn test_derived_state_system_active_integrating() {
         let mut task = make_task("work");
-        task.phase = Phase::Integrating;
+        task.state = TaskState::Integrating;
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert!(derived.is_system_active);
@@ -678,7 +681,7 @@ mod tests {
     #[test]
     fn test_derived_state_system_active_finishing() {
         let mut task = make_task("work");
-        task.phase = Phase::Finishing;
+        task.state = TaskState::finishing("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert!(derived.is_system_active);
@@ -687,34 +690,30 @@ mod tests {
     }
 
     #[test]
-    fn test_derived_state_not_system_active_for_other_phases() {
+    fn test_derived_state_not_system_active_for_other_states() {
         let mut task = make_task("work");
 
-        task.phase = Phase::Idle;
+        task.state = TaskState::queued("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(!derived.is_system_active);
 
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(!derived.is_system_active);
 
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_approval("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(!derived.is_system_active);
 
-        task.phase = Phase::Interrupted;
+        task.state = TaskState::interrupted("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(!derived.is_system_active);
 
-        task.phase = Phase::Finished;
+        task.state = TaskState::awaiting_setup("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(!derived.is_system_active);
 
-        task.phase = Phase::AwaitingSetup;
-        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
-        assert!(!derived.is_system_active);
-
-        task.phase = Phase::SettingUp;
+        task.state = TaskState::setting_up("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
         assert!(!derived.is_system_active);
     }
@@ -722,12 +721,12 @@ mod tests {
     #[test]
     fn test_derived_state_system_active_terminal_guard() {
         let mut task = make_task("work");
-        task.phase = Phase::Committing;
-        task.status = Status::failed("test error");
+        // In the unified model, a task is either Committing or Failed, not both.
+        // This test verifies that a Failed task is not marked as system_active.
+        task.state = TaskState::failed("test error");
 
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
-        // Terminal state overrides phase
         assert!(!derived.is_system_active);
         assert!(derived.is_terminal);
         assert!(derived.is_failed);
@@ -736,16 +735,16 @@ mod tests {
     #[test]
     fn test_subtask_progress_system_active() {
         let mut parent = make_task("breakdown");
-        parent.status = Status::waiting_on_children("work");
+        parent.state = TaskState::waiting_on_children("work");
 
         // One system-active subtask (committing)
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
-        sub1.phase = Phase::Committing;
+        sub1.state = TaskState::committing("work");
         let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[]);
 
         // One working subtask
         let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
-        sub2.phase = Phase::AgentWorking;
+        sub2.state = TaskState::agent_working("work");
         let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[]);
 
         // One waiting subtask
@@ -770,18 +769,16 @@ mod tests {
     #[test]
     fn test_subtask_progress_failed_system_active() {
         let mut parent = make_task("breakdown");
-        parent.status = Status::waiting_on_children("work");
+        parent.state = TaskState::waiting_on_children("work");
 
-        // One failed subtask that's also in Committing phase
-        // (could happen during crash recovery)
+        // One failed subtask (in unified model, Failed is a single state)
         let mut sub1 = Task::new("sub-1", "Sub 1", "Desc", "work", "now");
-        sub1.phase = Phase::Committing;
-        sub1.status = Status::failed("crash during commit");
+        sub1.state = TaskState::failed("crash during commit");
         let sub1_derived = DerivedTaskState::build(&sub1, &[], &[], &[]);
 
         // One normal working subtask
         let mut sub2 = Task::new("sub-2", "Sub 2", "Desc", "work", "now");
-        sub2.phase = Phase::AgentWorking;
+        sub2.state = TaskState::agent_working("work");
         let sub2_derived = DerivedTaskState::build(&sub2, &[], &[], &[]);
 
         let derived = DerivedTaskState::build(&parent, &[], &[], &[sub1_derived, sub2_derived]);
@@ -796,7 +793,7 @@ mod tests {
     #[test]
     fn test_phase_icon_committing() {
         let mut task = make_task("work");
-        task.phase = Phase::Committing;
+        task.state = TaskState::committing("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert_eq!(derived.phase_icon, Some("committing".to_string()));
@@ -805,7 +802,7 @@ mod tests {
     #[test]
     fn test_phase_icon_integrating() {
         let mut task = make_task("work");
-        task.phase = Phase::Integrating;
+        task.state = TaskState::Integrating;
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert_eq!(derived.phase_icon, Some("integrating".to_string()));
@@ -814,7 +811,7 @@ mod tests {
     #[test]
     fn test_phase_icon_finishing() {
         let mut task = make_task("work");
-        task.phase = Phase::Finishing;
+        task.state = TaskState::finishing("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert_eq!(derived.phase_icon, Some("system_busy".to_string()));
@@ -823,7 +820,7 @@ mod tests {
     #[test]
     fn test_phase_icon_setting_up() {
         let mut task = make_task("work");
-        task.phase = Phase::SettingUp;
+        task.state = TaskState::setting_up("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert_eq!(derived.phase_icon, Some("setting_up".to_string()));
@@ -832,7 +829,7 @@ mod tests {
     #[test]
     fn test_phase_icon_awaiting_setup() {
         let mut task = make_task("work");
-        task.phase = Phase::AwaitingSetup;
+        task.state = TaskState::awaiting_setup("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert_eq!(derived.phase_icon, Some("awaiting_setup".to_string()));
@@ -851,33 +848,29 @@ mod tests {
     }
 
     #[test]
-    fn test_phase_icon_finished_waiting() {
+    fn test_phase_icon_waiting_on_children() {
         let mut task = make_task("work");
-        task.phase = Phase::Finished;
-        // Task is finished but not waiting on children
+        task.state = TaskState::waiting_on_children("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
-        assert_eq!(
-            derived.phase_icon,
-            Some("waiting_for_orchestrator".to_string())
-        );
+        // WaitingOnChildren shows no phase icon
+        assert_eq!(derived.phase_icon, None);
     }
 
     #[test]
-    fn test_phase_icon_idle_waiting_on_children() {
+    fn test_phase_icon_awaiting_question_answer() {
         let mut task = make_task("work");
-        task.phase = Phase::Idle;
-        task.status = Status::waiting_on_children("work");
+        task.state = TaskState::awaiting_question_answer("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
+        // Human-facing states show no phase icon
         assert_eq!(derived.phase_icon, None);
     }
 
     #[test]
     fn test_phase_icon_terminal() {
         let mut task = make_task("work");
-        task.phase = Phase::Committing;
-        task.status = Status::failed("err");
+        task.state = TaskState::failed("err");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         // Terminal tasks don't show phase icons
@@ -887,7 +880,7 @@ mod tests {
     #[test]
     fn test_phase_icon_agent_working() {
         let mut task = make_task("work");
-        task.phase = Phase::AgentWorking;
+        task.state = TaskState::agent_working("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert_eq!(derived.phase_icon, None);
@@ -896,7 +889,7 @@ mod tests {
     #[test]
     fn test_phase_icon_awaiting_review() {
         let mut task = make_task("work");
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_approval("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert_eq!(derived.phase_icon, None);
@@ -905,11 +898,11 @@ mod tests {
     #[test]
     fn test_is_working_terminal_guard() {
         let mut task = make_task("work");
-        task.phase = Phase::AgentWorking;
-        task.status = Status::failed("err");
+        // In the unified model, a task is either AgentWorking or Failed, not both.
+        // This test verifies that a Failed task is not marked as working.
+        task.state = TaskState::failed("err");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
-        // Terminal status overrides agent working phase
         assert!(!derived.is_working);
         assert!(derived.is_terminal);
         assert!(derived.is_failed);

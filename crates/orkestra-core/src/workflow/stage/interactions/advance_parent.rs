@@ -4,7 +4,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Phase, Status};
+use crate::workflow::runtime::TaskState;
 
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -16,10 +16,10 @@ pub fn execute(
         .get_task(parent_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(parent_id.into()))?;
 
-    if !parent.status.is_waiting_on_children() || parent.phase != Phase::Idle {
+    if !parent.state.is_waiting_on_children() {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Parent {} is not in WaitingOnChildren/Idle (status={:?}, phase={:?})",
-            parent_id, parent.status, parent.phase
+            "Parent {} is not in WaitingOnChildren (state={})",
+            parent_id, parent.state
         )));
     }
 
@@ -30,10 +30,10 @@ pub fn execute(
             .effective_capabilities(&stage, parent.flow.as_deref())
             .unwrap_or_default();
 
-        let next_status = if let Some(target) = effective_caps.completion_stage() {
-            Status::active(target)
+        let next_state = if let Some(target) = effective_caps.completion_stage() {
+            TaskState::queued(target)
         } else {
-            super::finalize_advancement::compute_next_status_on_approve(
+            super::finalize_advancement::compute_next_state_on_approve(
                 workflow,
                 &stage,
                 parent.flow.as_deref(),
@@ -41,19 +41,18 @@ pub fn execute(
         };
         let now = chrono::Utc::now().to_rfc3339();
 
-        parent.status = next_status.clone();
-        parent.phase = Phase::Idle;
-        parent.updated_at.clone_from(&now);
-
-        if let Some(new_stage) = next_status.stage() {
+        if let Some(new_stage) = next_state.stage() {
             iteration_service.create_iteration(&parent.id, new_stage, None)?;
         }
-        if parent.is_done() {
+        let is_done = next_state.is_done();
+        parent.state = next_state;
+        parent.updated_at.clone_from(&now);
+
+        if is_done {
             parent.completed_at = Some(now);
         }
     } else {
-        parent.status = Status::Done;
-        parent.phase = Phase::Idle;
+        parent.state = TaskState::Done;
         let now = chrono::Utc::now().to_rfc3339();
         parent.updated_at.clone_from(&now);
         parent.completed_at = Some(now);

@@ -2,7 +2,7 @@
 
 use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::ports::{PrError, WorkflowError};
-use orkestra_core::workflow::runtime::{Phase, Status};
+use orkestra_core::workflow::runtime::TaskState;
 use orkestra_core::workflow::{create_pr_sync, merge_task_sync};
 
 use super::helpers::{disable_auto_merge, MockAgentOutput, TestEnv};
@@ -81,8 +81,7 @@ fn auto_merge_disabled_pauses_done_tasks() {
 
     // Verify task is Done+Idle after review stage
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(matches!(task.state, TaskState::Done), "Task should be Done");
 
     // Tick several more times — task should stay Done+Idle (not auto-integrated)
     ctx.advance();
@@ -90,8 +89,10 @@ fn auto_merge_disabled_pauses_done_tasks() {
     ctx.advance();
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should still be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should still be Idle");
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should still be Done"
+    );
     // Task should NOT be Archived (integration didn't happen)
 }
 
@@ -112,8 +113,8 @@ fn auto_merge_enabled_integrates_normally() {
     // By the time advance_to_done returns, integration has already happened.
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
-        task.status,
-        Status::Archived,
+        task.state,
+        TaskState::Archived,
         "Task should be Archived (auto-integrated)"
     );
 }
@@ -135,14 +136,16 @@ fn merge_task_triggers_integration() {
 
     // Verify task is Done+Idle before explicit merge
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(matches!(task.state, TaskState::Done), "Task should be Done");
 
     // User triggers merge (sync=true runs inline for tests)
     merge_task_sync(ctx.api_arc(), &task_id).unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Archived, "Task should be Archived");
+    assert!(
+        matches!(task.state, TaskState::Archived),
+        "Task should be Archived"
+    );
 }
 
 /// `merge_task()` fails if task is not Done.
@@ -179,17 +182,15 @@ fn begin_pr_creation_transitions_to_integrating() {
 
     // Verify task is Done+Idle before PR creation
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(matches!(task.state, TaskState::Done), "Task should be Done");
 
     // Begin PR creation
     let task = ctx.api().begin_pr_creation(&task_id).unwrap();
 
-    assert_eq!(task.status, Status::Done, "Task should still be Done");
     assert_eq!(
-        task.phase,
-        Phase::Integrating,
-        "Task should be in Integrating phase"
+        task.state,
+        TaskState::Integrating,
+        "Task should be in Integrating state"
     );
 }
 
@@ -206,8 +207,7 @@ fn pr_creation_succeeded_stores_url_and_returns_to_idle() {
 
     // Verify task is Done+Idle before PR creation
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(matches!(task.state, TaskState::Done), "Task should be Done");
 
     // Begin PR creation
     ctx.api().begin_pr_creation(&task_id).unwrap();
@@ -218,8 +218,10 @@ fn pr_creation_succeeded_stores_url_and_returns_to_idle() {
         .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
         .unwrap();
 
-    assert_eq!(task.status, Status::Done, "Task should still be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should return to Idle");
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should still be Done"
+    );
     assert_eq!(
         task.pr_url,
         Some("https://github.com/test/repo/pull/42".to_string()),
@@ -244,8 +246,7 @@ fn pr_creation_failed_transitions_to_failed() {
 
     // Verify task is Done+Idle before PR creation
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(matches!(task.state, TaskState::Done), "Task should be Done");
 
     // Begin PR creation
     ctx.api().begin_pr_creation(&task_id).unwrap();
@@ -256,10 +257,10 @@ fn pr_creation_failed_transitions_to_failed() {
         .pr_creation_failed(&task_id, "Failed to create pull request: auth expired")
         .unwrap();
 
-    let Status::Failed { error } = &task.status else {
-        panic!("Task should be in Failed state, got: {:?}", task.status)
+    let TaskState::Failed { error } = &task.state else {
+        panic!("Task should be in Failed state, got: {:?}", task.state)
     };
-    assert!(error.is_some(), "Failed status should have error message");
+    assert!(error.is_some(), "Failed state should have error message");
     let err_msg = error.as_ref().unwrap();
     assert!(
         err_msg.contains("Failed to create pull request"),
@@ -290,8 +291,7 @@ fn retry_pr_creation_recovers_to_done() {
 
     // Verify task is Done+Idle before PR creation
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(matches!(task.state, TaskState::Done), "Task should be Done");
 
     // Begin and fail PR creation
     ctx.api().begin_pr_creation(&task_id).unwrap();
@@ -302,15 +302,17 @@ fn retry_pr_creation_recovers_to_done() {
     // Verify task is Failed
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
-        matches!(task.status, Status::Failed { .. }),
+        matches!(task.state, TaskState::Failed { .. }),
         "Task should be Failed"
     );
 
     // Retry PR creation
     let task = ctx.api().retry_pr_creation(&task_id).unwrap();
 
-    assert_eq!(task.status, Status::Done, "Task should be Done again");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should be Done again"
+    );
     assert_eq!(task.pr_url, None, "PR URL should still be None");
 
     // Now can successfully create PR
@@ -320,8 +322,8 @@ fn retry_pr_creation_recovers_to_done() {
         .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/43")
         .unwrap();
 
-    assert_eq!(task.status, Status::Done);
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Done));
+    assert!(task.is_done());
     assert_eq!(
         task.pr_url,
         Some("https://github.com/test/repo/pull/43".to_string())
@@ -345,8 +347,7 @@ fn cannot_merge_after_pr_opened() {
 
     // Verify task is Done+Idle before PR creation
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(matches!(task.state, TaskState::Done), "Task should be Done");
 
     // Successfully create PR
     ctx.api().begin_pr_creation(&task_id).unwrap();
@@ -379,8 +380,7 @@ fn cannot_open_pr_twice() {
 
     // Verify task is Done+Idle before PR creation
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(matches!(task.state, TaskState::Done), "Task should be Done");
 
     // Successfully create PR
     ctx.api().begin_pr_creation(&task_id).unwrap();
@@ -409,8 +409,7 @@ fn retry_pr_rejects_non_failed_task() {
 
     // Verify task is Done+Idle (not Failed)
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(matches!(task.state, TaskState::Done), "Task should be Done");
 
     // Attempt to retry should fail
     let result = ctx.api().retry_pr_creation(&task_id);
@@ -457,8 +456,7 @@ fn create_pr_sync_completes_pr_creation() {
 
     // Verify task is Done+Idle before PR creation
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Done, "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(matches!(task.state, TaskState::Done), "Task should be Done");
 
     // Configure mock PR service to succeed
     ctx.pr_service()
@@ -468,8 +466,10 @@ fn create_pr_sync_completes_pr_creation() {
     let task = create_pr_sync(ctx.api_arc(), &task_id).unwrap();
 
     // Verify PR creation completed (task has pr_url and returned to Idle)
-    assert_eq!(task.status, Status::Done, "Task should still be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should return to Idle");
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should still be Done"
+    );
     assert_eq!(
         task.pr_url,
         Some("https://github.com/test/repo/pull/42".to_string()),
@@ -518,16 +518,16 @@ fn create_pr_sync_handles_failure() {
     let task = create_pr_sync(ctx.api_arc(), &task_id).unwrap();
 
     // Verify task transitioned to Failed
-    let Status::Failed { error } = &task.status else {
-        panic!("Task should be in Failed state, got: {:?}", task.status)
+    let TaskState::Failed { error } = &task.state else {
+        panic!("Task should be in Failed state, got: {:?}", task.state)
     };
-    assert!(error.is_some(), "Failed status should have error message");
+    assert!(error.is_some(), "Failed state should have error message");
     let err_msg = error.as_ref().unwrap();
     assert!(
         err_msg.contains("PR creation failed"),
         "Error message should mention PR creation failure"
     );
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(task.is_failed(), "Task should be Failed");
     assert_eq!(task.pr_url, None, "PR URL should not be set on failure");
 }
 
@@ -559,7 +559,10 @@ fn integration_syncs_and_pushes_for_non_task_branches() {
     merge_task_sync(ctx.api_arc(), &task_id).unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.status, Status::Archived, "Task should be Archived");
+    assert!(
+        matches!(task.state, TaskState::Archived),
+        "Task should be Archived"
+    );
 
     // Verify sync_base_branch was called with "main" during integration
     let post_integration_sync_calls = ctx.mock_git_service().get_sync_base_branch_calls();
@@ -666,8 +669,8 @@ fn integration_succeeds_when_sync_fails() {
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
-        task.status,
-        Status::Archived,
+        task.state,
+        TaskState::Archived,
         "Task should be Archived despite sync failure"
     );
 }
@@ -695,8 +698,8 @@ fn integration_succeeds_when_push_fails() {
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
-        task.status,
-        Status::Archived,
+        task.state,
+        TaskState::Archived,
         "Task should be Archived despite push failure"
     );
 }
@@ -736,8 +739,8 @@ fn integration_skips_sync_and_push_for_task_branches() {
     // So the subtask should already be Archived - no need to call merge_task_sync
     let subtask = ctx.api().get_task(&subtask_id).unwrap();
     assert_eq!(
-        subtask.status,
-        Status::Archived,
+        subtask.state,
+        TaskState::Archived,
         "Subtask should be Archived after auto-integration"
     );
 

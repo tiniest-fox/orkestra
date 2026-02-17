@@ -171,7 +171,7 @@ mod tests {
 
         // Task with no active stage (terminal status)
         let mut task = Task::new("task-1", "Test", "Desc", "planning", "now");
-        task.status = crate::workflow::runtime::Status::Done;
+        task.state = crate::workflow::runtime::TaskState::Done;
 
         let result = service.resolve_fresh(&workflow, &task, false);
         assert!(matches!(result, Err(AgentConfigError::NotInActiveStage)));

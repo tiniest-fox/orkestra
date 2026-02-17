@@ -6,7 +6,7 @@ use crate::orkestra_debug;
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::domain::{Task, TaskHeader};
 use crate::workflow::ports::GitService;
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 use crate::workflow::OrchestratorEvent;
 
 /// Recover all tasks stuck in Integrating phase.
@@ -20,7 +20,7 @@ pub fn execute(api: &WorkflowApi, headers: &[TaskHeader]) -> Vec<OrchestratorEve
     let mut events = Vec::new();
 
     for header in headers {
-        if header.phase == Phase::Integrating && header.is_done() {
+        if matches!(header.state, TaskState::Integrating) {
             orkestra_debug!("recovery", "Found stale Integrating task: {}", header.id);
 
             let Ok(Some(task)) = api.store.get_task(&header.id) else {
@@ -50,22 +50,22 @@ fn recover_stale_task(api: &WorkflowApi, task: &Task) -> OrchestratorEvent {
     if !api.workflow.integration.auto_merge {
         orkestra_debug!(
             "recovery",
-            "Task {} stuck in Integrating (auto_merge=false) — resetting to Done+Idle for retry",
+            "Task {} stuck in Integrating (auto_merge=false) — resetting to Done for retry",
             task.id
         );
         let mut reset_task = task.clone();
-        reset_task.phase = Phase::Idle;
+        reset_task.state = TaskState::Done;
         if let Err(e) = api.store.save_task(&reset_task) {
             orkestra_debug!(
                 "recovery",
-                "Failed to reset task {} to Idle: {}",
+                "Failed to reset task {} to Done: {}",
                 task.id,
                 e
             );
         }
         return OrchestratorEvent::Error {
             task_id: Some(task.id.clone()),
-            error: "Task was stuck in Integrating phase — reset to Done+Idle".into(),
+            error: "Task was stuck in Integrating state — reset to Done".into(),
         };
     }
 
@@ -134,18 +134,18 @@ fn reattempt_integration(api: &WorkflowApi, task: &Task) -> OrchestratorEvent {
             orkestra_debug!("recovery", "Integration failed for {}: {}", task.id, e);
 
             if let Ok(updated_task) = api.get_task(&task.id) {
-                if updated_task.phase == Phase::Integrating {
+                if matches!(updated_task.state, TaskState::Integrating) {
                     orkestra_debug!(
                         "recovery",
-                        "Task {} still in Integrating phase, resetting to Idle",
+                        "Task {} still in Integrating state, resetting to Done",
                         task.id
                     );
                     let mut reset_task = updated_task;
-                    reset_task.phase = Phase::Idle;
+                    reset_task.state = TaskState::Done;
                     if let Err(e) = api.store.save_task(&reset_task) {
                         orkestra_debug!(
                             "integration",
-                            "Failed to reset task {} phase: {}",
+                            "Failed to reset task {} state: {}",
                             task.id,
                             e
                         );

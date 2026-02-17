@@ -31,7 +31,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{Task, TaskHeader, TickSnapshot};
 use crate::workflow::integration::interactions as integration_interactions;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 use crate::workflow::stage::interactions as stage_interactions;
 use crate::workflow::stage::service::StageExecutionService;
 use crate::workflow::task::interactions as task_interactions;
@@ -539,7 +539,7 @@ impl OrchestratorLoop {
             return Ok(());
         };
 
-        // Mark as integrating (requires Phase::Idle, prevents double-processing)
+        // Mark as integrating (requires TaskState::Done, prevents double-processing)
         if let Err(e) = api.mark_integrating(&task_id) {
             events.push(OrchestratorEvent::Error {
                 task_id: Some(task_id),
@@ -571,11 +571,11 @@ impl OrchestratorLoop {
 
         if task.base_branch.is_empty() {
             let mut reset_task = api.get_task(&task_id)?;
-            reset_task.phase = Phase::Idle;
+            reset_task.state = TaskState::Done;
             if let Err(e) = api.store.save_task(&reset_task) {
                 orkestra_debug!(
                     "integration",
-                    "Failed to reset task {} phase: {}",
+                    "Failed to reset task {} state: {}",
                     task_id,
                     e
                 );

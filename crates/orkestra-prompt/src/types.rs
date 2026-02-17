@@ -3,7 +3,7 @@
 //! All data types that cross interaction boundaries live here.
 
 use orkestra_types::config::StageConfig;
-use orkestra_types::runtime::{Phase, Status};
+use orkestra_types::runtime::TaskState;
 use serde::Serialize;
 
 // ============================================================================
@@ -239,18 +239,18 @@ pub struct ResumeQuestionAnswer {
 // Helper Functions
 // ============================================================================
 
-/// Convert Status and Phase to a user-friendly display string for sibling context.
-pub fn sibling_status_display(status: &Status, phase: Phase) -> &'static str {
-    match status {
-        Status::Done | Status::Archived => "done",
-        Status::Failed { .. } => "failed",
-        Status::Blocked { .. } => "blocked",
-        Status::WaitingOnChildren { .. } => "waiting",
-        Status::Active { .. } => match phase {
-            Phase::AgentWorking => "working",
-            Phase::AwaitingReview => "reviewing",
-            _ => "pending",
-        },
+/// Convert `TaskState` to a user-friendly display string for sibling context.
+pub fn sibling_status_display(state: &TaskState) -> &'static str {
+    match state {
+        TaskState::Done | TaskState::Archived => "done",
+        TaskState::Failed { .. } => "failed",
+        TaskState::Blocked { .. } => "blocked",
+        TaskState::WaitingOnChildren { .. } => "waiting",
+        TaskState::AgentWorking { .. } => "working",
+        TaskState::AwaitingApproval { .. }
+        | TaskState::AwaitingQuestionAnswer { .. }
+        | TaskState::AwaitingRejectionConfirmation { .. } => "reviewing",
+        _ => "pending",
     }
 }
 

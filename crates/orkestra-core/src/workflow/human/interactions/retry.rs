@@ -5,7 +5,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Phase, Status};
+use crate::workflow::runtime::TaskState;
 
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -19,8 +19,8 @@ pub fn execute(
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
     // Verify task is in a retryable state (failed or blocked)
-    let was_failed = matches!(task.status, Status::Failed { .. });
-    let was_blocked = matches!(task.status, Status::Blocked { .. });
+    let was_failed = task.is_failed();
+    let was_blocked = task.is_blocked();
     if !was_failed && !was_blocked {
         return Err(WorkflowError::InvalidTransition(format!(
             "Cannot retry task {task_id} - not in failed or blocked state"
@@ -31,7 +31,7 @@ pub fn execute(
         "action",
         "retry {}: recovering from {} state",
         task_id,
-        task.status
+        task.state
     );
 
     // Get the last stage from the most recent iteration
@@ -48,18 +48,15 @@ pub fn execute(
     let now = chrono::Utc::now().to_rfc3339();
 
     // Transition task back to its last stage
-    task.status = Status::active(&last_stage);
-
-    // If worktree setup never completed, go back to AwaitingSetup
     if task.worktree_path.is_none() {
-        task.phase = Phase::AwaitingSetup;
+        task.state = TaskState::awaiting_setup(&last_stage);
         orkestra_debug!(
             "action",
-            "retry {}: no worktree_path, setting phase to AwaitingSetup",
+            "retry {}: no worktree_path, setting state to AwaitingSetup",
             task_id
         );
     } else {
-        task.phase = Phase::Idle;
+        task.state = TaskState::queued(&last_stage);
     }
 
     task.updated_at.clone_from(&now);
@@ -81,10 +78,10 @@ pub fn execute(
 
     orkestra_debug!(
         "action",
-        "retry {}: resumed in stage {}, phase={:?}",
+        "retry {}: resumed in stage {}, state={}",
         task_id,
         last_stage,
-        task.phase
+        task.state
     );
 
     Ok(task)

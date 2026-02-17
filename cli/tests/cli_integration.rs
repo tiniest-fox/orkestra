@@ -10,7 +10,7 @@ use orkestra_core::testutil::fixtures::{iterations, sessions};
 use orkestra_core::workflow::config::{FlowConfig, FlowStageEntry, StageConfig, WorkflowConfig};
 use orkestra_core::workflow::domain::{LogEntry, Task};
 use orkestra_core::workflow::ports::WorkflowStore;
-use orkestra_core::workflow::runtime::{Outcome, Phase, Status};
+use orkestra_core::workflow::runtime::{Outcome, TaskState};
 use orkestra_core::workflow::{Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi};
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -246,7 +246,7 @@ fn test_task_create_with_flow() {
     // Verify task has flow set and starts at flow's first stage
     assert_eq!(task.flow, Some("quick".to_string()));
     assert_eq!(task.current_stage(), Some("work")); // "quick" flow only has work stage
-    assert_eq!(task.phase, Phase::AwaitingSetup);
+    assert!(matches!(task.state, TaskState::AwaitingSetup { .. }));
 
     // Test invalid flow name
     let result =
@@ -268,7 +268,7 @@ fn test_task_show_git_state() {
     // With sync_setup=true, setup should complete immediately
     // But we need to trigger it - in real system, orchestrator does this
     // For now, verify the task was created correctly
-    assert_eq!(task.phase, Phase::AwaitingSetup);
+    assert!(matches!(task.state, TaskState::AwaitingSetup { .. }));
 
     // Since we can't easily trigger setup without orchestrator,
     // manually create git fields for testing get_git_state
@@ -284,7 +284,7 @@ fn test_task_show_git_state() {
     );
     task.base_branch = "main".to_string();
     task.base_commit = "abc123".to_string();
-    task.phase = Phase::Idle;
+    task.state = TaskState::queued("planning");
     store.save_task(&task).expect("update task");
 
     // Call get_git_state (simulates CLI --git flag)
@@ -417,10 +417,7 @@ fn test_stuck_task_investigation_scenario() {
 
     // Move task to work stage
     let mut task = api.get_task(&task.id).expect("get task");
-    task.status = Status::Active {
-        stage: "work".to_string(),
-    };
-    task.phase = Phase::Idle;
+    task.state = TaskState::queued("work");
     store.save_task(&task).expect("update task stage");
 
     // Simulate: work stage completed successfully
@@ -437,10 +434,7 @@ fn test_stuck_task_investigation_scenario() {
     .expect("save work iteration");
 
     // Move task to review stage
-    task.status = Status::Active {
-        stage: "review".to_string(),
-    };
-    task.phase = Phase::AwaitingReview;
+    task.state = TaskState::awaiting_approval("review");
     store.save_task(&task).expect("update to review");
 
     // Simulate: review stage REJECTED with feedback
@@ -459,13 +453,7 @@ fn test_stuck_task_investigation_scenario() {
 
     // Step 1: Get task - see status and phase
     let task_info = api.get_task(&task.id).expect("get task");
-    assert_eq!(
-        task_info.status,
-        Status::Active {
-            stage: "review".to_string()
-        }
-    );
-    assert_eq!(task_info.phase, Phase::AwaitingReview);
+    assert_eq!(task_info.state, TaskState::awaiting_approval("review"));
 
     // Step 2: Get iterations - see the history
     let iterations = api.get_iterations(&task.id).expect("get iterations");

@@ -5,7 +5,7 @@ use crate::workflow::domain::{extract_short_id, Task};
 use crate::workflow::execution::SubtaskOutput;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Artifact, Phase};
+use crate::workflow::runtime::{Artifact, TaskState};
 
 pub fn execute(
     parent: &Task,
@@ -71,7 +71,7 @@ pub fn execute(
         ));
 
         // Start in AwaitingSetup - orchestrator will pick this up when deps are satisfied
-        task.phase = Phase::AwaitingSetup;
+        task.state = TaskState::awaiting_setup(&first_stage.name);
 
         // Save immediately so subsequent next_subtask_id calls see this sibling
         store.save_task(&task)?;

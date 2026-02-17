@@ -48,14 +48,14 @@ export function smartDefaultTab(task: WorkflowTaskView, tabs: Tab[]): string {
   const { derived } = task;
 
   let preferred: string;
-  if (derived.is_done || task.status.type === "archived") {
+  if (derived.is_done || task.state.type === "archived") {
     // Default to PR tab if task has a PR, otherwise artifacts
     preferred = task.pr_url ? TaskDetailTabs.pr(task.id) : TaskDetailTabs.artifacts(task.id);
   } else if (derived.is_failed || derived.is_blocked) {
     preferred = TaskDetailTabs.details(task.id);
   } else if (derived.is_interrupted) {
     preferred = TaskDetailTabs.details(task.id);
-  } else if (task.status.type === "waiting_on_children") {
+  } else if (task.state.type === "waiting_on_children") {
     preferred = TaskDetailTabs.subtasks(task.id);
   } else if (derived.is_working || derived.is_system_active) {
     preferred = TaskDetailTabs.logs(task.id);

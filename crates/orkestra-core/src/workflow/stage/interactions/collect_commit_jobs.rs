@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::orkestra_debug;
 use crate::workflow::ports::{GitService, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 
 /// Parameters for a background commit job.
 pub struct CommitJob {
@@ -23,7 +23,7 @@ pub fn execute(
     let finishing: Vec<_> = store
         .list_task_headers()?
         .into_iter()
-        .filter(|h| h.phase == Phase::Finishing)
+        .filter(|h| matches!(h.state, TaskState::Finishing { .. }))
         .collect();
 
     if finishing.is_empty() {
@@ -36,7 +36,7 @@ pub fn execute(
         let Some(mut task) = store.get_task(&header.id)? else {
             continue;
         };
-        if task.phase != Phase::Finishing {
+        if !matches!(task.state, TaskState::Finishing { .. }) {
             continue;
         }
 
@@ -59,7 +59,7 @@ pub fn execute(
 
         if let Some(g) = git_service {
             // Git path: transition to Committing and queue background job
-            task.phase = Phase::Committing;
+            task.state = TaskState::committing(&stage);
             task.updated_at = chrono::Utc::now().to_rfc3339();
             store.save_task(&task)?;
 
@@ -70,8 +70,7 @@ pub fn execute(
                 git: Arc::clone(g),
             });
         } else {
-            // No git service — skip commit, go straight to Finished
-            task.phase = Phase::Finished;
+            // No git service — skip commit, stay in Finishing (advance_all_committed picks up)
             task.updated_at = chrono::Utc::now().to_rfc3339();
             store.save_task(&task)?;
         }

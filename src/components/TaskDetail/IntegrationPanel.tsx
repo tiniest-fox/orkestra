@@ -5,11 +5,11 @@
  * For Failed tasks (PR creation failure), shows error and Retry button.
  */
 
-import type { WorkflowTaskStatus } from "../../types/workflow";
+import type { TaskState } from "../../types/workflow";
 import { Button, Panel } from "../ui";
 
 interface IntegrationPanelProps {
-  status: WorkflowTaskStatus;
+  state: TaskState;
   onMerge: () => void;
   onOpenPr: () => void;
   onRetryPr: () => void;
@@ -19,7 +19,7 @@ interface IntegrationPanelProps {
 }
 
 export function IntegrationPanel({
-  status,
+  state,
   onMerge,
   onOpenPr,
   onRetryPr,
@@ -27,15 +27,15 @@ export function IntegrationPanel({
   ghAvailable,
 }: IntegrationPanelProps) {
   // Failed state — show error and retry
-  if (status.type === "failed") {
+  if (state.type === "failed") {
     return (
       <Panel accent="error" autoFill={false} padded={true} className="h-[200px] flex flex-col">
         <div className="text-sm font-medium text-error-600 dark:text-error-400 mb-3">
           PR Creation Failed
         </div>
-        {status.error && (
+        {state.error && (
           <div className="flex-1 text-sm text-error-700 dark:text-error-300 overflow-y-auto mb-3">
-            {status.error}
+            {state.error}
           </div>
         )}
         <Button

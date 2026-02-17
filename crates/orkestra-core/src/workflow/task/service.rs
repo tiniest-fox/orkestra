@@ -97,7 +97,7 @@ impl WorkflowApi {
 #[allow(clippy::similar_names)] // task1/task2/tasks are clear in test context
 mod tests {
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
-    use crate::workflow::runtime::{Phase, Status};
+    use crate::workflow::runtime::TaskState;
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
 
@@ -133,7 +133,7 @@ mod tests {
     /// stay in `AwaitingSetup`. This helper manually transitions to `Idle`.
     fn complete_setup(api: &WorkflowApi, task_id: &str) -> Task {
         let mut task = api.get_task(task_id).unwrap();
-        task.phase = Phase::Idle;
+        task.state = TaskState::queued("planning");
         api.store.save_task(&task).unwrap();
         task
     }
@@ -273,7 +273,7 @@ mod tests {
             .unwrap();
 
         // Archive task2
-        task2.status = Status::Archived;
+        task2.state = TaskState::Archived;
         api.store.save_task(&task2).unwrap();
 
         let tasks = api.list_tasks().unwrap();
@@ -293,7 +293,7 @@ mod tests {
             .unwrap();
 
         // Archive task2
-        task2.status = Status::Archived;
+        task2.state = TaskState::Archived;
         api.store.save_task(&task2).unwrap();
 
         let archived = api.list_archived_tasks().unwrap();

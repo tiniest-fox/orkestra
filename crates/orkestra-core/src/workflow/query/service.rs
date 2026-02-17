@@ -128,7 +128,7 @@ mod tests {
     use crate::workflow::domain::{Question, Task};
     use crate::workflow::execution::StageOutput;
     use crate::workflow::query::interactions::task_views::topological_sort;
-    use crate::workflow::runtime::{Outcome, Phase, Status};
+    use crate::workflow::runtime::{Outcome, TaskState};
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
 
@@ -137,7 +137,7 @@ mod tests {
     /// Create a task ready for agent work (in Idle phase).
     fn create_task_ready(api: &WorkflowApi, title: &str, desc: &str) -> Task {
         let mut task = api.create_task(title, desc, None).unwrap();
-        task.phase = Phase::Idle;
+        task.state = TaskState::queued("planning");
         api.store.save_task(&task).unwrap();
         task
     }
@@ -301,7 +301,7 @@ mod tests {
         );
 
         let mut done_task = api.create_task("Done", "Done task", None).unwrap();
-        done_task.status = Status::Done;
+        done_task.state = TaskState::Done;
         api.store.save_task(&done_task).unwrap();
 
         assert_eq!(api.get_current_stage(&done_task.id).unwrap(), None);
@@ -400,7 +400,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.status = Status::Archived;
+        task.state = TaskState::Archived;
         api.store.save_task(&task).unwrap();
 
         let archived_views = api.list_archived_task_views().unwrap();

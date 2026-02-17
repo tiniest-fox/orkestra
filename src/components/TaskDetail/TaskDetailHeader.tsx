@@ -175,20 +175,20 @@ export function TaskDetailHeader({
   };
 
   const statusBadgeVariant =
-    task.status.type === "done"
+    task.state.type === "done"
       ? "done"
-      : task.status.type === "failed"
+      : task.state.type === "failed"
         ? "failed"
-        : task.status.type === "blocked"
+        : task.state.type === "blocked"
           ? "blocked"
           : "waiting";
 
   const statusLabel =
-    task.status.type === "active"
-      ? titleCase(task.status.stage)
-      : task.status.type === "waiting_on_children"
-        ? "Waiting"
-        : titleCase(task.status.type);
+    task.state.type === "waiting_on_children"
+      ? "Waiting"
+      : "stage" in task.state
+        ? titleCase(task.state.stage)
+        : titleCase(task.state.type);
 
   return (
     <div className="flex flex-col items-stretch pt-1 pb-2 px-2">

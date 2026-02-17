@@ -18,8 +18,8 @@ use orkestra_core::{
         domain::{IterationTrigger, LogEntry},
         load_workflow_for_project,
         runtime::Outcome,
-        Git2GitService, GitService, Iteration, Phase, SqliteWorkflowStore, StageSession, Status,
-        Task, TaskView, WorkflowApi,
+        Git2GitService, GitService, Iteration, SqliteWorkflowStore, StageSession, Task, TaskState,
+        TaskView, WorkflowApi,
     },
 };
 
@@ -556,10 +556,10 @@ fn print_subtasks_table(subtasks: &[TaskView]) {
     }
 
     println!(
-        "{:<36} {:<30} {:<20} {:<10} {:<20}",
-        "ID", "Title", "Status", "Phase", "Dependencies"
+        "{:<36} {:<30} {:<25} {:<20}",
+        "ID", "Title", "State", "Dependencies"
     );
-    println!("{}", "-".repeat(116));
+    println!("{}", "-".repeat(111));
 
     for view in subtasks {
         let title = truncate_title(&view.task.title);
@@ -569,11 +569,10 @@ fn print_subtasks_table(subtasks: &[TaskView]) {
             view.task.depends_on.join(", ")
         };
         println!(
-            "{:<36} {:<30} {:<20} {:<10} {:<20}",
+            "{:<36} {:<30} {:<25} {:<20}",
             view.task.id,
             title,
-            format_status(&view.task.status),
-            format_phase(view.task.phase),
+            format_state(&view.task.state),
             deps
         );
     }
@@ -585,20 +584,16 @@ fn print_tasks_table(tasks: &[Task], empty_message: &str) {
         return;
     }
 
-    println!(
-        "{:<36} {:<30} {:<20} {:<10}",
-        "ID", "Title", "Status", "Phase"
-    );
-    println!("{}", "-".repeat(96));
+    println!("{:<36} {:<30} {:<25}", "ID", "Title", "State");
+    println!("{}", "-".repeat(91));
 
     for task in tasks {
         let title = truncate_title(&task.title);
         println!(
-            "{:<36} {:<30} {:<20} {:<10}",
+            "{:<36} {:<30} {:<25}",
             task.id,
             title,
-            format_status(&task.status),
-            format_phase(task.phase)
+            format_state(&task.state),
         );
     }
 }
@@ -644,8 +639,7 @@ fn handle_show_task_full(api: &WorkflowApi, id: &str, pretty: bool) {
         println!("Task: {}", task.id);
         println!("Title: {}", task.title);
         println!("Description: {}", task.description);
-        println!("Status: {}", format_status(&task.status));
-        println!("Phase: {}", format_phase(task.phase));
+        println!("State: {}", format_state(&task.state));
 
         if let Some(stage) = task.current_stage() {
             println!("Current Stage: {stage}");
@@ -841,7 +835,7 @@ fn handle_merge_task(api: &WorkflowApi, id: &str, pretty: bool) {
 
     if pretty {
         println!("Merged task {} into {}", task.id, task.base_branch);
-        println!("Status: {}", format_status(&task.status));
+        println!("State: {}", format_state(&task.state));
     } else {
         output_json(&task);
     }
@@ -865,7 +859,7 @@ fn handle_open_pr_task(api: Arc<Mutex<WorkflowApi>>, id: &str, pretty: bool) {
         } else {
             println!("Task {}: PR creation completed", task.id);
         }
-        println!("Status: {}", format_status(&task.status));
+        println!("State: {}", format_state(&task.state));
     } else {
         output_json(&task);
     }
@@ -881,8 +875,8 @@ fn handle_retry_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
     };
 
     if pretty {
-        println!("Reset task {} to Done+Idle", task.id);
-        println!("Status: {}", format_status(&task.status));
+        println!("Reset task {} to Done", task.id);
+        println!("State: {}", format_state(&task.state));
         println!("You can now retry merge or PR creation");
     } else {
         output_json(&task);
@@ -901,7 +895,7 @@ fn handle_retry_task(api: &WorkflowApi, id: &str, instructions: Option<&str>, pr
     if pretty {
         println!("Retried task {}", task.id);
         println!("Stage: {}", task.current_stage().unwrap_or("-"));
-        println!("Phase: {}", format_phase(task.phase));
+        println!("State: {}", format_state(&task.state));
         if instructions.is_some() {
             println!("Instructions provided to agent");
         }
@@ -955,7 +949,7 @@ fn init_workflow_api() -> Result<WorkflowApi, String> {
 
 fn matches_status_filter(task: &Task, filter: &StatusFilter) -> bool {
     match filter {
-        StatusFilter::Active => task.status.is_active(),
+        StatusFilter::Active => !task.state.is_terminal(),
         StatusFilter::Done => task.is_done(),
         StatusFilter::Archived => task.is_archived(),
         StatusFilter::Failed => task.is_failed(),
@@ -963,35 +957,32 @@ fn matches_status_filter(task: &Task, filter: &StatusFilter) -> bool {
     }
 }
 
-fn format_status(status: &Status) -> String {
-    match status {
-        Status::Active { stage } => format!("Active({stage})"),
-        Status::Done => "Done".to_string(),
-        Status::Archived => "Archived".to_string(),
-        Status::WaitingOnChildren { stage } => format!("Waiting({stage})"),
-        Status::Failed { error } => {
+fn format_state(state: &TaskState) -> String {
+    match state {
+        TaskState::AwaitingSetup { stage } => format!("AwaitingSetup({stage})"),
+        TaskState::SettingUp { stage } => format!("SettingUp({stage})"),
+        TaskState::Queued { stage } => format!("Queued({stage})"),
+        TaskState::AgentWorking { stage } => format!("Working({stage})"),
+        TaskState::Finishing { stage } => format!("Finishing({stage})"),
+        TaskState::Committing { stage } => format!("Committing({stage})"),
+        TaskState::Integrating => "Integrating".to_string(),
+        TaskState::AwaitingApproval { stage } => format!("AwaitingApproval({stage})"),
+        TaskState::AwaitingQuestionAnswer { stage } => format!("AwaitingQuestions({stage})"),
+        TaskState::AwaitingRejectionConfirmation { stage } => {
+            format!("AwaitingRejection({stage})")
+        }
+        TaskState::Interrupted { stage } => format!("Interrupted({stage})"),
+        TaskState::WaitingOnChildren { stage } => format!("WaitingOnChildren({stage})"),
+        TaskState::Done => "Done".to_string(),
+        TaskState::Archived => "Archived".to_string(),
+        TaskState::Failed { error } => {
             let msg = error.as_deref().unwrap_or("unknown");
             format!("Failed: {}", msg.chars().take(20).collect::<String>())
         }
-        Status::Blocked { reason } => {
+        TaskState::Blocked { reason } => {
             let msg = reason.as_deref().unwrap_or("unknown");
             format!("Blocked: {}", msg.chars().take(20).collect::<String>())
         }
-    }
-}
-
-fn format_phase(phase: Phase) -> String {
-    match phase {
-        Phase::AwaitingSetup => "Awaiting Setup".to_string(),
-        Phase::SettingUp => "Setting Up".to_string(),
-        Phase::Idle => "Idle".to_string(),
-        Phase::AgentWorking => "Working".to_string(),
-        Phase::AwaitingReview => "Review".to_string(),
-        Phase::Interrupted => "Interrupted".to_string(),
-        Phase::Integrating => "Integrating".to_string(),
-        Phase::Finishing => "Finishing".to_string(),
-        Phase::Committing => "Committing".to_string(),
-        Phase::Finished => "Finished".to_string(),
     }
 }
 

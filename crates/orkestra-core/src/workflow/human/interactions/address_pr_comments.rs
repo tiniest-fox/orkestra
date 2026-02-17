@@ -5,7 +5,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, PrCommentData, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Phase, Status};
+use crate::workflow::runtime::TaskState;
 
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -34,11 +34,6 @@ pub fn execute(
             "Task {task_id} is not done, cannot address PR comments"
         )));
     }
-    if task.phase != Phase::Idle {
-        return Err(WorkflowError::InvalidTransition(format!(
-            "Task {task_id} is not idle, cannot address PR comments"
-        )));
-    }
 
     orkestra_debug!(
         "action",
@@ -55,10 +50,9 @@ pub fn execute(
         Some(IterationTrigger::PrComments { comments, guidance }),
     )?;
 
-    // Update task to recovery stage in Idle phase
+    // Update task to recovery stage in Queued state
     let now = chrono::Utc::now().to_rfc3339();
-    task.status = Status::active(&recovery_stage);
-    task.phase = Phase::Idle;
+    task.state = TaskState::queued(&recovery_stage);
     task.completed_at = None;
     task.updated_at = now;
 

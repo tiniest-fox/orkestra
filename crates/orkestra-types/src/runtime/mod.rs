@@ -11,4 +11,4 @@ mod status;
 pub use artifact::{Artifact, ArtifactStore};
 pub use markdown::markdown_to_html;
 pub use outcome::Outcome;
-pub use status::{ParsePhaseError, Phase, Status};
+pub use status::TaskState;

@@ -11,7 +11,7 @@ use std::thread;
 
 use crate::title::TitleGenerator;
 use crate::workflow::ports::{GitService, WorkflowStore};
-use crate::workflow::runtime::{Phase, Status};
+use crate::workflow::runtime::TaskState;
 
 /// Handles background setup for newly created tasks.
 ///
@@ -52,7 +52,7 @@ impl TaskSetupService {
     /// Spawn background setup for a new task.
     ///
     /// Runs worktree creation and title generation in parallel, then transitions
-    /// to `Phase::Idle`. On failure, transitions to `Status::Failed`.
+    /// to `TaskState::Queued`. On failure, transitions to `TaskState::Failed`.
     ///
     /// `base_branch` is already set on the task at creation time. It's passed here
     /// so the background thread can use it for `create_worktree()` without loading
@@ -95,7 +95,8 @@ impl TaskSetupService {
 /// Run worktree creation and title generation in parallel using scoped threads.
 ///
 /// Delegates worktree creation to `setup_worktree::execute` and title generation
-/// to `generate_title::execute`.
+/// to `generate_title::execute`. Returns the worktree setup result for the caller
+/// to apply.
 fn run_parallel_setup(
     store: &Arc<dyn WorkflowStore>,
     git: Option<&Arc<dyn GitService>>,
@@ -124,10 +125,7 @@ fn run_parallel_setup(
             let _ = h.join();
         }
 
-        // Apply phase transition (worktree info already saved by the interaction)
-        apply_setup_result(store, task_id, worktree_result);
-
-        Ok(())
+        worktree_result
     })
 }
 
@@ -139,10 +137,11 @@ fn apply_setup_result(store: &Arc<dyn WorkflowStore>, task_id: &str, result: Res
     match store.get_task(task_id) {
         Ok(Some(mut task)) => match result {
             Ok(()) => {
-                task.phase = Phase::Idle;
+                let stage = task.current_stage().unwrap_or("unknown").to_string();
+                task.state = TaskState::queued(stage);
                 crate::orkestra_debug!(
                     "task",
-                    "{} setup complete: phase=Idle, worktree={:?}, branch={:?}",
+                    "{} setup complete: state=Queued, worktree={:?}, branch={:?}",
                     task_id,
                     task.worktree_path,
                     task.branch_name
@@ -153,8 +152,7 @@ fn apply_setup_result(store: &Arc<dyn WorkflowStore>, task_id: &str, result: Res
             }
             Err(error) => {
                 crate::orkestra_debug!("setup", "Setup failed for {task_id}: {error}");
-                task.status = Status::Failed { error: Some(error) };
-                task.phase = Phase::Idle;
+                task.state = TaskState::failed(&error);
                 // Worktree info is already saved - retry will skip creation
                 if let Err(e) = store.save_task(&task) {
                     crate::orkestra_debug!(

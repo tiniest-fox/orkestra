@@ -4,7 +4,7 @@ use crate::orkestra_debug;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -16,10 +16,10 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if task.phase != Phase::Interrupted {
+    if !matches!(task.state, TaskState::Interrupted { .. }) {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot resume task in phase {:?}",
-            task.phase
+            "Cannot resume task in state {} (expected Interrupted)",
+            task.state
         )));
     }
 
@@ -40,9 +40,9 @@ pub fn execute(
     let trigger = IterationTrigger::ManualResume { message };
     iteration_service.create_iteration(&task.id, &current_stage, Some(trigger))?;
 
-    // Transition to Idle so orchestrator picks it up
+    // Transition to Queued so orchestrator picks it up
     let now = chrono::Utc::now().to_rfc3339();
-    task.phase = Phase::Idle;
+    task.state = TaskState::queued(&current_stage);
     task.updated_at = now;
 
     store.save_task(&task)?;

@@ -5,7 +5,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Question, QuestionAnswer, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::WorkflowResult;
-use crate::workflow::runtime::{Artifact, Outcome, Phase};
+use crate::workflow::runtime::{Artifact, Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
 
 /// Standard auto-answer text used when auto-mode tasks receive questions from agents.
@@ -46,9 +46,9 @@ pub fn execute(
             stage_name,
             Some(IterationTrigger::Answers { answers }),
         )?;
-        task.phase = Phase::Idle;
+        task.state = TaskState::queued(stage_name);
     } else {
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_question_answer(stage_name);
     }
     task.updated_at = now.to_string();
     Ok(())

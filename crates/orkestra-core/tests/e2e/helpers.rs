@@ -17,7 +17,7 @@ use orkestra_core::workflow::{
         ProviderRegistry, RunConfig, StageOutput,
     },
     ports::{GitService, MockGitService, MockPrService, PrService},
-    runtime::Phase,
+    runtime::TaskState,
     MockAgentRunner, OrchestratorLoop, SqliteWorkflowStore, StageExecutionService, WorkflowApi,
 };
 use orkestra_core::{
@@ -453,9 +453,12 @@ impl TestEnv {
 
         let task = self.api().get_task(&task_id).expect("Should get task");
         assert!(
-            task.phase != Phase::AwaitingSetup && task.phase != Phase::SettingUp,
+            !matches!(
+                task.state,
+                TaskState::AwaitingSetup { .. } | TaskState::SettingUp { .. }
+            ),
             "Task should have completed setup synchronously, got: {:?}",
-            task.phase
+            task.state
         );
         task
     }
@@ -481,9 +484,12 @@ impl TestEnv {
 
         let task = self.api().get_task(&task_id).expect("Should get task");
         assert!(
-            task.phase != Phase::AwaitingSetup && task.phase != Phase::SettingUp,
+            !matches!(
+                task.state,
+                TaskState::AwaitingSetup { .. } | TaskState::SettingUp { .. }
+            ),
             "Subtask should have completed setup synchronously, got: {:?}",
-            task.phase
+            task.state
         );
         task
     }

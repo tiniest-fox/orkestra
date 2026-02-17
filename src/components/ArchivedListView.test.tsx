@@ -31,13 +31,13 @@ describe("ArchivedListView", () => {
       createMockWorkflowTaskView({
         id: "task-1",
         title: "Archived Task 1",
-        status: { type: "archived" },
+        state: { type: "archived" },
         derived: { is_archived: true },
       }),
       createMockWorkflowTaskView({
         id: "task-2",
         title: "Archived Task 2",
-        status: { type: "archived" },
+        state: { type: "archived" },
         derived: { is_archived: true },
       }),
     ];
@@ -58,7 +58,7 @@ describe("ArchivedListView", () => {
     const mockTask = createMockWorkflowTaskView({
       id: "task-1",
       title: "Archived Task",
-      status: { type: "archived" },
+      state: { type: "archived" },
       derived: { is_archived: true },
     });
     const onSelectTask = vi.fn();
@@ -75,13 +75,13 @@ describe("ArchivedListView", () => {
       createMockWorkflowTaskView({
         id: "task-1",
         title: "Task 1",
-        status: { type: "archived" },
+        state: { type: "archived" },
         derived: { is_archived: true },
       }),
       createMockWorkflowTaskView({
         id: "task-2",
         title: "Task 2",
-        status: { type: "archived" },
+        state: { type: "archived" },
         derived: { is_archived: true },
       }),
     ];

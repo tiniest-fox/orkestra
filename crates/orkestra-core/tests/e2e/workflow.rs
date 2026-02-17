@@ -22,7 +22,7 @@ use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::{
     config::{StageConfig, WorkflowConfig},
     domain::{Question, QuestionAnswer, QuestionOption},
-    runtime::{Outcome, Phase},
+    runtime::{Outcome, TaskState},
 };
 
 use crate::helpers::{enable_auto_merge, MockAgentOutput, TestEnv};
@@ -80,10 +80,9 @@ fn test_exhaustive_workflow_flow() {
     let task_id = task.id.clone();
 
     assert_eq!(task.current_stage(), Some("planning"));
-    assert_eq!(
-        task.phase,
-        Phase::Idle,
-        "Task should be Idle after setup completes"
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued after setup completes"
     );
 
     // Verify worktree was created by git service
@@ -121,7 +120,7 @@ fn test_exhaustive_workflow_flow() {
     ctx.assert_full_prompt("plan", true, false);
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
     // Questions are now stored in iteration outcome, not on task
     let questions = ctx.api().get_pending_questions(&task_id).unwrap();
     assert_eq!(questions.len(), 2);
@@ -148,7 +147,7 @@ fn test_exhaustive_workflow_flow() {
         .answer_questions(&task_id, answers)
         .expect("Should answer questions");
 
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
     // After answering, no pending questions (new iteration was created)
     let questions = ctx.api().get_pending_questions(&task_id).unwrap();
     assert!(questions.is_empty());
@@ -182,7 +181,7 @@ fn test_exhaustive_workflow_flow() {
     );
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
     assert_eq!(
         task.artifact("plan"),
         Some("Initial plan v1 - not detailed enough")
@@ -195,7 +194,7 @@ fn test_exhaustive_workflow_flow() {
         .expect("Should reject plan");
 
     assert_eq!(task.current_stage(), Some("planning"));
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     // With new model: iter1 (questions), iter2 (answers→rejected), iter3 (feedback)
@@ -242,7 +241,7 @@ fn test_exhaustive_workflow_flow() {
     );
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // =========================================================================
     // Step 4: Plan approved → Breakdown
@@ -257,7 +256,7 @@ fn test_exhaustive_workflow_flow() {
         Some("breakdown"),
         "Should go to breakdown stage"
     );
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     // With new model: iter1 (questions), iter2 (answers→rejected), iter3 (feedback→approved), iter4 (breakdown)
@@ -283,7 +282,7 @@ fn test_exhaustive_workflow_flow() {
     ctx.assert_full_prompt("breakdown", false, false);
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // =========================================================================
     // Step 5: Breakdown approved → Working
@@ -300,7 +299,7 @@ fn test_exhaustive_workflow_flow() {
         Some("work"),
         "Should go to work stage"
     );
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     // With new model: planning x3, breakdown, work
@@ -336,7 +335,7 @@ fn test_exhaustive_workflow_flow() {
         .expect("Should reject work");
 
     assert_eq!(task.current_stage(), Some("work"));
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     // With new model: planning x3, breakdown, work x2
@@ -366,7 +365,7 @@ fn test_exhaustive_workflow_flow() {
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     // =========================================================================
     // Step 8: Reviewer rejects to Work → Working → AwaitingReview
@@ -403,9 +402,8 @@ fn test_exhaustive_workflow_flow() {
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("work"));
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
         "Work agent ran and produced artifact"
     );
 
@@ -614,7 +612,7 @@ fn test_exhaustive_workflow_flow() {
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     println!("\n=== Exhaustive Workflow Test Complete ===");
     println!("Total iterations: {}", iterations.len());
-    println!("Final status: {:?}", task.status);
+    println!("Final state: {:?}", task.state);
     println!("Completed at: {:?}", task.completed_at);
 
     for (i, iter) in iterations.iter().enumerate() {
@@ -696,7 +694,7 @@ fn test_approval_validation() {
     assert!(
         task.is_failed(),
         "Agent returning invalid output type should fail the task, got: {:?}",
-        task.status
+        task.state
     );
 }
 
@@ -833,7 +831,7 @@ fn test_custom_integration_on_failure() {
         task.current_stage(),
         Some("planning"),
         "Integration failure should route to planning (on_failure config), got: {:?}",
-        task.status
+        task.state
     );
 
     // Verify integration failure was recorded in iteration history
@@ -1068,7 +1066,7 @@ fn test_script_stage_with_recovery() {
     let task_id = task.id.clone();
 
     assert_eq!(task.current_stage(), Some("work"));
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     // =========================================================================
     // Step 2: Work stage produces artifact
@@ -1085,7 +1083,7 @@ fn test_script_stage_with_recovery() {
     ctx.advance(); // processes work output
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // Approve work → moves to checks (script stage)
     ctx.api().approve(&task_id).unwrap();
@@ -1093,7 +1091,10 @@ fn test_script_stage_with_recovery() {
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("checks"));
-    assert_eq!(task.phase, Phase::Idle, "Script stage should start in Idle");
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Script stage should start in Queued"
+    );
 
     // =========================================================================
     // Step 3: Script runs and fails → Recovers to Work
@@ -1130,9 +1131,8 @@ fn test_script_stage_with_recovery() {
         Some("work"),
         "Should be in work stage after script failure recovery"
     );
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
         "Work agent should have produced artifact"
     );
 
@@ -1217,7 +1217,7 @@ fn test_script_stage_with_recovery() {
 /// Helper: advance a task through a simple work → review(automated) workflow to Done.
 ///
 /// Drives the task through the API directly (without orchestrator ticks) to avoid
-/// triggering auto-integration. The task will be in Done status with `Phase::Idle`.
+/// triggering auto-integration. The task will be in Done state.
 ///
 /// After `approve()` and auto-advance, the task enters `Finishing` phase.
 /// We call `finalize_stage_advancement()` to simulate the commit pipeline completing,
@@ -1259,8 +1259,8 @@ fn advance_to_done(ctx: &TestEnv, task_id: &str) {
     let task = api.get_task(task_id).unwrap();
     assert!(
         task.is_done(),
-        "Task should be Done after review auto-approves, but status is {:?}",
-        task.status
+        "Task should be Done after review auto-approves, but state is {:?}",
+        task.state
     );
 }
 
@@ -1342,13 +1342,11 @@ fn test_recovery_archives_already_merged_task() {
         std::fs::remove_dir_all(worktree_dir).unwrap();
     }
 
-    // Verify the task is stuck in the crash state
+    // Verify the task is stuck in the crash state (Integrating, not yet Archived)
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(task.is_done(), "Task should still be Done (not Archived)");
-    assert_eq!(
-        task.phase,
-        Phase::Integrating,
-        "Task should be stuck in Integrating phase"
+    assert!(
+        matches!(task.state, TaskState::Integrating),
+        "Task should be stuck in Integrating state"
     );
 
     // === Simulate app restart: run startup recovery ===
@@ -1358,8 +1356,8 @@ fn test_recovery_archives_already_merged_task() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
         task.is_archived(),
-        "Task should be Archived after recovery, but status is {:?}",
-        task.status
+        "Task should be Archived after recovery, but state is {:?}",
+        task.state
     );
 
     // Verify IntegrationCompleted event was emitted
@@ -1424,10 +1422,9 @@ fn test_recovery_retries_unmerged_task() {
     // === Simulate crash: mark as Integrating but DON'T merge ===
     ctx.api().mark_integrating(&task_id).unwrap();
 
-    // Verify the task is in the crash state (branch NOT merged)
+    // Verify the task is in the crash state (Integrating, branch NOT merged)
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(task.is_done());
-    assert_eq!(task.phase, Phase::Integrating);
+    assert!(matches!(task.state, TaskState::Integrating));
 
     // === Simulate app restart: run startup recovery ===
     let events = ctx.run_startup_recovery();
@@ -1437,8 +1434,8 @@ fn test_recovery_retries_unmerged_task() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
         task.is_archived(),
-        "Task should be Archived after recovery re-integration, but status is {:?}",
-        task.status
+        "Task should be Archived after recovery re-integration, but state is {:?}",
+        task.state
     );
 
     // Verify IntegrationCompleted event was emitted
@@ -2080,7 +2077,7 @@ fn test_retry_failed_with_instructions_sends_resume_prompt() {
     assert!(
         task.is_failed(),
         "Task should be Failed, got: {:?}",
-        task.status
+        task.state
     );
 
     // Human retries with instructions
@@ -2105,7 +2102,7 @@ fn test_retry_failed_with_instructions_sends_resume_prompt() {
     ctx.advance(); // processes artifact output
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 }
 
 /// Test that retry instructions on a blocked task reach the agent via the
@@ -2132,12 +2129,9 @@ fn test_retry_blocked_with_instructions_sends_resume_prompt() {
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
-        matches!(
-            task.status,
-            orkestra_core::workflow::runtime::Status::Blocked { .. }
-        ),
+        matches!(task.state, TaskState::Blocked { .. }),
         "Task should be Blocked, got: {:?}",
-        task.status
+        task.state
     );
 
     // Human retries with context
@@ -2161,7 +2155,7 @@ fn test_retry_blocked_with_instructions_sends_resume_prompt() {
     ctx.advance(); // processes artifact output
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 }
 
 /// Test that retry without instructions uses the `retry_failed` trigger
@@ -2255,7 +2249,7 @@ fn test_kill_before_output_retries_without_resume() {
 
     ctx.advance(); // processes artifact
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 }
 
 /// Test that an agent with activity retries WITH resume.
@@ -2285,7 +2279,7 @@ fn test_agent_with_activity_retries_with_resume() {
     ctx.advance(); // processes artifact output
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // Reject to trigger another spawn on the same stage
     ctx.api().reject(&task_id, "Needs more detail").unwrap();
@@ -2355,7 +2349,7 @@ fn test_rejection_review_override_then_approval() {
     let task_id = task.id.clone();
 
     assert_eq!(task.current_stage(), Some("work"));
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     // =========================================================================
     // Step 2: Work agent produces artifact → Approve → Review stage
@@ -2373,7 +2367,7 @@ fn test_rejection_review_override_then_approval() {
     ctx.advance(); // processes work output
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // Approve work → enters commit pipeline
     ctx.api().approve(&task_id).unwrap();
@@ -2381,7 +2375,7 @@ fn test_rejection_review_override_then_approval() {
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     // =========================================================================
     // Step 3: Reviewer rejects → Task pauses at AwaitingReview
@@ -2404,10 +2398,9 @@ fn test_rejection_review_override_then_approval() {
         Some("review"),
         "Task should still be in review stage (rejection paused for human review)"
     );
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
-        "Task should be AwaitingReview for human to confirm/override rejection"
+    assert!(
+        matches!(task.state, TaskState::AwaitingRejectionConfirmation { .. }),
+        "Task should be AwaitingRejectionConfirmation for human to confirm/override rejection"
     );
 
     // Verify the iteration outcome is AwaitingRejectionReview
@@ -2465,10 +2458,9 @@ fn test_rejection_review_override_then_approval() {
         Some("review"),
         "After override, task should stay in review stage"
     );
-    assert_eq!(
-        task.phase,
-        Phase::Idle,
-        "After override, task should be Idle (ready for reviewer to run again)"
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "After override, task should be Queued (ready for reviewer to run again)"
     );
 
     // Verify a new iteration was created in the review stage
@@ -2502,10 +2494,9 @@ fn test_rejection_review_override_then_approval() {
         Some("review"),
         "Task should still be in review (non-automated, awaiting human approval)"
     );
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
-        "Task should be AwaitingReview for standard approval"
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
+        "Task should be AwaitingApproval for standard approval"
     );
 
     // This time the outcome should NOT be AwaitingRejectionReview
@@ -2533,8 +2524,8 @@ fn test_rejection_review_override_then_approval() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
         task.is_archived(),
-        "Task should be Archived after approval + integration, got status: {:?}",
-        task.status
+        "Task should be Archived after approval + integration, got state: {:?}",
+        task.state
     );
 }
 
@@ -2591,7 +2582,7 @@ fn test_rejection_review_confirm() {
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // Human confirms the rejection (calls approve)
     let task = ctx.api().approve(&task_id).unwrap();
@@ -2600,10 +2591,9 @@ fn test_rejection_review_confirm() {
         Some("work"),
         "Confirming rejection should send task to the rejection target (work)"
     );
-    assert_eq!(
-        task.phase,
-        Phase::Idle,
-        "Task should be Idle, ready for work agent"
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued, ready for work agent"
     );
 
     // Verify the rejection review was recorded, followed by a new work iteration
@@ -2698,7 +2688,7 @@ fn test_automated_review_rejection_skips_human_review() {
         Some("work"),
         "Automated rejection should skip human review and go directly to work"
     );
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // Verify the rejection was an immediate Rejection (not AwaitingRejectionReview)
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
@@ -2797,7 +2787,7 @@ fn test_artifact_generation_for_all_output_types() {
     ctx.advance(); // processes questions output
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // ASSERT: Questions output creates an artifact
     let plan_artifact = task.artifact("plan");
@@ -2854,7 +2844,7 @@ fn test_artifact_generation_for_all_output_types() {
     ctx.advance(); // processes plan output
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
     assert_eq!(
         task.artifact("plan"),
         Some("Detailed implementation plan v1"),
@@ -2977,7 +2967,7 @@ fn test_artifact_generation_for_all_output_types() {
 
     // Task should be paused at AwaitingReview (non-automated stage)
     assert_eq!(task.current_stage(), Some("review"));
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // Human overrides rejection (should NOT change the artifact)
     ctx.api()
@@ -3288,7 +3278,7 @@ fn test_commit_message_generation_during_integration() {
     let task_id = task.id.clone();
 
     assert_eq!(task.current_stage(), Some("work"));
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     // Set mock output for work stage
     ctx.set_output(
@@ -3307,7 +3297,7 @@ fn test_commit_message_generation_during_integration() {
     // Verify task is awaiting review
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("work"));
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // Approve work
     ctx.api().approve(&task_id).unwrap();
@@ -3393,14 +3383,13 @@ fn test_interrupt_and_resume() {
     ctx.api().agent_started(&task_id).unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AgentWorking);
+    assert!(matches!(task.state, TaskState::AgentWorking { .. }));
 
     // Interrupt the task
     let task = ctx.api().interrupt(&task_id).unwrap();
-    assert_eq!(
-        task.phase,
-        Phase::Interrupted,
-        "Task should be in Interrupted phase after interrupt"
+    assert!(
+        matches!(task.state, TaskState::Interrupted { .. }),
+        "Task should be in Interrupted state after interrupt"
     );
 
     // Verify the iteration outcome is Interrupted
@@ -3417,7 +3406,10 @@ fn test_interrupt_and_resume() {
         .api()
         .resume(&task_id, Some("please focus on error handling".to_string()))
         .unwrap();
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle after resume");
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued after resume"
+    );
 
     // Verify a new iteration was created with ManualResume trigger
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
@@ -3450,9 +3442,8 @@ fn test_interrupt_and_resume() {
 
     // Task should now be awaiting review
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
         "Task should be awaiting review after completion"
     );
 }
@@ -3478,7 +3469,7 @@ fn test_interrupt_and_resume_without_message() {
 
     // Resume without message
     let task = ctx.api().resume(&task_id, None).unwrap();
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     // Verify ManualResume trigger with None message
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
@@ -3503,39 +3494,45 @@ fn test_interrupt_resume_multiple_cycles() {
 
     // Cycle 1: AgentWorking → Interrupt → Resume
     ctx.api().agent_started(&task_id).unwrap();
-    assert_eq!(
-        ctx.api().get_task(&task_id).unwrap().phase,
-        Phase::AgentWorking
-    );
+    assert!(matches!(
+        ctx.api().get_task(&task_id).unwrap().state,
+        TaskState::AgentWorking { .. }
+    ));
 
     ctx.api().interrupt(&task_id).unwrap();
-    assert_eq!(
-        ctx.api().get_task(&task_id).unwrap().phase,
-        Phase::Interrupted
-    );
+    assert!(matches!(
+        ctx.api().get_task(&task_id).unwrap().state,
+        TaskState::Interrupted { .. }
+    ));
 
     ctx.api()
         .resume(&task_id, Some("message 1".to_string()))
         .unwrap();
-    assert_eq!(ctx.api().get_task(&task_id).unwrap().phase, Phase::Idle);
+    assert!(matches!(
+        ctx.api().get_task(&task_id).unwrap().state,
+        TaskState::Queued { .. }
+    ));
 
     // Cycle 2: AgentWorking → Interrupt → Resume
     ctx.api().agent_started(&task_id).unwrap();
-    assert_eq!(
-        ctx.api().get_task(&task_id).unwrap().phase,
-        Phase::AgentWorking
-    );
+    assert!(matches!(
+        ctx.api().get_task(&task_id).unwrap().state,
+        TaskState::AgentWorking { .. }
+    ));
 
     ctx.api().interrupt(&task_id).unwrap();
-    assert_eq!(
-        ctx.api().get_task(&task_id).unwrap().phase,
-        Phase::Interrupted
-    );
+    assert!(matches!(
+        ctx.api().get_task(&task_id).unwrap().state,
+        TaskState::Interrupted { .. }
+    ));
 
     ctx.api()
         .resume(&task_id, Some("message 2".to_string()))
         .unwrap();
-    assert_eq!(ctx.api().get_task(&task_id).unwrap().phase, Phase::Idle);
+    assert!(matches!(
+        ctx.api().get_task(&task_id).unwrap().state,
+        TaskState::Queued { .. }
+    ));
 
     // Cycle 3: Complete normally via orchestrator
     ctx.set_output(
@@ -3550,9 +3547,8 @@ fn test_interrupt_resume_multiple_cycles() {
     ctx.advance(); // Process completion
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
         "Task should complete normally after multiple interrupt/resume cycles"
     );
 
@@ -3593,7 +3589,7 @@ fn test_interrupt_wrong_phase() {
 
     // Task should now be in AwaitingReview
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // Try to interrupt (should fail)
     let result = ctx.api().interrupt(&task_id);
@@ -3629,7 +3625,7 @@ fn test_resume_wrong_phase() {
 
     // Task should be in AgentWorking
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AgentWorking);
+    assert!(matches!(task.state, TaskState::AgentWorking { .. }));
 
     // Try to resume (should fail - not in Interrupted phase)
     let result = ctx.api().resume(&task_id, None);
@@ -3669,10 +3665,10 @@ fn test_interrupted_task_not_auto_advanced() {
 
     // Interrupt
     ctx.api().interrupt(&task_id).unwrap();
-    assert_eq!(
-        ctx.api().get_task(&task_id).unwrap().phase,
-        Phase::Interrupted
-    );
+    assert!(matches!(
+        ctx.api().get_task(&task_id).unwrap().state,
+        TaskState::Interrupted { .. }
+    ));
 
     // Advance several ticks
     ctx.advance();
@@ -3681,9 +3677,8 @@ fn test_interrupted_task_not_auto_advanced() {
 
     // Verify task is still in Interrupted phase (not auto-advanced)
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(
-        task.phase,
-        Phase::Interrupted,
+    assert!(
+        matches!(task.state, TaskState::Interrupted { .. }),
         "Interrupted task should not be auto-advanced by orchestrator"
     );
 }
@@ -4717,7 +4712,7 @@ fn test_interrupt_message_in_resume_prompt() {
     ctx.advance(); // Processes output → AwaitingReview
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AwaitingReview);
+    assert!(task.is_awaiting_review());
 
     // Reject to trigger another iteration on the same stage
     ctx.api()
@@ -4725,23 +4720,22 @@ fn test_interrupt_message_in_resume_prompt() {
         .unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(
-        task.phase,
-        Phase::Idle,
-        "Task should be Idle after rejection"
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued after rejection"
     );
 
     // Step 2: Simulate the retry agent starting (without completing)
     ctx.api().agent_started(&task_id).unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::AgentWorking);
+    assert!(matches!(task.state, TaskState::AgentWorking { .. }));
 
     // Step 3: Interrupt and resume with a message
     ctx.api().interrupt(&task_id).unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::Interrupted);
+    assert!(matches!(task.state, TaskState::Interrupted { .. }));
 
     let interrupt_message = "Please focus on the validation logic and add proper error handling";
     ctx.api()
@@ -4749,7 +4743,7 @@ fn test_interrupt_message_in_resume_prompt() {
         .unwrap();
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.phase, Phase::Idle);
+    assert!(matches!(task.state, TaskState::Queued { .. }));
 
     // Step 4: Set output and advance to spawn the resumed agent
     ctx.set_output(
@@ -4771,9 +4765,8 @@ fn test_interrupt_message_in_resume_prompt() {
     ctx.advance(); // Processes output
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
         "Task should be awaiting review after completion"
     );
 }
@@ -4850,9 +4843,8 @@ fn test_activity_log_intervening_stage_preserves_entries() {
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
+    assert!(
+        matches!(task.state, TaskState::AwaitingRejectionConfirmation { .. }),
         "Non-automated review should pause for human confirmation"
     );
 
@@ -4864,10 +4856,9 @@ fn test_activity_log_intervening_stage_preserves_entries() {
         Some("work"),
         "Should be back in work stage after confirming rejection"
     );
-    assert_eq!(
-        task.phase,
-        Phase::Idle,
-        "Task should be Idle, ready for work agent"
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued, ready for work agent"
     );
 
     // === Second work iteration: produces Log B ===
@@ -5326,7 +5317,7 @@ fn test_manual_archive_task() {
         task.is_done(),
         "Task should be Done after workflow completes"
     );
-    assert_eq!(task.phase, Phase::Idle, "Task should be in Idle phase");
+    assert!(task.is_done(), "Task should be Done");
 
     // Archive the task
     let archived_task = ctx
@@ -5335,7 +5326,7 @@ fn test_manual_archive_task() {
         .expect("archive_task should succeed");
 
     assert!(archived_task.is_archived(), "Task should be Archived");
-    assert_eq!(archived_task.phase, Phase::Idle, "Phase should remain Idle");
+    // Archived is terminal — no phase to check
 }
 
 /// Test that `archive_task` rejects tasks not in Idle phase.
@@ -5361,15 +5352,14 @@ fn test_archive_task_rejects_non_idle_phase() {
     // Verify task is Done + Idle
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(task.is_done(), "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(task.is_done(), "Task should be Done");
 
     // Put task into Integrating phase via begin_pr_creation
     ctx.api().begin_pr_creation(&task_id).unwrap();
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(
-        task.phase,
-        Phase::Integrating,
-        "Task should be in Integrating phase"
+    assert!(
+        matches!(task.state, TaskState::Integrating),
+        "Task should be in Integrating state"
     );
 
     // Attempt to archive should fail
@@ -5413,7 +5403,7 @@ fn test_address_pr_comments_returns_to_work_stage() {
     // Verify task is Done and Idle
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(task.is_done(), "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(task.is_done(), "Task should be Done");
 
     // Create test comments
     let comments = vec![
@@ -5447,7 +5437,6 @@ fn test_address_pr_comments_returns_to_work_stage() {
         Some("work"),
         "Task should return to work stage"
     );
-    assert_eq!(result.phase, Phase::Idle, "Task should be Idle");
     assert!(
         !result.is_done(),
         "Task should no longer be Done after addressing PR comments"
@@ -5541,7 +5530,7 @@ fn test_address_pr_comments_rejects_empty_comments() {
     // Verify task is Done and Idle
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(task.is_done(), "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(task.is_done(), "Task should be Done");
 
     // Attempt with empty comments should fail
     let result = ctx.api().address_pr_comments(&task_id, vec![], None);
@@ -5582,7 +5571,7 @@ fn test_address_pr_conflicts_returns_to_work_stage() {
     // Verify task is Done and Idle
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(task.is_done(), "Task should be Done");
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(task.is_done(), "Task should be Done");
 
     // Address PR conflicts
     let base_branch = "origin/main";
@@ -5597,7 +5586,6 @@ fn test_address_pr_conflicts_returns_to_work_stage() {
         Some("work"),
         "Task should return to work stage"
     );
-    assert_eq!(result.phase, Phase::Idle, "Task should be Idle");
     assert!(
         !result.is_done(),
         "Task should no longer be Done after addressing PR conflicts"

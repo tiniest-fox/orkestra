@@ -34,7 +34,7 @@ function deriveVisualState(result: SearchResult): {
   label: string;
   icon: ReactNode;
 } {
-  const { derived, status } = result.task;
+  const { derived } = result.task;
 
   if (derived.is_failed) {
     return {
@@ -110,7 +110,7 @@ function deriveVisualState(result: SearchResult): {
   if (derived.is_working) {
     return {
       state: "working",
-      label: status.type === "active" ? status.stage : "Working",
+      label: "stage" in result.task.state ? result.task.state.stage : "Working",
       icon: <CircleDot className="w-3.5 h-3.5" />,
     };
   }

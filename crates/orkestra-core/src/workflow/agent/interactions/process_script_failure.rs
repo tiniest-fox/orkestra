@@ -5,7 +5,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
+use crate::workflow::runtime::{Artifact, Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
 
 use super::process_script_success::strip_ansi_codes;
@@ -22,10 +22,10 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if task.phase != Phase::AgentWorking {
+    if !matches!(task.state, TaskState::AgentWorking { .. }) {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot process script failure in phase {:?}",
-            task.phase
+            "Cannot process script failure in state {} (expected AgentWorking)",
+            task.state
         )));
     }
 
@@ -73,8 +73,7 @@ pub fn execute(
 
     if let Some(target) = recovery_stage {
         // Transition to recovery stage
-        task.status = Status::active(target);
-        task.phase = Phase::Idle;
+        task.state = TaskState::queued(target);
 
         // Create new iteration in recovery stage with script failure trigger
         iteration_service.create_iteration(
@@ -87,18 +86,16 @@ pub fn execute(
         )?;
     } else {
         // No recovery stage - mark task as failed
-        task.status = Status::failed(&clean_error);
-        task.phase = Phase::Idle;
+        task.state = TaskState::failed(&clean_error);
     }
 
     task.updated_at = now;
 
     orkestra_debug!(
         "action",
-        "process_script_failure {} complete: phase={:?}, status={:?}",
+        "process_script_failure {} complete: state={}",
         task_id,
-        task.phase,
-        task.status
+        task.state
     );
 
     store.save_task(&task)?;

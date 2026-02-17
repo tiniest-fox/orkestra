@@ -157,14 +157,14 @@ export function TaskDetailSidebar({
   // Show integration panel for Done+Idle tasks (ready to merge or PR)
   // Also show for PR creation failures (error starts with PR_CREATION_FAILURE_PREFIX)
   const isPrCreationFailure =
-    task.status.type === "failed" && task.status.error?.startsWith(PR_CREATION_FAILURE_PREFIX);
+    task.state.type === "failed" && task.state.error?.startsWith(PR_CREATION_FAILURE_PREFIX);
   const showIntegration =
     !showDelete &&
     !showQuestions &&
     !showResume &&
     !showReview &&
-    ((task.derived.is_done && task.phase === "idle" && !task.pr_url) || isPrCreationFailure);
-  // Show archive panel for Done+Idle tasks with merged PRs
+    ((task.state.type === "done" && !task.pr_url) || isPrCreationFailure);
+  // Show archive panel for Done tasks with merged PRs
   const prStatus = task.pr_url ? getPrStatus(task.id) : undefined;
   const showArchive =
     !showDelete &&
@@ -172,11 +172,10 @@ export function TaskDetailSidebar({
     !showResume &&
     !showReview &&
     !showIntegration &&
-    task.derived.is_done &&
-    task.phase === "idle" &&
+    task.state.type === "done" &&
     task.pr_url &&
     prStatus?.state === "merged";
-  // Show PR issues panel for Done+Idle tasks with PR and conflicts or comments
+  // Show PR issues panel for Done tasks with PR and conflicts or comments
   const conflictsDetected = prStatus ? hasConflicts(prStatus) : false;
   const showPrIssues =
     !showDelete &&
@@ -185,8 +184,7 @@ export function TaskDetailSidebar({
     !showReview &&
     !showIntegration &&
     !showArchive &&
-    task.derived.is_done &&
-    task.phase === "idle" &&
+    task.state.type === "done" &&
     task.pr_url &&
     (conflictsDetected || (prStatus?.comments && prStatus.comments.length > 0));
   const showCompactFooter = !!(
@@ -313,7 +311,7 @@ export function TaskDetailSidebar({
 
         {showIntegration && (
           <IntegrationPanel
-            status={task.status}
+            state={task.state}
             onMerge={mergeTask}
             onOpenPr={openPr}
             onRetryPr={retryPr}

@@ -3,6 +3,7 @@
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
+use crate::workflow::runtime::TaskState;
 
 use super::interactions as integration_interactions;
 use crate::workflow::workflow_warn;
@@ -64,12 +65,15 @@ impl WorkflowApi {
     }
 
     /// Attempt to integrate a completed task (startup recovery).
+    ///
+    /// Accepts tasks in both `Done` and `Integrating` states. The `Integrating`
+    /// case handles recovery from crashes that occurred mid-integration.
     pub fn integrate_task(&self, task_id: &str) -> WorkflowResult<Task> {
         let task = self.get_task(task_id)?;
 
-        if !task.is_done() {
+        if !task.is_done() && !matches!(task.state, TaskState::Integrating) {
             return Err(WorkflowError::InvalidTransition(
-                "Cannot integrate task that is not Done".into(),
+                "Cannot integrate task that is not Done or Integrating".into(),
             ));
         }
 
@@ -158,7 +162,7 @@ impl WorkflowApi {
 #[cfg(test)]
 mod tests {
     use crate::workflow::config::{StageConfig, WorkflowConfig};
-    use crate::workflow::runtime::{Outcome, Phase, Status};
+    use crate::workflow::runtime::{Outcome, TaskState};
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
 
@@ -180,7 +184,7 @@ mod tests {
         let api = WorkflowApi::new(workflow, store);
 
         let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.status = Status::Done;
+        task.state = TaskState::Done;
         task.completed_at = Some(chrono::Utc::now().to_rfc3339());
         api.store.save_task(&task).unwrap();
 
@@ -194,7 +198,7 @@ mod tests {
         let result = api.integration_succeeded(&task.id).unwrap();
         assert!(result.is_archived());
         assert!(!result.is_done());
-        assert_eq!(result.phase, Phase::Idle);
+        assert!(matches!(result.state, TaskState::Archived));
     }
 
     #[test]
@@ -219,7 +223,7 @@ mod tests {
 
         // Should return to configured on_failure stage (default: "work")
         assert_eq!(task.current_stage(), Some("work"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
         assert!(task.completed_at.is_none());
     }
 

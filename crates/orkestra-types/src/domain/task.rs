@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::runtime::{ArtifactStore, Phase, Status};
+use crate::runtime::{ArtifactStore, TaskState};
 
 /// A task in the workflow system.
 ///
@@ -27,11 +27,8 @@ pub struct Task {
     pub description: String,
 
     // === State ===
-    /// Current workflow status (which stage, or terminal state).
-    pub status: Status,
-
-    /// Current phase within the stage.
-    pub phase: Phase,
+    /// Unified task state — what the task is doing right now.
+    pub state: TaskState,
 
     // === Artifacts ===
     /// Stage outputs (plan, summary, etc.) stored by name.
@@ -111,8 +108,7 @@ impl Task {
             id: id.into(),
             title: title.into(),
             description: description.into(),
-            status: Status::active(first_stage),
-            phase: Phase::Idle,
+            state: TaskState::queued(first_stage),
             artifacts: ArtifactStore::new(),
             parent_id: None,
             short_id: None,
@@ -129,6 +125,8 @@ impl Task {
             completed_at: None,
         }
     }
+
+    // -- Builders --
 
     /// Builder: set parent ID (for subtasks).
     #[must_use]
@@ -191,34 +189,36 @@ impl Task {
         self
     }
 
+    // -- Queries --
+
     /// Get the current stage name, if active.
     pub fn current_stage(&self) -> Option<&str> {
-        self.status.stage()
+        self.state.stage()
     }
 
     /// Check if the task is in a terminal state.
     pub fn is_terminal(&self) -> bool {
-        self.status.is_terminal()
+        self.state.is_terminal()
     }
 
     /// Check if the task is done.
     pub fn is_done(&self) -> bool {
-        matches!(self.status, Status::Done)
+        self.state.is_done()
     }
 
     /// Check if the task is blocked.
     pub fn is_blocked(&self) -> bool {
-        matches!(self.status, Status::Blocked { .. })
+        self.state.is_blocked()
     }
 
     /// Check if the task is failed.
     pub fn is_failed(&self) -> bool {
-        matches!(self.status, Status::Failed { .. })
+        self.state.is_failed()
     }
 
     /// Check if the task is archived (completed and integrated).
     pub fn is_archived(&self) -> bool {
-        matches!(self.status, Status::Archived)
+        self.state.is_archived()
     }
 
     /// Check if the task is a subtask.
@@ -231,14 +231,19 @@ impl Task {
         self.artifacts.content(name)
     }
 
-    /// Check if the task is awaiting human review.
+    /// Check if the task is awaiting human approval.
     pub fn is_awaiting_review(&self) -> bool {
-        self.phase == Phase::AwaitingReview
+        matches!(
+            self.state,
+            TaskState::AwaitingApproval { .. }
+                | TaskState::AwaitingQuestionAnswer { .. }
+                | TaskState::AwaitingRejectionConfirmation { .. }
+        )
     }
 
     /// Check if the task needs human review (awaiting review + active status).
     pub fn needs_review(&self) -> bool {
-        self.is_awaiting_review() && self.status.is_active()
+        self.is_awaiting_review()
     }
 
     /// Whether this task has an open pull request (one-way door — cannot merge or re-open PR).
@@ -252,14 +257,13 @@ impl Task {
 /// Contains all `Task` fields except `artifacts` — the heavy `ArtifactStore`
 /// that holds all stage outputs as deserialized JSON. This avoids the cost of
 /// deserializing artifact data when the orchestrator only needs to categorize
-/// tasks by status/phase for dispatch.
+/// tasks by state for dispatch.
 #[derive(Debug, Clone)]
 pub struct TaskHeader {
     pub id: String,
     pub title: String,
     pub description: String,
-    pub status: Status,
-    pub phase: Phase,
+    pub state: TaskState,
     pub parent_id: Option<String>,
     pub short_id: Option<String>,
     pub depends_on: Vec<String>,
@@ -278,12 +282,12 @@ pub struct TaskHeader {
 impl TaskHeader {
     /// Check if the task is done.
     pub fn is_done(&self) -> bool {
-        matches!(self.status, Status::Done)
+        self.state.is_done()
     }
 
     /// Check if the task is archived (completed and integrated).
     pub fn is_archived(&self) -> bool {
-        matches!(self.status, Status::Archived)
+        self.state.is_archived()
     }
 
     /// Check if the task is a subtask.
@@ -293,7 +297,7 @@ impl TaskHeader {
 
     /// Get the current stage name, if active.
     pub fn current_stage(&self) -> Option<&str> {
-        self.status.stage()
+        self.state.stage()
     }
 
     /// Whether this task has an open pull request (one-way door — cannot merge or re-open PR).
@@ -308,8 +312,7 @@ impl From<&Task> for TaskHeader {
             id: task.id.clone(),
             title: task.title.clone(),
             description: task.description.clone(),
-            status: task.status.clone(),
-            phase: task.phase,
+            state: task.state.clone(),
             parent_id: task.parent_id.clone(),
             short_id: task.short_id.clone(),
             depends_on: task.depends_on.clone(),
@@ -334,15 +337,15 @@ impl From<&Task> for TaskHeader {
 pub struct TickSnapshot {
     /// All task headers (for subtask filtering in parent completion check).
     pub all: Vec<TaskHeader>,
-    /// Tasks in `AwaitingSetup` phase.
+    /// Tasks in `AwaitingSetup` state.
     pub awaiting_setup: Vec<TaskHeader>,
-    /// Parents in `WaitingOnChildren` status + `Idle` phase.
+    /// Parents in `WaitingOnChildren` state.
     pub waiting_parents: Vec<TaskHeader>,
-    /// Tasks in `Idle` phase + `Active` status (candidates for agent spawning).
+    /// Tasks in `Queued` state (candidates for agent spawning).
     pub idle_active: Vec<TaskHeader>,
-    /// Tasks that are `Done` + `Idle` + have a worktree (candidates for integration).
+    /// Tasks that are `Done` + have a worktree (candidates for integration).
     pub idle_done_with_worktree: Vec<TaskHeader>,
-    /// Whether any task is currently in `Integrating` phase.
+    /// Whether any task is currently in `Integrating` state.
     pub has_integrating: bool,
     /// IDs of `Archived` tasks (for subtask dependency checking — setup waits for integration).
     pub integrated_ids: HashSet<String>,
@@ -370,26 +373,22 @@ impl TickSnapshot {
                 done_ids.insert(header.id.clone());
             }
 
-            // Track integrating
-            if header.phase == Phase::Integrating {
-                has_integrating = true;
-            }
-
             // Categorize into buckets
-            match header.phase {
-                Phase::AwaitingSetup => {
+            match &header.state {
+                TaskState::AwaitingSetup { .. } => {
                     awaiting_setup.push(header.clone());
                 }
-                Phase::Idle => {
-                    if header.status.is_waiting_on_children() {
-                        waiting_parents.push(header.clone());
-                    }
-                    if header.status.is_active() {
-                        idle_active.push(header.clone());
-                    }
-                    if header.is_done() && header.worktree_path.is_some() {
-                        idle_done_with_worktree.push(header.clone());
-                    }
+                TaskState::Queued { .. } => {
+                    idle_active.push(header.clone());
+                }
+                TaskState::WaitingOnChildren { .. } => {
+                    waiting_parents.push(header.clone());
+                }
+                TaskState::Done if header.worktree_path.is_some() => {
+                    idle_done_with_worktree.push(header.clone());
+                }
+                TaskState::Integrating => {
+                    has_integrating = true;
                 }
                 _ => {}
             }
@@ -409,7 +408,7 @@ impl TickSnapshot {
 
     /// Check if the snapshot has no actionable tasks (everything idle/terminal).
     ///
-    /// Note: does not account for Finishing/Finished tasks (commit pipeline
+    /// Note: does not account for Finishing/Committing tasks (commit pipeline
     /// queries the DB directly). Those are transient states that resolve within
     /// one tick, so missing them here just means one extra idle-sleep cycle.
     pub fn is_idle(&self) -> bool {
@@ -446,7 +445,7 @@ mod tests {
         assert_eq!(task.id, "task-1");
         assert_eq!(task.title, "Implement login");
         assert_eq!(task.current_stage(), Some("planning"));
-        assert_eq!(task.phase, Phase::Idle);
+        assert!(matches!(task.state, TaskState::Queued { .. }));
         assert!(!task.is_terminal());
         assert!(!task.is_subtask());
     }
@@ -480,19 +479,19 @@ mod tests {
         assert!(!task.is_terminal());
         assert!(!task.is_done());
 
-        task.status = Status::Done;
+        task.state = TaskState::Done;
         assert!(task.is_terminal());
         assert!(task.is_done());
 
-        task.status = Status::Archived;
+        task.state = TaskState::Archived;
         assert!(task.is_terminal());
         assert!(task.is_archived());
 
-        task.status = Status::failed("error");
+        task.state = TaskState::failed("error");
         assert!(task.is_terminal());
         assert!(task.is_failed());
 
-        task.status = Status::blocked("waiting");
+        task.state = TaskState::blocked("waiting");
         assert!(task.is_terminal());
         assert!(task.is_blocked());
     }
@@ -512,7 +511,13 @@ mod tests {
         let mut task = Task::new("task-1", "Task", "desc", "planning", "now");
         assert!(!task.is_awaiting_review());
 
-        task.phase = Phase::AwaitingReview;
+        task.state = TaskState::awaiting_approval("planning");
+        assert!(task.is_awaiting_review());
+
+        task.state = TaskState::awaiting_question_answer("planning");
+        assert!(task.is_awaiting_review());
+
+        task.state = TaskState::awaiting_rejection_confirmation("planning");
         assert!(task.is_awaiting_review());
     }
 

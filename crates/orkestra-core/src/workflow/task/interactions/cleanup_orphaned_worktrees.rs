@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use crate::orkestra_debug;
 use crate::workflow::domain::TaskHeader;
 use crate::workflow::ports::{GitService, WorkflowStore};
-use crate::workflow::runtime::Phase;
 
 /// Clean up worktrees that are no longer needed.
 ///
@@ -44,7 +43,7 @@ pub fn execute(store: &dyn WorkflowStore, git_service: &dyn GitService) {
                 orkestra_debug!("recovery", "Cleaning up orphaned worktree: {name}");
                 true
             }
-            Some(header) if header.status.is_archived() && header.phase == Phase::Idle => {
+            Some(header) if header.is_archived() => {
                 orkestra_debug!("recovery", "Cleaning up worktree for archived task: {name}");
                 true
             }

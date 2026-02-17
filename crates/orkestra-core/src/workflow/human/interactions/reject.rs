@@ -4,7 +4,7 @@ use crate::orkestra_debug;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Outcome, Phase};
+use crate::workflow::runtime::{Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
 
 pub fn execute(
@@ -17,10 +17,10 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if task.phase != Phase::AwaitingReview {
+    if !task.is_awaiting_review() {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot reject task in phase {:?}",
-            task.phase
+            "Cannot reject task in state {} (expected awaiting review)",
+            task.state
         )));
     }
 
@@ -50,7 +50,7 @@ pub fn execute(
             }),
         )?;
 
-        task.phase = Phase::Idle;
+        task.state = TaskState::queued(&current_stage);
         task.updated_at = now;
 
         store.save_task(&task)?;
@@ -74,8 +74,8 @@ pub fn execute(
         Outcome::rejected(&current_stage, feedback),
     )?;
 
-    // Stay in same stage, go back to Idle
-    task.phase = Phase::Idle;
+    // Stay in same stage, go back to Queued
+    task.state = TaskState::queued(&current_stage);
     task.updated_at.clone_from(&now);
 
     // Create new iteration in same stage with feedback context

@@ -6,7 +6,7 @@ use crate::workflow::domain::Task;
 use crate::workflow::execution::StageOutput;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::{Outcome, Phase, Status};
+use crate::workflow::runtime::{Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
 
 #[allow(clippy::too_many_lines)]
@@ -21,10 +21,10 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if task.phase != Phase::AgentWorking {
+    if !matches!(task.state, TaskState::AgentWorking { .. }) {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot process agent output in phase {:?} (expected AgentWorking)",
-            task.phase
+            "Cannot process agent output in state {} (expected AgentWorking)",
+            task.state
         )));
     }
 
@@ -110,8 +110,7 @@ pub fn execute(
                     error: error.clone(),
                 },
             )?;
-            task.status = Status::failed(&error);
-            task.phase = Phase::Idle;
+            task.state = TaskState::failed(&error);
             task.updated_at = now;
         }
         StageOutput::Blocked { reason } => {
@@ -122,18 +121,16 @@ pub fn execute(
                     reason: reason.clone(),
                 },
             )?;
-            task.status = Status::blocked(&reason);
-            task.phase = Phase::Idle;
+            task.state = TaskState::blocked(&reason);
             task.updated_at = now;
         }
     }
 
     orkestra_debug!(
         "action",
-        "process_agent_output {} complete: phase={:?}, status={:?}",
+        "process_agent_output {} complete: state={}",
         task_id,
-        task.phase,
-        task.status
+        task.state
     );
 
     store.save_task(&task)?;

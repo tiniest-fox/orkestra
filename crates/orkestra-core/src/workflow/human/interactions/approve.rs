@@ -5,7 +5,6 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
 use crate::workflow::stage::interactions as stage;
 
 pub fn execute(
@@ -18,10 +17,10 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    if task.phase != Phase::AwaitingReview {
+    if !task.is_awaiting_review() {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Cannot approve task in phase {:?}",
-            task.phase
+            "Cannot approve task in state {} (expected awaiting review)",
+            task.state
         )));
     }
 

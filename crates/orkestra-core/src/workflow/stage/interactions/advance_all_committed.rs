@@ -3,24 +3,28 @@
 use crate::orkestra_debug;
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 use crate::workflow::OrchestratorEvent;
 
-/// Advance tasks in Finished phase to the next stage.
+/// Advance tasks whose commit pipeline has completed (Queued after Committing).
 ///
 /// The output was already processed inline (during `handle_execution_complete`
 /// or human approval). The commit pipeline just committed the worktree changes.
 /// Now we complete the stage advancement.
+///
+/// After a successful commit, `commit_succeeded` transitions the task to
+/// `Queued` with a `_committed` marker in the stage name suffix (same stage).
+/// This interaction picks those up and finalizes advancement.
 pub fn execute(
     api: &WorkflowApi,
     store: &dyn WorkflowStore,
 ) -> WorkflowResult<Vec<OrchestratorEvent>> {
     // Query DB directly (not snapshot) because commit pipeline may have
-    // created Finished tasks after the snapshot was built.
+    // created committed tasks after the snapshot was built.
     let finished: Vec<_> = store
         .list_task_headers()?
         .into_iter()
-        .filter(|h| h.phase == Phase::Finished)
+        .filter(|h| matches!(&h.state, TaskState::Finishing { .. }))
         .collect();
 
     if finished.is_empty() {
@@ -44,7 +48,7 @@ pub fn execute(
             Ok(updated) => {
                 let output_type = if updated.is_done() {
                     "done"
-                } else if updated.status.is_waiting_on_children() {
+                } else if updated.state.is_waiting_on_children() {
                     "subtasks"
                 } else {
                     "advanced"

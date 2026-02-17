@@ -13,7 +13,7 @@ use std::process::Command;
 use orkestra_core::testutil::fixtures::test_default_workflow;
 use orkestra_core::workflow::execution::SubtaskOutput;
 use orkestra_core::workflow::merge_task_sync;
-use orkestra_core::workflow::runtime::Phase;
+use orkestra_core::workflow::runtime::TaskState;
 
 use super::helpers::{disable_auto_merge, enable_auto_merge, workflows, MockAgentOutput, TestEnv};
 
@@ -331,7 +331,7 @@ fn test_integration_squashes_commits_for_non_subtask() {
     assert!(
         task.is_archived(),
         "Task should be Archived after integration, got: {:?}",
-        task.status
+        task.state
     );
 
     // Main should have exactly 1 new commit (the squashed commit)
@@ -414,9 +414,9 @@ fn test_subtask_integration_preserves_commits() {
     // Parent should be waiting on children
     let parent = ctx.api().get_task(&parent_id).unwrap();
     assert!(
-        parent.status.is_waiting_on_children(),
+        parent.state.is_waiting_on_children(),
         "Parent should be WaitingOnChildren, got: {:?}",
-        parent.status
+        parent.state
     );
 
     // Get the subtask
@@ -479,7 +479,7 @@ fn test_subtask_integration_preserves_commits() {
     assert!(
         subtask.is_archived(),
         "Subtask should be Archived after integration, got: {:?}",
-        subtask.status
+        subtask.state
     );
 
     // Verify parent branch has the subtask commits (not squashed)
@@ -626,12 +626,12 @@ fn test_conflict_recovery_squashes_all_commits() {
         task.current_stage(),
         Some("work"),
         "Task should recover to work stage after conflict, got: {:?}",
-        task.status
+        task.state
     );
-    assert_eq!(
-        task.phase,
-        Phase::AwaitingReview,
-        "Work agent should have completed"
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
+        "Work agent should have completed, got: {:?}",
+        task.state
     );
 
     // Create file change for recovery commit
@@ -691,7 +691,7 @@ fn test_conflict_recovery_squashes_all_commits() {
     assert!(
         task.is_archived(),
         "Task should be Archived after successful integration, got: {:?}",
-        task.status
+        task.state
     );
 
     // Main should have exactly 1 new commit (all commits squashed into one)
@@ -787,7 +787,7 @@ fn test_integration_with_no_commits_succeeds() {
     assert!(
         task.is_archived(),
         "Task should be Archived after integration (even with no commits), got: {:?}",
-        task.status
+        task.state
     );
 
     // Main should have 0 new commits (no squash happened because there was nothing to squash)
@@ -891,12 +891,8 @@ fn test_merge_task_squashes_commits() {
 
     // Verify task is Done+Idle (not archived — auto_merge is off)
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(
-        task.is_done(),
-        "Task should be Done, got: {:?}",
-        task.status
-    );
-    assert_eq!(task.phase, Phase::Idle, "Task should be Idle");
+    assert!(task.is_done(), "Task should be Done, got: {:?}", task.state);
+    assert!(task.state.is_done(), "Task should be Done");
 
     // User triggers merge (sync=true runs inline for tests)
     merge_task_sync(ctx.api_arc(), &task_id).unwrap();
@@ -906,7 +902,7 @@ fn test_merge_task_squashes_commits() {
     assert!(
         task.is_archived(),
         "Task should be Archived after merge_task(), got: {:?}",
-        task.status
+        task.state
     );
 
     // Main should have exactly 1 new commit (the squashed commit)

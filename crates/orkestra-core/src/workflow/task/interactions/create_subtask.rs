@@ -5,7 +5,7 @@ use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{extract_short_id, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
+use crate::workflow::runtime::TaskState;
 
 pub fn execute(
     store: &dyn WorkflowStore,
@@ -20,7 +20,10 @@ pub fn execute(
         .get_task(parent_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(parent_id.into()))?;
 
-    if parent.phase == Phase::AwaitingSetup || parent.phase == Phase::SettingUp {
+    if matches!(
+        parent.state,
+        TaskState::AwaitingSetup { .. } | TaskState::SettingUp { .. }
+    ) {
         return Err(WorkflowError::InvalidTransition(
             "Cannot create subtask while parent task is still setting up".into(),
         ));
@@ -48,7 +51,7 @@ pub fn execute(
     task.auto_mode = parent.auto_mode;
 
     // Start in AwaitingSetup for consistency with create_task()
-    task.phase = Phase::AwaitingSetup;
+    task.state = TaskState::awaiting_setup(&first_stage.name);
 
     store.save_task(&task)?;
 
@@ -57,10 +60,10 @@ pub fn execute(
 
     orkestra_debug!(
         "task",
-        "Created subtask {}: parent={}, phase={:?}",
+        "Created subtask {}: parent={}, state={}",
         task.id,
         parent_id,
-        task.phase
+        task.state
     );
 
     Ok(task)

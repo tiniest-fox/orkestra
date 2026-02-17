@@ -4,7 +4,7 @@
 //! stopping processes, listing sessions, and retrieving logs.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
-use orkestra_core::workflow::{domain::AssistantSession, services::AssistantService, LogEntry};
+use orkestra_core::workflow::{domain::AssistantSession, AssistantService, LogEntry};
 use std::sync::Arc;
 use tauri::{State, Window};
 

@@ -939,7 +939,7 @@ pub fn enable_auto_merge(mut workflow: WorkflowConfig) -> WorkflowConfig {
 /// Returns (service, store, `temp_dir`). The `temp_dir` must be kept alive for the
 /// duration of the test to prevent database deletion.
 pub fn create_assistant_service() -> (
-    orkestra_core::workflow::services::AssistantService,
+    orkestra_core::workflow::AssistantService,
     Arc<dyn orkestra_core::workflow::WorkflowStore>,
     TempDir,
 ) {
@@ -949,7 +949,7 @@ pub fn create_assistant_service() -> (
     let store: Arc<dyn orkestra_core::workflow::WorkflowStore> =
         Arc::new(SqliteWorkflowStore::new(conn.shared()));
 
-    let service = orkestra_core::workflow::services::AssistantService::new(
+    let service = orkestra_core::workflow::AssistantService::new(
         Arc::clone(&store),
         test_provider_registry(),
         temp_dir.path().to_path_buf(),

@@ -6,7 +6,6 @@
 pub mod adapters;
 pub mod commit_message;
 pub mod debug_log;
-pub mod error;
 pub mod init;
 pub mod pr_description;
 pub mod process;
@@ -19,9 +18,6 @@ pub mod workflow;
 // Test utilities (available for integration tests)
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
-
-// Error types
-pub use error::{OrkestraError, Result};
 
 // Title generation
 #[cfg(any(test, feature = "testutil"))]

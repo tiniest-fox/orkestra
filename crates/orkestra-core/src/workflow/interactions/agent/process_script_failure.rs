@@ -8,6 +8,8 @@ use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
 use crate::workflow::services::IterationService;
 
+use super::process_script_success::strip_ansi_codes;
+
 pub fn execute(
     store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
@@ -101,12 +103,4 @@ pub fn execute(
 
     store.save_task(&task)?;
     Ok(task)
-}
-
-// -- Helpers --
-
-/// Strip ANSI escape codes from a string.
-fn strip_ansi_codes(input: &str) -> String {
-    let bytes = strip_ansi_escapes::strip(input);
-    String::from_utf8_lossy(&bytes).into_owned()
 }

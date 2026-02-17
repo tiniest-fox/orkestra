@@ -72,7 +72,7 @@ pub fn execute(
 // -- Helpers --
 
 /// Strip ANSI escape codes from a string.
-fn strip_ansi_codes(input: &str) -> String {
+pub(super) fn strip_ansi_codes(input: &str) -> String {
     let bytes = strip_ansi_escapes::strip(input);
     String::from_utf8_lossy(&bytes).into_owned()
 }

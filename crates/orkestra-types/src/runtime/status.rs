@@ -223,7 +223,7 @@ impl TaskState {
     }
 
     /// Returns true for states where the system is doing background work
-    /// (finishing, committing, integrating) but no agent is running.
+    /// (finishing, committing, committed, integrating) but no agent is running.
     pub fn is_system_active(&self) -> bool {
         matches!(
             self,

@@ -1,0 +1,105 @@
+//! Create session and iteration before spawn attempt, returning spawn context.
+
+use crate::orkestra_debug;
+use crate::workflow::domain::{SessionState, StageSession};
+use crate::workflow::iteration::IterationService;
+use crate::workflow::ports::{WorkflowResult, WorkflowStore};
+use crate::workflow::stage::session::SessionSpawnContext;
+
+/// Create session and iteration before spawn attempt, returning spawn context.
+///
+/// This is called BEFORE attempting to spawn the agent process.
+/// Creates or updates a session in `Spawning` state.
+/// Creates a new iteration only if there's no active one for this stage.
+///
+/// Returns `SessionSpawnContext` containing the session ID, resume flag, and
+/// stage re-entry detection. Re-entry is computed **before** linking the
+/// iteration to the session, so the `stage_session_id.is_none()` check
+/// correctly detects fresh iterations that haven't been spawned yet.
+///
+/// # Arguments
+///
+/// * `initial_session_id` — Pre-generated session ID for providers that accept caller-supplied
+///   IDs (Claude Code). Pass `None` for providers that generate their own (`OpenCode`).
+///   Only used when creating a NEW session; existing sessions keep their current ID.
+pub(crate) fn execute(
+    store: &dyn WorkflowStore,
+    iteration_service: &IterationService,
+    task_id: &str,
+    stage: &str,
+    initial_session_id: Option<String>,
+) -> WorkflowResult<SessionSpawnContext> {
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Get or create session in Spawning state
+    let session = if let Some(mut session) = store.get_stage_session(task_id, stage)? {
+        // Existing session — keep existing claude_session_id unchanged
+        session.session_state = SessionState::Spawning;
+        session.updated_at.clone_from(&now);
+        session
+    } else {
+        // New session with UUID-based ID
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let mut session = StageSession::new(&session_id, task_id, stage, &now);
+        session.claude_session_id = initial_session_id;
+        session.session_state = SessionState::Spawning;
+        session
+    };
+
+    let stage_session_id = session.id.clone();
+
+    // Compute resume/reentry BEFORE saving the session or linking the iteration.
+    // is_resume: true if we have a session ID AND the agent produced output.
+    let is_resume = session.claude_session_id.is_some() && session.has_activity;
+
+    orkestra_debug!(
+        "session",
+        "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}, has_activity={}",
+        task_id,
+        stage,
+        session.claude_session_id,
+        session.session_state,
+        session.spawn_count,
+        session.has_activity
+    );
+
+    store.save_stage_session(&session)?;
+
+    // Get or create iteration — delegates to IterationService
+    let iteration = if let Some(active_iter) = store.get_active_iteration(task_id, stage)? {
+        active_iter
+    } else {
+        orkestra_debug!(
+            "session",
+            "on_spawn_starting {}/{}: creating iteration via IterationService",
+            task_id,
+            stage
+        );
+        iteration_service.create_iteration(task_id, stage, None)?
+    };
+
+    // Detect untriggered re-entry BEFORE linking: resuming a session but with a
+    // fresh iteration that has no trigger and wasn't linked to this session yet.
+    let is_stage_reentry =
+        is_resume && iteration.stage_session_id.is_none() && iteration.incoming_context.is_none();
+
+    orkestra_debug!(
+        "session",
+        "on_spawn_starting {}/{}: is_resume={}, is_stage_reentry={}",
+        task_id,
+        stage,
+        is_resume,
+        is_stage_reentry
+    );
+
+    // Link the session to the iteration for log recovery
+    let iteration = iteration.with_stage_session_id(&stage_session_id);
+    store.save_iteration(&iteration)?;
+
+    Ok(SessionSpawnContext {
+        session_id: session.claude_session_id,
+        is_resume,
+        is_stage_reentry,
+        stage_session_id,
+    })
+}

@@ -1,4 +1,4 @@
-//! Stage transition logic: advancement, commit pipeline, recovery.
+//! Stage transition logic: advancement, commit pipeline, recovery, session lifecycle.
 
 pub mod advance_all_committed;
 pub mod advance_parent;
@@ -10,7 +10,11 @@ pub mod commit_succeeded;
 pub mod create_subtasks;
 pub mod end_iteration;
 pub mod enter_commit_pipeline;
+pub mod execute_agent;
 pub mod execute_rejection;
 pub mod finalize_advancement;
 pub mod pending_rejection_review;
+pub mod poll_script;
 pub mod recover_stale_commits;
+pub mod session;
+pub mod spawn_script;

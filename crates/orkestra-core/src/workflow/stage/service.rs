@@ -23,7 +23,7 @@ use crate::workflow::ports::WorkflowStore;
 
 use super::agents::{AgentExecutionService, ExecutionHandle};
 use super::scripts::{ScriptExecutionService, ScriptPollResult};
-use super::session::{SessionService, SessionSpawnContext};
+use super::session::SessionSpawnContext;
 use crate::workflow::iteration::IterationService;
 
 // ============================================================================
@@ -178,13 +178,13 @@ impl ActiveAgent {
 /// - `AgentExecutionService` for agent-based stages
 /// - `ScriptExecutionService` for script-based stages
 ///
-/// Session lifecycle is managed here (unified for all stage types):
-/// 1. Create session before spawn (`SessionService::on_spawn_starting`)
-/// 2. Record PID after spawn (`SessionService::on_agent_spawned`)
+/// Session lifecycle is managed here via session interactions:
+/// 1. Create session before spawn (`session::on_spawn_starting`)
+/// 2. Record PID after spawn (`session::on_agent_spawned`)
 /// 3. Handle completion/failure at stage transitions
 pub struct StageExecutionService {
-    /// Session service for managing stage sessions (shared with `AgentExecutionService`).
-    session_service: Arc<SessionService>,
+    /// Iteration service for creating iterations during spawn.
+    iteration_service: Arc<IterationService>,
     /// Agent execution service (for spawning agents).
     agent_service: Arc<AgentExecutionService>,
     /// Script execution service (for spawning scripts).
@@ -213,12 +213,6 @@ impl StageExecutionService {
         runner: Arc<dyn AgentRunnerTrait>,
         registry: Arc<ProviderRegistry>,
     ) -> Self {
-        // Create shared session service (used for unified session lifecycle)
-        let session_service = Arc::new(SessionService::new(
-            Arc::clone(&store),
-            Arc::clone(&iteration_service),
-        ));
-
         // Agent service only handles execution - session lifecycle is managed here
         let agent_service = Arc::new(AgentExecutionService::new(
             runner,
@@ -234,7 +228,7 @@ impl StageExecutionService {
         ));
 
         Self {
-            session_service,
+            iteration_service,
             agent_service,
             script_service,
             store,
@@ -396,10 +390,14 @@ impl StageExecutionService {
         };
 
         // 1. Create session + get spawn context (session ID, resume flag, reentry detection)
-        let mut spawn_context = self
-            .session_service
-            .on_spawn_starting(&task.id, stage, generate_session_id())
-            .map_err(|e| SpawnError::SessionError(e.to_string()))?;
+        let mut spawn_context = super::interactions::session::on_spawn_starting::execute(
+            self.store.as_ref(),
+            &self.iteration_service,
+            &task.id,
+            stage,
+            generate_session_id(),
+        )
+        .map_err(|e| SpawnError::SessionError(e.to_string()))?;
 
         // 2. If this stage has restart_on_reentry and we detected a re-entry,
         //    supersede the existing session and create a fresh one.
@@ -411,19 +409,26 @@ impl StageExecutionService {
 
             if restart {
                 // Supersede the old session so the next on_spawn_starting creates a new one
-                self.session_service
-                    .supersede_session(&task.id, stage)
-                    .map_err(|e| SpawnError::SessionError(e.to_string()))?;
+                super::interactions::session::supersede_session::execute(
+                    self.store.as_ref(),
+                    &task.id,
+                    stage,
+                )
+                .map_err(|e| SpawnError::SessionError(e.to_string()))?;
 
                 // Generate a FRESH UUID — reusing the old one would cause Claude Code
                 // to find the old JSONL session file and resume it
                 // Re-create session: on_spawn_starting will find no active session
                 // (Superseded is filtered) and create a new one. The iteration from
                 // the first call is reused via get_active_iteration.
-                spawn_context = self
-                    .session_service
-                    .on_spawn_starting(&task.id, stage, generate_session_id())
-                    .map_err(|e| SpawnError::SessionError(e.to_string()))?;
+                spawn_context = super::interactions::session::on_spawn_starting::execute(
+                    self.store.as_ref(),
+                    &self.iteration_service,
+                    &task.id,
+                    stage,
+                    generate_session_id(),
+                )
+                .map_err(|e| SpawnError::SessionError(e.to_string()))?;
             }
         }
 
@@ -438,10 +443,12 @@ impl StageExecutionService {
         match &result {
             Ok(spawn_result) => {
                 // Record successful spawn with PID
-                if let Err(e) =
-                    self.session_service
-                        .on_agent_spawned(&task.id, stage, spawn_result.pid)
-                {
+                if let Err(e) = super::interactions::session::on_agent_spawned::execute(
+                    self.store.as_ref(),
+                    &task.id,
+                    stage,
+                    spawn_result.pid,
+                ) {
                     // Non-fatal: spawn already happened, just log the error
                     crate::orkestra_debug!(
                         "stage_execution",
@@ -454,7 +461,11 @@ impl StageExecutionService {
 
                 // Mark trigger as delivered so crash recovery doesn't replay it
                 if spawn_context.is_resume && trigger.is_some() {
-                    if let Err(e) = self.session_service.mark_trigger_delivered(&task.id, stage) {
+                    if let Err(e) = super::interactions::session::mark_trigger_delivered::execute(
+                        self.store.as_ref(),
+                        &task.id,
+                        stage,
+                    ) {
                         crate::orkestra_debug!(
                             "stage_execution",
                             "Failed to mark trigger delivered for {}/{}: {}",
@@ -467,10 +478,12 @@ impl StageExecutionService {
             }
             Err(e) => {
                 // Record spawn failure
-                if let Err(session_err) =
-                    self.session_service
-                        .on_spawn_failed(&task.id, stage, &e.to_string())
-                {
+                if let Err(session_err) = super::interactions::session::on_spawn_failed::execute(
+                    self.store.as_ref(),
+                    &task.id,
+                    stage,
+                    &e.to_string(),
+                ) {
                     crate::orkestra_debug!(
                         "stage_execution",
                         "Failed to record spawn failure for {}/{}: {}",

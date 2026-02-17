@@ -261,17 +261,19 @@ impl WorkflowApi {
     /// Falls back to the task title if generation fails.
     pub fn generate_integration_commit_message(&self, task: &Task) -> String {
         match &self.git_service {
-            Some(git) => super::integration::commit::generate_task_commit_message(
+            Some(git) => super::integration::interactions::generate_commit_message::execute(
                 git.as_ref(),
                 task,
                 &self.workflow,
                 self.commit_message_generator.as_ref(),
             ),
-            None => super::integration::commit::generate_task_commit_message_without_diff(
-                task,
-                &self.workflow,
-                self.commit_message_generator.as_ref(),
-            ),
+            None => {
+                super::integration::interactions::generate_commit_message::execute_without_diff(
+                    task,
+                    &self.workflow,
+                    self.commit_message_generator.as_ref(),
+                )
+            }
         }
     }
 }

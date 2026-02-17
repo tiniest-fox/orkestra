@@ -116,7 +116,7 @@ pub use prompt::PromptService;
 pub use stage::service::{
     ExecutionComplete, ExecutionResult, SpawnError, SpawnResult, StageExecutionService,
 };
-pub use stage::session::{SessionService, SessionSpawnContext};
+pub use stage::session::SessionSpawnContext;
 
 // Parser re-exports
 pub use orkestra_parser::{ResumeMarker, ResumeMarkerType};

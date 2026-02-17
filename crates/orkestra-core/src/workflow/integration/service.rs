@@ -81,7 +81,7 @@ impl WorkflowApi {
             return self.integration_succeeded(task_id);
         }
 
-        let result = super::merge::commit_squash_rebase_merge(
+        let result = integration_interactions::squash_rebase_merge::execute(
             git.as_ref(),
             &task,
             &self.workflow,

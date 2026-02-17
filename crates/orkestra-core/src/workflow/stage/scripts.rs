@@ -1,26 +1,18 @@
 //! Script execution service for running script-based workflow stages.
 //!
-//! TODO: Extract spawn/poll logic into interactions. The service would only
-//! track active script handles and delegate spawn + poll to interactions.
-//!
-//! This service handles the lifecycle of script stages:
-//! - Spawning scripts
-//! - Tracking active executions
-//! - Polling for completion
-//! - Generating log entries
+//! Tracks active script handles and delegates spawn + poll to interactions.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use crate::workflow::config::{ScriptStageConfig, StageConfig, WorkflowConfig};
-use crate::workflow::domain::{LogEntry, Task};
-use crate::workflow::execution::{ScriptEnv, ScriptHandle, ScriptPollState, ScriptResult};
+use crate::workflow::domain::Task;
+use crate::workflow::execution::{ScriptHandle, ScriptResult};
 use crate::workflow::ports::WorkflowStore;
 
 // ============================================================================
-// Script Execution Handle
+// Types
 // ============================================================================
 
 /// Handle for tracking a running script execution.
@@ -63,265 +55,6 @@ pub struct ScriptCompletion {
     pub recovery_stage: Option<String>,
 }
 
-// ============================================================================
-// Script Execution Service
-// ============================================================================
-
-/// Service for managing script stage execution.
-///
-/// This service encapsulates all script-related logic, keeping the orchestrator
-/// focused on coordination rather than execution details.
-pub struct ScriptExecutionService {
-    /// Workflow configuration.
-    workflow: WorkflowConfig,
-    /// Project root for resolving paths.
-    project_root: PathBuf,
-    /// Store for persisting log entries.
-    store: Arc<dyn WorkflowStore>,
-    /// Active script executions keyed by task ID.
-    active_scripts: Mutex<HashMap<String, ActiveScript>>,
-}
-
-impl ScriptExecutionService {
-    /// Create a new script execution service.
-    pub fn new(
-        workflow: WorkflowConfig,
-        project_root: PathBuf,
-        store: Arc<dyn WorkflowStore>,
-    ) -> Self {
-        Self {
-            workflow,
-            project_root,
-            store,
-            active_scripts: Mutex::new(HashMap::new()),
-        }
-    }
-
-    /// Check if a stage is a script stage.
-    pub fn is_script_stage(&self, stage: &str) -> bool {
-        self.workflow
-            .stages
-            .iter()
-            .find(|s| s.name == stage)
-            .is_some_and(StageConfig::is_script_stage)
-    }
-
-    /// Get the script configuration for a stage.
-    pub fn get_script_config(&self, stage: &str) -> Option<&ScriptStageConfig> {
-        self.workflow
-            .stages
-            .iter()
-            .find(|s| s.name == stage)
-            .and_then(|s| s.script.as_ref())
-    }
-
-    /// Get the working directory for a task.
-    pub fn get_working_dir(&self, task: &Task) -> PathBuf {
-        task.worktree_path
-            .as_ref()
-            .map_or_else(|| self.project_root.clone(), PathBuf::from)
-    }
-
-    /// Check if a task has an active script execution.
-    pub fn has_active_script(&self, task_id: &str) -> bool {
-        self.active_scripts
-            .lock()
-            .map(|scripts| scripts.contains_key(task_id))
-            .unwrap_or(false)
-    }
-
-    /// Spawn a script for a task.
-    ///
-    /// Returns the process ID of the spawned script.
-    pub fn spawn_script(
-        &self,
-        task: &Task,
-        stage: &str,
-        stage_session_id: Option<&str>,
-    ) -> Result<u32, ScriptError> {
-        let script_config = self
-            .get_script_config(stage)
-            .ok_or_else(|| ScriptError::NoConfig(stage.to_string()))?;
-
-        let command = script_config.command.clone();
-        let timeout = Duration::from_secs(u64::from(script_config.timeout_seconds));
-        let recovery_stage = script_config.on_failure.clone();
-        let working_dir = self.get_working_dir(task);
-
-        // Build environment variables for the script
-        let env = self.build_script_env(task);
-
-        // Use caller-provided session ID, or look up from store as fallback
-        let stage_session_id = stage_session_id.map_or_else(
-            || {
-                self.store
-                    .get_stage_session(&task.id, stage)
-                    .ok()
-                    .flatten()
-                    .map_or_else(|| format!("{}-{}", task.id, stage), |s| s.id)
-            },
-            String::from,
-        );
-
-        // Write initial log entry to database
-        self.append_log_entry(
-            &stage_session_id,
-            &LogEntry::ScriptStart {
-                command: command.clone(),
-                stage: stage.to_string(),
-            },
-        )?;
-
-        // Spawn the script with environment variables
-        let handle = ScriptHandle::spawn_with_env(&command, &working_dir, timeout, &env)
-            .map_err(|e| ScriptError::SpawnFailed(e.to_string()))?;
-
-        let pid = handle.pid();
-
-        let active_script = ActiveScript {
-            task_id: task.id.clone(),
-            stage: stage.to_string(),
-            command,
-            handle,
-            recovery_stage,
-            stage_session_id,
-        };
-
-        // Track the script
-        self.active_scripts
-            .lock()
-            .map_err(|_| ScriptError::LockError)?
-            .insert(task.id.clone(), active_script);
-
-        Ok(pid)
-    }
-
-    /// Poll all active scripts for completion.
-    ///
-    /// Returns a list of poll results. Incremental output is written to the
-    /// database as it arrives, allowing real-time log viewing.
-    pub fn poll_active_scripts(&self) -> Vec<ScriptPollResult> {
-        let mut results = Vec::new();
-        let mut completed_task_ids = Vec::new();
-
-        // First pass: check for completions
-        if let Ok(mut scripts) = self.active_scripts.lock() {
-            for (task_id, script) in scripts.iter_mut() {
-                match script.handle.try_wait() {
-                    Ok(ScriptPollState::Completed(result)) => {
-                        // Write final output if any (may contain remaining buffered output)
-                        if !result.output.is_empty() {
-                            let _ = self.append_log_entry(
-                                &script.stage_session_id,
-                                &LogEntry::ScriptOutput {
-                                    content: result.output.clone(),
-                                },
-                            );
-                        }
-
-                        let _ = self.append_log_entry(
-                            &script.stage_session_id,
-                            &LogEntry::ScriptExit {
-                                code: result.exit_code,
-                                success: result.is_success(),
-                                timed_out: result.timed_out,
-                            },
-                        );
-
-                        completed_task_ids.push(task_id.clone());
-                        results.push(ScriptPollResult::Completed(ScriptCompletion {
-                            task_id: task_id.clone(),
-                            stage: script.stage.clone(),
-                            result,
-                            recovery_stage: script.recovery_stage.clone(),
-                        }));
-                    }
-                    Ok(ScriptPollState::Running { new_output }) => {
-                        // Write incremental output to database for real-time viewing
-                        if let Some(output) = new_output {
-                            if !output.is_empty() {
-                                let _ = self.append_log_entry(
-                                    &script.stage_session_id,
-                                    &LogEntry::ScriptOutput { content: output },
-                                );
-                            }
-                        }
-                        results.push(ScriptPollResult::Running);
-                    }
-                    Err(e) => {
-                        completed_task_ids.push(task_id.clone());
-                        results.push(ScriptPollResult::Error(format!(
-                            "Script execution error for {task_id}: {e}"
-                        )));
-                    }
-                }
-            }
-
-            // Remove completed scripts
-            for task_id in completed_task_ids {
-                scripts.remove(&task_id);
-            }
-        }
-
-        results
-    }
-
-    /// Get the number of active scripts.
-    pub fn active_count(&self) -> usize {
-        self.active_scripts.lock().map(|s| s.len()).unwrap_or(0)
-    }
-
-    /// Get the set of task IDs with active script executions.
-    pub fn active_script_task_ids(&self) -> std::collections::HashSet<String> {
-        self.active_scripts
-            .lock()
-            .map(|s| s.keys().cloned().collect())
-            .unwrap_or_default()
-    }
-
-    /// Build environment variables for script execution.
-    ///
-    /// These variables provide task context so scripts can make intelligent
-    /// decisions (e.g., running only relevant checks based on what changed).
-    ///
-    /// Variables set:
-    /// - `ORKESTRA_TASK_ID` - Unique task identifier
-    /// - `ORKESTRA_TASK_TITLE` - Human-readable task title
-    /// - `ORKESTRA_BRANCH` - Task's git branch (if set)
-    /// - `ORKESTRA_BASE_BRANCH` - Branch this task was forked from (parent branch for subtasks, primary for tasks)
-    /// - `ORKESTRA_WORKTREE_PATH` - Path to task's worktree (if set)
-    /// - `ORKESTRA_PROJECT_ROOT` - Path to main project root
-    /// - `ORKESTRA_PARENT_ID` - Parent task ID (only set for subtasks)
-    fn build_script_env(&self, task: &Task) -> ScriptEnv {
-        ScriptEnv::new()
-            .with("ORKESTRA_TASK_ID", &task.id)
-            .with("ORKESTRA_TASK_TITLE", &task.title)
-            .with_opt("ORKESTRA_BRANCH", task.branch_name.as_ref())
-            .with("ORKESTRA_BASE_BRANCH", &task.base_branch)
-            .with_opt("ORKESTRA_WORKTREE_PATH", task.worktree_path.as_ref())
-            .with(
-                "ORKESTRA_PROJECT_ROOT",
-                self.project_root.to_string_lossy().as_ref(),
-            )
-            .with_opt("ORKESTRA_PARENT_ID", task.parent_id.as_ref())
-    }
-
-    /// Persist a log entry to the database via the workflow store.
-    fn append_log_entry(
-        &self,
-        stage_session_id: &str,
-        entry: &LogEntry,
-    ) -> Result<(), ScriptError> {
-        self.store
-            .append_log_entry(stage_session_id, entry)
-            .map_err(|e| ScriptError::LogError(e.to_string()))
-    }
-}
-
-// ============================================================================
-// Script Error
-// ============================================================================
-
 /// Errors that can occur during script execution.
 #[derive(Debug)]
 pub enum ScriptError {
@@ -348,11 +81,152 @@ impl std::fmt::Display for ScriptError {
 
 impl std::error::Error for ScriptError {}
 
+// ============================================================================
+// Script Execution Service
+// ============================================================================
+
+/// Service for managing script stage execution.
+///
+/// Tracks active script handles and delegates spawn/poll to interactions.
+pub struct ScriptExecutionService {
+    /// Workflow configuration.
+    workflow: WorkflowConfig,
+    /// Project root for resolving paths.
+    project_root: PathBuf,
+    /// Store for persisting log entries.
+    store: Arc<dyn WorkflowStore>,
+    /// Active script executions keyed by task ID.
+    active_scripts: Mutex<HashMap<String, ActiveScript>>,
+}
+
+impl ScriptExecutionService {
+    /// Create a new script execution service.
+    pub fn new(
+        workflow: WorkflowConfig,
+        project_root: PathBuf,
+        store: Arc<dyn WorkflowStore>,
+    ) -> Self {
+        Self {
+            workflow,
+            project_root,
+            store,
+            active_scripts: Mutex::new(HashMap::new()),
+        }
+    }
+
+    // -- Config Queries --
+
+    /// Check if a stage is a script stage.
+    pub fn is_script_stage(&self, stage: &str) -> bool {
+        self.workflow
+            .stages
+            .iter()
+            .find(|s| s.name == stage)
+            .is_some_and(StageConfig::is_script_stage)
+    }
+
+    /// Get the script configuration for a stage.
+    pub fn get_script_config(&self, stage: &str) -> Option<&ScriptStageConfig> {
+        self.workflow
+            .stages
+            .iter()
+            .find(|s| s.name == stage)
+            .and_then(|s| s.script.as_ref())
+    }
+
+    // -- Active Script Tracking --
+
+    /// Check if a task has an active script execution.
+    pub fn has_active_script(&self, task_id: &str) -> bool {
+        self.active_scripts
+            .lock()
+            .map(|scripts| scripts.contains_key(task_id))
+            .unwrap_or(false)
+    }
+
+    /// Get the number of active scripts.
+    pub fn active_count(&self) -> usize {
+        self.active_scripts.lock().map(|s| s.len()).unwrap_or(0)
+    }
+
+    /// Get the set of task IDs with active script executions.
+    pub fn active_script_task_ids(&self) -> std::collections::HashSet<String> {
+        self.active_scripts
+            .lock()
+            .map(|s| s.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    // -- Spawn & Poll --
+
+    /// Spawn a script for a task.
+    ///
+    /// Returns the process ID of the spawned script.
+    pub fn spawn_script(
+        &self,
+        task: &Task,
+        stage: &str,
+        stage_session_id: Option<&str>,
+    ) -> Result<u32, ScriptError> {
+        let active_script = super::interactions::spawn_script::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.project_root,
+            task,
+            stage,
+            stage_session_id,
+        )?;
+
+        let pid = active_script.handle.pid();
+
+        self.active_scripts
+            .lock()
+            .map_err(|_| ScriptError::LockError)?
+            .insert(task.id.clone(), active_script);
+
+        Ok(pid)
+    }
+
+    /// Poll all active scripts for completion.
+    ///
+    /// Returns a list of poll results. Incremental output is written to the
+    /// database as it arrives, allowing real-time log viewing.
+    pub fn poll_active_scripts(&self) -> Vec<ScriptPollResult> {
+        let mut results = Vec::new();
+        let mut completed_task_ids = Vec::new();
+
+        if let Ok(mut scripts) = self.active_scripts.lock() {
+            for (task_id, script) in scripts.iter_mut() {
+                let result = super::interactions::poll_script::execute(self.store.as_ref(), script);
+                match &result {
+                    ScriptPollResult::Completed(_) | ScriptPollResult::Error(_) => {
+                        completed_task_ids.push(task_id.clone());
+                    }
+                    ScriptPollResult::Running => {}
+                }
+                results.push(result);
+            }
+
+            // Remove completed scripts
+            for task_id in completed_task_ids {
+                scripts.remove(&task_id);
+            }
+        }
+
+        results
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::config::{IntegrationConfig, StageConfig};
+    use crate::workflow::config::{IntegrationConfig, ScriptStageConfig, StageConfig};
+    use crate::workflow::domain::LogEntry;
     use tempfile::TempDir;
 
     fn test_workflow_with_script() -> WorkflowConfig {
@@ -408,12 +282,12 @@ mod tests {
 
     #[test]
     fn test_append_and_read_logs() {
-        let (service, store) = create_service();
+        let (_service, store) = create_service();
 
         let stage_session_id = "task-456-checks";
 
-        // Write some entries via the service
-        service
+        // Write entries directly via store (testing log persistence)
+        store
             .append_log_entry(
                 stage_session_id,
                 &LogEntry::ScriptStart {
@@ -423,7 +297,7 @@ mod tests {
             )
             .unwrap();
 
-        service
+        store
             .append_log_entry(
                 stage_session_id,
                 &LogEntry::ScriptOutput {
@@ -432,7 +306,7 @@ mod tests {
             )
             .unwrap();
 
-        service
+        store
             .append_log_entry(
                 stage_session_id,
                 &LogEntry::ScriptExit {

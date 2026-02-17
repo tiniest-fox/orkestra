@@ -63,7 +63,7 @@ impl OrchestratorLoop {
     ) {
         let task_id = task.id.clone();
 
-        let commit_result = crate::workflow::integration::commit::commit_worktree_changes(
+        let commit_result = crate::workflow::integration::interactions::commit_worktree::execute(
             git.as_ref(),
             &task,
             &stage,

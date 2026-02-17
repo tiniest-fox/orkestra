@@ -18,6 +18,7 @@ use crate::title::{generate_fallback_title, generate_title_sync};
 use crate::workflow::domain::{AssistantSession, LogEntry};
 use crate::workflow::execution::{AgentParser, ProviderRegistry};
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
+use orkestra_agent::interactions::spawner::cli_path::prepare_path_env;
 use orkestra_process::{is_process_running, kill_process_tree, ProcessGuard};
 
 // ============================================================================
@@ -179,13 +180,11 @@ impl AssistantService {
         session: &AssistantSession,
         message: &str,
     ) -> std::io::Result<(u32, std::process::ChildStdout, std::process::ChildStderr)> {
-        let path_env = crate::process::prepare_path_env();
+        let path_env = prepare_path_env();
         let is_resume = session.spawn_count > 0;
-
-        // Load system prompt (placeholder until Subtask 5 is complete)
         let system_prompt = Self::load_system_prompt();
 
-        let mut child = crate::process::spawn_claude_assistant_process(
+        let mut child = spawn_claude_assistant_process(
             &self.project_root,
             &path_env,
             session.claude_session_id.as_deref(),
@@ -195,7 +194,7 @@ impl AssistantService {
 
         let pid = child.id();
 
-        // Write the user message to stdin
+        // Write the user message to stdin and close it
         if let Some(mut stdin) = child.stdin.take() {
             use std::io::Write;
             stdin.write_all(message.as_bytes())?;
@@ -375,6 +374,61 @@ fn generate_and_set_title(
     let now = chrono::Utc::now().to_rfc3339();
     session.set_title(title, &now);
     let _ = store.save_assistant_session(&session);
+}
+
+// ============================================================================
+// Claude assistant process spawning
+// ============================================================================
+
+/// Spawns a Claude process for the assistant (free-form chat, no JSON schema).
+fn spawn_claude_assistant_process(
+    project_root: &std::path::Path,
+    path_env: &str,
+    session_id: Option<&str>,
+    is_resume: bool,
+    system_prompt: &str,
+) -> std::io::Result<std::process::Child> {
+    use std::process::{Command, Stdio};
+
+    #[cfg(unix)]
+    use std::os::unix::process::CommandExt;
+
+    let mut cmd = Command::new("claude");
+
+    if let Some(sid) = session_id {
+        if is_resume {
+            cmd.args(["--resume", sid]);
+        } else {
+            cmd.args(["--session-id", sid]);
+        }
+    }
+
+    cmd.args(["--print", "--verbose"]);
+    cmd.args(["--output-format", "stream-json"]);
+    cmd.args(["--dangerously-skip-permissions"]);
+
+    // Restrict to read-only tools — the assistant investigates and creates
+    // Orkestra tasks but never modifies files directly
+    cmd.args([
+        "--disallowedTools",
+        "Edit,Write,NotebookEdit,AskUserQuestion",
+    ]);
+
+    if !is_resume {
+        cmd.args(["--system-prompt", system_prompt]);
+    }
+
+    cmd.env("PATH", path_env)
+        .env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1")
+        .current_dir(project_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(unix)]
+    cmd.process_group(0);
+
+    cmd.spawn()
 }
 
 #[cfg(test)]

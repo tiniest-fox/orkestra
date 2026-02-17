@@ -28,6 +28,7 @@ orkestra-process = { path = "../orkestra-process", features = ["testutil"] }
 orkestra-schema = { path = "../orkestra-schema" }
 orkestra-store = { path = "../orkestra-store", features = ["testutil"] }
 orkestra-types = { path = "../orkestra-types" }
+orkestra-utility = { path = "../orkestra-utility", features = ["testutil"] }
 tempfile = { version = "3", optional = true }
 handlebars = "6"
 jsonschema = "0.26"

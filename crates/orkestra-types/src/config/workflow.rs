@@ -954,8 +954,7 @@ impl WorkflowConfig {
 mod tests {
     use super::*;
     use crate::config::stage::{
-        ApprovalCapabilities, ScriptStageConfig, StageCapabilities, StageConfig,
-        SubtaskCapabilities, ToolRestriction,
+        ScriptStageConfig, StageCapabilities, StageConfig, SubtaskCapabilities, ToolRestriction,
     };
 
     /// Standard 4-stage workflow used by most tests.

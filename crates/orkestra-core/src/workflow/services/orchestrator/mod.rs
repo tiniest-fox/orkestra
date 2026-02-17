@@ -8,7 +8,10 @@
 //! It is driven by the workflow configuration and is stage-agnostic -
 //! it doesn't know about specific stages like "planning" or "work".
 
-use std::collections::{HashMap, HashSet};
+mod commit_pipeline;
+mod recovery;
+
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -19,22 +22,12 @@ use super::periodic::PeriodicScheduler;
 use crate::orkestra_debug;
 use crate::pr_description::PrDescriptionGenerator;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{Task, TaskHeader, TickSnapshot};
+use crate::workflow::domain::{Task, TickSnapshot};
 use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::Phase;
 
 use super::stage_execution::{ExecutionComplete, ExecutionResult, StageExecutionService};
 use super::WorkflowApi;
-
-/// Parameters for a background commit job.
-struct CommitJob {
-    task: Task,
-    /// The stage being committed (for simple commit message format).
-    stage: String,
-    /// Activity log from the iteration (for commit message body).
-    activity_log: Option<String>,
-    git: Arc<dyn GitService>,
-}
 
 // ============================================================================
 // Orchestrator Events
@@ -377,6 +370,13 @@ impl OrchestratorLoop {
 
         Ok(events)
     }
+
+    /// Get count of active executions.
+    pub fn active_count(&self) -> usize {
+        self.stage_executor.active_count()
+    }
+
+    // -- Tick Phases --
 
     /// Build a `TickSnapshot` from the current store state.
     fn build_snapshot(&self) -> WorkflowResult<TickSnapshot> {
@@ -764,6 +764,8 @@ impl OrchestratorLoop {
         Ok(events)
     }
 
+    // -- PR Creation --
+
     /// Background PR creation logic. Performs git push and PR creation, records the result.
     /// Runs off the orchestrator's main thread.
     #[allow(clippy::needless_pass_by_value)]
@@ -780,7 +782,7 @@ impl OrchestratorLoop {
         let base_branch = task.base_branch.clone();
 
         // 1. Safety-net commit
-        if let Err(e) = super::commit_worktree::commit_worktree_changes(
+        if let Err(e) = crate::workflow::services::commit_worktree::commit_worktree_changes(
             git.as_ref(),
             &task,
             "integrating",
@@ -801,7 +803,8 @@ impl OrchestratorLoop {
         }
 
         // 3. Generate PR description (with fallback on failure)
-        let diff_summary = super::commit_worktree::build_diff_summary(git.as_ref(), &task);
+        let diff_summary =
+            crate::workflow::services::commit_worktree::build_diff_summary(git.as_ref(), &task);
 
         // Get plan artifact if available for richer PR body
         let plan_artifact = task.artifacts.get("plan").map(|a| a.content.as_str());
@@ -884,6 +887,8 @@ impl OrchestratorLoop {
         }
         Ok(())
     }
+
+    // -- Integration --
 
     /// Start integrations for Done tasks that need merging.
     ///
@@ -997,7 +1002,7 @@ impl OrchestratorLoop {
         let api_clone = Arc::clone(&self.api);
 
         let run_integration = move || {
-            super::integration::run_integration(
+            crate::workflow::services::integration::run_integration(
                 git,
                 api_clone,
                 commit_message_generator,
@@ -1014,639 +1019,11 @@ impl OrchestratorLoop {
 
         Ok(events)
     }
-
-    // ========================================================================
-    // Finishing / Committing / Finished pipeline
-    // ========================================================================
-
-    /// Transition Finishing tasks to Committing and spawn background commit threads.
-    ///
-    /// Always goes through Committing — even if there are no changes, the
-    /// background thread completes instantly (`commit_pending_changes` is a no-op
-    /// when clean). This keeps the git status check off the tick thread.
-    fn spawn_pending_commits(&self) -> WorkflowResult<()> {
-        let jobs = self.collect_pending_commit_jobs()?;
-
-        for job in jobs {
-            let api_clone = Arc::clone(&self.api);
-            let run_commit = move || {
-                Self::run_background_commit(
-                    job.git,
-                    api_clone,
-                    job.task,
-                    job.stage,
-                    job.activity_log,
-                );
-            };
-
-            if self.sync_background {
-                run_commit();
-            } else {
-                std::thread::spawn(run_commit);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Find Finishing tasks, transition them to Committing (or Finished if no git),
-    /// and return the commit jobs to spawn.
-    fn collect_pending_commit_jobs(&self) -> WorkflowResult<Vec<CommitJob>> {
-        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-        let finishing: Vec<_> = api
-            .store
-            .list_task_headers()?
-            .into_iter()
-            .filter(|h| h.phase == Phase::Finishing)
-            .collect();
-
-        if finishing.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut jobs = Vec::new();
-
-        for header in &finishing {
-            let Some(mut task) = api.store.get_task(&header.id)? else {
-                continue;
-            };
-            if task.phase != Phase::Finishing {
-                continue;
-            }
-
-            // Get stage and activity_log for simple commit message
-            let stage = task.current_stage().unwrap_or("unknown").to_string();
-            let activity_log = api
-                .store
-                .get_latest_iteration(&task.id, &stage)?
-                .and_then(|iter| iter.activity_log);
-
-            orkestra_debug!(
-                "orchestrator",
-                "spawn_pending_commits {}: → {}",
-                task.id,
-                if self.git_service.is_some() {
-                    "Committing"
-                } else {
-                    "Finished"
-                }
-            );
-
-            if let Some(g) = &self.git_service {
-                // Git path: transition to Committing and queue background job
-                task.phase = Phase::Committing;
-                task.updated_at = chrono::Utc::now().to_rfc3339();
-                api.store.save_task(&task)?;
-
-                jobs.push(CommitJob {
-                    task,
-                    stage,
-                    activity_log,
-                    git: Arc::clone(g),
-                });
-            } else {
-                // No git service — skip commit, go straight to Finished
-                task.phase = Phase::Finished;
-                task.updated_at = chrono::Utc::now().to_rfc3339();
-                api.store.save_task(&task)?;
-            }
-        }
-
-        Ok(jobs)
-    }
-
-    /// Background commit logic. Commits worktree changes and records result via `WorkflowApi`.
-    #[allow(clippy::needless_pass_by_value)]
-    fn run_background_commit(
-        git: Arc<dyn GitService>,
-        api: Arc<Mutex<WorkflowApi>>,
-        task: Task,
-        stage: String,
-        activity_log: Option<String>,
-    ) {
-        let task_id = task.id.clone();
-
-        let commit_result = super::commit_worktree::commit_worktree_changes(
-            git.as_ref(),
-            &task,
-            &stage,
-            activity_log.as_deref(),
-        );
-
-        let Ok(api) = api.lock() else {
-            orkestra_debug!(
-                "commit",
-                "failed to acquire API lock after commit for {} — will be recovered on restart",
-                task_id
-            );
-            return;
-        };
-
-        let result = match commit_result {
-            Ok(()) => api.commit_succeeded(&task_id),
-            Err(e) => api.commit_failed(&task_id, &format!("Failed to commit agent changes: {e}")),
-        };
-
-        if let Err(e) = result {
-            orkestra_debug!(
-                "commit",
-                "commit result recording failed for {}: {}",
-                task_id,
-                e
-            );
-        }
-    }
-
-    /// Advance tasks in Finished phase to the next stage.
-    ///
-    /// The output was already processed inline (during `handle_execution_complete`
-    /// or human approval). The commit pipeline just committed the worktree changes.
-    /// Now we complete the stage advancement.
-    fn advance_committed_stages(&self) -> WorkflowResult<Vec<OrchestratorEvent>> {
-        // Query DB directly (not snapshot) because:
-        // 1. process_completed_executions may have created Finishing tasks after snapshot
-        // 2. spawn_pending_commits bg threads transition Committing → Finished after snapshot
-        // Acquiring the lock also blocks until any in-flight commit threads complete.
-        let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-        let finished: Vec<_> = api
-            .store
-            .list_task_headers()?
-            .into_iter()
-            .filter(|h| h.phase == Phase::Finished)
-            .collect();
-
-        if finished.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut events = Vec::new();
-
-        for header in &finished {
-            let task_id = header.id.clone();
-            let stage = header.current_stage().unwrap_or("unknown").to_string();
-
-            orkestra_debug!(
-                "orchestrator",
-                "advance_committed_stages {}/{}: advancing stage",
-                task_id,
-                stage,
-            );
-
-            match api.finalize_stage_advancement(&task_id) {
-                Ok(updated) => {
-                    let output_type = if updated.is_done() {
-                        "done"
-                    } else if updated.status.is_waiting_on_children() {
-                        "subtasks"
-                    } else {
-                        "advanced"
-                    };
-                    events.push(OrchestratorEvent::OutputProcessed {
-                        task_id,
-                        stage,
-                        output_type: output_type.to_string(),
-                    });
-                }
-                Err(e) => {
-                    events.push(OrchestratorEvent::Error {
-                        task_id: Some(task_id),
-                        error: e.to_string(),
-                    });
-                }
-            }
-        }
-
-        Ok(events)
-    }
-
-    // ========================================================================
-    // Recovery
-    // ========================================================================
-
-    /// Recover tasks stuck in Integrating phase (from app crash during merge).
-    ///
-    /// Tasks that were being integrated when the app crashed will be stuck in Integrating.
-    ///
-    /// First checks if the branch was already merged into the target. This handles
-    /// the common case where the merge succeeded but the app was killed before
-    /// the DB was updated to Archived (e.g., merge triggers a rebuild that restarts
-    /// the app). In this case, the task is archived directly without re-merging.
-    ///
-    /// If the branch is NOT merged, falls back to re-attempting the full integration.
-    fn recover_stale_integrations(&self, headers: &[TaskHeader]) -> Vec<OrchestratorEvent> {
-        let mut events = Vec::new();
-
-        let Ok(api) = self.api.lock() else {
-            orkestra_debug!(
-                "recovery",
-                "Failed to acquire API lock for stale integration recovery"
-            );
-            return events;
-        };
-
-        for header in headers {
-            if header.phase == Phase::Integrating && header.is_done() {
-                orkestra_debug!("recovery", "Found stale Integrating task: {}", header.id);
-
-                // Load full task for integration recovery (needs artifacts, branch info)
-                let Ok(Some(task)) = api.store.get_task(&header.id) else {
-                    orkestra_debug!(
-                        "recovery",
-                        "Failed to load task {} for integration recovery",
-                        header.id
-                    );
-                    continue;
-                };
-                events.push(Self::recover_stale_task(&api, &task));
-            }
-        }
-
-        events
-    }
-
-    /// Attempt to recover a single task stuck in `Integrating` phase.
-    fn recover_stale_task(api: &WorkflowApi, task: &Task) -> OrchestratorEvent {
-        // First check if the branch is already merged (handles both regular merges and PRs)
-        if Self::is_branch_already_merged(api, task) {
-            return Self::archive_already_merged_task(api, task);
-        }
-
-        // auto_merge disabled — return to choice point for user to retry.
-        // Covers both failed PR creation and failed manual merge attempts.
-        if !api.workflow.integration.auto_merge {
-            orkestra_debug!(
-                "recovery",
-                "Task {} stuck in Integrating (auto_merge=false) — resetting to Done+Idle for retry",
-                task.id
-            );
-            let mut reset_task = task.clone();
-            reset_task.phase = Phase::Idle;
-            if let Err(e) = api.store.save_task(&reset_task) {
-                orkestra_debug!(
-                    "recovery",
-                    "Failed to reset task {} to Idle: {}",
-                    task.id,
-                    e
-                );
-            }
-            return OrchestratorEvent::Error {
-                task_id: Some(task.id.clone()),
-                error: "Task was stuck in Integrating phase — reset to Done+Idle".into(),
-            };
-        }
-
-        // Otherwise, this is a regular merge attempt - retry integration
-        Self::reattempt_integration(api, task)
-    }
-
-    /// Archive a task whose branch is already merged into the target.
-    fn archive_already_merged_task(api: &WorkflowApi, task: &Task) -> OrchestratorEvent {
-        orkestra_debug!(
-            "recovery",
-            "Branch already merged for {}, archiving directly",
-            task.id
-        );
-
-        // Clean up worktree if it still exists on disk
-        if task.worktree_path.is_some() {
-            if let Some(ref git) = api.git_service {
-                if let Err(e) = git.remove_worktree(&task.id, true) {
-                    orkestra_debug!(
-                        "recovery",
-                        "Failed to remove worktree for {} (non-critical): {}",
-                        task.id,
-                        e
-                    );
-                }
-            }
-        }
-
-        match api.integration_succeeded(&task.id) {
-            Ok(_) => {
-                orkestra_debug!("recovery", "Archived already-merged task {}", task.id);
-                OrchestratorEvent::IntegrationCompleted {
-                    task_id: task.id.clone(),
-                }
-            }
-            Err(e) => {
-                orkestra_debug!(
-                    "recovery",
-                    "Failed to archive already-merged task {}: {}",
-                    task.id,
-                    e
-                );
-                OrchestratorEvent::IntegrationFailed {
-                    task_id: task.id.clone(),
-                    error: e.to_string(),
-                    conflict_files: vec![],
-                }
-            }
-        }
-    }
-
-    /// Re-attempt full integration for a task whose branch is not yet merged.
-    fn reattempt_integration(api: &WorkflowApi, task: &Task) -> OrchestratorEvent {
-        match api.integrate_task(&task.id) {
-            Ok(_) => {
-                orkestra_debug!(
-                    "recovery",
-                    "Successfully recovered integration for {}",
-                    task.id
-                );
-                OrchestratorEvent::IntegrationCompleted {
-                    task_id: task.id.clone(),
-                }
-            }
-            Err(e) => {
-                orkestra_debug!("recovery", "Integration failed for {}: {}", task.id, e);
-
-                // integration_failed() should have moved task to recovery stage.
-                // Verify the task is no longer stuck in Integrating phase.
-                if let Ok(updated_task) = api.get_task(&task.id) {
-                    if updated_task.phase == Phase::Integrating {
-                        // Fallback: reset phase to Idle so orchestrator can retry later
-                        orkestra_debug!(
-                            "recovery",
-                            "Task {} still in Integrating phase, resetting to Idle",
-                            task.id
-                        );
-                        let mut reset_task = updated_task;
-                        reset_task.phase = Phase::Idle;
-                        if let Err(e) = api.store.save_task(&reset_task) {
-                            orkestra_debug!(
-                                "integration",
-                                "Failed to reset task {} phase: {}",
-                                task.id,
-                                e
-                            );
-                        }
-                    }
-                }
-
-                OrchestratorEvent::IntegrationFailed {
-                    task_id: task.id.clone(),
-                    error: e.to_string(),
-                    conflict_files: vec![],
-                }
-            }
-        }
-    }
-
-    /// Check if a task's branch is already merged into its target branch.
-    ///
-    /// Returns `true` if:
-    /// - No git service configured (nothing to merge)
-    /// - No branch name on the task (nothing to merge)
-    /// - The branch no longer exists (already cleaned up after merge)
-    /// - The branch's commits are all reachable from the target
-    ///
-    /// Returns `false` if the branch has unmerged commits or if the check fails.
-    fn is_branch_already_merged(api: &WorkflowApi, task: &Task) -> bool {
-        let Some(ref git) = api.git_service else {
-            return true; // No git = nothing to merge
-        };
-
-        let Some(ref branch_name) = task.branch_name else {
-            return true; // No branch = nothing to merge
-        };
-
-        if task.base_branch.is_empty() {
-            // No base_branch means we can't determine the merge target.
-            // Treat as not merged so integration can surface the error.
-            return false;
-        }
-
-        match git.is_branch_merged(branch_name, &task.base_branch) {
-            Ok(merged) => merged,
-            Err(e) => {
-                orkestra_debug!(
-                    "recovery",
-                    "Failed to check merge status for {}: {}, assuming not merged",
-                    task.id,
-                    e
-                );
-                false // Err on side of caution: attempt re-integration
-            }
-        }
-    }
-
-    /// Recover tasks stuck in `SettingUp` phase (from app crash during setup).
-    ///
-    /// Tasks stuck in `SettingUp` from a previous crash are transitioned back to
-    /// `AwaitingSetup`. The orchestrator will pick them up on the next tick.
-    /// Cleans up any partial worktree/branch before transitioning.
-    fn recover_stale_setup_tasks(&self, headers: &[TaskHeader]) {
-        let Ok(api) = self.api.lock() else {
-            orkestra_debug!(
-                "recovery",
-                "Failed to acquire API lock for stale setup recovery"
-            );
-            return;
-        };
-
-        for header in headers {
-            if header.phase != Phase::SettingUp {
-                continue;
-            }
-
-            orkestra_debug!("recovery", "Recovering stale setup task: {}", header.id);
-
-            // Clean up any partial worktree/branch from interrupted setup
-            if let Some(ref git) = api.git_service {
-                if let Err(e) = git.remove_worktree(&header.id, true) {
-                    // Expected if worktree wasn't created yet
-                    if !e.to_string().contains("not found")
-                        && !e.to_string().contains("does not exist")
-                    {
-                        orkestra_debug!(
-                            "recovery",
-                            "WARNING: Failed to clean up partial worktree for {}: {}",
-                            header.id,
-                            e
-                        );
-                    }
-                }
-            }
-
-            // Load full task to modify and save
-            let Ok(Some(mut task)) = api.store.get_task(&header.id) else {
-                orkestra_debug!(
-                    "recovery",
-                    "Failed to load task {} for setup recovery",
-                    header.id
-                );
-                continue;
-            };
-
-            // Transition back to AwaitingSetup - orchestrator will re-trigger
-            task.phase = Phase::AwaitingSetup;
-            task.worktree_path = None;
-            task.branch_name = None;
-            if let Err(e) = api.store.save_task(&task) {
-                orkestra_debug!(
-                    "recovery",
-                    "Failed to transition task {} to AwaitingSetup: {}",
-                    task.id,
-                    e
-                );
-            }
-        }
-    }
-
-    /// Recover tasks stuck in `AgentWorking` phase (from app crash during agent run).
-    ///
-    /// Tasks that had an agent running when the app crashed will be stuck in `AgentWorking`.
-    /// We reset them to Idle so the orchestrator can respawn the agent.
-    fn recover_stale_agent_working_tasks(&self, headers: &[TaskHeader]) {
-        let Ok(api) = self.api.lock() else {
-            orkestra_debug!(
-                "recovery",
-                "Failed to acquire API lock for stale agent recovery"
-            );
-            return;
-        };
-
-        for header in headers {
-            if header.phase == Phase::AgentWorking {
-                orkestra_debug!("recovery", "Found stale AgentWorking task: {}", header.id);
-
-                // Load full task to modify and save
-                let Ok(Some(mut task)) = api.store.get_task(&header.id) else {
-                    orkestra_debug!(
-                        "recovery",
-                        "Failed to load task {} for agent recovery",
-                        header.id
-                    );
-                    continue;
-                };
-
-                task.phase = Phase::Idle;
-                // Keep same status - orchestrator will respawn agent
-
-                if let Err(e) = api.store.save_task(&task) {
-                    orkestra_debug!(
-                        "recovery",
-                        "Failed to reset stale task {} to Idle: {}",
-                        task.id,
-                        e
-                    );
-                }
-            }
-        }
-    }
-
-    /// Recover tasks stuck in Committing phase (background thread died).
-    ///
-    /// Reset to Finishing so the next tick re-checks for uncommitted changes
-    /// and re-spawns the commit thread. The commit is idempotent.
-    fn recover_stale_committing_tasks(&self, headers: &[TaskHeader]) {
-        let Ok(api) = self.api.lock() else {
-            orkestra_debug!(
-                "recovery",
-                "Failed to acquire API lock for stale committing recovery"
-            );
-            return;
-        };
-
-        for header in headers {
-            if header.phase == Phase::Committing {
-                orkestra_debug!("recovery", "Found stale Committing task: {}", header.id);
-
-                // Load full task to modify and save
-                let Ok(Some(mut task)) = api.store.get_task(&header.id) else {
-                    orkestra_debug!(
-                        "recovery",
-                        "Failed to load task {} for committing recovery",
-                        header.id
-                    );
-                    continue;
-                };
-
-                task.phase = Phase::Finishing;
-
-                if let Err(e) = api.store.save_task(&task) {
-                    orkestra_debug!(
-                        "recovery",
-                        "Failed to reset stale task {} to Finishing: {}",
-                        task.id,
-                        e
-                    );
-                }
-            }
-        }
-    }
-
-    /// Clean up worktrees that are no longer needed.
-    ///
-    /// Removes worktrees in two cases:
-    /// 1. **Orphaned**: The task was deleted from the DB but the worktree remains on disk.
-    /// 2. **Archived**: The task was integrated but crashed before worktree cleanup.
-    ///
-    /// Other terminal states (Done, Failed, Blocked) keep their worktrees:
-    /// Done tasks still need theirs for integration, and Failed/Blocked tasks
-    /// can be retried.
-    fn cleanup_orphaned_worktrees(&self) {
-        let Ok(api) = self.api.lock() else {
-            orkestra_debug!(
-                "recovery",
-                "Failed to acquire API lock for orphaned worktree cleanup"
-            );
-            return;
-        };
-
-        let Some(ref git) = api.git_service else {
-            return; // No git service configured
-        };
-
-        let worktree_names = match git.list_worktree_names() {
-            Ok(names) => names,
-            Err(e) => {
-                orkestra_debug!("recovery", "Failed to list worktree dirs: {}", e);
-                return;
-            }
-        };
-
-        if worktree_names.is_empty() {
-            return;
-        }
-
-        let Ok(all_headers) = api.store.list_task_headers() else {
-            orkestra_debug!(
-                "recovery",
-                "Failed to list task headers for orphaned worktree cleanup"
-            );
-            return;
-        };
-
-        let headers_by_id: HashMap<&str, &TaskHeader> =
-            all_headers.iter().map(|h| (h.id.as_str(), h)).collect();
-
-        for name in &worktree_names {
-            let should_remove = match headers_by_id.get(name.as_str()) {
-                None => {
-                    orkestra_debug!("recovery", "Cleaning up orphaned worktree: {name}");
-                    true
-                }
-                Some(header) if header.status.is_archived() && header.phase == Phase::Idle => {
-                    orkestra_debug!("recovery", "Cleaning up worktree for archived task: {name}");
-                    true
-                }
-                _ => false,
-            };
-
-            if should_remove {
-                if let Err(e) = git.remove_worktree(name, true) {
-                    orkestra_debug!("recovery", "Failed to clean up worktree {name}: {}", e);
-                }
-            }
-        }
-    }
-
-    /// Get count of active executions.
-    pub fn active_count(&self) -> usize {
-        self.stage_executor.active_count()
-    }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {

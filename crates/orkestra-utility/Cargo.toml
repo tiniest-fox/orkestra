@@ -1,0 +1,22 @@
+[package]
+name = "orkestra-utility"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Enables mock implementations for testing
+testutil = []
+
+[dependencies]
+serde_json = "1"
+handlebars = "6"
+jsonschema = "0.26"
+orkestra-process = { path = "../orkestra-process" }
+orkestra-types = { path = "../orkestra-types" }
+
+[dev-dependencies]
+indexmap = "2"

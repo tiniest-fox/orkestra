@@ -1,144 +1,27 @@
 //! Read-only query operations.
 
-use std::collections::HashMap;
-
-use crate::workflow::domain::task_view::{DerivedTaskState, TaskView};
-use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession, Task};
+use crate::workflow::domain::task_view::TaskView;
+use crate::workflow::domain::{Iteration, LogEntry, Question, StageSession};
+use crate::workflow::interactions::query;
 use crate::workflow::ports::WorkflowResult;
-use crate::workflow::runtime::{Artifact, Outcome};
+use crate::workflow::runtime::Artifact;
 
-use super::log_service::LogService;
 use super::WorkflowApi;
-
-/// Trait for types that belong to a task (have a `task_id` field).
-trait HasTaskId {
-    fn task_id(&self) -> &str;
-}
-
-impl HasTaskId for Iteration {
-    fn task_id(&self) -> &str {
-        &self.task_id
-    }
-}
-
-impl HasTaskId for StageSession {
-    fn task_id(&self) -> &str {
-        &self.task_id
-    }
-}
-
-/// Sort tasks in topological order (dependencies before dependents).
-///
-/// Uses Kahn's algorithm. Within the same dependency level, preserves
-/// the original input order (typically creation order).
-fn topological_sort(tasks: Vec<Task>) -> Vec<Task> {
-    use std::collections::{HashSet, VecDeque};
-
-    let ids: HashSet<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
-
-    // Map id → index for quick lookup
-    let id_to_idx: HashMap<&str, usize> = tasks
-        .iter()
-        .enumerate()
-        .map(|(i, t)| (t.id.as_str(), i))
-        .collect();
-
-    // Count in-degree (only deps within this task set)
-    let mut in_degree = vec![0usize; tasks.len()];
-    let mut dependents: Vec<Vec<usize>> = vec![vec![]; tasks.len()];
-    for (i, task) in tasks.iter().enumerate() {
-        for dep_id in &task.depends_on {
-            if let Some(&dep_idx) = id_to_idx.get(dep_id.as_str()) {
-                if ids.contains(dep_id.as_str()) {
-                    in_degree[i] += 1;
-                    dependents[dep_idx].push(i);
-                }
-            }
-        }
-    }
-
-    // BFS from zero-degree nodes, preserving original order within each level
-    let mut queue: VecDeque<usize> = VecDeque::new();
-    for (i, &deg) in in_degree.iter().enumerate() {
-        if deg == 0 {
-            queue.push_back(i);
-        }
-    }
-
-    let mut order: Vec<usize> = Vec::with_capacity(tasks.len());
-    while let Some(idx) = queue.pop_front() {
-        order.push(idx);
-        // Sort dependents by original index to preserve creation order
-        let mut deps = dependents[idx].clone();
-        deps.sort_unstable();
-        for dep_idx in deps {
-            in_degree[dep_idx] -= 1;
-            if in_degree[dep_idx] == 0 {
-                queue.push_back(dep_idx);
-            }
-        }
-    }
-
-    // If there are cycles (shouldn't happen), append remaining tasks
-    if order.len() < tasks.len() {
-        for i in 0..tasks.len() {
-            if !order.contains(&i) {
-                order.push(i);
-            }
-        }
-    }
-
-    // Reorder tasks by the computed indices
-    let mut indexed: Vec<(usize, Task)> = tasks.into_iter().enumerate().collect();
-    let mut result = Vec::with_capacity(indexed.len());
-    for idx in order {
-        // Find and remove by original index
-        if let Some(pos) = indexed.iter().position(|(i, _)| *i == idx) {
-            result.push(indexed.swap_remove(pos).1);
-        }
-    }
-    result
-}
-
-/// Group a flat list of items by their task ID.
-fn group_by_task_id<T: HasTaskId>(items: Vec<T>) -> HashMap<String, Vec<T>> {
-    let mut map: HashMap<String, Vec<T>> = HashMap::new();
-    for item in items {
-        map.entry(item.task_id().to_string())
-            .or_default()
-            .push(item);
-    }
-    map
-}
 
 impl WorkflowApi {
     /// Get pending questions for a task.
-    ///
-    /// Reads questions from the latest iteration's outcome.
     pub fn get_pending_questions(&self, task_id: &str) -> WorkflowResult<Vec<Question>> {
-        let task = self.get_task(task_id)?;
-
-        // Get questions from iteration outcome
-        if let Some(stage) = task.current_stage() {
-            if let Some(iter) = self.store.get_latest_iteration(task_id, stage)? {
-                if let Some(Outcome::AwaitingAnswers { questions, .. }) = &iter.outcome {
-                    return Ok(questions.clone());
-                }
-            }
-        }
-
-        Ok(vec![])
+        query::questions::get_pending(self.store.as_ref(), task_id)
     }
 
     /// Get a specific artifact by name.
     pub fn get_artifact(&self, task_id: &str, name: &str) -> WorkflowResult<Option<Artifact>> {
-        let task = self.get_task(task_id)?;
-        Ok(task.artifacts.get(name).cloned())
+        query::artifacts::get_artifact(self.store.as_ref(), task_id, name)
     }
 
     /// Get all iterations for a task.
     pub fn get_iterations(&self, task_id: &str) -> WorkflowResult<Vec<Iteration>> {
-        self.store.get_iterations(task_id)
+        query::iterations::get_all(self.store.as_ref(), task_id)
     }
 
     /// Get the latest iteration for a specific stage.
@@ -147,300 +30,37 @@ impl WorkflowApi {
         task_id: &str,
         stage: &str,
     ) -> WorkflowResult<Option<Iteration>> {
-        self.store.get_latest_iteration(task_id, stage)
+        query::iterations::get_latest(self.store.as_ref(), task_id, stage)
     }
 
-    /// Get feedback from the last rejection (for agent prompts).
-    ///
-    /// Returns the feedback from the most recent `Rejected` or `Rejection` outcome
-    /// for the task's current stage, if any.
+    /// Get feedback from the last rejection for the current stage.
     pub fn get_rejection_feedback(&self, task_id: &str) -> WorkflowResult<Option<String>> {
-        let task = self.get_task(task_id)?;
-
-        let Some(current_stage) = task.current_stage() else {
-            return Ok(None);
-        };
-
-        // Get iterations for current stage
-        let iterations = self
-            .store
-            .get_iterations_for_stage(task_id, current_stage)?;
-
-        // Find the most recent rejection outcome
-        for iteration in iterations.into_iter().rev() {
-            if let Some(Outcome::Rejected { feedback, .. } | Outcome::Rejection { feedback, .. }) =
-                iteration.outcome
-            {
-                return Ok(Some(feedback));
-            }
-        }
-
-        Ok(None)
+        query::iterations::get_rejection_feedback(self.store.as_ref(), task_id)
     }
 
     /// Check if a task has pending questions.
     pub fn has_pending_questions(&self, task_id: &str) -> WorkflowResult<bool> {
-        let questions = self.get_pending_questions(task_id)?;
-        Ok(!questions.is_empty())
+        query::questions::has_pending(self.store.as_ref(), task_id)
     }
 
     /// Get the current stage name for a task.
     pub fn get_current_stage(&self, task_id: &str) -> WorkflowResult<Option<String>> {
-        let task = self.get_task(task_id)?;
-        Ok(task.current_stage().map(std::string::ToString::to_string))
+        query::artifacts::get_current_stage(self.store.as_ref(), task_id)
     }
 
     /// List all active top-level tasks with pre-joined data and derived state.
-    ///
-    /// Enriches each task with its iterations, stage sessions, and a `DerivedTaskState`
-    /// computed from the task's domain predicates. This lets the frontend render
-    /// everything without additional queries.
-    ///
-    /// Loads archived subtasks for non-archived parent tasks so they appear in the
-    /// subtasks tab and count toward progress totals. Top-level tasks are filtered
-    /// to exclude archived ones.
     pub fn list_task_views(&self) -> WorkflowResult<Vec<TaskView>> {
-        // Load all active tasks (parents + subtasks) in one query
-        let all_active = self.store.list_active_tasks()?;
-
-        // Separate top-level tasks from subtasks
-        let mut top_level = Vec::new();
-        let mut parent_ids = Vec::new();
-        let mut subtasks_by_parent: std::collections::HashMap<String, Vec<Task>> =
-            std::collections::HashMap::new();
-
-        for task in all_active {
-            if let Some(ref parent_id) = task.parent_id {
-                subtasks_by_parent
-                    .entry(parent_id.clone())
-                    .or_default()
-                    .push(task);
-            } else {
-                parent_ids.push(task.id.clone());
-                top_level.push(task);
-            }
-        }
-
-        // For non-archived parent tasks, load their archived subtasks too
-        // so they appear in the subtasks tab and count in progress displays
-        {
-            let parent_id_refs: Vec<&str> = parent_ids.iter().map(String::as_str).collect();
-            let archived_subtasks = self
-                .store
-                .list_archived_subtasks_by_parents(&parent_id_refs)?;
-            for subtask in archived_subtasks {
-                if let Some(ref parent_id) = subtask.parent_id {
-                    subtasks_by_parent
-                        .entry(parent_id.clone())
-                        .or_default()
-                        .push(subtask);
-                }
-            }
-        }
-
-        // Collect all task IDs (parents + subtasks) for scoped batch loading
-        let all_task_ids: Vec<String> = {
-            let mut ids = parent_ids.clone();
-            for subtasks in subtasks_by_parent.values() {
-                for subtask in subtasks {
-                    ids.push(subtask.id.clone());
-                }
-            }
-            ids
-        };
-        let all_task_id_refs: Vec<&str> = all_task_ids.iter().map(String::as_str).collect();
-
-        // Batch-load iterations and sessions scoped to displayed tasks only
-        let iterations_by_task =
-            group_by_task_id(self.store.list_iterations_for_tasks(&all_task_id_refs)?);
-        let sessions_by_task = group_by_task_id(
-            self.store
-                .list_stage_sessions_for_tasks(&all_task_id_refs)?,
-        );
-
-        // Build subtask views (sorted topologically per parent) and collect
-        // derived states for parent aggregate flags.
-        let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
-        let mut subtask_views: Vec<TaskView> = Vec::new();
-
-        for (parent_id, subtasks) in &subtasks_by_parent {
-            let sorted = topological_sort(subtasks.clone());
-            let mut derived_states = Vec::with_capacity(sorted.len());
-
-            for task in sorted {
-                let iterations = iterations_by_task
-                    .get(&task.id)
-                    .cloned()
-                    .unwrap_or_default();
-                let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-                let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[]);
-                derived_states.push(derived.clone());
-                subtask_views.push(TaskView {
-                    task,
-                    iterations,
-                    stage_sessions,
-                    derived,
-                });
-            }
-            subtask_derived_by_parent.insert(parent_id.clone(), derived_states);
-        }
-
-        // Build top-level task views with subtask aggregate flags
-        let mut views = Vec::with_capacity(top_level.len() + subtask_views.len());
-        for task in top_level {
-            let iterations = iterations_by_task
-                .get(&task.id)
-                .cloned()
-                .unwrap_or_default();
-            let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-            let subtask_states = subtask_derived_by_parent
-                .get(&task.id)
-                .map_or(&[][..], Vec::as_slice);
-            let derived =
-                DerivedTaskState::build(&task, &iterations, &stage_sessions, subtask_states);
-
-            views.push(TaskView {
-                task,
-                iterations,
-                stage_sessions,
-                derived,
-            });
-        }
-
-        // Append subtask views after parents
-        views.extend(subtask_views);
-
-        Ok(views)
+        query::task_views::list_active(&self.store)
     }
 
     /// List subtasks for a parent task with pre-joined data and derived state.
-    ///
-    /// Same enrichment as `list_task_views` but scoped to a single parent's children.
-    /// Results are sorted in topological order (dependencies before dependents)
-    /// so the display matches execution order.
     pub fn list_subtask_views(&self, parent_id: &str) -> WorkflowResult<Vec<TaskView>> {
-        let subtasks = self.store.list_subtasks(parent_id)?;
-        if subtasks.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let sorted = topological_sort(subtasks);
-
-        let mut views = Vec::with_capacity(sorted.len());
-        for task in sorted {
-            let iterations = self.store.get_iterations(&task.id)?;
-            let stage_sessions = self.store.get_stage_sessions(&task.id)?;
-            let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[]);
-            views.push(TaskView {
-                task,
-                iterations,
-                stage_sessions,
-                derived,
-            });
-        }
-
-        Ok(views)
+        query::task_views::list_subtasks(self.store.as_ref(), parent_id)
     }
 
     /// List all archived top-level tasks with pre-joined data and derived state.
-    ///
-    /// Mirrors `list_task_views` but for archived tasks. Loads only top-level
-    /// archived tasks (those without a `parent_id`) plus their archived subtasks
-    /// for progress display. Uses batch loading for iterations and sessions.
     pub fn list_archived_task_views(&self) -> WorkflowResult<Vec<TaskView>> {
-        // Load all archived tasks (parents + subtasks) in one query
-        let all_archived = self.store.list_archived_tasks()?;
-
-        // Separate top-level tasks from subtasks
-        let mut top_level = Vec::new();
-        let mut parent_ids = Vec::new();
-        let mut subtasks_by_parent: HashMap<String, Vec<Task>> = HashMap::new();
-
-        for task in all_archived {
-            if let Some(ref parent_id) = task.parent_id {
-                subtasks_by_parent
-                    .entry(parent_id.clone())
-                    .or_default()
-                    .push(task);
-            } else {
-                parent_ids.push(task.id.clone());
-                top_level.push(task);
-            }
-        }
-
-        // Collect all task IDs (parents + subtasks) for scoped batch loading
-        let all_task_ids: Vec<String> = {
-            let mut ids = parent_ids.clone();
-            for subtasks in subtasks_by_parent.values() {
-                for subtask in subtasks {
-                    ids.push(subtask.id.clone());
-                }
-            }
-            ids
-        };
-        let all_task_id_refs: Vec<&str> = all_task_ids.iter().map(String::as_str).collect();
-
-        // Batch-load iterations and sessions scoped to archived tasks only
-        let iterations_by_task =
-            group_by_task_id(self.store.list_iterations_for_tasks(&all_task_id_refs)?);
-        let sessions_by_task = group_by_task_id(
-            self.store
-                .list_stage_sessions_for_tasks(&all_task_id_refs)?,
-        );
-
-        // Build subtask views (sorted topologically per parent) and collect
-        // derived states for parent aggregate flags.
-        let mut subtask_derived_by_parent: HashMap<String, Vec<DerivedTaskState>> = HashMap::new();
-        let mut subtask_views: Vec<TaskView> = Vec::new();
-
-        for (parent_id, subtasks) in &subtasks_by_parent {
-            let sorted = topological_sort(subtasks.clone());
-            let mut derived_states = Vec::with_capacity(sorted.len());
-
-            for task in sorted {
-                let iterations = iterations_by_task
-                    .get(&task.id)
-                    .cloned()
-                    .unwrap_or_default();
-                let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-                let derived = DerivedTaskState::build(&task, &iterations, &stage_sessions, &[]);
-                derived_states.push(derived.clone());
-                subtask_views.push(TaskView {
-                    task,
-                    iterations,
-                    stage_sessions,
-                    derived,
-                });
-            }
-            subtask_derived_by_parent.insert(parent_id.clone(), derived_states);
-        }
-
-        // Build top-level task views with subtask aggregate flags
-        let mut views = Vec::with_capacity(top_level.len() + subtask_views.len());
-        for task in top_level {
-            let iterations = iterations_by_task
-                .get(&task.id)
-                .cloned()
-                .unwrap_or_default();
-            let stage_sessions = sessions_by_task.get(&task.id).cloned().unwrap_or_default();
-            let subtask_states = subtask_derived_by_parent
-                .get(&task.id)
-                .map_or(&[][..], Vec::as_slice);
-            let derived =
-                DerivedTaskState::build(&task, &iterations, &stage_sessions, subtask_states);
-
-            views.push(TaskView {
-                task,
-                iterations,
-                stage_sessions,
-                derived,
-            });
-        }
-
-        // Append subtask views after parents
-        views.extend(subtask_views);
-
-        Ok(views)
+        query::task_views::list_archived(&self.store)
     }
 
     /// Get a specific stage session for a task.
@@ -449,31 +69,20 @@ impl WorkflowApi {
         task_id: &str,
         stage: &str,
     ) -> WorkflowResult<Option<StageSession>> {
-        self.store.get_stage_session(task_id, stage)
+        query::sessions::get_stage_session(self.store.as_ref(), task_id, stage)
     }
 
     /// Get all stage sessions for a task.
     pub fn get_stage_sessions(&self, task_id: &str) -> WorkflowResult<Vec<StageSession>> {
-        self.store.get_stage_sessions(task_id)
+        query::sessions::get_stage_sessions(self.store.as_ref(), task_id)
     }
 
-    /// Get all running agent processes.
-    ///
-    /// Returns tuples of (`task_id`, stage, pid) for all agents that have PIDs
-    /// recorded in their stage sessions. Used for cleanup on shutdown/startup.
+    /// Get all running agent processes as (`task_id`, stage, pid) tuples.
     pub fn get_running_agent_pids(&self) -> WorkflowResult<Vec<(String, String, u32)>> {
-        let sessions = self.store.get_sessions_with_pids()?;
-        Ok(sessions
-            .into_iter()
-            .filter_map(|s| s.agent_pid.map(|pid| (s.task_id, s.stage, pid)))
-            .collect())
+        query::sessions::get_running_agent_pids(self.store.as_ref())
     }
 
     /// Clear the `claude_session_id` for a stage session (test-only).
-    ///
-    /// Simulates a crash before the provider's session ID was extracted from the
-    /// output stream. The session retains its `spawn_count` so the next spawn
-    /// would normally try to resume — but with no session ID, it must start fresh.
     #[cfg(feature = "testutil")]
     pub fn clear_session_id(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
         if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
@@ -485,9 +94,6 @@ impl WorkflowApi {
     }
 
     /// Clear the agent PID for a stage session after an orphaned agent is killed.
-    ///
-    /// Only clears the PID. The `spawn_count` was already incremented when
-    /// the agent was spawned, so the next spawn will correctly use `--resume`.
     pub fn clear_session_agent_pid(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
         if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
             session.agent_pid = None;
@@ -498,74 +104,37 @@ impl WorkflowApi {
     }
 
     /// Get stages that have logs for a task.
-    ///
-    /// Returns the names of stages that have log entries in the database.
     pub fn get_stages_with_logs(&self, task_id: &str) -> WorkflowResult<Vec<String>> {
-        let sessions = self.store.get_stage_sessions(task_id)?;
-        let log_service = LogService::new(self.store.clone());
-
-        let mut stages = Vec::new();
-        for session in sessions {
-            if log_service.has_logs(&session.id)? {
-                stages.push(session.stage);
-            }
-        }
-        Ok(stages)
+        query::logs::get_stages_with_logs(&self.store, task_id)
     }
 
     /// Get log entries for a task's stage.
-    ///
-    /// Reads log entries from the database for the task's current (or specified)
-    /// stage session.
-    ///
-    /// # Arguments
-    /// * `task_id` - The task ID
-    /// * `stage` - Optional stage name. If None, uses the task's current stage.
-    ///
-    /// # Returns
-    /// Vec of `LogEntry` representing the session activity (tool uses, text output, etc.)
     pub fn get_task_logs(
         &self,
         task_id: &str,
         stage: Option<&str>,
     ) -> WorkflowResult<Vec<LogEntry>> {
-        let task = self.get_task(task_id)?;
-
-        // Determine which stage to get logs for
-        let stage_name = match stage {
-            Some(s) => s.to_string(),
-            None => match task.current_stage() {
-                Some(s) => s.to_string(),
-                None => return Ok(vec![]), // Terminal state, no active stage
-            },
-        };
-
-        // Look up the stage session to get its ID
-        let Some(session) = self.store.get_stage_session(task_id, &stage_name)? else {
-            return Ok(vec![]);
-        };
-
-        // Read log entries from the database
-        let log_service = LogService::new(self.store.clone());
-        log_service.get_logs(&session.id)
+        query::logs::get_task_logs(&self.store, task_id, stage)
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
-    use crate::workflow::domain::Task;
+    use crate::workflow::domain::{Question, Task};
     use crate::workflow::execution::StageOutput;
-    use crate::workflow::runtime::{Phase, Status};
+    use crate::workflow::interactions::query::task_views::topological_sort;
+    use crate::workflow::runtime::{Outcome, Phase, Status};
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
 
     use super::*;
 
     /// Create a task ready for agent work (in Idle phase).
-    ///
-    /// Unit tests don't have an orchestrator to run setup, so we manually
-    /// transition the task to Idle.
     fn create_task_ready(api: &WorkflowApi, title: &str, desc: &str) -> Task {
         let mut task = api.create_task(title, desc, None).unwrap();
         task.phase = Phase::Idle;
@@ -740,11 +309,6 @@ mod tests {
 
     #[test]
     fn test_clear_session_agent_pid_preserves_spawn_count() {
-        // This test verifies crash recovery works correctly:
-        // spawn_count is incremented at spawn time, so even if an agent
-        // crashes (and we just clear the PID), the next spawn sees
-        // spawn_count > 0 and uses --resume.
-
         use crate::workflow::domain::StageSession;
 
         let workflow = test_workflow();
@@ -753,8 +317,6 @@ mod tests {
 
         let task = api.create_task("Test", "Description", None).unwrap();
 
-        // Simulate a session with a running agent that was spawned
-        // (spawn_count = 1 because it was incremented at spawn time)
         let mut session = StageSession::new(
             format!("{}-planning", task.id),
             &task.id,
@@ -762,10 +324,9 @@ mod tests {
             chrono::Utc::now().to_rfc3339(),
         );
         session.agent_pid = Some(12345);
-        session.spawn_count = 1; // Incremented when agent was spawned
+        session.spawn_count = 1;
         api.store.save_stage_session(&session).unwrap();
 
-        // Verify initial state
         let session_before = api
             .store
             .get_stage_session(&task.id, "planning")
@@ -774,10 +335,8 @@ mod tests {
         assert_eq!(session_before.agent_pid, Some(12345));
         assert_eq!(session_before.spawn_count, 1);
 
-        // Simulate orphan cleanup: kill process and clear PID
         api.clear_session_agent_pid(&task.id, "planning").unwrap();
 
-        // Verify: PID is cleared, spawn_count preserved (still > 0)
         let session_after = api
             .store
             .get_stage_session(&task.id, "planning")
@@ -792,7 +351,6 @@ mod tests {
 
     #[test]
     fn test_topological_sort_diamond() {
-        // Diamond: A → B, A → C, B → D, C → D
         let a = Task::new("a", "A", "", "work", "now");
         let mut b = Task::new("b", "B", "", "work", "now");
         b.depends_on = vec!["a".into()];
@@ -801,11 +359,9 @@ mod tests {
         let mut d = Task::new("d", "D", "", "work", "now");
         d.depends_on = vec!["b".into(), "c".into()];
 
-        // Provide in reverse order to verify sort works
         let sorted = topological_sort(vec![d, c, b, a]);
         let ids: Vec<&str> = sorted.iter().map(|t| t.id.as_str()).collect();
 
-        // A must come before B and C; B and C must come before D
         let pos = |id: &str| ids.iter().position(|&x| x == id).unwrap();
         assert!(pos("a") < pos("b"));
         assert!(pos("a") < pos("c"));
@@ -819,7 +375,6 @@ mod tests {
         let b = Task::new("b", "B", "", "work", "now");
         let c = Task::new("c", "C", "", "work", "now");
 
-        // No dependencies — should preserve input order
         let sorted = topological_sort(vec![a, b, c]);
         let ids: Vec<&str> = sorted.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(ids, vec!["a", "b", "c"]);
@@ -833,7 +388,6 @@ mod tests {
         let mut c = Task::new("c", "C", "", "work", "now");
         c.depends_on = vec!["b".into()];
 
-        // Provide in reverse order
         let sorted = topological_sort(vec![c, b, a]);
         let ids: Vec<&str> = sorted.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(ids, vec!["a", "b", "c"]);
@@ -845,18 +399,15 @@ mod tests {
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
 
-        // Create a task and archive it
         let mut task = api.create_task("Test", "Description", None).unwrap();
         task.status = Status::Archived;
         api.store.save_task(&task).unwrap();
 
-        // Verify it appears in archived views
         let archived_views = api.list_archived_task_views().unwrap();
         assert_eq!(archived_views.len(), 1);
         assert_eq!(archived_views[0].task.id, task.id);
         assert!(archived_views[0].derived.is_archived);
 
-        // Verify it does NOT appear in active views
         let active_views = api.list_task_views().unwrap();
         assert_eq!(active_views.len(), 0);
     }

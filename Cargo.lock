@@ -2973,6 +2973,7 @@ dependencies = [
  "orkestra-schema",
  "orkestra-store",
  "orkestra-types",
+ "orkestra-utility",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -3057,6 +3058,18 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+]
+
+[[package]]
+name = "orkestra-utility"
+version = "0.1.0"
+dependencies = [
+ "handlebars",
+ "indexmap 2.13.0",
+ "jsonschema",
+ "orkestra-process",
+ "orkestra-types",
+ "serde_json",
 ]
 
 [[package]]

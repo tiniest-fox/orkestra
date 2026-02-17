@@ -1,716 +1,128 @@
 //! Human/UI actions: approve, reject, answer questions, toggle auto mode.
 
-use crate::orkestra_debug;
-use crate::workflow::domain::{IterationTrigger, PrCommentData, QuestionAnswer, Task};
-use crate::workflow::ports::{WorkflowError, WorkflowResult};
-use crate::workflow::runtime::{Outcome, Phase, Status};
-
-use super::agent_actions::AUTO_ANSWER_TEXT;
+use crate::workflow::domain::{PrCommentData, QuestionAnswer, Task};
+use crate::workflow::interactions::human;
+use crate::workflow::ports::WorkflowResult;
 
 use super::WorkflowApi;
 
 impl WorkflowApi {
     /// Approve the current stage's artifact. Moves to next stage.
-    ///
-    /// When approving a breakdown stage that produced subtasks, this creates
-    /// Task records for each subtask and sets the parent to `WaitingOnChildren`.
-    ///
-    /// When confirming a pending rejection, executes the rejection (moves to target stage).
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidTransition` if the task is not in `AwaitingReview` phase.
     pub fn approve(&self, task_id: &str) -> WorkflowResult<Task> {
-        let mut task = self.get_task(task_id)?;
-
-        if task.phase != Phase::AwaitingReview {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Cannot approve task in phase {:?}",
-                task.phase
-            )));
-        }
-
-        let current_stage = task
-            .current_stage()
-            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
-            .to_string();
-
-        // Check for pending rejection review — "approve" means "confirm the rejection"
-        if let Some((from_stage, target, feedback)) =
-            self.pending_rejection_review(&task.id, &current_stage)?
-        {
-            orkestra_debug!(
-                "action",
-                "approve {}: confirming rejection from {} to {}",
-                task_id,
-                from_stage,
-                target
-            );
-            let now = chrono::Utc::now().to_rfc3339();
-            self.execute_rejection(&mut task, &from_stage, &target, &feedback, &now)?;
-            self.store.save_task(&task)?;
-            return Ok(task);
-        }
-
-        orkestra_debug!(
-            "action",
-            "approve {}: from stage {}",
+        human::approve::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
             task_id,
-            current_stage
-        );
-
-        // Enter commit pipeline. Actual advancement happens in finalize_stage_advancement after commit.
-        let now = chrono::Utc::now().to_rfc3339();
-        self.enter_commit_pipeline(&mut task, &now)?;
-
-        self.store.save_task(&task)?;
-        Ok(task)
+        )
     }
 
     /// Reject the current stage's artifact with feedback. Retries current stage.
-    ///
-    /// When overriding a pending rejection, stays in the same review stage and creates
-    /// a new iteration with the human's feedback so the reviewer agent runs again.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidTransition` if the task is not in `AwaitingReview` phase.
     pub fn reject(&self, task_id: &str, feedback: &str) -> WorkflowResult<Task> {
-        let mut task = self.get_task(task_id)?;
-
-        if task.phase != Phase::AwaitingReview {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Cannot reject task in phase {:?}",
-                task.phase
-            )));
-        }
-
-        let current_stage = task
-            .current_stage()
-            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
-            .to_string();
-
-        // Check for pending rejection review — "reject" means "override, request new verdict"
-        if self
-            .pending_rejection_review(&task.id, &current_stage)?
-            .is_some()
-        {
-            orkestra_debug!(
-                "action",
-                "reject {}: overriding rejection, requesting new verdict in {}",
-                task_id,
-                current_stage
-            );
-
-            let now = chrono::Utc::now().to_rfc3339();
-
-            // Don't call end_current_iteration — it was already ended with AwaitingRejectionReview
-            // Create new iteration in the same review stage with human's feedback
-            self.iteration_service.create_iteration(
-                &task.id,
-                &current_stage,
-                Some(IterationTrigger::Feedback {
-                    feedback: feedback.to_string(),
-                }),
-            )?;
-
-            task.phase = Phase::Idle;
-            task.updated_at = now;
-
-            self.store.save_task(&task)?;
-            return Ok(task);
-        }
-
-        orkestra_debug!(
-            "action",
-            "reject {}: stage={}, feedback_len={}",
+        human::reject::execute(
+            self.store.as_ref(),
+            &self.iteration_service,
             task_id,
-            current_stage,
-            feedback.len()
-        );
-
-        let now = chrono::Utc::now().to_rfc3339();
-
-        // End current iteration with rejection
-        self.end_current_iteration(&task, Outcome::rejected(&current_stage, feedback))?;
-
-        // Stay in same stage, go back to Idle
-        task.phase = Phase::Idle;
-        task.updated_at.clone_from(&now);
-
-        // Create new iteration in same stage with feedback context via IterationService
-        self.iteration_service.create_iteration(
-            &task.id,
-            &current_stage,
-            Some(IterationTrigger::Feedback {
-                feedback: feedback.to_string(),
-            }),
-        )?;
-
-        self.store.save_task(&task)?;
-        Ok(task)
+            feedback,
+        )
     }
 
     /// Answer pending questions from the agent.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidTransition` if there are no pending questions.
     pub fn answer_questions(
         &self,
         task_id: &str,
         answers: Vec<QuestionAnswer>,
     ) -> WorkflowResult<Task> {
-        let mut task = self.get_task(task_id)?;
-
-        let current_stage = task
-            .current_stage()
-            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
-            .to_string();
-
-        // Get questions from latest iteration's outcome
-        let prev_iter = self
-            .store
-            .get_latest_iteration(&task.id, &current_stage)?
-            .ok_or_else(|| WorkflowError::InvalidTransition("No iteration to answer".into()))?;
-
-        // Verify there are pending questions in the outcome
-        let _questions = match &prev_iter.outcome {
-            Some(Outcome::AwaitingAnswers { questions, .. }) if !questions.is_empty() => questions,
-            _ => {
-                return Err(WorkflowError::InvalidTransition(
-                    "No pending questions to answer".into(),
-                ))
-            }
-        };
-
-        orkestra_debug!(
-            "action",
-            "answer_questions {}: {} answers provided",
+        human::answer_questions::execute(
+            self.store.as_ref(),
+            &self.iteration_service,
             task_id,
-            answers.len()
-        );
-
-        let now = chrono::Utc::now().to_rfc3339();
-
-        // Create new iteration with Answers context via IterationService
-        self.iteration_service.create_iteration(
-            &task.id,
-            &current_stage,
-            Some(IterationTrigger::Answers { answers }),
-        )?;
-
-        // Task stays in same stage, phase goes back to Idle so agent can resume
-        task.phase = Phase::Idle;
-        task.updated_at = now;
-
-        self.store.save_task(&task)?;
-        Ok(task)
+            answers,
+        )
     }
 
     /// Retry a failed or blocked task by resuming it from its last active stage.
-    ///
-    /// This retrieves the last stage from the most recent iteration and
-    /// transitions the task back to that stage with an Idle phase.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidTransition` if the task is not in Failed or Blocked state.
     pub fn retry(&self, task_id: &str, instructions: Option<&str>) -> WorkflowResult<Task> {
-        let mut task = self.get_task(task_id)?;
-
-        // Verify task is in a retryable state (failed or blocked)
-        let was_failed = matches!(task.status, Status::Failed { .. });
-        let was_blocked = matches!(task.status, Status::Blocked { .. });
-        if !was_failed && !was_blocked {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Cannot retry task {task_id} - not in failed or blocked state"
-            )));
-        }
-
-        orkestra_debug!(
-            "action",
-            "retry {}: recovering from {} state",
+        human::retry::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
             task_id,
-            task.status
-        );
-
-        // Get the last stage from the most recent iteration
-        let iterations = self.store.get_iterations(&task.id)?;
-        let last_stage = iterations.last().map_or_else(
-            || {
-                self.workflow
-                    .first_stage_in_flow(task.flow.as_deref())
-                    .map_or_else(|| "planning".to_string(), |s| s.name.clone())
-            },
-            |i| i.stage.clone(),
-        );
-
-        let now = chrono::Utc::now().to_rfc3339();
-
-        // Transition task back to its last stage
-        task.status = Status::active(&last_stage);
-
-        // If worktree setup never completed, go back to AwaitingSetup
-        if task.worktree_path.is_none() {
-            task.phase = Phase::AwaitingSetup;
-            orkestra_debug!(
-                "action",
-                "retry {}: no worktree_path, setting phase to AwaitingSetup",
-                task_id
-            );
-        } else {
-            task.phase = Phase::Idle;
-        }
-
-        task.updated_at.clone_from(&now);
-
-        // Create new iteration with trigger that reflects the retry context
-        let trimmed = instructions.map(str::trim).filter(|s| !s.is_empty());
-        let trigger = if was_failed {
-            IterationTrigger::RetryFailed {
-                instructions: trimmed.map(String::from),
-            }
-        } else {
-            IterationTrigger::RetryBlocked {
-                instructions: trimmed.map(String::from),
-            }
-        };
-        self.iteration_service
-            .create_iteration(&task.id, &last_stage, Some(trigger))?;
-
-        // Save updated task
-        self.store.save_task(&task)?;
-
-        orkestra_debug!(
-            "action",
-            "retry {}: resumed in stage {}, phase={:?}",
-            task_id,
-            last_stage,
-            task.phase
-        );
-
-        Ok(task)
+            instructions,
+        )
     }
 
     /// Set the `auto_mode` flag on a task, with immediate side effects.
-    ///
-    /// When toggling to `true`:
-    /// - If the task is `AwaitingReview` with an artifact pending: auto-approves
-    /// - If the task is `AwaitingReview` with questions pending: auto-answers them
-    /// - Otherwise: saves the flag for the next stage completion
-    ///
-    /// When toggling to `false`: saves the flag, no immediate state change.
-    ///
-    /// If the immediate side effect fails, the toggle is rolled back.
     pub fn set_auto_mode(&self, task_id: &str, auto_mode: bool) -> WorkflowResult<Task> {
-        let mut task = self.get_task(task_id)?;
-
-        orkestra_debug!(
-            "action",
-            "set_auto_mode {}: {} -> {}",
+        human::set_auto_mode::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
             task_id,
-            task.auto_mode,
-            auto_mode
-        );
-
-        task.auto_mode = auto_mode;
-
-        // When enabling auto mode, handle immediate side effects
-        if auto_mode && task.phase == Phase::AwaitingReview {
-            if let Some(current_stage) = task.current_stage().map(String::from) {
-                // Check if there are pending questions
-                let has_pending_questions = self
-                    .store
-                    .get_latest_iteration(&task.id, &current_stage)?
-                    .and_then(|iter| match &iter.outcome {
-                        Some(Outcome::AwaitingAnswers { questions, .. })
-                            if !questions.is_empty() =>
-                        {
-                            Some(questions.clone())
-                        }
-                        _ => None,
-                    });
-
-                if let Some(questions) = has_pending_questions {
-                    // Auto-answer questions
-                    orkestra_debug!(
-                        "action",
-                        "set_auto_mode {}: auto-answering {} questions",
-                        task_id,
-                        questions.len()
-                    );
-                    let now = chrono::Utc::now().to_rfc3339();
-                    let answers: Vec<QuestionAnswer> = questions
-                        .iter()
-                        .map(|q| QuestionAnswer::new(&q.question, AUTO_ANSWER_TEXT, &now))
-                        .collect();
-
-                    self.iteration_service.create_iteration(
-                        &task.id,
-                        &current_stage,
-                        Some(IterationTrigger::Answers { answers }),
-                    )?;
-                    task.phase = Phase::Idle;
-                    task.updated_at = now;
-                } else if let Some((from_stage, target, feedback)) =
-                    self.pending_rejection_review(&task.id, &current_stage)?
-                {
-                    // Auto-confirm pending rejection
-                    orkestra_debug!(
-                        "action",
-                        "set_auto_mode {}: auto-confirming rejection from {} to {}",
-                        task_id,
-                        from_stage,
-                        target
-                    );
-                    let now = chrono::Utc::now().to_rfc3339();
-                    self.execute_rejection(&mut task, &from_stage, &target, &feedback, &now)?;
-                } else {
-                    self.auto_approve_stage(&mut task, &current_stage)?;
-                }
-            }
-        } else {
-            task.updated_at = chrono::Utc::now().to_rfc3339();
-        }
-
-        self.store.save_task(&task)?;
-        Ok(task)
-    }
-
-    /// Auto-approve the current stage artifact and enter the commit pipeline.
-    ///
-    /// Actual advancement happens in `finalize_stage_advancement` after commit.
-    fn auto_approve_stage(&self, task: &mut Task, current_stage: &str) -> WorkflowResult<()> {
-        orkestra_debug!(
-            "action",
-            "set_auto_mode {}: auto-approving stage {}",
-            task.id,
-            current_stage
-        );
-        let now = chrono::Utc::now().to_rfc3339();
-        self.enter_commit_pipeline(task, &now)
-    }
-
-    /// Check if the latest iteration has a pending rejection awaiting human review.
-    ///
-    /// Returns `Some((from_stage, target, feedback))` if found.
-    fn pending_rejection_review(
-        &self,
-        task_id: &str,
-        current_stage: &str,
-    ) -> WorkflowResult<Option<(String, String, String)>> {
-        let latest = self.store.get_latest_iteration(task_id, current_stage)?;
-
-        if let Some(iter) = latest {
-            if let Some(Outcome::AwaitingRejectionReview {
-                from_stage,
-                target,
-                feedback,
-            }) = &iter.outcome
-            {
-                return Ok(Some((from_stage.clone(), target.clone(), feedback.clone())));
-            }
-        }
-
-        Ok(None)
+            auto_mode,
+        )
     }
 
     /// Interrupt a running agent execution.
-    ///
-    /// If an `AgentKiller` is configured, kills the agent process before transitioning state.
-    /// Otherwise, the caller is responsible for killing the process.
-    /// Ends the current iteration with `Outcome::Interrupted` and transitions
-    /// the task to `Phase::Interrupted`.
-    ///
-    /// # Errors
-    /// Returns `InvalidTransition` if the task is not in `AgentWorking` phase.
     pub fn interrupt(&self, task_id: &str) -> WorkflowResult<Task> {
-        let mut task = self.get_task(task_id)?;
-
-        if task.phase != Phase::AgentWorking {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Cannot interrupt task in phase {:?}",
-                task.phase
-            )));
-        }
-
-        // Kill agent if configured
-        if let Some(killer) = &self.agent_killer {
-            let pid = killer.kill_agent(task_id);
-            orkestra_debug!(
-                "action",
-                "interrupt {}: killed agent (pid: {:?})",
-                task_id,
-                pid
-            );
-        } else {
-            orkestra_debug!(
-                "action",
-                "interrupt {}: no agent killer configured, transitioning only",
-                task_id
-            );
-        }
-
-        // End current iteration with Interrupted outcome
-        self.end_current_iteration(&task, Outcome::Interrupted)?;
-
-        // Transition to Interrupted phase
-        let now = chrono::Utc::now().to_rfc3339();
-        task.phase = Phase::Interrupted;
-        task.updated_at = now;
-
-        self.store.save_task(&task)?;
-        Ok(task)
+        human::interrupt::execute(
+            self.store.as_ref(),
+            &self.iteration_service,
+            self.agent_killer.as_deref(),
+            task_id,
+        )
     }
 
     /// Resume an interrupted task, optionally with a message for the agent.
-    ///
-    /// Creates a new iteration with `ManualResume` trigger and sets the task
-    /// back to `Idle` so the orchestrator picks it up and spawns the agent
-    /// with session resume.
-    ///
-    /// # Errors
-    /// Returns `InvalidTransition` if the task is not in `Interrupted` phase.
     pub fn resume(&self, task_id: &str, message: Option<String>) -> WorkflowResult<Task> {
-        let mut task = self.get_task(task_id)?;
-
-        if task.phase != Phase::Interrupted {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Cannot resume task in phase {:?}",
-                task.phase
-            )));
-        }
-
-        let current_stage = task
-            .current_stage()
-            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?
-            .to_string();
-
-        orkestra_debug!(
-            "action",
-            "resume {}: stage {} with message: {:?}",
+        human::resume::execute(
+            self.store.as_ref(),
+            &self.iteration_service,
             task_id,
-            current_stage,
-            message.as_deref()
-        );
-
-        // Create new iteration with ManualResume trigger
-        let trigger = IterationTrigger::ManualResume { message };
-        self.iteration_service
-            .create_iteration(&task.id, &current_stage, Some(trigger))?;
-
-        // Transition to Idle so orchestrator picks it up
-        let now = chrono::Utc::now().to_rfc3339();
-        task.phase = Phase::Idle;
-        task.updated_at = now;
-
-        self.store.save_task(&task)?;
-        Ok(task)
+            message,
+        )
     }
 
-    /// Address PR comments by returning to the work stage.
-    ///
-    /// This is similar to `integration_failed()` but triggered by user action
-    /// rather than a merge conflict. Creates a new iteration in the recovery
-    /// stage with PR comment context.
-    ///
-    /// # Arguments
-    ///
-    /// * `task_id` - The task ID
-    /// * `comments` - Selected PR comments to address (captured by the caller)
-    /// * `guidance` - Optional guidance from the user about how to address the comments
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidTransition` if:
-    /// - No comments are provided (empty vec)
-    /// - The task is not in Done status
-    /// - The task is not in Idle phase
+    /// Address PR comments by returning to the recovery stage.
     pub fn address_pr_comments(
         &self,
         task_id: &str,
         comments: Vec<PrCommentData>,
         guidance: Option<String>,
     ) -> WorkflowResult<Task> {
-        // Validate at least one comment is provided
-        if comments.is_empty() {
-            return Err(WorkflowError::InvalidTransition(
-                "At least one comment must be selected".into(),
-            ));
-        }
-
-        let mut task = self.get_task(task_id)?;
-
-        // Validate task state
-        if !task.is_done() {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Task {task_id} is not done, cannot address PR comments"
-            )));
-        }
-        if task.phase != Phase::Idle {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Task {task_id} is not idle, cannot address PR comments"
-            )));
-        }
-
-        // Determine recovery stage (same as integration failures)
-        let recovery_stage = self
-            .integration_failure_stage(task.flow.as_deref())
-            .ok_or_else(|| {
-                WorkflowError::InvalidTransition("No recovery stage configured".into())
-            })?;
-
-        orkestra_debug!(
-            "action",
-            "address_pr_comments {}: returning to {} stage with {} comments",
+        human::address_pr_comments::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
             task_id,
-            recovery_stage,
-            comments.len()
-        );
-
-        // Create new iteration with PR comments trigger
-        self.iteration_service.create_iteration(
-            task_id,
-            &recovery_stage,
-            Some(IterationTrigger::PrComments { comments, guidance }),
-        )?;
-
-        // Update task to recovery stage in Idle phase
-        let now = chrono::Utc::now().to_rfc3339();
-        task.status = Status::active(&recovery_stage);
-        task.phase = Phase::Idle;
-        task.completed_at = None;
-        task.updated_at = now;
-
-        self.store.save_task(&task)?;
-        Ok(task)
+            comments,
+            guidance,
+        )
     }
 
-    /// Address PR merge conflicts by returning to the work stage.
-    ///
-    /// Similar to `address_pr_comments()` but for merge conflicts. Creates a new
-    /// iteration in the recovery stage with integration failure context that
-    /// instructs the agent to rebase and resolve conflicts.
-    ///
-    /// # Arguments
-    ///
-    /// * `task_id` - The task ID
-    /// * `base_branch` - The branch to rebase onto (typically `origin/{task.base_branch}`)
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidTransition` if:
-    /// - The task is not in Done status
-    /// - The task is not in Idle phase
+    /// Address PR merge conflicts by returning to the recovery stage.
     pub fn address_pr_conflicts(&self, task_id: &str, base_branch: &str) -> WorkflowResult<Task> {
-        let mut task = self.get_task(task_id)?;
-
-        // Validate task state
-        if !task.is_done() {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Task {task_id} is not done, cannot address PR conflicts"
-            )));
-        }
-        if task.phase != Phase::Idle {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Task {task_id} is not idle, cannot address PR conflicts"
-            )));
-        }
-
-        // Determine recovery stage (same as integration failures)
-        let recovery_stage = self
-            .integration_failure_stage(task.flow.as_deref())
-            .ok_or_else(|| {
-                WorkflowError::InvalidTransition("No recovery stage configured".into())
-            })?;
-
-        orkestra_debug!(
-            "action",
-            "address_pr_conflicts {}: returning to {} stage to resolve conflicts with {}",
+        human::address_pr_conflicts::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
             task_id,
-            recovery_stage,
-            base_branch
-        );
-
-        // Create new iteration with Integration trigger (reuses existing variant)
-        self.iteration_service.create_iteration(
-            task_id,
-            &recovery_stage,
-            Some(IterationTrigger::Integration {
-                message: format!("PR has merge conflicts with {base_branch}"),
-                conflict_files: vec![], // GitHub doesn't expose file list; agent discovers on rebase
-            }),
-        )?;
-
-        // Update task to recovery stage in Idle phase
-        let now = chrono::Utc::now().to_rfc3339();
-        task.status = Status::active(&recovery_stage);
-        task.phase = Phase::Idle;
-        task.completed_at = None;
-        task.updated_at = now;
-
-        self.store.save_task(&task)?;
-        Ok(task)
+            base_branch,
+        )
     }
 
     /// Manually archive a Done task.
-    ///
-    /// This is used when a task's PR has been merged externally and the user
-    /// wants to mark it complete. Delegates to `integration_succeeded` for
-    /// the actual state transition.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidTransition` if:
-    /// - The task is not in Done status
-    /// - The task is not in Idle phase (e.g., currently integrating)
     pub fn archive_task(&self, task_id: &str) -> WorkflowResult<Task> {
-        let task = self.get_task(task_id)?;
-
-        // Validate phase to prevent race with orchestrator's auto-merge
-        if task.phase != Phase::Idle {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Cannot archive task in phase {:?}",
-                task.phase
-            )));
-        }
-
-        // Delegate to existing archive logic
-        self.integration_succeeded(task_id)
-    }
-
-    /// End the current iteration with `Approved` and enter the commit pipeline.
-    ///
-    /// Shared by auto-advance (agent actions), human approve, and auto-approve (`set_auto_mode`).
-    /// Callers are responsible for saving the task after this returns.
-    pub(crate) fn enter_commit_pipeline(&self, task: &mut Task, now: &str) -> WorkflowResult<()> {
-        self.end_current_iteration(task, Outcome::Approved)?;
-        task.phase = Phase::Finishing;
-        task.updated_at = now.to_string();
-        Ok(())
-    }
-
-    /// Helper: End the current active iteration with an outcome.
-    pub(crate) fn end_current_iteration(
-        &self,
-        task: &Task,
-        outcome: Outcome,
-    ) -> WorkflowResult<()> {
-        let current_stage = task
-            .current_stage()
-            .ok_or_else(|| WorkflowError::InvalidTransition("Task not in active stage".into()))?;
-
-        self.iteration_service
-            .end_iteration(&task.id, current_stage, outcome)
+        human::archive::execute(self.store.as_ref(), task_id)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
-    use crate::workflow::domain::Question;
-    use crate::workflow::runtime::{Artifact, Status};
+    use crate::workflow::domain::{IterationTrigger, Question};
+    use crate::workflow::ports::WorkflowError;
+    use crate::workflow::runtime::{Artifact, Outcome, Phase, Status};
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
 

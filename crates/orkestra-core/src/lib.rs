@@ -39,9 +39,7 @@ pub use pr_description::mock::MockPrDescriptionGenerator;
 pub use pr_description::{ClaudePrDescriptionGenerator, PrDescriptionGenerator};
 
 // Process infrastructure re-exports
-pub use process::{
-    is_process_running, kill_process_tree, write_prompt_to_stdin, ParsedStreamEvent, ProcessGuard,
-};
+pub use process::{is_process_running, kill_process_tree, ParsedStreamEvent, ProcessGuard};
 
 // Init re-exports
 pub use init::ensure_orkestra_project;

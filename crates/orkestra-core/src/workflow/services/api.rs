@@ -10,7 +10,6 @@ use crate::title::{ClaudeTitleGenerator, TitleGenerator};
 use crate::workflow::config::{StageConfig, WorkflowConfig};
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
-use crate::workflow::runtime::Phase;
 
 /// Trait for killing active agent processes.
 ///
@@ -206,158 +205,53 @@ impl WorkflowApi {
     }
 
     /// Get the stage to return to on integration failure.
-    ///
-    /// Uses the flow's `on_failure` override if set, otherwise the global
-    /// `integration.on_failure`. Falls back to the first stage in the flow
-    /// if the configured stage is not available (defensive, should not
-    /// happen with properly validated configs).
     pub fn integration_failure_stage(&self, flow: Option<&str>) -> Option<String> {
         let configured = self.workflow.effective_integration_on_failure(flow);
-
-        // Validate the configured stage exists in this task's flow
         if self.workflow.stage_in_flow(configured, flow) {
             return Some(configured.to_string());
         }
-
-        // Fallback: use the first stage in the flow
-        // This should not happen with validated configs, but provides runtime resilience
         self.workflow
             .first_stage_in_flow(flow)
             .map(|s| s.name.clone())
     }
 
-    /// Get artifact name for a stage, with fallback default.
-    pub(crate) fn artifact_name_for_stage(&self, stage: &str, default: &str) -> String {
-        self.workflow
-            .stage(stage)
-            .map_or_else(|| default.to_string(), |s| s.artifact.clone())
-    }
-
-    /// Compute the next status after approving the current stage.
-    ///
-    /// Returns Done if no more stages. Uses the task's flow for progression.
-    pub(crate) fn compute_next_status_on_approve(
-        &self,
-        current_stage: &str,
-        flow: Option<&str>,
-    ) -> crate::workflow::runtime::Status {
-        use crate::workflow::runtime::Status;
-
-        match self.workflow.next_stage_in_flow(current_stage, flow) {
-            Some(stage) => Status::active(&stage.name),
-            None => Status::Done,
-        }
-    }
-
-    /// Get tasks that are Done and ready for integration (merge to target branch).
-    ///
-    /// Returns both parent tasks and subtasks that:
-    /// - Are in Done status (not Archived — integrated tasks become Archived)
-    /// - Are in Idle phase (not already integrating)
-    /// - Have a worktree path (need merging)
-    ///
-    /// Parent tasks merge to primary (main/master).
-    /// Subtasks merge to their parent's branch (stored in `base_branch`).
-    pub fn get_tasks_needing_integration(&self) -> WorkflowResult<Vec<Task>> {
-        let tasks = self.store.list_tasks()?;
-        Ok(tasks
-            .into_iter()
-            .filter(|t| t.is_done() && t.phase == Phase::Idle && t.worktree_path.is_some())
-            .collect())
-    }
-
     /// Mark a task as being integrated.
-    ///
-    /// This sets the phase to `Integrating` to prevent double-integration
-    /// and to indicate that the merge is in progress.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidTransition` if the task is not Done or not in Idle phase.
     pub fn mark_integrating(&self, task_id: &str) -> WorkflowResult<Task> {
-        let mut task = self.get_task(task_id)?;
-
-        if !task.is_done() {
-            return Err(WorkflowError::InvalidTransition(
-                "Can only integrate Done tasks".into(),
-            ));
-        }
-
-        if task.phase != Phase::Idle {
-            return Err(WorkflowError::InvalidTransition(format!(
-                "Task must be Idle to start integration, but is {:?}",
-                task.phase
-            )));
-        }
-
-        task.phase = Phase::Integrating;
-        task.updated_at = chrono::Utc::now().to_rfc3339();
-        self.store.save_task(&task)?;
-        Ok(task)
+        crate::workflow::interactions::integration::mark_integrating::execute(
+            self.store.as_ref(),
+            task_id,
+        )
     }
 
     /// Get the diff for a task against its base branch.
-    ///
-    /// Returns the structured diff data including file paths, change types,
-    /// additions/deletions counts, and unified diff content.
-    ///
-    /// # Errors
-    ///
-    /// Returns `TaskNotFound` if the task doesn't exist, or `GitError` if
-    /// the task doesn't have a worktree or if the git diff operation fails.
     pub fn get_task_diff(&self, task_id: &str) -> WorkflowResult<crate::workflow::ports::TaskDiff> {
-        let task = self.get_task(task_id)?;
-
         let git = self
             .git_service
             .as_ref()
             .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
-
-        let worktree_path = task
-            .worktree_path
-            .as_ref()
-            .ok_or_else(|| WorkflowError::GitError("Task has no worktree".into()))?;
-
-        let branch_name = task
-            .branch_name
-            .as_ref()
-            .ok_or_else(|| WorkflowError::GitError("Task has no branch".into()))?;
-
-        git.diff_against_base(
-            std::path::Path::new(worktree_path),
-            branch_name,
-            &task.base_branch,
+        crate::workflow::interactions::query::diff::execute(
+            self.store.as_ref(),
+            git.as_ref(),
+            task_id,
         )
-        .map_err(|e| WorkflowError::GitError(e.to_string()))
     }
 
     /// Get the content of a file at HEAD in a task's worktree.
-    ///
-    /// Returns the file content as a string, or None if the file doesn't exist.
-    ///
-    /// # Errors
-    ///
-    /// Returns `TaskNotFound` if the task doesn't exist, or `GitError` if
-    /// the task doesn't have a worktree or if the git operation fails.
     pub fn get_file_content(
         &self,
         task_id: &str,
         file_path: &str,
     ) -> WorkflowResult<Option<String>> {
-        let task = self.get_task(task_id)?;
-
         let git = self
             .git_service
             .as_ref()
             .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
-
-        let worktree_path = task
-            .worktree_path
-            .as_ref()
-            .ok_or_else(|| WorkflowError::GitError("Task has no worktree".into()))?;
-
-        git.read_file_at_head(std::path::Path::new(worktree_path), file_path)
-            .map_err(|e| WorkflowError::GitError(e.to_string()))
+        crate::workflow::interactions::query::file_content::execute(
+            self.store.as_ref(),
+            git.as_ref(),
+            task_id,
+            file_path,
+        )
     }
 
     /// Generate a commit message for task integration.
@@ -442,24 +336,24 @@ mod tests {
 
     #[test]
     fn test_compute_next_status() {
+        use crate::workflow::interactions::stage::finalize_advancement::compute_next_status_on_approve;
+
         let workflow = test_workflow();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
 
         // Planning goes to breakdown (default flow)
-        let status = api.compute_next_status_on_approve("planning", None);
+        let status = compute_next_status_on_approve(&workflow, "planning", None);
         assert_eq!(status.stage(), Some("breakdown"));
 
         // Breakdown goes to work
-        let status = api.compute_next_status_on_approve("breakdown", None);
+        let status = compute_next_status_on_approve(&workflow, "breakdown", None);
         assert_eq!(status.stage(), Some("work"));
 
         // Work goes to review
-        let status = api.compute_next_status_on_approve("work", None);
+        let status = compute_next_status_on_approve(&workflow, "work", None);
         assert_eq!(status.stage(), Some("review"));
 
         // Review goes to Done
-        let status = api.compute_next_status_on_approve("review", None);
+        let status = compute_next_status_on_approve(&workflow, "review", None);
         assert_eq!(status, crate::workflow::runtime::Status::Done);
     }
 

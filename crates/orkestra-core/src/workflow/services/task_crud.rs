@@ -1,25 +1,13 @@
 //! Task CRUD operations.
 
-use crate::orkestra_debug;
-use crate::workflow::domain::extract_short_id;
 use crate::workflow::domain::Task;
+use crate::workflow::interactions::task as task_interactions;
 use crate::workflow::ports::{WorkflowError, WorkflowResult};
-use crate::workflow::runtime::Phase;
 
 use super::WorkflowApi;
 
 impl WorkflowApi {
     /// Create a new task. Starts in the first workflow stage.
-    ///
-    /// Task creation returns immediately with `Phase::AwaitingSetup`. The orchestrator
-    /// picks up tasks in this phase on its next tick, transitions to `SettingUp`,
-    /// handles worktree creation and setup script, then transitions to `Phase::Idle`
-    /// (or `Status::Failed` if setup fails).
-    ///
-    /// If `title` is empty, a background thread will generate one using AI.
-    ///
-    /// The `base_branch` parameter specifies which branch to create the worktree from
-    /// (defaults to current branch).
     pub fn create_task(
         &self,
         title: &str,
@@ -29,15 +17,7 @@ impl WorkflowApi {
         self.create_task_with_options(title, description, base_branch, false, None)
     }
 
-    /// Create a new task with options. Starts in the first workflow stage.
-    ///
-    /// Like `create_task`, but allows setting `auto_mode` and `flow` at creation time.
-    /// When `flow` is specified, the task starts at the first stage of that flow.
-    ///
-    /// Task creation returns immediately with `Phase::AwaitingSetup`. The orchestrator
-    /// picks up tasks in this phase on its next tick, transitions to `SettingUp`,
-    /// handles worktree creation and setup script, then transitions to `Phase::Idle`
-    /// (or `Status::Failed` if setup fails).
+    /// Create a new task with options (`auto_mode`, flow).
     pub fn create_task_with_options(
         &self,
         title: &str,
@@ -46,134 +26,34 @@ impl WorkflowApi {
         auto_mode: bool,
         flow: Option<&str>,
     ) -> WorkflowResult<Task> {
-        // Validate flow exists if specified
-        if let Some(flow_name) = flow {
-            if !self.workflow.flows.contains_key(flow_name) {
-                return Err(WorkflowError::InvalidTransition(format!(
-                    "Unknown flow \"{flow_name}\". Available flows: {:?}",
-                    self.workflow.flows.keys().collect::<Vec<_>>()
-                )));
-            }
-        }
-
-        let id = self.store.next_task_id()?;
-        let first_stage = self
-            .workflow
-            .first_stage_in_flow(flow)
-            .ok_or_else(|| WorkflowError::InvalidTransition("No stages in workflow".into()))?;
-
-        // Resolve base_branch eagerly: use provided value, or current branch from git.
-        let resolved_base_branch = match base_branch {
-            Some(b) => b.to_string(),
-            None => match &self.git_service {
-                Some(git) => git.current_branch().map_err(|e| {
-                    WorkflowError::InvalidTransition(format!("Cannot determine base branch: {e}"))
-                })?,
-                None => String::new(),
-            },
-        };
-
-        let now = chrono::Utc::now().to_rfc3339();
-        let mut task = Task::new(&id, title, description, &first_stage.name, &now);
-        task.base_branch = resolved_base_branch;
-        task.auto_mode = auto_mode;
-        task.flow = flow.map(String::from);
-
-        // Start in AwaitingSetup - orchestrator will pick this up and trigger setup
-        task.phase = Phase::AwaitingSetup;
-
-        // Save task immediately (non-blocking UI)
-        self.store.save_task(&task)?;
-
-        // Create initial iteration via IterationService
-        self.iteration_service
-            .create_initial_iteration(&id, &first_stage.name)?;
-
-        // Setup is deferred to the orchestrator tick loop (setup_awaiting_tasks),
-        // which triggers spawn_setup() for tasks in AwaitingSetup phase.
-
-        orkestra_debug!(
-            "task",
-            "Created {}: phase={:?}, status={:?}, stage={}",
-            task.id,
-            task.phase,
-            task.status,
-            first_stage.name
-        );
-
-        Ok(task)
+        task_interactions::create::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            self.git_service.as_deref(),
+            &self.iteration_service,
+            title,
+            description,
+            base_branch,
+            auto_mode,
+            flow,
+        )
     }
 
-    /// Create a new task with a parent (subtask).
-    ///
-    /// Subtasks get their own worktree branching from the parent's branch.
-    /// Setup is deferred to the orchestrator's `setup_awaiting_tasks()` phase,
-    /// which triggers `spawn_setup()` only after dependencies are satisfied.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InvalidTransition` if the parent task is still in `AwaitingSetup` or `SettingUp` phase.
-    /// The parent's setup must complete before subtasks can be created.
+    /// Create a new subtask under a parent task.
     pub fn create_subtask(
         &self,
         parent_id: &str,
         title: &str,
         description: &str,
     ) -> WorkflowResult<Task> {
-        // Verify parent exists and its setup is complete
-        let parent = self.get_task(parent_id)?;
-
-        if parent.phase == Phase::AwaitingSetup || parent.phase == Phase::SettingUp {
-            return Err(WorkflowError::InvalidTransition(
-                "Cannot create subtask while parent task is still setting up".into(),
-            ));
-        }
-
-        let id = self.store.next_subtask_id(parent_id)?;
-        let first_stage = self
-            .workflow
-            .first_stage()
-            .ok_or_else(|| WorkflowError::InvalidTransition("No stages in workflow".into()))?;
-
-        let short_id = extract_short_id(&id);
-
-        let now = chrono::Utc::now().to_rfc3339();
-        let mut task = Task::new(&id, title, description, &first_stage.name, &now);
-        task.parent_id = Some(parent_id.to_string());
-        task.short_id = Some(short_id);
-
-        // Subtasks branch from parent's branch (worktree created during setup).
-        // Fall back to parent's base_branch if branch_name not yet set (shouldn't happen
-        // since we check parent setup is complete above, but be explicit).
-        task.base_branch = parent
-            .branch_name
-            .clone()
-            .unwrap_or_else(|| parent.base_branch.clone());
-
-        // Subtasks inherit parent's auto_mode
-        task.auto_mode = parent.auto_mode;
-
-        // Start in AwaitingSetup for consistency with create_task()
-        task.phase = Phase::AwaitingSetup;
-
-        self.store.save_task(&task)?;
-
-        // Create initial iteration via IterationService
-        self.iteration_service
-            .create_initial_iteration(&id, &first_stage.name)?;
-
-        // Setup is deferred to the orchestrator tick loop (setup_awaiting_tasks),
-        // which triggers spawn_setup() only after dependencies are satisfied.
-
-        orkestra_debug!(
-            "task",
-            "Created subtask {}: parent={}, phase={:?}",
-            task.id,
+        task_interactions::create_subtask::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
             parent_id,
-            task.phase
-        );
-
-        Ok(task)
+            title,
+            description,
+        )
     }
 
     /// Get a task by ID.
@@ -185,42 +65,22 @@ impl WorkflowApi {
 
     /// List all active top-level tasks (excluding archived, without parents).
     pub fn list_tasks(&self) -> WorkflowResult<Vec<Task>> {
-        let all_tasks = self.store.list_active_tasks()?;
-        Ok(all_tasks
-            .into_iter()
-            .filter(|t| t.parent_id.is_none())
-            .collect())
+        task_interactions::list::list_active(self.store.as_ref())
     }
 
     /// List all archived top-level tasks (tasks without parents).
     pub fn list_archived_tasks(&self) -> WorkflowResult<Vec<Task>> {
-        let all_tasks = self.store.list_archived_tasks()?;
-        Ok(all_tasks
-            .into_iter()
-            .filter(|t| t.parent_id.is_none())
-            .collect())
+        task_interactions::list::list_archived(self.store.as_ref())
     }
 
     /// List subtasks of a parent task.
     pub fn list_subtasks(&self, parent_id: &str) -> WorkflowResult<Vec<Task>> {
-        self.store.list_subtasks(parent_id)
+        task_interactions::list::list_subtasks(self.store.as_ref(), parent_id)
     }
 
     /// Delete a task, its subtasks, and all associated data.
-    ///
-    /// Deletes all DB records (task, subtasks, iterations, stage sessions) in a
-    /// single transaction. Git worktree cleanup is handled separately by the
-    /// orchestrator's orphaned worktree cleanup on startup.
     pub fn delete_task(&self, id: &str) -> WorkflowResult<()> {
-        // Verify task exists
-        self.get_task(id)?;
-
-        // Collect all task IDs to delete (parent + subtasks recursively)
-        let mut task_ids = vec![id.to_string()];
-        self.collect_subtask_ids(id, &mut task_ids)?;
-
-        // Delete everything in one transaction
-        self.store.delete_task_tree(&task_ids)
+        task_interactions::delete::execute(self.store.as_ref(), id)
     }
 
     /// Recursively collect all descendant subtask IDs.
@@ -229,11 +89,7 @@ impl WorkflowApi {
         parent_id: &str,
         ids: &mut Vec<String>,
     ) -> WorkflowResult<()> {
-        for subtask in self.store.list_subtasks(parent_id)? {
-            ids.push(subtask.id.clone());
-            self.collect_subtask_ids(&subtask.id, ids)?;
-        }
-        Ok(())
+        task_interactions::delete::collect_subtask_ids(self.store.as_ref(), parent_id, ids)
     }
 }
 
@@ -241,7 +97,7 @@ impl WorkflowApi {
 #[allow(clippy::similar_names)] // task1/task2/tasks are clear in test context
 mod tests {
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
-    use crate::workflow::runtime::Status;
+    use crate::workflow::runtime::{Phase, Status};
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
 

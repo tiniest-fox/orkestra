@@ -33,6 +33,7 @@ pub mod adapters;
 pub mod config;
 pub mod domain;
 pub mod execution;
+pub mod interactions;
 pub mod ports;
 pub mod runtime;
 pub mod services;

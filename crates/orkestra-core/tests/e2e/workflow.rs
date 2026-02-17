@@ -1216,7 +1216,7 @@ fn test_script_stage_with_recovery() {
 
 /// Helper: advance a task through a simple work → review(automated) workflow to Done.
 ///
-/// Uses the orchestrator loop (set_output + advance) so the commit pipeline runs
+/// Uses the orchestrator loop (`set_output` + advance) so the commit pipeline runs
 /// naturally within each tick. The task will be in Done state.
 fn advance_to_done(ctx: &TestEnv, task_id: &str) {
     // Work stage
@@ -3250,8 +3250,8 @@ fn test_commit_message_generation_during_integration() {
                 .automated(),
         ],
         integration: orkestra_core::workflow::config::IntegrationConfig {
+            on_failure: "work".to_string(),
             auto_merge: true, // Explicitly enable to test integration flow
-            ..Default::default()
         },
         flows: indexmap::IndexMap::new(),
     };
@@ -3692,7 +3692,7 @@ fn activity_log_stored_on_iteration() {
                 .with_prompt("worker.md")
                 .with_inputs(vec!["plan".into()]),
         ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::default(),
+        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
         flows: indexmap::IndexMap::new(),
     };
 
@@ -3756,7 +3756,7 @@ fn activity_log_injected_into_next_stage_prompt() {
                 .with_prompt("worker.md")
                 .with_inputs(vec!["plan".into()]),
         ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::default(),
+        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
         flows: indexmap::IndexMap::new(),
     };
 
@@ -3845,7 +3845,7 @@ fn activity_log_accumulates_across_stages() {
                 .with_inputs(vec!["plan".into(), "summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
         ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::default(),
+        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
         flows: indexmap::IndexMap::new(),
     };
 
@@ -3947,7 +3947,7 @@ fn activity_log_none_does_not_break() {
                 .with_prompt("worker.md")
                 .with_inputs(vec!["plan".into()]),
         ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::default(),
+        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
         flows: indexmap::IndexMap::new(),
     };
 
@@ -4031,7 +4031,7 @@ fn activity_log_on_rejection_retry() {
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ],
-        integration: orkestra_core::workflow::config::IntegrationConfig::default(),
+        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
         flows: indexmap::IndexMap::new(),
     };
 
@@ -4564,11 +4564,8 @@ fn test_disallowed_tools_flow_override() {
             stages: vec![FlowStageEntry {
                 stage_name: "work".to_string(),
                 overrides: Some(FlowStageOverride {
-                    prompt: None,
-                    capabilities: None,
-                    model: None,
-                    inputs: None,
                     disallowed_tools: Some(vec![]), // Explicitly no restrictions
+                    ..Default::default()
                 }),
             }],
             integration: None,

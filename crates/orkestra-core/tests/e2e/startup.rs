@@ -228,6 +228,8 @@ stages:
   - name: work
     artifact: summary
     inputs: [plan]
+integration:
+  on_failure: work
 ";
     let config: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
     let errors = config.validate();

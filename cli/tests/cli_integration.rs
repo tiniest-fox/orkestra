@@ -7,7 +7,9 @@ use orkestra_cli::get_git_state;
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::testutil::create_temp_git_repo;
 use orkestra_core::testutil::fixtures::{iterations, sessions};
-use orkestra_core::workflow::config::{FlowConfig, FlowStageEntry, StageConfig, WorkflowConfig};
+use orkestra_core::workflow::config::{
+    FlowConfig, FlowStageEntry, IntegrationConfig, StageConfig, WorkflowConfig,
+};
 use orkestra_core::workflow::domain::{LogEntry, Task};
 use orkestra_core::workflow::ports::WorkflowStore;
 use orkestra_core::workflow::runtime::{Outcome, TaskState};
@@ -38,6 +40,7 @@ fn test_workflow_with_flow() -> WorkflowConfig {
         StageConfig::new("work", "summary"),
         StageConfig::new("review", "verdict"),
     ])
+    .with_integration(IntegrationConfig::new("work"))
     .with_flows(flows)
 }
 
@@ -48,6 +51,7 @@ fn test_workflow() -> WorkflowConfig {
         StageConfig::new("work", "summary"),
         StageConfig::new("review", "verdict"),
     ])
+    .with_integration(IntegrationConfig::new("work"))
 }
 
 /// Set up a real git repo with `SQLite` and `WorkflowApi` (matches `TestEnv::with_git` pattern).

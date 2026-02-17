@@ -300,6 +300,7 @@ mod tests {
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
+        .with_integration(IntegrationConfig::new("work"))
     }
 
     #[test]

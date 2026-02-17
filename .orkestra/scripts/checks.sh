@@ -356,8 +356,11 @@ else
                 cli/*)
                     HAS_CLI=true
                     ;;
-                crates/*/*)
-                    # Extract crate name: crates/orkestra-foo/... → orkestra-foo
+                crates/*/Cargo.toml|crates/*/build.rs|crates/*/*/*)
+                    # Compilation-relevant crate files: manifests, build scripts,
+                    # and anything in subdirectories (src/, tests/, embedded
+                    # templates, migrations). Root-level documentation (README.md,
+                    # CLAUDE.md, LICENSE) is excluded — those don't affect compilation.
                     crate_name="${file#crates/}"
                     crate_name="${crate_name%%/*}"
                     if ! array_contains "$crate_name" "${CHANGED_CRATES[@]}"; then

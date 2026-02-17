@@ -34,7 +34,10 @@ pub(crate) fn execute(
         .and_then(|s| s.script.as_ref())
         .ok_or_else(|| ScriptError::NoConfig(stage.to_string()))?;
 
-    let command = script_config.command.clone();
+    // Use flow-aware command lookup (checks flow override, falls back to global)
+    let command = workflow
+        .effective_script_command(stage, task.flow.as_deref())
+        .ok_or_else(|| ScriptError::NoConfig(stage.to_string()))?;
     let timeout = Duration::from_secs(u64::from(script_config.timeout_seconds));
     let recovery_stage = script_config.on_failure.clone();
     let working_dir = task

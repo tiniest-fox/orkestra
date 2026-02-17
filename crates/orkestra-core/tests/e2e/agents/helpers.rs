@@ -80,7 +80,7 @@ impl AgentTestEnv {
                 .with_prompt("worker.md")
                 .with_model(model)
                 .with_capabilities(capabilities)],
-            integration: IntegrationConfig::default(),
+            integration: IntegrationConfig::new("work"),
             flows: indexmap::IndexMap::new(),
         };
 

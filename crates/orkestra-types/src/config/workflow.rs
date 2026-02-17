@@ -72,25 +72,44 @@ pub struct FlowStageEntry {
 }
 
 /// Overridable fields for a stage within a flow.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct FlowStageOverride {
-    /// Override prompt template path.
+    /// Override prompt template path (agent stages only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
-    /// Override capabilities (full replace, not merge).
+    /// Override capabilities (full replace, not merge; agent stages only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<StageCapabilities>,
-    /// Override model identifier (e.g., "claudecode/haiku" for cheaper model in quick flow).
+    /// Override model identifier (agent stages only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// Override input artifacts (full replace, not merge).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inputs: Option<Vec<String>>,
-    /// Override disallowed tools (full replace, not merge).
+    /// Override disallowed tools (full replace, not merge; agent stages only).
     /// `Some(vec![])` means "explicitly no restrictions" (overrides global config).
     /// `None` means "inherit from global stage config".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disallowed_tools: Option<Vec<ToolRestriction>>,
+    /// Override script command (script stages only).
+    /// Replaces the global stage's script command for this flow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script_command: Option<String>,
+}
+
+impl FlowStageOverride {
+    /// Returns true if this override contains only agent-stage fields.
+    pub fn has_agent_fields(&self) -> bool {
+        self.prompt.is_some()
+            || self.capabilities.is_some()
+            || self.model.is_some()
+            || self.disallowed_tools.is_some()
+    }
+
+    /// Returns true if this override contains only script-stage fields.
+    pub fn has_script_fields(&self) -> bool {
+        self.script_command.is_some()
+    }
 }
 
 // Custom serde for FlowStageEntry to handle the YAML format:
@@ -150,7 +169,7 @@ impl<'de> Deserialize<'de> for FlowStageEntry {
 pub struct IntegrationConfig {
     /// Stage to return to when integration fails (e.g., merge conflict).
     /// The failure details (error, conflict files) are passed to this stage's prompt.
-    #[serde(default = "default_on_failure")]
+    /// Required — validation rejects workflows where this references a non-existent stage.
     pub on_failure: String,
     /// Whether to automatically merge (rebase + merge) when tasks reach Done.
     /// When false, tasks pause at Done until user chooses "Merge" or "Open PR".
@@ -158,10 +177,22 @@ pub struct IntegrationConfig {
     pub auto_merge: bool,
 }
 
+impl IntegrationConfig {
+    /// Create integration config with the given failure recovery stage.
+    pub fn new(on_failure: impl Into<String>) -> Self {
+        Self {
+            on_failure: on_failure.into(),
+            auto_merge: default_auto_merge(),
+        }
+    }
+}
+
 impl Default for IntegrationConfig {
+    /// Default integration config — `on_failure` is empty, which will fail validation.
+    /// Use `IntegrationConfig::new("stage_name")` or `with_integration()` to set it.
     fn default() -> Self {
         Self {
-            on_failure: default_on_failure(),
+            on_failure: String::new(),
             auto_merge: default_auto_merge(),
         }
     }
@@ -171,21 +202,21 @@ fn default_version() -> u32 {
     1
 }
 
-fn default_on_failure() -> String {
-    "work".to_string()
-}
-
 fn default_auto_merge() -> bool {
     false
 }
 
 impl WorkflowConfig {
     /// Create a new workflow with the given stages.
+    ///
+    /// Uses the first stage name as `integration.on_failure`. Override with
+    /// `with_integration()` if a different recovery stage is needed.
     pub fn new(stages: Vec<StageConfig>) -> Self {
+        let on_failure = stages.first().map_or_else(String::new, |s| s.name.clone());
         Self {
             version: 1,
             stages,
-            integration: IntegrationConfig::default(),
+            integration: IntegrationConfig::new(on_failure),
             flows: IndexMap::new(),
         }
     }
@@ -373,6 +404,18 @@ impl WorkflowConfig {
         self.flow_override(stage_name, flow, |o| o.disallowed_tools.clone())
             .or_else(|| self.stage(stage_name).map(|s| s.disallowed_tools.clone()))
             .unwrap_or_default()
+    }
+
+    /// Get the effective script command for a script stage, checking flow overrides first.
+    ///
+    /// Returns the flow override if present, otherwise the global stage's command.
+    pub fn effective_script_command(&self, stage_name: &str, flow: Option<&str>) -> Option<String> {
+        self.flow_override(stage_name, flow, |o| o.script_command.clone())
+            .or_else(|| {
+                self.stage(stage_name)
+                    .and_then(|s| s.script.as_ref())
+                    .map(|sc| sc.command.clone())
+            })
     }
 
     /// Get ordered stage references for a given flow.
@@ -682,14 +725,20 @@ impl WorkflowConfig {
                     continue;
                 }
 
-                // Script stages cannot have overrides
+                // Script stages only allow script_command overrides
                 if let Some(ref overrides) = entry.overrides {
                     let is_script = self
                         .stage(&entry.stage_name)
                         .is_some_and(super::stage::StageConfig::is_script_stage);
-                    if is_script {
+                    if is_script && overrides.has_agent_fields() {
                         errors.push(format!(
-                            "Flow \"{flow_name}\" cannot override stage \"{}\" — script stages don't support overrides",
+                            "Flow \"{flow_name}\" cannot override agent fields on script stage \"{}\" — only script_command is allowed",
+                            entry.stage_name
+                        ));
+                    }
+                    if !is_script && overrides.has_script_fields() {
+                        errors.push(format!(
+                            "Flow \"{flow_name}\" cannot override script_command on agent stage \"{}\"",
                             entry.stage_name
                         ));
                     }
@@ -1003,6 +1052,7 @@ mod tests {
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
+        .with_integration(IntegrationConfig::new("work"))
         .with_flows(flows)
     }
 
@@ -1179,7 +1229,8 @@ mod tests {
             StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
-        ]);
+        ])
+        .with_integration(IntegrationConfig::new("work"));
         let errors = workflow.validate();
         assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
     }
@@ -1191,7 +1242,8 @@ mod tests {
             StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
                 .with_capabilities(StageCapabilities::with_approval(None)),
-        ]);
+        ])
+        .with_integration(IntegrationConfig::new("work"));
         let errors = workflow.validate();
         assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
     }
@@ -1199,6 +1251,16 @@ mod tests {
     #[test]
     fn test_integration_config_default() {
         let config = IntegrationConfig::default();
+        assert!(
+            config.on_failure.is_empty(),
+            "Default on_failure should be empty (requires explicit config)"
+        );
+        assert!(!config.auto_merge);
+    }
+
+    #[test]
+    fn test_integration_config_new() {
+        let config = IntegrationConfig::new("work");
         assert_eq!(config.on_failure, "work");
         assert!(!config.auto_merge);
     }
@@ -1260,7 +1322,8 @@ mod tests {
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary").restart_on_reentry(),
-        ]);
+        ])
+        .with_integration(IntegrationConfig::new("work"));
 
         let errors = workflow.validate();
         assert!(
@@ -1311,7 +1374,8 @@ integration:
             StageConfig::new_script("checks", "check_results", "./run_checks.sh")
                 .with_inputs(vec!["summary".into()]),
             StageConfig::new("review", "verdict").with_inputs(vec!["check_results".into()]),
-        ]);
+        ])
+        .with_integration(IntegrationConfig::new("work"));
 
         let errors = workflow.validate();
         assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
@@ -1322,7 +1386,8 @@ integration:
         let mut stage = StageConfig::new_script("checks", "check_results", "./run.sh");
         stage.script = Some(ScriptStageConfig::new("./run.sh").with_on_failure("work"));
 
-        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage]);
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage])
+            .with_integration(IntegrationConfig::new("work"));
 
         let errors = workflow.validate();
         assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
@@ -1573,11 +1638,8 @@ integration:
                     FlowStageEntry {
                         stage_name: "planning".to_string(),
                         overrides: Some(FlowStageOverride {
-                            prompt: None,
-                            capabilities: None,
                             model: Some("haiku".to_string()),
-                            inputs: None,
-                            disallowed_tools: None,
+                            ..Default::default()
                         }),
                     },
                     FlowStageEntry {
@@ -1648,11 +1710,8 @@ integration:
                 stages: vec![FlowStageEntry {
                     stage_name: "work".to_string(),
                     overrides: Some(FlowStageOverride {
-                        prompt: None,
-                        capabilities: None,
-                        model: None,
-                        inputs: None,
                         disallowed_tools: Some(flow_tools),
+                        ..Default::default()
                     }),
                 }],
                 integration: None,
@@ -1714,11 +1773,8 @@ integration:
                 stages: vec![FlowStageEntry {
                     stage_name: "work".to_string(),
                     overrides: Some(FlowStageOverride {
-                        prompt: None,
-                        capabilities: None,
-                        model: None,
-                        inputs: None,
                         disallowed_tools: Some(vec![]),
+                        ..Default::default()
                     }),
                 }],
                 integration: None,
@@ -1782,7 +1838,8 @@ integration:
                 message: Some("Use checks stage".to_string()),
             }]);
 
-        let workflow = WorkflowConfig::new(vec![stage]);
+        let workflow =
+            WorkflowConfig::new(vec![stage]).with_integration(IntegrationConfig::new("work"));
 
         let errors = workflow.validate();
         assert!(
@@ -1804,10 +1861,6 @@ integration:
                 stages: vec![FlowStageEntry {
                     stage_name: "work".to_string(),
                     overrides: Some(FlowStageOverride {
-                        prompt: None,
-                        capabilities: None,
-                        model: None,
-                        inputs: None,
                         disallowed_tools: Some(vec![
                             ToolRestriction {
                                 pattern: "Edit".to_string(),
@@ -1818,6 +1871,7 @@ integration:
                                 message: Some("Invalid".to_string()),
                             },
                         ]),
+                        ..Default::default()
                     }),
                 }],
                 integration: None,
@@ -1843,11 +1897,8 @@ integration:
         }];
 
         let override_with_tools = FlowStageOverride {
-            prompt: None,
-            capabilities: None,
-            model: None,
-            inputs: None,
             disallowed_tools: Some(tools),
+            ..Default::default()
         };
 
         let yaml = serde_yaml::to_string(&override_with_tools).unwrap();
@@ -1860,13 +1911,7 @@ integration:
         assert_eq!(parsed.disallowed_tools.unwrap().len(), 1);
 
         // Test with None (should be omitted)
-        let override_none = FlowStageOverride {
-            prompt: None,
-            capabilities: None,
-            model: None,
-            inputs: None,
-            disallowed_tools: None,
-        };
+        let override_none = FlowStageOverride::default();
 
         let yaml_none = serde_yaml::to_string(&override_none).unwrap();
         assert!(!yaml_none.contains("disallowed_tools"));
@@ -2224,6 +2269,133 @@ flows:
         assert!(
             errors.is_empty(),
             "Flow containing global on_failure should be valid. Got: {errors:?}"
+        );
+    }
+
+    // -- Script command flow overrides --
+
+    #[test]
+    fn test_flow_script_command_override_valid() {
+        let check = StageConfig::new_script("check", "check_results", "checks.sh");
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "hotfix".to_string(),
+            FlowConfig {
+                description: String::new(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "check".to_string(),
+                    overrides: Some(FlowStageOverride {
+                        script_command: Some("checks-lite.sh".to_string()),
+                        ..Default::default()
+                    }),
+                }],
+                integration: None,
+            },
+        );
+        let workflow = WorkflowConfig::new(vec![check])
+            .with_integration(IntegrationConfig::new("check"))
+            .with_flows(flows);
+        let errors = workflow.validate();
+        assert!(
+            errors.is_empty(),
+            "script_command override on script stage should be valid. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_flow_agent_fields_on_script_stage_rejected() {
+        let check = StageConfig::new_script("check", "check_results", "checks.sh");
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "hotfix".to_string(),
+            FlowConfig {
+                description: String::new(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "check".to_string(),
+                    overrides: Some(FlowStageOverride {
+                        prompt: Some("custom.md".to_string()),
+                        ..Default::default()
+                    }),
+                }],
+                integration: None,
+            },
+        );
+        let workflow = WorkflowConfig::new(vec![check]).with_flows(flows);
+        let errors = workflow.validate();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("cannot override agent fields on script stage")),
+            "Agent field overrides on script stage should be rejected. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_flow_script_command_on_agent_stage_rejected() {
+        let work = StageConfig::new("work", "summary");
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "quick".to_string(),
+            FlowConfig {
+                description: String::new(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: Some(FlowStageOverride {
+                        script_command: Some("checks-lite.sh".to_string()),
+                        ..Default::default()
+                    }),
+                }],
+                integration: None,
+            },
+        );
+        let workflow = WorkflowConfig::new(vec![work]).with_flows(flows);
+        let errors = workflow.validate();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("cannot override script_command on agent stage")),
+            "script_command on agent stage should be rejected. Got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_effective_script_command_with_flow_override() {
+        let check = StageConfig::new_script("check", "check_results", "checks.sh");
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "hotfix".to_string(),
+            FlowConfig {
+                description: String::new(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "check".to_string(),
+                    overrides: Some(FlowStageOverride {
+                        script_command: Some("checks-lite.sh".to_string()),
+                        ..Default::default()
+                    }),
+                }],
+                integration: None,
+            },
+        );
+        let workflow = WorkflowConfig::new(vec![check]).with_flows(flows);
+
+        // Flow override returns the overridden command
+        assert_eq!(
+            workflow.effective_script_command("check", Some("hotfix")),
+            Some("checks-lite.sh".to_string())
+        );
+        // No flow returns the global command
+        assert_eq!(
+            workflow.effective_script_command("check", None),
+            Some("checks.sh".to_string())
+        );
+        // Non-existent flow falls back to global
+        assert_eq!(
+            workflow.effective_script_command("check", Some("nonexistent")),
+            Some("checks.sh".to_string())
         );
     }
 }

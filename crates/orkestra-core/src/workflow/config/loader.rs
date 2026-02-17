@@ -80,6 +80,8 @@ stages:
   - name: work
     artifact: summary
     inputs: [plan]
+integration:
+  on_failure: work
 ";
         std::fs::write(&path, yaml).unwrap();
 

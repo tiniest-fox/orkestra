@@ -25,8 +25,8 @@ pub const FIXTURE_TIMESTAMP: &str = "2025-01-24T10:00:00Z";
 /// "subtask" flow for child tasks.
 pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
     use crate::workflow::config::{
-        FlowConfig, FlowStageEntry, StageCapabilities, StageConfig, SubtaskCapabilities,
-        WorkflowConfig,
+        FlowConfig, FlowStageEntry, IntegrationConfig, StageCapabilities, StageConfig,
+        SubtaskCapabilities, WorkflowConfig,
     };
     use indexmap::IndexMap;
 
@@ -74,5 +74,6 @@ pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .automated(),
     ])
+    .with_integration(IntegrationConfig::new("work"))
     .with_flows(flows)
 }

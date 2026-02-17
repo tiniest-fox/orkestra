@@ -119,7 +119,9 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
-    use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use crate::workflow::config::{
+        IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
+    };
     use crate::workflow::domain::{IterationTrigger, Question};
     use crate::workflow::ports::WorkflowError;
     use crate::workflow::runtime::{Artifact, Outcome, TaskState};
@@ -137,6 +139,7 @@ mod tests {
                 .with_inputs(vec!["summary".into()])
                 .automated(),
         ])
+        .with_integration(IntegrationConfig::new("work"))
     }
 
     fn api_with_task_in_review() -> (WorkflowApi, Task) {

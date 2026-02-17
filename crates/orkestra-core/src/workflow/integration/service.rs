@@ -161,7 +161,7 @@ impl WorkflowApi {
 
 #[cfg(test)]
 mod tests {
-    use crate::workflow::config::{StageConfig, WorkflowConfig};
+    use crate::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
     use crate::workflow::runtime::{Outcome, TaskState};
     use crate::workflow::InMemoryWorkflowStore;
     use std::sync::Arc;
@@ -176,6 +176,7 @@ mod tests {
                 .with_inputs(vec!["summary".into()])
                 .automated(),
         ])
+        .with_integration(IntegrationConfig::new("work"))
     }
 
     fn api_with_done_task() -> (WorkflowApi, Task) {

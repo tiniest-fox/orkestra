@@ -360,7 +360,7 @@ mod tests {
         let workflow = WorkflowConfig {
             version: 1,
             stages: vec![planning, work],
-            integration: IntegrationConfig::default(),
+            integration: IntegrationConfig::new("work"),
             flows: indexmap::IndexMap::default(),
         };
 
@@ -380,7 +380,7 @@ mod tests {
         let workflow = WorkflowConfig {
             version: 1,
             stages: vec![planning, checks],
-            integration: IntegrationConfig::default(),
+            integration: IntegrationConfig::new("work"),
             flows: indexmap::IndexMap::default(),
         };
 
@@ -446,7 +446,7 @@ mod tests {
         let workflow = WorkflowConfig {
             version: 1,
             stages: vec![planning, breakdown, work, review],
-            integration: IntegrationConfig::default(),
+            integration: IntegrationConfig::new("work"),
             flows,
         };
 

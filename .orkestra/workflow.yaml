@@ -57,7 +57,9 @@ stages:
         message: "Never run the app binary — it spawns nested agent processes and causes errors"
 
   # Checks: Automated quality gates (lint, test, type check)
-  # Runs in the task's worktree, detects what changed, runs relevant checks
+  # Runs in the task's worktree, detects what changed, runs relevant checks.
+  # Flows can override the script command (e.g. hotfix uses checks-lite.sh
+  # for scoped checks without reverse deps or workspace build).
   - name: check
     display_name: Check
     icon: circle-check-big
@@ -120,12 +122,15 @@ flows:
       on_failure: work
 
   # Hotfix flow: Straight to work, minimal overhead
+  # Uses checks-lite.sh — scoped checks without reverse deps or workspace build.
+  # The parent task's full check stage handles integration verification.
   hotfix:
     description: Emergency fix — skip straight to implementation
     icon: rocket
     stages:
       - work
-      - check
+      - check:
+          script_command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
       - review:
           prompt: subtask-reviewer.md
           capabilities:
@@ -141,7 +146,8 @@ flows:
     stages:
       - work:
           model: sonnet
-      - check
+      - check:
+          script_command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
     integration:
       on_failure: work
 

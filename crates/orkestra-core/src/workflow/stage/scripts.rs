@@ -243,7 +243,7 @@ mod tests {
                         on_failure: Some("work".into()),
                     }),
             ],
-            integration: IntegrationConfig::default(),
+            integration: IntegrationConfig::new("work"),
             flows: indexmap::IndexMap::new(),
         }
     }

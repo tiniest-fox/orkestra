@@ -826,7 +826,7 @@ pub mod workflows {
                     on_failure: None,
                 }),
             ],
-            integration: IntegrationConfig::default(),
+            integration: IntegrationConfig::new("work"),
             flows: indexmap::IndexMap::new(),
         }
     }
@@ -854,13 +854,10 @@ pub mod workflows {
                     FlowStageEntry {
                         stage_name: "review".to_string(),
                         overrides: Some(FlowStageOverride {
-                            prompt: None,
                             capabilities: Some(StageCapabilities::with_approval(Some(
                                 "work".into(),
                             ))),
-                            model: None,
-                            inputs: None,
-                            disallowed_tools: None,
+                            ..Default::default()
                         }),
                     },
                 ],
@@ -899,7 +896,7 @@ pub mod workflows {
                     )
                     .automated(),
             ],
-            integration: IntegrationConfig::default(),
+            integration: IntegrationConfig::new("work"),
             flows,
         }
     }
@@ -918,7 +915,7 @@ pub mod workflows {
                     on_failure: None,
                 }),
             ],
-            integration: IntegrationConfig::default(),
+            integration: IntegrationConfig::new("work"),
             flows: indexmap::IndexMap::new(),
         }
     }

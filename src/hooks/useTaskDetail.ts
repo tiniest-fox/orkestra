@@ -40,6 +40,8 @@ interface UseTaskDetailResult {
   retryPr: () => Promise<void>;
   /** Archive a Done task with a merged PR. */
   archiveTask: () => Promise<void>;
+  /** Request update on a Done task with feedback. */
+  requestUpdate: (feedback: string) => Promise<void>;
 }
 
 export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
@@ -197,6 +199,24 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     }
   }, [task.id, refetch]);
 
+  const requestUpdate = useCallback(
+    async (feedback: string) => {
+      setIsSubmitting(true);
+      try {
+        await invoke<WorkflowTask>("workflow_request_update", {
+          taskId: task.id,
+          feedback,
+        });
+        refetch();
+      } catch (err) {
+        console.error("Failed to request update:", err);
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [task.id, refetch],
+  );
+
   return {
     task,
     currentStageDisplayName,
@@ -212,5 +232,6 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
     openPr,
     retryPr,
     archiveTask,
+    requestUpdate,
   };
 }

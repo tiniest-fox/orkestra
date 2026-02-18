@@ -78,6 +78,7 @@ export function TaskDetailSidebar({
     openPr,
     retryPr,
     archiveTask,
+    requestUpdate,
   } = useTaskDetail(task);
 
   const tabs = useMemo(() => buildTabs(task), [task]);
@@ -317,6 +318,7 @@ export function TaskDetailSidebar({
             onMerge={mergeTask}
             onOpenPr={openPr}
             onRetryPr={retryPr}
+            onRequestUpdate={requestUpdate}
             isSubmitting={isSubmitting}
             ghAvailable={ghAvailable}
           />

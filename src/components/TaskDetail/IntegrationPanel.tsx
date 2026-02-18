@@ -70,7 +70,7 @@ export function IntegrationPanel({
         value={feedback}
         onChange={(e) => setFeedback(e.target.value)}
         placeholder="Leave feedback to request changes..."
-        className="w-full flex-1 px-3 py-2 text-sm border border-stone-300 dark:bg-stone-800 dark:border-stone-600 dark:text-stone-100 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-info-500 resize-none mb-3 text-stone-800"
+        className="w-full flex-1 px-3 py-2 text-sm text-stone-800 dark:text-stone-100 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-600 rounded-panel-sm focus:outline-none focus:ring-2 focus:ring-info-500 resize-none mb-3"
       />
       {feedback.trim() ? (
         <Button
@@ -78,7 +78,7 @@ export function IntegrationPanel({
           disabled={isSubmitting}
           loading={isSubmitting}
           fullWidth
-          className="bg-amber-500 hover:bg-amber-600 text-white"
+          variant="warning"
         >
           Request Update
         </Button>

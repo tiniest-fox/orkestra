@@ -5687,10 +5687,7 @@ fn test_stages_with_logs_groups_sessions_correctly() {
     let task = ctx.create_task("Test task", "Test description", None);
     let task_id = task.id.clone();
 
-    // Advance to spawn planning agent
-    ctx.advance();
-
-    // Complete planning
+    // Set output BEFORE advancing (mock runner needs output configured before spawn)
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -5699,7 +5696,8 @@ fn test_stages_with_logs_groups_sessions_correctly() {
             activity_log: None,
         },
     );
-    ctx.advance();
+    ctx.advance(); // spawns planner agent (completion ready)
+    ctx.advance(); // processes plan output
 
     // Get task view after planning session exists
     let task_views = ctx.api().list_task_views().unwrap();
@@ -5722,11 +5720,8 @@ fn test_stages_with_logs_groups_sessions_correctly() {
     assert!(planning_stage.sessions[0].is_current);
     let planning_session_id = planning_stage.sessions[0].session_id.clone();
 
-    // Approve to move to breakdown
+    // Approve to move to breakdown, then set output for breakdown
     ctx.api().approve(&task_id).unwrap();
-    ctx.advance();
-
-    // Complete breakdown (skip subtasks)
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -5735,11 +5730,11 @@ fn test_stages_with_logs_groups_sessions_correctly() {
             activity_log: None,
         },
     );
-    ctx.advance();
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance();
+    ctx.advance(); // spawns breakdown agent
+    ctx.advance(); // processes breakdown output
 
-    // Now in work stage - produce output
+    // Approve breakdown to move to work
+    ctx.api().approve(&task_id).unwrap();
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -5748,7 +5743,8 @@ fn test_stages_with_logs_groups_sessions_correctly() {
             activity_log: None,
         },
     );
-    ctx.advance();
+    ctx.advance(); // spawns worker agent
+    ctx.advance(); // processes work output
 
     // Get task view and verify multiple stages have sessions
     let task_views = ctx.api().list_task_views().unwrap();
@@ -5810,8 +5806,7 @@ fn test_rejection_does_not_create_new_session() {
     let task = ctx.create_task("Test task", "Test description", None);
     let task_id = task.id.clone();
 
-    // Get through to work stage
-    ctx.advance();
+    // Get through to work stage - set output BEFORE advancing
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -5820,10 +5815,10 @@ fn test_rejection_does_not_create_new_session() {
             activity_log: None,
         },
     );
-    ctx.advance();
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance();
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes output
 
+    ctx.api().approve(&task_id).unwrap();
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -5832,9 +5827,10 @@ fn test_rejection_does_not_create_new_session() {
             activity_log: None,
         },
     );
-    ctx.advance();
+    ctx.advance(); // spawns breakdown
+    ctx.advance(); // processes output
+
     ctx.api().approve(&task_id).unwrap();
-    ctx.advance();
 
     // Work stage - first iteration
     ctx.set_output(
@@ -5845,7 +5841,8 @@ fn test_rejection_does_not_create_new_session() {
             activity_log: None,
         },
     );
-    ctx.advance();
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes output
 
     // Get initial state
     let task_views = ctx.api().list_task_views().unwrap();
@@ -5865,11 +5862,7 @@ fn test_rejection_does_not_create_new_session() {
     );
     let first_session_id = work_stage.sessions[0].session_id.clone();
 
-    // Reject the work to trigger another iteration
-    ctx.api().reject(&task_id, "Please add error handling").unwrap();
-    ctx.advance();
-
-    // Complete the second iteration
+    // Reject the work to trigger another iteration - set output BEFORE rejecting
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -5878,7 +5871,11 @@ fn test_rejection_does_not_create_new_session() {
             activity_log: None,
         },
     );
-    ctx.advance();
+    ctx.api()
+        .reject(&task_id, "Please add error handling")
+        .unwrap();
+    ctx.advance(); // spawns worker (resume)
+    ctx.advance(); // processes output
 
     // Verify still one session (rejections don't create new sessions)
     let task_views = ctx.api().list_task_views().unwrap();
@@ -5925,7 +5922,7 @@ fn test_stages_with_logs_ordered_chronologically() {
     let task_id = task.id.clone();
 
     // Go through planning → breakdown → work
-    ctx.advance();
+    // Set output BEFORE advancing (mock runner needs output before spawn)
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -5934,10 +5931,10 @@ fn test_stages_with_logs_ordered_chronologically() {
             activity_log: None,
         },
     );
-    ctx.advance();
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance();
+    ctx.advance(); // spawns planner
+    ctx.advance(); // processes output
 
+    ctx.api().approve(&task_id).unwrap();
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -5946,10 +5943,10 @@ fn test_stages_with_logs_ordered_chronologically() {
             activity_log: None,
         },
     );
-    ctx.advance();
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance();
+    ctx.advance(); // spawns breakdown
+    ctx.advance(); // processes output
 
+    ctx.api().approve(&task_id).unwrap();
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -5958,7 +5955,8 @@ fn test_stages_with_logs_ordered_chronologically() {
             activity_log: None,
         },
     );
-    ctx.advance();
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes output
 
     // Get task view
     let task_views = ctx.api().list_task_views().unwrap();
@@ -5979,8 +5977,7 @@ fn test_stages_with_logs_ordered_chronologically() {
 
     assert!(
         planning_idx.is_some() && breakdown_idx.is_some() && work_idx.is_some(),
-        "All stages should be present. Got: {:?}",
-        stage_names
+        "All stages should be present. Got: {stage_names:?}"
     );
 
     let planning_idx = planning_idx.unwrap();
@@ -5989,12 +5986,10 @@ fn test_stages_with_logs_ordered_chronologically() {
 
     assert!(
         planning_idx < breakdown_idx,
-        "Planning should come before breakdown. Got order: {:?}",
-        stage_names
+        "Planning should come before breakdown. Got order: {stage_names:?}"
     );
     assert!(
         breakdown_idx < work_idx,
-        "Breakdown should come before work. Got order: {:?}",
-        stage_names
+        "Breakdown should come before work. Got order: {stage_names:?}"
     );
 }

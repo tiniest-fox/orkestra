@@ -97,7 +97,11 @@ pub struct SessionLogInfo {
 pub struct StageLogInfo {
     /// The stage name.
     pub stage: String,
-    /// All sessions for this stage that have logs, ordered chronologically.
+    /// All sessions for this stage, ordered chronologically.
+    ///
+    /// Includes sessions in any state (Active, Spawning, Completed, Superseded, etc.).
+    /// This allows the UI to show tabs for in-progress sessions that may not have
+    /// produced logs yet.
     pub sessions: Vec<SessionLogInfo>,
 }
 
@@ -149,8 +153,6 @@ impl DerivedTaskState {
 fn build_stages_with_logs(sessions: &[StageSession]) -> Vec<StageLogInfo> {
     use std::collections::HashMap;
 
-    use crate::workflow::domain::SessionState;
-
     // Group sessions by stage
     let mut by_stage: HashMap<String, Vec<&StageSession>> = HashMap::new();
     for session in sessions {
@@ -177,7 +179,7 @@ fn build_stages_with_logs(sessions: &[StageSession]) -> Vec<StageLogInfo> {
                     SessionLogInfo {
                         session_id: s.id.clone(),
                         run_number,
-                        is_current: s.session_state != SessionState::Superseded,
+                        is_current: s.session_state.is_current(),
                         created_at: s.created_at.clone(),
                     }
                 })

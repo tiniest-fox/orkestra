@@ -152,24 +152,6 @@ pub fn workflow_list_branches(
     })
 }
 
-/// Get stages that have logs for a task.
-///
-/// Returns the names of stages that have log entries in the database.
-/// Used by the UI to show tabs for each stage that has been executed.
-#[tauri::command]
-pub fn workflow_get_stages_with_logs(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-) -> Result<Vec<String>, TauriError> {
-    registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .get_stages_with_logs(&task_id)
-            .map_err(Into::into)
-    })
-}
-
 /// Get log entries for a task's stage or a specific session.
 ///
 /// Reads log entries from the database for a specific session, or the task's

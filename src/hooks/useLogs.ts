@@ -111,7 +111,15 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
-  // Set initial session when stage is first selected by useSmartDefault
+  // Initialize session ID when stage is first selected by useSmartDefault.
+  //
+  // This duplicates logic in setActiveLogStage, which is intentional:
+  // - setActiveLogStage: Called when user explicitly clicks a stage tab
+  // - This effect: Called when useSmartDefault sets the initial stage on mount
+  //
+  // The useSmartDefault hook can set activeLogStage before this hook's own
+  // setActiveLogStage is ever called, so we need this effect to catch that case
+  // and initialize the session ID accordingly.
   useEffect(() => {
     if (activeLogStage && !activeSessionId) {
       const defaultSessionId = findDefaultSession(activeLogStage);

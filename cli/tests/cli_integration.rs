@@ -455,16 +455,16 @@ fn test_get_logs_by_session_id() {
         panic!("Expected Text log entry");
     }
 
-    // Fetch by stage (no session_id) - should get the current/latest session's logs
-    // The latest session for "planning" is session2
+    // Verify session_id takes precedence over stage parameter
+    // Even when stage is provided, session_id should be used
     let logs = api
-        .get_task_logs(&task.id, Some("planning"), None)
-        .expect("get logs by stage");
+        .get_task_logs(&task.id, Some("work"), Some(&session1.id))
+        .expect("get logs with both stage and session_id");
     assert_eq!(logs.len(), 1);
     if let LogEntry::Text { content } = &logs[0] {
         assert!(
-            content.contains("session 2"),
-            "Stage lookup should return latest session, got: {content}"
+            content.contains("session 1"),
+            "session_id should take precedence over stage, got: {content}"
         );
     } else {
         panic!("Expected Text log entry");

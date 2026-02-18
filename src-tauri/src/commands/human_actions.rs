@@ -215,3 +215,21 @@ pub fn workflow_address_pr_conflicts(
             .map_err(Into::into)
     })
 }
+
+/// Request update on a Done task by returning to the recovery stage.
+///
+/// Creates a new iteration with the feedback as context for the agent.
+#[tauri::command]
+pub fn workflow_request_update(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    feedback: String,
+) -> Result<Task, TauriError> {
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .request_update(&task_id, &feedback)
+            .map_err(Into::into)
+    })
+}

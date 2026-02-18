@@ -62,7 +62,9 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
 
       // Prefer the current session, otherwise take the last one
       const currentSession = stageInfo.sessions.find((s) => s.is_current);
-      return currentSession?.session_id ?? stageInfo.sessions[stageInfo.sessions.length - 1].session_id;
+      return (
+        currentSession?.session_id ?? stageInfo.sessions[stageInfo.sessions.length - 1].session_id
+      );
     },
     [stagesWithLogs],
   );
@@ -174,7 +176,6 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
   }, [
     isActive,
     activeLogStage,
-    activeSessionId,
     task.derived.is_working,
     task.derived.current_stage,
     fetchLogs,

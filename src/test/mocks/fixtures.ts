@@ -106,23 +106,26 @@ export function createMockWorkflowTaskView(
   if (state.type === "waiting_on_children") {
     derivedDefaults.is_waiting_on_children = true;
   }
-  if (state.type === "committing") {
-    derivedDefaults.phase_icon = "committing";
-    derivedDefaults.is_system_active = true;
+  // Git-related states use simplified "git" phase_icon
+  if (
+    state.type === "committing" ||
+    state.type === "integrating" ||
+    state.type === "setting_up" ||
+    state.type === "awaiting_setup"
+  ) {
+    derivedDefaults.phase_icon = "git";
+    if (state.type === "committing" || state.type === "integrating") {
+      derivedDefaults.is_system_active = true;
+    }
   }
-  if (state.type === "integrating") {
-    derivedDefaults.phase_icon = "integrating";
-    derivedDefaults.is_system_active = true;
-  }
+  // System busy states (finishing, committed) also use "git" since they're part of integration
   if (state.type === "finishing" || state.type === "committed") {
-    derivedDefaults.phase_icon = "system_busy";
+    derivedDefaults.phase_icon = "git";
     derivedDefaults.is_system_active = true;
   }
-  if (state.type === "setting_up") {
-    derivedDefaults.phase_icon = "setting_up";
-  }
-  if (state.type === "awaiting_setup") {
-    derivedDefaults.phase_icon = "awaiting_setup";
+  // Queued state uses "queued" phase_icon
+  if (state.type === "queued") {
+    derivedDefaults.phase_icon = "queued";
   }
 
   return {

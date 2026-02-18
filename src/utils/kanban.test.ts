@@ -521,5 +521,29 @@ describe("getTasksForColumn", () => {
       expect(failedTasks).toHaveLength(1);
       expect(failedTasks[0].id).toBe("failed-task");
     });
+
+    it("should return integrating tasks in done column", () => {
+      const tasks = [
+        createMockWorkflowTaskView({
+          id: "integrating-task",
+          state: { type: "integrating" },
+        }),
+        createMockWorkflowTaskView({
+          id: "done-task",
+          state: { type: "done" },
+        }),
+        createMockWorkflowTaskView({
+          id: "active-task",
+          state: { type: "queued", stage: "planning" },
+          derived: { current_stage: "planning" },
+        }),
+      ];
+
+      const doneTasks = getTasksForColumn(tasks, "done");
+
+      expect(doneTasks).toHaveLength(2);
+      expect(doneTasks.map((t) => t.id)).toContain("integrating-task");
+      expect(doneTasks.map((t) => t.id)).toContain("done-task");
+    });
   });
 });

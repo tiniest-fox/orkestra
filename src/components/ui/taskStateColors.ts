@@ -57,6 +57,11 @@ export const taskStateColors = {
     badge: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
     icon: "bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300",
   },
+  auto: {
+    bg: "bg-purple-500 dark:bg-purple-400",
+    badge: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
+    icon: "text-purple-500 dark:text-purple-400",
+  },
   // PR states
   pr_open: {
     bg: "bg-purple-500 dark:bg-purple-400",

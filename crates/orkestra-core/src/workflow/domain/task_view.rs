@@ -254,14 +254,17 @@ fn compute_phase_icon(task: &Task) -> Option<String> {
         return None;
     }
     match &task.state {
-        TaskState::Committing { .. } => Some("committing".to_string()),
-        TaskState::Integrating => Some("integrating".to_string()),
-        TaskState::SettingUp { .. } => Some("setting_up".to_string()),
-        TaskState::AwaitingSetup { .. } => Some("awaiting_setup".to_string()),
-        TaskState::Finishing { .. } | TaskState::Committed { .. } => {
-            Some("system_busy".to_string())
-        }
-        TaskState::Queued { .. } => Some("waiting_for_orchestrator".to_string()),
+        // All git-related states use the same icon
+        TaskState::Committing { .. }
+        | TaskState::Integrating
+        | TaskState::SettingUp { .. }
+        | TaskState::AwaitingSetup { .. }
+        | TaskState::Finishing { .. }
+        | TaskState::Committed { .. } => Some("git".to_string()),
+
+        // Queued tasks waiting for orchestrator
+        TaskState::Queued { .. } => Some("queued".to_string()),
+
         // Human-facing, agent-active, parent, and terminal states don't show phase icons
         TaskState::AgentWorking { .. }
         | TaskState::AwaitingApproval { .. }
@@ -922,7 +925,7 @@ mod tests {
         task.state = TaskState::committing("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
-        assert_eq!(derived.phase_icon, Some("committing".to_string()));
+        assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
 
     #[test]
@@ -931,7 +934,7 @@ mod tests {
         task.state = TaskState::Integrating;
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
-        assert_eq!(derived.phase_icon, Some("integrating".to_string()));
+        assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
 
     #[test]
@@ -940,7 +943,16 @@ mod tests {
         task.state = TaskState::finishing("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
-        assert_eq!(derived.phase_icon, Some("system_busy".to_string()));
+        assert_eq!(derived.phase_icon, Some("git".to_string()));
+    }
+
+    #[test]
+    fn test_phase_icon_committed() {
+        let mut task = make_task("work");
+        task.state = TaskState::committed("work");
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+
+        assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
 
     #[test]
@@ -949,7 +961,7 @@ mod tests {
         task.state = TaskState::setting_up("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
-        assert_eq!(derived.phase_icon, Some("setting_up".to_string()));
+        assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
 
     #[test]
@@ -958,7 +970,7 @@ mod tests {
         task.state = TaskState::awaiting_setup("work");
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
-        assert_eq!(derived.phase_icon, Some("awaiting_setup".to_string()));
+        assert_eq!(derived.phase_icon, Some("git".to_string()));
     }
 
     #[test]
@@ -967,10 +979,7 @@ mod tests {
         // Task is idle with an active status
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
-        assert_eq!(
-            derived.phase_icon,
-            Some("waiting_for_orchestrator".to_string())
-        );
+        assert_eq!(derived.phase_icon, Some("queued".to_string()));
     }
 
     #[test]

@@ -7,12 +7,9 @@ import {
   AlertCircle,
   CircleCheck,
   Eye,
-  GitBranch,
-  GitCommitVertical,
   GitMerge,
   GitPullRequest,
   Hand,
-  Hourglass,
   Layers,
   MessageCircle,
   Pause,
@@ -180,21 +177,24 @@ export function TaskCard({
           {getDisplayTitle(task)}
         </h3>
         <div className="flex items-center gap-1.5">
-          {derived.phase_icon === "awaiting_setup" && (
+          {/* Auto mode icon - subtle, no background. Excluded for Failed/Blocked (they show error icons) */}
+          {task.auto_mode && !isFailed && !isBlocked && (
             <span className="flex-shrink-0 p-1.5">
-              <GitBranch className="w-4 h-4 text-stone-400 dark:text-stone-500" />
-            </span>
-          )}
-          {derived.phase_icon === "setting_up" && (
-            <span className="flex-shrink-0 p-1.5">
-              <GitBranch className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
-            </span>
-          )}
-          {task.auto_mode && (
-            <span className="flex-shrink-0 p-1.5 rounded-md bg-purple-100 dark:bg-purple-900">
               <Zap
-                className={`w-4 h-4 text-purple-600 dark:text-purple-300 ${showSpinner ? "animate-spin-bounce" : ""}`}
+                className={`w-4 h-4 ${taskStateColors.auto.icon} ${showSpinner || derived.is_system_active ? "animate-spin-bounce" : ""}`}
               />
+            </span>
+          )}
+          {/* Git-related phase icon - only show when not in auto mode */}
+          {derived.phase_icon === "git" && !task.auto_mode && (
+            <span className="flex-shrink-0 p-1.5">
+              <GitMerge className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
+            </span>
+          )}
+          {/* Queued - work spinner - only show when not in auto mode */}
+          {derived.phase_icon === "queued" && !task.auto_mode && (
+            <span className="flex-shrink-0 p-1.5">
+              <span className="block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
             </span>
           )}
           {hasQuestions && (
@@ -207,7 +207,8 @@ export function TaskCard({
               <Eye className="w-4 h-4" />
             </span>
           )}
-          {showSpinner && !task.auto_mode && (
+          {/* Work spinner for AgentWorking - only when not in auto mode and no phase_icon */}
+          {showSpinner && !task.auto_mode && !derived.phase_icon && (
             <span className="flex-shrink-0 p-1.5">
               <span className="block w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
             </span>
@@ -225,26 +226,6 @@ export function TaskCard({
           {isInterrupted && (
             <span className={`flex-shrink-0 p-1.5 rounded-md ${taskStateColors.interrupted.icon}`}>
               <Pause className="w-4 h-4" />
-            </span>
-          )}
-          {derived.phase_icon === "committing" && (
-            <span className="flex-shrink-0 p-1.5">
-              <GitCommitVertical className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
-            </span>
-          )}
-          {derived.phase_icon === "integrating" && (
-            <span className="flex-shrink-0 p-1.5">
-              <GitMerge className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
-            </span>
-          )}
-          {derived.phase_icon === "system_busy" && (
-            <span className="flex-shrink-0 p-1.5">
-              <Hourglass className="w-4 h-4 text-stone-400 dark:text-stone-500 animate-spin-bounce" />
-            </span>
-          )}
-          {derived.phase_icon === "waiting_for_orchestrator" && (
-            <span className="flex-shrink-0 p-1.5">
-              <Hourglass className="w-4 h-4 text-stone-300 dark:text-stone-600 animate-spin-bounce" />
             </span>
           )}
           {hasUnresolvedDeps && (

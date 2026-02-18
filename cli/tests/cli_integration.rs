@@ -331,7 +331,7 @@ fn test_log_viewing_with_pagination() {
 
     // Get all logs (baseline)
     let all_logs = api
-        .get_task_logs(&task.id, Some("planning"))
+        .get_task_logs(&task.id, Some("planning"), None)
         .expect("get all logs");
     assert_eq!(all_logs.len(), 10);
 

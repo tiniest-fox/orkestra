@@ -5661,3 +5661,340 @@ fn test_address_pr_conflicts_requires_done_status() {
         "Expected InvalidTransition error mentioning 'not done', got: {result:?}"
     );
 }
+
+// =============================================================================
+// Multi-session log sub-tabs
+// =============================================================================
+
+/// Test that `stages_with_logs` correctly groups sessions and assigns run numbers.
+///
+/// This test verifies that:
+/// 1. Sessions are correctly grouped by stage
+/// 2. Run numbers are 1-indexed and chronological
+/// 3. The `is_current` flag correctly identifies non-superseded sessions
+#[test]
+fn test_stages_with_logs_groups_sessions_correctly() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+
+    use crate::helpers::enable_auto_merge;
+
+    let ctx = TestEnv::with_git(
+        &enable_auto_merge(test_default_workflow()),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    // Create and start a task
+    let task = ctx.create_task("Test task", "Test description", None);
+    let task_id = task.id.clone();
+
+    // Advance to spawn planning agent
+    ctx.advance();
+
+    // Complete planning
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Initial plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+
+    // Get task view after planning session exists
+    let task_views = ctx.api().list_task_views().unwrap();
+    let task_view = task_views.iter().find(|v| v.task.id == task_id).unwrap();
+
+    // Verify planning stage has a session
+    let planning_stage = task_view
+        .derived
+        .stages_with_logs
+        .iter()
+        .find(|s| s.stage == "planning")
+        .expect("planning stage should have logs");
+
+    assert_eq!(
+        planning_stage.sessions.len(),
+        1,
+        "planning should have 1 session"
+    );
+    assert_eq!(planning_stage.sessions[0].run_number, 1);
+    assert!(planning_stage.sessions[0].is_current);
+    let planning_session_id = planning_stage.sessions[0].session_id.clone();
+
+    // Approve to move to breakdown
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance();
+
+    // Complete breakdown (skip subtasks)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "Simple task, no subtasks needed".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance();
+
+    // Now in work stage - produce output
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "First work attempt".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+
+    // Get task view and verify multiple stages have sessions
+    let task_views = ctx.api().list_task_views().unwrap();
+    let task_view = task_views.iter().find(|v| v.task.id == task_id).unwrap();
+
+    // Should now have planning, breakdown, and work stages with logs
+    assert!(
+        task_view.derived.stages_with_logs.len() >= 3,
+        "Should have at least 3 stages with logs, got: {:?}",
+        task_view
+            .derived
+            .stages_with_logs
+            .iter()
+            .map(|s| &s.stage)
+            .collect::<Vec<_>>()
+    );
+
+    // Verify planning session ID is unchanged
+    let planning_stage = task_view
+        .derived
+        .stages_with_logs
+        .iter()
+        .find(|s| s.stage == "planning")
+        .unwrap();
+    assert_eq!(
+        planning_stage.sessions[0].session_id, planning_session_id,
+        "Planning session ID should be unchanged"
+    );
+
+    // Verify work stage exists with correct structure
+    let work_stage = task_view
+        .derived
+        .stages_with_logs
+        .iter()
+        .find(|s| s.stage == "work")
+        .expect("work stage should have logs");
+
+    assert_eq!(work_stage.sessions.len(), 1, "work should have 1 session");
+    assert_eq!(work_stage.sessions[0].run_number, 1);
+    assert!(work_stage.sessions[0].is_current);
+}
+
+/// Test that human rejections don't create new sessions (they create new iterations).
+///
+/// When a human rejects an artifact, the agent resumes within the same session
+/// using the rejection feedback as context. This test verifies that the session
+/// count remains 1 after rejection.
+#[test]
+fn test_rejection_does_not_create_new_session() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+
+    use crate::helpers::enable_auto_merge;
+
+    let ctx = TestEnv::with_git(
+        &enable_auto_merge(test_default_workflow()),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test task", "Test description", None);
+    let task_id = task.id.clone();
+
+    // Get through to work stage
+    ctx.advance();
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "No subtasks".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance();
+
+    // Work stage - first iteration
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "First work attempt".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+
+    // Get initial state
+    let task_views = ctx.api().list_task_views().unwrap();
+    let task_view = task_views.iter().find(|v| v.task.id == task_id).unwrap();
+
+    let work_stage = task_view
+        .derived
+        .stages_with_logs
+        .iter()
+        .find(|s| s.stage == "work")
+        .expect("work stage should have logs");
+
+    assert_eq!(
+        work_stage.sessions.len(),
+        1,
+        "Should have 1 session initially"
+    );
+    let first_session_id = work_stage.sessions[0].session_id.clone();
+
+    // Reject the work to trigger another iteration
+    ctx.api().reject(&task_id, "Please add error handling").unwrap();
+    ctx.advance();
+
+    // Complete the second iteration
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Second work attempt with error handling".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+
+    // Verify still one session (rejections don't create new sessions)
+    let task_views = ctx.api().list_task_views().unwrap();
+    let task_view = task_views.iter().find(|v| v.task.id == task_id).unwrap();
+
+    let work_stage = task_view
+        .derived
+        .stages_with_logs
+        .iter()
+        .find(|s| s.stage == "work")
+        .expect("work stage should have logs");
+
+    assert_eq!(
+        work_stage.sessions.len(),
+        1,
+        "Rejection should not create new session"
+    );
+    assert_eq!(
+        work_stage.sessions[0].session_id, first_session_id,
+        "Session ID should remain unchanged after rejection"
+    );
+    assert!(
+        work_stage.sessions[0].is_current,
+        "Session should still be current"
+    );
+}
+
+/// Test that stages are ordered chronologically by their first session.
+///
+/// When displaying log tabs, stages should appear in the order they were
+/// first executed, not alphabetically.
+#[test]
+fn test_stages_with_logs_ordered_chronologically() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+
+    use crate::helpers::enable_auto_merge;
+
+    let ctx = TestEnv::with_git(
+        &enable_auto_merge(test_default_workflow()),
+        &["planner", "breakdown", "worker", "reviewer"],
+    );
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    // Go through planning → breakdown → work
+    ctx.advance();
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Plan".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "breakdown".to_string(),
+            content: "Breakdown".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance();
+
+    // Get task view
+    let task_views = ctx.api().list_task_views().unwrap();
+    let task_view = task_views.iter().find(|v| v.task.id == task_id).unwrap();
+
+    // Stages should be in chronological order: planning, breakdown, work
+    let stage_names: Vec<&str> = task_view
+        .derived
+        .stages_with_logs
+        .iter()
+        .map(|s| s.stage.as_str())
+        .collect();
+
+    // Find indexes of each stage
+    let planning_idx = stage_names.iter().position(|&s| s == "planning");
+    let breakdown_idx = stage_names.iter().position(|&s| s == "breakdown");
+    let work_idx = stage_names.iter().position(|&s| s == "work");
+
+    assert!(
+        planning_idx.is_some() && breakdown_idx.is_some() && work_idx.is_some(),
+        "All stages should be present. Got: {:?}",
+        stage_names
+    );
+
+    let planning_idx = planning_idx.unwrap();
+    let breakdown_idx = breakdown_idx.unwrap();
+    let work_idx = work_idx.unwrap();
+
+    assert!(
+        planning_idx < breakdown_idx,
+        "Planning should come before breakdown. Got order: {:?}",
+        stage_names
+    );
+    assert!(
+        breakdown_idx < work_idx,
+        "Breakdown should come before work. Got order: {:?}",
+        stage_names
+    );
+}

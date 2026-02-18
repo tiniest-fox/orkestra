@@ -6154,3 +6154,89 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
         "Review session should be current"
     );
 }
+
+// =============================================================================
+// Request Update E2E Tests
+// =============================================================================
+
+/// Test that requesting update on a Done task returns it to recovery stage with feedback.
+///
+/// This test verifies the full `request_update` flow:
+/// 1. Task reaches Done status after review approval
+/// 2. User calls `request_update` with feedback
+/// 3. Task returns to the recovery stage (work)
+/// 4. A new iteration is created with `IterationTrigger::Feedback`
+/// 5. Agent receives the feedback in its resume prompt
+#[test]
+fn test_request_update_on_done_task() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    use crate::helpers::disable_auto_merge;
+
+    // Use git workflow with auto_merge disabled so task stays at Done
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    // Create a task
+    let task = ctx.create_task("Test request update", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance through all stages to Done
+    advance_to_done_no_integration(&ctx, &task_id);
+
+    // Verify task is Done
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(task.is_done(), "Task should be Done after review approval");
+    assert!(task.completed_at.is_some(), "completed_at should be set");
+
+    // =========================================================================
+    // Request update with feedback
+    // =========================================================================
+
+    let feedback = "Please add more error handling";
+    let task = ctx.api().request_update(&task_id, feedback).unwrap();
+
+    // Verify task moved to recovery stage (work)
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Task should return to work stage"
+    );
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued"
+    );
+    assert!(
+        task.completed_at.is_none(),
+        "completed_at should be cleared"
+    );
+
+    // Verify iteration was created with Feedback trigger
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let work_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == "work").collect();
+    let last_work_iter = work_iterations.last().expect("Should have work iterations");
+
+    match &last_work_iter.incoming_context {
+        Some(IterationTrigger::Feedback { feedback: fb }) => {
+            assert_eq!(fb, "Please add more error handling");
+        }
+        other => panic!("Expected Feedback trigger, got {other:?}"),
+    }
+
+    // Set mock output for the work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Updated work with error handling".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Advance orchestrator — agent should receive feedback in prompt
+    ctx.advance();
+
+    // Verify resume prompt contains the feedback
+    ctx.assert_resume_prompt_contains("feedback", &["Please add more error handling"]);
+}

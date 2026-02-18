@@ -111,6 +111,17 @@ impl WorkflowApi {
         )
     }
 
+    /// Request update on a Done task by returning to the recovery stage with feedback.
+    pub fn request_update(&self, task_id: &str, feedback: &str) -> WorkflowResult<Task> {
+        human::request_update::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
+            task_id,
+            feedback,
+        )
+    }
+
     /// Manually archive a Done task.
     pub fn archive_task(&self, task_id: &str) -> WorkflowResult<Task> {
         human::archive::execute(self.store.as_ref(), task_id)

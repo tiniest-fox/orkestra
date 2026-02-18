@@ -423,7 +423,9 @@ describe("LogsTab auto-scroll integration", () => {
 
   describe("multi-session sub-tabs", () => {
     it("renders nested sub-tabs when stage has multiple sessions", async () => {
-      const stagesWithLogs = createStageLogInfo(["work", "review"], { multiSession: { review: 2 } });
+      const stagesWithLogs = createStageLogInfo(["work", "review"], {
+        multiSession: { review: 2 },
+      });
       const task = createMockTask({
         derived: {
           current_stage: "review",

@@ -4,7 +4,7 @@
 
 import { useEffect } from "react";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
-import type { LogEntry, WorkflowTaskView } from "../../types/workflow";
+import type { LogEntry, StageLogInfo, WorkflowTaskView } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { LogList } from "../Logs";
 import { FlexContainer, LogTabs, TabbedPanel } from "../ui";
@@ -14,9 +14,11 @@ interface LogsTabProps {
   logs: LogEntry[];
   isLoading: boolean;
   error: unknown;
-  stagesWithLogs: string[];
+  stagesWithLogs: StageLogInfo[];
   activeLogStage: string | null;
+  activeSessionId: string | null;
   onStageChange: (stage: string) => void;
+  onSessionChange: (sessionId: string | null) => void;
 }
 
 export function LogsTab({
@@ -26,7 +28,9 @@ export function LogsTab({
   error,
   stagesWithLogs,
   activeLogStage,
+  activeSessionId: _activeSessionId,
   onStageChange,
+  onSessionChange: _onSessionChange,
 }: LogsTabProps) {
   const { containerRef, handleScroll, resetAutoScroll } = useAutoScroll<HTMLDivElement>(true);
 
@@ -36,7 +40,10 @@ export function LogsTab({
     resetAutoScroll();
   }, [activeLogStage]);
 
-  const tabs = stagesWithLogs.map((stage) => ({
+  // Extract stage names for tabs (sub-tab rendering will be added by sibling task)
+  const stageNames = stagesWithLogs.map((s) => s.stage);
+
+  const tabs = stageNames.map((stage) => ({
     id: LogTabs.stage(stage),
     label: titleCase(stage),
     indicator:
@@ -47,7 +54,7 @@ export function LogsTab({
 
   const handleTabChange = (tabId: string) => {
     // Extract raw stage name from animation key
-    const raw = stagesWithLogs.find((s) => LogTabs.stage(s) === tabId);
+    const raw = stageNames.find((s) => LogTabs.stage(s) === tabId);
     if (raw && raw !== activeLogStage) {
       onStageChange(raw);
     }

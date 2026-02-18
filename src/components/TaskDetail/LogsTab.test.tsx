@@ -7,9 +7,26 @@
 
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { LogEntry, WorkflowTaskView } from "../../types/workflow";
+import type { LogEntry, StageLogInfo, WorkflowTaskView } from "../../types/workflow";
 import { ContentAnimationContext } from "../ui/ContentAnimation";
 import { LogsTab } from "./LogsTab";
+
+/**
+ * Helper to create StageLogInfo array from stage names.
+ */
+function createStageLogInfo(stages: string[]): StageLogInfo[] {
+  return stages.map((stage, index) => ({
+    stage,
+    sessions: [
+      {
+        session_id: `session-${stage}-1`,
+        run_number: 1,
+        is_current: index === stages.length - 1,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  }));
+}
 
 // Mock framer-motion since TabbedPanel uses it
 vi.mock("framer-motion", () => ({
@@ -66,7 +83,7 @@ function createMockTask(overrides: Partial<WorkflowTaskView> = {}): WorkflowTask
       pending_questions: [],
       rejection_feedback: null,
       pending_rejection: null,
-      stages_with_logs: ["work"],
+      stages_with_logs: createStageLogInfo(["work"]),
       subtask_progress: null,
     },
     ...overrides,
@@ -120,9 +137,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={logs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work"]}
+            stagesWithLogs={createStageLogInfo(["work"])}
             activeLogStage="work"
+            activeSessionId="session-work-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -157,9 +176,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={logs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work"]}
+            stagesWithLogs={createStageLogInfo(["work"])}
             activeLogStage="work"
+            activeSessionId="session-work-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -190,9 +211,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={logs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work"]}
+            stagesWithLogs={createStageLogInfo(["work"])}
             activeLogStage="work"
+            activeSessionId="session-work-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -255,7 +278,7 @@ describe("LogsTab auto-scroll integration", () => {
           pending_questions: [],
           rejection_feedback: null,
           pending_rejection: null,
-          stages_with_logs: ["work", "checks"],
+          stages_with_logs: createStageLogInfo(["work", "checks"]),
           subtask_progress: null,
         },
       });
@@ -270,9 +293,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={workLogs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work", "checks"]}
+            stagesWithLogs={createStageLogInfo(["work", "checks"])}
             activeLogStage="work"
+            activeSessionId="session-work-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -299,9 +324,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={checksLogs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work", "checks"]}
+            stagesWithLogs={createStageLogInfo(["work", "checks"])}
             activeLogStage="checks"
+            activeSessionId="session-checks-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -337,7 +364,7 @@ describe("LogsTab auto-scroll integration", () => {
           pending_questions: [],
           rejection_feedback: null,
           pending_rejection: null,
-          stages_with_logs: ["work", "checks"],
+          stages_with_logs: createStageLogInfo(["work", "checks"]),
           subtask_progress: null,
         },
       });
@@ -359,9 +386,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={scriptLogs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work", "checks"]}
+            stagesWithLogs={createStageLogInfo(["work", "checks"])}
             activeLogStage="checks"
+            activeSessionId="session-checks-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -415,7 +444,9 @@ describe("LogsTab auto-scroll integration", () => {
             error={null}
             stagesWithLogs={[]}
             activeLogStage={null}
+            activeSessionId={null}
             onStageChange={vi.fn()}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );

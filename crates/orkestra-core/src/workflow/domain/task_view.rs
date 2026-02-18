@@ -84,7 +84,7 @@ pub struct SubtaskProgress {
 pub struct SessionLogInfo {
     /// The unique session ID (UUID).
     pub session_id: String,
-    /// The run number within this stage (1-indexed, ordered by created_at).
+    /// The run number within this stage (1-indexed, ordered by `created_at`).
     pub run_number: u32,
     /// Whether this is the current (non-superseded) session.
     pub is_current: bool,
@@ -143,7 +143,7 @@ impl DerivedTaskState {
 
 /// Build grouped stage log info from sessions.
 ///
-/// Groups sessions by stage name, orders by created_at within each group,
+/// Groups sessions by stage name, orders by `created_at` within each group,
 /// and assigns run numbers (1-indexed). Includes all sessions regardless of state
 /// since any session could have logs.
 fn build_stages_with_logs(sessions: &[StageSession]) -> Vec<StageLogInfo> {
@@ -170,11 +170,16 @@ fn build_stages_with_logs(sessions: &[StageSession]) -> Vec<StageLogInfo> {
             let sessions = sessions_for_stage
                 .into_iter()
                 .enumerate()
-                .map(|(idx, s)| SessionLogInfo {
-                    session_id: s.id.clone(),
-                    run_number: (idx + 1) as u32,
-                    is_current: s.session_state != SessionState::Superseded,
-                    created_at: s.created_at.clone(),
+                .map(|(idx, s)| {
+                    // Run numbers are 1-indexed. Sessions per stage will never exceed u32::MAX.
+                    #[allow(clippy::cast_possible_truncation)]
+                    let run_number = (idx + 1) as u32;
+                    SessionLogInfo {
+                        session_id: s.id.clone(),
+                        run_number,
+                        is_current: s.session_state != SessionState::Superseded,
+                        created_at: s.created_at.clone(),
+                    }
                 })
                 .collect();
 
@@ -463,8 +468,7 @@ mod tests {
     fn test_derived_state_stages_with_logs() {
         let task = make_task("planning");
 
-        let mut session1 =
-            StageSession::new("ss-1", "task-1", "planning", "2025-01-24T10:00:00Z");
+        let mut session1 = StageSession::new("ss-1", "task-1", "planning", "2025-01-24T10:00:00Z");
         session1.session_state = SessionState::Active;
 
         let mut session2 = StageSession::new("ss-2", "task-1", "work", "2025-01-24T11:00:00Z");
@@ -486,13 +490,11 @@ mod tests {
         let task = make_task("work");
 
         // First review session - superseded
-        let mut session1 =
-            StageSession::new("ss-1", "task-1", "review", "2025-01-24T10:00:00Z");
+        let mut session1 = StageSession::new("ss-1", "task-1", "review", "2025-01-24T10:00:00Z");
         session1.session_state = SessionState::Superseded;
 
         // Second review session - current
-        let mut session2 =
-            StageSession::new("ss-2", "task-1", "review", "2025-01-24T11:00:00Z");
+        let mut session2 = StageSession::new("ss-2", "task-1", "review", "2025-01-24T11:00:00Z");
         session2.session_state = SessionState::Active;
 
         // Work session

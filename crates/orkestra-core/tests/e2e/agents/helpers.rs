@@ -278,7 +278,7 @@ impl AgentTestEnv {
             .api
             .lock()
             .unwrap()
-            .get_task_logs(task_id, Some(stage))
+            .get_task_logs(task_id, Some(stage), None)
             .expect("get logs");
 
         let text_count = logs
@@ -340,7 +340,7 @@ impl AgentTestEnv {
         self.api
             .lock()
             .unwrap()
-            .get_task_logs(task_id, Some(stage))
+            .get_task_logs(task_id, Some(stage), None)
             .expect("get_task_logs should succeed")
     }
 
@@ -349,7 +349,7 @@ impl AgentTestEnv {
         self.api
             .lock()
             .unwrap()
-            .get_task_logs(task_id, Some(stage))
+            .get_task_logs(task_id, Some(stage), None)
             .expect("get_task_logs should succeed")
             .len()
     }

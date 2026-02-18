@@ -7,9 +7,37 @@
 
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { LogEntry, WorkflowTaskView } from "../../types/workflow";
+import type { LogEntry, StageLogInfo, WorkflowTaskView } from "../../types/workflow";
 import { ContentAnimationContext } from "../ui/ContentAnimation";
 import { LogsTab } from "./LogsTab";
+
+/**
+ * Helper to create StageLogInfo array from stage names.
+ *
+ * By default, each stage gets a single session. Use the `multiSession` option
+ * to create stages with multiple sessions (for testing sub-tab rendering).
+ */
+function createStageLogInfo(
+  stages: string[],
+  options?: { multiSession?: Record<string, number> },
+): StageLogInfo[] {
+  return stages.map((stage, index) => {
+    const sessionCount = options?.multiSession?.[stage] ?? 1;
+    const isLastStage = index === stages.length - 1;
+
+    return {
+      stage,
+      sessions: Array.from({ length: sessionCount }, (_, sessionIndex) => ({
+        session_id: `session-${stage}-${sessionIndex + 1}`,
+        run_number: sessionIndex + 1,
+        // For multi-session stages, only the last session is current
+        // For single-session stages on the last stage, it's current
+        is_current: isLastStage && sessionIndex === sessionCount - 1,
+        created_at: new Date().toISOString(),
+      })),
+    };
+  });
+}
 
 // Mock framer-motion since TabbedPanel uses it
 vi.mock("framer-motion", () => ({
@@ -66,7 +94,7 @@ function createMockTask(overrides: Partial<WorkflowTaskView> = {}): WorkflowTask
       pending_questions: [],
       rejection_feedback: null,
       pending_rejection: null,
-      stages_with_logs: ["work"],
+      stages_with_logs: createStageLogInfo(["work"]),
       subtask_progress: null,
     },
     ...overrides,
@@ -120,9 +148,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={logs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work"]}
+            stagesWithLogs={createStageLogInfo(["work"])}
             activeLogStage="work"
+            activeSessionId="session-work-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -157,9 +187,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={logs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work"]}
+            stagesWithLogs={createStageLogInfo(["work"])}
             activeLogStage="work"
+            activeSessionId="session-work-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -190,9 +222,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={logs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work"]}
+            stagesWithLogs={createStageLogInfo(["work"])}
             activeLogStage="work"
+            activeSessionId="session-work-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -255,7 +289,7 @@ describe("LogsTab auto-scroll integration", () => {
           pending_questions: [],
           rejection_feedback: null,
           pending_rejection: null,
-          stages_with_logs: ["work", "checks"],
+          stages_with_logs: createStageLogInfo(["work", "checks"]),
           subtask_progress: null,
         },
       });
@@ -270,9 +304,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={workLogs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work", "checks"]}
+            stagesWithLogs={createStageLogInfo(["work", "checks"])}
             activeLogStage="work"
+            activeSessionId="session-work-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -299,9 +335,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={checksLogs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work", "checks"]}
+            stagesWithLogs={createStageLogInfo(["work", "checks"])}
             activeLogStage="checks"
+            activeSessionId="session-checks-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -337,7 +375,7 @@ describe("LogsTab auto-scroll integration", () => {
           pending_questions: [],
           rejection_feedback: null,
           pending_rejection: null,
-          stages_with_logs: ["work", "checks"],
+          stages_with_logs: createStageLogInfo(["work", "checks"]),
           subtask_progress: null,
         },
       });
@@ -359,9 +397,11 @@ describe("LogsTab auto-scroll integration", () => {
             logs={scriptLogs}
             isLoading={false}
             error={null}
-            stagesWithLogs={["work", "checks"]}
+            stagesWithLogs={createStageLogInfo(["work", "checks"])}
             activeLogStage="checks"
+            activeSessionId="session-checks-1"
             onStageChange={onStageChange}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );
@@ -378,6 +418,169 @@ describe("LogsTab auto-scroll integration", () => {
       // Verify tabs show both agent and script stages
       expect(screen.getByText("Work")).toBeInTheDocument();
       expect(screen.getByText("Checks")).toBeInTheDocument();
+    });
+  });
+
+  describe("multi-session sub-tabs", () => {
+    it("renders nested sub-tabs when stage has multiple sessions", async () => {
+      const stagesWithLogs = createStageLogInfo(["work", "review"], {
+        multiSession: { review: 2 },
+      });
+      const task = createMockTask({
+        derived: {
+          current_stage: "review",
+          is_working: true,
+          is_system_active: true,
+          phase_icon: null,
+          is_interrupted: false,
+          is_failed: false,
+          is_blocked: false,
+          is_done: false,
+          is_archived: false,
+          is_terminal: false,
+          is_waiting_on_children: false,
+          needs_review: false,
+          has_questions: false,
+          pending_questions: [],
+          rejection_feedback: null,
+          pending_rejection: null,
+          stages_with_logs: stagesWithLogs,
+          subtask_progress: null,
+        },
+      });
+      const logs = createMockLogs(5);
+      const onSessionChange = vi.fn();
+
+      render(
+        <ContentAnimationContext.Provider value={{ phases: { "task-panel": "settled" } }}>
+          <LogsTab
+            task={task}
+            logs={logs}
+            isLoading={false}
+            error={null}
+            stagesWithLogs={stagesWithLogs}
+            activeLogStage="review"
+            activeSessionId="session-review-2"
+            onStageChange={vi.fn()}
+            onSessionChange={onSessionChange}
+          />
+        </ContentAnimationContext.Provider>,
+      );
+
+      // Verify outer stage tabs
+      expect(screen.getByText("Work")).toBeInTheDocument();
+      expect(screen.getByText("Review")).toBeInTheDocument();
+
+      // Verify nested sub-tabs for multi-session stage
+      expect(screen.getByText("Run #1")).toBeInTheDocument();
+      expect(screen.getByText("Run #2")).toBeInTheDocument();
+
+      // Click on Run #1 sub-tab
+      const runOneTab = screen.getByText("Run #1");
+      await act(async () => {
+        runOneTab.click();
+      });
+
+      // Verify onSessionChange was called with the correct session ID
+      expect(onSessionChange).toHaveBeenCalledWith("session-review-1");
+    });
+
+    it("shows working indicator on the current session sub-tab", async () => {
+      const stagesWithLogs = createStageLogInfo(["review"], { multiSession: { review: 2 } });
+      const task = createMockTask({
+        derived: {
+          current_stage: "review",
+          is_working: true,
+          is_system_active: true,
+          phase_icon: null,
+          is_interrupted: false,
+          is_failed: false,
+          is_blocked: false,
+          is_done: false,
+          is_archived: false,
+          is_terminal: false,
+          is_waiting_on_children: false,
+          needs_review: false,
+          has_questions: false,
+          pending_questions: [],
+          rejection_feedback: null,
+          pending_rejection: null,
+          stages_with_logs: stagesWithLogs,
+          subtask_progress: null,
+        },
+      });
+
+      render(
+        <ContentAnimationContext.Provider value={{ phases: { "task-panel": "settled" } }}>
+          <LogsTab
+            task={task}
+            logs={[]}
+            isLoading={false}
+            error={null}
+            stagesWithLogs={stagesWithLogs}
+            activeLogStage="review"
+            activeSessionId="session-review-2"
+            onStageChange={vi.fn()}
+            onSessionChange={vi.fn()}
+          />
+        </ContentAnimationContext.Provider>,
+      );
+
+      // Find the working indicator (pulsing dot) - should appear in the current session sub-tab
+      // The indicator is a span with specific classes
+      const indicators = document.querySelectorAll(".animate-pulse");
+      // Should have exactly one indicator (on the current session's sub-tab, Run #2)
+      expect(indicators.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("does not render nested sub-tabs when stage has single session", async () => {
+      const stagesWithLogs = createStageLogInfo(["work", "review"]);
+      const task = createMockTask({
+        derived: {
+          current_stage: "review",
+          is_working: false,
+          is_system_active: false,
+          phase_icon: null,
+          is_interrupted: false,
+          is_failed: false,
+          is_blocked: false,
+          is_done: false,
+          is_archived: false,
+          is_terminal: false,
+          is_waiting_on_children: false,
+          needs_review: false,
+          has_questions: false,
+          pending_questions: [],
+          rejection_feedback: null,
+          pending_rejection: null,
+          stages_with_logs: stagesWithLogs,
+          subtask_progress: null,
+        },
+      });
+
+      render(
+        <ContentAnimationContext.Provider value={{ phases: { "task-panel": "settled" } }}>
+          <LogsTab
+            task={task}
+            logs={[]}
+            isLoading={false}
+            error={null}
+            stagesWithLogs={stagesWithLogs}
+            activeLogStage="review"
+            activeSessionId="session-review-1"
+            onStageChange={vi.fn()}
+            onSessionChange={vi.fn()}
+          />
+        </ContentAnimationContext.Provider>,
+      );
+
+      // Verify outer stage tabs exist
+      expect(screen.getByText("Work")).toBeInTheDocument();
+      expect(screen.getByText("Review")).toBeInTheDocument();
+
+      // Verify NO sub-tabs are rendered (no "Run #1" label for single-session stages)
+      expect(screen.queryByText("Run #1")).not.toBeInTheDocument();
+      expect(screen.queryByText("Run #2")).not.toBeInTheDocument();
     });
   });
 
@@ -415,7 +618,9 @@ describe("LogsTab auto-scroll integration", () => {
             error={null}
             stagesWithLogs={[]}
             activeLogStage={null}
+            activeSessionId={null}
             onStageChange={vi.fn()}
+            onSessionChange={vi.fn()}
           />
         </ContentAnimationContext.Provider>,
       );

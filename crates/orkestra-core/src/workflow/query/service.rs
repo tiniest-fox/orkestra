@@ -108,13 +108,18 @@ impl WorkflowApi {
         query::logs::get_stages_with_logs(&self.store, task_id)
     }
 
-    /// Get log entries for a task's stage.
+    /// Get log entries for a task's stage or a specific session.
+    ///
+    /// If `session_id` is provided, fetch logs for that specific session.
+    /// Otherwise, if `stage` is provided, fetch logs for the current session of that stage.
+    /// If neither is provided, fetch logs for the current stage's current session.
     pub fn get_task_logs(
         &self,
         task_id: &str,
         stage: Option<&str>,
+        session_id: Option<&str>,
     ) -> WorkflowResult<Vec<LogEntry>> {
-        query::logs::get_task_logs(&self.store, task_id, stage)
+        query::logs::get_task_logs(&self.store, task_id, stage, session_id)
     }
 }
 

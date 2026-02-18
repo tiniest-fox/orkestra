@@ -23,7 +23,9 @@ vi.mock("../hooks/useLogs", () => ({
     error: null,
     stagesWithLogs: [],
     activeLogStage: null,
+    activeSessionId: null,
     setActiveLogStage: vi.fn(),
+    setActiveSessionId: vi.fn(),
     reset: vi.fn(),
   }),
 }));

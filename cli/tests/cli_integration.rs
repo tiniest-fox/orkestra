@@ -331,7 +331,7 @@ fn test_log_viewing_with_pagination() {
 
     // Get all logs (baseline)
     let all_logs = api
-        .get_task_logs(&task.id, Some("planning"))
+        .get_task_logs(&task.id, Some("planning"), None)
         .expect("get all logs");
     assert_eq!(all_logs.len(), 10);
 
@@ -392,6 +392,83 @@ fn test_stages_with_logs() {
     let stages = api.get_stages_with_logs(&task.id).expect("get stages");
     assert_eq!(stages.len(), 1);
     assert_eq!(stages[0], "planning");
+}
+
+#[test]
+fn test_get_logs_by_session_id() {
+    let (api, store, _temp_dir) = setup_test_env(&test_workflow());
+
+    // Create task
+    let task = api
+        .create_task("Test task", "Description", None)
+        .expect("create task");
+
+    // Create first session and add logs
+    let session1 =
+        sessions::save_session(&*store, "session-1", &task.id, "planning").expect("save session 1");
+    store
+        .append_log_entry(
+            &session1.id,
+            &LogEntry::Text {
+                content: "Log from session 1".to_string(),
+            },
+        )
+        .expect("append log to session 1");
+
+    // Create second session (simulating rejection/retry) and add logs
+    let session2 =
+        sessions::save_session(&*store, "session-2", &task.id, "planning").expect("save session 2");
+    store
+        .append_log_entry(
+            &session2.id,
+            &LogEntry::Text {
+                content: "Log from session 2".to_string(),
+            },
+        )
+        .expect("append log to session 2");
+
+    // Fetch by specific session_id (session 1) - should get only session 1 logs
+    let logs = api
+        .get_task_logs(&task.id, None, Some(&session1.id))
+        .expect("get logs by session_id");
+    assert_eq!(logs.len(), 1);
+    if let LogEntry::Text { content } = &logs[0] {
+        assert!(
+            content.contains("session 1"),
+            "Expected log from session 1, got: {content}"
+        );
+    } else {
+        panic!("Expected Text log entry");
+    }
+
+    // Fetch by session 2 - should get only session 2 logs
+    let logs = api
+        .get_task_logs(&task.id, None, Some(&session2.id))
+        .expect("get logs for session 2");
+    assert_eq!(logs.len(), 1);
+    if let LogEntry::Text { content } = &logs[0] {
+        assert!(
+            content.contains("session 2"),
+            "Expected log from session 2, got: {content}"
+        );
+    } else {
+        panic!("Expected Text log entry");
+    }
+
+    // Verify session_id takes precedence over stage parameter
+    // Even when stage is provided, session_id should be used
+    let logs = api
+        .get_task_logs(&task.id, Some("work"), Some(&session1.id))
+        .expect("get logs with both stage and session_id");
+    assert_eq!(logs.len(), 1);
+    if let LogEntry::Text { content } = &logs[0] {
+        assert!(
+            content.contains("session 1"),
+            "session_id should take precedence over stage, got: {content}"
+        );
+    } else {
+        panic!("Expected Text log entry");
+    }
 }
 
 #[test]

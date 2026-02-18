@@ -46,7 +46,7 @@ pub struct DerivedTaskState {
     pub pending_questions: Vec<Question>,
     pub rejection_feedback: Option<String>,
     pub pending_rejection: Option<PendingRejection>,
-    pub stages_with_logs: Vec<String>,
+    pub stages_with_logs: Vec<StageLogInfo>,
     pub subtask_progress: Option<SubtaskProgress>,
 }
 
@@ -79,6 +79,32 @@ pub struct SubtaskProgress {
     pub waiting: usize,
 }
 
+/// Information about a single session within a stage for log display.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionLogInfo {
+    /// The unique session ID (UUID).
+    pub session_id: String,
+    /// The run number within this stage (1-indexed, ordered by `created_at`).
+    pub run_number: u32,
+    /// Whether this is the current (non-superseded) session.
+    pub is_current: bool,
+    /// When this session was created (RFC3339).
+    pub created_at: String,
+}
+
+/// Information about a stage's log sessions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StageLogInfo {
+    /// The stage name.
+    pub stage: String,
+    /// All sessions for this stage, ordered chronologically.
+    ///
+    /// Includes sessions in any state (Active, Spawning, Completed, Superseded, etc.).
+    /// This allows the UI to show tabs for in-progress sessions that may not have
+    /// produced logs yet.
+    pub sessions: Vec<SessionLogInfo>,
+}
+
 impl DerivedTaskState {
     /// Build derived state from a task and its related data.
     ///
@@ -93,7 +119,7 @@ impl DerivedTaskState {
         let pending_questions = extract_pending_questions(task, iterations);
         let rejection_feedback = extract_rejection_feedback(task, iterations);
         let pending_rejection = extract_pending_rejection(task, iterations);
-        let stages_with_logs = sessions.iter().map(|s| s.stage.clone()).collect();
+        let stages_with_logs = build_stages_with_logs(sessions);
         let subtask_progress = compute_subtask_progress(subtask_states);
 
         Self {
@@ -117,6 +143,60 @@ impl DerivedTaskState {
             subtask_progress,
         }
     }
+}
+
+/// Build grouped stage log info from sessions.
+///
+/// Groups sessions by stage name, orders by `created_at` within each group,
+/// and assigns run numbers (1-indexed). Includes all sessions regardless of state
+/// since any session could have logs.
+fn build_stages_with_logs(sessions: &[StageSession]) -> Vec<StageLogInfo> {
+    use std::collections::HashMap;
+
+    // Group sessions by stage
+    let mut by_stage: HashMap<String, Vec<&StageSession>> = HashMap::new();
+    for session in sessions {
+        by_stage
+            .entry(session.stage.clone())
+            .or_default()
+            .push(session);
+    }
+
+    // Convert to StageLogInfo, sorted by earliest session per stage
+    let mut result: Vec<StageLogInfo> = by_stage
+        .into_iter()
+        .map(|(stage, mut sessions_for_stage)| {
+            // Sort by created_at ascending
+            sessions_for_stage.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
+            let sessions = sessions_for_stage
+                .into_iter()
+                .enumerate()
+                .map(|(idx, s)| {
+                    // Run numbers are 1-indexed. Sessions per stage will never exceed u32::MAX.
+                    #[allow(clippy::cast_possible_truncation)]
+                    let run_number = (idx + 1) as u32;
+                    SessionLogInfo {
+                        session_id: s.id.clone(),
+                        run_number,
+                        is_current: s.session_state.is_current(),
+                        created_at: s.created_at.clone(),
+                    }
+                })
+                .collect();
+
+            StageLogInfo { stage, sessions }
+        })
+        .collect();
+
+    // Sort stages by their first session's created_at
+    result.sort_by(|a, b| {
+        let a_first = a.sessions.first().map(|s| &s.created_at);
+        let b_first = b.sessions.first().map(|s| &s.created_at);
+        a_first.cmp(&b_first)
+    });
+
+    result
 }
 
 /// Compute subtask progress from pre-computed subtask derived states.
@@ -390,16 +470,60 @@ mod tests {
     fn test_derived_state_stages_with_logs() {
         let task = make_task("planning");
 
-        let mut session1 = StageSession::new("ss-1", "task-1", "planning", "now");
+        let mut session1 = StageSession::new("ss-1", "task-1", "planning", "2025-01-24T10:00:00Z");
         session1.session_state = SessionState::Active;
 
-        let mut session2 = StageSession::new("ss-2", "task-1", "work", "now");
+        let mut session2 = StageSession::new("ss-2", "task-1", "work", "2025-01-24T11:00:00Z");
         session2.session_state = SessionState::Spawning;
 
         let derived = DerivedTaskState::build(&task, &[], &[session1, session2], &[]);
 
         // All sessions produce tabs, including Spawning
-        assert_eq!(derived.stages_with_logs, vec!["planning", "work"]);
+        assert_eq!(derived.stages_with_logs.len(), 2);
+        assert_eq!(derived.stages_with_logs[0].stage, "planning");
+        assert_eq!(derived.stages_with_logs[0].sessions.len(), 1);
+        assert_eq!(derived.stages_with_logs[0].sessions[0].run_number, 1);
+        assert!(derived.stages_with_logs[0].sessions[0].is_current);
+        assert_eq!(derived.stages_with_logs[1].stage, "work");
+    }
+
+    #[test]
+    fn test_derived_state_multiple_sessions_per_stage() {
+        let task = make_task("work");
+
+        // First review session - superseded
+        let mut session1 = StageSession::new("ss-1", "task-1", "review", "2025-01-24T10:00:00Z");
+        session1.session_state = SessionState::Superseded;
+
+        // Second review session - current
+        let mut session2 = StageSession::new("ss-2", "task-1", "review", "2025-01-24T11:00:00Z");
+        session2.session_state = SessionState::Active;
+
+        // Work session
+        let mut session3 = StageSession::new("ss-3", "task-1", "work", "2025-01-24T09:00:00Z");
+        session3.session_state = SessionState::Completed;
+
+        let derived = DerivedTaskState::build(&task, &[], &[session1, session2, session3], &[]);
+
+        // Should have 2 stages: work (first by created_at), then review
+        assert_eq!(derived.stages_with_logs.len(), 2);
+
+        // Work stage comes first (09:00)
+        assert_eq!(derived.stages_with_logs[0].stage, "work");
+        assert_eq!(derived.stages_with_logs[0].sessions.len(), 1);
+
+        // Review stage has 2 sessions
+        assert_eq!(derived.stages_with_logs[1].stage, "review");
+        assert_eq!(derived.stages_with_logs[1].sessions.len(), 2);
+
+        // Sessions are ordered chronologically with correct run numbers
+        assert_eq!(derived.stages_with_logs[1].sessions[0].run_number, 1);
+        assert_eq!(derived.stages_with_logs[1].sessions[0].session_id, "ss-1");
+        assert!(!derived.stages_with_logs[1].sessions[0].is_current); // superseded
+
+        assert_eq!(derived.stages_with_logs[1].sessions[1].run_number, 2);
+        assert_eq!(derived.stages_with_logs[1].sessions[1].session_id, "ss-2");
+        assert!(derived.stages_with_logs[1].sessions[1].is_current); // active
     }
 
     #[test]

@@ -353,7 +353,7 @@ export interface WorkflowTask {
 /**
  * State of a stage session.
  */
-export type SessionState = "spawning" | "active" | "completed" | "abandoned";
+export type SessionState = "spawning" | "active" | "completed" | "abandoned" | "superseded";
 
 /**
  * A stage session tracking Claude session continuity across iterations.
@@ -368,6 +368,30 @@ export interface WorkflowStageSession {
   session_state: SessionState;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Information about a single session within a stage for log display.
+ */
+export interface SessionLogInfo {
+  /** The unique session ID (UUID). */
+  session_id: string;
+  /** The run number within this stage (1-indexed, ordered chronologically). */
+  run_number: number;
+  /** Whether this is the current (non-superseded) session. */
+  is_current: boolean;
+  /** When this session was created (RFC3339). */
+  created_at: string;
+}
+
+/**
+ * Information about a stage's log sessions.
+ */
+export interface StageLogInfo {
+  /** The stage name. */
+  stage: string;
+  /** All sessions for this stage that have logs, ordered chronologically. */
+  sessions: SessionLogInfo[];
 }
 
 // =============================================================================
@@ -407,7 +431,7 @@ export interface DerivedTaskState {
   pending_questions: WorkflowQuestion[];
   rejection_feedback: string | null;
   pending_rejection: PendingRejection | null;
-  stages_with_logs: string[];
+  stages_with_logs: StageLogInfo[];
   subtask_progress: SubtaskProgress | null;
 }
 

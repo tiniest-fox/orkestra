@@ -27,6 +27,17 @@ pub enum SessionState {
     Superseded,
 }
 
+impl SessionState {
+    /// Check if this state represents a "current" (non-superseded) session.
+    ///
+    /// Used by the view layer to determine which session is the active one for a stage.
+    /// All states except `Superseded` are considered current, since even completed
+    /// or abandoned sessions are the "final" session for that run of the stage.
+    pub fn is_current(self) -> bool {
+        self != Self::Superseded
+    }
+}
+
 /// A session wrapper that maintains Claude session continuity across iterations within a stage.
 ///
 /// All iterations for a given task+stage share a single `StageSession`. The session
@@ -304,6 +315,16 @@ mod tests {
             serde_json::to_string(&superseded).unwrap(),
             "\"superseded\""
         );
+    }
+
+    #[test]
+    fn test_session_state_is_current() {
+        // All states except Superseded are considered "current"
+        assert!(SessionState::Spawning.is_current());
+        assert!(SessionState::Active.is_current());
+        assert!(SessionState::Completed.is_current());
+        assert!(SessionState::Abandoned.is_current());
+        assert!(!SessionState::Superseded.is_current());
     }
 
     #[test]

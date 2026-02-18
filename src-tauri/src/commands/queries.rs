@@ -152,32 +152,16 @@ pub fn workflow_list_branches(
     })
 }
 
-/// Get stages that have logs for a task.
+/// Get log entries for a task's stage or a specific session.
 ///
-/// Returns the names of stages that have log entries in the database.
-/// Used by the UI to show tabs for each stage that has been executed.
-#[tauri::command]
-pub fn workflow_get_stages_with_logs(
-    registry: State<ProjectRegistry>,
-    window: Window,
-    task_id: String,
-) -> Result<Vec<String>, TauriError> {
-    registry.with_project(window.label(), |state| {
-        state
-            .api()?
-            .get_stages_with_logs(&task_id)
-            .map_err(Into::into)
-    })
-}
-
-/// Get log entries for a task's stage.
-///
-/// Reads log entries from the database for the task's current (or specified)
-/// stage session.
+/// Reads log entries from the database for a specific session, or the task's
+/// current (or specified) stage session.
 ///
 /// # Arguments
 /// * `task_id` - The task ID
 /// * `stage` - Optional stage name. If None, uses the task's current stage.
+/// * `session_id` - Optional session ID. If provided, fetches logs for that
+///   specific session directly (takes precedence over `stage`).
 ///
 /// # Returns
 /// Vec of LogEntry representing agent activity (tool uses, text output, etc.)
@@ -188,11 +172,12 @@ pub fn workflow_get_logs(
     window: Window,
     task_id: String,
     stage: Option<String>,
+    session_id: Option<String>,
 ) -> Result<Vec<LogEntry>, TauriError> {
     registry.with_project(window.label(), |state| {
         state
             .api()?
-            .get_task_logs(&task_id, stage.as_deref())
+            .get_task_logs(&task_id, stage.as_deref(), session_id.as_deref())
             .map_err(Into::into)
     })
 }

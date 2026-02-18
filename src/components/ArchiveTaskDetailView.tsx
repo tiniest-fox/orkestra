@@ -112,7 +112,9 @@ export function ArchiveTaskDetailView({
                       error={logsState.error}
                       stagesWithLogs={logsState.stagesWithLogs}
                       activeLogStage={logsState.activeLogStage}
+                      activeSessionId={logsState.activeSessionId}
                       onStageChange={logsState.setActiveLogStage}
+                      onSessionChange={logsState.setActiveSessionId}
                     />
                   )}
                 </TabbedPanel>

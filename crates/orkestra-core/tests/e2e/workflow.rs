@@ -6161,11 +6161,11 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
 
 /// Test that requesting update on a Done task returns it to recovery stage with feedback.
 ///
-/// This test verifies the full request_update flow:
+/// This test verifies the full `request_update` flow:
 /// 1. Task reaches Done status after review approval
-/// 2. User calls request_update with feedback
+/// 2. User calls `request_update` with feedback
 /// 3. Task returns to the recovery stage (work)
-/// 4. A new iteration is created with IterationTrigger::Feedback
+/// 4. A new iteration is created with `IterationTrigger::Feedback`
 /// 5. Agent receives the feedback in its resume prompt
 #[test]
 fn test_request_update_on_done_task() {

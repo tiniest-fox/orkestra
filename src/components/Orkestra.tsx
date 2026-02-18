@@ -139,6 +139,10 @@ export function Orkestra() {
     }
   };
 
+  const handleArchiveTask = () => {
+    closeFocus();
+  };
+
   const handleTaskCreated = async (
     description: string,
     autoMode: boolean,
@@ -319,6 +323,7 @@ export function Orkestra() {
                 task={currentSelectedTask}
                 onClose={closeFocus}
                 onDelete={() => handleDeleteTask(currentSelectedTask.id)}
+                onArchive={handleArchiveTask}
                 subtasks={currentSubtasks}
                 selectedSubtaskId={layout.subtaskId ?? undefined}
                 onSelectSubtask={handleSelectSubtask}

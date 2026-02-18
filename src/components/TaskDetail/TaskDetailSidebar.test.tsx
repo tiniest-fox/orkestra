@@ -340,16 +340,24 @@ describe("TaskDetailSidebar", () => {
       expect(screen.queryByRole("button", { name: /archive/i })).not.toBeInTheDocument();
     });
 
-    it("calls archiveTask when Archive is clicked", async () => {
+    it("calls archiveTask and onArchive callback when Archive is clicked", async () => {
       mockGetPrStatus.mockReturnValue(createMockPrStatus("merged"));
       const task = createMockWorkflowTaskView({
         state: { type: "done" },
         pr_url: "https://github.com/test/repo/pull/42",
         derived: { is_done: true },
       });
+      const onArchive = vi.fn();
 
       await act(async () => {
-        render(<TaskDetailSidebar task={task} onClose={() => {}} onDelete={() => {}} />);
+        render(
+          <TaskDetailSidebar
+            task={task}
+            onClose={() => {}}
+            onDelete={() => {}}
+            onArchive={onArchive}
+          />,
+        );
       });
 
       await act(async () => {
@@ -357,6 +365,7 @@ describe("TaskDetailSidebar", () => {
       });
 
       expect(mockArchiveTask).toHaveBeenCalled();
+      expect(onArchive).toHaveBeenCalled();
     });
   });
 

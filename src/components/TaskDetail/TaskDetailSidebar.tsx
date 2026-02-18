@@ -47,6 +47,8 @@ interface TaskDetailSidebarProps {
   task: WorkflowTaskView;
   onClose: () => void;
   onDelete?: () => void;
+  /** Called after a task is successfully archived. */
+  onArchive?: () => void;
   /** Subtasks for this task (from shared TasksProvider). */
   subtasks?: WorkflowTaskView[];
   selectedSubtaskId?: string;
@@ -57,6 +59,7 @@ export function TaskDetailSidebar({
   task,
   onClose,
   onDelete,
+  onArchive,
   subtasks,
   selectedSubtaskId,
   onSelectSubtask,
@@ -143,6 +146,11 @@ export function TaskDetailSidebar({
     } catch (err) {
       console.error("Failed to toggle auto mode:", err);
     }
+  };
+
+  const handleArchive = async () => {
+    await archiveTask();
+    onArchive?.();
   };
 
   // Determine which footer panel to show
@@ -324,7 +332,7 @@ export function TaskDetailSidebar({
           />
         )}
 
-        {showArchive && <ArchivePanel onArchive={archiveTask} isSubmitting={isSubmitting} />}
+        {showArchive && <ArchivePanel onArchive={handleArchive} isSubmitting={isSubmitting} />}
 
         {showPrIssues && prStatus && (
           <PrIssuesPanel

@@ -129,11 +129,12 @@ vi.mock("../hooks/useFocusTaskListener", () => ({
 
 // Import after mocking to get the mocked versions
 import type { DisplayContextValue, LayoutState } from "../providers";
-import { useDisplayContext, useTasks } from "../providers";
+import { useAutoTaskTemplates, useDisplayContext, useTasks } from "../providers";
 import { PRESETS } from "../providers/presets";
 
 const mockUseTasks = useTasks as ReturnType<typeof vi.fn>;
 const mockUseDisplayContext = useDisplayContext as ReturnType<typeof vi.fn>;
+const mockUseAutoTaskTemplates = useAutoTaskTemplates as ReturnType<typeof vi.fn>;
 
 describe("Orkestra - View Toggle", () => {
   let displayContextValue: DisplayContextValue;
@@ -457,5 +458,109 @@ describe("Orkestra - View Toggle", () => {
     expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /reject/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("Orkestra - Auto Task Templates", () => {
+  let displayContextValue: DisplayContextValue;
+  let mockCreateTask: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    resetMocks();
+
+    const initialLayout: LayoutState = {
+      preset: "Board",
+      isArchive: false,
+      taskId: null,
+      subtaskId: null,
+      commitHash: null,
+    };
+
+    displayContextValue = {
+      layout: initialLayout,
+      activePreset: PRESETS.Board,
+      showBoard: vi.fn(),
+      showTask: vi.fn(),
+      showSubtask: vi.fn(),
+      showNewTask: vi.fn(),
+      showTaskDiff: vi.fn(),
+      showSubtaskDiff: vi.fn(),
+      toggleGitHistory: vi.fn(),
+      selectCommit: vi.fn(),
+      deselectCommit: vi.fn(),
+      toggleAssistant: vi.fn(),
+      toggleAssistantHistory: vi.fn(),
+      closeFocus: vi.fn(),
+      closeSubtask: vi.fn(),
+      closeDiff: vi.fn(),
+      closeAssistantHistory: vi.fn(),
+      switchToArchive: vi.fn(),
+      switchToActive: vi.fn(),
+      navigateToTask: vi.fn(),
+    };
+
+    mockUseDisplayContext.mockImplementation(() => displayContextValue);
+
+    mockCreateTask = vi.fn(() => Promise.resolve());
+    mockUseTasks.mockReturnValue({
+      tasks: [],
+      archivedTasks: [],
+      loading: false,
+      error: null,
+      createTask: mockCreateTask,
+      createSubtask: vi.fn(() => Promise.resolve()),
+      deleteTask: vi.fn(() => Promise.resolve()),
+      refetch: vi.fn(() => Promise.resolve()),
+    });
+  });
+
+  it("shows template dropdown when templates are available", async () => {
+    mockUseAutoTaskTemplates.mockReturnValue([
+      { filename: "test.yaml", title: "Test Template", description: "Test", auto_run: true },
+    ]);
+
+    await act(async () => {
+      render(<Orkestra />);
+    });
+
+    expect(screen.getByRole("button", { name: "Task templates" })).toBeInTheDocument();
+  });
+
+  it("does not show template dropdown when no templates", async () => {
+    mockUseAutoTaskTemplates.mockReturnValue([]);
+
+    await act(async () => {
+      render(<Orkestra />);
+    });
+
+    expect(screen.queryByRole("button", { name: "Task templates" })).not.toBeInTheDocument();
+  });
+
+  it("calls createTask when template is selected", async () => {
+    const template = {
+      filename: "test.yaml",
+      title: "Test Template",
+      description: "Test description",
+      auto_run: true,
+      flow: "quick",
+    };
+    mockUseAutoTaskTemplates.mockReturnValue([template]);
+
+    await act(async () => {
+      render(<Orkestra />);
+    });
+
+    // Open dropdown
+    await act(async () => {
+      screen.getByRole("button", { name: "Task templates" }).click();
+    });
+
+    // Click template
+    await act(async () => {
+      screen.getByText("Test Template").click();
+    });
+
+    // createTask is called with: (title, description, autoMode, baseBranch, flow)
+    expect(mockCreateTask).toHaveBeenCalledWith("", "Test description", true, undefined, "quick");
   });
 });

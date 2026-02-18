@@ -18,6 +18,7 @@ import type { AutoTaskTemplate, WorkflowTask, WorkflowTaskView } from "../types/
 import { ArchivedListView } from "./ArchivedListView";
 import { ArchiveTaskDetailView } from "./ArchiveTaskDetailView";
 import { AssistantPanel, SessionHistory } from "./Assistant";
+import { AutoTaskDropdown } from "./AutoTaskDropdown";
 import { BranchIndicator } from "./BranchIndicator";
 import { CommandPalette } from "./CommandPalette";
 import { CommitDiffPanel, CommitHistoryPanel } from "./CommitHistory";
@@ -206,17 +207,8 @@ export function Orkestra() {
           <BranchIndicator />
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {autoTaskTemplates.map((template) => (
-            <Button
-              key={template.filename}
-              variant="secondary"
-              size="sm"
-              onClick={() => handleAutoTask(template)}
-            >
-              {template.title}
-            </Button>
-          ))}
           <Button onClick={showNewTask}>+ New Task</Button>
+          <AutoTaskDropdown templates={autoTaskTemplates} onSelect={handleAutoTask} />
         </div>
       </div>
 

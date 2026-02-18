@@ -81,41 +81,21 @@ fn resolve_recovery_stage(workflow: &WorkflowConfig, flow: Option<&str>) -> Work
 mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::config::{
-        IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
-    };
+    use crate::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
     use crate::workflow::domain::Task;
     use crate::workflow::iteration::IterationService;
     use std::sync::Arc;
 
     fn test_workflow() -> WorkflowConfig {
-        WorkflowConfig {
-            stages: vec![
-                StageConfig {
-                    name: "planning".to_string(),
-                    artifact: "plan".to_string(),
-                    ..Default::default()
-                },
-                StageConfig {
-                    name: "work".to_string(),
-                    artifact: "summary".to_string(),
-                    capabilities: StageCapabilities {
-                        approval: Some(Default::default()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            ],
-            integration: IntegrationConfig {
-                on_failure: "work".to_string(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
+        WorkflowConfig::new(vec![
+            StageConfig::new("planning", "plan"),
+            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+        ])
+        .with_integration(IntegrationConfig::new("work"))
     }
 
     fn create_done_task(store: &Arc<InMemoryWorkflowStore>) -> Task {
-        let mut task = Task::new("task-1", "Test", "Description", "now");
+        let mut task = Task::new("task-1", "Test", "Description", "planning", "now");
         task.state = TaskState::Done;
         store.save_task(&task).unwrap();
         task
@@ -177,7 +157,7 @@ mod tests {
         let iteration_service = IterationService::new(store.clone());
 
         // Create task in Queued state (not Done)
-        let mut task = Task::new("task-1", "Test", "Description", "now");
+        let mut task = Task::new("task-1", "Test", "Description", "planning", "now");
         task.state = TaskState::queued("planning");
         store.save_task(&task).unwrap();
 
@@ -199,13 +179,7 @@ mod tests {
         let task = create_done_task(&store);
 
         // Empty feedback should be rejected
-        let result = execute(
-            store.as_ref(),
-            &workflow,
-            &iteration_service,
-            &task.id,
-            "",
-        );
+        let result = execute(store.as_ref(), &workflow, &iteration_service, &task.id, "");
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
 
         // Whitespace-only feedback should also be rejected

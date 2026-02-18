@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra Workshop - Diff Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Nunito+Sans:ital,opsz,wght@0,6..12,300;0,6..12,400;0,6..12,500;0,6..12,600;0,6..12,700;1,6..12,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --canvas: #faf8f5; --surface-1: #ffffff; --surface-2: #f5f2ee; --surface-3: #ede9e3;
+  --surface-hover: #f0ece6;
+  --terracotta: #c4643a; --terracotta-dim: #d4835f; --terracotta-bg: #fdf0ea;
+  --sage: #6b8f71; --sage-dim: #8aab8f; --sage-bg: #eef5ef;
+  --slate: #4a6280; --slate-dim: #7490ab; --slate-bg: #edf2f7;
+  --charcoal: #2d2926;
+  --success: #5a9a60; --success-bg: #eef5ef;
+  --warning: #c49a3a; --warning-bg: #fdf6ea;
+  --error: #c44a3a; --error-bg: #fdf0ea;
+  --info: #4a7ac4;
+  --text-primary: #2d2926; --text-secondary: #6b6560; --text-tertiary: #9b9590;
+  --text-inverse: #faf8f5;
+  --border: #e5e0d8; --border-light: #ede9e3; --border-focus: var(--terracotta);
+  --font-heading: 'Fraunces', serif; --font-body: 'Nunito Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px;
+  --sp-6: 24px; --sp-8: 32px;
+  --radius-sm: 8px; --radius-md: 16px; --radius-full: 9999px;
+  --shadow-sm: 0 1px 3px rgba(45,41,38,0.06), 0 1px 2px rgba(45,41,38,0.04);
+  --shadow-md: 0 4px 12px rgba(45,41,38,0.08), 0 2px 4px rgba(45,41,38,0.04);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms; --duration-normal: 300ms;
+}
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-body); color: var(--text-primary); background: var(--canvas); line-height: 1.5; }
+
+.mono { font-family: var(--font-mono); }
+
+/* -- Page Layout -- */
+.page { min-height: 100vh; display: flex; flex-direction: column; }
+
+.page-header {
+  padding: var(--sp-4) var(--sp-6);
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--canvas); position: sticky; top: 0; z-index: 100;
+}
+.page-title { font-family: var(--font-heading); font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; }
+
+/* -- Buttons -- */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4); font-family: var(--font-body);
+  font-size: 0.875rem; font-weight: 600; border: none;
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+.btn:hover { transform: translateY(-1px); }
+.btn-ghost { background: transparent; color: var(--text-secondary); }
+.btn-ghost:hover { background: var(--surface-2); color: var(--text-primary); }
+.btn-sm { padding: var(--sp-1) var(--sp-3); font-size: 0.8125rem; }
+.btn-secondary { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); }
+
+/* -- Badges -- */
+.badge {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: 2px var(--sp-2); font-size: 0.6875rem; font-weight: 600;
+  letter-spacing: 0.02em; text-transform: uppercase; border-radius: var(--radius-full);
+}
+.badge-working { background: var(--sage-bg); color: var(--sage); }
+
+/* -- Breadcrumb -- */
+.focus-breadcrumb {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-6); font-size: 0.8125rem; color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border-light);
+}
+.focus-breadcrumb a { color: var(--terracotta); text-decoration: none; }
+.focus-breadcrumb a:hover { text-decoration: underline; }
+
+/* -- Diff Layout (two-column) -- */
+.diff-layout {
+  display: grid; grid-template-columns: 260px 1fr;
+  flex: 1; overflow: hidden;
+}
+
+@media (max-width: 800px) {
+  .diff-layout { grid-template-columns: 1fr; }
+  .file-panel { max-height: 200px; }
+}
+
+/* -- File Panel (left) -- */
+.file-panel {
+  border-right: 1px solid var(--border-light);
+  overflow-y: auto; background: var(--surface-1);
+}
+
+.file-panel-header {
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-light);
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; background: var(--surface-1); z-index: 10;
+}
+
+.file-panel-title {
+  font-family: var(--font-heading); font-size: 0.8125rem; font-weight: 500;
+  color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+.file-panel-count {
+  font-family: var(--font-mono); font-size: 0.6875rem; color: var(--text-tertiary);
+}
+
+.file-list { list-style: none; }
+
+.file-item {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  font-size: 0.8125rem; cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.file-item:hover { background: var(--surface-hover); }
+
+.file-item--active {
+  background: var(--terracotta-bg);
+  border-left-color: var(--terracotta);
+}
+
+.file-item-icon {
+  width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0;
+}
+.file-item-icon--modified { background: var(--warning); }
+.file-item-icon--added { background: var(--success); }
+.file-item-icon--deleted { background: var(--error); }
+
+.file-item-name {
+  font-family: var(--font-mono); font-size: 0.75rem;
+  color: var(--text-primary); flex: 1; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+
+.file-item-stats {
+  font-family: var(--font-mono); font-size: 0.6875rem;
+  display: flex; gap: var(--sp-1); flex-shrink: 0;
+}
+
+.file-item-add { color: var(--success); }
+.file-item-del { color: var(--error); }
+
+/* -- Diff Content (right) -- */
+.diff-content {
+  overflow-y: auto; background: var(--surface-1);
+}
+
+.diff-file-header {
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--surface-2); border-bottom: 1px solid var(--border-light);
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 10;
+}
+
+.diff-file-path {
+  font-family: var(--font-mono); font-size: 0.8125rem; color: var(--text-primary);
+}
+
+.diff-file-stats {
+  font-family: var(--font-mono); font-size: 0.75rem;
+  display: flex; gap: var(--sp-3);
+}
+
+/* Hunk header */
+.diff-hunk {
+  padding: var(--sp-1) var(--sp-5);
+  background: var(--slate-bg);
+  font-family: var(--font-mono); font-size: 0.6875rem;
+  color: var(--slate); border-bottom: 1px solid var(--border-light);
+}
+
+/* Diff lines */
+.diff-line {
+  display: flex; font-family: var(--font-mono); font-size: 0.75rem;
+  line-height: 1.7; border-bottom: 1px solid rgba(0,0,0,0.02);
+}
+
+.diff-line:hover { filter: brightness(0.97); }
+
+.diff-line-number {
+  width: 40px; text-align: right; padding-right: var(--sp-2);
+  color: var(--text-tertiary); user-select: none; flex-shrink: 0;
+  font-size: 0.6875rem;
+}
+
+.diff-line-number--old { border-right: 1px solid var(--border-light); }
+
+.diff-line-content {
+  flex: 1; padding: 0 var(--sp-3);
+  white-space: pre-wrap; word-break: break-all;
+}
+
+/* Line types */
+.diff-line--context { background: var(--surface-1); }
+.diff-line--add { background: rgba(90, 154, 96, 0.08); }
+.diff-line--add .diff-line-content { color: var(--text-primary); }
+.diff-line--del { background: rgba(196, 74, 58, 0.08); }
+.diff-line--del .diff-line-content { color: var(--text-primary); }
+
+.diff-line--add .diff-line-number { color: var(--success); }
+.diff-line--del .diff-line-number { color: var(--error); }
+
+/* Inline highlights within changed lines */
+.diff-highlight-add { background: rgba(90, 154, 96, 0.2); border-radius: 2px; padding: 0 1px; }
+.diff-highlight-del { background: rgba(196, 74, 58, 0.2); border-radius: 2px; padding: 0 1px; }
+
+/* -- Toggle bar (unified / split) -- */
+.diff-toolbar {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+  border-bottom: 1px solid var(--border-light);
+  background: var(--surface-1);
+}
+
+.diff-toggle {
+  display: flex; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.diff-toggle-btn {
+  padding: var(--sp-1) var(--sp-3);
+  font-family: var(--font-body); font-size: 0.75rem; font-weight: 600;
+  border: none; cursor: pointer;
+  background: var(--surface-1); color: var(--text-secondary);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.diff-toggle-btn--active {
+  background: var(--terracotta); color: var(--text-inverse);
+}
+
+.diff-toggle-btn:not(.diff-toggle-btn--active):hover {
+  background: var(--surface-2);
+}
+
+/* -- View Description -- */
+.view-description {
+  text-align: center; padding: var(--sp-4) var(--sp-8);
+  color: var(--text-tertiary); font-size: 0.875rem;
+  border-bottom: 1px solid var(--border-light);
+}
+.view-description h2 {
+  font-family: var(--font-heading); font-size: 1.125rem; font-weight: 500;
+  color: var(--text-secondary); margin-bottom: var(--sp-2);
+}
+
+/* -- Assistant Bubble -- */
+.assistant-bubble {
+  position: fixed; bottom: var(--sp-6); right: var(--sp-6);
+  width: 48px; height: 48px; border-radius: var(--radius-full);
+  background: var(--terracotta); color: var(--text-inverse);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 24px rgba(45,41,38,0.10); cursor: pointer;
+  font-size: 1.25rem; z-index: 200; border: 3px solid var(--canvas);
+  transition: all var(--duration-normal) var(--ease-spring);
+}
+.assistant-bubble:hover { transform: scale(1.1); }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <header class="page-header">
+    <h1 class="page-title">Orkestra</h1>
+    <div style="display: flex; align-items: center; gap: var(--sp-3);">
+      <button class="btn btn-ghost btn-sm">Back to Task</button>
+      <button class="btn btn-ghost btn-sm">Esc</button>
+    </div>
+  </header>
+
+  <div class="view-description">
+    <h2>Focus Sub-View: Code Diff</h2>
+    <p>The diff viewer replaces the Focus view's main content. File list on the left, unified diff on the right. Toggle between unified and split modes. Press Escape or "Back to Task" to return to the previous focus content.</p>
+  </div>
+
+  <!-- Breadcrumb -->
+  <nav class="focus-breadcrumb">
+    <a href="preview.html">Workbench</a>
+    <span>/</span>
+    <a href="activity.html">User settings page implementation</a>
+    <span>/</span>
+    <span>Changes</span>
+  </nav>
+
+  <!-- Diff toolbar -->
+  <div class="diff-toolbar">
+    <div class="diff-toggle">
+      <button class="diff-toggle-btn diff-toggle-btn--active">Unified</button>
+      <button class="diff-toggle-btn">Split</button>
+    </div>
+    <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-tertiary);">6 files changed</span>
+    <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--success);">+187</span>
+    <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--error);">-34</span>
+  </div>
+
+  <div class="diff-layout">
+    <!-- File Panel -->
+    <div class="file-panel">
+      <div class="file-panel-header">
+        <span class="file-panel-title">Files</span>
+        <span class="file-panel-count">6</span>
+      </div>
+      <ul class="file-list">
+        <li class="file-item file-item--active">
+          <span class="file-item-icon file-item-icon--modified"></span>
+          <span class="file-item-name">src/types/user.ts</span>
+          <div class="file-item-stats">
+            <span class="file-item-add">+12</span>
+            <span class="file-item-del">-3</span>
+          </div>
+        </li>
+        <li class="file-item">
+          <span class="file-item-icon file-item-icon--added"></span>
+          <span class="file-item-name">src/components/Settings/ThemeSelector.tsx</span>
+          <div class="file-item-stats">
+            <span class="file-item-add">+87</span>
+          </div>
+        </li>
+        <li class="file-item">
+          <span class="file-item-icon file-item-icon--added"></span>
+          <span class="file-item-name">src/components/Settings/NotificationPrefs.tsx</span>
+          <div class="file-item-stats">
+            <span class="file-item-add">+64</span>
+          </div>
+        </li>
+        <li class="file-item">
+          <span class="file-item-icon file-item-icon--modified"></span>
+          <span class="file-item-name">src/components/Settings/SettingsForm.tsx</span>
+          <div class="file-item-stats">
+            <span class="file-item-add">+18</span>
+            <span class="file-item-del">-4</span>
+          </div>
+        </li>
+        <li class="file-item">
+          <span class="file-item-icon file-item-icon--modified"></span>
+          <span class="file-item-name">src/components/Settings/SettingsPage.tsx</span>
+          <div class="file-item-stats">
+            <span class="file-item-add">+6</span>
+            <span class="file-item-del">-2</span>
+          </div>
+        </li>
+        <li class="file-item">
+          <span class="file-item-icon file-item-icon--modified"></span>
+          <span class="file-item-name">src/hooks/useSettings.ts</span>
+          <div class="file-item-stats">
+            <span class="file-item-add">+24</span>
+            <span class="file-item-del">-8</span>
+          </div>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Diff Content -->
+    <div class="diff-content">
+      <div class="diff-file-header">
+        <span class="diff-file-path">src/types/user.ts</span>
+        <div class="diff-file-stats">
+          <span style="color: var(--success);">+12</span>
+          <span style="color: var(--error);">-3</span>
+        </div>
+      </div>
+
+      <div class="diff-hunk">@@ -14,8 +14,17 @@ export interface UserPreferences {</div>
+
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">14</span>
+        <span class="diff-line-number diff-line-number--old">14</span>
+        <span class="diff-line-content">  language: string;</span>
+      </div>
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">15</span>
+        <span class="diff-line-number diff-line-number--old">15</span>
+        <span class="diff-line-content">  timezone: string;</span>
+      </div>
+      <div class="diff-line diff-line--del">
+        <span class="diff-line-number"></span>
+        <span class="diff-line-number diff-line-number--old">16</span>
+        <span class="diff-line-content">  <span class="diff-highlight-del">displayMode</span>: 'compact' | 'comfortable';</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">16</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">  <span class="diff-highlight-add">theme</span>: 'light' | 'dark' | 'system';</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">17</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">  <span class="diff-highlight-add">displayDensity</span>: 'compact' | 'comfortable' | 'spacious';</span>
+      </div>
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">18</span>
+        <span class="diff-line-number diff-line-number--old">17</span>
+        <span class="diff-line-content">  emailNotifications: boolean;</span>
+      </div>
+      <div class="diff-line diff-line--del">
+        <span class="diff-line-number"></span>
+        <span class="diff-line-number diff-line-number--old">18</span>
+        <span class="diff-line-content">  <span class="diff-highlight-del">pushEnabled</span>: boolean;</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">19</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">  <span class="diff-highlight-add">notifications</span>: NotificationPreferences;</span>
+      </div>
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">20</span>
+        <span class="diff-line-number diff-line-number--old">19</span>
+        <span class="diff-line-content">}</span>
+      </div>
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">21</span>
+        <span class="diff-line-number diff-line-number--old">20</span>
+        <span class="diff-line-content"></span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">22</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content"><span class="diff-highlight-add">export interface NotificationPreferences {</span></span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">23</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content"><span class="diff-highlight-add">  push: boolean;</span></span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">24</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content"><span class="diff-highlight-add">  email: boolean;</span></span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">25</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content"><span class="diff-highlight-add">  inApp: boolean;</span></span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">26</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content"><span class="diff-highlight-add">  digest: 'realtime' | 'hourly' | 'daily';</span></span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">27</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content"><span class="diff-highlight-add">  quietHours: { start: string; end: string } | null;</span></span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">28</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content"><span class="diff-highlight-add">}</span></span>
+      </div>
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">29</span>
+        <span class="diff-line-number diff-line-number--old">21</span>
+        <span class="diff-line-content">export type UserRole = 'admin' | 'member' | 'viewer';</span>
+      </div>
+
+      <div class="diff-hunk">@@ -32,7 +41,7 @@ export function getDefaultPreferences(): UserPreferences {</div>
+
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">41</span>
+        <span class="diff-line-number diff-line-number--old">32</span>
+        <span class="diff-line-content">    language: 'en',</span>
+      </div>
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">42</span>
+        <span class="diff-line-number diff-line-number--old">33</span>
+        <span class="diff-line-content">    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,</span>
+      </div>
+      <div class="diff-line diff-line--del">
+        <span class="diff-line-number"></span>
+        <span class="diff-line-number diff-line-number--old">34</span>
+        <span class="diff-line-content">    displayMode: 'comfortable',</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">43</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">    theme: 'system',</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">44</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">    displayDensity: 'comfortable',</span>
+      </div>
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">45</span>
+        <span class="diff-line-number diff-line-number--old">35</span>
+        <span class="diff-line-content">    emailNotifications: true,</span>
+      </div>
+      <div class="diff-line diff-line--del">
+        <span class="diff-line-number"></span>
+        <span class="diff-line-number diff-line-number--old">36</span>
+        <span class="diff-line-content">    pushEnabled: true,</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">46</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">    notifications: {</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">47</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">      push: true,</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">48</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">      email: true,</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">49</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">      inApp: true,</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">50</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">      digest: 'realtime',</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">51</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">      quietHours: null,</span>
+      </div>
+      <div class="diff-line diff-line--add">
+        <span class="diff-line-number">52</span>
+        <span class="diff-line-number diff-line-number--old"></span>
+        <span class="diff-line-content">    },</span>
+      </div>
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">53</span>
+        <span class="diff-line-number diff-line-number--old">37</span>
+        <span class="diff-line-content">  };</span>
+      </div>
+      <div class="diff-line diff-line--context">
+        <span class="diff-line-number">54</span>
+        <span class="diff-line-number diff-line-number--old">38</span>
+        <span class="diff-line-content">}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="assistant-bubble">?</div>
+
+</body>
+</html>

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra — Failed Task</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-0: #111110; --bg-1: #1a1918; --bg-2: #222120; --bg-3: #2c2b29;
+  --bg-hover: #262523; --bg-active: #302e2c;
+  --green: #3dd68c; --green-dim: #264d38; --green-bg: rgba(61, 214, 140, 0.08);
+  --amber: #f0b429; --amber-bg: rgba(240, 180, 41, 0.08);
+  --red: #e5534b; --red-dim: #5c2b28; --red-bg: rgba(229, 83, 75, 0.08);
+  --blue: #539bf5; --blue-bg: rgba(83, 155, 245, 0.08);
+  --orange: #e0823d; --orange-bg: rgba(224, 130, 61, 0.08);
+  --text-0: #ecebe9; --text-1: #b5b3b0; --text-2: #7c7a77; --text-3: #545250;
+  --border: rgba(236, 235, 233, 0.08); --border-active: rgba(236, 235, 233, 0.16);
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+  --radius-sm: 6px; --radius-md: 10px;
+}
+
+.light {
+  --bg-0: #f8f7f6; --bg-1: #ffffff; --bg-2: #f0efed; --bg-3: #e6e4e1;
+  --bg-hover: #efeeec; --bg-active: #e8e6e4;
+  --text-0: #1a1918; --text-1: #4a4846; --text-2: #8a8886; --text-3: #b5b3b0;
+  --border: rgba(26, 25, 24, 0.08); --border-active: rgba(26, 25, 24, 0.16);
+  --green: #1a8a52; --amber: #b08a14; --red: #c44a3a; --blue: #2a6bc4; --orange: #c4643a;
+  --red-bg: rgba(196, 74, 58, 0.06);
+}
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-ui); background: var(--bg-0); color: var(--text-0); line-height: 1.5; }
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* -- Shared Chrome -- */
+.command-bar {
+  display: flex; align-items: center; gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-5); background: var(--bg-1);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; height: 44px;
+}
+.command-bar-brand { font-weight: 700; font-size: 0.8125rem; letter-spacing: -0.02em; user-select: none; }
+.command-bar-sep { width: 1px; height: 16px; background: var(--border-active); flex-shrink: 0; }
+.breadcrumb { display: flex; align-items: center; gap: var(--sp-2); font-size: 0.8125rem; color: var(--text-2); flex: 1; }
+.breadcrumb .link { color: var(--orange); cursor: pointer; text-decoration: none; }
+.breadcrumb .link:hover { text-decoration: underline; }
+.breadcrumb .sep { color: var(--text-3); }
+.breadcrumb .current { color: var(--text-0); font-weight: 500; }
+.bar-hints { display: flex; align-items: center; gap: var(--sp-3); font-size: 0.6875rem; color: var(--text-3); flex-shrink: 0; }
+.bar-hints kbd { font-family: var(--font-mono); font-weight: 500; color: var(--text-2); font-size: 0.6875rem; }
+.theme-toggle {
+  padding: var(--sp-1) var(--sp-2); font-family: var(--font-mono); font-size: 0.625rem;
+  color: var(--text-3); cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: none;
+}
+.theme-toggle:hover { color: var(--text-1); border-color: var(--border-active); }
+
+/* -- Focus View -- */
+.focus-main { flex: 1; overflow-y: auto; padding: var(--sp-6) var(--sp-8); max-width: 800px; }
+.focus-header { margin-bottom: var(--sp-5); }
+.focus-title { font-size: 1.125rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: var(--sp-1); }
+.focus-subtitle { font-size: 0.8125rem; color: var(--red); margin-bottom: var(--sp-2); }
+.focus-meta {
+  display: flex; align-items: center; gap: var(--sp-4);
+  font-family: var(--font-mono); font-size: 0.6875rem; color: var(--text-2);
+}
+.stage-badge--failed {
+  display: inline-flex; align-items: center; padding: 1px var(--sp-2);
+  background: var(--red-bg); border-radius: 4px; color: var(--red); font-weight: 500;
+}
+.focus-divider { border: none; border-top: 1px solid var(--border); margin: var(--sp-5) 0; }
+.section-label {
+  font-size: 0.6875rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-2); margin-bottom: var(--sp-4);
+}
+
+/* -- Error Block -- */
+.error-block {
+  background: var(--red-bg);
+  border: 1px solid rgba(229, 83, 75, 0.2);
+  border-left: 3px solid var(--red);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-4) var(--sp-5);
+  margin-bottom: var(--sp-6);
+}
+
+.error-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--red);
+  margin-bottom: var(--sp-2);
+}
+
+.error-message {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--text-1);
+  white-space: pre-wrap;
+}
+
+/* -- Log Output -- */
+.log-output {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.log-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--sp-2) var(--sp-4);
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--border);
+}
+
+.log-title {
+  font-size: 0.6875rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-2);
+}
+
+.log-tag {
+  font-family: var(--font-mono); font-size: 0.5625rem; color: var(--text-3);
+}
+
+.log-body {
+  padding: var(--sp-3) var(--sp-4);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.8;
+  color: var(--text-1);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.log-line { display: flex; gap: var(--sp-2); }
+.log-line .time { color: var(--text-3); min-width: 52px; flex-shrink: 0; }
+.log-line .icon { width: 14px; text-align: center; flex-shrink: 0; }
+.log-line .icon.bash { color: var(--amber); }
+.log-line .icon.read { color: var(--green); }
+.log-line .icon.edit { color: var(--orange); }
+.log-line .text { color: var(--text-2); }
+.log-line .text.error { color: var(--red); }
+.log-line .text.success { color: var(--green); }
+
+/* -- Action Bar -- */
+.action-bar {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-4) 0; margin-top: var(--sp-4); border-top: 1px solid var(--border);
+}
+.action-btn {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4); font-family: var(--font-ui);
+  font-size: 0.8125rem; font-weight: 600; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); cursor: pointer; background: transparent;
+  color: var(--text-1); transition: all 80ms;
+}
+.action-btn:hover { background: var(--bg-3); border-color: var(--border-active); }
+.action-btn--primary { background: var(--orange); border-color: var(--orange); color: #fff; }
+.action-btn--primary:hover { background: #ca7435; }
+.action-btn--danger { border-color: rgba(229, 83, 75, 0.3); color: var(--red); }
+.action-btn--danger:hover { background: var(--red-bg); }
+.action-btn kbd { font-family: var(--font-mono); font-size: 0.625rem; opacity: 0.7; }
+.action-spacer { flex: 1; }
+
+/* -- Status Line -- */
+.status-line {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--sp-1) var(--sp-5); background: var(--bg-1);
+  border-top: 1px solid var(--border); font-size: 0.6875rem;
+  flex-shrink: 0; height: 28px;
+}
+.status-line-left, .status-line-right { display: flex; align-items: center; gap: var(--sp-4); }
+.status-line .branch { font-family: var(--font-mono); font-weight: 500; color: var(--orange); }
+.status-line .hint { color: var(--text-3); }
+.status-line .hint kbd { font-family: var(--font-mono); color: var(--text-2); font-weight: 500; }
+.status-line .sep { color: var(--bg-3); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="command-bar">
+    <span class="command-bar-brand">Orkestra</span>
+    <span class="command-bar-sep"></span>
+    <div class="breadcrumb">
+      <span class="link">Dashboard</span>
+      <span class="sep">/</span>
+      <span class="current">CI pipeline fix</span>
+    </div>
+    <div class="bar-hints">
+      <span><kbd>Esc</kbd> back</span>
+      <span><kbd>L</kbd> full logs</span>
+      <button class="theme-toggle" onclick="document.getElementById('app').classList.toggle('light'); this.textContent = this.textContent === 'light' ? 'dark' : 'light';">light</button>
+    </div>
+  </div>
+
+  <div class="focus-main">
+    <div class="focus-header">
+      <h1 class="focus-title">CI pipeline fix</h1>
+      <p class="focus-subtitle">Script stage "checks" failed with exit code 1</p>
+      <div class="focus-meta">
+        <span>ork-038</span>
+        <span>Failed 45m ago</span>
+        <span class="stage-badge--failed">failed</span>
+        <span>Stage: checks</span>
+        <span>Flow: hotfix</span>
+      </div>
+    </div>
+
+    <hr class="focus-divider">
+    <div class="section-label">Error</div>
+
+    <div class="error-block">
+      <div class="error-title">cargo test: 3 test failures</div>
+      <div class="error-message">test auth::middleware::tests::test_jwt_validation ... FAILED
+test auth::middleware::tests::test_token_refresh ... FAILED
+test auth::middleware::tests::test_expired_token ... FAILED
+
+failures:
+    auth::middleware::tests::test_jwt_validation
+    auth::middleware::tests::test_token_refresh
+    auth::middleware::tests::test_expired_token
+
+test result: FAILED. 142 passed; 3 failed; 0 ignored</div>
+    </div>
+
+    <div class="section-label">Recent activity</div>
+
+    <div class="log-output">
+      <div class="log-header">
+        <span class="log-title">Session log</span>
+        <span class="log-tag">checks &middot; 2m 34s</span>
+      </div>
+      <div class="log-body">
+        <div class="log-line"><span class="time">14:32:01</span><span class="icon bash">$</span><span class="text">cargo fmt --all -- --check</span></div>
+        <div class="log-line"><span class="time">14:32:03</span><span class="icon"></span><span class="text success">Formatting OK</span></div>
+        <div class="log-line"><span class="time">14:32:03</span><span class="icon bash">$</span><span class="text">cargo clippy --workspace</span></div>
+        <div class="log-line"><span class="time">14:32:18</span><span class="icon"></span><span class="text success">Clippy: 0 warnings</span></div>
+        <div class="log-line"><span class="time">14:32:18</span><span class="icon bash">$</span><span class="text">cargo test --workspace</span></div>
+        <div class="log-line"><span class="time">14:34:22</span><span class="icon"></span><span class="text">Running 145 tests...</span></div>
+        <div class="log-line"><span class="time">14:34:35</span><span class="icon"></span><span class="text error">FAILED: test_jwt_validation (assertion: expected 200, got 401)</span></div>
+        <div class="log-line"><span class="time">14:34:35</span><span class="icon"></span><span class="text error">FAILED: test_token_refresh (assertion: token not refreshed)</span></div>
+        <div class="log-line"><span class="time">14:34:35</span><span class="icon"></span><span class="text error">FAILED: test_expired_token (panic: unwrap on None)</span></div>
+        <div class="log-line"><span class="time">14:34:35</span><span class="icon"></span><span class="text error">Result: 142 passed, 3 failed</span></div>
+        <div class="log-line"><span class="time">14:34:35</span><span class="icon"></span><span class="text error">Script exited with code 1</span></div>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <button class="action-btn action-btn--primary"><kbd>T</kbd> Retry stage</button>
+      <button class="action-btn action-btn--danger"><kbd>F</kbd> Mark as failed</button>
+      <span class="action-spacer"></span>
+      <button class="action-btn"><kbd>D</kbd> View diff</button>
+      <button class="action-btn"><kbd>L</kbd> Full logs</button>
+      <button class="action-btn"><kbd>Esc</kbd> Back</button>
+    </div>
+  </div>
+
+  <div class="status-line">
+    <div class="status-line-left">
+      <span class="branch">fix/ci-pipeline</span>
+      <span style="font-family: var(--font-mono); color: var(--text-2);">+5 -2</span>
+      <span class="sep">|</span>
+      <span class="hint" style="color: var(--red);">Failed &middot; checks stage</span>
+    </div>
+    <div class="status-line-right">
+      <span class="hint"><kbd>T</kbd> retry</span>
+      <span class="hint"><kbd>F</kbd> fail</span>
+      <span class="hint"><kbd>Esc</kbd> back</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

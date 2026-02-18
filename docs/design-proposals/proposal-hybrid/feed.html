@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forge -- Task Feed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --canvas: #141118; --surface-1: #1C1820; --surface-2: #242029; --surface-3: #2E2936;
+  --surface-hover: #282330;
+  --accent: #E8613A; --accent-hover: #F07350;
+  --accent-bg: rgba(232,97,58,0.08); --accent-bg-hover: rgba(232,97,58,0.14);
+  --green: #4ADE80; --green-dim: #22804A; --green-bg: rgba(74,222,128,0.08);
+  --amber: #FBBF24; --amber-bg: rgba(251,191,36,0.08);
+  --red: #F87171; --red-bg: rgba(248,113,113,0.08);
+  --blue: #60A5FA; --blue-bg: rgba(96,165,250,0.08);
+  --purple: #A78BFA;
+  --text-primary: #F0ECF4; --text-secondary: #B8B0C4; --text-tertiary: #706880; --text-muted: #524A5C;
+  --border: rgba(168,162,178,0.12); --border-focus: var(--accent);
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+  --shadow-elevated: 0 1px 2px rgba(20,17,24,0.15), 0 1px 3px rgba(20,17,24,0.10);
+}
+
+.light {
+  --canvas: #FAF8FC; --surface-1: #FFFFFF; --surface-2: #F4F0F8; --surface-3: #EBE6F0;
+  --surface-hover: #F0ECF4;
+  --accent: #D4512D; --accent-hover: #E8613A;
+  --accent-bg: rgba(212,81,45,0.06); --accent-bg-hover: rgba(212,81,45,0.12);
+  --green: #16A34A; --green-dim: #86EFAC; --green-bg: rgba(22,163,74,0.06);
+  --amber: #D97706; --amber-bg: rgba(217,119,6,0.06);
+  --red: #DC2626; --red-bg: rgba(220,38,38,0.06);
+  --blue: #2563EB; --blue-bg: rgba(37,99,235,0.06);
+  --purple: #7C3AED;
+  --text-primary: #1C1820; --text-secondary: #6B6078; --text-tertiary: #9890A4; --text-muted: #C4BED0;
+  --border: #E4DFE9; --border-focus: var(--accent);
+  --shadow-elevated: 0 1px 3px rgba(28,24,32,0.08), 0 1px 2px rgba(28,24,32,0.05);
+}
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-ui); background: var(--canvas); color: var(--text-primary);
+  line-height: 1.5; font-variant-numeric: tabular-nums;
+}
+
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* ============================================================================
+   Status Bar (top)
+   ============================================================================ */
+.status-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 24px; background: var(--surface-1); border-bottom: 1px solid var(--border);
+  flex-shrink: 0; box-shadow: var(--shadow-elevated);
+}
+.status-bar-left { display: flex; align-items: center; gap: 20px; }
+.status-bar-right { display: flex; align-items: center; gap: 12px; }
+.app-title {
+  font-weight: 700; font-size: 13px; letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.metric { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.metric-value { font-family: var(--font-mono); font-weight: 600; font-size: 12px; }
+.metric-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-tertiary);
+}
+.metric-dot { width: 6px; height: 6px; border-radius: 50%; }
+.cmd-k {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  color: var(--text-tertiary); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px;
+  cursor: pointer; transition: all 120ms;
+}
+.cmd-k:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ============================================================================
+   Command Bar
+   ============================================================================ */
+.command-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 24px; background: var(--surface-1); border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.command-bar-left { display: flex; align-items: center; gap: 8px; flex: 1; }
+.command-bar-prompt { color: var(--accent); font-weight: 600; font-family: var(--font-mono); font-size: 14px; }
+.command-bar-input {
+  background: none; border: none; outline: none; color: var(--text-primary);
+  font-family: var(--font-mono); font-size: 13px; flex: 1; caret-color: var(--accent);
+}
+.command-bar-input::placeholder { color: var(--text-muted); }
+.command-bar-right { display: flex; align-items: center; gap: 12px; font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+.branch { color: var(--accent); }
+.theme-toggle {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  color: var(--text-tertiary); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px;
+  cursor: pointer; transition: all 120ms;
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ============================================================================
+   Feed (main scrollable area)
+   ============================================================================ */
+.feed { flex: 1; overflow-y: auto; padding: 0; }
+.section { margin-bottom: 4px; }
+.section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 24px 6px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary);
+  user-select: none; position: sticky; top: 0; background: var(--canvas); z-index: 10;
+}
+.section-header .count {
+  font-family: var(--font-mono); font-weight: 400; font-size: 11px; color: var(--text-muted);
+}
+.section-header .kbd-hints {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 400;
+  letter-spacing: 0; text-transform: none; color: var(--text-muted);
+}
+.section-divider { border: none; border-top: 1px solid var(--border); margin: 4px 24px 0; }
+
+/* ============================================================================
+   Task Rows
+   ============================================================================ */
+.task-row {
+  display: grid; grid-template-columns: 24px 1fr 200px 2fr auto;
+  gap: 12px; align-items: center; padding: 8px 24px;
+  cursor: pointer; transition: background 120ms; min-height: 40px;
+}
+.task-row:hover { background: var(--surface-hover); }
+.task-row.focused { background: var(--accent-bg); }
+
+/* Status symbol */
+.task-symbol {
+  font-family: var(--font-mono); font-weight: 600; font-size: 14px;
+  text-align: center; width: 24px; line-height: 1;
+}
+.task-symbol.green { color: var(--green); }
+.task-symbol.amber { color: var(--amber); }
+.task-symbol.blue { color: var(--blue); }
+.task-symbol.red { color: var(--red); }
+.task-symbol.muted { color: var(--text-muted); }
+.task-symbol.green-dim { color: var(--green-dim); }
+.task-symbol.pulsing { animation: pulse-symbol 2.5s ease-in-out infinite; }
+@keyframes pulse-symbol { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+/* Title column */
+.task-title-col { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.task-title {
+  font-size: 13px; font-weight: 500; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.task-id {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+}
+
+/* Pipeline visualization */
+.task-pipeline { display: flex; align-items: center; gap: 2px; }
+.pipeline-stages { display: flex; gap: 2px; flex: 1; height: 16px; align-items: center; }
+.pipeline-stage {
+  flex: 1; height: 4px; border-radius: 2px; background: var(--surface-3);
+  transition: background 120ms;
+}
+.pipeline-stage.done { background: var(--green-dim); }
+.pipeline-stage.active { background: var(--amber); animation: pipeline-pulse 1.5s ease-in-out infinite; }
+.pipeline-stage.failed { background: var(--red); opacity: 0.7; }
+.pipeline-stage.current { background: var(--green); animation: pipeline-pulse 1.5s ease-in-out infinite; }
+@keyframes pipeline-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.pipeline-label {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-tertiary); white-space: nowrap; margin-left: 8px; min-width: 56px;
+}
+
+/* Live feed text */
+.task-feed {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.task-feed.live::before {
+  content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--green); margin-right: 6px; vertical-align: middle;
+  animation: pulse-symbol 2.5s ease-in-out infinite;
+}
+.task-feed.error { color: var(--red); }
+
+/* Action column */
+.task-action { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.action-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+  transition: all 120ms; background: transparent; color: var(--text-secondary);
+  letter-spacing: -0.01em;
+}
+.action-btn:hover { background: var(--surface-3); border-color: rgba(168,162,178,0.24); }
+.action-btn.green { border-color: rgba(74,222,128,0.25); color: var(--green); }
+.action-btn.green:hover { background: var(--green-bg); }
+.action-btn.blue { border-color: rgba(96,165,250,0.25); color: var(--blue); }
+.action-btn.blue:hover { background: var(--blue-bg); }
+.action-btn.red { border-color: rgba(248,113,113,0.25); color: var(--red); }
+.action-btn.red:hover { background: var(--red-bg); }
+.action-btn .kbd {
+  font-family: var(--font-mono); font-size: 9px; font-weight: 500;
+  color: var(--text-muted); margin-right: 2px;
+}
+.task-time {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+}
+
+/* Subtask inline progress */
+.subtask-inline { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+.subtask-bar { width: 80px; height: 3px; background: var(--surface-3); border-radius: 2px; overflow: hidden; display: flex; }
+.subtask-seg { height: 100%; }
+.subtask-seg.done { background: var(--green-dim); }
+.subtask-seg.active { background: var(--green); }
+
+/* Completed row dimming */
+.task-row.completed { opacity: 0.45; }
+.task-row.completed:hover { opacity: 0.65; }
+
+/* ============================================================================
+   Status Line (bottom)
+   ============================================================================ */
+.status-line {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 24px; background: var(--surface-1); border-top: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); flex-shrink: 0;
+}
+.status-line-left, .status-line-right { display: flex; align-items: center; gap: 16px; }
+.status-line .branch { color: var(--accent); }
+.status-line .sep { color: var(--text-muted); }
+.status-line kbd {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  color: var(--text-muted); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 3px; padding: 0px 4px;
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <div class="status-bar-left">
+      <span class="app-title">ORKESTRA</span>
+      <div class="metric">
+        <div class="metric-dot" style="background: var(--green); animation: pulse-symbol 2.5s ease-in-out infinite;"></div>
+        <span class="metric-value" style="color: var(--green);">3</span>
+        <span class="metric-label">Active</span>
+      </div>
+      <div class="metric">
+        <div class="metric-dot" style="background: var(--amber);"></div>
+        <span class="metric-value" style="color: var(--amber);">1</span>
+        <span class="metric-label">Review</span>
+      </div>
+      <div class="metric">
+        <div class="metric-dot" style="background: var(--blue);"></div>
+        <span class="metric-value" style="color: var(--blue);">1</span>
+        <span class="metric-label">Questions</span>
+      </div>
+      <div class="metric">
+        <div class="metric-dot" style="background: var(--red);"></div>
+        <span class="metric-value" style="color: var(--red);">1</span>
+        <span class="metric-label">Failed</span>
+      </div>
+      <div class="metric">
+        <span class="metric-value" style="color: var(--text-tertiary);">4</span>
+        <span class="metric-label">Done</span>
+      </div>
+    </div>
+    <div class="status-bar-right">
+      <button class="cmd-k">Cmd+K</button>
+      <button class="theme-toggle" onclick="document.getElementById('app').classList.toggle('light'); this.textContent = this.textContent.trim() === 'light' ? 'dark' : 'light';">light</button>
+    </div>
+  </div>
+
+  <!-- Command Bar -->
+  <div class="command-bar">
+    <div class="command-bar-left">
+      <span class="command-bar-prompt">&gt;</span>
+      <input type="text" class="command-bar-input" placeholder="Filter, search, or type a command..." autofocus>
+    </div>
+    <div class="command-bar-right">
+      <span class="branch">main</span>
+      <span>+2 -0</span>
+    </div>
+  </div>
+
+  <!-- Feed -->
+  <div class="feed">
+
+    <!-- Needs Attention -->
+    <div class="section">
+      <div class="section-header">
+        <span>Needs Attention <span class="count">(3)</span></span>
+        <span class="kbd-hints"><kbd>j</kbd> <kbd>k</kbd> navigate &nbsp; <kbd>enter</kbd> focus &nbsp; <kbd>a</kbd> approve</span>
+      </div>
+
+      <div class="task-row focused">
+        <span class="task-symbol amber">&gt;</span>
+        <div class="task-title-col">
+          <span class="task-title">Refactor authentication middleware</span>
+          <span class="task-id">gentle-fuzzy-otter</span>
+        </div>
+        <div class="task-pipeline">
+          <div class="pipeline-stages">
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage active"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+          </div>
+          <span class="pipeline-label">Review</span>
+        </div>
+        <div class="task-feed">Plan ready for review -- 5 changes proposed, est. 3 files</div>
+        <div class="task-action">
+          <button class="action-btn green"><span class="kbd">a</span> Approve</button>
+          <button class="action-btn">Review</button>
+        </div>
+      </div>
+
+      <div class="task-row">
+        <span class="task-symbol red">!</span>
+        <div class="task-title-col">
+          <span class="task-title">Fix CI pipeline configuration</span>
+          <span class="task-id">roundly-quick-finch</span>
+        </div>
+        <div class="task-pipeline">
+          <div class="pipeline-stages">
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage failed"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+          </div>
+          <span class="pipeline-label" style="color: var(--red);">Checks</span>
+        </div>
+        <div class="task-feed error">cargo test: 3 assertion failures in auth module</div>
+        <div class="task-action">
+          <button class="action-btn red"><span class="kbd">r</span> Retry</button>
+        </div>
+      </div>
+
+      <div class="task-row">
+        <span class="task-symbol blue">?</span>
+        <div class="task-title-col">
+          <span class="task-title">Database schema migration</span>
+          <span class="task-id">briskly-calm-falcon</span>
+        </div>
+        <div class="task-pipeline">
+          <div class="pipeline-stages">
+            <div class="pipeline-stage active"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+          </div>
+          <span class="pipeline-label">Planning</span>
+        </div>
+        <div class="task-feed">2 questions awaiting answers</div>
+        <div class="task-action">
+          <button class="action-btn blue"><span class="kbd">q</span> Answer</button>
+        </div>
+      </div>
+
+      <hr class="section-divider">
+    </div>
+
+    <!-- Active -->
+    <div class="section">
+      <div class="section-header">
+        <span>Active <span class="count">(3)</span></span>
+      </div>
+
+      <div class="task-row">
+        <span class="task-symbol green pulsing">*</span>
+        <div class="task-title-col">
+          <span class="task-title">User settings page implementation</span>
+          <span class="task-id">warmly-proud-heron</span>
+        </div>
+        <div class="task-pipeline">
+          <div class="pipeline-stages">
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage current"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+          </div>
+          <span class="pipeline-label">Work</span>
+        </div>
+        <div class="task-feed live">Reading src/components/Settings/SettingsForm.tsx</div>
+        <div class="task-action"><span class="task-time">2m 34s</span></div>
+      </div>
+
+      <div class="task-row">
+        <span class="task-symbol green pulsing">*</span>
+        <div class="task-title-col">
+          <span class="task-title">API rate limiting and throttling</span>
+          <span class="task-id">firmly-keen-osprey</span>
+        </div>
+        <div class="task-pipeline">
+          <div class="pipeline-stages">
+            <div class="pipeline-stage current"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+          </div>
+          <span class="pipeline-label">Planning</span>
+        </div>
+        <div class="task-feed live">Analyzing existing rate limit middleware patterns...</div>
+        <div class="task-action"><span class="task-time">45s</span></div>
+      </div>
+
+      <div class="task-row">
+        <span class="task-symbol green pulsing">*</span>
+        <div class="task-title-col">
+          <span class="task-title">Test infrastructure overhaul</span>
+          <span class="task-id">slowly-bold-crane</span>
+        </div>
+        <div class="task-pipeline">
+          <div class="pipeline-stages">
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+            <div class="pipeline-stage"></div>
+          </div>
+          <span class="pipeline-label" style="color: var(--text-muted);">Children</span>
+        </div>
+        <div class="task-feed">
+          <span class="subtask-inline">
+            <span class="subtask-bar">
+              <div class="subtask-seg done" style="width: 50%;"></div>
+              <div class="subtask-seg active" style="width: 25%;"></div>
+            </span>
+            <span>2/4 subtasks</span>
+          </span>
+        </div>
+        <div class="task-action">
+          <button class="action-btn" style="font-size: 10px;">Expand</button>
+        </div>
+      </div>
+
+      <hr class="section-divider">
+    </div>
+
+    <!-- Completed Today -->
+    <div class="section">
+      <div class="section-header">
+        <span>Completed Today <span class="count">(4)</span></span>
+      </div>
+
+      <div class="task-row completed">
+        <span class="task-symbol green-dim">.</span>
+        <div class="task-title-col">
+          <span class="task-title">Database migration scripts</span>
+          <span class="task-id">gently-swift-puma</span>
+        </div>
+        <div class="task-pipeline">
+          <div class="pipeline-stages">
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+          </div>
+          <span class="pipeline-label" style="color: var(--green-dim);">Done</span>
+        </div>
+        <div class="task-feed">Merged to main -- 3 files changed</div>
+        <div class="task-action"><span class="task-time">12:34</span></div>
+      </div>
+
+      <div class="task-row completed">
+        <span class="task-symbol green-dim">.</span>
+        <div class="task-title-col">
+          <span class="task-title">API rate limiting implementation</span>
+          <span class="task-id">briskly-calm-wren</span>
+        </div>
+        <div class="task-pipeline">
+          <div class="pipeline-stages">
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+          </div>
+          <span class="pipeline-label" style="color: var(--green-dim);">Done</span>
+        </div>
+        <div class="task-feed">PR #47 merged -- 7 files changed</div>
+        <div class="task-action"><span class="task-time">11:20</span></div>
+      </div>
+
+      <div class="task-row completed">
+        <span class="task-symbol muted">-</span>
+        <div class="task-title-col">
+          <span class="task-title">Fix login redirect loop</span>
+          <span class="task-id">coolly-rapid-moth</span>
+        </div>
+        <div class="task-pipeline">
+          <div class="pipeline-stages">
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+          </div>
+          <span class="pipeline-label" style="color: var(--text-muted);">Archived</span>
+        </div>
+        <div class="task-feed">PR #42 merged -- 2 files changed</div>
+        <div class="task-action"><span class="task-time">09:15</span></div>
+      </div>
+
+      <div class="task-row completed">
+        <span class="task-symbol muted">-</span>
+        <div class="task-title-col">
+          <span class="task-title">Update error message formatting</span>
+          <span class="task-id">warmly-calm-crane</span>
+        </div>
+        <div class="task-pipeline">
+          <div class="pipeline-stages">
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+            <div class="pipeline-stage done"></div>
+          </div>
+          <span class="pipeline-label" style="color: var(--text-muted);">Archived</span>
+        </div>
+        <div class="task-feed">Auto-merged -- 5 files changed</div>
+        <div class="task-action"><span class="task-time">08:45</span></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Status Line -->
+  <div class="status-line">
+    <div class="status-line-left">
+      <span class="branch">main</span>
+      <span>+2 -0</span>
+      <span class="sep">|</span>
+      <span>3 agents running</span>
+    </div>
+    <div class="status-line-right">
+      <span><kbd>j</kbd><kbd>k</kbd> navigate</span>
+      <span><kbd>enter</kbd> focus</span>
+      <span><kbd>ctrl+\</kbd> split</span>
+      <span><kbd>cmd+k</kbd> command</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

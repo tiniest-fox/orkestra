@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mission Control -- Task Creation (Command Bar)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-0: #0a0f1a; --bg-1: #0f1729; --bg-2: #162033; --bg-3: #1d2940; --bg-hover: #1a2438;
+  --green: #34d399; --green-dim: #1a7a52; --green-bg: rgba(52,211,153,0.08);
+  --amber: #fbbf24; --amber-bg: rgba(251,191,36,0.08);
+  --text-0: #f1f5f9; --text-1: #cbd5e1; --text-2: #64748b; --text-3: #475569;
+  --border: rgba(148,163,184,0.12);
+  --font-data: 'IBM Plex Mono', monospace; --font-label: 'Inter', system-ui, sans-serif;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+}
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-data); background: var(--bg-0); color: var(--text-0); line-height: 1.5; }
+
+.text-1 { color: var(--text-1); } .text-2 { color: var(--text-2); } .text-3 { color: var(--text-3); }
+.text-green { color: var(--green); }
+.text-xxs { font-size: 0.6875rem; } .tabular { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-data); }
+
+.status-bar { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-2) var(--sp-4); background: var(--bg-1); border-bottom: 1px solid var(--border); font-size: 0.75rem; }
+.status-bar-left { display: flex; align-items: center; gap: var(--sp-6); }
+.status-bar-right { display: flex; align-items: center; gap: var(--sp-4); }
+.status-metric { display: flex; align-items: center; gap: var(--sp-2); }
+.status-metric-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.status-metric-label { color: var(--text-2); font-family: var(--font-label); font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.app-title { font-family: var(--font-label); font-weight: 700; font-size: 0.875rem; letter-spacing: -0.02em; }
+
+.kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 4px; font-family: var(--font-data); font-size: 0.5625rem; font-weight: 500; color: var(--text-2); background: var(--bg-3); border: 1px solid var(--border); border-radius: 3px; }
+
+/* Command Bar Modal */
+.command-overlay { position: relative; background: rgba(10,15,26,0.7); padding: var(--sp-8) var(--sp-4); min-height: 300px; }
+.command-modal { max-width: 640px; margin: 0 auto; background: var(--bg-1); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.command-modal-input { display: flex; align-items: center; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); gap: var(--sp-2); }
+.command-prompt { color: var(--text-3); font-size: 0.75rem; flex-shrink: 0; }
+.command-text { font-family: var(--font-data); font-size: 0.75rem; color: var(--text-0); }
+.command-cursor { display: inline-block; width: 1px; height: 14px; background: var(--text-0); animation: blink 1s step-end infinite; vertical-align: middle; }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.command-preview { padding: var(--sp-3) var(--sp-4); }
+.command-preview-row { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-1) 0; font-size: 0.6875rem; }
+.command-preview-label { color: var(--text-3); width: 64px; flex-shrink: 0; text-align: right; }
+.command-preview-value { color: var(--text-1); }
+.command-option-row { display: flex; gap: var(--sp-2); }
+.command-option { padding: 2px 8px; font-family: var(--font-data); font-size: 0.625rem; border: 1px solid var(--border); border-radius: 3px; background: transparent; color: var(--text-2); cursor: pointer; }
+.command-option--selected { border-color: rgba(52,211,153,0.3); color: var(--green); background: var(--green-bg); }
+.command-hint { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border); font-size: 0.625rem; color: var(--text-3); }
+</style>
+</head>
+<body>
+
+<div class="status-bar">
+  <div class="status-bar-left">
+    <span class="app-title">ORKESTRA</span>
+    <div class="status-metric">
+      <span class="status-metric-value text-green">3</span>
+      <span class="status-metric-label">Active</span>
+    </div>
+  </div>
+  <div class="status-bar-right">
+    <span class="text-xxs text-2 mono">main</span>
+    <span class="text-xxs text-2 tabular">15:21:44</span>
+  </div>
+</div>
+
+<!-- Semi-transparent overlay with command modal -->
+<div class="command-overlay">
+  <div class="command-modal">
+    <div class="command-modal-input">
+      <span class="command-prompt">&gt;</span>
+      <span class="command-text">new Implement refresh token rotation for auth middleware</span>
+      <span class="command-cursor"></span>
+    </div>
+
+    <div class="command-preview">
+      <div style="font-family: var(--font-label); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); margin-bottom: var(--sp-2);">Create Task</div>
+
+      <div class="command-preview-row">
+        <span class="command-preview-label">Title</span>
+        <span class="command-preview-value">Implement refresh token rotation for auth middleware</span>
+      </div>
+
+      <div class="command-preview-row">
+        <span class="command-preview-label">Flow</span>
+        <div class="command-option-row">
+          <button class="command-option command-option--selected">standard</button>
+          <button class="command-option">quick</button>
+          <button class="command-option">hotfix</button>
+        </div>
+      </div>
+
+      <div class="command-preview-row">
+        <span class="command-preview-label">Branch</span>
+        <span class="command-preview-value" style="color: var(--text-2);">main <span class="text-3">(default)</span></span>
+      </div>
+
+      <div class="command-preview-row">
+        <span class="command-preview-label">Auto</span>
+        <div class="command-option-row">
+          <button class="command-option command-option--selected">on</button>
+          <button class="command-option">off</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="command-hint">
+      <span><span class="kbd">Enter</span> create</span>
+      <span><span class="kbd">Tab</span> cycle options</span>
+      <span><span class="kbd">Esc</span> cancel</span>
+      <span style="margin-left: auto;">Flags: <span style="color: var(--text-2);">--flow quick &nbsp; --branch feature/auth &nbsp; --no-auto</span></span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

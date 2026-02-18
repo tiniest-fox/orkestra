@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra — Full Session Logs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --fg: #000000; --fg-secondary: #6B7280; --fg-muted: #9CA3AF;
+    --border: #E5E7EB; --accent: #F04A00; --accent-bg: rgba(240, 74, 0, 0.06);
+    --status-success: #059669; --status-active: #D97706; --status-attention: #2563EB; --status-danger: #DC2626;
+    --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+    --page-pad-x: 32px;
+  }
+  .dark {
+    --bg: #000000; --fg: #E5E7EB; --fg-secondary: #9CA3AF; --fg-muted: #6B7280;
+    --border: #2D3340; --accent-bg: rgba(240, 74, 0, 0.10);
+  }
+  html { font-size: 13px; line-height: 20px; }
+  body {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    font-feature-settings: 'liga' 0; background: var(--bg); color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .command-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px var(--page-pad-x); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .command-bar-left { display: flex; align-items: center; gap: 8px; flex: 1; }
+  .command-bar-prompt { color: var(--accent); font-weight: 500; }
+  .command-bar-status { display: flex; gap: 16px; font-size: 11px; color: var(--fg-muted); }
+  .command-bar-status kbd { color: var(--fg-secondary); font-family: var(--font-mono); font-size: 11px; }
+  .status-line {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px var(--page-pad-x); border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--fg-muted); flex-shrink: 0;
+  }
+  .status-line-left, .status-line-right { display: flex; gap: 16px; align-items: center; }
+  .status-line .branch { color: var(--accent); }
+  .status-line .sep { color: var(--border); }
+  .status-line kbd { color: var(--fg-secondary); font-family: var(--font-mono); font-size: 11px; }
+
+  /* Filter bar */
+  .filter-bar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 8px var(--page-pad-x); border-bottom: 1px solid var(--border);
+    font-size: 11px; flex-shrink: 0;
+  }
+  .filter-label { color: var(--fg-muted); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
+  .filter-toggle {
+    padding: 2px 10px; font-family: var(--font-mono); font-size: 11px;
+    color: var(--fg-muted); cursor: pointer; border: 1px solid var(--border);
+    border-radius: 2px; background: none;
+  }
+  .filter-toggle:hover { border-color: var(--fg-secondary); color: var(--fg-secondary); }
+  .filter-toggle.active { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+  .filter-toggle kbd { font-family: var(--font-mono); font-weight: 500; margin-right: 4px; }
+
+  .filter-sep { color: var(--border); }
+
+  .filter-search {
+    background: none; border: none; outline: none;
+    color: var(--fg); font-family: var(--font-mono); font-size: 11px;
+    caret-color: var(--accent); flex: 1;
+  }
+  .filter-search::placeholder { color: var(--fg-muted); }
+
+  /* Log content */
+  .log-view { flex: 1; overflow-y: auto; padding: 12px var(--page-pad-x); }
+
+  .log-entry {
+    display: grid;
+    grid-template-columns: 72px 16px 100px 1fr;
+    gap: 8px;
+    padding: 1px 0;
+    font-size: 12px;
+    line-height: 18px;
+    align-items: baseline;
+  }
+
+  .log-time { color: var(--fg-muted); text-align: right; }
+  .log-level { text-align: center; font-weight: 600; }
+  .log-level.tool { color: var(--status-attention); }
+  .log-level.output { color: var(--fg-secondary); }
+  .log-level.error { color: var(--status-danger); }
+  .log-level.info { color: var(--status-active); }
+  .log-level.system { color: var(--fg-muted); }
+  .log-source { color: var(--fg-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-content { color: var(--fg-secondary); white-space: pre-wrap; word-break: break-word; }
+  .log-content.error { color: var(--status-danger); }
+  .log-content.success { color: var(--status-success); }
+
+  /* Collapsible output blocks */
+  .log-output-block {
+    grid-column: 4;
+    background: var(--accent-bg);
+    padding: 6px 12px;
+    margin: 2px 0 4px;
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--fg-secondary);
+    white-space: pre;
+    overflow-x: auto;
+    max-height: 120px;
+    overflow-y: auto;
+    border-left: 2px solid var(--border);
+  }
+
+  /* Stage divider in logs */
+  .log-stage-divider {
+    padding: 12px 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+  }
+
+  .theme-toggle {
+    padding: 0; font-family: var(--font-mono); font-size: 11px;
+    color: var(--fg-muted); cursor: pointer; border: none; background: none; margin-left: 16px;
+  }
+  .theme-toggle:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="command-bar">
+    <div class="command-bar-left">
+      <span class="command-bar-prompt">&gt;</span>
+      <span style="color: var(--fg-secondary); font-size: 13px;">auth-refactor -- logs</span>
+    </div>
+    <div class="command-bar-status">
+      <span><kbd>esc</kbd> back to task</span>
+      <button class="theme-toggle" onclick="document.getElementById('app').classList.toggle('dark'); this.textContent = this.textContent === 'dark' ? 'light' : 'dark';">dark</button>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <span class="filter-label">Filter:</span>
+    <button class="filter-toggle active"><kbd>t</kbd>ool_use</button>
+    <button class="filter-toggle active"><kbd>o</kbd>utput</button>
+    <button class="filter-toggle active"><kbd>e</kbd>rror</button>
+    <button class="filter-toggle"><kbd>i</kbd>nfo</button>
+    <button class="filter-toggle"><kbd>s</kbd>ystem</button>
+    <span class="filter-sep">|</span>
+    <input type="text" class="filter-search" placeholder="Search logs...">
+  </div>
+
+  <div class="log-view">
+    <div class="log-stage-divider">Work Stage -- Session 1 (14:10:03 - present)</div>
+
+    <div class="log-entry">
+      <span class="log-time">14:10:03</span>
+      <span class="log-level system">~</span>
+      <span class="log-source">system</span>
+      <span class="log-content">Agent started -- claude-sonnet-4-20250514</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:05</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Read</span>
+      <span class="log-content">src/middleware/auth.ts (142 lines)</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:07</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Read</span>
+      <span class="log-content">src/middleware/session.ts (89 lines)</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:10</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Grep</span>
+      <span class="log-content">"verifyToken" in src/**/*.ts</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time"></span>
+      <span class="log-level output">.</span>
+      <span class="log-source"></span>
+      <div class="log-output-block">src/routes/api/users.ts:12:  const token = verifyToken(req.headers.authorization);
+src/routes/api/settings.ts:8:  const token = verifyToken(req.headers.authorization);
+src/routes/api/admin.ts:15:  const token = verifyToken(req.headers.authorization);
+src/routes/api/billing.ts:9:  const token = verifyToken(req.headers.authorization);
+src/middleware/auth.ts:23:export function verifyToken(header: string): TokenPayload {
+...8 more results</div>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:14</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Read</span>
+      <span class="log-content">src/routes/api/users.ts (67 lines)</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:16</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Read</span>
+      <span class="log-content">src/routes/api/settings.ts (54 lines)</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:20</span>
+      <span class="log-level info">*</span>
+      <span class="log-source">agent</span>
+      <span class="log-content">I'll extract the JWT validation logic into a shared middleware function and update all route handlers to use it.</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:22</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Edit</span>
+      <span class="log-content">src/middleware/auth.ts (lines 12-45) -- extract validateJwt()</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time"></span>
+      <span class="log-level output">.</span>
+      <span class="log-source"></span>
+      <div class="log-output-block">-export function verifyToken(header: string): TokenPayload {
+-  if (!header || !header.startsWith('Bearer ')) {
+-    throw new AuthError('Missing or invalid authorization header');
+-  }
+-  const token = header.slice(7);
+-  try {
+-    return jwt.verify(token, process.env.JWT_SECRET!) as TokenPayload;
+-  } catch {
+-    throw new AuthError('Invalid or expired token');
+-  }
+-}
++export function validateJwt(): RequestHandler {
++  return (req, res, next) => {
++    const header = req.headers.authorization;
++    if (!header?.startsWith('Bearer ')) {
++      return res.status(401).json({ error: 'Missing authorization' });
++    }
++    try {
++      req.user = jwt.verify(header.slice(7), config.jwtSecret) as TokenPayload;
++      next();
++    } catch {
++      return res.status(401).json({ error: 'Invalid or expired token' });
++    }
++  };
++}</div>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:28</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Edit</span>
+      <span class="log-content">src/middleware/auth.ts (lines 48-67) -- add refreshToken handler</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:33</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Edit</span>
+      <span class="log-content">src/types/auth.ts (lines 1-8) -- add TokenPayload interface</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:37</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Edit</span>
+      <span class="log-content">src/routes/api/users.ts (lines 5-12) -- use validateJwt middleware</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:40</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Edit</span>
+      <span class="log-content">src/routes/api/settings.ts (lines 3-9) -- use validateJwt middleware</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:44</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Glob</span>
+      <span class="log-content">tests/**/*auth* -- 4 files found</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:46</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Read</span>
+      <span class="log-content">tests/middleware/auth.test.ts (203 lines)</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:50</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Edit</span>
+      <span class="log-content">tests/middleware/auth.test.ts (lines 23-56) -- update assertions for new middleware</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:10:55</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Bash</span>
+      <span class="log-content">npm test -- --filter auth</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time"></span>
+      <span class="log-level output">.</span>
+      <span class="log-source"></span>
+      <div class="log-output-block"> PASS  tests/middleware/auth.test.ts
+  validateJwt middleware
+    ✓ rejects requests without authorization header (3ms)
+    ✓ rejects requests with invalid token (2ms)
+    ✓ sets req.user for valid tokens (4ms)
+    ✓ handles expired tokens gracefully (2ms)
+  refreshToken handler
+    ✓ issues new access token for valid refresh token (5ms)
+    ✓ rejects invalid refresh tokens (2ms)
+
+Tests: 6 passed, 6 total
+Time:  0.847s</div>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:11:02</span>
+      <span class="log-level tool">T</span>
+      <span class="log-source">Bash</span>
+      <span class="log-content">npm test</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time"></span>
+      <span class="log-level output">.</span>
+      <span class="log-source"></span>
+      <span class="log-content success">Tests: 142 passed, 142 total -- Time: 4.23s</span>
+    </div>
+    <div class="log-entry">
+      <span class="log-time">14:11:08</span>
+      <span class="log-level info">*</span>
+      <span class="log-source">agent</span>
+      <span class="log-content">All tests passing. The refactored auth middleware extracts JWT validation into a reusable middleware function and adds refresh token support.</span>
+    </div>
+  </div>
+
+  <div class="status-line">
+    <div class="status-line-left">
+      <span class="branch">task/auth-refactor</span>
+      <span class="sep">|</span>
+      <span>Work stage, session 1</span>
+      <span class="sep">|</span>
+      <span>18 entries</span>
+    </div>
+    <div class="status-line-right">
+      <span><kbd>t/o/e/i/s</kbd> filter</span>
+      <span><kbd>/</kbd> search</span>
+      <span><kbd>esc</kbd> back</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

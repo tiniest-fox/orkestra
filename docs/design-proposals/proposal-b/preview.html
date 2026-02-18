@@ -1,0 +1,2459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra - Proposal B: The Workshop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Nunito+Sans:ital,opsz,wght@0,6..12,300;0,6..12,400;0,6..12,500;0,6..12,600;0,6..12,700;1,6..12,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================================
+   CSS Reset & Base
+   ============================================================================ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* -- Canvas & Surface -- */
+  --canvas:        #faf8f5;
+  --surface-1:     #ffffff;
+  --surface-2:     #f5f2ee;
+  --surface-3:     #ede9e3;
+  --surface-hover: #f0ece6;
+
+  /* -- Earth Tones -- */
+  --terracotta:     #c4643a;
+  --terracotta-dim: #d4835f;
+  --terracotta-bg:  #fdf0ea;
+  --sage:           #6b8f71;
+  --sage-dim:       #8aab8f;
+  --sage-bg:        #eef5ef;
+  --slate:          #4a6280;
+  --slate-dim:      #7490ab;
+  --slate-bg:       #edf2f7;
+  --charcoal:       #2d2926;
+  --charcoal-dim:   #5c5653;
+
+  /* -- Semantic -- */
+  --success:     #5a9a60;
+  --success-bg:  #eef5ef;
+  --warning:     #c49a3a;
+  --warning-bg:  #fdf6ea;
+  --error:       #c44a3a;
+  --error-bg:    #fdf0ea;
+  --info:        #4a7ac4;
+  --info-bg:     #edf2f9;
+
+  /* -- Text -- */
+  --text-primary:    #2d2926;
+  --text-secondary:  #6b6560;
+  --text-tertiary:   #9b9590;
+  --text-inverse:    #faf8f5;
+
+  /* -- Borders -- */
+  --border:       #e5e0d8;
+  --border-light: #ede9e3;
+  --border-focus: var(--terracotta);
+
+  /* -- Typography -- */
+  --font-heading: 'Fraunces', serif;
+  --font-body:    'Nunito Sans', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  /* -- Spacing scale (4px base) -- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+
+  /* -- Radii -- */
+  --radius-sm:  8px;
+  --radius-md:  16px;
+  --radius-lg:  24px;
+  --radius-full: 9999px;
+
+  /* -- Shadows (warm-toned) -- */
+  --shadow-sm:  0 1px 3px rgba(45, 41, 38, 0.06), 0 1px 2px rgba(45, 41, 38, 0.04);
+  --shadow-md:  0 4px 12px rgba(45, 41, 38, 0.08), 0 2px 4px rgba(45, 41, 38, 0.04);
+  --shadow-lg:  0 8px 24px rgba(45, 41, 38, 0.10), 0 4px 8px rgba(45, 41, 38, 0.04);
+  --shadow-hover: 0 12px 32px rgba(45, 41, 38, 0.12), 0 4px 12px rgba(45, 41, 38, 0.06);
+
+  /* -- Transitions -- */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 300ms;
+  --duration-slow: 500ms;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  background: var(--canvas);
+  line-height: 1.5;
+}
+
+/* ============================================================================
+   Utility Classes
+   ============================================================================ */
+
+.mono { font-family: var(--font-mono); }
+.heading { font-family: var(--font-heading); }
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary { color: var(--text-tertiary); }
+.text-sm { font-size: 0.8125rem; line-height: 1.5; }
+.text-xs { font-size: 0.75rem; line-height: 1.5; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ============================================================================
+   Page Layout
+   ============================================================================ */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-header {
+  padding: var(--sp-4) var(--sp-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--canvas);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.page-title {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.page-content {
+  flex: 1;
+  padding: var(--sp-6);
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ============================================================================
+   Section Headers
+   ============================================================================ */
+
+.section {
+  margin-bottom: var(--sp-8);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-4);
+}
+
+.section-title {
+  font-family: var(--font-heading);
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  letter-spacing: -0.01em;
+}
+
+.section-count {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* ============================================================================
+   Buttons
+   ============================================================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-smooth);
+  line-height: 1.4;
+}
+
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+
+.btn-primary {
+  background: var(--terracotta);
+  color: var(--text-inverse);
+}
+.btn-primary:hover { background: #b85a32; box-shadow: var(--shadow-md); }
+
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--surface-3); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.btn-ghost:hover { background: var(--surface-2); color: var(--text-primary); }
+
+.btn-success {
+  background: var(--success);
+  color: var(--text-inverse);
+}
+.btn-success:hover { background: #4f8a55; box-shadow: var(--shadow-md); }
+
+.btn-warning {
+  background: var(--warning);
+  color: var(--text-inverse);
+}
+.btn-warning:hover { background: #b08a32; }
+
+.btn-sm {
+  padding: var(--sp-1) var(--sp-3);
+  font-size: 0.8125rem;
+}
+
+.btn-icon {
+  padding: var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+
+/* ============================================================================
+   Cards
+   ============================================================================ */
+
+.card {
+  background: var(--surface-1);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-5);
+  transition: all var(--duration-normal) var(--ease-spring);
+  cursor: pointer;
+  position: relative;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+  border-color: var(--border);
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--sp-4);
+}
+
+/* Card states */
+.card--attention {
+  border-left: 4px solid var(--terracotta);
+}
+
+.card--questions {
+  border-left: 4px solid var(--info);
+}
+
+.card--failed {
+  border-left: 4px solid var(--error);
+}
+
+.card--working {
+  border-left: 4px solid transparent;
+  background: linear-gradient(var(--surface-1), var(--surface-1)) padding-box,
+              linear-gradient(135deg, var(--sage), var(--slate)) border-box;
+  border-left-width: 4px;
+}
+
+.card--done {
+  opacity: 0.7;
+  border-left: 4px solid var(--success);
+}
+
+.card--done:hover { opacity: 1; }
+
+/* Card internals */
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.card-title {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.card-description {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-light);
+}
+
+/* ============================================================================
+   Badges
+   ============================================================================ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border-radius: var(--radius-full);
+}
+
+.badge-review {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.badge-questions {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.badge-working {
+  background: var(--sage-bg);
+  color: var(--sage);
+}
+
+.badge-failed {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.badge-done {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.badge-stage {
+  background: var(--surface-3);
+  color: var(--text-secondary);
+}
+
+.badge-auto {
+  background: #f3eef9;
+  color: #7c5db5;
+}
+
+/* ============================================================================
+   Status Dot (animated breathing border for working tasks)
+   ============================================================================ */
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.status-dot--working {
+  background: var(--sage);
+  animation: breathe 2s ease-in-out infinite;
+}
+
+.status-dot--review {
+  background: var(--warning);
+}
+
+.status-dot--questions {
+  background: var(--info);
+}
+
+.status-dot--failed {
+  background: var(--error);
+}
+
+.status-dot--done {
+  background: var(--success);
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(107, 143, 113, 0.4); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 6px rgba(107, 143, 113, 0); }
+}
+
+/* ============================================================================
+   Progress Indicator (circular)
+   ============================================================================ */
+
+.progress-ring {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.progress-ring circle {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.progress-ring .track {
+  stroke: var(--surface-3);
+}
+
+.progress-ring .fill {
+  stroke: var(--sage);
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dashoffset var(--duration-slow) var(--ease-smooth);
+}
+
+/* ============================================================================
+   Stage Pipeline (horizontal dots)
+   ============================================================================ */
+
+.pipeline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pipeline-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.pipeline-dot--complete { background: var(--success); }
+.pipeline-dot--active { background: var(--terracotta); transform: scale(1.5); }
+.pipeline-dot--upcoming { background: var(--border); }
+
+.pipeline-connector {
+  width: 12px;
+  height: 2px;
+  background: var(--border-light);
+}
+
+.pipeline-connector--complete { background: var(--success); }
+
+/* ============================================================================
+   Subtask Progress Bar
+   ============================================================================ */
+
+.subtask-bar {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  overflow: hidden;
+  display: flex;
+}
+
+.subtask-bar-segment {
+  height: 100%;
+  transition: width var(--duration-normal) var(--ease-smooth);
+}
+
+/* ============================================================================
+   Live Activity Indicator
+   ============================================================================ */
+
+.live-feed {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.live-feed::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--sage);
+  animation: breathe 2s ease-in-out infinite;
+}
+
+/* ============================================================================
+   Quick Action Buttons (hover overlay on cards)
+   ============================================================================ */
+
+.card-actions {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  display: flex;
+  gap: var(--sp-1);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-smooth);
+}
+
+.card:hover .card-actions {
+  opacity: 1;
+}
+
+.card-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.card-action-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+/* ============================================================================
+   View Separator
+   ============================================================================ */
+
+.view-separator {
+  border: none;
+  height: 1px;
+  background: var(--border-light);
+  margin: var(--sp-10) 0;
+}
+
+.view-label {
+  text-align: center;
+  font-family: var(--font-heading);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: var(--sp-12) 0 var(--sp-6);
+  position: relative;
+}
+
+.view-label::before,
+.view-label::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: calc(50% - 120px);
+  height: 1px;
+  background: var(--border-light);
+}
+
+.view-label::before { left: 0; }
+.view-label::after { right: 0; }
+
+/* ============================================================================
+   Focus View (Task Detail)
+   ============================================================================ */
+
+.focus-view {
+  background: var(--canvas);
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.focus-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-6);
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+}
+
+.focus-breadcrumb a {
+  color: var(--terracotta);
+  text-decoration: none;
+}
+
+.focus-breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.focus-header {
+  margin-bottom: var(--sp-6);
+}
+
+.focus-title {
+  font-family: var(--font-heading);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin-bottom: var(--sp-2);
+}
+
+.focus-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.focus-id {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* ============================================================================
+   Focus Content Sections
+   ============================================================================ */
+
+.focus-section {
+  background: var(--surface-1);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--sp-4);
+  overflow: hidden;
+}
+
+.focus-section-header {
+  padding: var(--sp-4) var(--sp-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.focus-section-title {
+  font-family: var(--font-heading);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.focus-section-body {
+  padding: var(--sp-5);
+}
+
+/* ============================================================================
+   Artifact Preview
+   ============================================================================ */
+
+.artifact-content {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+.artifact-content h3 {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 600;
+  margin: var(--sp-4) 0 var(--sp-2);
+  color: var(--text-primary);
+}
+
+.artifact-content p {
+  margin-bottom: var(--sp-3);
+}
+
+.artifact-content ul {
+  margin-bottom: var(--sp-3);
+  padding-left: var(--sp-5);
+}
+
+.artifact-content li {
+  margin-bottom: var(--sp-1);
+}
+
+.artifact-content code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  background: var(--surface-2);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+/* ============================================================================
+   Review Panel
+   ============================================================================ */
+
+.review-panel {
+  background: var(--surface-1);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-md);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+
+.review-panel-title {
+  font-family: var(--font-heading);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  margin-bottom: var(--sp-3);
+  color: var(--warning);
+}
+
+.review-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  resize: vertical;
+  min-height: 80px;
+  background: var(--canvas);
+  color: var(--text-primary);
+  margin-bottom: var(--sp-3);
+  transition: border-color var(--duration-fast) var(--ease-smooth);
+}
+
+.review-textarea:focus {
+  outline: none;
+  border-color: var(--terracotta);
+  box-shadow: 0 0 0 3px rgba(196, 100, 58, 0.1);
+}
+
+.review-actions {
+  display: flex;
+  gap: var(--sp-3);
+}
+
+/* ============================================================================
+   Question Panel
+   ============================================================================ */
+
+.question-panel {
+  background: var(--slate-bg);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(74, 98, 128, 0.2);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+
+.question-label {
+  font-family: var(--font-heading);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--slate);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--sp-2);
+}
+
+.question-text {
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.4;
+  margin-bottom: var(--sp-4);
+}
+
+.question-context {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3);
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: var(--radius-sm);
+}
+
+.question-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+}
+
+.question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid rgba(74, 98, 128, 0.2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.question-option:hover {
+  border-color: var(--slate);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.question-option--selected {
+  border-color: var(--slate);
+  background: var(--surface-1);
+  box-shadow: 0 0 0 2px rgba(74, 98, 128, 0.15);
+}
+
+.question-radio {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--border);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.question-option--selected .question-radio {
+  border-color: var(--slate);
+  background: var(--slate);
+  box-shadow: inset 0 0 0 3px var(--surface-1);
+}
+
+/* ============================================================================
+   Log Viewer
+   ============================================================================ */
+
+.log-viewer {
+  background: #2d2926;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.log-header {
+  padding: var(--sp-3) var(--sp-4);
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.log-header-title {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: rgba(250, 248, 245, 0.6);
+}
+
+.log-body {
+  padding: var(--sp-4);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.7;
+  color: rgba(250, 248, 245, 0.85);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.log-entry {
+  padding: var(--sp-1) 0;
+  display: flex;
+  gap: var(--sp-3);
+}
+
+.log-icon {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  opacity: 0.5;
+}
+
+.log-tool-read { color: #8aab8f; }
+.log-tool-edit { color: #d4835f; }
+.log-tool-bash { color: #c49a3a; }
+.log-tool-grep { color: #7490ab; }
+.log-text { color: rgba(250, 248, 245, 0.5); }
+
+/* ============================================================================
+   Subtask List in Focus View
+   ============================================================================ */
+
+.subtask-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.subtask-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius-sm);
+  background: var(--canvas);
+  border: 1px solid var(--border-light);
+  transition: all var(--duration-fast) var(--ease-smooth);
+  cursor: pointer;
+}
+
+.subtask-item:hover {
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+
+.subtask-item--done {
+  opacity: 0.6;
+}
+
+.subtask-id {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  width: 48px;
+  flex-shrink: 0;
+}
+
+.subtask-title {
+  flex: 1;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.subtask-dep {
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+/* ============================================================================
+   Completed Strip
+   ============================================================================ */
+
+.completed-strip {
+  display: flex;
+  gap: var(--sp-3);
+  overflow-x: auto;
+  padding-bottom: var(--sp-2);
+}
+
+.completed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-1);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.completed-chip:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+.completed-chip .check {
+  color: var(--success);
+  font-size: 0.875rem;
+}
+
+/* ============================================================================
+   Assistant Bubble
+   ============================================================================ */
+
+.assistant-bubble {
+  position: fixed;
+  bottom: var(--sp-6);
+  right: var(--sp-6);
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--terracotta);
+  color: var(--text-inverse);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  font-size: 1.25rem;
+  transition: all var(--duration-normal) var(--ease-spring);
+  z-index: 200;
+  border: 3px solid var(--canvas);
+}
+
+.assistant-bubble:hover {
+  transform: scale(1.1);
+  box-shadow: var(--shadow-hover);
+}
+
+/* ============================================================================
+   Error Banner
+   ============================================================================ */
+
+.error-banner {
+  background: var(--error-bg);
+  border: 1px solid rgba(196, 74, 58, 0.2);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: 0.8125rem;
+  color: var(--error);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+.error-banner-icon {
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+/* ============================================================================
+   Auto Mode Switch
+   ============================================================================ */
+
+.auto-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.auto-switch-track {
+  width: 32px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--surface-3);
+  position: relative;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-smooth);
+}
+
+.auto-switch-track--on {
+  background: #7c5db5;
+}
+
+.auto-switch-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--surface-1);
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform var(--duration-fast) var(--ease-spring);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.auto-switch-track--on .auto-switch-thumb {
+  transform: translateX(14px);
+}
+
+.auto-switch-label {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+/* ============================================================================
+   Dark Mode Preview (toggle area)
+   ============================================================================ */
+
+.dark-preview {
+  --canvas:        #1a1614;
+  --surface-1:     #242120;
+  --surface-2:     #2e2a28;
+  --surface-3:     #3a3532;
+  --surface-hover: #332e2c;
+  --text-primary:  #ede9e3;
+  --text-secondary: #9b9590;
+  --text-tertiary:  #6b6560;
+  --text-inverse:  #1a1614;
+  --border:        #3a3532;
+  --border-light:  #2e2a28;
+  --terracotta:    #d4835f;
+  --sage:          #8aab8f;
+  --slate:         #7490ab;
+  --success:       #7ab880;
+  --success-bg:    #1e2a1f;
+  --warning:       #d4b35f;
+  --warning-bg:    #2a2418;
+  --error:         #d46a5f;
+  --error-bg:      #2a1e1c;
+  --info:          #6a9ad4;
+  --info-bg:       #1c222a;
+
+  background: var(--canvas);
+  color: var(--text-primary);
+  padding: var(--sp-6);
+  border-radius: var(--radius-lg);
+}
+
+/* ============================================================================
+   Annotation Labels (for mockup presentation)
+   ============================================================================ */
+
+.annotation {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--terracotta);
+  background: var(--terracotta-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-bottom: var(--sp-2);
+}
+</style>
+</head>
+<body>
+
+<!-- ========================================================================
+     VIEW 1: Main Workbench (Overview)
+     ======================================================================== -->
+
+<div class="page">
+  <header class="page-header">
+    <h1 class="page-title">Orkestra</h1>
+    <div class="page-actions">
+      <div class="auto-switch">
+        <span class="auto-switch-label">Auto</span>
+        <div class="auto-switch-track auto-switch-track--on">
+          <div class="auto-switch-thumb"></div>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm mono" style="font-size: 0.75rem;">main <span style="color: var(--text-tertiary)">3a7f2c1</span></button>
+      <button class="btn btn-primary">+ New Task</button>
+    </div>
+  </header>
+
+  <div class="page-content">
+
+    <!-- Section: Your Attention -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Your Attention</h2>
+        <span class="section-count">3 items</span>
+      </div>
+
+      <div class="card-grid">
+        <!-- Card: Review needed -->
+        <div class="card card--attention">
+          <div class="card-actions">
+            <button class="card-action-btn" title="Approve">&#10003;</button>
+            <button class="card-action-btn" title="View Diff">&#916;</button>
+          </div>
+          <div class="card-header">
+            <div>
+              <div style="display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1);">
+                <span class="badge badge-review">Review</span>
+                <span class="badge badge-stage">Planning</span>
+              </div>
+              <h3 class="card-title">Refactor authentication middleware</h3>
+            </div>
+            <svg class="progress-ring" viewBox="0 0 36 36">
+              <circle class="track" cx="18" cy="18" r="15"/>
+              <circle class="fill" cx="18" cy="18" r="15" stroke-dasharray="94.2" stroke-dashoffset="47.1" style="stroke: var(--warning);"/>
+            </svg>
+          </div>
+          <div class="card-description">The plan proposes extracting JWT validation into a standalone middleware module and adding refresh token rotation...</div>
+          <div class="card-meta">
+            <span class="text-xs text-tertiary mono">gentle-fuzzy-otter</span>
+            <span class="text-xs text-secondary">2 min ago</span>
+          </div>
+        </div>
+
+        <!-- Card: Questions -->
+        <div class="card card--questions">
+          <div class="card-actions">
+            <button class="card-action-btn" title="Answer">?</button>
+          </div>
+          <div class="card-header">
+            <div>
+              <div style="display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1);">
+                <span class="badge badge-questions">2 Questions</span>
+                <span class="badge badge-stage">Planning</span>
+              </div>
+              <h3 class="card-title">Database schema migration</h3>
+            </div>
+            <svg class="progress-ring" viewBox="0 0 36 36">
+              <circle class="track" cx="18" cy="18" r="15"/>
+              <circle class="fill" cx="18" cy="18" r="15" stroke-dasharray="94.2" stroke-dashoffset="75.3" style="stroke: var(--info);"/>
+            </svg>
+          </div>
+          <div class="card-description">Agent needs clarification on foreign key constraints and whether to use a migration framework or raw SQL.</div>
+          <div class="card-meta">
+            <span class="text-xs text-tertiary mono">briskly-calm-falcon</span>
+            <span class="text-xs text-secondary">5 min ago</span>
+          </div>
+        </div>
+
+        <!-- Card: Failed -->
+        <div class="card card--failed">
+          <div class="card-actions">
+            <button class="card-action-btn" title="Retry">&#8634;</button>
+          </div>
+          <div class="card-header">
+            <div>
+              <div style="display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1);">
+                <span class="badge badge-failed">Failed</span>
+                <span class="badge badge-stage">Checks</span>
+              </div>
+              <h3 class="card-title">Fix CI pipeline configuration</h3>
+            </div>
+          </div>
+          <div class="error-banner" style="margin-top: var(--sp-2);">
+            <span class="error-banner-icon">!</span>
+            <span>cargo test failed: 3 test failures in auth module (expected JWT claims mismatch)</span>
+          </div>
+          <div class="card-meta">
+            <span class="text-xs text-tertiary mono">roundly-quick-finch</span>
+            <span class="text-xs text-secondary">12 min ago</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section: Agents at Work -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Agents at Work</h2>
+        <span class="section-count">3 active</span>
+      </div>
+
+      <div class="card-grid">
+        <!-- Card: Working on coding -->
+        <div class="card card--working">
+          <div class="card-header">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1);">
+                <span class="status-dot status-dot--working"></span>
+                <span class="badge badge-working">Work</span>
+                <span class="badge badge-auto">Auto</span>
+              </div>
+              <h3 class="card-title">User settings page implementation</h3>
+            </div>
+            <svg class="progress-ring" viewBox="0 0 36 36">
+              <circle class="track" cx="18" cy="18" r="15"/>
+              <circle class="fill" cx="18" cy="18" r="15" stroke-dasharray="94.2" stroke-dashoffset="28.3"/>
+            </svg>
+          </div>
+          <div class="live-feed">Reading src/components/Settings/SettingsForm.tsx</div>
+          <div class="card-footer">
+            <div class="pipeline">
+              <div class="pipeline-dot pipeline-dot--complete"></div>
+              <div class="pipeline-connector pipeline-connector--complete"></div>
+              <div class="pipeline-dot pipeline-dot--complete"></div>
+              <div class="pipeline-connector pipeline-connector--complete"></div>
+              <div class="pipeline-dot pipeline-dot--active"></div>
+              <div class="pipeline-connector"></div>
+              <div class="pipeline-dot pipeline-dot--upcoming"></div>
+              <div class="pipeline-connector"></div>
+              <div class="pipeline-dot pipeline-dot--upcoming"></div>
+            </div>
+            <span class="text-xs text-tertiary">3 / 5 stages</span>
+          </div>
+        </div>
+
+        <!-- Card: Planning -->
+        <div class="card card--working">
+          <div class="card-header">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1);">
+                <span class="status-dot status-dot--working"></span>
+                <span class="badge badge-working">Planning</span>
+              </div>
+              <h3 class="card-title">API rate limiting and throttling</h3>
+            </div>
+            <svg class="progress-ring" viewBox="0 0 36 36">
+              <circle class="track" cx="18" cy="18" r="15"/>
+              <circle class="fill" cx="18" cy="18" r="15" stroke-dasharray="94.2" stroke-dashoffset="84.8"/>
+            </svg>
+          </div>
+          <div class="live-feed">Analyzing existing middleware patterns...</div>
+          <div class="card-footer">
+            <div class="pipeline">
+              <div class="pipeline-dot pipeline-dot--active"></div>
+              <div class="pipeline-connector"></div>
+              <div class="pipeline-dot pipeline-dot--upcoming"></div>
+              <div class="pipeline-connector"></div>
+              <div class="pipeline-dot pipeline-dot--upcoming"></div>
+              <div class="pipeline-connector"></div>
+              <div class="pipeline-dot pipeline-dot--upcoming"></div>
+              <div class="pipeline-connector"></div>
+              <div class="pipeline-dot pipeline-dot--upcoming"></div>
+            </div>
+            <span class="text-xs text-tertiary">1 / 5 stages</span>
+          </div>
+        </div>
+
+        <!-- Card: Breakdown with subtasks -->
+        <div class="card card--working">
+          <div class="card-header">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1);">
+                <span class="status-dot status-dot--working"></span>
+                <span class="badge badge-working">Subtasks</span>
+              </div>
+              <h3 class="card-title">Test infrastructure overhaul</h3>
+            </div>
+          </div>
+          <div class="card-description" style="margin-bottom: var(--sp-3);">Waiting on 4 subtasks</div>
+          <div style="display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2);">
+            <span class="text-xs text-secondary">2 / 4 done</span>
+          </div>
+          <div class="subtask-bar">
+            <div class="subtask-bar-segment" style="width: 50%; background: var(--success);"></div>
+            <div class="subtask-bar-segment" style="width: 25%; background: var(--sage);"></div>
+            <div class="subtask-bar-segment" style="width: 25%; background: var(--surface-3);"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section: Recently Completed -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Recently Completed</h2>
+        <button class="btn btn-ghost btn-sm">View all</button>
+      </div>
+
+      <div class="completed-strip">
+        <div class="completed-chip">
+          <span class="check">&#10003;</span>
+          <span>Database migration scripts</span>
+          <span class="text-xs text-tertiary">12:34</span>
+        </div>
+        <div class="completed-chip">
+          <span class="check">&#10003;</span>
+          <span>API rate limiting</span>
+          <span class="text-xs text-tertiary">11:20</span>
+        </div>
+        <div class="completed-chip">
+          <span class="check">&#10003;</span>
+          <span>Error boundary components</span>
+          <span class="text-xs text-tertiary">10:45</span>
+        </div>
+        <div class="completed-chip">
+          <span class="check">&#10003;</span>
+          <span>User avatar uploads</span>
+          <span class="text-xs text-tertiary">09:30</span>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Assistant bubble -->
+  <div class="assistant-bubble" title="Open Assistant">&#9672;</div>
+</div>
+
+<!-- ========================================================================
+     VIEW 2: Task Detail (Focus View) - Review Flow
+     ======================================================================== -->
+
+<div class="view-label">View 2: Task Detail &mdash; Review Flow</div>
+
+<div class="page" style="min-height: auto;">
+  <header class="page-header">
+    <h1 class="page-title">Orkestra</h1>
+    <div class="page-actions">
+      <button class="btn btn-ghost btn-sm mono" style="font-size: 0.75rem;">main</button>
+      <button class="btn btn-primary">+ New Task</button>
+    </div>
+  </header>
+
+  <div class="page-content">
+    <div class="focus-view">
+      <div class="focus-breadcrumb">
+        <a href="#">Workbench</a>
+        <span>/</span>
+        <span>Refactor authentication middleware</span>
+      </div>
+
+      <div class="focus-header">
+        <h1 class="focus-title">Refactor authentication middleware</h1>
+        <div class="focus-meta">
+          <span class="focus-id">gentle-fuzzy-otter</span>
+          <span class="badge badge-review">Awaiting Review</span>
+          <span class="badge badge-stage">Planning</span>
+          <div class="auto-switch" style="margin-left: auto;">
+            <span class="auto-switch-label">Auto</span>
+            <div class="auto-switch-track">
+              <div class="auto-switch-thumb"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Review Action Panel (primary position) -->
+      <div class="review-panel">
+        <div class="review-panel-title">Review Plan</div>
+        <div class="review-textarea" contenteditable="true" style="outline: none;">Leave feedback to request changes...</div>
+        <div class="review-actions">
+          <button class="btn btn-success" style="flex: 1;">Approve Plan</button>
+          <button class="btn btn-warning" style="flex: 1; opacity: 0.5;">Request Changes</button>
+        </div>
+      </div>
+
+      <!-- Artifact (the main content to review) -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Plan Artifact</span>
+          <span class="text-xs text-tertiary">Iteration 1 &middot; 2 min ago</span>
+        </div>
+        <div class="focus-section-body">
+          <div class="artifact-content">
+            <h3>Authentication Middleware Refactor</h3>
+            <p>This plan proposes extracting JWT validation from the route handlers into a standalone middleware module. The key changes are:</p>
+            <ul>
+              <li>Create <code>src/middleware/auth.ts</code> with <code>validateToken()</code> and <code>refreshRotation()</code></li>
+              <li>Move <code>JwtPayload</code> type to <code>src/types/auth.ts</code> for shared access</li>
+              <li>Add refresh token rotation with 7-day sliding window</li>
+              <li>Implement rate limiting on the <code>/auth/refresh</code> endpoint (10 req/min)</li>
+              <li>Update all protected routes to use the new middleware instead of inline validation</li>
+            </ul>
+            <h3>Testing Strategy</h3>
+            <p>Unit tests for token validation logic, integration tests for the refresh flow, and update existing route tests to work with middleware-based auth.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Collapsible: Task Description -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Description</span>
+          <button class="btn btn-ghost btn-sm">&#9660;</button>
+        </div>
+        <div class="focus-section-body">
+          <p class="text-sm text-secondary">Extract the JWT validation logic from individual route handlers into a reusable authentication middleware. The current implementation duplicates token parsing in 12+ route files. We need a centralized middleware that handles token validation, refresh rotation, and error responses.</p>
+        </div>
+      </div>
+
+      <!-- Collapsible: Activity Log -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Activity</span>
+          <span class="text-xs text-tertiary">3 iterations</span>
+        </div>
+        <div class="focus-section-body" style="padding: 0;">
+          <div class="log-viewer">
+            <div class="log-header">
+              <span class="log-header-title">Planning &middot; Run 1</span>
+              <span class="log-header-title">Session 3a7f2c1</span>
+            </div>
+            <div class="log-body">
+              <div class="log-entry">
+                <span class="log-icon log-tool-read">R</span>
+                <span>Read src/routes/auth.ts</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-tool-read">R</span>
+                <span>Read src/routes/users.ts</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-tool-grep">G</span>
+                <span>Grep "jwt.verify" across src/</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-tool-read">R</span>
+                <span>Read src/types/index.ts</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-text">T</span>
+                <span style="color: rgba(250, 248, 245, 0.5);">Found 12 files with inline JWT validation. All use the same pattern...</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon" style="color: #d4835f;">&#9998;</span>
+                <span>Structured output: plan artifact</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================
+     VIEW 3: Task Detail (Focus View) - Questions Flow
+     ======================================================================== -->
+
+<div class="view-label">View 3: Task Detail &mdash; Questions Flow</div>
+
+<div class="page" style="min-height: auto;">
+  <header class="page-header">
+    <h1 class="page-title">Orkestra</h1>
+    <div class="page-actions">
+      <button class="btn btn-ghost btn-sm mono" style="font-size: 0.75rem;">main</button>
+      <button class="btn btn-primary">+ New Task</button>
+    </div>
+  </header>
+
+  <div class="page-content">
+    <div class="focus-view">
+      <div class="focus-breadcrumb">
+        <a href="#">Workbench</a>
+        <span>/</span>
+        <span>Database schema migration</span>
+      </div>
+
+      <div class="focus-header">
+        <h1 class="focus-title">Database schema migration</h1>
+        <div class="focus-meta">
+          <span class="focus-id">briskly-calm-falcon</span>
+          <span class="badge badge-questions">2 Questions</span>
+          <span class="badge badge-stage">Planning</span>
+        </div>
+      </div>
+
+      <!-- Question 1 -->
+      <div class="question-panel">
+        <div class="question-label">Question 1 of 2</div>
+        <div class="question-text">Which database migration approach should I use for the schema changes?</div>
+        <div class="question-context">The project currently has no migration framework configured. I found both Diesel and Refinery as dependencies in adjacent crates, so either would be consistent with the codebase.</div>
+
+        <div class="question-options">
+          <div class="question-option question-option--selected">
+            <div class="question-radio"></div>
+            <div>
+              <div class="font-medium text-sm">Refinery migrations</div>
+              <div class="text-xs text-secondary" style="margin-top: 2px;">SQL-based migrations with version numbering. Matches the existing pattern in orkestra-core.</div>
+            </div>
+          </div>
+          <div class="question-option">
+            <div class="question-radio"></div>
+            <div>
+              <div class="font-medium text-sm">Raw SQL scripts</div>
+              <div class="text-xs text-secondary" style="margin-top: 2px;">Manual SQL files without a framework. Simpler but no automatic version tracking.</div>
+            </div>
+          </div>
+          <div class="question-option">
+            <div class="question-radio"></div>
+            <div>
+              <div class="font-medium text-sm">Diesel migrations</div>
+              <div class="text-xs text-secondary" style="margin-top: 2px;">Full ORM-based migrations. More powerful but adds a heavier dependency.</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: var(--sp-3); justify-content: flex-end;">
+          <button class="btn btn-primary">Next Question</button>
+        </div>
+      </div>
+
+      <!-- Description (collapsed) -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Description</span>
+          <button class="btn btn-ghost btn-sm">&#9654;</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================
+     VIEW 4: Subtask Parent View
+     ======================================================================== -->
+
+<div class="view-label">View 4: Subtask Parent &mdash; Waiting on Children</div>
+
+<div class="page" style="min-height: auto;">
+  <header class="page-header">
+    <h1 class="page-title">Orkestra</h1>
+    <div class="page-actions">
+      <button class="btn btn-ghost btn-sm mono" style="font-size: 0.75rem;">main</button>
+      <button class="btn btn-primary">+ New Task</button>
+    </div>
+  </header>
+
+  <div class="page-content">
+    <div class="focus-view">
+      <div class="focus-breadcrumb">
+        <a href="#">Workbench</a>
+        <span>/</span>
+        <span>Test infrastructure overhaul</span>
+      </div>
+
+      <div class="focus-header">
+        <h1 class="focus-title">Test infrastructure overhaul</h1>
+        <div class="focus-meta">
+          <span class="focus-id">warmly-proud-heron</span>
+          <span class="badge badge-working">Waiting on Children</span>
+          <span class="text-xs text-secondary">2 of 4 subtasks done</span>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div style="margin-bottom: var(--sp-6);">
+        <div style="display: flex; justify-content: space-between; margin-bottom: var(--sp-2);">
+          <span class="text-sm text-secondary">Subtask Progress</span>
+          <span class="text-sm font-medium">50%</span>
+        </div>
+        <div class="subtask-bar" style="height: 6px;">
+          <div class="subtask-bar-segment" style="width: 50%; background: var(--success);"></div>
+          <div class="subtask-bar-segment" style="width: 25%; background: var(--sage);"></div>
+          <div class="subtask-bar-segment" style="width: 25%; background: var(--surface-3);"></div>
+        </div>
+      </div>
+
+      <!-- Subtask List -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Subtasks</span>
+        </div>
+        <div class="focus-section-body" style="padding: var(--sp-3);">
+          <div class="subtask-list">
+            <div class="subtask-item subtask-item--done">
+              <span class="status-dot status-dot--done"></span>
+              <span class="subtask-id">robin</span>
+              <span class="subtask-title" style="text-decoration: line-through; opacity: 0.6;">Set up Vitest configuration</span>
+              <span class="badge badge-done">Done</span>
+            </div>
+            <div class="subtask-item subtask-item--done">
+              <span class="status-dot status-dot--done"></span>
+              <span class="subtask-id">crane</span>
+              <span class="subtask-title" style="text-decoration: line-through; opacity: 0.6;">Create test utilities module</span>
+              <span class="badge badge-done">Done</span>
+            </div>
+            <div class="subtask-item">
+              <span class="status-dot status-dot--working"></span>
+              <span class="subtask-id">eagle</span>
+              <span class="subtask-title">Write integration test suite</span>
+              <span class="badge badge-working">Work</span>
+              <span class="subtask-dep">depends on robin</span>
+            </div>
+            <div class="subtask-item">
+              <span class="status-dot" style="background: var(--border);"></span>
+              <span class="subtask-id">finch</span>
+              <span class="subtask-title">Add coverage reporting</span>
+              <span class="badge badge-stage">Queued</span>
+              <span class="subtask-dep">depends on eagle</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Plan Artifact (collapsed) -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Breakdown Plan</span>
+          <button class="btn btn-ghost btn-sm">&#9654;</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================
+     VIEW 5: Dark Mode Preview
+     ======================================================================== -->
+
+<div class="view-label">View 5: Dark Mode</div>
+
+<div class="dark-preview">
+  <div style="max-width: 1400px; margin: 0 auto;">
+
+    <!-- Header -->
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-8); padding-bottom: var(--sp-4); border-bottom: 1px solid var(--border-light);">
+      <h1 class="page-title">Orkestra</h1>
+      <div class="page-actions">
+        <button class="btn btn-ghost btn-sm mono" style="font-size: 0.75rem;">main</button>
+        <button class="btn btn-primary">+ New Task</button>
+      </div>
+    </div>
+
+    <!-- Your Attention -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Your Attention</h2>
+        <span class="section-count">2 items</span>
+      </div>
+
+      <div class="card-grid">
+        <div class="card card--attention">
+          <div class="card-header">
+            <div>
+              <div style="display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1);">
+                <span class="badge badge-review">Review</span>
+                <span class="badge badge-stage">Work</span>
+              </div>
+              <h3 class="card-title">WebSocket event handler refactor</h3>
+            </div>
+            <svg class="progress-ring" viewBox="0 0 36 36">
+              <circle class="track" cx="18" cy="18" r="15"/>
+              <circle class="fill" cx="18" cy="18" r="15" stroke-dasharray="94.2" stroke-dashoffset="18.8" style="stroke: var(--warning);"/>
+            </svg>
+          </div>
+          <div class="card-description">Summary describes splitting the monolithic event handler into domain-specific modules with type-safe event routing...</div>
+          <div class="card-meta">
+            <span class="text-xs text-tertiary mono">firmly-keen-osprey</span>
+          </div>
+        </div>
+
+        <div class="card card--questions">
+          <div class="card-header">
+            <div>
+              <div style="display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1);">
+                <span class="badge badge-questions">1 Question</span>
+                <span class="badge badge-stage">Work</span>
+              </div>
+              <h3 class="card-title">Error reporting dashboard</h3>
+            </div>
+          </div>
+          <div class="card-description">Agent is asking about the preferred charting library for the error rate visualization.</div>
+          <div class="card-meta">
+            <span class="text-xs text-tertiary mono">gently-swift-puma</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Agents at Work -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Agents at Work</h2>
+        <span class="section-count">1 active</span>
+      </div>
+
+      <div class="card-grid">
+        <div class="card card--working">
+          <div class="card-header">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1);">
+                <span class="status-dot status-dot--working"></span>
+                <span class="badge badge-working">Review</span>
+                <span class="badge badge-auto">Auto</span>
+              </div>
+              <h3 class="card-title">Cache invalidation strategy</h3>
+            </div>
+          </div>
+          <div class="live-feed">Reviewing diff against plan requirements...</div>
+          <div class="card-footer">
+            <div class="pipeline">
+              <div class="pipeline-dot pipeline-dot--complete"></div>
+              <div class="pipeline-connector pipeline-connector--complete"></div>
+              <div class="pipeline-dot pipeline-dot--complete"></div>
+              <div class="pipeline-connector pipeline-connector--complete"></div>
+              <div class="pipeline-dot pipeline-dot--complete"></div>
+              <div class="pipeline-connector pipeline-connector--complete"></div>
+              <div class="pipeline-dot pipeline-dot--active"></div>
+              <div class="pipeline-connector"></div>
+              <div class="pipeline-dot pipeline-dot--upcoming"></div>
+            </div>
+            <span class="text-xs text-tertiary">4 / 5 stages</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Completed -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Recently Completed</h2>
+        <button class="btn btn-ghost btn-sm">View all</button>
+      </div>
+      <div class="completed-strip">
+        <div class="completed-chip">
+          <span class="check">&#10003;</span>
+          <span>Logging infrastructure</span>
+        </div>
+        <div class="completed-chip">
+          <span class="check">&#10003;</span>
+          <span>Config validation</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ========================================================================
+     VIEW 6: Task Creation
+     ======================================================================== -->
+
+<div class="view-label">View 6: Task Creation</div>
+
+<div class="page" style="min-height: auto;">
+  <header class="page-header">
+    <h1 class="page-title">Orkestra</h1>
+    <div class="page-actions">
+      <button class="btn btn-ghost btn-sm mono" style="font-size: 0.75rem;">main</button>
+    </div>
+  </header>
+
+  <div class="page-content">
+    <div class="focus-view">
+      <div class="focus-breadcrumb">
+        <a href="#">Workbench</a>
+        <span>/</span>
+        <span>New Task</span>
+      </div>
+
+      <h1 class="focus-title" style="margin-bottom: var(--sp-6);">What do you want to build?</h1>
+
+      <div class="focus-section">
+        <div class="focus-section-body">
+          <!-- Description -->
+          <div style="margin-bottom: var(--sp-5);">
+            <label class="text-sm font-medium" style="display: block; margin-bottom: var(--sp-2);">Describe the task</label>
+            <div class="review-textarea" contenteditable="true" style="outline: none; min-height: 120px; margin-bottom: 0;">Add user profile picture upload with S3 storage, image resizing, and a crop tool in the settings page...</div>
+          </div>
+
+          <!-- Flow Picker -->
+          <div style="margin-bottom: var(--sp-5);">
+            <label class="text-sm font-medium" style="display: block; margin-bottom: var(--sp-2);">Pipeline</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3);">
+              <div style="padding: var(--sp-3) var(--sp-4); border: 2px solid var(--terracotta); border-radius: var(--radius-sm); background: var(--terracotta-bg); cursor: pointer;">
+                <div class="font-medium text-sm" style="color: var(--terracotta); margin-bottom: var(--sp-1);">Standard</div>
+                <div class="text-xs text-secondary">Plan &#8594; Task &#8594; Work &#8594; Check &#8594; Review</div>
+              </div>
+              <div style="padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer;">
+                <div class="font-medium text-sm" style="margin-bottom: var(--sp-1);">Quick</div>
+                <div class="text-xs text-secondary">Plan &#8594; Work &#8594; Check &#8594; Review</div>
+              </div>
+              <div style="padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer;">
+                <div class="font-medium text-sm" style="margin-bottom: var(--sp-1);">Hotfix</div>
+                <div class="text-xs text-secondary">Work &#8594; Check &#8594; Review</div>
+              </div>
+              <div style="padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer;">
+                <div class="font-medium text-sm" style="margin-bottom: var(--sp-1);">Micro</div>
+                <div class="text-xs text-secondary">Work &#8594; Check</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Options row -->
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <button class="btn btn-ghost btn-sm mono" style="font-size: 0.75rem;">Branch: main</button>
+            <div class="auto-switch">
+              <span class="auto-switch-label">Auto mode</span>
+              <div class="auto-switch-track">
+                <div class="auto-switch-thumb"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: var(--sp-3); justify-content: flex-end; margin-top: var(--sp-4);">
+        <button class="btn btn-secondary">Cancel</button>
+        <button class="btn btn-primary">Create Task</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================
+     VIEW 7: Task Detail (Focus View) - Failed / Error Recovery
+     ======================================================================== -->
+
+<div class="view-label">View 7: Task Detail &mdash; Failed Task</div>
+
+<div class="page" style="min-height: auto;">
+  <header class="page-header">
+    <h1 class="page-title">Orkestra</h1>
+    <div class="page-actions">
+      <button class="btn btn-ghost btn-sm mono" style="font-size: 0.75rem;">main</button>
+      <button class="btn btn-primary">+ New Task</button>
+    </div>
+  </header>
+
+  <div class="page-content">
+    <div class="focus-view">
+      <div class="focus-breadcrumb">
+        <a href="#">Workbench</a>
+        <span>/</span>
+        <span>Fix CI pipeline configuration</span>
+      </div>
+
+      <div class="focus-header">
+        <h1 class="focus-title">Fix CI pipeline configuration</h1>
+        <div class="focus-meta">
+          <span class="focus-id">roundly-quick-finch</span>
+          <span class="badge badge-failed">Failed</span>
+          <span class="badge badge-stage">Checks</span>
+        </div>
+      </div>
+
+      <!-- Error hero block -->
+      <div style="background: var(--error-bg); border: 1px solid rgba(196, 74, 58, 0.2); border-radius: var(--radius-card); padding: var(--sp-5); margin-bottom: var(--sp-4);">
+        <div style="display: flex; align-items: flex-start; gap: var(--sp-3); margin-bottom: var(--sp-3);">
+          <span style="color: var(--error); font-size: 1.25rem; line-height: 1;">&#10005;</span>
+          <div>
+            <div class="heading" style="font-size: 1rem; font-weight: 600; color: var(--error); margin-bottom: var(--sp-1);">cargo test failed</div>
+            <div class="text-sm text-secondary">3 assertion errors in tests/auth_test.rs</div>
+          </div>
+        </div>
+        <div style="background: var(--surface-1); border-radius: var(--radius-sm); padding: var(--sp-3); font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-secondary); line-height: 1.7;">
+          <div>thread 'auth::test_forbidden_response' panicked at tests/auth_test.rs:47</div>
+          <div style="padding-left: var(--sp-4);">assertion `left == right` failed</div>
+          <div style="padding-left: var(--sp-6); color: var(--error);">left: StatusCode(401)</div>
+          <div style="padding-left: var(--sp-5); color: var(--success);">right: StatusCode(403)</div>
+        </div>
+      </div>
+
+      <!-- Retry panel -->
+      <div style="background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-card); padding: var(--sp-5); margin-bottom: var(--sp-4);">
+        <div class="heading" style="font-size: 0.9375rem; font-weight: 500; margin-bottom: var(--sp-3);">Retry with Instructions</div>
+        <div class="review-textarea" contenteditable="true" style="outline: none; margin-bottom: var(--sp-3);">The auth middleware now returns 401 for expired tokens. Update test assertions from 403 to 401.</div>
+        <div style="display: flex; gap: var(--sp-3);">
+          <button class="btn" style="flex: 1; background: var(--error); color: white; border: none; border-radius: var(--radius-btn); padding: 10px 20px; font-family: var(--font-body); font-size: 0.875rem; font-weight: 600; cursor: pointer;">Retry with Instructions</button>
+          <button class="btn btn-ghost" style="flex: 0; padding: 10px 20px;">Retry (no instructions)</button>
+        </div>
+      </div>
+
+      <!-- Activity context -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Last Agent Activity</span>
+          <span class="text-xs text-tertiary">Iteration 3 &middot; 6 min ago</span>
+        </div>
+        <div class="focus-section-body" style="padding: 0;">
+          <div class="log-viewer">
+            <div class="log-header">
+              <span class="log-header-title">Work &middot; Run 3</span>
+              <span class="log-header-title">8 actions</span>
+            </div>
+            <div class="log-body">
+              <div class="log-entry">
+                <span class="log-icon log-tool-read">R</span>
+                <span>Read tests/auth_test.rs</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-tool-read">R</span>
+                <span>Read src/middleware/auth.ts</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon" style="color: #d4835f;">E</span>
+                <span>Edit tests/auth_test.rs:45-52</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon" style="color: #d4835f;">E</span>
+                <span>Edit tests/auth_test.rs:78-83</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon" style="color: var(--warning);">B</span>
+                <span>Run cargo test --test auth_test</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon" style="color: var(--error);">!</span>
+                <span style="color: var(--error);">FAILED: 3 assertion errors</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Iteration history (collapsed) -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Iteration History</span>
+          <span class="text-xs text-tertiary">3 attempts</span>
+          <button class="btn btn-ghost btn-sm" style="margin-left: auto;">&#9654;</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================
+     VIEW 8: Task Detail (Focus View) - Integration / Completed
+     ======================================================================== -->
+
+<div class="view-label">View 8: Task Detail &mdash; Integration (Completed)</div>
+
+<div class="page" style="min-height: auto;">
+  <header class="page-header">
+    <h1 class="page-title">Orkestra</h1>
+    <div class="page-actions">
+      <button class="btn btn-ghost btn-sm mono" style="font-size: 0.75rem;">main</button>
+      <button class="btn btn-primary">+ New Task</button>
+    </div>
+  </header>
+
+  <div class="page-content">
+    <div class="focus-view">
+      <div class="focus-breadcrumb">
+        <a href="#">Workbench</a>
+        <span>/</span>
+        <span>Database migration scripts</span>
+      </div>
+
+      <div class="focus-header">
+        <h1 class="focus-title">Database migration scripts</h1>
+        <div class="focus-meta">
+          <span class="focus-id">gently-swift-puma</span>
+          <span class="badge badge-done">Completed</span>
+        </div>
+      </div>
+
+      <!-- Integration hero panel -->
+      <div style="background: var(--success-bg); border: 1px solid rgba(90, 154, 96, 0.2); border-radius: var(--radius-card); padding: var(--sp-5); margin-bottom: var(--sp-4);">
+        <div class="heading" style="font-size: 1rem; font-weight: 600; color: var(--success); margin-bottom: var(--sp-3);">Ready to Integrate</div>
+        <div class="text-sm text-secondary" style="margin-bottom: var(--sp-4);">This task has completed all workflow stages. Choose how to land the changes.</div>
+        <div style="display: flex; gap: var(--sp-3);">
+          <button class="btn" style="flex: 1; background: var(--success); color: white; border: none; border-radius: var(--radius-btn); padding: 12px 24px; font-family: var(--font-body); font-size: 0.875rem; font-weight: 600; cursor: pointer;">Merge to main</button>
+          <button class="btn" style="flex: 1; background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-btn); padding: 12px 24px; font-family: var(--font-body); font-size: 0.875rem; font-weight: 600; cursor: pointer;">Open Pull Request</button>
+        </div>
+        <div class="text-xs text-tertiary mono" style="margin-top: var(--sp-3);">Branch: task/gently-swift-puma &middot; +3 commits ahead of main</div>
+      </div>
+
+      <!-- Summary artifact -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Summary</span>
+        </div>
+        <div class="focus-section-body">
+          <div class="artifact-content">
+            <p>Added <code>workflow_stage_sessions</code> and <code>log_entries</code> tables with composite indexes for efficient querying. Migration runs cleanly on both fresh and existing databases. All 569 tests pass.</p>
+            <h3>Files Changed</h3>
+            <ul>
+              <li><code>V15__add_sessions_and_logs.sql</code> (new)</li>
+              <li><code>src/workflow/domain/session.rs</code> (new)</li>
+              <li><code>src/adapters/sqlite/mod.rs</code> (modified)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Checks passed -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Checks</span>
+          <span class="text-xs" style="color: var(--success);">All passed</span>
+        </div>
+        <div class="focus-section-body" style="padding: var(--sp-3) var(--sp-4);">
+          <div style="display: flex; flex-direction: column; gap: var(--sp-2); font-size: 0.8125rem;">
+            <div style="display: flex; align-items: center; gap: var(--sp-2);">
+              <span style="color: var(--success);">&#10003;</span>
+              <span class="text-secondary">cargo fmt</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: var(--sp-2);">
+              <span style="color: var(--success);">&#10003;</span>
+              <span class="text-secondary">cargo clippy (0 warnings)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: var(--sp-2);">
+              <span style="color: var(--success);">&#10003;</span>
+              <span class="text-secondary">cargo test (569/569 passing)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Iteration timeline -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Timeline</span>
+        </div>
+        <div class="focus-section-body" style="padding: var(--sp-3) var(--sp-4);">
+          <div style="display: flex; flex-direction: column; gap: var(--sp-2); font-size: 0.8125rem; color: var(--text-secondary);">
+            <div style="display: flex; gap: var(--sp-3);">
+              <span class="mono text-xs text-tertiary" style="min-width: 44px;">09:34</span>
+              <span>Planning started</span>
+            </div>
+            <div style="display: flex; gap: var(--sp-3);">
+              <span class="mono text-xs text-tertiary" style="min-width: 44px;">09:36</span>
+              <span>Plan approved</span>
+            </div>
+            <div style="display: flex; gap: var(--sp-3);">
+              <span class="mono text-xs text-tertiary" style="min-width: 44px;">09:37</span>
+              <span>Work started</span>
+            </div>
+            <div style="display: flex; gap: var(--sp-3);">
+              <span class="mono text-xs text-tertiary" style="min-width: 44px;">09:45</span>
+              <span>Checks: all passing</span>
+            </div>
+            <div style="display: flex; gap: var(--sp-3);">
+              <span class="mono text-xs text-tertiary" style="min-width: 44px;">09:48</span>
+              <span style="color: var(--error);">Review rejected: "Missing FK constraints"</span>
+            </div>
+            <div style="display: flex; gap: var(--sp-3);">
+              <span class="mono text-xs text-tertiary" style="min-width: 44px;">09:50</span>
+              <span>Work restarted (iteration 2)</span>
+            </div>
+            <div style="display: flex; gap: var(--sp-3);">
+              <span class="mono text-xs text-tertiary" style="min-width: 44px;">09:57</span>
+              <span style="color: var(--success);">Review approved &mdash; task completed</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================
+     VIEW 9: Task Detail (Focus View) - Active Monitoring
+     ======================================================================== -->
+
+<div class="view-label">View 9: Task Detail &mdash; Agent Working</div>
+
+<div class="page" style="min-height: auto;">
+  <header class="page-header">
+    <h1 class="page-title">Orkestra</h1>
+    <div class="page-actions">
+      <button class="btn btn-ghost btn-sm mono" style="font-size: 0.75rem;">main</button>
+      <button class="btn btn-primary">+ New Task</button>
+    </div>
+  </header>
+
+  <div class="page-content">
+    <div class="focus-view">
+      <div class="focus-breadcrumb">
+        <a href="#">Workbench</a>
+        <span>/</span>
+        <span>User settings page implementation</span>
+      </div>
+
+      <div class="focus-header">
+        <h1 class="focus-title">User settings page implementation</h1>
+        <div class="focus-meta">
+          <span class="focus-id">warmly-proud-heron</span>
+          <span class="badge badge-working">Agent Working</span>
+          <span class="badge badge-stage">Work</span>
+          <div class="auto-switch" style="margin-left: auto;">
+            <span class="auto-switch-label">Auto</span>
+            <div class="auto-switch-track auto-switch-track--on">
+              <div class="auto-switch-thumb auto-switch-thumb--on"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progress indicator -->
+      <div style="display: flex; align-items: center; gap: var(--sp-4); margin-bottom: var(--sp-4); padding: var(--sp-4); background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-card);">
+        <div class="pipeline" style="flex: 1; gap: 0;">
+          <div class="pipeline-dot pipeline-dot--complete"></div>
+          <div class="pipeline-connector pipeline-connector--complete"></div>
+          <div class="pipeline-dot pipeline-dot--complete"></div>
+          <div class="pipeline-connector pipeline-connector--complete"></div>
+          <div class="pipeline-dot pipeline-dot--active"></div>
+          <div class="pipeline-connector"></div>
+          <div class="pipeline-dot pipeline-dot--upcoming"></div>
+          <div class="pipeline-connector"></div>
+          <div class="pipeline-dot pipeline-dot--upcoming"></div>
+        </div>
+        <div style="display: flex; flex-direction: column; align-items: flex-end;">
+          <span class="text-xs font-medium">Stage 3 of 5: Work</span>
+          <span class="mono text-xs text-tertiary">4m 12s elapsed</span>
+        </div>
+      </div>
+
+      <!-- Live activity feed -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">
+            <span class="status-dot status-dot--working" style="display: inline-block; margin-right: var(--sp-2);"></span>
+            Live Activity
+          </span>
+          <span class="text-xs text-tertiary">23 actions &middot; streaming</span>
+        </div>
+        <div class="focus-section-body" style="padding: 0;">
+          <div class="log-viewer">
+            <div class="log-body" style="max-height: 300px; overflow-y: auto;">
+              <div class="log-entry">
+                <span class="log-icon log-tool-read">R</span>
+                <span>Read src/types/settings.ts</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-tool-read">R</span>
+                <span>Read src/hooks/useSettings.ts</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-tool-grep">G</span>
+                <span>Grep "SettingsForm" &mdash; 4 matches</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-tool-read">R</span>
+                <span>Read src/components/Settings/SettingsForm.tsx</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-tool-read">R</span>
+                <span>Read src/components/ui/Form/FormField.tsx</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-text">T</span>
+                <span style="color: rgba(250, 248, 245, 0.5);">Analyzing form validation pattern in existing components...</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon" style="color: #d4835f;">E</span>
+                <span>Edit src/types/settings.ts:12-28 (add theme preferences type)</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon" style="color: #d4835f;">E</span>
+                <span>Edit src/hooks/useSettings.ts:5-18 (add mutation for theme)</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-tool-read">R</span>
+                <span>Read src/styles/theme.ts</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon log-text">T</span>
+                <span style="color: rgba(250, 248, 245, 0.5);">Theme preferences will use a dropdown selector with live preview.</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon" style="color: #d4835f;">E</span>
+                <span>Edit src/components/Settings/SettingsForm.tsx:34-72 (add theme section)</span>
+              </div>
+              <div class="log-entry">
+                <span class="log-icon" style="color: #d4835f;">E</span>
+                <span>Edit src/components/Settings/SettingsForm.tsx:89-105 (add notification prefs)</span>
+              </div>
+              <div class="log-entry" style="color: var(--text-primary);">
+                <span class="log-icon" style="color: #d4835f;">E</span>
+                <span>Edit src/components/Settings/SettingsForm.tsx:110-130 (add save handler)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Task info -->
+      <div class="focus-section">
+        <div class="focus-section-header">
+          <span class="focus-section-title">Description</span>
+          <button class="btn btn-ghost btn-sm">&#9660;</button>
+        </div>
+        <div class="focus-section-body">
+          <p class="text-sm text-secondary">Implement the user settings page with theme preferences, notification settings, and account management. Build on the existing form components and connect to the settings API.</p>
+          <div style="display: flex; gap: var(--sp-4); margin-top: var(--sp-3); font-size: 0.8125rem; color: var(--text-tertiary);">
+            <span>Branch: task/warmly-proud-heron</span>
+            <span>Files touched: 4</span>
+            <span>Plan approved at 14:31</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interrupt action -->
+      <div style="display: flex; justify-content: flex-end; padding: var(--sp-3) 0;">
+        <button class="btn btn-ghost" style="color: var(--warning); border-color: rgba(196, 154, 58, 0.3);">Interrupt Agent</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================
+     Color Palette Reference
+     ======================================================================== -->
+
+<div class="view-label">Design Tokens Reference</div>
+
+<div style="max-width: 1400px; margin: 0 auto; padding: 0 var(--sp-6) var(--sp-16);">
+
+  <!-- Color Swatches -->
+  <div style="margin-bottom: var(--sp-8);">
+    <h3 class="heading font-semibold" style="margin-bottom: var(--sp-4);">Color Palette</h3>
+    <div style="display: flex; gap: var(--sp-3); flex-wrap: wrap;">
+      <div>
+        <div style="width: 64px; height: 64px; border-radius: var(--radius-sm); background: #faf8f5; border: 1px solid var(--border);"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Canvas</div>
+        <div class="mono text-xs text-tertiary">#faf8f5</div>
+      </div>
+      <div>
+        <div style="width: 64px; height: 64px; border-radius: var(--radius-sm); background: #ffffff; border: 1px solid var(--border);"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Surface</div>
+        <div class="mono text-xs text-tertiary">#ffffff</div>
+      </div>
+      <div>
+        <div style="width: 64px; height: 64px; border-radius: var(--radius-sm); background: #c4643a;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Terracotta</div>
+        <div class="mono text-xs text-tertiary">#c4643a</div>
+      </div>
+      <div>
+        <div style="width: 64px; height: 64px; border-radius: var(--radius-sm); background: #6b8f71;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Sage</div>
+        <div class="mono text-xs text-tertiary">#6b8f71</div>
+      </div>
+      <div>
+        <div style="width: 64px; height: 64px; border-radius: var(--radius-sm); background: #4a6280;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Slate</div>
+        <div class="mono text-xs text-tertiary">#4a6280</div>
+      </div>
+      <div>
+        <div style="width: 64px; height: 64px; border-radius: var(--radius-sm); background: #2d2926;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Charcoal</div>
+        <div class="mono text-xs text-tertiary">#2d2926</div>
+      </div>
+      <div>
+        <div style="width: 64px; height: 64px; border-radius: var(--radius-sm); background: #5a9a60;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Success</div>
+        <div class="mono text-xs text-tertiary">#5a9a60</div>
+      </div>
+      <div>
+        <div style="width: 64px; height: 64px; border-radius: var(--radius-sm); background: #c49a3a;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Warning</div>
+        <div class="mono text-xs text-tertiary">#c49a3a</div>
+      </div>
+      <div>
+        <div style="width: 64px; height: 64px; border-radius: var(--radius-sm); background: #c44a3a;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Error</div>
+        <div class="mono text-xs text-tertiary">#c44a3a</div>
+      </div>
+      <div>
+        <div style="width: 64px; height: 64px; border-radius: var(--radius-sm); background: #4a7ac4;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Info</div>
+        <div class="mono text-xs text-tertiary">#4a7ac4</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Typography -->
+  <div style="margin-bottom: var(--sp-8);">
+    <h3 class="heading font-semibold" style="margin-bottom: var(--sp-4);">Typography</h3>
+    <div style="display: flex; flex-direction: column; gap: var(--sp-4);">
+      <div>
+        <span class="text-xs text-tertiary mono">Fraunces 600 / 28px / -0.02em</span>
+        <div class="heading" style="font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em;">Page Title Heading</div>
+      </div>
+      <div>
+        <span class="text-xs text-tertiary mono">Fraunces 500 / 18px / -0.01em</span>
+        <div class="heading" style="font-size: 1.125rem; font-weight: 500; letter-spacing: -0.01em;">Section Title</div>
+      </div>
+      <div>
+        <span class="text-xs text-tertiary mono">Fraunces 500 / 16px</span>
+        <div class="heading" style="font-size: 1rem; font-weight: 500;">Card Title</div>
+      </div>
+      <div>
+        <span class="text-xs text-tertiary mono">Nunito Sans 400 / 14px / 1.5</span>
+        <div style="font-size: 0.875rem;">Body text for descriptions, paragraphs, and general content. The humanist letterforms feel warm and approachable.</div>
+      </div>
+      <div>
+        <span class="text-xs text-tertiary mono">Nunito Sans 600 / 13px</span>
+        <div style="font-size: 0.8125rem; font-weight: 600;">Label or metadata text</div>
+      </div>
+      <div>
+        <span class="text-xs text-tertiary mono">JetBrains Mono 400 / 12px</span>
+        <div class="mono" style="font-size: 0.75rem;">gentle-fuzzy-otter  &middot;  src/middleware/auth.ts  &middot;  3a7f2c1</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Spacing -->
+  <div style="margin-bottom: var(--sp-8);">
+    <h3 class="heading font-semibold" style="margin-bottom: var(--sp-4);">Spacing Scale (4px base)</h3>
+    <div style="display: flex; align-items: flex-end; gap: var(--sp-3);">
+      <div style="text-align: center;">
+        <div style="width: 4px; height: 4px; background: var(--terracotta); border-radius: 1px;"></div>
+        <div class="mono text-xs text-tertiary" style="margin-top: var(--sp-1);">4</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="width: 8px; height: 8px; background: var(--terracotta); border-radius: 2px;"></div>
+        <div class="mono text-xs text-tertiary" style="margin-top: var(--sp-1);">8</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="width: 12px; height: 12px; background: var(--terracotta); border-radius: 2px;"></div>
+        <div class="mono text-xs text-tertiary" style="margin-top: var(--sp-1);">12</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="width: 16px; height: 16px; background: var(--terracotta); border-radius: 3px;"></div>
+        <div class="mono text-xs text-tertiary" style="margin-top: var(--sp-1);">16</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="width: 24px; height: 24px; background: var(--terracotta); border-radius: 4px;"></div>
+        <div class="mono text-xs text-tertiary" style="margin-top: var(--sp-1);">24</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="width: 32px; height: 32px; background: var(--terracotta); border-radius: 4px;"></div>
+        <div class="mono text-xs text-tertiary" style="margin-top: var(--sp-1);">32</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="width: 48px; height: 48px; background: var(--terracotta); border-radius: 6px;"></div>
+        <div class="mono text-xs text-tertiary" style="margin-top: var(--sp-1);">48</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="width: 64px; height: 64px; background: var(--terracotta); border-radius: 8px;"></div>
+        <div class="mono text-xs text-tertiary" style="margin-top: var(--sp-1);">64</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Border Radius -->
+  <div style="margin-bottom: var(--sp-8);">
+    <h3 class="heading font-semibold" style="margin-bottom: var(--sp-4);">Border Radius</h3>
+    <div style="display: flex; align-items: center; gap: var(--sp-6);">
+      <div style="text-align: center;">
+        <div style="width: 64px; height: 64px; border: 2px solid var(--terracotta); border-radius: 8px;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Small</div>
+        <div class="mono text-xs text-tertiary">8px</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="width: 64px; height: 64px; border: 2px solid var(--terracotta); border-radius: 16px;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Medium</div>
+        <div class="mono text-xs text-tertiary">16px</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="width: 64px; height: 64px; border: 2px solid var(--terracotta); border-radius: 24px;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Large</div>
+        <div class="mono text-xs text-tertiary">24px</div>
+      </div>
+      <div style="text-align: center;">
+        <div style="width: 64px; height: 64px; border: 2px solid var(--terracotta); border-radius: 9999px;"></div>
+        <div class="text-xs text-secondary" style="margin-top: var(--sp-1);">Full</div>
+        <div class="mono text-xs text-tertiary">9999px</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

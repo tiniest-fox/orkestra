@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra Workshop - Integration View</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Nunito+Sans:ital,opsz,wght@0,6..12,300;0,6..12,400;0,6..12,500;0,6..12,600;0,6..12,700;1,6..12,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --canvas: #faf8f5; --surface-1: #ffffff; --surface-2: #f5f2ee; --surface-3: #ede9e3;
+  --surface-hover: #f0ece6;
+  --terracotta: #c4643a; --terracotta-dim: #d4835f; --terracotta-bg: #fdf0ea;
+  --sage: #6b8f71; --sage-dim: #8aab8f; --sage-bg: #eef5ef;
+  --slate: #4a6280; --slate-dim: #7490ab; --slate-bg: #edf2f7;
+  --charcoal: #2d2926;
+  --success: #5a9a60; --success-bg: #eef5ef;
+  --warning: #c49a3a; --warning-bg: #fdf6ea;
+  --error: #c44a3a; --error-bg: #fdf0ea;
+  --info: #4a7ac4; --info-bg: #edf2f9;
+  --text-primary: #2d2926; --text-secondary: #6b6560; --text-tertiary: #9b9590;
+  --text-inverse: #faf8f5;
+  --border: #e5e0d8; --border-light: #ede9e3; --border-focus: var(--terracotta);
+  --font-heading: 'Fraunces', serif; --font-body: 'Nunito Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px;
+  --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+  --radius-sm: 8px; --radius-md: 16px; --radius-lg: 24px; --radius-full: 9999px;
+  --shadow-sm: 0 1px 3px rgba(45,41,38,0.06), 0 1px 2px rgba(45,41,38,0.04);
+  --shadow-md: 0 4px 12px rgba(45,41,38,0.08), 0 2px 4px rgba(45,41,38,0.04);
+  --shadow-hover: 0 12px 32px rgba(45,41,38,0.12), 0 4px 12px rgba(45,41,38,0.06);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms; --duration-normal: 300ms;
+}
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-body); color: var(--text-primary); background: var(--canvas); line-height: 1.5; }
+
+.mono { font-family: var(--font-mono); }
+
+/* -- Page Layout -- */
+.page { min-height: 100vh; display: flex; flex-direction: column; }
+
+.page-header {
+  padding: var(--sp-4) var(--sp-6);
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--canvas); position: sticky; top: 0; z-index: 100;
+}
+.page-title { font-family: var(--font-heading); font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; }
+
+.page-content { flex: 1; padding: var(--sp-6); max-width: 800px; margin: 0 auto; width: 100%; }
+
+/* -- Buttons -- */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4); font-family: var(--font-body);
+  font-size: 0.875rem; font-weight: 600; border: none;
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+.btn:hover { transform: translateY(-1px); }
+.btn-primary { background: var(--terracotta); color: var(--text-inverse); }
+.btn-primary:hover { background: #b85a32; box-shadow: var(--shadow-md); }
+.btn-success { background: var(--success); color: var(--text-inverse); }
+.btn-success:hover { background: #4f8a55; box-shadow: var(--shadow-md); }
+.btn-secondary { background: var(--surface-2); color: var(--text-primary); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--surface-3); }
+.btn-ghost { background: transparent; color: var(--text-secondary); }
+.btn-ghost:hover { background: var(--surface-2); color: var(--text-primary); }
+.btn-sm { padding: var(--sp-1) var(--sp-3); font-size: 0.8125rem; }
+.btn-lg { padding: var(--sp-4) var(--sp-6); font-size: 1rem; }
+
+/* -- Badges -- */
+.badge {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: 2px var(--sp-2); font-size: 0.6875rem; font-weight: 600;
+  letter-spacing: 0.02em; text-transform: uppercase; border-radius: var(--radius-full);
+}
+.badge-done { background: var(--success-bg); color: var(--success); }
+.badge-stage { background: var(--surface-3); color: var(--text-secondary); }
+
+/* -- Focus View -- */
+.focus-breadcrumb {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin-bottom: var(--sp-6); font-size: 0.8125rem; color: var(--text-tertiary);
+}
+.focus-breadcrumb a { color: var(--terracotta); text-decoration: none; }
+.focus-breadcrumb a:hover { text-decoration: underline; }
+
+.focus-header { margin-bottom: var(--sp-6); }
+.focus-title {
+  font-family: var(--font-heading); font-size: 1.75rem; font-weight: 600;
+  letter-spacing: -0.02em; line-height: 1.2; margin-bottom: var(--sp-2);
+}
+.focus-meta { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.focus-id { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-tertiary); }
+
+/* -- Summary Section -- */
+.summary-section {
+  background: var(--surface-1); border-radius: var(--radius-md);
+  border: 1px solid var(--border-light); box-shadow: var(--shadow-sm);
+  padding: var(--sp-5); margin-bottom: var(--sp-6);
+}
+
+.summary-title {
+  font-family: var(--font-heading); font-size: 0.9375rem; font-weight: 500;
+  margin-bottom: var(--sp-3); color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+
+.summary-content { font-size: 0.875rem; line-height: 1.7; color: var(--text-primary); }
+.summary-content p { margin-bottom: var(--sp-3); }
+.summary-content ul { padding-left: var(--sp-5); margin-bottom: var(--sp-3); }
+.summary-content li { margin-bottom: var(--sp-1); }
+.summary-content code {
+  font-family: var(--font-mono); font-size: 0.8125rem;
+  background: var(--surface-2); padding: 1px 4px; border-radius: 4px;
+}
+
+.summary-stats {
+  display: flex; gap: var(--sp-4); margin-top: var(--sp-4);
+  padding-top: var(--sp-4); border-top: 1px solid var(--border-light);
+}
+
+.summary-stat {
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--sp-1);
+}
+
+.summary-stat-value {
+  font-family: var(--font-mono); font-size: 1.125rem; font-weight: 500;
+  color: var(--text-primary);
+}
+
+.summary-stat-label {
+  font-size: 0.6875rem; color: var(--text-tertiary); text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* -- Integration Options -- */
+.integration-options {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4);
+  margin-bottom: var(--sp-6);
+}
+
+@media (max-width: 640px) {
+  .integration-options { grid-template-columns: 1fr; }
+}
+
+.integration-card {
+  background: var(--surface-1); border-radius: var(--radius-md);
+  border: 2px solid var(--border-light); box-shadow: var(--shadow-sm);
+  padding: var(--sp-6); cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-spring);
+  text-align: center;
+}
+
+.integration-card:hover {
+  border-color: var(--terracotta); box-shadow: var(--shadow-hover);
+  transform: translateY(-3px);
+}
+
+.integration-card--recommended {
+  border-color: var(--sage); position: relative;
+}
+
+.integration-card--recommended::before {
+  content: 'Recommended';
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  background: var(--sage); color: var(--text-inverse);
+  font-size: 0.6875rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 2px var(--sp-3);
+  border-radius: var(--radius-full);
+}
+
+.integration-icon {
+  width: 56px; height: 56px; border-radius: var(--radius-md);
+  margin: 0 auto var(--sp-4);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5rem;
+}
+
+.integration-icon--merge { background: var(--sage-bg); color: var(--sage); }
+.integration-icon--pr { background: var(--slate-bg); color: var(--slate); }
+
+.integration-card-title {
+  font-family: var(--font-heading); font-size: 1.125rem; font-weight: 600;
+  margin-bottom: var(--sp-2);
+}
+
+.integration-card-desc {
+  font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.5;
+  margin-bottom: var(--sp-4);
+}
+
+.integration-card-detail {
+  font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-tertiary);
+  background: var(--surface-2); padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm); display: inline-block;
+}
+
+/* -- PR Monitoring (shown after PR is created) -- */
+.pr-monitor {
+  background: var(--surface-1); border-radius: var(--radius-md);
+  border: 1px solid var(--border-light); box-shadow: var(--shadow-sm);
+  overflow: hidden; margin-bottom: var(--sp-6);
+}
+
+.pr-monitor-header {
+  padding: var(--sp-4) var(--sp-5);
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.pr-monitor-title {
+  font-family: var(--font-heading); font-size: 0.9375rem; font-weight: 500;
+  display: flex; align-items: center; gap: var(--sp-2);
+}
+
+.pr-badge {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: 3px var(--sp-3); border-radius: var(--radius-full);
+  font-size: 0.75rem; font-weight: 600;
+}
+.pr-badge--open { background: var(--success-bg); color: var(--success); }
+.pr-badge--merged { background: #f3eef9; color: #7c5db5; }
+
+.pr-monitor-body { padding: var(--sp-5); }
+
+.pr-link {
+  font-family: var(--font-mono); font-size: 0.8125rem;
+  color: var(--slate); text-decoration: none; margin-bottom: var(--sp-4);
+  display: block;
+}
+.pr-link:hover { text-decoration: underline; }
+
+.check-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.check-item {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-sm);
+  background: var(--canvas); border: 1px solid var(--border-light);
+  font-size: 0.8125rem;
+}
+
+.check-icon {
+  width: 20px; height: 20px; border-radius: var(--radius-full);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.6875rem; font-weight: 700; flex-shrink: 0;
+}
+.check-icon--pass { background: var(--success-bg); color: var(--success); }
+.check-icon--running { background: var(--warning-bg); color: var(--warning); }
+.check-icon--pending { background: var(--surface-3); color: var(--text-tertiary); }
+
+.check-label { flex: 1; color: var(--text-primary); }
+
+.check-time {
+  font-family: var(--font-mono); font-size: 0.6875rem; color: var(--text-tertiary);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.check-icon--running::after {
+  content: ''; display: block; width: 10px; height: 10px;
+  border: 2px solid var(--warning); border-top-color: transparent;
+  border-radius: var(--radius-full); animation: spin 1s linear infinite;
+}
+
+/* -- Review Status -- */
+.review-list { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-4); }
+
+.review-item {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); font-size: 0.8125rem;
+}
+
+.review-avatar {
+  width: 24px; height: 24px; border-radius: var(--radius-full);
+  background: var(--surface-3); display: flex; align-items: center;
+  justify-content: center; font-size: 0.625rem; font-weight: 700;
+  color: var(--text-secondary); flex-shrink: 0;
+}
+
+.review-name { color: var(--text-primary); }
+.review-status { margin-left: auto; font-size: 0.75rem; }
+.review-status--approved { color: var(--success); }
+.review-status--pending { color: var(--text-tertiary); }
+
+/* -- Archive Actions -- */
+.archive-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface-1); border-radius: var(--radius-md);
+  border: 1px solid var(--border-light); box-shadow: var(--shadow-sm);
+}
+
+.archive-bar-text {
+  font-size: 0.875rem; color: var(--text-secondary);
+}
+
+/* -- View Label Separator -- */
+.view-separator {
+  border: none; height: 1px; background: var(--border-light);
+  margin: var(--sp-10) 0;
+}
+
+.view-label {
+  text-align: center; font-family: var(--font-heading);
+  font-size: 0.875rem; font-weight: 500; color: var(--text-tertiary);
+  letter-spacing: 0.05em; text-transform: uppercase;
+  margin: var(--sp-10) 0 var(--sp-6); position: relative;
+}
+.view-label::before, .view-label::after {
+  content: ''; position: absolute; top: 50%;
+  width: calc(50% - 140px); height: 1px; background: var(--border-light);
+}
+.view-label::before { left: 0; }
+.view-label::after { right: 0; }
+
+/* -- View Description -- */
+.view-description {
+  text-align: center; padding: var(--sp-6) var(--sp-8); margin-bottom: var(--sp-6);
+  color: var(--text-tertiary); font-size: 0.875rem;
+}
+.view-description h2 {
+  font-family: var(--font-heading); font-size: 1.125rem; font-weight: 500;
+  color: var(--text-secondary); margin-bottom: var(--sp-2);
+}
+
+/* -- Assistant Bubble -- */
+.assistant-bubble {
+  position: fixed; bottom: var(--sp-6); right: var(--sp-6);
+  width: 48px; height: 48px; border-radius: var(--radius-full);
+  background: var(--terracotta); color: var(--text-inverse);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 24px rgba(45,41,38,0.10); cursor: pointer;
+  font-size: 1.25rem; z-index: 200; border: 3px solid var(--canvas);
+  transition: all var(--duration-normal) var(--ease-spring);
+}
+.assistant-bubble:hover { transform: scale(1.1); }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <header class="page-header">
+    <h1 class="page-title">Orkestra</h1>
+    <div style="display: flex; align-items: center; gap: var(--sp-3);">
+      <button class="btn btn-ghost btn-sm">Esc</button>
+    </div>
+  </header>
+
+  <div class="page-content">
+
+    <!-- ================================================================
+         STATE 1: Integration Options (task just completed)
+         ================================================================ -->
+
+    <div class="view-description">
+      <h2>Focus View: Integration (Choose Method)</h2>
+      <p>Task completed all stages. The user sees a summary of what was done and two prominent integration options. This is a first-class step in the workflow, not a footer panel.</p>
+    </div>
+
+    <nav class="focus-breadcrumb">
+      <a href="preview.html">Workbench</a>
+      <span>/</span>
+      <span>Refactor authentication middleware</span>
+    </nav>
+
+    <div class="focus-header">
+      <h1 class="focus-title">Refactor authentication middleware</h1>
+      <div class="focus-meta">
+        <span class="focus-id">gentle-fuzzy-otter</span>
+        <span class="badge badge-done">Done</span>
+      </div>
+    </div>
+
+    <!-- Summary of what was done -->
+    <div class="summary-section">
+      <div class="summary-title">Summary</div>
+      <div class="summary-content">
+        <p>Extracted JWT validation into a standalone <code>JwtMiddleware</code> module with configurable claim requirements. Added refresh token rotation using the v2 format with backwards-compatible fallback for existing v1 tokens.</p>
+        <ul>
+          <li>New <code>src/auth/jwt_middleware.rs</code> with configurable validation pipeline</li>
+          <li>Updated <code>src/auth/claims.rs</code> to support both v1 and v2 token formats</li>
+          <li>Added <code>src/auth/refresh.rs</code> with rotation logic and revocation tracking</li>
+          <li>Updated 4 existing test files, added 12 new tests</li>
+        </ul>
+      </div>
+      <div class="summary-stats">
+        <div class="summary-stat">
+          <span class="summary-stat-value">8</span>
+          <span class="summary-stat-label">Files changed</span>
+        </div>
+        <div class="summary-stat">
+          <span class="summary-stat-value">+342</span>
+          <span class="summary-stat-label" style="color: var(--success);">Additions</span>
+        </div>
+        <div class="summary-stat">
+          <span class="summary-stat-value">-87</span>
+          <span class="summary-stat-label" style="color: var(--error);">Deletions</span>
+        </div>
+        <div class="summary-stat">
+          <span class="summary-stat-value">47/47</span>
+          <span class="summary-stat-label">Tests passing</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Integration Options -->
+    <div class="integration-options">
+      <div class="integration-card integration-card--recommended">
+        <div class="integration-icon integration-icon--merge">&#8594;</div>
+        <div class="integration-card-title">Auto-merge</div>
+        <div class="integration-card-desc">Merge directly into the base branch. Best for small, well-tested changes.</div>
+        <div class="integration-card-detail">gentle-fuzzy-otter &#8594; main</div>
+      </div>
+
+      <div class="integration-card">
+        <div class="integration-icon integration-icon--pr">PR</div>
+        <div class="integration-card-title">Open Pull Request</div>
+        <div class="integration-card-desc">Create a PR for team review and CI checks before merging.</div>
+        <div class="integration-card-detail">Opens on GitHub</div>
+      </div>
+    </div>
+
+    <div style="text-align: center; margin-bottom: var(--sp-6);">
+      <button class="btn btn-ghost btn-sm" style="color: var(--text-tertiary);">View Changes</button>
+    </div>
+
+    <!-- ================================================================
+         STATE 2: PR Created, Monitoring Checks
+         ================================================================ -->
+
+    <div class="view-label">After PR is Created</div>
+
+    <div class="view-description">
+      <h2>Focus View: PR Monitoring</h2>
+      <p>Once a PR is created, the view transitions to show PR status, CI check results, and review statuses. The user can track progress without leaving Orkestra.</p>
+    </div>
+
+    <div class="pr-monitor">
+      <div class="pr-monitor-header">
+        <div class="pr-monitor-title">
+          <span class="pr-badge pr-badge--open">Open</span>
+          Refactor authentication middleware
+        </div>
+        <span style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-tertiary);">#247</span>
+      </div>
+
+      <div class="pr-monitor-body">
+        <a class="pr-link" href="#">github.com/acme/backend/pull/247</a>
+
+        <!-- CI Checks -->
+        <div style="margin-bottom: var(--sp-4);">
+          <div style="font-family: var(--font-heading); font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: var(--sp-2);">CI Checks</div>
+          <div class="check-list">
+            <div class="check-item">
+              <div class="check-icon check-icon--pass">&#10003;</div>
+              <span class="check-label">Build</span>
+              <span class="check-time">42s</span>
+            </div>
+            <div class="check-item">
+              <div class="check-icon check-icon--pass">&#10003;</div>
+              <span class="check-label">Lint</span>
+              <span class="check-time">12s</span>
+            </div>
+            <div class="check-item">
+              <div class="check-icon check-icon--running"></div>
+              <span class="check-label">Test Suite</span>
+              <span class="check-time">running...</span>
+            </div>
+            <div class="check-item">
+              <div class="check-icon check-icon--pending">-</div>
+              <span class="check-label">Deploy Preview</span>
+              <span class="check-time">queued</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reviews -->
+        <div>
+          <div style="font-family: var(--font-heading); font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: var(--sp-2);">Reviews</div>
+          <div class="review-list">
+            <div class="review-item">
+              <div class="review-avatar">JD</div>
+              <span class="review-name">Jane Doe</span>
+              <span class="review-status review-status--approved">Approved</span>
+            </div>
+            <div class="review-item">
+              <div class="review-avatar">MK</div>
+              <span class="review-name">Mike Kim</span>
+              <span class="review-status review-status--pending">Pending</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Post-merge archive -->
+    <div class="archive-bar">
+      <span class="archive-bar-text">PR merged. Ready to archive this task.</span>
+      <div style="display: flex; gap: var(--sp-3);">
+        <button class="btn btn-success">Archive Task</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="assistant-bubble">?</div>
+
+</body>
+</html>

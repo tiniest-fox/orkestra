@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Operator -- Hybrid Proposal Index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-0: #111113; --bg-1: #1A1A1D; --bg-2: #232326; --bg-3: #2C2C30;
+  --border: rgba(255,255,255,0.08); --border-active: rgba(255,255,255,0.16);
+  --text-0: #F4F4F5; --text-1: #A1A1A6; --text-2: #63636B; --text-3: #3E3E44;
+  --accent: #E5653B; --accent-bg: rgba(229,101,59,0.10);
+  --green: #3DD68C; --amber: #F5B731; --red: #EF5A5A; --blue: #5B9EF5; --purple: #9B7BF5;
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+}
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-ui);
+  background: var(--bg-0);
+  color: var(--text-0);
+  line-height: 1.5;
+  padding: 48px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+.subtitle {
+  color: var(--text-1);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.tagline {
+  color: var(--text-2);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  margin-bottom: 32px;
+}
+
+.section-header {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  padding: 16px 0 8px;
+}
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0 0 4px;
+}
+
+.preview-link {
+  display: block;
+  padding: 10px 12px;
+  margin: 0 -12px;
+  color: var(--text-0);
+  text-decoration: none;
+  border-radius: 6px;
+  transition: background 100ms;
+}
+.preview-link:hover {
+  background: var(--accent-bg);
+}
+.preview-link .name {
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.preview-link .name .arrow {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.preview-link .name .tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.preview-link .desc {
+  color: var(--text-1);
+  font-size: 12px;
+  padding-left: 20px;
+  margin-top: 2px;
+}
+
+.palette {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 24px;
+  flex-wrap: wrap;
+}
+.swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.note {
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  margin-top: 32px;
+  line-height: 18px;
+}
+</style>
+</head>
+<body>
+
+<h1>The Operator</h1>
+<div class="subtitle">Hybrid Design Proposal for Orkestra</div>
+<div class="tagline">Keyboard-first density + typographic warmth. "Linear meets Warp terminal."</div>
+
+<div class="palette">
+  <div class="swatch" style="background: #111113;" title="--bg-0"></div>
+  <div class="swatch" style="background: #1A1A1D;" title="--bg-1"></div>
+  <div class="swatch" style="background: #232326;" title="--bg-2"></div>
+  <div class="swatch" style="background: #E5653B;" title="--accent"></div>
+  <div class="swatch" style="background: #3DD68C;" title="--green"></div>
+  <div class="swatch" style="background: #F5B731;" title="--amber"></div>
+  <div class="swatch" style="background: #EF5A5A;" title="--red"></div>
+  <div class="swatch" style="background: #5B9EF5;" title="--blue"></div>
+  <div class="swatch" style="background: #9B7BF5;" title="--purple"></div>
+</div>
+
+<div class="section-header">Core Views</div>
+<hr>
+
+<a class="preview-link" href="feed.html">
+  <div class="name"><span class="arrow">&gt;</span> feed.html <span class="tag">primary</span></div>
+  <div class="desc">Main task feed -- intent-grouped list with pipeline visualization and live status</div>
+</a>
+<a class="preview-link" href="task-detail.html">
+  <div class="name"><span class="arrow">&gt;</span> task-detail.html</div>
+  <div class="desc">Full task detail in focus mode -- working state with live activity and metrics</div>
+</a>
+<a class="preview-link" href="review.html">
+  <div class="name"><span class="arrow">&gt;</span> review.html</div>
+  <div class="desc">Review mode -- artifact content with approve/reject action bar</div>
+</a>
+<a class="preview-link" href="questions.html">
+  <div class="name"><span class="arrow">&gt;</span> questions.html</div>
+  <div class="desc">Questions mode -- answering agent questions with keyboard selection</div>
+</a>
+
+<div class="section-header">State Views</div>
+<hr>
+
+<a class="preview-link" href="failed.html">
+  <div class="name"><span class="arrow">&gt;</span> failed.html</div>
+  <div class="desc">Failed task -- error display with activity log and retry options</div>
+</a>
+<a class="preview-link" href="subtasks.html">
+  <div class="name"><span class="arrow">&gt;</span> subtasks.html</div>
+  <div class="desc">Parent task with subtask hierarchy, dependency graph, and progress tracking</div>
+</a>
+<a class="preview-link" href="monitoring.html">
+  <div class="name"><span class="arrow">&gt;</span> monitoring.html</div>
+  <div class="desc">Active agent monitoring with live tool calls and file edits</div>
+</a>
+
+<div class="section-header">Utilities</div>
+<hr>
+
+<a class="preview-link" href="diff.html">
+  <div class="name"><span class="arrow">&gt;</span> diff.html</div>
+  <div class="desc">Code diff viewer with file tree navigation and syntax highlighting</div>
+</a>
+<a class="preview-link" href="logs.html">
+  <div class="name"><span class="arrow">&gt;</span> logs.html</div>
+  <div class="desc">Full agent session log with type filters and session navigation</div>
+</a>
+<a class="preview-link" href="create.html">
+  <div class="name"><span class="arrow">&gt;</span> create.html</div>
+  <div class="desc">Task creation -- command bar quick-create with flow picker</div>
+</a>
+
+<hr style="margin-top: 16px;">
+
+<div class="note">
+  Each file is self-contained HTML/CSS. Open any directly in a browser.<br>
+  All views include dark/light mode toggle. Design system defined in README.md.<br>
+  Sources: Proposal A (density, pipeline), B (warmth, typography), C (keyboard, minimalism).
+</div>
+
+</body>
+</html>

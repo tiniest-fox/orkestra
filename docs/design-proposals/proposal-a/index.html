@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proposal A: Mission Control -- Preview Index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-0: #0a0f1a;
+    --bg-1: #0f1729;
+    --bg-hover: #1a2438;
+    --text-0: #f1f5f9;
+    --text-1: #cbd5e1;
+    --text-2: #64748b;
+    --text-3: #475569;
+    --border: rgba(148, 163, 184, 0.12);
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --blue: #60a5fa;
+    --font-data: 'IBM Plex Mono', monospace;
+    --font-label: 'Inter', system-ui, sans-serif;
+  }
+  html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+  body {
+    font-family: var(--font-data);
+    background: var(--bg-0);
+    color: var(--text-0);
+    padding: 48px;
+    max-width: 720px;
+    line-height: 1.5;
+  }
+  h1 {
+    font-family: var(--font-label);
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: var(--text-2);
+    font-size: 12px;
+    margin-bottom: 32px;
+  }
+  .section-header {
+    font-family: var(--font-label);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-2);
+    padding: 16px 0 8px;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 8px 0 0;
+  }
+  .preview-link {
+    display: block;
+    padding: 8px 0;
+    color: var(--text-0);
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .preview-link:hover {
+    background: var(--bg-hover);
+    margin: 0 -8px;
+    padding: 8px;
+  }
+  .preview-link .name { font-weight: 500; }
+  .preview-link .desc {
+    color: var(--text-2);
+    font-size: 11px;
+    padding-left: 4px;
+    margin-top: 2px;
+  }
+  .note {
+    color: var(--text-3);
+    font-size: 11px;
+    margin-top: 32px;
+    line-height: 18px;
+  }
+  .doc-link {
+    display: block;
+    padding: 4px 0;
+    color: var(--text-1);
+    text-decoration: none;
+    font-size: 12px;
+  }
+  .doc-link:hover { color: var(--text-0); }
+  .doc-link .label { color: var(--text-2); font-size: 11px; }
+</style>
+</head>
+<body>
+  <h1>Proposal A: "Mission Control"</h1>
+  <div class="subtitle">Dense, data-rich, timeline-based operations dashboard</div>
+
+  <div class="section-header">All Views (Combined)</div>
+  <hr>
+
+  <a class="preview-link" href="preview.html">
+    <div class="name">preview.html</div>
+    <div class="desc">All 8 views + design tokens in a single scrollable file</div>
+  </a>
+
+  <div class="section-header" style="margin-top: 16px;">Standalone Views</div>
+  <hr>
+
+  <a class="preview-link" href="feed.html">
+    <div class="name">feed.html</div>
+    <div class="desc">Main timeline feed -- status bar, needs attention / active / completed sections with task rows</div>
+  </a>
+  <a class="preview-link" href="review.html">
+    <div class="name">review.html</div>
+    <div class="desc">Plan review with expanded accordion -- artifact, agent activity log, approve/reject bar</div>
+  </a>
+  <a class="preview-link" href="questions.html">
+    <div class="name">questions.html</div>
+    <div class="desc">Agent questions expanded -- inline question panels with option buttons and submit</div>
+  </a>
+  <a class="preview-link" href="subtasks.html">
+    <div class="name">subtasks.html</div>
+    <div class="desc">Subtask expansion -- parent task showing child rows with dependency arrows</div>
+  </a>
+  <a class="preview-link" href="failed.html">
+    <div class="name">failed.html</div>
+    <div class="desc">Failed task -- error hero with stack trace, iteration history, retry with instructions</div>
+  </a>
+  <a class="preview-link" href="integration.html">
+    <div class="name">integration.html</div>
+    <div class="desc">Completed task integration -- summary, checks, iteration timeline, merge/PR actions</div>
+  </a>
+  <a class="preview-link" href="monitoring.html">
+    <div class="name">monitoring.html</div>
+    <div class="desc">Active task monitoring -- live streaming activity feed with interrupt option</div>
+  </a>
+  <a class="preview-link" href="diff.html">
+    <div class="name">diff.html</div>
+    <div class="desc">Code diff viewer -- file tree sidebar with unified diff during review</div>
+  </a>
+  <a class="preview-link" href="create.html">
+    <div class="name">create.html</div>
+    <div class="desc">Task creation -- command palette modal with flow, branch, and auto-mode options</div>
+  </a>
+
+  <div class="section-header" style="margin-top: 16px;">Documentation</div>
+  <hr>
+
+  <a class="doc-link" href="README.md"><span class="label">README.md</span> -- Design philosophy, visual language, component mapping</a>
+  <a class="doc-link" href="flows.md"><span class="label">flows.md</span> -- User flows, keyboard shortcuts, transitions</a>
+
+  <div class="note">
+    Each standalone file is self-contained with full CSS -- open any file directly in a browser.<br>
+    preview.html has all 8 views in one scrollable page; standalone files show one view each for focused review.<br>
+    8 views covering: feed, review, questions, subtasks, failed, integration, monitoring, diff, task creation.<br>
+    Dark-only design -- there is no light mode.
+  </div>
+</body>
+</html>

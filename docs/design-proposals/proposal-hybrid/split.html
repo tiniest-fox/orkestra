@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra — Split View</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-0: #111110; --bg-1: #1a1918; --bg-2: #222120; --bg-3: #2c2b29;
+  --bg-hover: #262523; --bg-active: #302e2c;
+  --green: #3dd68c; --green-dim: #264d38; --green-bg: rgba(61, 214, 140, 0.08);
+  --amber: #f0b429; --amber-bg: rgba(240, 180, 41, 0.08);
+  --red: #e5534b; --red-bg: rgba(229, 83, 75, 0.08);
+  --blue: #539bf5; --blue-bg: rgba(83, 155, 245, 0.08);
+  --orange: #e0823d; --orange-bg: rgba(224, 130, 61, 0.08);
+  --text-0: #ecebe9; --text-1: #b5b3b0; --text-2: #7c7a77; --text-3: #545250;
+  --border: rgba(236, 235, 233, 0.08); --border-active: rgba(236, 235, 233, 0.16);
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+  --radius-sm: 6px; --radius-md: 10px;
+}
+
+.light {
+  --bg-0: #f8f7f6; --bg-1: #ffffff; --bg-2: #f0efed; --bg-3: #e6e4e1;
+  --bg-hover: #efeeec; --bg-active: #e8e6e4;
+  --text-0: #1a1918; --text-1: #4a4846; --text-2: #8a8886; --text-3: #b5b3b0;
+  --border: rgba(26, 25, 24, 0.08); --border-active: rgba(26, 25, 24, 0.16);
+  --green: #1a8a52; --green-dim: #d4eddf; --amber: #b08a14; --red: #c44a3a; --blue: #2a6bc4; --orange: #c4643a;
+  --green-bg: rgba(26, 138, 82, 0.06); --amber-bg: rgba(176, 138, 20, 0.06);
+  --red-bg: rgba(196, 74, 58, 0.06); --blue-bg: rgba(42, 107, 196, 0.06);
+}
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-ui); background: var(--bg-0); color: var(--text-0); line-height: 1.5; }
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* -- Command Bar -- */
+.command-bar {
+  display: flex; align-items: center; gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-5); background: var(--bg-1);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; height: 44px;
+}
+.command-bar-brand { font-weight: 700; font-size: 0.8125rem; letter-spacing: -0.02em; user-select: none; }
+.command-bar-sep { width: 1px; height: 16px; background: var(--border-active); flex-shrink: 0; }
+.command-bar-search { display: flex; align-items: center; gap: var(--sp-2); flex: 1; }
+.command-bar-prompt { color: var(--text-3); font-family: var(--font-mono); font-size: 0.75rem; }
+.command-bar-input {
+  background: none; border: none; outline: none; color: var(--text-0);
+  font-family: var(--font-ui); font-size: 0.8125rem; flex: 1; caret-color: var(--orange);
+}
+.command-bar-input::placeholder { color: var(--text-3); }
+.bar-hints { display: flex; align-items: center; gap: var(--sp-3); font-size: 0.6875rem; color: var(--text-3); flex-shrink: 0; }
+.bar-hints kbd { font-family: var(--font-mono); font-weight: 500; color: var(--text-2); font-size: 0.6875rem; }
+.theme-toggle {
+  padding: var(--sp-1) var(--sp-2); font-family: var(--font-mono); font-size: 0.625rem;
+  color: var(--text-3); cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: none;
+}
+.theme-toggle:hover { color: var(--text-1); border-color: var(--border-active); }
+
+/* -- Split Layout -- */
+.split-layout { display: grid; grid-template-columns: 360px 1fr; flex: 1; overflow: hidden; }
+.split-left { border-right: 1px solid var(--border); overflow-y: auto; padding: var(--sp-4) var(--sp-4); }
+.split-right { overflow-y: auto; padding: var(--sp-5) var(--sp-6); }
+
+/* -- Left Pane: Task List -- */
+.section { margin-bottom: var(--sp-3); }
+.section-header {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) 0; margin-bottom: var(--sp-1);
+}
+.section-title {
+  font-size: 0.6875rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-2);
+}
+.section-count {
+  font-family: var(--font-mono); font-size: 0.625rem; color: var(--text-3);
+}
+
+.task-row {
+  display: grid; grid-template-columns: 20px 1fr auto;
+  gap: var(--sp-2); align-items: center;
+  padding: var(--sp-2) var(--sp-3); margin: 0 calc(-1 * var(--sp-3));
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: background 80ms; min-height: 36px;
+}
+.task-row:hover { background: var(--bg-hover); }
+.task-row.focused { background: var(--bg-active); box-shadow: inset 2px 0 0 var(--orange); }
+.task-symbol { font-family: var(--font-mono); font-size: 0.8125rem; font-weight: 600; text-align: center; }
+.task-symbol--working { color: var(--green); }
+.task-symbol--review { color: var(--amber); }
+.task-symbol--question { color: var(--blue); }
+.task-symbol--failed { color: var(--red); }
+.task-symbol--done { color: var(--green); opacity: 0.5; }
+
+.task-info { min-width: 0; }
+.task-title { font-size: 0.8125rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-meta { font-family: var(--font-mono); font-size: 0.5625rem; color: var(--text-3); }
+.task-badge { font-size: 0.5625rem; font-weight: 600; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+.task-badge--review { background: var(--amber-bg); color: var(--amber); }
+.task-badge--questions { background: var(--blue-bg); color: var(--blue); }
+.task-badge--failed { background: var(--red-bg); color: var(--red); }
+.task-badge--working { background: var(--green-bg); color: var(--green); }
+
+.section--completed .task-row { opacity: 0.5; }
+.section--completed .task-row:hover { opacity: 0.8; }
+
+/* -- Right Pane: Focus View -- */
+.focus-title { font-size: 1.125rem; font-weight: 600; letter-spacing: -0.01em; margin-bottom: var(--sp-1); }
+.focus-subtitle { font-size: 0.8125rem; color: var(--text-1); margin-bottom: var(--sp-2); }
+.focus-meta {
+  display: flex; align-items: center; gap: var(--sp-4);
+  font-family: var(--font-mono); font-size: 0.6875rem; color: var(--text-2);
+}
+.stage-badge {
+  display: inline-flex; align-items: center; padding: 1px var(--sp-2);
+  background: var(--amber-bg); border-radius: 4px; color: var(--amber); font-weight: 500;
+}
+.focus-divider { border: none; border-top: 1px solid var(--border); margin: var(--sp-5) 0; }
+.section-label {
+  font-size: 0.6875rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-2); margin-bottom: var(--sp-4);
+}
+
+/* Artifact */
+.artifact { font-size: 0.8125rem; line-height: 1.7; color: var(--text-1); }
+.artifact h2 { font-size: 1rem; font-weight: 600; color: var(--text-0); margin-top: var(--sp-6); margin-bottom: var(--sp-2); }
+.artifact h2:first-child { margin-top: 0; }
+.artifact h3 { font-size: 0.875rem; font-weight: 600; color: var(--text-0); margin-top: var(--sp-5); margin-bottom: var(--sp-2); }
+.artifact p { margin-bottom: var(--sp-3); }
+.artifact ul, .artifact ol { padding-left: var(--sp-5); margin-bottom: var(--sp-3); }
+.artifact li { margin-bottom: var(--sp-1); }
+.artifact code { font-family: var(--font-mono); font-size: 0.75rem; padding: 2px 5px; background: var(--bg-3); border-radius: 3px; color: var(--orange); }
+
+/* Action Bar */
+.action-bar {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-4) 0; margin-top: var(--sp-4); border-top: 1px solid var(--border);
+}
+.action-btn {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4); font-family: var(--font-ui);
+  font-size: 0.8125rem; font-weight: 600; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); cursor: pointer; background: transparent;
+  color: var(--text-1); transition: all 80ms;
+}
+.action-btn:hover { background: var(--bg-3); border-color: var(--border-active); }
+.action-btn--primary { background: var(--green); border-color: var(--green); color: var(--bg-0); }
+.action-btn--primary:hover { background: #35c07e; }
+.action-btn--warning { border-color: rgba(240, 180, 41, 0.3); color: var(--amber); }
+.action-btn--warning:hover { background: var(--amber-bg); }
+.action-btn kbd { font-family: var(--font-mono); font-size: 0.625rem; opacity: 0.7; }
+.action-spacer { flex: 1; }
+
+/* -- Status Line -- */
+.status-line {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--sp-1) var(--sp-5); background: var(--bg-1);
+  border-top: 1px solid var(--border); font-size: 0.6875rem;
+  flex-shrink: 0; height: 28px;
+}
+.status-line-left, .status-line-right { display: flex; align-items: center; gap: var(--sp-4); }
+.status-line .branch { font-family: var(--font-mono); font-weight: 500; color: var(--orange); }
+.status-line .hint { color: var(--text-3); }
+.status-line .hint kbd { font-family: var(--font-mono); color: var(--text-2); font-weight: 500; }
+.status-line .sep { color: var(--bg-3); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="command-bar">
+    <span class="command-bar-brand">Orkestra</span>
+    <span class="command-bar-sep"></span>
+    <div class="command-bar-search">
+      <span class="command-bar-prompt">/</span>
+      <input type="text" class="command-bar-input" placeholder="Search tasks, run commands...">
+    </div>
+    <div class="bar-hints">
+      <span><kbd>Ctrl+\</kbd> close split</span>
+      <button class="theme-toggle" onclick="document.getElementById('app').classList.toggle('light'); this.textContent = this.textContent === 'light' ? 'dark' : 'light';">light</button>
+    </div>
+  </div>
+
+  <div class="split-layout">
+    <!-- Left: Task list -->
+    <div class="split-left">
+      <div class="section">
+        <div class="section-header">
+          <span class="section-title">Needs attention</span>
+          <span class="section-count">3</span>
+        </div>
+        <div class="task-row focused">
+          <span class="task-symbol task-symbol--review">&gt;</span>
+          <div class="task-info">
+            <div class="task-title">Database schema update</div>
+            <div class="task-meta">ork-042 &middot; review</div>
+          </div>
+          <span class="task-badge task-badge--review">Review</span>
+        </div>
+        <div class="task-row">
+          <span class="task-symbol task-symbol--failed">!</span>
+          <div class="task-info">
+            <div class="task-title">CI pipeline fix</div>
+            <div class="task-meta">ork-038 &middot; checks</div>
+          </div>
+          <span class="task-badge task-badge--failed">Failed</span>
+        </div>
+        <div class="task-row">
+          <span class="task-symbol task-symbol--question">?</span>
+          <div class="task-info">
+            <div class="task-title">API endpoint design</div>
+            <div class="task-meta">ork-039 &middot; planning</div>
+          </div>
+          <span class="task-badge task-badge--questions">2 Qs</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <span class="section-title">Active</span>
+          <span class="section-count">3</span>
+        </div>
+        <div class="task-row">
+          <span class="task-symbol task-symbol--working">*</span>
+          <div class="task-info">
+            <div class="task-title">Auth refactor</div>
+            <div class="task-meta">ork-040 &middot; work</div>
+          </div>
+          <span class="task-badge task-badge--working">Working</span>
+        </div>
+        <div class="task-row">
+          <span class="task-symbol task-symbol--working">*</span>
+          <div class="task-info">
+            <div class="task-title">User settings page</div>
+            <div class="task-meta">ork-041 &middot; planning</div>
+          </div>
+          <span class="task-badge task-badge--working">Working</span>
+        </div>
+        <div class="task-row">
+          <span class="task-symbol task-symbol--working">*</span>
+          <div class="task-info">
+            <div class="task-title">Test infrastructure overhaul</div>
+            <div class="task-meta">ork-036 &middot; work</div>
+          </div>
+          <span class="task-badge task-badge--working">2/4</span>
+        </div>
+      </div>
+
+      <div class="section section--completed">
+        <div class="section-header">
+          <span class="section-title">Completed today</span>
+          <span class="section-count">2</span>
+        </div>
+        <div class="task-row">
+          <span class="task-symbol task-symbol--done">.</span>
+          <div class="task-info">
+            <div class="task-title">Database migration v14</div>
+            <div class="task-meta">ork-035 &middot; 12:34</div>
+          </div>
+        </div>
+        <div class="task-row">
+          <span class="task-symbol task-symbol--done">.</span>
+          <div class="task-info">
+            <div class="task-title">API rate limiting</div>
+            <div class="task-meta">ork-034 &middot; 11:20</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Focus on selected task -->
+    <div class="split-right">
+      <div class="focus-title">Database schema update</div>
+      <div class="focus-subtitle">Review the planning artifact before the agent proceeds to breakdown.</div>
+      <div class="focus-meta">
+        <span>ork-042</span>
+        <span>Created 2h ago</span>
+        <span class="stage-badge">review</span>
+        <span>Iteration 2</span>
+      </div>
+
+      <hr class="focus-divider">
+      <div class="section-label">Artifact: plan</div>
+
+      <div class="artifact">
+        <h2>Database Schema Update Plan</h2>
+
+        <h3>Overview</h3>
+        <p>Add session tracking and structured logging tables to support agent process recovery and debugging.</p>
+
+        <h3>Changes</h3>
+        <ol>
+          <li>Add <code>workflow_stage_sessions</code> table</li>
+          <li>Add <code>log_entries</code> table</li>
+          <li>Add composite indexes on <code>(task_id, stage)</code></li>
+          <li>Add foreign key constraints</li>
+        </ol>
+
+        <h3>Affected Files</h3>
+        <ul>
+          <li><code>V15__add_sessions_and_logs.sql</code> (new)</li>
+          <li><code>session.rs</code>, <code>log_entry.rs</code> (new types)</li>
+          <li><code>sessions.rs</code>, <code>logs.rs</code> (new queries)</li>
+          <li><code>mod.rs</code>, <code>SCHEMA.md</code> (modified)</li>
+        </ul>
+      </div>
+
+      <div class="action-bar">
+        <button class="action-btn action-btn--primary"><kbd>A</kbd> Approve</button>
+        <button class="action-btn action-btn--warning"><kbd>R</kbd> Reject</button>
+        <span class="action-spacer"></span>
+        <button class="action-btn"><kbd>D</kbd> Diff</button>
+        <button class="action-btn"><kbd>L</kbd> Logs</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-line">
+    <div class="status-line-left">
+      <span class="branch">main</span>
+      <span style="font-family: var(--font-mono); color: var(--text-2);">+2 -0</span>
+      <span class="sep">|</span>
+      <span class="hint">Split view</span>
+      <span class="sep">|</span>
+      <span class="hint">3 agents running</span>
+    </div>
+    <div class="status-line-right">
+      <span class="hint"><kbd>J</kbd>/<kbd>K</kbd> nav</span>
+      <span class="hint"><kbd>A</kbd> approve</span>
+      <span class="hint"><kbd>Ctrl+\</kbd> close split</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

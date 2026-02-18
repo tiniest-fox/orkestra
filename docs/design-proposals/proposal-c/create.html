@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra — Create Task</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --fg: #000000; --fg-secondary: #6B7280; --fg-muted: #9CA3AF;
+    --border: #E5E7EB; --accent: #F04A00; --accent-bg: rgba(240, 74, 0, 0.06);
+    --status-success: #059669; --status-active: #D97706; --status-attention: #2563EB; --status-danger: #DC2626;
+    --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+    --page-pad-x: 32px;
+  }
+  .dark {
+    --bg: #000000; --fg: #E5E7EB; --fg-secondary: #9CA3AF; --fg-muted: #6B7280;
+    --border: #2D3340; --accent-bg: rgba(240, 74, 0, 0.10);
+  }
+  html { font-size: 13px; line-height: 20px; }
+  body {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    font-feature-settings: 'liga' 0; background: var(--bg); color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .command-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px var(--page-pad-x); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .command-bar-left { display: flex; align-items: center; gap: 8px; flex: 1; }
+  .command-bar-prompt { color: var(--accent); font-weight: 500; }
+  .command-bar-input {
+    background: none; border: none; outline: none; color: var(--fg);
+    font-family: var(--font-mono); font-size: 14px; line-height: 20px;
+    flex: 1; caret-color: var(--accent);
+  }
+  .command-bar-status { display: flex; gap: 16px; font-size: 11px; color: var(--fg-muted); }
+  .command-bar-status kbd { color: var(--fg-secondary); font-family: var(--font-mono); font-size: 11px; }
+  .status-line {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px var(--page-pad-x); border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--fg-muted); flex-shrink: 0;
+  }
+  .status-line-left, .status-line-right { display: flex; gap: 16px; align-items: center; }
+  .status-line .branch { color: var(--accent); }
+  .status-line .sep { color: var(--border); }
+  .status-line kbd { color: var(--fg-secondary); font-family: var(--font-mono); font-size: 11px; }
+
+  .buffer { flex: 1; overflow-y: auto; padding: 24px var(--page-pad-x); }
+
+  /* Create form -- text editor feel */
+  .create-form {
+    max-width: 680px;
+  }
+
+  .form-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--fg-muted); margin-bottom: 8px;
+  }
+
+  .form-field {
+    margin-bottom: 20px;
+  }
+
+  .form-input {
+    background: none; border: none; border-bottom: 1px solid var(--border);
+    outline: none; color: var(--fg); font-family: var(--font-mono);
+    font-size: 14px; line-height: 24px; width: 100%; padding: 4px 0;
+    caret-color: var(--accent);
+  }
+  .form-input:focus { border-bottom-color: var(--accent); }
+  .form-input::placeholder { color: var(--fg-muted); }
+
+  .form-textarea {
+    background: none; border: none; border-left: 2px solid var(--border);
+    outline: none; color: var(--fg); font-family: var(--font-mono);
+    font-size: 13px; line-height: 22px; width: 100%; padding: 8px 16px;
+    caret-color: var(--accent); resize: vertical; min-height: 88px;
+  }
+  .form-textarea:focus { border-left-color: var(--accent); }
+  .form-textarea::placeholder { color: var(--fg-muted); }
+
+  /* Option rows */
+  .form-options {
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+
+  .form-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--fg-secondary);
+  }
+
+  .form-option-label {
+    color: var(--fg-muted);
+    font-size: 11px;
+    min-width: 48px;
+  }
+
+  .form-option-value {
+    color: var(--fg);
+    font-weight: 500;
+  }
+
+  .form-option-value.muted {
+    color: var(--fg-muted);
+    font-weight: 400;
+  }
+
+  /* Flow picker -- text-based */
+  .flow-picker {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .flow-option {
+    padding: 4px 12px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--fg-muted);
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: none;
+  }
+
+  .flow-option:hover {
+    border-color: var(--accent);
+    color: var(--fg);
+  }
+
+  .flow-option.selected {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-bg);
+  }
+
+  .flow-stages {
+    font-size: 11px;
+    color: var(--fg-muted);
+    margin-top: 6px;
+    padding-left: 2px;
+  }
+
+  /* Quick create example */
+  .quick-create {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .quick-example {
+    font-size: 12px;
+    color: var(--fg-muted);
+    margin-bottom: 4px;
+    line-height: 20px;
+  }
+
+  .quick-example code {
+    color: var(--fg-secondary);
+  }
+
+  .quick-example .cmd {
+    color: var(--accent);
+  }
+
+  .form-hint {
+    font-size: 11px;
+    color: var(--fg-muted);
+    margin-top: 4px;
+  }
+
+  .focus-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+  .action-bar { display: flex; gap: 24px; padding: 16px 0; font-size: 13px; }
+  .action-item { color: var(--fg-muted); cursor: pointer; }
+  .action-item:hover { color: var(--fg); }
+  .action-item kbd { color: var(--accent); font-family: var(--font-mono); font-weight: 500; }
+  .action-item.primary { color: var(--fg); }
+
+  .theme-toggle {
+    padding: 0; font-family: var(--font-mono); font-size: 11px;
+    color: var(--fg-muted); cursor: pointer; border: none; background: none; margin-left: 16px;
+  }
+  .theme-toggle:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="command-bar">
+    <div class="command-bar-left">
+      <span class="command-bar-prompt">&gt;</span>
+      <input type="text" class="command-bar-input" value="new" readonly style="color: var(--accent); font-weight: 500;">
+    </div>
+    <div class="command-bar-status">
+      <span><kbd>esc</kbd> cancel</span>
+      <button class="theme-toggle" onclick="document.getElementById('app').classList.toggle('dark'); this.textContent = this.textContent === 'dark' ? 'light' : 'dark';">dark</button>
+    </div>
+  </div>
+
+  <div class="buffer">
+    <div class="create-form">
+      <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-muted); margin-bottom: 16px;">
+        New Task
+      </div>
+
+      <div class="form-field">
+        <div class="form-label">Description</div>
+        <textarea class="form-textarea" placeholder="What should the agent do?" autofocus>Refactor the authentication middleware to extract JWT validation into a shared utility function. Replace inline token verification in each route handler with the new middleware. Add support for refresh tokens. Update all affected tests.</textarea>
+      </div>
+
+      <div class="form-field">
+        <div class="form-label">Flow</div>
+        <div class="flow-picker">
+          <button class="flow-option selected">default</button>
+          <button class="flow-option">quick</button>
+          <button class="flow-option">hotfix</button>
+          <button class="flow-option">micro</button>
+        </div>
+        <div class="flow-stages">plan &rarr; breakdown &rarr; work &rarr; checks &rarr; review &rarr; compound</div>
+      </div>
+
+      <div class="form-field">
+        <div class="form-label">Options</div>
+        <div class="form-options">
+          <div class="form-option">
+            <span class="form-option-label">Branch:</span>
+            <span class="form-option-value">main</span>
+          </div>
+          <div class="form-option">
+            <span class="form-option-label">Auto:</span>
+            <span class="form-option-value muted">off</span>
+            <span style="font-size: 11px; color: var(--fg-muted);">(tab to toggle)</span>
+          </div>
+        </div>
+      </div>
+
+      <hr class="focus-divider">
+
+      <div class="action-bar">
+        <span class="action-item primary"><kbd>enter</kbd> create task</span>
+        <span class="action-item"><kbd>tab</kbd> next field</span>
+        <span class="action-item"><kbd>esc</kbd> cancel</span>
+      </div>
+
+      <div class="quick-create">
+        <div style="font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--fg-muted); margin-bottom: 8px;">
+          Quick Create (command bar)
+        </div>
+        <div class="quick-example"><span class="cmd">new</span> <code>Fix the login bug on the auth page</code></div>
+        <div class="quick-example"><span class="cmd">new --flow quick</span> <code>Add error handling to the API</code></div>
+        <div class="quick-example"><span class="cmd">new --auto -b feature/auth</span> <code>Implement JWT refresh tokens</code></div>
+        <div class="quick-example"><span class="cmd">new --flow hotfix --auto</span> <code>Fix broken CI pipeline</code></div>
+        <div class="form-hint" style="margin-top: 8px;">
+          Type <code style="color: var(--accent);">new</code> followed by a description in the command bar for instant creation.<br>
+          Add flags for flow, branch, and auto mode. Press Enter with no description for this form.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-line">
+    <div class="status-line-left">
+      <span class="branch">main</span>
+      <span>+0 -0</span>
+      <span class="sep">|</span>
+      <span>Creating task</span>
+    </div>
+    <div class="status-line-right">
+      <span><kbd>enter</kbd> create</span>
+      <span><kbd>tab</kbd> next field</span>
+      <span><kbd>esc</kbd> cancel</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proposal B: The Workshop -- Preview Index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,500;6..12,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --canvas: #faf8f5;
+    --surface-1: #ffffff;
+    --surface-2: #f5f2ee;
+    --border: #e2ddd7;
+    --text-primary: #2d2926;
+    --text-secondary: #78716c;
+    --text-tertiary: #a8a29e;
+    --terracotta: #c4643a;
+    --sage: #6b8f71;
+    --font-heading: 'Fraunces', serif;
+    --font-body: 'Nunito Sans', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+  html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+  body {
+    font-family: var(--font-body);
+    background: var(--canvas);
+    color: var(--text-primary);
+    padding: 48px;
+    max-width: 720px;
+    line-height: 1.5;
+  }
+  h1 {
+    font-family: var(--font-heading);
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin-bottom: 32px;
+  }
+  .section-header {
+    font-family: var(--font-heading);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 16px 0 8px;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 8px 0 0;
+  }
+  .preview-link {
+    display: block;
+    padding: 10px 0;
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 0.875rem;
+    border-radius: 12px;
+  }
+  .preview-link:hover {
+    background: var(--surface-2);
+    margin: 0 -12px;
+    padding: 10px 12px;
+  }
+  .preview-link .name {
+    font-family: var(--font-heading);
+    font-weight: 500;
+  }
+  .preview-link .desc {
+    color: var(--text-tertiary);
+    font-size: 0.8125rem;
+    margin-top: 2px;
+  }
+  .note {
+    color: var(--text-tertiary);
+    font-size: 0.8125rem;
+    margin-top: 32px;
+    line-height: 1.6;
+  }
+  .doc-link {
+    display: block;
+    padding: 6px 0;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.8125rem;
+  }
+  .doc-link:hover { color: var(--text-primary); }
+  .doc-link .label {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+  }
+</style>
+</head>
+<body>
+  <h1>Proposal B: "The Workshop"</h1>
+  <div class="subtitle">Warm, spatial, card-based creative workspace</div>
+
+  <div class="section-header">Preview</div>
+  <hr>
+
+  <a class="preview-link" href="preview.html">
+    <div class="name">preview.html</div>
+    <div class="desc">Main preview: Workbench, Review, Questions, Subtasks, Dark Mode, Task Creation + design tokens</div>
+  </a>
+
+  <div class="section-header" style="margin-top: 16px;">Focused View Previews</div>
+  <hr>
+
+  <a class="preview-link" href="activity.html">
+    <div class="name">activity.html</div>
+    <div class="desc">Live activity feed with stage progress pipeline, real-time agent action timeline, context sidebar</div>
+  </a>
+  <a class="preview-link" href="failed.html">
+    <div class="name">failed.html</div>
+    <div class="desc">Error recovery: error hero with full output, activity context, iteration history, retry panel</div>
+  </a>
+  <a class="preview-link" href="integration.html">
+    <div class="name">integration.html</div>
+    <div class="desc">Post-completion integration: summary, auto-merge vs PR options, CI check monitoring, archive</div>
+  </a>
+  <a class="preview-link" href="diff.html">
+    <div class="name">diff.html</div>
+    <div class="desc">Code diff viewer: file list panel, unified diff with syntax-colored additions/deletions</div>
+  </a>
+
+  <div class="section-header" style="margin-top: 16px;">Views in preview.html</div>
+  <hr>
+
+  <div class="preview-link" style="cursor: default;">
+    <div class="name">View 1: Main Workbench</div>
+    <div class="desc">Your Attention / Agents at Work / Recently Completed sections with task cards</div>
+  </div>
+  <div class="preview-link" style="cursor: default;">
+    <div class="name">View 2: Review Flow</div>
+    <div class="desc">Full-screen focus view with artifact hero, review panel, and activity log</div>
+  </div>
+  <div class="preview-link" style="cursor: default;">
+    <div class="name">View 3: Questions Flow</div>
+    <div class="desc">Question form with radio options and context, full-screen focus</div>
+  </div>
+  <div class="preview-link" style="cursor: default;">
+    <div class="name">View 4: Subtask Parent</div>
+    <div class="desc">Parent task with progress bar and child task cards sorted by priority</div>
+  </div>
+  <div class="preview-link" style="cursor: default;">
+    <div class="name">View 5: Dark Mode</div>
+    <div class="desc">Workbench in dark mode with warm brown canvas and adjusted colors</div>
+  </div>
+  <div class="preview-link" style="cursor: default;">
+    <div class="name">View 6: Task Creation</div>
+    <div class="desc">Bottom sheet modal with description, flow picker, and auto mode toggle</div>
+  </div>
+
+  <div class="section-header" style="margin-top: 16px;">Documentation</div>
+  <hr>
+
+  <a class="doc-link" href="README.md"><span class="label">README.md</span> -- Design philosophy, visual language, component mapping</a>
+  <a class="doc-link" href="flows.md"><span class="label">flows.md</span> -- User flows, keyboard shortcuts, transitions</a>
+
+  <div class="note">
+    preview.html contains 6 views in a single scrollable page (light + dark mode).<br>
+    The focused view previews (activity, failed, integration, diff) are separate files for deeper exploration of each state.
+  </div>
+</body>
+</html>

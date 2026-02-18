@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mission Control -- Subtask Expansion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-0: #0a0f1a; --bg-1: #0f1729; --bg-2: #162033; --bg-3: #1d2940; --bg-hover: #1a2438;
+  --green: #34d399; --green-dim: #1a7a52; --green-bg: rgba(52,211,153,0.08);
+  --amber: #fbbf24; --amber-bg: rgba(251,191,36,0.08);
+  --red: #f87171; --red-bg: rgba(248,113,113,0.08);
+  --blue: #60a5fa; --blue-bg: rgba(96,165,250,0.08);
+  --orange: #fb923c;
+  --text-0: #f1f5f9; --text-1: #cbd5e1; --text-2: #64748b; --text-3: #475569;
+  --border: rgba(148,163,184,0.12);
+  --font-data: 'IBM Plex Mono', monospace; --font-label: 'Inter', system-ui, sans-serif;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+}
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-data); background: var(--bg-0); color: var(--text-0); line-height: 1.5; }
+
+.text-1 { color: var(--text-1); } .text-2 { color: var(--text-2); } .text-3 { color: var(--text-3); }
+.text-green { color: var(--green); }
+.text-xxs { font-size: 0.6875rem; } .tabular { font-variant-numeric: tabular-nums; }
+
+.feed { width: 100%; }
+.feed-section { margin-bottom: var(--sp-2); }
+.feed-section-header { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); background: var(--bg-1); border-bottom: 1px solid var(--border); font-family: var(--font-label); font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-2); }
+.feed-section-count { font-family: var(--font-data); font-size: 0.625rem; color: var(--text-3); font-weight: 400; }
+
+.task-row { display: grid; grid-template-columns: 28px 1fr 240px 2fr auto; gap: var(--sp-3); align-items: center; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); cursor: pointer; transition: background 100ms; min-height: 44px; }
+.task-row:hover { background: var(--bg-hover); }
+.task-status { width: 8px; height: 8px; border-radius: 50%; justify-self: center; }
+.task-status--working { background: var(--green); animation: pulse-status 2s infinite; }
+.task-status--done { background: var(--green); opacity: 0.4; }
+.task-status--queued { background: var(--text-3); }
+@keyframes pulse-status { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+.task-title-col { display: flex; flex-direction: column; min-width: 0; }
+.task-title { font-family: var(--font-label); font-size: 0.8125rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-id { font-size: 0.6875rem; color: var(--text-3); }
+
+.task-pipeline { display: flex; align-items: center; gap: 2px; height: 20px; }
+.pipeline-stage { flex: 1; height: 4px; border-radius: 2px; background: var(--bg-3); }
+.pipeline-stage--done { background: var(--green-dim); }
+.pipeline-stage--active { background: var(--amber); animation: pipeline-pulse 1.5s infinite; }
+@keyframes pipeline-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.pipeline-label { font-size: 0.625rem; color: var(--text-2); font-family: var(--font-label); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; margin-left: var(--sp-2); min-width: 56px; }
+
+.task-feed { font-size: 0.6875rem; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.task-feed-live::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--green); margin-right: 6px; animation: pulse-status 2s infinite; }
+
+.task-action { display: flex; align-items: center; gap: var(--sp-2); }
+</style>
+</head>
+<body>
+
+<div class="feed">
+  <div class="feed-section">
+    <div class="feed-section-header">
+      <span style="color: var(--green);">&#9679;</span>
+      Active &mdash; Test infrastructure overhaul
+      <span class="feed-section-count">4 subtasks</span>
+    </div>
+
+    <!-- Completed subtask 1 -->
+    <div class="task-row" style="opacity: 0.5;">
+      <div class="task-status task-status--done"></div>
+      <div class="task-title-col">
+        <span class="task-title text-2" style="text-decoration: line-through;">Set up Vitest configuration</span>
+        <span class="task-id">robin</span>
+      </div>
+      <div class="task-pipeline">
+        <div class="pipeline-stage pipeline-stage--done"></div>
+        <div class="pipeline-stage pipeline-stage--done"></div>
+        <div class="pipeline-stage pipeline-stage--done"></div>
+        <span class="pipeline-label" style="color: var(--green-dim);">Done</span>
+      </div>
+      <div class="task-feed text-3">2 files changed</div>
+      <div class="task-action"></div>
+    </div>
+
+    <!-- Completed subtask 2 -->
+    <div class="task-row" style="opacity: 0.5;">
+      <div class="task-status task-status--done"></div>
+      <div class="task-title-col">
+        <span class="task-title text-2" style="text-decoration: line-through;">Create test utilities module</span>
+        <span class="task-id">crane</span>
+      </div>
+      <div class="task-pipeline">
+        <div class="pipeline-stage pipeline-stage--done"></div>
+        <div class="pipeline-stage pipeline-stage--done"></div>
+        <div class="pipeline-stage pipeline-stage--done"></div>
+        <span class="pipeline-label" style="color: var(--green-dim);">Done</span>
+      </div>
+      <div class="task-feed text-3">5 files changed</div>
+      <div class="task-action"></div>
+    </div>
+
+    <!-- Active subtask (with dependency arrow) -->
+    <div class="task-row">
+      <div class="task-status task-status--working"></div>
+      <div class="task-title-col">
+        <span class="task-title">Write integration test suite</span>
+        <span class="task-id">eagle <span class="text-3">&larr; robin</span></span>
+      </div>
+      <div class="task-pipeline">
+        <div class="pipeline-stage pipeline-stage--done"></div>
+        <div class="pipeline-stage pipeline-stage--active"></div>
+        <div class="pipeline-stage"></div>
+        <span class="pipeline-label">Work</span>
+      </div>
+      <div class="task-feed task-feed-live">Writing test for auth middleware...</div>
+      <div class="task-action">
+        <span class="text-xxs text-2 tabular">1m 12s</span>
+      </div>
+    </div>
+
+    <!-- Queued subtask (waiting on dependency) -->
+    <div class="task-row" style="opacity: 0.6;">
+      <div class="task-status task-status--queued"></div>
+      <div class="task-title-col">
+        <span class="task-title text-2">Add coverage reporting</span>
+        <span class="task-id">finch <span class="text-3">&larr; eagle</span></span>
+      </div>
+      <div class="task-pipeline">
+        <div class="pipeline-stage"></div>
+        <div class="pipeline-stage"></div>
+        <div class="pipeline-stage"></div>
+        <span class="pipeline-label">Queued</span>
+      </div>
+      <div class="task-feed text-3">Waiting on eagle</div>
+      <div class="task-action"></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra — Integration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --fg: #000000; --fg-secondary: #6B7280; --fg-muted: #9CA3AF;
+    --border: #E5E7EB; --accent: #F04A00; --accent-bg: rgba(240, 74, 0, 0.06);
+    --status-success: #059669; --status-active: #D97706; --status-attention: #2563EB; --status-danger: #DC2626;
+    --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+    --page-pad-x: 32px;
+  }
+  .dark {
+    --bg: #000000; --fg: #E5E7EB; --fg-secondary: #9CA3AF; --fg-muted: #6B7280;
+    --border: #2D3340; --accent-bg: rgba(240, 74, 0, 0.10);
+  }
+  html { font-size: 13px; line-height: 20px; }
+  body {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    font-feature-settings: 'liga' 0; background: var(--bg); color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .command-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px var(--page-pad-x); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .command-bar-left { display: flex; align-items: center; gap: 8px; flex: 1; }
+  .command-bar-prompt { color: var(--accent); font-weight: 500; }
+  .command-bar-status { display: flex; gap: 16px; font-size: 11px; color: var(--fg-muted); }
+  .command-bar-status kbd { color: var(--fg-secondary); font-family: var(--font-mono); font-size: 11px; }
+  .status-line {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px var(--page-pad-x); border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--fg-muted); flex-shrink: 0;
+  }
+  .status-line-left, .status-line-right { display: flex; gap: 16px; align-items: center; }
+  .status-line .branch { color: var(--accent); }
+  .status-line .sep { color: var(--border); }
+  .status-line kbd { color: var(--fg-secondary); font-family: var(--font-mono); font-size: 11px; }
+
+  .focus-view { flex: 1; overflow-y: auto; padding: 24px var(--page-pad-x); max-width: 800px; }
+  .focus-title { font-size: 16px; font-weight: 700; line-height: 24px; margin-bottom: 4px; }
+  .focus-subtitle { font-size: 13px; margin-bottom: 4px; }
+  .focus-meta { color: var(--fg-muted); font-size: 11px; display: flex; gap: 16px; }
+  .focus-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+  .focus-section-label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--fg-muted); margin-bottom: 12px;
+  }
+
+  .artifact { line-height: 22px; }
+  .artifact p { margin-bottom: 8px; color: var(--fg-secondary); }
+  .artifact h3 { font-size: 13px; font-weight: 600; margin-top: 16px; margin-bottom: 6px; }
+  .artifact ul { padding-left: 24px; margin-bottom: 8px; color: var(--fg-secondary); }
+  .artifact li { margin-bottom: 4px; }
+  .artifact code { color: var(--accent); font-size: 12px; }
+
+  .integration-options { display: flex; gap: 24px; padding: 8px 0; }
+  .integration-option {
+    display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+    cursor: pointer; color: var(--fg-secondary); border: 1px solid var(--border);
+    border-radius: 2px; font-size: 13px; font-family: var(--font-mono); background: none;
+  }
+  .integration-option:hover { border-color: var(--accent); color: var(--fg); }
+  .integration-option kbd { color: var(--accent); font-weight: 500; }
+  .inline-hint { font-size: 11px; color: var(--fg-muted); padding: 4px 0; line-height: 18px; }
+
+  .activity-log { font-size: 12px; line-height: 20px; }
+  .activity-entry { display: grid; grid-template-columns: 52px 1fr; gap: 12px; padding: 2px 0; }
+  .activity-time { color: var(--fg-muted); text-align: right; }
+  .activity-text { color: var(--fg-secondary); }
+
+  .action-bar { display: flex; gap: 24px; padding: 16px 0; font-size: 13px; }
+  .action-item { color: var(--fg-muted); cursor: pointer; }
+  .action-item:hover { color: var(--fg); }
+  .action-item kbd { color: var(--accent); font-family: var(--font-mono); font-weight: 500; }
+  .action-item.primary { color: var(--fg); }
+
+  .theme-toggle {
+    padding: 0; font-family: var(--font-mono); font-size: 11px;
+    color: var(--fg-muted); cursor: pointer; border: none; background: none; margin-left: 16px;
+  }
+  .theme-toggle:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="command-bar">
+    <div class="command-bar-left">
+      <span class="command-bar-prompt">&gt;</span>
+      <span style="color: var(--fg-secondary); font-size: 13px;">database-migration</span>
+    </div>
+    <div class="command-bar-status">
+      <span><kbd>esc</kbd> back</span>
+      <button class="theme-toggle" onclick="document.getElementById('app').classList.toggle('dark'); this.textContent = this.textContent === 'dark' ? 'light' : 'dark';">dark</button>
+    </div>
+  </div>
+
+  <div class="focus-view">
+    <div>
+      <div class="focus-title">database-migration</div>
+      <div class="focus-subtitle" style="color: var(--status-success);">Completed -- ready to integrate</div>
+      <div class="focus-meta">
+        <span>Created 3h ago</span>
+        <span>Completed at 12:34</span>
+        <span>3 files changed</span>
+      </div>
+    </div>
+
+    <hr class="focus-divider">
+
+    <div class="focus-section-label">Summary</div>
+    <div class="artifact">
+      <p>Added <code>workflow_stage_sessions</code> and <code>log_entries</code> tables with appropriate indexes. Migration runs cleanly on both fresh and existing databases. All existing tests pass.</p>
+      <h3>Changes Made</h3>
+      <ul>
+        <li><code>V15__add_sessions_and_logs.sql</code> -- migration with table definitions and indexes</li>
+        <li><code>src/workflow/domain/session.rs</code> -- StageSession and SessionStatus types</li>
+        <li><code>src/adapters/sqlite/mod.rs</code> -- registered new query modules</li>
+      </ul>
+    </div>
+
+    <hr class="focus-divider">
+
+    <div class="focus-section-label">Integrate</div>
+    <div class="integration-options">
+      <button class="integration-option"><kbd>m</kbd> Merge to main</button>
+      <button class="integration-option"><kbd>p</kbd> Open pull request</button>
+    </div>
+    <div class="inline-hint">
+      Merge will fast-forward main to include this task's commits.<br>
+      Pull request will push the branch and open a PR via gh CLI.
+    </div>
+
+    <hr class="focus-divider">
+
+    <div class="focus-section-label">Iteration History</div>
+    <div class="activity-log">
+      <div class="activity-entry">
+        <span class="activity-time">09:34</span>
+        <span class="activity-text">Planning started (iteration 1)</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:36</span>
+        <span class="activity-text">Planning complete -- plan artifact created</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:37</span>
+        <span class="activity-text" style="color: var(--status-success);">Planning approved</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:37</span>
+        <span class="activity-text">Work started (iteration 1)</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:45</span>
+        <span class="activity-text">Work complete -- summary artifact created</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:45</span>
+        <span class="activity-text">Checks: cargo fmt -- pass</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:46</span>
+        <span class="activity-text">Checks: cargo clippy -- pass</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:48</span>
+        <span class="activity-text">Checks: cargo test -- pass (569/569)</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:48</span>
+        <span class="activity-text">Review started (iteration 1)</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:50</span>
+        <span class="activity-text" style="color: var(--status-danger);">Review rejected: "Missing foreign key constraints"</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:50</span>
+        <span class="activity-text">Work restarted (iteration 2)</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:55</span>
+        <span class="activity-text">Work complete -- updated summary</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:56</span>
+        <span class="activity-text">Checks: all passing</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:57</span>
+        <span class="activity-text" style="color: var(--status-success);">Review approved</span>
+      </div>
+      <div class="activity-entry">
+        <span class="activity-time">09:57</span>
+        <span class="activity-text" style="color: var(--status-success);">Task completed</span>
+      </div>
+    </div>
+
+    <hr class="focus-divider">
+
+    <div class="action-bar">
+      <span class="action-item primary"><kbd>m</kbd>erge</span>
+      <span class="action-item"><kbd>p</kbd>ull request</span>
+      <span class="action-item"><kbd>d</kbd>iff</span>
+      <span class="action-item"><kbd>l</kbd>ogs</span>
+      <span class="action-item"><kbd>esc</kbd> back</span>
+    </div>
+  </div>
+
+  <div class="status-line">
+    <div class="status-line-left">
+      <span class="branch">task/database-migration</span>
+      <span>+3 -0</span>
+      <span class="sep">|</span>
+      <span style="color: var(--status-success);">Completed</span>
+    </div>
+    <div class="status-line-right">
+      <span><kbd>m</kbd> merge</span>
+      <span><kbd>p</kbd> open PR</span>
+      <span><kbd>esc</kbd> back</span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

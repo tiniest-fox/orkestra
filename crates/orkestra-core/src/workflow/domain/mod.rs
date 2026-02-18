@@ -8,4 +8,6 @@ pub(crate) mod task_view;
 // Re-export all domain types from orkestra-types
 pub use orkestra_types::domain::*;
 
-pub use task_view::{DerivedTaskState, PendingRejection, SubtaskProgress, TaskView};
+pub use task_view::{
+    DerivedTaskState, PendingRejection, SessionLogInfo, StageLogInfo, SubtaskProgress, TaskView,
+};

@@ -43,7 +43,7 @@ stages:
       name: summary
       description: Summary of changes made and implementation notes
     prompt: worker.md
-    model: opus
+    model: sonnet
     disallowed_tools:
       - pattern: "Bash(*cargo test*)"
         message: "Testing runs automatically in the checks stage"

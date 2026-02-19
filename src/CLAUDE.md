@@ -100,6 +100,20 @@ useEffect(() => {
   - Accents: `text-orange-600 dark:text-orange-400` (600 for light, 400 for dark)
 - Use `PROSE_CLASSES_LIGHT` from `utils/prose.ts` for markdown rendering - it includes dual-mode variants. Don't use `PROSE_CLASSES_DARK`.
 
+## Forge Design System
+
+<!-- compound: unthinkingly-inventive-dugong -->
+
+The Forge design system is an alternate visual language used by `FeedView` and its components. It uses IBM Plex fonts, a warm purple-undertone palette, and pink-red accent (`--accent-1`).
+
+**Scoping:** Forge tokens are CSS custom properties defined in `.forge-theme` in `src/index.css` (following the `.artifact-prose` pattern). Apply the `.forge-theme` class at the top-level container of any Forge component (`FeedView`), not globally — this prevents Forge colors leaking into the kanban.
+
+**Tailwind exception — `StatusSymbol`:** `StatusSymbol.tsx` is the one component that legitimately uses inline `style` props. The reason: both `color` (a CSS variable selected by runtime state from an object) and `animation` (conditionally present) are genuinely dynamic — not one of a fixed set of values. Tailwind arbitrary classes like `text-[var(--x)]` require the variable name to be statically known at write time. This is a deliberate, documented exception; all other Forge components must use Tailwind classes only.
+
+**Dark mode:** `.forge-theme` defines light-mode-only values. Dark mode for Forge tokens is explicitly deferred. When added, a `@media (prefers-color-scheme: dark) { .forge-theme { ... } }` block in `src/index.css` is the right place.
+
+**Animation coupling:** Keyframe names (`pipe-active-pulse`, `forge-pulse-opacity`) are coupled by string between `index.css` and TSX files with no compile-time check. Be careful when renaming them.
+
 ## UI Components
 
 - Use the existing design system in `components/ui/` — `Panel`, `Button`, `Badge`, `IconButton`, `TabbedPanel`, `ModalPanel`, etc.

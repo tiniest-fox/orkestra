@@ -1,6 +1,7 @@
 /* Font imports must precede all other statements */
 @import url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.min.css');
 @import url('https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.min.css');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -102,6 +103,47 @@ body {
 
 .prose.prose-sm ol > li {
   margin-left: 2rem;
+}
+
+/* Forge design language — scoped to feed view */
+.forge-theme {
+  --canvas: #FAF8FC;
+  --surface-3: #EBE6F0;
+  --surface-hover: #F0ECF4;
+  --border: #E4DFE9;
+  --accent: #E83558;
+  --accent-hover: #D42B4C;
+  --accent-bg-strong: rgba(232, 53, 88, 0.14);
+  --accent-2: #A63CB5;
+  --green: #16A34A;
+  --green-dim: #A0C8B0;
+  --amber: #D97706;
+  --red: #DC2626;
+  --blue: #2563EB;
+  --text-0: #1C1820;
+  --text-1: #6B6078;
+  --text-2: #9890A4;
+  --text-3: #C4BCCC;
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', 'Cascadia Code', monospace;
+  --radius-md: 6px;
+  --shadow-bar: 0 1px 3px rgba(28, 24, 32, 0.08), 0 1px 2px rgba(28, 24, 32, 0.05);
+
+  font-family: var(--font-ui);
+  background-color: var(--canvas);
+  color: var(--text-0);
+}
+
+/* Forge pipeline segment pulse animation */
+@keyframes pipe-active-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Forge status symbol pulse animation */
+@keyframes forge-pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 /* Intermittent spin: one rotation with elastic overshoot, then a pause */

@@ -76,6 +76,12 @@ vi.mock("./NewTaskPanel", () => ({
   NewTaskPanel: () => <div data-testid="new-task-panel">New Task</div>,
 }));
 
+vi.mock("./Feed", () => ({
+  FeedView: ({ tasks }: { tasks: Array<{ id: string }> }) => (
+    <div data-testid="feed-view">Feed: {tasks.length} tasks</div>
+  ),
+}));
+
 vi.mock("./CommandPalette", () => ({
   CommandPalette: () => null,
 }));
@@ -163,6 +169,7 @@ describe("Orkestra - View Toggle", () => {
       toggleGitHistory: vi.fn(),
       selectCommit: vi.fn(),
       deselectCommit: vi.fn(),
+      toggleFeed: vi.fn(),
       toggleAssistant: vi.fn(),
       toggleAssistantHistory: vi.fn(),
       closeFocus: vi.fn(),
@@ -415,6 +422,33 @@ describe("Orkestra - View Toggle", () => {
     });
   });
 
+  it("shows FeedView when Feed preset is active", async () => {
+    displayContextValue.layout = {
+      preset: "Feed",
+      isArchive: false,
+      taskId: null,
+      subtaskId: null,
+      commitHash: null,
+    };
+    displayContextValue.activePreset = PRESETS.Feed;
+
+    mockUseTasks.mockReturnValue({
+      tasks: [createMockWorkflowTaskView({ id: "t1", title: "Task 1" })],
+      archivedTasks: [],
+      loading: false,
+      error: null,
+      createTask: vi.fn(),
+      createSubtask: vi.fn(),
+      deleteTask: vi.fn(),
+      refetch: vi.fn(),
+    });
+
+    await act(async () => {
+      render(<Orkestra />);
+    });
+    expect(screen.getByTestId("feed-view")).toBeInTheDocument();
+  });
+
   it("shows ArchiveTaskDetailView in archive view", async () => {
     const archivedTask = createMockWorkflowTaskView({
       id: "archived-1",
@@ -488,6 +522,7 @@ describe("Orkestra - Auto Task Templates", () => {
       toggleGitHistory: vi.fn(),
       selectCommit: vi.fn(),
       deselectCommit: vi.fn(),
+      toggleFeed: vi.fn(),
       toggleAssistant: vi.fn(),
       toggleAssistantHistory: vi.fn(),
       closeFocus: vi.fn(),

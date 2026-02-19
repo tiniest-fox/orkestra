@@ -26,6 +26,7 @@ export interface DisplayContextValue {
   toggleGitHistory(): void;
   selectCommit(hash: string): void;
   deselectCommit(): void;
+  toggleFeed(): void;
   toggleAssistant(): void;
   toggleAssistantHistory(): void;
 
@@ -179,6 +180,27 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
     }));
   }, []);
 
+  const toggleFeed = useCallback(() => {
+    setLayout((prev) => {
+      if (prev.preset === "Feed") {
+        return {
+          preset: "Board",
+          isArchive: prev.isArchive,
+          taskId: null,
+          subtaskId: null,
+          commitHash: null,
+        };
+      }
+      return {
+        preset: "Feed",
+        isArchive: prev.isArchive,
+        taskId: null,
+        subtaskId: null,
+        commitHash: null,
+      };
+    });
+  }, []);
+
   const toggleAssistant = useCallback(() => {
     setLayout((prev) => {
       if (prev.preset === "Assistant" || prev.preset === "AssistantHistory") {
@@ -310,6 +332,7 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       toggleGitHistory,
       selectCommit,
       deselectCommit,
+      toggleFeed,
       toggleAssistant,
       toggleAssistantHistory,
       closeFocus,
@@ -332,6 +355,7 @@ export function DisplayContextProvider({ children }: DisplayContextProviderProps
       toggleGitHistory,
       selectCommit,
       deselectCommit,
+      toggleFeed,
       toggleAssistant,
       toggleAssistantHistory,
       closeFocus,

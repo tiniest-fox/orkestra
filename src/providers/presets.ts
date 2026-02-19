@@ -12,6 +12,7 @@
 /** Named layout presets representing all possible UI states. */
 export type PresetName =
   | "Board"
+  | "Feed"
   | "Task"
   | "Subtask"
   | "NewTask"
@@ -25,6 +26,7 @@ export type PresetName =
 /** Component types that can occupy layout slots. */
 export type SlotContent =
   | "KanbanBoard"
+  | "FeedView"
   | "TaskDetail"
   | "SubtaskDetail"
   | "NewTaskPanel"
@@ -57,6 +59,7 @@ export interface LayoutState {
 
 export const PRESETS: Record<PresetName, LayoutPreset> = {
   Board: { content: "KanbanBoard", panel: null, secondaryPanel: null },
+  Feed: { content: "FeedView", panel: null, secondaryPanel: null },
   Task: { content: "KanbanBoard", panel: "TaskDetail", secondaryPanel: null },
   Subtask: {
     content: "KanbanBoard",

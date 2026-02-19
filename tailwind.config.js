@@ -48,6 +48,8 @@ export default {
         sans: ['Geist', 'system-ui', 'sans-serif'],
         heading: ['Geist', 'system-ui', 'sans-serif'],
         mono: ['Geist Mono', 'ui-monospace', 'monospace'],
+        'forge-sans': ['IBM Plex Sans', 'system-ui', '-apple-system', 'sans-serif'],
+        'forge-mono': ['IBM Plex Mono', 'SF Mono', 'Cascadia Code', 'monospace'],
       },
       borderRadius: {
         'panel': '12px',

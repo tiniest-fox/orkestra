@@ -4,7 +4,7 @@
  * Navigation state is driven by DisplayContext.
  */
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFocusTaskListener } from "../hooks/useFocusTaskListener";
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import {
@@ -23,6 +23,7 @@ import { BranchIndicator } from "./BranchIndicator";
 import { CommandPalette } from "./CommandPalette";
 import { CommitDiffPanel, CommitHistoryPanel } from "./CommitHistory";
 import { DiffPanel } from "./Diff";
+import { FeedView } from "./Feed";
 import { KanbanBoard } from "./Kanban";
 import { NewTaskPanel } from "./NewTaskPanel";
 import { TaskDetailSidebar } from "./TaskDetail";
@@ -49,6 +50,7 @@ export function Orkestra() {
     selectCommit,
     deselectCommit,
     toggleGitHistory,
+    toggleFeed,
   } = useDisplayContext();
 
   const config = useWorkflowConfig();
@@ -72,6 +74,18 @@ export function Orkestra() {
     isPanelOpenRef.current = isAssistantPanelOpen;
     markPanelOpen(isAssistantPanelOpen);
   }
+
+  // Keyboard shortcut: Cmd+Shift+F toggles feed view
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "f") {
+        e.preventDefault();
+        toggleFeed();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [toggleFeed]);
 
   // Filter to top-level tasks only
   const topLevelTasks = useMemo(() => tasks.filter((t) => !t.parent_id), [tasks]);
@@ -208,6 +222,26 @@ export function Orkestra() {
               Archived
             </Button>
           </div>
+          <div className="flex items-center gap-1 bg-stone-200 dark:bg-stone-800 rounded-panel p-0.5">
+            <Button
+              variant={content === "KanbanBoard" ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => {
+                if (layout.preset === "Feed") toggleFeed();
+              }}
+            >
+              Board
+            </Button>
+            <Button
+              variant={content === "FeedView" ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => {
+                if (layout.preset !== "Feed") toggleFeed();
+              }}
+            >
+              Feed
+            </Button>
+          </div>
           <BranchIndicator />
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -281,6 +315,7 @@ export function Orkestra() {
                 onSelectTask={handleSelectTask}
               />
             ))}
+          {content === "FeedView" && <FeedView config={config} tasks={tasks} />}
           {content === "CommitDiffPanel" && layout.commitHash && (
             <CommitDiffPanel commitHash={layout.commitHash} onClose={deselectCommit} />
           )}

@@ -119,6 +119,29 @@ format!("{}", TaskState::agent_working("work")) // "agent_working (work)"
 ### Validation is Optional
 `WorkflowConfig::validate()` returns errors but doesn't prevent construction. Always call `is_valid()` or `validate()` after loading from YAML.
 
+## Cross-Crate Constants
+
+When multiple crates need to reference the same path format, directory name, or other constant value:
+
+**DO**: Define it in orkestra-types with a public accessor function.
+
+```rust
+// In orkestra-types/src/runtime/artifact.rs
+const ARTIFACTS_DIR: &str = ".orkestra/.artifacts";
+
+pub fn artifacts_directory() -> &'static str {
+    ARTIFACTS_DIR
+}
+
+pub fn artifact_file_path(name: &str) -> String {
+    format!("{}/{}.md", ARTIFACTS_DIR, name)
+}
+```
+
+**WHY**: orkestra-types is the shared dependency of both orkestra-core (which writes files) and orkestra-prompt (which references them). This ensures Single Source of Truth across crate boundaries.
+
+**DON'T**: Define the same path/constant independently in multiple crates. If orkestra-core uses `.orkestra/.artifacts` and orkestra-prompt uses a different string, they'll diverge and break.
+
 ## Anti-Patterns
 
 - **Don't add I/O here**: Storage, network, file operations belong in other crates

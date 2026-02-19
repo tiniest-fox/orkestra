@@ -36,7 +36,7 @@ fn spawn_claude_process(
         cmd.args(["--model", model_id]);
     }
 
-    cmd.args(["--print", "--verbose"]);
+    cmd.args(["--print", "--verbose", "--effort", "medium"]);
 
     // Always use structured JSON output with schema
     cmd.args([

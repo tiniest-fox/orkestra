@@ -160,32 +160,6 @@ fn cleanup_agents_standalone() {
     }
 }
 
-/// Best-effort PATH fix for macOS .app bundles.
-///
-/// GUI apps get a minimal PATH that excludes user-installed tools. This appends
-/// Homebrew — the most universal macOS tool location. Everything else (cargo, mise,
-/// asdf, nvm, etc.) should be set up in script stages by the project.
-fn fix_path_env() {
-    #[cfg(unix)]
-    {
-        let current = std::env::var("PATH").unwrap_or_default();
-
-        let extra_paths = [
-            "/opt/homebrew/bin".to_string(),
-            "/opt/homebrew/sbin".to_string(),
-        ];
-
-        let mut path = current;
-        for p in extra_paths {
-            if std::path::Path::new(&p).exists() && !path.contains(&p) {
-                path = format!("{path}:{p}");
-            }
-        }
-
-        std::env::set_var("PATH", &path);
-    }
-}
-
 /// Set up signal handlers to clean up agents on termination signals (Unix only).
 #[cfg(unix)]
 fn setup_signal_handlers() {
@@ -313,7 +287,7 @@ pub fn run() {
     // Fix PATH for macOS .app bundles. GUI apps don't inherit the user's shell
     // PATH, so tools like cargo, node, mise shims etc. aren't found. This runs
     // the user's login shell to resolve their real PATH and sets it on this process.
-    fix_path_env();
+    let _ = fix_path_env::fix();
 
     // Set up signal handlers to ensure cleanup on external termination
     setup_signal_handlers();

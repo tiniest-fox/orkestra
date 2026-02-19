@@ -45,19 +45,19 @@ stages:
     prompt: worker.md
     model: opus
     disallowed_tools:
-      - pattern: "Bash(cargo test*)"
+      - pattern: "Bash(*cargo test*)"
         message: "Testing runs automatically in the checks stage"
-      - pattern: "Bash(cargo build*)"
+      - pattern: "Bash(*cargo build*)"
         message: "Building is handled by the automated checks stage"
-      - pattern: "Bash(cargo clippy*)"
+      - pattern: "Bash(*cargo clippy*)"
         message: "Linting runs automatically in the checks stage"
-      - pattern: "Bash(cargo fmt*)"
+      - pattern: "Bash(*cargo fmt*)"
         message: "Formatting runs automatically in the checks stage"
       - pattern: "Bash(pnpm tauri*)"
         message: "Never run the app — it spawns nested agent processes and causes errors"
       - pattern: "Bash(pnpm dev*)"
         message: "Never run the app dev server — it's not needed for implementation"
-      - pattern: "Bash(cargo run*)"
+      - pattern: "Bash(*cargo run*)"
         message: "Never run the app binary — it spawns nested agent processes and causes errors"
 
   # Checks: Automated quality gates (lint, test, type check)
@@ -88,7 +88,7 @@ stages:
     model: opus
     restart_on_reentry: true
     disallowed_tools:
-      - pattern: "Bash(cargo *)"
+      - pattern: "Bash(*cargo *)"
         message: "All automated checks have passed and all tests pass as-is — focus on code review, not re-running checks"
     capabilities:
       approval:

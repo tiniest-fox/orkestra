@@ -526,10 +526,17 @@ impl WorkflowConfig {
     fn validate_no_duplicate_artifact_names(&self, errors: &mut Vec<String>) {
         let mut seen = std::collections::HashSet::new();
         for stage in &self.stages {
-            if !seen.insert(&stage.artifact) {
+            let name = stage.artifact_name();
+            if name.is_empty() {
                 errors.push(format!(
-                    "Duplicate artifact name \"{}\". Each stage must produce a unique artifact.",
-                    stage.artifact
+                    "Stage \"{}\" has an empty artifact name. Artifact names must be non-empty.",
+                    stage.name
+                ));
+                continue;
+            }
+            if !seen.insert(name) {
+                errors.push(format!(
+                    "Duplicate artifact name \"{name}\". Each stage must produce a unique artifact."
                 ));
             }
         }
@@ -984,7 +991,7 @@ mod tests {
 
         let planning = workflow.stage("planning");
         assert!(planning.is_some());
-        assert_eq!(planning.unwrap().artifact, "plan");
+        assert_eq!(planning.unwrap().artifact_name(), "plan");
 
         let missing = workflow.stage("nonexistent");
         assert!(missing.is_none());

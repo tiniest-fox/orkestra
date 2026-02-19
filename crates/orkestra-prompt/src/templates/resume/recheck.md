@@ -20,6 +20,6 @@ Prior stages have recorded the following activity:
 The following artifacts have been updated. Re-read them:
 
 {{#each artifacts}}
-- `{{this.file_path}}` — {{this.name}}
+- `{{this.file_path}}`{{#if this.description}} — {{this.description}}{{/if}}
 {{/each}}
 {{/if}}

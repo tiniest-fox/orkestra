@@ -65,6 +65,9 @@ pub struct ArtifactContext {
     pub name: String,
     /// Relative path to the artifact file (e.g., ".orkestra/.artifacts/plan.md").
     pub file_path: String,
+    /// Optional description of what this artifact contains.
+    /// Shown to agents alongside the file path.
+    pub description: Option<String>,
 }
 
 /// Context for a question-answer pair.

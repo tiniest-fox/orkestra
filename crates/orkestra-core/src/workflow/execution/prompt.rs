@@ -106,7 +106,7 @@ pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>)
 
     // Generate schema dynamically based on stage config
     let schema_config = crate::prompts::SchemaConfig {
-        artifact_name: &stage_config.artifact,
+        artifact_name: stage_config.artifact_name(),
         ask_questions: stage_config.capabilities.ask_questions,
         produces_subtasks: stage_config.capabilities.produces_subtasks(),
         has_approval: stage_config.capabilities.has_approval(),

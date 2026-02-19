@@ -110,7 +110,7 @@ fn build_output_format_context(ctx: &StagePromptContext<'_>) -> OutputFormatCont
     };
 
     OutputFormatContext {
-        artifact_name: ctx.stage.artifact.clone(),
+        artifact_name: ctx.stage.artifact_name().to_owned(),
         can_ask_questions: ctx.stage.capabilities.ask_questions,
         questions_example,
         can_produce_subtasks: ctx.stage.capabilities.produces_subtasks(),

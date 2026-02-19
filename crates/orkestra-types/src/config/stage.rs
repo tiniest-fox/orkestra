@@ -5,7 +5,97 @@
 //! - Produces an artifact (e.g., "plan", "summary")
 //! - Has capabilities that define what it can do
 
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+// ============================================================================
+// Artifact Configuration
+// ============================================================================
+
+/// Configuration for an artifact produced by a stage.
+///
+/// Accepts both a plain string (just the name) and a rich struct:
+///
+/// ```yaml
+/// # Simple form
+/// artifact: plan
+///
+/// # Rich form
+/// artifact:
+///   name: plan
+///   display_name: PRD
+///   description: High-level product plan for this task
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArtifactConfig {
+    /// Artifact key used for file paths and storage (e.g., "plan", "summary").
+    pub name: String,
+    /// Human-readable display name (e.g., "PRD"). Defaults to `name` if not set.
+    pub display_name: Option<String>,
+    /// Short description shown to agents alongside the file path.
+    pub description: Option<String>,
+}
+
+impl ArtifactConfig {
+    fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            display_name: None,
+            description: None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ArtifactConfig {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Helper {
+            Simple(String),
+            Full {
+                name: String,
+                #[serde(default)]
+                display_name: Option<String>,
+                #[serde(default)]
+                description: Option<String>,
+            },
+        }
+        Ok(match Helper::deserialize(deserializer)? {
+            Helper::Simple(name) => ArtifactConfig {
+                name,
+                display_name: None,
+                description: None,
+            },
+            Helper::Full {
+                name,
+                display_name,
+                description,
+            } => ArtifactConfig {
+                name,
+                display_name,
+                description,
+            },
+        })
+    }
+}
+
+impl Serialize for ArtifactConfig {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.display_name.is_none() && self.description.is_none() {
+            serializer.serialize_str(&self.name)
+        } else {
+            let mut map = serializer.serialize_map(None)?;
+            map.serialize_entry("name", &self.name)?;
+            if let Some(ref dn) = self.display_name {
+                map.serialize_entry("display_name", dn)?;
+            }
+            if let Some(ref desc) = self.description {
+                map.serialize_entry("description", desc)?;
+            }
+            map.end()
+        }
+    }
+}
 
 /// A tool restriction rule for agent stages.
 ///
@@ -43,9 +133,8 @@ pub struct StageConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Name of the artifact this stage produces (e.g., "plan", "summary").
-    /// The artifact content is stored with this key.
-    pub artifact: String,
+    /// Artifact this stage produces.
+    pub artifact: ArtifactConfig,
 
     /// What this stage can do.
     #[serde(default)]
@@ -99,7 +188,7 @@ impl StageConfig {
             display_name: None,
             icon: None,
             description: None,
-            artifact: artifact.into(),
+            artifact: ArtifactConfig::new(artifact),
             capabilities: StageCapabilities::default(),
             prompt: None, // Defaults to {name}.md via prompt_path()
             schema_file: None,
@@ -122,7 +211,7 @@ impl StageConfig {
             display_name: None,
             icon: None,
             description: None,
-            artifact: artifact.into(),
+            artifact: ArtifactConfig::new(artifact),
             capabilities: StageCapabilities::default(),
             prompt: None,
             schema_file: None,
@@ -216,6 +305,11 @@ impl StageConfig {
         self.display_name
             .clone()
             .unwrap_or_else(|| capitalize(&self.name))
+    }
+
+    /// Get the artifact name (key used for file paths and storage).
+    pub fn artifact_name(&self) -> &str {
+        &self.artifact.name
     }
 
     /// Check if this is a script stage.
@@ -448,7 +542,7 @@ mod tests {
     fn test_stage_config_new() {
         let stage = StageConfig::new("planning", "plan");
         assert_eq!(stage.name, "planning");
-        assert_eq!(stage.artifact, "plan");
+        assert_eq!(stage.artifact_name(), "plan");
         assert!(!stage.is_automated);
         assert!(stage.is_agent_stage());
         assert!(!stage.is_script_stage());
@@ -880,5 +974,84 @@ disallowed_tools:
         assert_eq!(stage.disallowed_tools[0].message, None);
         assert_eq!(stage.disallowed_tools[1].pattern, "Edit");
         assert_eq!(stage.disallowed_tools[1].message, None);
+    }
+
+    // -- ArtifactConfig serde --
+
+    #[test]
+    fn test_artifact_config_simple_deserialization() {
+        let yaml = "name: planning
+artifact: plan
+";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(stage.artifact_name(), "plan");
+        assert!(stage.artifact.description.is_none());
+        assert!(stage.artifact.display_name.is_none());
+    }
+
+    #[test]
+    fn test_artifact_config_rich_description_only() {
+        let yaml = "name: planning
+artifact:
+  name: plan
+  description: The implementation plan
+";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(stage.artifact_name(), "plan");
+        assert_eq!(
+            stage.artifact.description.as_deref(),
+            Some("The implementation plan")
+        );
+        assert!(stage.artifact.display_name.is_none());
+    }
+
+    #[test]
+    fn test_artifact_config_rich_all_fields() {
+        let yaml = "name: planning
+artifact:
+  name: plan
+  display_name: PRD
+  description: High-level plan
+";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(stage.artifact_name(), "plan");
+        assert_eq!(stage.artifact.display_name.as_deref(), Some("PRD"));
+        assert_eq!(
+            stage.artifact.description.as_deref(),
+            Some("High-level plan")
+        );
+    }
+
+    #[test]
+    fn test_artifact_config_rich_roundtrip() {
+        let yaml = "name: planning
+artifact:
+  name: plan
+  description: The implementation plan
+";
+        let stage: StageConfig = serde_yaml::from_str(yaml).unwrap();
+        let out = serde_yaml::to_string(&stage).unwrap();
+        let reparsed: StageConfig = serde_yaml::from_str(&out).unwrap();
+        assert_eq!(stage, reparsed);
+    }
+
+    #[test]
+    fn test_artifact_config_simple_serializes_as_string() {
+        let stage = StageConfig::new("planning", "plan");
+        let yaml = serde_yaml::to_string(&stage).unwrap();
+        // Simple artifact (no optional fields) must serialize as plain string "plan",
+        // not as a map with a "name" key.
+        assert!(yaml.contains("artifact: plan"));
+        // Ensure artifact is not serialized as a map (which would produce "artifact:\n  name: ...")
+        assert!(!yaml.contains("artifact:\n"));
+    }
+
+    #[test]
+    fn test_artifact_config_rich_serializes_as_map() {
+        let mut stage = StageConfig::new("planning", "plan");
+        stage.artifact.description = Some("The implementation plan".to_string());
+        let yaml = serde_yaml::to_string(&stage).unwrap();
+        assert!(yaml.contains("description: The implementation plan"));
+        assert!(yaml.contains("name: plan"));
     }
 }

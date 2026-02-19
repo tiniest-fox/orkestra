@@ -110,7 +110,7 @@ pub(crate) fn artifact_name_for_stage(
 ) -> String {
     workflow
         .stage(stage)
-        .map_or_else(|| default.to_string(), |s| s.artifact.clone())
+        .map_or_else(|| default.to_string(), |s| s.artifact_name().to_string())
 }
 
 /// Compute the next state after approving the current stage.

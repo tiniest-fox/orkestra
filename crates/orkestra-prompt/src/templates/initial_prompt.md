@@ -28,7 +28,7 @@
 The following artifacts are available in your worktree. Read them as needed:
 
 {{#each artifacts}}
-- `{{this.file_path}}` — {{this.name}}
+- `{{this.file_path}}`{{#if this.description}} — {{this.description}}{{/if}}
 {{/each}}
 {{/if}}
 {{#if sibling_tasks}}

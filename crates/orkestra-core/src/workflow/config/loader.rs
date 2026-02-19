@@ -89,7 +89,7 @@ integration:
 
         let config = result.unwrap();
         assert_eq!(config.stages.len(), 2);
-        assert_eq!(config.stage("planning").unwrap().artifact, "plan");
+        assert_eq!(config.stage("planning").unwrap().artifact_name(), "plan");
     }
 
     #[test]

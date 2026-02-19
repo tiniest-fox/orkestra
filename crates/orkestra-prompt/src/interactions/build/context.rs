@@ -116,9 +116,17 @@ fn build_context_from_stage<'a>(
     // Artifacts are materialized to files before agent spawn.
     let artifacts: Vec<ArtifactContext> = artifact_names
         .iter()
-        .map(|name| ArtifactContext {
-            name: name.clone(),
-            file_path: artifact_file_path(name),
+        .map(|name| {
+            let description = workflow
+                .stages
+                .iter()
+                .find(|s| s.artifact_name() == name)
+                .and_then(|s| s.artifact.description.clone());
+            ArtifactContext {
+                name: name.clone(),
+                file_path: artifact_file_path(name),
+                description,
+            }
         })
         .collect();
 

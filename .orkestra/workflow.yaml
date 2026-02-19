@@ -11,7 +11,9 @@ stages:
     display_name: Plan
     icon: file-text
     description: Create an implementation plan
-    artifact: plan
+    artifact:
+      name: plan
+      description: Implementation plan and approach for this task
     prompt: planner.md
     model: opus
     capabilities:
@@ -22,7 +24,9 @@ stages:
     display_name: Task
     icon: list-tree
     description: Break down the plan into subtasks
-    artifact: breakdown
+    artifact:
+      name: breakdown
+      description: Subtask breakdown with dependencies
     prompt: breakdown.md
     model: opus
     capabilities:
@@ -35,7 +39,9 @@ stages:
     display_name: Work
     icon: code
     description: Implement the approved plan
-    artifact: summary
+    artifact:
+      name: summary
+      description: Summary of changes made and implementation notes
     prompt: worker.md
     model: opus
     disallowed_tools:
@@ -62,7 +68,9 @@ stages:
     display_name: Check
     icon: circle-check-big
     description: Run automated code quality checks
-    artifact: check_results
+    artifact:
+      name: check_results
+      description: Automated check results (lint, tests, type checking)
     script:
       command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
       timeout_seconds: 600 # 10 minutes for full test suite
@@ -73,7 +81,9 @@ stages:
     display_name: Review
     icon: eye
     description: Review completed work for correctness
-    artifact: verdict
+    artifact:
+      name: verdict
+      description: Review verdict and feedback
     prompt: reviewer.md
     model: opus
     restart_on_reentry: true
@@ -91,7 +101,9 @@ stages:
     display_name: Compound
     icon: book-open
     description: Capture learnings and update documentation
-    artifact: learnings
+    artifact:
+      name: learnings
+      description: Captured learnings and documentation updates
     prompt: compound.md
     model: sonnet
     is_automated: true

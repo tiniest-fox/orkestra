@@ -23,7 +23,6 @@ stages:
     icon: list-tree
     description: Break down the plan into subtasks
     artifact: breakdown
-    inputs: [plan]
     prompt: breakdown.md
     model: opus
     capabilities:
@@ -37,7 +36,6 @@ stages:
     icon: code
     description: Implement the approved plan
     artifact: summary
-    inputs: [breakdown]
     prompt: worker.md
     model: opus
     disallowed_tools:
@@ -76,7 +74,6 @@ stages:
     icon: eye
     description: Review completed work for correctness
     artifact: verdict
-    inputs: [plan]
     prompt: reviewer.md
     model: opus
     restart_on_reentry: true
@@ -95,7 +92,6 @@ stages:
     icon: book-open
     description: Capture learnings and update documentation
     artifact: learnings
-    inputs: [plan, summary, check_results, verdict]
     prompt: compound.md
     model: sonnet
     is_automated: true
@@ -108,16 +104,13 @@ flows:
     stages:
       - plan:
           prompt: quick_planner.md
-      - work:
-          inputs: [plan]
+      - work
       - check
       - review:
-          inputs: [plan, summary, check_results]
           capabilities:
             approval:
               rejection_stage: work
-      - compound:
-          inputs: [plan, summary, check_results, verdict]
+      - compound
     integration:
       on_failure: work
 

@@ -51,6 +51,7 @@ impl PromptService {
     /// # Arguments
     /// * `workflow` - The workflow configuration
     /// * `task` - The task requiring an agent
+    /// * `artifact_names` - Names of artifacts that have been materialized to the worktree
     /// * `feedback` - Optional rejection feedback to incorporate
     /// * `integration_error` - Optional merge conflict information
     /// * `activity_logs` - Activity logs from prior completed iterations
@@ -63,11 +64,12 @@ impl PromptService {
         &self,
         workflow: &WorkflowConfig,
         task: &Task,
+        artifact_names: &[String],
         feedback: Option<&str>,
         integration_error: Option<IntegrationErrorContext<'_>>,
         show_direct_structured_output_hint: bool,
-        activity_logs: Vec<ActivityLogEntry>,
-        sibling_tasks: Vec<SiblingTaskContext>,
+        activity_logs: &[ActivityLogEntry],
+        sibling_tasks: &[SiblingTaskContext],
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
         let stage_name = task
             .current_stage()
@@ -77,14 +79,12 @@ impl PromptService {
         let prompt_override = workflow.effective_prompt_path(stage_name, task.flow.as_deref());
         let capabilities_override =
             workflow.effective_capabilities(stage_name, task.flow.as_deref());
-        let inputs_override = workflow.effective_inputs(stage_name, task.flow.as_deref());
 
         // Only pass overrides if the task has a flow (otherwise use stage defaults)
         let flow_overrides = if task.flow.is_some() {
             FlowOverrides {
                 prompt: prompt_override.as_deref(),
                 capabilities: capabilities_override.as_ref(),
-                inputs: inputs_override,
             }
         } else {
             FlowOverrides::default()
@@ -94,6 +94,7 @@ impl PromptService {
             workflow,
             task,
             stage_name,
+            artifact_names,
             Some(&self.project_root),
             feedback,
             integration_error,
@@ -101,47 +102,6 @@ impl PromptService {
             show_direct_structured_output_hint,
             activity_logs,
             sibling_tasks,
-        )
-    }
-
-    /// Resolve agent configuration with just feedback (no integration error).
-    ///
-    /// Convenience method for the common case of rejection feedback.
-    pub fn resolve_with_feedback(
-        &self,
-        workflow: &WorkflowConfig,
-        task: &Task,
-        feedback: &str,
-        show_direct_structured_output_hint: bool,
-    ) -> Result<ResolvedAgentConfig, AgentConfigError> {
-        self.resolve_config(
-            workflow,
-            task,
-            Some(feedback),
-            None,
-            show_direct_structured_output_hint,
-            Vec::new(), // activity_logs - convenience method doesn't use them
-            Vec::new(), // sibling_tasks - convenience method doesn't use them
-        )
-    }
-
-    /// Resolve agent configuration with no additional context.
-    ///
-    /// Convenience method for fresh agent spawns with no feedback.
-    pub fn resolve_fresh(
-        &self,
-        workflow: &WorkflowConfig,
-        task: &Task,
-        show_direct_structured_output_hint: bool,
-    ) -> Result<ResolvedAgentConfig, AgentConfigError> {
-        self.resolve_config(
-            workflow,
-            task,
-            None,
-            None,
-            show_direct_structured_output_hint,
-            Vec::new(), // activity_logs - convenience method doesn't use them
-            Vec::new(), // sibling_tasks - convenience method doesn't use them
         )
     }
 }
@@ -154,7 +114,7 @@ mod tests {
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary"),
         ])
     }
 
@@ -165,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_fresh_not_in_stage() {
+    fn test_resolve_config_not_in_stage() {
         let service = PromptService::new("/tmp");
         let workflow = test_workflow();
 
@@ -173,19 +133,19 @@ mod tests {
         let mut task = Task::new("task-1", "Test", "Desc", "planning", "now");
         task.state = crate::workflow::runtime::TaskState::Done;
 
-        let result = service.resolve_fresh(&workflow, &task, false);
+        let result = service.resolve_config(&workflow, &task, &[], None, None, false, &[], &[]);
         assert!(matches!(result, Err(AgentConfigError::NotInActiveStage)));
     }
 
     #[test]
-    fn test_resolve_fresh_unknown_stage() {
+    fn test_resolve_config_unknown_stage() {
         let service = PromptService::new("/tmp");
         let workflow = test_workflow();
 
         // Task in an unknown stage
         let task = Task::new("task-1", "Test", "Desc", "nonexistent", "now");
 
-        let result = service.resolve_fresh(&workflow, &task, false);
+        let result = service.resolve_config(&workflow, &task, &[], None, None, false, &[], &[]);
         assert!(matches!(result, Err(AgentConfigError::UnknownStage(_))));
     }
 }

@@ -22,7 +22,7 @@ pub struct StagePromptContext<'a> {
     pub description: &'a str,
 
     /// Available artifacts from previous stages.
-    pub artifacts: Vec<ArtifactContext<'a>>,
+    pub artifacts: Vec<ArtifactContext>,
 
     /// Question history (if stage can ask questions).
     pub question_history: Vec<QuestionAnswerContext<'a>>,
@@ -56,12 +56,15 @@ pub struct StagePromptContext<'a> {
 }
 
 /// Context for an artifact available to the stage.
+///
+/// Artifacts are materialized as files in the worktree before agent spawn.
+/// Agents read them on demand rather than receiving them inline in the prompt.
 #[derive(Debug, Clone, Serialize)]
-pub struct ArtifactContext<'a> {
+pub struct ArtifactContext {
     /// Artifact name.
-    pub name: &'a str,
-    /// Artifact content.
-    pub content: &'a str,
+    pub name: String,
+    /// Relative path to the artifact file (e.g., ".orkestra/.artifacts/plan.md").
+    pub file_path: String,
 }
 
 /// Context for a question-answer pair.
@@ -124,15 +127,13 @@ pub struct WorkflowStageEntry {
 /// Flow-specific overrides for agent configuration.
 ///
 /// When a task uses a named flow, the flow may override the prompt path,
-/// capabilities, and/or inputs for specific stages.
+/// capabilities for specific stages.
 #[derive(Debug, Default, Clone)]
 pub struct FlowOverrides<'a> {
     /// Override the prompt template path.
     pub prompt: Option<&'a str>,
     /// Override the stage capabilities.
     pub capabilities: Option<&'a orkestra_types::config::StageCapabilities>,
-    /// Override the stage inputs.
-    pub inputs: Option<Vec<String>>,
 }
 
 // ============================================================================

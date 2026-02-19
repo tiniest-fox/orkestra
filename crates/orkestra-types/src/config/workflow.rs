@@ -83,9 +83,6 @@ pub struct FlowStageOverride {
     /// Override model identifier (agent stages only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// Override input artifacts (full replace, not merge).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inputs: Option<Vec<String>>,
     /// Override disallowed tools (full replace, not merge; agent stages only).
     /// `Some(vec![])` means "explicitly no restrictions" (overrides global config).
     /// `None` means "inherit from global stage config".
@@ -384,14 +381,6 @@ impl WorkflowConfig {
             .or_else(|| self.stage(stage_name).and_then(|s| s.model.clone()))
     }
 
-    /// Get the effective inputs for a stage in a flow.
-    ///
-    /// Flow overrides fully replace (not merge) the global inputs.
-    pub fn effective_inputs(&self, stage_name: &str, flow: Option<&str>) -> Option<Vec<String>> {
-        self.flow_override(stage_name, flow, |o| o.inputs.clone())
-            .or_else(|| self.stage(stage_name).map(|s| s.inputs.clone()))
-    }
-
     /// Get the effective disallowed tools for a stage in a flow.
     ///
     /// Flow overrides fully replace (not merge) the global disallowed tools.
@@ -505,19 +494,14 @@ impl WorkflowConfig {
         // Build validation context
         let stage_names: Vec<&str> = self.stages.iter().map(|s| s.name.as_str()).collect();
         let stage_names_set: std::collections::HashSet<_> = stage_names.iter().copied().collect();
-        let artifact_names: Vec<&str> = self.stages.iter().map(|s| s.artifact.as_str()).collect();
-        let artifact_names_set: std::collections::HashSet<_> =
-            artifact_names.iter().copied().collect();
 
         // Run all validations
         self.validate_no_duplicate_stage_names(&mut errors);
         self.validate_no_duplicate_artifact_names(&mut errors);
-        self.validate_input_references(&artifact_names, &artifact_names_set, &mut errors);
-        self.validate_input_ordering(&artifact_names_set, &mut errors);
         self.validate_approval_targets(&stage_names, &stage_names_set, &mut errors);
         self.validate_integration_on_failure(&stage_names, &stage_names_set, &mut errors);
         self.validate_script_stages(&stage_names, &stage_names_set, &mut errors);
-        self.validate_flows(&stage_names_set, &artifact_names_set, &mut errors);
+        self.validate_flows(&stage_names_set, &mut errors);
         self.validate_subtask_flows(&mut errors);
         self.validate_model_fields(&mut errors);
         self.validate_disallowed_tools(&mut errors);
@@ -547,63 +531,6 @@ impl WorkflowConfig {
                     "Duplicate artifact name \"{}\". Each stage must produce a unique artifact.",
                     stage.artifact
                 ));
-            }
-        }
-    }
-
-    /// Check that all input references point to existing artifacts.
-    fn validate_input_references(
-        &self,
-        artifact_names: &[&str],
-        artifact_names_set: &std::collections::HashSet<&str>,
-        errors: &mut Vec<String>,
-    ) {
-        for stage in &self.stages {
-            for input in &stage.inputs {
-                if !artifact_names_set.contains(input.as_str()) {
-                    errors.push(format!(
-                        "Stage \"{}\" references input artifact \"{}\" which doesn't exist. \
-                         Available artifacts: {:?}",
-                        stage.name, input, artifact_names
-                    ));
-                }
-            }
-        }
-    }
-
-    /// Check that inputs come from earlier stages (no forward references).
-    fn validate_input_ordering(
-        &self,
-        artifact_names_set: &std::collections::HashSet<&str>,
-        errors: &mut Vec<String>,
-    ) {
-        for (idx, stage) in self.stages.iter().enumerate() {
-            let earlier_artifacts: std::collections::HashSet<_> = self.stages[..idx]
-                .iter()
-                .map(|s| s.artifact.as_str())
-                .collect();
-
-            for input in &stage.inputs {
-                if !earlier_artifacts.contains(input.as_str())
-                    && artifact_names_set.contains(input.as_str())
-                {
-                    let producing_stage = self
-                        .stages
-                        .iter()
-                        .find(|s| s.artifact == *input)
-                        .map_or("unknown", |s| s.name.as_str());
-                    errors.push(format!(
-                        "Stage \"{}\" references input \"{}\" from stage \"{}\", \
-                         but \"{}\" comes later in the workflow. \
-                         Move \"{}\" before \"{}\" or remove this input.",
-                        stage.name,
-                        input,
-                        producing_stage,
-                        producing_stage,
-                        producing_stage,
-                        stage.name
-                    ));
-                }
             }
         }
     }
@@ -697,7 +624,6 @@ impl WorkflowConfig {
     fn validate_flows(
         &self,
         stage_names_set: &std::collections::HashSet<&str>,
-        artifact_names_set: &std::collections::HashSet<&str>,
         errors: &mut Vec<String>,
     ) {
         for (flow_name, flow) in &self.flows {
@@ -741,18 +667,6 @@ impl WorkflowConfig {
                             "Flow \"{flow_name}\" cannot override script_command on agent stage \"{}\"",
                             entry.stage_name
                         ));
-                    }
-
-                    // Validate that input overrides reference existing artifact names
-                    if let Some(ref inputs) = overrides.inputs {
-                        for input in inputs {
-                            if !artifact_names_set.contains(input.as_str()) {
-                                errors.push(format!(
-                                    "Flow \"{flow_name}\" stage \"{}\" overrides inputs with \"{input}\" which doesn't match any stage artifact",
-                                    entry.stage_name
-                                ));
-                            }
-                        }
                     }
 
                     // Validate that capability overrides with approval rejection_stage reference stages in the flow
@@ -1036,19 +950,16 @@ mod tests {
             StageConfig::new("breakdown", "breakdown")
                 .with_display_name("Breaking Down")
                 .with_prompt("breakdown.md")
-                .with_inputs(vec!["plan".into()])
                 .with_capabilities(StageCapabilities {
                     subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
                     ..Default::default()
                 }),
             StageConfig::new("work", "summary")
                 .with_display_name("Working")
-                .with_prompt("worker.md")
-                .with_inputs(vec!["plan".into()]),
+                .with_prompt("worker.md"),
             StageConfig::new("review", "verdict")
                 .with_display_name("Reviewing")
                 .with_prompt("reviewer.md")
-                .with_inputs(vec!["plan".into(), "summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
@@ -1131,28 +1042,6 @@ mod tests {
         ]);
         let errors = workflow.validate();
         assert!(errors.iter().any(|e| e.contains("Duplicate artifact name")));
-    }
-
-    #[test]
-    fn test_workflow_validation_unknown_input() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary").with_inputs(vec!["nonexistent".into()]),
-        ]);
-        let errors = workflow.validate();
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("nonexistent") && e.contains("doesn't exist")));
-    }
-
-    #[test]
-    fn test_workflow_validation_forward_reference() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan").with_inputs(vec!["summary".into()]), // References later artifact
-            StageConfig::new("work", "summary"),
-        ]);
-        let errors = workflow.validate();
-        assert!(errors.iter().any(|e| e.contains("comes later")));
     }
 
     #[test]
@@ -1371,9 +1260,8 @@ integration:
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
             StageConfig::new("work", "summary"),
-            StageConfig::new_script("checks", "check_results", "./run_checks.sh")
-                .with_inputs(vec!["summary".into()]),
-            StageConfig::new("review", "verdict").with_inputs(vec!["check_results".into()]),
+            StageConfig::new_script("checks", "check_results", "./run_checks.sh"),
+            StageConfig::new("review", "verdict"),
         ])
         .with_integration(IntegrationConfig::new("work"));
 
@@ -1456,14 +1344,12 @@ stages:
     prompt: worker.md
   - name: checks
     artifact: check_results
-    inputs: [summary]
     script:
       command: "./scripts/run_checks.sh"
       timeout_seconds: 300
       on_failure: work
   - name: review
     artifact: verdict
-    inputs: [check_results]
     prompt: reviewer.md
 integration:
   on_failure: work
@@ -1547,7 +1433,6 @@ stages:
     artifact: plan
   - name: breakdown
     artifact: breakdown
-    inputs: [plan]
     capabilities:
       subtasks:
         flow: subtask

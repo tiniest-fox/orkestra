@@ -730,12 +730,9 @@ fn test_custom_integration_on_failure() {
 
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan").with_prompt("planner.md"),
-        StageConfig::new("work", "summary")
-            .with_prompt("worker.md")
-            .with_inputs(vec!["plan".into()]),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .automated(),
     ])
     .with_integration(IntegrationConfig {
@@ -891,12 +888,9 @@ fn test_integration_failure_uses_flow_on_failure_override() {
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
             .with_capabilities(StageCapabilities::with_questions()),
-        StageConfig::new("work", "summary")
-            .with_prompt("worker.md")
-            .with_inputs(vec!["plan".into()]),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .automated(),
     ])
     .with_integration(IntegrationConfig {
@@ -1045,7 +1039,6 @@ fn test_script_stage_with_recovery() {
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("checks", "check_results")
             .with_display_name("Automated Checks")
-            .with_inputs(vec!["summary".into()])
             .with_script(ScriptStageConfig {
                 command: script_command.to_string(),
                 timeout_seconds: 10,
@@ -1053,7 +1046,6 @@ fn test_script_stage_with_recovery() {
             }),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into(), "check_results".into()])
             .automated(),
     ]);
 
@@ -1572,7 +1564,6 @@ fn test_session_reset_on_cross_stage_rejection() {
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .with_capabilities(caps)
             .automated(),
     ]);
@@ -1834,7 +1825,6 @@ fn test_session_not_reset_without_flag() {
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .automated(),
     ]);
@@ -1991,7 +1981,6 @@ fn test_handlebars_passthrough_for_plain_definitions() {
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .automated(),
     ]);
@@ -2319,7 +2308,6 @@ fn test_rejection_review_override_then_approval() {
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
         // Intentionally NOT .automated() — human review required
     ]));
@@ -2531,7 +2519,6 @@ fn test_rejection_review_confirm() {
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
     ]);
 
@@ -2622,7 +2609,6 @@ fn test_automated_review_rejection_skips_human_review() {
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .automated(),
     ]);
@@ -2732,19 +2718,14 @@ fn test_artifact_generation_for_all_output_types() {
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
             .with_capabilities(StageCapabilities::with_questions()),
-        StageConfig::new("work", "summary")
-            .with_prompt("worker.md")
-            .with_inputs(vec!["plan".into()]),
-        StageConfig::new("checks", "check_results")
-            .with_inputs(vec!["summary".into()])
-            .with_script(ScriptStageConfig {
-                command: "echo 'all checks passed'".to_string(),
-                timeout_seconds: 10,
-                on_failure: Some("work".into()),
-            }),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("checks", "check_results").with_script(ScriptStageConfig {
+            command: "echo 'all checks passed'".to_string(),
+            timeout_seconds: 10,
+            on_failure: Some("work".into()),
+        }),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into(), "check_results".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
         // Intentionally NOT .automated() — human review required
     ]);
@@ -3019,16 +3000,13 @@ fn test_script_failure_creates_artifact() {
 
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("checks", "check_results")
-            .with_inputs(vec!["summary".into()])
-            .with_script(ScriptStageConfig {
-                command: "echo 'Error: tests failed with 3 failures'; exit 1".to_string(),
-                timeout_seconds: 10,
-                on_failure: Some("work".into()),
-            }),
+        StageConfig::new("checks", "check_results").with_script(ScriptStageConfig {
+            command: "echo 'Error: tests failed with 3 failures'; exit 1".to_string(),
+            timeout_seconds: 10,
+            on_failure: Some("work".into()),
+        }),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["check_results".into()])
             .automated(),
     ]);
 
@@ -3241,7 +3219,6 @@ fn test_commit_message_generation_during_integration() {
             StageConfig::new("work", "summary").with_prompt("worker.md"),
             StageConfig::new("review", "verdict")
                 .with_prompt("reviewer.md")
-                .with_inputs(vec!["summary".into()])
                 .with_capabilities(
                     orkestra_core::workflow::config::StageCapabilities::with_approval(Some(
                         "work".into(),
@@ -3688,9 +3665,7 @@ fn activity_log_stored_on_iteration() {
             StageConfig::new("planning", "plan")
                 .with_prompt("planner.md")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary")
-                .with_prompt("worker.md")
-                .with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary").with_prompt("worker.md"),
         ],
         integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
         flows: indexmap::IndexMap::new(),
@@ -3752,9 +3727,7 @@ fn activity_log_injected_into_next_stage_prompt() {
             StageConfig::new("planning", "plan")
                 .with_prompt("planner.md")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary")
-                .with_prompt("worker.md")
-                .with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary").with_prompt("worker.md"),
         ],
         integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
         flows: indexmap::IndexMap::new(),
@@ -3837,12 +3810,9 @@ fn activity_log_accumulates_across_stages() {
             StageConfig::new("planning", "plan")
                 .with_prompt("planner.md")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary")
-                .with_prompt("worker.md")
-                .with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary").with_prompt("worker.md"),
             StageConfig::new("review", "verdict")
                 .with_prompt("reviewer.md")
-                .with_inputs(vec!["plan".into(), "summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
         ],
         integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
@@ -3943,9 +3913,7 @@ fn activity_log_none_does_not_break() {
             StageConfig::new("planning", "plan")
                 .with_prompt("planner.md")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary")
-                .with_prompt("worker.md")
-                .with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary").with_prompt("worker.md"),
         ],
         integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
         flows: indexmap::IndexMap::new(),
@@ -4027,7 +3995,6 @@ fn activity_log_on_rejection_retry() {
             StageConfig::new("work", "summary").with_prompt("worker.md"),
             StageConfig::new("review", "verdict")
                 .with_prompt("reviewer.md")
-                .with_inputs(vec!["summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ],
@@ -4121,11 +4088,9 @@ fn test_restart_on_reentry_spawns_fresh_session() {
     // Review has approval rejecting back to work AND restart_on_reentry: true
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new_script("checks", "check_results", "echo ok")
-            .with_inputs(vec!["summary".into()]),
+        StageConfig::new_script("checks", "check_results", "echo ok"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into(), "check_results".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .restart_on_reentry()
             .automated(),
@@ -4292,11 +4257,9 @@ fn test_reentry_without_restart_flag_uses_recheck() {
     // Same workflow as above, but WITHOUT restart_on_reentry
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new_script("checks", "check_results", "echo ok")
-            .with_inputs(vec!["summary".into()]),
+        StageConfig::new_script("checks", "check_results", "echo ok"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into(), "check_results".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .automated(), // No .restart_on_reentry()
     ]);
@@ -4782,7 +4745,6 @@ fn test_activity_log_intervening_stage_preserves_entries() {
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
         // NOT .automated() - human approval required so we control the flow
     ]);
@@ -5104,11 +5066,9 @@ fn test_activity_log_with_script_and_review_rejection() {
     // Build workflow: work → checks(script) → review (can reject back to work)
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new_script("checks", "check_results", "echo ok")
-            .with_inputs(vec!["summary".into()]),
+        StageConfig::new_script("checks", "check_results", "echo ok"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into(), "check_results".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
         // NOT .automated() - human approval required so we control the flow
     ]);
@@ -6015,7 +5975,6 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .with_capabilities(caps)
             .automated(),
     ]);
@@ -6239,4 +6198,371 @@ fn test_request_update_on_done_task() {
 
     // Verify resume prompt contains the feedback
     ctx.assert_resume_prompt_contains("feedback", &["Please add more error handling"]);
+}
+
+// =============================================================================
+// Artifact Materialization E2E Tests
+// =============================================================================
+
+/// Test that artifacts are materialized as files in the worktree.
+///
+/// Verifies:
+/// 1. Plan artifact from stage 1 is written to `.orkestra/.artifacts/plan.md`
+/// 2. File content matches the artifact content from the database
+/// 3. Prompts reference file paths (not inline content)
+#[test]
+fn test_artifact_materialization() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use std::path::Path;
+
+    // Two-stage workflow: planning → work
+    // Work stage will receive the plan artifact
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
+
+    let task = ctx.create_task("Test artifact materialization", "Test description", None);
+    let task_id = task.id.clone();
+
+    // Verify task has worktree
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.worktree_path.is_some(),
+        "Task should have a worktree path"
+    );
+    let worktree_path = Path::new(task.worktree_path.as_ref().unwrap());
+
+    // =========================================================================
+    // Step 1: Complete planning stage with an artifact
+    // =========================================================================
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "Step 1: Do the thing\nStep 2: Verify it works".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance(); // spawn planner
+    ctx.advance(); // process planner output
+
+    // Verify artifact is stored in database
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert_eq!(
+        task.artifact("plan"),
+        Some("Step 1: Do the thing\nStep 2: Verify it works"),
+        "Plan artifact should be stored in database"
+    );
+
+    // Queue the work stage output BEFORE approve (it will be consumed when worker spawns)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work completed".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Approve to move to work stage
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → Idle (work stage)
+    ctx.advance(); // spawn worker
+
+    // =========================================================================
+    // Step 2: Verify artifact file was materialized
+    // =========================================================================
+    let artifacts_dir = worktree_path.join(".orkestra/.artifacts");
+    let plan_file = artifacts_dir.join("plan.md");
+
+    assert!(
+        plan_file.exists(),
+        "Artifact file should exist at {plan_file:?}"
+    );
+
+    let file_content = std::fs::read_to_string(&plan_file).unwrap();
+    assert_eq!(
+        file_content, "Step 1: Do the thing\nStep 2: Verify it works",
+        "File content should match artifact content"
+    );
+
+    // =========================================================================
+    // Step 3: Verify prompt references file path, not inline content
+    // =========================================================================
+    let prompt = ctx.last_prompt();
+
+    // Prompt should reference the artifact file path
+    assert!(
+        prompt.contains(".orkestra/.artifacts/plan.md"),
+        "Prompt should contain artifact file path. Got prompt:\n{}",
+        &prompt[..prompt.len().min(2000)]
+    );
+
+    // Prompt should NOT contain the inline artifact content
+    // (The content is in the file, not the prompt)
+    assert!(
+        !prompt.contains("Step 1: Do the thing"),
+        "Prompt should NOT contain inline artifact content"
+    );
+}
+
+/// Test that multiple artifacts from different stages are all materialized.
+///
+/// Verifies:
+/// 1. Multiple artifact files created in `.orkestra/.artifacts/`
+/// 2. Each file contains the correct content
+/// 3. Prompts reference all artifact file paths
+#[test]
+fn test_multiple_artifacts_materialized() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use std::path::Path;
+
+    // Three-stage workflow: planning → work → review
+    // Review stage receives both plan and summary artifacts
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("planning", "plan")
+            .with_prompt("planner.md")
+            .with_capabilities(StageCapabilities::with_questions()),
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test multiple artifacts", "Test description", None);
+    let task_id = task.id.clone();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    let worktree_path = Path::new(task.worktree_path.as_ref().unwrap());
+
+    // =========================================================================
+    // Step 1: Complete planning stage
+    // =========================================================================
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The implementation plan".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance(); // spawn planner
+    ctx.advance(); // process planner output
+
+    // Queue work output BEFORE approve
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work completed successfully".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → Idle (work stage)
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process worker output
+
+    // Queue review output BEFORE approve
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Looks good".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline: Finishing → Finished → Idle (review stage)
+    ctx.advance(); // spawn reviewer
+
+    // =========================================================================
+    // Step 2: Verify all artifacts materialized
+    // =========================================================================
+    let artifacts_dir = worktree_path.join(".orkestra/.artifacts");
+
+    // Both artifact files should exist
+    assert!(
+        artifacts_dir.join("plan.md").exists(),
+        "Plan artifact file should exist"
+    );
+    assert!(
+        artifacts_dir.join("summary.md").exists(),
+        "Summary artifact file should exist"
+    );
+
+    // Verify content
+    assert_eq!(
+        std::fs::read_to_string(artifacts_dir.join("plan.md")).unwrap(),
+        "The implementation plan"
+    );
+    assert_eq!(
+        std::fs::read_to_string(artifacts_dir.join("summary.md")).unwrap(),
+        "Work completed successfully"
+    );
+
+    // =========================================================================
+    // Step 4: Verify prompt references both artifact paths
+    // =========================================================================
+    let prompt = ctx.last_prompt();
+
+    assert!(
+        prompt.contains(".orkestra/.artifacts/plan.md"),
+        "Prompt should reference plan artifact path"
+    );
+    assert!(
+        prompt.contains(".orkestra/.artifacts/summary.md"),
+        "Prompt should reference summary artifact path"
+    );
+
+    // Prompt should NOT contain inline content
+    assert!(
+        !prompt.contains("The implementation plan"),
+        "Prompt should NOT contain inline plan content"
+    );
+    assert!(
+        !prompt.contains("Work completed successfully"),
+        "Prompt should NOT contain inline summary content"
+    );
+}
+
+/// Test that recheck resume prompts reference artifact file paths.
+///
+/// When a review stage is re-entered (recheck), the resume prompt should
+/// reference artifact file paths for any updated artifacts, not inline content.
+#[test]
+fn test_recheck_resume_references_file_paths() {
+    use orkestra_core::workflow::config::{
+        ScriptStageConfig, StageCapabilities, StageConfig, WorkflowConfig,
+    };
+    use std::path::Path;
+
+    // Workflow with work → checks (script) → review (with rejection back to work)
+    // The script stage ensures proper staging between work and review
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("checks", "check_results").with_script(ScriptStageConfig {
+            command: "echo ok".to_string(),
+            timeout_seconds: 10,
+            on_failure: None,
+        }),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+            .automated(),
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task("Test recheck file paths", "Test description", None);
+    let task_id = task.id.clone();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    let worktree_path = Path::new(task.worktree_path.as_ref().unwrap());
+
+    // =========================================================================
+    // Step 1: Complete work stage
+    // =========================================================================
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial work done".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process worker output
+
+    // =========================================================================
+    // Step 2: Queue outputs BEFORE approve for: review rejection → work → review recheck
+    // =========================================================================
+
+    // First: review will reject
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Needs more tests".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Second: re-entered work will produce updated artifact
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work with tests added".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Third: final review approval (for recheck)
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Looks good now".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Approve work → checks → review (spawns reviewer, rejects) → work (spawns worker)
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // work → checks (Idle)
+    ctx.advance(); // checks script runs → review (Idle)
+    ctx.advance(); // spawn reviewer
+    ctx.advance(); // process rejection → work (spawns worker due to feedback)
+    ctx.advance(); // process work output
+
+    // Approve work again → checks → review (recheck)
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // work → checks (Idle)
+    ctx.advance(); // checks script runs → review (Idle)
+    ctx.advance(); // spawn reviewer (recheck)
+
+    // =========================================================================
+    // Step 3: Verify recheck prompt references file paths
+    // =========================================================================
+
+    // Verify the prompt is a recheck resume prompt
+    ctx.assert_resume_prompt_contains("recheck", &[]);
+
+    // Get full prompt including system prompt
+    let prompt = ctx.last_prompt();
+
+    // Recheck prompts should mention updated artifacts with file paths
+    assert!(
+        prompt.contains(".orkestra/.artifacts/summary.md"),
+        "Recheck prompt should reference artifact file path. Got:\n{}",
+        &prompt[..prompt.len().min(2000)]
+    );
+
+    // Should NOT contain inline content
+    assert!(
+        !prompt.contains("Work with tests added"),
+        "Recheck prompt should NOT contain inline artifact content"
+    );
+
+    // Verify the artifact file was updated
+    let summary_file = worktree_path.join(".orkestra/.artifacts/summary.md");
+    assert!(summary_file.exists(), "Summary artifact file should exist");
+    assert_eq!(
+        std::fs::read_to_string(&summary_file).unwrap(),
+        "Work with tests added",
+        "Artifact file should have updated content"
+    );
 }

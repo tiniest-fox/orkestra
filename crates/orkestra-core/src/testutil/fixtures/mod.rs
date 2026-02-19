@@ -58,19 +58,16 @@ pub fn test_default_workflow() -> crate::workflow::config::WorkflowConfig {
         StageConfig::new("breakdown", "breakdown")
             .with_display_name("Breaking Down")
             .with_prompt("breakdown.md")
-            .with_inputs(vec!["plan".into()])
             .with_capabilities(StageCapabilities {
                 subtasks: Some(SubtaskCapabilities::default().with_flow("subtask")),
                 ..Default::default()
             }),
         StageConfig::new("work", "summary")
             .with_display_name("Working")
-            .with_prompt("worker.md")
-            .with_inputs(vec!["plan".into()]),
+            .with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_display_name("Reviewing")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["plan".into(), "summary".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .automated(),
     ])

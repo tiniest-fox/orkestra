@@ -875,7 +875,6 @@ pub mod workflows {
                     ),
                 StageConfig::new("breakdown", "breakdown")
                     .with_prompt("breakdown.md")
-                    .with_inputs(vec!["plan".into()])
                     .with_capabilities(orkestra_core::workflow::config::StageCapabilities {
                         subtasks: Some(
                             orkestra_core::workflow::config::SubtaskCapabilities::default()
@@ -883,12 +882,9 @@ pub mod workflows {
                         ),
                         ..Default::default()
                     }),
-                StageConfig::new("work", "summary")
-                    .with_prompt("worker.md")
-                    .with_inputs(vec!["plan".into()]),
+                StageConfig::new("work", "summary").with_prompt("worker.md"),
                 StageConfig::new("review", "verdict")
                     .with_prompt("reviewer.md")
-                    .with_inputs(vec!["plan".into(), "summary".into()])
                     .with_capabilities(
                         orkestra_core::workflow::config::StageCapabilities::with_approval(Some(
                             "work".into(),

@@ -3,8 +3,8 @@
 # Defines the stages a task passes through from creation to completion.
 # Each stage runs an AI agent (with a prompt template) or a shell script.
 #
-# Stages execute in order. Each stage produces a named artifact that
-# later stages can reference via `inputs`.
+# Stages execute in order. Each stage produces a named artifact.
+# Artifacts from earlier stages are automatically available to later stages.
 
 version: 1
 
@@ -23,7 +23,6 @@ stages:
   - name: breakdown
     display_name: Breaking Down
     artifact: breakdown
-    inputs: [plan]
     prompt: breakdown.md
     capabilities:
       subtasks:
@@ -33,7 +32,6 @@ stages:
   - name: work
     display_name: Working
     artifact: summary
-    inputs: [plan]
     prompt: worker.md
 
   # Review: check completed work, approve or reject with feedback.
@@ -42,7 +40,6 @@ stages:
   - name: review
     display_name: Reviewing
     artifact: verdict
-    inputs: [plan, summary]
     prompt: reviewer.md
     capabilities:
       approval:

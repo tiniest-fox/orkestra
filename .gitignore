@@ -49,8 +49,10 @@ coverage/
 # Orkestra runtime data (keep agents/ and workflow.yaml tracked)
 .orkestra/.database/
 .orkestra/.logs/
+.orkestra/.artifacts/
 .orkestra/tasks.jsonl
 .orkestra/.worktrees/
+**/.orkestra/.worktrees/
 .orkestra/*.md
 
 # Claude Code Artifacts

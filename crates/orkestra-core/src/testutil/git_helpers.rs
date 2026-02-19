@@ -8,8 +8,9 @@ use tempfile::TempDir;
 ///
 /// The repository is initialized with:
 /// - A `main` branch
-/// - An initial commit with a README.md
+/// - An initial commit with a README.md and .gitignore
 /// - Git user configuration (required for commits)
+/// - A `.gitignore` that excludes orkestra runtime directories
 ///
 /// The `TempDir` is automatically cleaned up when dropped.
 ///
@@ -43,6 +44,16 @@ pub fn create_temp_git_repo() -> std::io::Result<TempDir> {
         .args(["config", "user.name", "Test User"])
         .current_dir(temp_dir.path())
         .output()?;
+
+    // Create .gitignore for orkestra runtime directories
+    let gitignore_content = "\
+# Orkestra internals
+.orkestra/.database/
+.orkestra/.logs/
+.orkestra/.worktrees/
+.orkestra/.artifacts/
+";
+    std::fs::write(temp_dir.path().join(".gitignore"), gitignore_content)?;
 
     // Create initial commit on main branch
     std::fs::write(temp_dir.path().join("README.md"), "# Test Repo\n")?;

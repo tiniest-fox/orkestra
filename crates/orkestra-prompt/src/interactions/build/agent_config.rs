@@ -24,20 +24,25 @@ use super::context::PromptBuilder;
 ///
 /// Takes agent definition content and JSON schema content (already loaded from
 /// disk by the caller) and assembles the full `ResolvedAgentConfig`.
+///
+/// # Arguments
+/// * `artifact_names` - Names of artifacts that have been materialized to the worktree.
+///   These are used to construct file paths in the prompt.
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
     templates: &Handlebars<'static>,
     workflow: &WorkflowConfig,
     task: &Task,
     stage_name: &str,
+    artifact_names: &[String],
     agent_definition: &str,
     json_schema: &str,
     feedback: Option<&str>,
     integration_error: Option<IntegrationErrorContext<'_>>,
     flow_overrides: &FlowOverrides<'_>,
     show_direct_structured_output_hint: bool,
-    activity_logs: Vec<ActivityLogEntry>,
-    sibling_tasks: Vec<SiblingTaskContext>,
+    activity_logs: &[ActivityLogEntry],
+    sibling_tasks: &[SiblingTaskContext],
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
         .stage(stage_name)
@@ -48,7 +53,7 @@ pub fn execute(
         return Err(AgentConfigError::NotInActiveStage);
     }
 
-    // Build effective stage config (with capability/input overrides for flows)
+    // Build effective stage config (with capability overrides for flows)
     let overridden_stage = apply_overrides(stage, flow_overrides);
     let effective_stage = overridden_stage.as_ref().unwrap_or(stage);
 
@@ -58,6 +63,7 @@ pub fn execute(
         .build_context_with_stage(
             effective_stage,
             task,
+            artifact_names,
             feedback,
             integration_error,
             show_direct_structured_output_hint,
@@ -80,32 +86,15 @@ pub fn execute(
     })
 }
 
-/// Build a complete prompt by combining agent definition with context.
-///
-/// This generates a combined prompt (system + user) for backward compatibility
-/// with tests and simple use cases.
-pub fn build_complete_prompt(
-    templates: &Handlebars<'static>,
-    agent_definition: &str,
-    ctx: &crate::types::StagePromptContext<'_>,
-) -> String {
-    let system_prompt = super::system_prompt::execute(templates, agent_definition, ctx);
-    let user_message = super::user_message::execute(templates, ctx);
-
-    format!("{system_prompt}\n\n{user_message}")
-}
-
 // -- Helpers --
 
 /// Apply flow overrides to a stage config, returning Some if overrides were applied.
 fn apply_overrides(stage: &StageConfig, flow_overrides: &FlowOverrides<'_>) -> Option<StageConfig> {
-    if flow_overrides.capabilities.is_some() || flow_overrides.inputs.is_some() {
+    // Only capabilities need overriding for prompt building.
+    if flow_overrides.capabilities.is_some() {
         let mut s = stage.clone();
         if let Some(caps) = flow_overrides.capabilities {
             s.capabilities = caps.clone();
-        }
-        if let Some(ref inputs) = flow_overrides.inputs {
-            s.inputs.clone_from(inputs);
         }
         Some(s)
     } else {

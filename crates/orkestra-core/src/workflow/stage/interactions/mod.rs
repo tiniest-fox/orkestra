@@ -13,6 +13,7 @@ pub mod enter_commit_pipeline;
 pub mod execute_agent;
 pub mod execute_rejection;
 pub mod finalize_advancement;
+pub mod materialize_artifacts;
 pub mod pending_rejection_review;
 pub mod poll_script;
 pub mod recover_stale_commits;

@@ -19,7 +19,6 @@
 //!
 //!   - name: work
 //!     artifact: summary
-//!     inputs: [plan]
 //! ```
 //!
 //! # Design Principles

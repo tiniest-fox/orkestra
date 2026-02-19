@@ -9,6 +9,37 @@ use serde::{Deserialize, Serialize};
 
 use super::markdown::markdown_to_html;
 
+/// The relative directory path for materialized artifact files.
+const ARTIFACTS_DIR: &str = ".orkestra/.artifacts";
+
+/// Returns the relative directory path for materialized artifact files.
+///
+/// This is the canonical definition of the artifacts directory path.
+pub fn artifacts_directory() -> &'static str {
+    ARTIFACTS_DIR
+}
+
+/// Returns the relative file path for a named artifact.
+///
+/// Artifacts are materialized to the worktree before agent spawn.
+/// This is the canonical definition of the artifact path format.
+///
+/// # Example
+/// ```
+/// use orkestra_types::runtime::artifact_file_path;
+/// assert_eq!(artifact_file_path("plan"), ".orkestra/.artifacts/plan.md");
+/// ```
+///
+/// # Panics
+/// Panics if `name` contains path separators (`/`, `\`) or parent references (`..`).
+pub fn artifact_file_path(name: &str) -> String {
+    assert!(
+        !name.contains('/') && !name.contains('\\') && !name.contains(".."),
+        "artifact name must not contain path separators or parent references: {name}"
+    );
+    format!("{ARTIFACTS_DIR}/{name}.md")
+}
+
 /// A named artifact produced by a stage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Artifact {
@@ -295,5 +326,37 @@ mod tests {
         let parsed: ArtifactStore = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed.content("plan"), Some("content"));
+    }
+
+    #[test]
+    fn test_artifact_file_path() {
+        assert_eq!(artifact_file_path("plan"), ".orkestra/.artifacts/plan.md");
+        assert_eq!(
+            artifact_file_path("summary"),
+            ".orkestra/.artifacts/summary.md"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "artifact name must not contain path separators")]
+    fn test_artifact_file_path_rejects_slash() {
+        artifact_file_path("foo/bar");
+    }
+
+    #[test]
+    #[should_panic(expected = "artifact name must not contain path separators")]
+    fn test_artifact_file_path_rejects_backslash() {
+        artifact_file_path("foo\\bar");
+    }
+
+    #[test]
+    #[should_panic(expected = "artifact name must not contain path separators")]
+    fn test_artifact_file_path_rejects_parent_ref() {
+        artifact_file_path("..plan");
+    }
+
+    #[test]
+    fn test_artifacts_directory() {
+        assert_eq!(artifacts_directory(), ".orkestra/.artifacts");
     }
 }

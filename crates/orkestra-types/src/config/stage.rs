@@ -3,7 +3,6 @@
 //! A stage represents a single step in the workflow. Each stage:
 //! - Has a unique name (e.g., "planning", "work", "review")
 //! - Produces an artifact (e.g., "plan", "summary")
-//! - May require inputs from previous stages
 //! - Has capabilities that define what it can do
 
 use serde::{Deserialize, Serialize};
@@ -47,11 +46,6 @@ pub struct StageConfig {
     /// Name of the artifact this stage produces (e.g., "plan", "summary").
     /// The artifact content is stored with this key.
     pub artifact: String,
-
-    /// Names of artifacts from previous stages that this stage requires.
-    /// These are passed to the agent prompt.
-    #[serde(default)]
-    pub inputs: Vec<String>,
 
     /// What this stage can do.
     #[serde(default)]
@@ -106,7 +100,6 @@ impl StageConfig {
             icon: None,
             description: None,
             artifact: artifact.into(),
-            inputs: Vec::new(),
             capabilities: StageCapabilities::default(),
             prompt: None, // Defaults to {name}.md via prompt_path()
             schema_file: None,
@@ -130,7 +123,6 @@ impl StageConfig {
             icon: None,
             description: None,
             artifact: artifact.into(),
-            inputs: Vec::new(),
             capabilities: StageCapabilities::default(),
             prompt: None,
             schema_file: None,
@@ -160,13 +152,6 @@ impl StageConfig {
     #[must_use]
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
-        self
-    }
-
-    /// Builder: add required inputs.
-    #[must_use]
-    pub fn with_inputs(mut self, inputs: Vec<String>) -> Self {
-        self.inputs = inputs;
         self
     }
 
@@ -464,7 +449,6 @@ mod tests {
         let stage = StageConfig::new("planning", "plan");
         assert_eq!(stage.name, "planning");
         assert_eq!(stage.artifact, "plan");
-        assert!(stage.inputs.is_empty());
         assert!(!stage.is_automated);
         assert!(stage.is_agent_stage());
         assert!(!stage.is_script_stage());
@@ -472,12 +456,9 @@ mod tests {
 
     #[test]
     fn test_stage_config_builder() {
-        let stage = StageConfig::new("work", "summary")
-            .with_display_name("Working")
-            .with_inputs(vec!["plan".into()]);
+        let stage = StageConfig::new("work", "summary").with_display_name("Working");
 
         assert_eq!(stage.display(), "Working");
-        assert_eq!(stage.inputs, vec!["plan"]);
     }
 
     #[test]
@@ -681,8 +662,7 @@ mod tests {
 
     #[test]
     fn test_stage_with_script() {
-        let stage = StageConfig::new_script("checks", "check_results", "./run_checks.sh")
-            .with_inputs(vec!["summary".into()]);
+        let stage = StageConfig::new_script("checks", "check_results", "./run_checks.sh");
 
         assert!(stage.is_script_stage());
         assert!(!stage.is_agent_stage());

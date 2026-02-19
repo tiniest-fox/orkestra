@@ -153,7 +153,7 @@ fn render_agent_definition(template: &str, ctx: &StagePromptContext<'_>) -> Stri
         task_id: ctx.task_id,
         feedback: ctx.feedback,
         has_artifacts: !ctx.artifacts.is_empty(),
-        artifact_names: ctx.artifacts.iter().map(|a| a.name).collect(),
+        artifact_names: ctx.artifacts.iter().map(|a| a.name.as_str()).collect(),
     };
 
     let mut hb = Handlebars::new();
@@ -196,12 +196,9 @@ mod tests {
             StageConfig::new("planning", "plan")
                 .with_display_name("Planning")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary")
-                .with_display_name("Working")
-                .with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary").with_display_name("Working"),
             StageConfig::new("review", "verdict")
                 .with_display_name("Reviewing")
-                .with_inputs(vec!["plan".into(), "summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
@@ -225,7 +222,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
+            .build_context("planning", &task, &[], None, None, false, &[], &[])
             .unwrap();
 
         let input = "You are a planner agent. Do planning.";
@@ -244,11 +241,12 @@ mod tests {
             .build_context(
                 "planning",
                 &task,
+                &[],
                 Some("Fix this"),
                 None,
                 false,
-                Vec::new(),
-                Vec::new(),
+                &[],
+                &[],
             )
             .unwrap();
         let template = "Base instructions.\n\n{{#if feedback}}\nFEEDBACK_SECTION\n{{/if}}";
@@ -258,7 +256,7 @@ mod tests {
 
         // Without feedback
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
+            .build_context("planning", &task, &[], None, None, false, &[], &[])
             .unwrap();
         let result = render_agent_definition(template, &ctx);
         assert!(!result.contains("FEEDBACK_SECTION"));
@@ -271,7 +269,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
+            .build_context("planning", &task, &[], None, None, false, &[], &[])
             .unwrap();
 
         let bad_template = "Start {{#if}} missing close";
@@ -285,7 +283,7 @@ mod tests {
         let builder = PromptBuilder::new(&workflow);
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
+            .build_context("planning", &task, &[], None, None, false, &[], &[])
             .unwrap();
 
         let template = "Stage: {{stage_name}}, Task: {{task_id}}";

@@ -236,7 +236,6 @@ mod tests {
                 StageConfig::new("work", "summary"),
                 StageConfig::new("checks", "check_results")
                     .with_display_name("Automated Checks")
-                    .with_inputs(vec!["summary".into()])
                     .with_script(ScriptStageConfig {
                         command: "echo 'hello'".into(),
                         timeout_seconds: 10,

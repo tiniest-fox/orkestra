@@ -50,7 +50,7 @@ struct UserMessageContext<'a> {
     task_id: &'a str,
     title: &'a str,
     description: &'a str,
-    artifacts: &'a [ArtifactContext<'a>],
+    artifacts: &'a [ArtifactContext],
     question_history: &'a [QuestionAnswerContext<'a>],
     feedback: Option<&'a str>,
     integration_error: Option<&'a IntegrationErrorContext<'a>>,
@@ -72,7 +72,6 @@ mod tests {
     use crate::interactions::build::context::PromptBuilder;
     use orkestra_types::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use orkestra_types::domain::Task;
-    use orkestra_types::runtime::Artifact;
 
     fn test_templates() -> Handlebars<'static> {
         let mut hb = Handlebars::new();
@@ -90,12 +89,9 @@ mod tests {
             StageConfig::new("planning", "plan")
                 .with_display_name("Planning")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary")
-                .with_display_name("Working")
-                .with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary").with_display_name("Working"),
             StageConfig::new("review", "verdict")
                 .with_display_name("Reviewing")
-                .with_inputs(vec!["plan".into(), "summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
@@ -107,22 +103,18 @@ mod tests {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
-        let mut task = Task::new(
+        let task = Task::new(
             "task-1",
             "Implement feature",
             "Add new feature",
             "work",
             "now",
         );
-        task.artifacts.set(Artifact::new(
-            "plan",
-            "Step 1: Do this\nStep 2: Do that",
-            "planning",
-            "now",
-        ));
 
+        // Pass artifact names (artifacts are materialized to files before spawn)
+        let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
+            .build_context("work", &task, &artifact_names, None, None, false, &[], &[])
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -130,7 +122,8 @@ mod tests {
         assert!(user_message.contains("task-1"));
         assert!(user_message.contains("Implement feature"));
         assert!(user_message.contains("Add new feature"));
-        assert!(user_message.contains("Step 1: Do this"));
+        // Artifacts now show file paths instead of content
+        assert!(user_message.contains(".orkestra/.artifacts/plan.md"));
         assert!(user_message.contains("Input Artifacts"));
     }
 
@@ -140,22 +133,17 @@ mod tests {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
 
-        let mut task = Task::new(
+        let task = Task::new(
             "task-1",
             "Implement login",
             "Add login feature",
             "work",
             "now",
         );
-        task.artifacts.set(Artifact::new(
-            "plan",
-            "The implementation plan",
-            "planning",
-            "now",
-        ));
 
+        let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
+            .build_context("work", &task, &artifact_names, None, None, false, &[], &[])
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -192,7 +180,7 @@ mod tests {
         ];
 
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), siblings)
+            .build_context("planning", &task, &[], None, None, false, &[], &siblings)
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -215,7 +203,7 @@ mod tests {
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
 
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
+            .build_context("planning", &task, &[], None, None, false, &[], &[])
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -235,7 +223,7 @@ mod tests {
             .with_base_commit("abc123def456");
 
         let ctx = builder
-            .build_context("planning", &task, None, None, false, Vec::new(), Vec::new())
+            .build_context("planning", &task, &[], None, None, false, &[], &[])
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -258,7 +246,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "work", "now");
         let ctx = builder
-            .build_context("work", &task, None, None, false, Vec::new(), Vec::new())
+            .build_context("work", &task, &[], None, None, false, &[], &[])
             .unwrap();
 
         let user_message = execute(&templates, &ctx);

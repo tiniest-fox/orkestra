@@ -17,10 +17,9 @@ Prior stages have recorded the following activity:
 
 ## Updated Input Artifacts
 
+The following artifacts have been updated. Re-read them:
+
 {{#each artifacts}}
-### {{this.name}}
-
-{{this.content}}
-
+- `{{this.file_path}}` — {{this.name}}
 {{/each}}
 {{/if}}

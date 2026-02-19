@@ -171,10 +171,8 @@ mod tests {
     fn test_workflow() -> WorkflowConfig {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
-            StageConfig::new("review", "verdict")
-                .with_inputs(vec!["summary".into()])
-                .automated(),
+            StageConfig::new("work", "summary"),
+            StageConfig::new("review", "verdict").automated(),
         ])
         .with_integration(IntegrationConfig::new("work"))
     }

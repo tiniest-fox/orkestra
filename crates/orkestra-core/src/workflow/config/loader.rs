@@ -79,7 +79,6 @@ stages:
     artifact: plan
   - name: work
     artifact: summary
-    inputs: [plan]
 integration:
   on_failure: work
 ";

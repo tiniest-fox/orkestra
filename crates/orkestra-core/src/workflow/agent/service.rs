@@ -123,9 +123,8 @@ mod tests {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_inputs(vec!["summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
@@ -235,9 +234,8 @@ mod tests {
         // Non-automated review stage: rejection should pause for human review
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_inputs(vec!["summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
         ]);
         let store = Arc::new(InMemoryWorkflowStore::new());
@@ -292,9 +290,8 @@ mod tests {
         // Non-automated review stage but task has auto_mode — should auto-execute
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_inputs(vec!["summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
         ]);
         let store = Arc::new(InMemoryWorkflowStore::new());
@@ -462,11 +459,9 @@ mod tests {
 
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
-            checks_stage.with_inputs(vec!["summary".into()]),
-            StageConfig::new("review", "verdict")
-                .with_inputs(vec!["check_results".into()])
-                .automated(),
+            StageConfig::new("work", "summary"),
+            checks_stage,
+            StageConfig::new("review", "verdict").automated(),
         ])
     }
 

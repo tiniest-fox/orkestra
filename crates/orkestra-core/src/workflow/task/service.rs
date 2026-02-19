@@ -107,7 +107,7 @@ mod tests {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary"),
         ])
     }
 

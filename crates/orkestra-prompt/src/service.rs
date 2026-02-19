@@ -51,26 +51,32 @@ impl PromptService {
     // -- Build --
 
     /// Build a complete agent configuration from pre-loaded inputs.
+    ///
+    /// # Arguments
+    /// * `artifact_names` - Names of artifacts that have been materialized to the worktree.
+    ///   These are used to construct file paths in the prompt.
     #[allow(clippy::too_many_arguments)]
     pub fn build_agent_config(
         &self,
         workflow: &WorkflowConfig,
         task: &Task,
         stage_name: &str,
+        artifact_names: &[String],
         agent_definition: &str,
         json_schema: &str,
         feedback: Option<&str>,
         integration_error: Option<IntegrationErrorContext<'_>>,
         flow_overrides: &FlowOverrides<'_>,
         show_direct_structured_output_hint: bool,
-        activity_logs: Vec<ActivityLogEntry>,
-        sibling_tasks: Vec<SiblingTaskContext>,
+        activity_logs: &[ActivityLogEntry],
+        sibling_tasks: &[SiblingTaskContext],
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
         interactions::build::agent_config::execute(
             &self.templates,
             workflow,
             task,
             stage_name,
+            artifact_names,
             agent_definition,
             json_schema,
             feedback,
@@ -96,19 +102,6 @@ impl PromptService {
         interactions::build::user_message::execute(&self.templates, ctx)
     }
 
-    /// Build a complete prompt (system + user) for backward compatibility.
-    pub fn build_complete_prompt(
-        &self,
-        agent_definition: &str,
-        ctx: &StagePromptContext<'_>,
-    ) -> String {
-        interactions::build::agent_config::build_complete_prompt(
-            &self.templates,
-            agent_definition,
-            ctx,
-        )
-    }
-
     // -- Resume --
 
     /// Build a resume prompt for session continuation.
@@ -117,14 +110,14 @@ impl PromptService {
         stage: &str,
         resume_type: &ResumeType,
         base_branch: &str,
-        artifacts: &[(String, String)],
+        artifact_names: &[String],
         activity_logs: &[ActivityLogEntry],
     ) -> Result<String, AgentConfigError> {
         interactions::resume::build_prompt::execute(
             stage,
             resume_type,
             base_branch,
-            artifacts,
+            artifact_names,
             activity_logs,
         )
     }

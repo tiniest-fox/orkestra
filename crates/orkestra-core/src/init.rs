@@ -21,6 +21,7 @@ const REQUIRED_GITIGNORE_ENTRIES: &[&str] = &[
     ".orkestra/.database/",
     ".orkestra/.logs/",
     ".orkestra/.worktrees/",
+    ".orkestra/.artifacts/",
 ];
 
 /// Ensures `.orkestra/` has its full directory structure and default files.
@@ -108,4 +109,90 @@ fn ensure_gitignore_entries(orkestra_dir: &Path) -> std::io::Result<()> {
     file.write_all(appendix.as_bytes())?;
 
     Ok(())
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_ensure_gitignore_creates_new_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let orkestra_dir = temp_dir.path().join(".orkestra");
+        fs::create_dir_all(&orkestra_dir).unwrap();
+
+        ensure_gitignore_entries(&orkestra_dir).unwrap();
+
+        let gitignore_path = temp_dir.path().join(".gitignore");
+        assert!(gitignore_path.exists());
+        let content = fs::read_to_string(&gitignore_path).unwrap();
+        assert!(content.contains("# Orkestra internals"));
+        for entry in REQUIRED_GITIGNORE_ENTRIES {
+            assert!(content.contains(entry), "Missing entry: {entry}");
+        }
+    }
+
+    #[test]
+    fn test_ensure_gitignore_appends_to_existing() {
+        let temp_dir = TempDir::new().unwrap();
+        let orkestra_dir = temp_dir.path().join(".orkestra");
+        fs::create_dir_all(&orkestra_dir).unwrap();
+
+        // Create existing gitignore with unrelated content
+        let gitignore_path = temp_dir.path().join(".gitignore");
+        fs::write(&gitignore_path, "node_modules/\ntarget/\n").unwrap();
+
+        ensure_gitignore_entries(&orkestra_dir).unwrap();
+
+        let content = fs::read_to_string(&gitignore_path).unwrap();
+        assert!(content.contains("node_modules/"));
+        assert!(content.contains("target/"));
+        assert!(content.contains("# Orkestra internals"));
+        for entry in REQUIRED_GITIGNORE_ENTRIES {
+            assert!(content.contains(entry), "Missing entry: {entry}");
+        }
+    }
+
+    #[test]
+    fn test_ensure_gitignore_idempotent() {
+        let temp_dir = TempDir::new().unwrap();
+        let orkestra_dir = temp_dir.path().join(".orkestra");
+        fs::create_dir_all(&orkestra_dir).unwrap();
+
+        // Run twice
+        ensure_gitignore_entries(&orkestra_dir).unwrap();
+        ensure_gitignore_entries(&orkestra_dir).unwrap();
+
+        let content = fs::read_to_string(temp_dir.path().join(".gitignore")).unwrap();
+        // Count occurrences of each entry - should appear exactly once
+        for entry in REQUIRED_GITIGNORE_ENTRIES {
+            let count = content.matches(entry).count();
+            assert_eq!(count, 1, "Entry {entry} appears {count} times");
+        }
+    }
+
+    #[test]
+    fn test_ensure_gitignore_handles_missing_trailing_newline() {
+        let temp_dir = TempDir::new().unwrap();
+        let orkestra_dir = temp_dir.path().join(".orkestra");
+        fs::create_dir_all(&orkestra_dir).unwrap();
+
+        // Create gitignore without trailing newline
+        let gitignore_path = temp_dir.path().join(".gitignore");
+        fs::write(&gitignore_path, "node_modules/").unwrap(); // No newline
+
+        ensure_gitignore_entries(&orkestra_dir).unwrap();
+
+        let content = fs::read_to_string(&gitignore_path).unwrap();
+        // Should have added newline before Orkestra section
+        assert!(
+            content.contains("node_modules/\n"),
+            "Missing newline after existing content"
+        );
+    }
 }

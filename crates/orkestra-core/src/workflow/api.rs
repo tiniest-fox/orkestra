@@ -294,9 +294,8 @@ mod tests {
             StageConfig::new("planning", "plan")
                 .with_capabilities(StageCapabilities::with_questions()),
             StageConfig::new("breakdown", "subtasks"),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_inputs(vec!["plan".into(), "summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])
@@ -401,9 +400,8 @@ mod tests {
             StageConfig::new("planning", "plan")
                 .with_capabilities(StageCapabilities::with_questions()),
             StageConfig::new("breakdown", "subtasks"),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_inputs(vec!["plan".into(), "summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
                 .automated(),
         ])

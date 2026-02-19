@@ -35,7 +35,7 @@ src/
 
 ### Config Types (from YAML)
 - **WorkflowConfig**: Ordered stages, integration config, named flows
-- **StageConfig**: Stage definition (name, artifact, inputs, capabilities, prompt/script)
+- **StageConfig**: Stage definition (name, artifact, capabilities, prompt/script)
 - **StageCapabilities**: Feature flags (ask_questions, subtasks, approval)
 - **FlowConfig**: Alternate pipeline with stage subset and overrides
 

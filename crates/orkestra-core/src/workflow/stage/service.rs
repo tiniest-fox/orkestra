@@ -541,7 +541,7 @@ impl StageExecutionService {
 
         let handle = self
             .agent_service
-            .execute_stage(task, trigger, spawn_context, activity_logs, sibling_tasks)
+            .execute_stage(task, trigger, spawn_context, &activity_logs, &sibling_tasks)
             .map_err(|e| SpawnError::AgentError(e.to_string()))?;
 
         let pid = handle.pid;

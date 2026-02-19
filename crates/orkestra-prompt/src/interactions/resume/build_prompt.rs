@@ -3,6 +3,7 @@
 //! Builds short resume prompts for session continuation.
 
 use handlebars::Handlebars;
+use orkestra_types::runtime::artifact_file_path;
 
 use crate::types::{ActivityLogEntry, AgentConfigError, ResumeType};
 
@@ -32,7 +33,7 @@ pub fn execute(
     stage: &str,
     resume_type: &ResumeType,
     base_branch: &str,
-    artifacts: &[(String, String)],
+    artifact_names: &[String],
     activity_logs: &[ActivityLogEntry],
 ) -> Result<String, AgentConfigError> {
     let (template, mut context) = match &resume_type {
@@ -76,11 +77,16 @@ pub fn execute(
     // All resume templates need the stage name for the marker
     context["stage_name"] = serde_json::json!(stage);
 
-    // Inject artifacts if present
-    if !artifacts.is_empty() {
-        let artifact_values: Vec<serde_json::Value> = artifacts
+    // Inject artifacts if present (using file paths, not content)
+    if !artifact_names.is_empty() {
+        let artifact_values: Vec<serde_json::Value> = artifact_names
             .iter()
-            .map(|(name, content)| serde_json::json!({"name": name, "content": content}))
+            .map(|name| {
+                serde_json::json!({
+                    "name": name,
+                    "file_path": artifact_file_path(name)
+                })
+            })
             .collect();
         context["artifacts"] = serde_json::json!(artifact_values);
     }
@@ -116,11 +122,8 @@ mod tests {
 
     #[test]
     fn test_continue() {
-        let artifacts = vec![(
-            "plan".to_string(),
-            "The implementation plan content".to_string(),
-        )];
-        let prompt = execute("work", &ResumeType::Continue, "main", &artifacts, &[]).unwrap();
+        let artifact_names = vec!["plan".to_string()];
+        let prompt = execute("work", &ResumeType::Continue, "main", &artifact_names, &[]).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -129,14 +132,14 @@ mod tests {
 
     #[test]
     fn test_feedback() {
-        let artifacts = vec![("summary".to_string(), "Work completion summary".to_string())];
+        let artifact_names = vec!["summary".to_string()];
         let prompt = execute(
             "review",
             &ResumeType::Feedback {
                 feedback: "Add more error handling".to_string(),
             },
             "main",
-            &artifacts,
+            &artifact_names,
             &[],
         )
         .unwrap();
@@ -148,10 +151,7 @@ mod tests {
 
     #[test]
     fn test_integration() {
-        let artifacts = vec![(
-            "breakdown".to_string(),
-            "Task breakdown details".to_string(),
-        )];
+        let artifact_names = vec!["breakdown".to_string()];
         let prompt = execute(
             "work",
             &ResumeType::Integration {
@@ -159,7 +159,7 @@ mod tests {
                 conflict_files: vec!["src/main.rs".to_string(), "src/lib.rs".to_string()],
             },
             "feature/parent-branch",
-            &artifacts,
+            &artifact_names,
             &[],
         )
         .unwrap();
@@ -173,10 +173,7 @@ mod tests {
 
     #[test]
     fn test_answers() {
-        let artifacts = vec![(
-            "requirements".to_string(),
-            "User requirements specification".to_string(),
-        )];
+        let artifact_names = vec!["requirements".to_string()];
         let prompt = execute(
             "planning",
             &ResumeType::Answers {
@@ -192,7 +189,7 @@ mod tests {
                 ],
             },
             "main",
-            &artifacts,
+            &artifact_names,
             &[],
         )
         .unwrap();
@@ -206,28 +203,23 @@ mod tests {
 
     #[test]
     fn test_recheck() {
-        let artifacts = vec![
-            ("summary".to_string(), "Updated work summary".to_string()),
-            (
-                "check_results".to_string(),
-                "Check results output".to_string(),
-            ),
-        ];
-        let prompt = execute("review", &ResumeType::Recheck, "main", &artifacts, &[]).unwrap();
+        let artifact_names = vec!["summary".to_string(), "check_results".to_string()];
+        let prompt = execute("review", &ResumeType::Recheck, "main", &artifact_names, &[]).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
         assert!(prompt.contains("re-run"));
         assert!(prompt.contains("re-examine"));
         assert!(prompt.contains("JSON"));
         assert!(prompt.contains("Updated Input Artifacts"));
-        assert!(prompt.contains("### summary"));
-        assert!(prompt.contains("Updated work summary"));
-        assert!(prompt.contains("### check_results"));
-        assert!(prompt.contains("Check results output"));
+        // New format: file paths instead of inline content
+        assert!(prompt.contains(".orkestra/.artifacts/summary.md"));
+        assert!(prompt.contains(".orkestra/.artifacts/check_results.md"));
+        // Should NOT contain inline content
+        assert!(!prompt.contains("### summary"));
     }
 
     #[test]
     fn test_recheck_with_activity_logs() {
-        let artifacts = vec![("summary".to_string(), "Updated work summary".to_string())];
+        let artifact_names = vec!["summary".to_string()];
         let activity_logs = vec![
             ActivityLogEntry {
                 stage: "work".to_string(),
@@ -244,7 +236,7 @@ mod tests {
             "review",
             &ResumeType::Recheck,
             "main",
-            &artifacts,
+            &artifact_names,
             &activity_logs,
         )
         .unwrap();
@@ -256,6 +248,8 @@ mod tests {
         assert!(prompt.contains("[review]"));
         assert!(prompt.contains("Found issue with error handling"));
         assert!(prompt.contains("Updated Input Artifacts"));
+        // New format: file paths instead of inline content
+        assert!(prompt.contains(".orkestra/.artifacts/summary.md"));
     }
 
     #[test]
@@ -268,14 +262,14 @@ mod tests {
 
     #[test]
     fn test_manual_resume_with_message() {
-        let artifacts = vec![("plan".to_string(), "Implementation plan".to_string())];
+        let artifact_names = vec!["plan".to_string()];
         let prompt = execute(
             "work",
             &ResumeType::ManualResume {
                 message: Some("Fix the validation logic".to_string()),
             },
             "main",
-            &artifacts,
+            &artifact_names,
             &[],
         )
         .unwrap();

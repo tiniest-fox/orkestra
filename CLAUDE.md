@@ -302,8 +302,8 @@ Tasks progress through an ordered list of stages defined in `StageConfig` struct
 
 **Key domain types** (`workflow/config/`):
 
-- **`WorkflowConfig`** (`workflow.rs`) — Ordered list of `StageConfig` plus `IntegrationConfig`. Validated on load (no forward artifact references, unique names).
-- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `inputs` (artifacts from earlier stages), `capabilities`, optional `model` (provider/model spec like `"claudecode/sonnet"`), and either a `prompt` (agent stage) or `script` (script stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set.
+- **`WorkflowConfig`** (`workflow.rs`) — Ordered list of `StageConfig` plus `IntegrationConfig`. Validated on load (unique stage/artifact names).
+- **`StageConfig`** (`stage.rs`) — A stage has a `name`, `artifact` (output name), `capabilities`, optional `model` (provider/model spec like `"claudecode/sonnet"`), and either a `prompt` (agent stage) or `script` (script stage). Agent stages default to `.orkestra/agents/{name}.md` when no explicit prompt is set. Artifacts from earlier stages are automatically available to all later stages.
 - **`StageCapabilities`** (`stage.rs`) — Flags that control what output types the stage's JSON schema includes: `ask_questions`, `subtasks: Option<SubtaskCapabilities>` (with `flow` and `completion_stage`), `approval: Option<ApprovalCapabilities>` (with optional `rejection_stage`).
 - **`ScriptStageConfig`** (`stage.rs`) — Shell command, timeout, optional `on_failure` stage for recovery.
 - **`FlowConfig`** (`workflow.rs`) — Named alternate flow (shortened pipeline). Has a `description`, optional `icon`, an ordered list of `FlowStageEntry`s referencing a subset of global stages with optional overrides, and an optional `integration: FlowIntegrationOverride` for per-flow integration settings (e.g., `on_failure` override).

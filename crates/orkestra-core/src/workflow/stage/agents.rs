@@ -117,8 +117,8 @@ impl AgentExecutionService {
         task: &Task,
         trigger: Option<&IterationTrigger>,
         spawn_context: &SessionSpawnContext,
-        activity_logs: Vec<ActivityLogEntry>,
-        sibling_tasks: Vec<SiblingTaskContext>,
+        activity_logs: &[ActivityLogEntry],
+        sibling_tasks: &[SiblingTaskContext],
     ) -> Result<ExecutionHandle, ExecutionError> {
         super::interactions::execute_agent::execute(
             self.runner.as_ref(),

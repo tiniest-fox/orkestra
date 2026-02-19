@@ -214,7 +214,7 @@ flows:
     stages: [work, check]                            # work + checks only
 ```
 
-Flows can **override** stage config (prompt, capabilities, inputs, model, disallowed_tools) per stage. Overrides are full replacement, not merge.
+Flows can **override** stage config (prompt, capabilities, model, disallowed_tools) per stage. Overrides are full replacement, not merge.
 
 Key constraint: `rejection_stage` and `on_failure` targets must exist within the flow's stage list.
 

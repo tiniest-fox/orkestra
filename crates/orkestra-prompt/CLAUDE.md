@@ -67,7 +67,7 @@ Variants:
 
 ### FlowOverrides
 
-When a task uses a named flow, capabilities/prompt/inputs may be overridden. This struct carries those overrides.
+When a task uses a named flow, capabilities/prompt may be overridden. This struct carries those overrides.
 
 ## Patterns
 

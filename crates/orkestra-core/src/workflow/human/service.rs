@@ -145,10 +145,8 @@ mod tests {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
-            StageConfig::new("review", "verdict")
-                .with_inputs(vec!["summary".into()])
-                .automated(),
+            StageConfig::new("work", "summary"),
+            StageConfig::new("review", "verdict").automated(),
         ])
         .with_integration(IntegrationConfig::new("work"))
     }
@@ -449,9 +447,8 @@ mod tests {
         WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan")
                 .with_capabilities(StageCapabilities::with_questions()),
-            StageConfig::new("work", "summary").with_inputs(vec!["plan".into()]),
+            StageConfig::new("work", "summary"),
             StageConfig::new("review", "verdict")
-                .with_inputs(vec!["summary".into()])
                 .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
         ])
     }

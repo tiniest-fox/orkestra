@@ -281,11 +281,9 @@ let workflow = WorkflowConfig {
     version: 1,
     stages: vec![
         StageConfig::new("work", "summary")
-            .with_prompt("worker.md")
-            .with_inputs(vec!["plan".into()]),
+            .with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_inputs(vec!["summary".into()])
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .automated(),
     ],

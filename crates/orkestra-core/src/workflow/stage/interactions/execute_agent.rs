@@ -34,8 +34,8 @@ pub(crate) fn execute(
     task: &Task,
     trigger: Option<&IterationTrigger>,
     spawn_context: &SessionSpawnContext,
-    activity_logs: Vec<ActivityLogEntry>,
-    sibling_tasks: Vec<SiblingTaskContext>,
+    activity_logs: &[ActivityLogEntry],
+    sibling_tasks: &[SiblingTaskContext],
 ) -> Result<ExecutionHandle, ExecutionError> {
     let stage = task
         .current_stage()
@@ -48,6 +48,19 @@ pub(crate) fn execute(
         stage,
         spawn_context.session_id,
         spawn_context.is_resume
+    );
+
+    // 0. Materialize artifacts to worktree files before building prompts
+    let artifact_names = super::materialize_artifacts::execute(task).map_err(|e| {
+        ExecutionError::ConfigError(format!("Failed to materialize artifacts: {e}"))
+    })?;
+
+    orkestra_debug!(
+        "exec",
+        "execute_stage {}/{}: materialized {} artifacts",
+        task.id,
+        stage,
+        artifact_names.len()
     );
 
     // 1. Get JSON schema (needed for BOTH first spawn and resume)
@@ -66,10 +79,11 @@ pub(crate) fn execute(
         prompt_service,
         workflow,
         task,
+        &artifact_names,
         feedback,
         resolved.capabilities.requires_direct_structured_output,
-        activity_logs.clone(),
-        sibling_tasks.clone(),
+        activity_logs,
+        sibling_tasks,
     )?;
 
     // 5. Apply tool restrictions (split into prompt text + CLI patterns)
@@ -82,6 +96,7 @@ pub(crate) fn execute(
         prompt_service,
         workflow,
         task,
+        &artifact_names,
         stage,
         spawn_context.is_resume,
         spawn_context.is_stage_reentry,
@@ -158,18 +173,21 @@ struct ResolvedStageConfig {
 // -- Prompt Building --
 
 /// Build the system prompt for a stage.
+#[allow(clippy::too_many_arguments)]
 fn build_system_prompt(
     prompt_service: &PromptService,
     workflow: &WorkflowConfig,
     task: &Task,
+    artifact_names: &[String],
     feedback: Option<&str>,
     show_direct_structured_output_hint: bool,
-    activity_logs: Vec<ActivityLogEntry>,
-    sibling_tasks: Vec<SiblingTaskContext>,
+    activity_logs: &[ActivityLogEntry],
+    sibling_tasks: &[SiblingTaskContext],
 ) -> Result<String, ExecutionError> {
     let config = prompt_service.resolve_config(
         workflow,
         task,
+        artifact_names,
         feedback,
         None, // No integration error for system prompt
         show_direct_structured_output_hint,
@@ -188,13 +206,14 @@ fn build_user_prompt(
     prompt_service: &PromptService,
     workflow: &WorkflowConfig,
     task: &Task,
+    artifact_names: &[String],
     stage: &str,
     is_resume: bool,
     is_stage_reentry: bool,
     trigger: Option<&IterationTrigger>,
     show_direct_structured_output_hint: bool,
-    activity_logs: Vec<ActivityLogEntry>,
-    sibling_tasks: Vec<SiblingTaskContext>,
+    activity_logs: &[ActivityLogEntry],
+    sibling_tasks: &[SiblingTaskContext],
 ) -> Result<String, ExecutionError> {
     if is_resume {
         let resume_type = if is_stage_reentry {
@@ -203,25 +222,12 @@ fn build_user_prompt(
             trigger_to_resume_type(trigger)
         };
 
-        // Gather artifacts for this stage (respecting flow overrides)
-        let input_names = workflow
-            .effective_inputs(stage, task.flow.as_deref())
-            .unwrap_or_default();
-        let artifacts: Vec<(String, String)> = input_names
-            .iter()
-            .filter_map(|name| {
-                task.artifacts
-                    .get(name)
-                    .map(|a| (a.name.clone(), a.content.clone()))
-            })
-            .collect();
-
         build_resume_prompt(
             stage,
             &resume_type,
             &task.base_branch,
-            &artifacts,
-            &activity_logs,
+            artifact_names,
+            activity_logs,
         )
         .map_err(ExecutionError::from)
     } else {
@@ -231,6 +237,7 @@ fn build_user_prompt(
         let config = prompt_service.resolve_config(
             workflow,
             task,
+            artifact_names,
             feedback,
             None, // No integration error on first spawn
             show_direct_structured_output_hint,

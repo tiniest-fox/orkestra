@@ -25,11 +25,10 @@
 {{#if artifacts}}
 ## Input Artifacts
 
+The following artifacts are available in your worktree. Read them as needed:
+
 {{#each artifacts}}
-### {{this.name}}
-
-{{this.content}}
-
+- `{{this.file_path}}` — {{this.name}}
 {{/each}}
 {{/if}}
 {{#if sibling_tasks}}

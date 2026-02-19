@@ -24,6 +24,8 @@ pub struct MockAgentRunner {
     outputs: Mutex<HashMap<String, Vec<StageOutput>>>,
     /// Queue of outputs that should include `LogLine` events before Completed.
     activity_outputs: Mutex<HashMap<String, Vec<StageOutput>>>,
+    /// Queue of outputs that send activity (`LogLine`) then fail.
+    failure_with_activity: Mutex<HashMap<String, Vec<String>>>,
     /// Next PID to assign.
     next_pid: AtomicU32,
     /// Recorded calls.
@@ -42,6 +44,7 @@ impl MockAgentRunner {
         Self {
             outputs: Mutex::new(HashMap::new()),
             activity_outputs: Mutex::new(HashMap::new()),
+            failure_with_activity: Mutex::new(HashMap::new()),
             next_pid: AtomicU32::new(10000),
             calls: Mutex::new(Vec::new()),
         }
@@ -67,6 +70,17 @@ impl MockAgentRunner {
             .entry(task_id.to_string())
             .or_default()
             .push(output);
+    }
+
+    /// Set the next agent spawn to emit activity (`LogLine`) then fail with the given error.
+    /// Tests the scenario where an agent produces streaming output but ultimately fails.
+    pub fn set_failure_with_activity(&self, task_id: &str, error: String) {
+        self.failure_with_activity
+            .lock()
+            .unwrap()
+            .entry(task_id.to_string())
+            .or_default()
+            .push(error);
     }
 
     /// Get recorded calls.
@@ -150,7 +164,31 @@ impl AgentRunner for MockAgentRunner {
             .clone()
             .or_else(|| Self::extract_task_id(&config.prompt));
 
-        // Check activity_outputs first (these send LogLine before Completed)
+        // Check failure_with_activity first (send LogLine then error)
+        let failure_error = task_id.as_ref().and_then(|id| {
+            self.failure_with_activity
+                .lock()
+                .unwrap()
+                .get_mut(id)
+                .and_then(|queue| {
+                    if queue.is_empty() {
+                        None
+                    } else {
+                        Some(queue.remove(0))
+                    }
+                })
+        });
+
+        if let Some(error) = failure_error {
+            // Send a LogLine first to trigger in-memory has_activity
+            let _ = tx.send(RunEvent::LogLine(LogEntry::Text {
+                content: "Mock agent activity before failure".to_string(),
+            }));
+            let _ = tx.send(RunEvent::Completed(Err(error)));
+            return Ok((pid, rx));
+        }
+
+        // Check activity_outputs next (these send LogLine before Completed)
         let activity_output = task_id.as_ref().and_then(|id| {
             self.activity_outputs
                 .lock()

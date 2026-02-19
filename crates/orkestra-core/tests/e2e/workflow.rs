@@ -6566,3 +6566,132 @@ fn test_recheck_resume_references_file_paths() {
         "Artifact file should have updated content"
     );
 }
+
+// =============================================================================
+// Activity Flag Persistence Tests
+// =============================================================================
+
+/// Test that `has_activity` is only persisted to the database on successful agent completion.
+///
+/// This verifies the fix for a bug where activity was persisted during streaming,
+/// causing failed sessions to incorrectly appear as having activity (which would
+/// then cause resume attempts to fail with "Session ID already in use").
+///
+/// The fix moves activity flag persistence from `poll_agents()` (during streaming)
+/// to `dispatch_completion()` (after successful output processing).
+#[test]
+fn test_activity_only_persisted_on_agent_success() {
+    use orkestra_core::workflow::config::{IntegrationConfig, StageConfig, WorkflowConfig};
+
+    let workflow = WorkflowConfig {
+        version: 1,
+        stages: vec![StageConfig::new("work", "summary").with_prompt("worker.md")],
+        integration: IntegrationConfig::new("work"),
+        flows: indexmap::IndexMap::new(),
+    };
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    // =========================================================================
+    // Test 1: Successful agent completion → has_activity = true
+    // =========================================================================
+
+    let task_success = ctx.create_task("Test activity on success", "First task", None);
+    let task_success_id = task_success.id.clone();
+
+    // Set output WITH activity (sends LogLine before Completed)
+    ctx.set_output_with_activity(
+        &task_success_id,
+        MockAgentOutput::Artifact {
+            name: "summary".into(),
+            content: "Work done successfully".into(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance(); // spawns agent (with LogLine activity)
+    ctx.advance(); // processes successful output
+
+    // Verify task completed successfully
+    let task = ctx.api().get_task(&task_success_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be awaiting review after successful output"
+    );
+
+    // Verify has_activity was persisted to DB
+    let session = ctx
+        .api()
+        .get_stage_session(&task_success_id, "work")
+        .unwrap()
+        .expect("Session should exist");
+    assert!(
+        session.has_activity,
+        "has_activity should be true after successful agent completion"
+    );
+
+    // =========================================================================
+    // Test 2: Failed agent (no output configured) → has_activity = false
+    // =========================================================================
+
+    let task_fail = ctx.create_task("Test activity on failure", "Second task", None);
+    let task_fail_id = task_fail.id.clone();
+
+    // Don't set any output — mock will return an error
+    ctx.advance(); // spawns agent (immediately fails, no output configured)
+
+    // Verify task is in failed state
+    let task = ctx.api().get_task(&task_fail_id).unwrap();
+    assert!(
+        task.is_failed(),
+        "Task should be failed when agent has no output"
+    );
+
+    // Verify has_activity was NOT persisted to DB
+    let session = ctx
+        .api()
+        .get_stage_session(&task_fail_id, "work")
+        .unwrap()
+        .expect("Session should exist");
+    assert!(
+        !session.has_activity,
+        "has_activity should be false after failed agent (activity not persisted on failure)"
+    );
+
+    // =========================================================================
+    // Test 3: Failed agent WITH activity → has_activity = false
+    // This tests the original bug scenario: agent emits streaming output
+    // (LogLine events) but ultimately fails. The in-memory has_activity is set
+    // during streaming, but it should NOT be persisted to DB on failure.
+    // =========================================================================
+
+    let task_activity_fail =
+        ctx.create_task("Test activity on failure with output", "Third task", None);
+    let task_activity_fail_id = task_activity_fail.id.clone();
+
+    // Set output to emit activity (LogLine) then fail
+    ctx.set_failure_with_activity(
+        &task_activity_fail_id,
+        "Simulated failure after producing activity".into(),
+    );
+
+    ctx.advance(); // spawns agent (sends LogLine then failure)
+
+    // Verify task is in failed state
+    let task = ctx.api().get_task(&task_activity_fail_id).unwrap();
+    assert!(
+        task.is_failed(),
+        "Task should be failed when agent fails after producing activity"
+    );
+
+    // Verify has_activity was NOT persisted to DB despite in-memory activity
+    let session = ctx
+        .api()
+        .get_stage_session(&task_activity_fail_id, "work")
+        .unwrap()
+        .expect("Session should exist");
+    assert!(
+        !session.has_activity,
+        "has_activity should be false after agent failure, even if streaming activity occurred"
+    );
+}

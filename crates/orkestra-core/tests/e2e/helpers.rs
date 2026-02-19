@@ -561,6 +561,13 @@ impl TestEnv {
         self.runner.set_output_with_activity(task_id, output.into());
     }
 
+    /// Set the next agent spawn to emit activity then fail.
+    /// The mock sends a `LogLine` event then an error, testing the scenario where
+    /// an agent produces streaming output but ultimately fails.
+    pub fn set_failure_with_activity(&self, task_id: &str, error: String) {
+        self.runner.set_failure_with_activity(task_id, error);
+    }
+
     /// Get the number of calls made to the mock runner.
     pub fn call_count(&self) -> usize {
         self.runner.calls().len()

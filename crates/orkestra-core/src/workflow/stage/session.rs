@@ -95,7 +95,7 @@ mod tests {
         // Agent exits
         simulate_agent_exit(&store, "task-1", "planning");
 
-        // Simulate agent activity (normally done by persist_activity_flags in poll_agents)
+        // Simulate agent activity (normally done by persist_activity_flag in dispatch_completion)
         let mut s = store
             .get_stage_session("task-1", "planning")
             .unwrap()
@@ -696,5 +696,167 @@ mod tests {
 
         let result = session::supersede_session::execute(store.as_ref(), "task-1", "work");
         assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Stale Session ID Replacement Tests
+    // ========================================================================
+
+    #[test]
+    fn test_stale_session_id_replaced_on_non_resume() {
+        let (store, iter_svc) = create_deps();
+
+        // First spawn creates session with ID
+        session::on_spawn_starting::execute(
+            store.as_ref(),
+            &iter_svc,
+            "task-1",
+            "planning",
+            Some("original-uuid".into()),
+        )
+        .unwrap();
+        session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
+        simulate_agent_exit(&store, "task-1", "planning");
+
+        // Session has ID but NO activity (simulating failed agent)
+        let s = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
+        assert!(!s.has_activity);
+        assert_eq!(s.claude_session_id, Some("original-uuid".to_string()));
+
+        // Next spawn with fresh ID should REPLACE the stale one
+        let ctx = session::on_spawn_starting::execute(
+            store.as_ref(),
+            &iter_svc,
+            "task-1",
+            "planning",
+            Some("fresh-uuid".into()),
+        )
+        .unwrap();
+
+        assert!(!ctx.is_resume, "Should not be resume without activity");
+        assert_eq!(
+            ctx.session_id,
+            Some("fresh-uuid".to_string()),
+            "Should use fresh ID, not stale one"
+        );
+
+        // Verify the session in storage was also updated
+        let s = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            s.claude_session_id,
+            Some("fresh-uuid".to_string()),
+            "Stored session should have fresh ID"
+        );
+    }
+
+    #[test]
+    fn test_stale_session_id_kept_when_resuming() {
+        let (store, iter_svc) = create_deps();
+
+        // First spawn creates session with ID and activity
+        session::on_spawn_starting::execute(
+            store.as_ref(),
+            &iter_svc,
+            "task-1",
+            "planning",
+            Some("original-uuid".into()),
+        )
+        .unwrap();
+        session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
+        simulate_agent_exit(&store, "task-1", "planning");
+
+        // Simulate agent producing activity (successful output)
+        let mut s = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
+        s.has_activity = true;
+        store.save_stage_session(&s).unwrap();
+
+        // Next spawn should KEEP the original ID (is_resume = true)
+        let ctx = session::on_spawn_starting::execute(
+            store.as_ref(),
+            &iter_svc,
+            "task-1",
+            "planning",
+            Some("ignored-uuid".into()),
+        )
+        .unwrap();
+
+        assert!(ctx.is_resume, "Should be resume with activity");
+        assert_eq!(
+            ctx.session_id,
+            Some("original-uuid".to_string()),
+            "Should keep original ID when resuming"
+        );
+    }
+
+    #[test]
+    fn test_stale_session_id_cleared_for_own_id_provider() {
+        let (store, iter_svc) = create_deps();
+
+        // First spawn for own-ID provider (initial_session_id = None)
+        session::on_spawn_starting::execute(
+            store.as_ref(),
+            &iter_svc,
+            "task-1",
+            "planning",
+            None, // Own-ID provider
+        )
+        .unwrap();
+        session::on_agent_spawned::execute(store.as_ref(), "task-1", "planning", 12345).unwrap();
+
+        // Simulate provider registering its own session ID (e.g., from extracted_session_id)
+        let mut s = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
+        s.claude_session_id = Some("provider-generated-id".to_string());
+        store.save_stage_session(&s).unwrap();
+
+        simulate_agent_exit(&store, "task-1", "planning");
+
+        // Session has ID but NO activity (simulating failed agent)
+        let s = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
+        assert!(!s.has_activity);
+        assert_eq!(
+            s.claude_session_id,
+            Some("provider-generated-id".to_string())
+        );
+
+        // Next spawn should CLEAR the stale session ID (not resume without activity)
+        let ctx = session::on_spawn_starting::execute(
+            store.as_ref(),
+            &iter_svc,
+            "task-1",
+            "planning",
+            None, // Own-ID provider
+        )
+        .unwrap();
+
+        assert!(!ctx.is_resume, "Should not be resume without activity");
+        assert_eq!(
+            ctx.session_id, None,
+            "Should clear stale ID for own-ID provider"
+        );
+
+        // Verify the session in storage was also cleared
+        let s = store
+            .get_stage_session("task-1", "planning")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            s.claude_session_id, None,
+            "Stored session should have cleared ID"
+        );
     }
 }

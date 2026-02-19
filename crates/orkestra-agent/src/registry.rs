@@ -297,11 +297,8 @@ impl ProviderRegistry {
 /// Claude Code provider alias table.
 pub fn claudecode_aliases() -> HashMap<String, String> {
     HashMap::from([
-        (
-            "sonnet".to_string(),
-            "claude-sonnet-4-5-20250929".to_string(),
-        ),
-        ("opus".to_string(), "claude-opus-4-5-20251101".to_string()),
+        ("sonnet".to_string(), "claude-sonnet-4-6".to_string()),
+        ("opus".to_string(), "claude-opus-4-6".to_string()),
         ("haiku".to_string(), "claude-haiku-4-5-20251001".to_string()),
     ])
 }
@@ -449,10 +446,7 @@ mod tests {
     fn resolve_claudecode_sonnet_alias() {
         let registry = test_registry();
         let resolved = registry.resolve(Some("claudecode/sonnet")).unwrap();
-        assert_eq!(
-            resolved.model_id,
-            Some("claude-sonnet-4-5-20250929".to_string())
-        );
+        assert_eq!(resolved.model_id, Some("claude-sonnet-4-6".to_string()));
         assert!(resolved.capabilities.supports_json_schema);
         assert!(resolved.capabilities.supports_sessions);
         assert!(resolved.capabilities.supports_system_prompt);
@@ -462,10 +456,7 @@ mod tests {
     fn resolve_claudecode_opus_alias() {
         let registry = test_registry();
         let resolved = registry.resolve(Some("claudecode/opus")).unwrap();
-        assert_eq!(
-            resolved.model_id,
-            Some("claude-opus-4-5-20251101".to_string())
-        );
+        assert_eq!(resolved.model_id, Some("claude-opus-4-6".to_string()));
     }
 
     #[test]
@@ -518,10 +509,7 @@ mod tests {
     fn resolve_shorthand_sonnet() {
         let registry = test_registry();
         let resolved = registry.resolve(Some("sonnet")).unwrap();
-        assert_eq!(
-            resolved.model_id,
-            Some("claude-sonnet-4-5-20250929".to_string())
-        );
+        assert_eq!(resolved.model_id, Some("claude-sonnet-4-6".to_string()));
         // Should resolve to claudecode provider
         assert!(resolved.capabilities.supports_json_schema);
     }
@@ -630,8 +618,8 @@ mod tests {
     #[test]
     fn claudecode_aliases_are_correct() {
         let aliases = claudecode_aliases();
-        assert_eq!(aliases["sonnet"], "claude-sonnet-4-5-20250929");
-        assert_eq!(aliases["opus"], "claude-opus-4-5-20251101");
+        assert_eq!(aliases["sonnet"], "claude-sonnet-4-6");
+        assert_eq!(aliases["opus"], "claude-opus-4-6");
         assert_eq!(aliases["haiku"], "claude-haiku-4-5-20251001");
         assert_eq!(aliases.len(), 3);
     }

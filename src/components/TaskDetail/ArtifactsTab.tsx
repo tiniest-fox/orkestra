@@ -4,6 +4,7 @@
 
 import { FileOutput } from "lucide-react";
 import { useSmartDefault } from "../../hooks/useSmartDefault";
+import { artifactName } from "../../types/workflow";
 import type { WorkflowArtifact, WorkflowConfig } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { ArtifactTabs, EmptyState, ExpandablePanel, FlexContainer, TabbedPanel } from "../ui";
@@ -27,11 +28,12 @@ interface ArtifactsTabProps {
 export function ArtifactsTab({ taskId, currentStage, artifacts, config }: ArtifactsTabProps) {
   // Build tabs in stage order from config
   const artifactNames = config.stages
-    .map((stage) => stage.artifact)
+    .map((stage) => artifactName(stage.artifact))
     .filter((name) => artifacts[name]);
 
   // Map currentStage (stage name) to the corresponding artifact name
-  const currentStageArtifact = config.stages.find((s) => s.name === currentStage)?.artifact ?? null;
+  const currentStageEntry = config.stages.find((s) => s.name === currentStage);
+  const currentStageArtifact = currentStageEntry != null ? artifactName(currentStageEntry.artifact) : null;
 
   const { selectedItem, setSelectedItem } = useSmartDefault({
     taskId,

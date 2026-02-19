@@ -40,6 +40,18 @@ export interface SubtaskCapabilities {
 }
 
 /**
+ * Artifact config — either a plain name string (when no description/display_name)
+ * or a rich object (when description or display_name are set).
+ * Mirrors ArtifactConfig's custom serde in Rust.
+ */
+export type ArtifactConfig = string | { name: string; display_name?: string; description?: string };
+
+/** Extract the artifact name string from an ArtifactConfig. */
+export function artifactName(artifact: ArtifactConfig): string {
+  return typeof artifact === "string" ? artifact : artifact.name;
+}
+
+/**
  * Configuration for a single workflow stage.
  */
 export interface StageConfig {
@@ -49,8 +61,8 @@ export interface StageConfig {
   display_name?: string;
   /** Optional lucide-react icon name (e.g., "pencil-ruler", "hammer"). */
   icon?: string;
-  /** Name of the artifact this stage produces (e.g., "plan", "summary"). */
-  artifact: string;
+  /** Artifact config for the output this stage produces. */
+  artifact: ArtifactConfig;
   /** Artifacts required as inputs from previous stages. */
   inputs: string[];
   /** Whether this stage is automated (no human review required). */

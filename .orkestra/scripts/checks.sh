@@ -473,23 +473,24 @@ if $HAS_RUST; then
     # Acquire lock for cargo commands that use the shared target/ directory
     acquire_lock
 
-    # Invalidate cargo's mtime-based fingerprints for crates we're about to check.
+    # Invalidate cargo's mtime-based fingerprints for ALL workspace crates.
     # All worktrees share one target/ directory. Cargo considers a crate "Fresh" when
-    # every source file is older than the cached binary — but a binary compiled by
-    # worktree A is newer than worktree B's checkout, so cargo serves A's stale binary
-    # to B without recompiling. Touching the crate root forces cargo to see "Dirty" and
-    # rebuild. sccache still provides content-based cache hits, so unchanged files
-    # compile instantly — the only real cost is linking (~5-10s per affected crate).
+    # every source file is older than the cached binary — but binaries in the shared
+    # target may have been compiled by main (or another worktree) with different source.
+    # We touch ALL crate roots, not just AFFECTED_CRATES, because crates this worktree
+    # didn't touch may still have stale binaries from main that don't match this
+    # worktree's type definitions. sccache provides content-based cache hits so
+    # unchanged files compile instantly — the only real cost is linking (~5-10s total).
     #
     # IMPORTANT: This must happen INSIDE the lock. If touch runs before acquire_lock,
     # another worktree can compile between our touch and our cargo run, making its
     # binary newer than our touched source — cargo then sees "Fresh" and serves stale code.
     if [ -L "target" ]; then
-        for crate in "${AFFECTED_CRATES[@]}"; do
+        for crate in "${ALL_CRATES[@]}"; do
             touch "crates/$crate/src/lib.rs"
         done
-        $HAS_CLI && touch cli/src/main.rs
-        $HAS_TAURI && touch src-tauri/src/main.rs
+        touch cli/src/main.rs
+        touch src-tauri/src/main.rs
     fi
 
     # Run clippy with auto-fix, then verify no remaining warnings

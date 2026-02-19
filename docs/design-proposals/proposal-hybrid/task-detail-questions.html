@@ -24,6 +24,7 @@
   --accent-2:     #A63CB5;
   --accent-2-bg:  rgba(166, 60, 181, 0.08);
   --green:        #16A34A;
+  --green-dim:    #A0C8B0;
   --green-bg:     rgba(22, 163, 74, 0.06);
   --amber:        #D97706;
   --amber-bg:     rgba(217, 119, 6, 0.06);
@@ -150,9 +151,10 @@ body {
   text-align: center;
 }
 .sym-questions { color: var(--blue); }
-.sym-working   { color: var(--green); }
+.sym-working   { color: var(--amber); animation: symbol-pulse 2.5s ease-in-out infinite; }
+@keyframes symbol-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .sym-review    { color: var(--amber); }
-.sym-done      { color: var(--green); opacity: 0.45; }
+.sym-done      { color: var(--green-dim); }
 
 .task-info { min-width: 0; flex: 1; }
 .task-name {
@@ -193,7 +195,7 @@ body {
   flex-shrink: 0;
 }
 .detail-title {
-  font-size: 18px; font-weight: 600;
+  font-size: 18px; font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-0);
   margin-bottom: 10px;
@@ -214,7 +216,7 @@ body {
   letter-spacing: 0.02em;
 }
 .pipeline-stage.current { color: var(--blue); }
-.pipeline-stage.done    { color: var(--text-3); }
+.pipeline-stage.done    { color: var(--green-dim); }
 .pipeline-sep {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -238,7 +240,7 @@ body {
 .detail-content {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 32px 100px;
+  padding: 28px 32px 40px;
 }
 
 /* ============================================================================
@@ -356,17 +358,14 @@ body {
    Action bar
    ============================================================================ */
 .action-bar {
-  position: fixed;
-  bottom: 0;
-  right: 0;
-  left: 240px;
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 12px 32px;
+  padding: 0 24px;
+  height: 52px;
   background: var(--surface-1);
   border-top: 1px solid var(--border);
-  box-shadow: 0 -4px 16px rgba(28, 24, 32, 0.06);
+  flex-shrink: 0;
 }
 .btn-primary {
   padding: 8px 20px;
@@ -397,7 +396,7 @@ body {
   align-items: center;
   gap: 20px;
   padding: 0 20px;
-  height: 26px;
+  height: 28px;
   background: var(--surface-1);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
@@ -478,7 +477,7 @@ body {
         </div>
 
         <div class="task-row">
-          <span class="task-sym sym-review">~</span>
+          <span class="task-sym sym-review">&gt;</span>
           <div class="task-info">
             <div class="task-name">Add rate limiting to API</div>
             <div class="task-sub">review · iter 1</div>
@@ -553,13 +552,13 @@ body {
         <div class="pipeline-row">
           <span class="pipeline-stage current">PLN</span>
           <span class="pipeline-sep">→</span>
-          <span class="pipeline-stage done">tsk</span>
+          <span class="pipeline-stage">tsk</span>
           <span class="pipeline-sep">→</span>
-          <span class="pipeline-stage done">wrk</span>
+          <span class="pipeline-stage">wrk</span>
           <span class="pipeline-sep">→</span>
-          <span class="pipeline-stage done">chk</span>
+          <span class="pipeline-stage">chk</span>
           <span class="pipeline-sep">→</span>
-          <span class="pipeline-stage done">rvw</span>
+          <span class="pipeline-stage">rvw</span>
         </div>
 
         <div class="detail-status">

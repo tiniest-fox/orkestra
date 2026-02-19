@@ -1,4 +1,32 @@
 <!DOCTYPE html>
+<!--
+  PIPELINE APPROACH: Segment bars (not text shorthands).
+
+  Decision: We use 4px horizontal segment bars (`.row-pipe-seg`) in the pipeline
+  column, NOT the `pln → tsk → wrk` text shorthand approach.
+
+  Rationale:
+  - The bar communicates progress spatially — green fills from the left, amber marks
+    the active position, red marks failure. You read state in ~200ms without parsing text.
+  - Text shorthands require domain knowledge to decode (what is "chk"?). Bars are
+    self-explanatory: left = early stages, right = late stages, fill = done.
+  - Scanning the full feed, bars give immediate visual differentiation between rows.
+    Text shorthands make every row look nearly identical until your eye finds the
+    colored token — which defeats the purpose of at-a-glance legibility.
+  - The design brief is explicit: "the pipeline bar communicates where you were,
+    where you are, what comes next without opening anything." Bars do this at a glance.
+    Text does it adequately. This tool's identity demands more than adequate.
+  - The design system already defines `.row-pipe-seg` at 4px height / 20px width,
+    explicitly sized for feed row use. The infrastructure exists. Use it.
+
+  Stage name text is NOT shown beneath bars in the row context — there is insufficient
+  vertical space and the stage names add density without value at this zoom level.
+  Stage names appear only in the design-system reference and in the split-pane detail.
+
+  If you are reading this and considering switching back to text shorthands: don't.
+  If the bars feel too subtle, increase segment height to 5px or adjust gap — but
+  keep the bars.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -17,6 +45,7 @@
   --surface-3:        #EBE6F0;
   --surface-hover:    #F0ECF4;
   --border:           #E4DFE9;
+  --border-strong:    rgba(28, 24, 32, 0.18);
 
   --accent:           #E83558;
   --accent-hover:     #D42B4C;
@@ -68,9 +97,10 @@ body {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.35; }
 }
-@keyframes seg-pulse {
+
+@keyframes pipe-active-pulse {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
+  50%       { opacity: 0.50; }
 }
 
 /* ============================================================================
@@ -100,7 +130,6 @@ body {
   margin-right: 22px;
 }
 
-/* Metric group — counts in the top bar */
 .metrics {
   display: flex; align-items: center; gap: 4px;
   font-family: var(--font-mono);
@@ -108,22 +137,13 @@ body {
   color: var(--text-1);
 }
 
-.metric-sep {
-  color: var(--text-3);
-  margin: 0 2px;
-}
-
-.metric-val {
-  font-weight: 600;
-}
-
+.metric-sep   { color: var(--text-3); margin: 0 2px; }
+.metric-val   { font-weight: 600; }
 .metric-val.amber { color: var(--amber); }
 .metric-val.blue  { color: var(--blue); }
 .metric-val.green { color: var(--green); }
-
 .metric-label { color: var(--text-2); font-weight: 400; margin-left: 1px; }
 
-/* cmd+k badge */
 .kbd-badge {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -150,9 +170,7 @@ body {
   flex-shrink: 0;
 }
 
-.command-bar-left {
-  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
-}
+.command-bar-left  { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 
 .command-prompt {
   font-family: var(--font-mono);
@@ -181,19 +199,23 @@ body {
   flex-shrink: 0;
 }
 
-.command-branch { color: var(--accent); font-weight: 500; }
-.command-git-status { color: var(--text-3); }
+.command-branch      { color: var(--accent); font-weight: 500; }
+.command-git-status  { color: var(--text-3); }
 
 /* ============================================================================
    Feed
    ============================================================================ */
 .feed { flex: 1; overflow-y: auto; }
 
-.section { }
-
+/* ============================================================================
+   Section Headers
+   — accent color, uppercase monospace, small. Tight top gap, tighter bottom gap.
+     The header belongs to the rows below it — top spacing creates section separation,
+     bottom spacing draws the header toward its content.
+   ============================================================================ */
 .section-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 24px 6px;
+  padding: 20px 24px 5px;
   position: sticky; top: 0;
   background: var(--canvas);
   z-index: 10;
@@ -204,9 +226,9 @@ body {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.10em;
   text-transform: uppercase;
-  color: var(--text-2);
+  color: var(--accent);
 }
 
 .section-count {
@@ -216,38 +238,78 @@ body {
   color: var(--text-3);
   letter-spacing: 0;
   text-transform: none;
-  margin-left: 5px;
+  margin-left: 6px;
 }
 
 .section-divider {
   border: none;
   border-top: 1px solid var(--border);
-  margin: 8px 24px 0;
+  margin: 12px 24px 0;
 }
 
 /* ============================================================================
    Task Rows
+   — 4-column grid: symbol | title+id | pipeline-bar | actions
+     The pipeline column uses segment bars, not text. It stretches to fill available
+     space and the bars scale with the column width.
    ============================================================================ */
 .task-row {
   display: grid;
-  grid-template-columns: 18px minmax(0, 200px) 148px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 220px) 148px auto;
   gap: 16px;
   align-items: center;
   padding: 8px 24px;
   min-height: 40px;
   cursor: pointer;
-  transition: background 120ms;
+  transition: background 100ms;
   border-left: 2px solid transparent;
 }
 
 .task-row:hover { background: var(--surface-hover); }
 
+/* Selected / keyboard-focused row */
 .task-row.selected {
   background: var(--accent-bg);
   border-left-color: var(--accent);
 }
 
-/* Symbol column */
+/* Subtask rows — indented under parent */
+.task-row.subtask {
+  grid-template-columns: 18px minmax(0, 200px) 148px auto;
+  padding-left: 44px;   /* 24px base + 20px indent */
+  border-left: 2px solid transparent;
+  background: transparent;
+}
+.task-row.subtask:hover { background: var(--surface-hover); }
+
+/* Subtask indent glyph — rendered inside the symbol column */
+.subtask-indent {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+  line-height: 1;
+}
+
+/* Subtask summary line */
+.subtask-summary {
+  padding: 2px 24px 8px 44px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.subtask-summary-done   { color: var(--text-2); }
+.subtask-summary-pend   { color: var(--text-3); }
+
+/* Completed rows — recede visually */
+.task-row.completed { opacity: 0.38; }
+.task-row.completed:hover { opacity: 0.62; }
+
+/* ============================================================================
+   Symbol Column
+   ============================================================================ */
 .task-sym {
   font-family: var(--font-mono);
   font-size: 14px;
@@ -255,25 +317,23 @@ body {
   text-align: center;
   line-height: 1;
   flex-shrink: 0;
+  user-select: none;
 }
 
-.task-sym.amber  { color: var(--amber); }
-.task-sym.blue   { color: var(--blue); }
-.task-sym.red    { color: var(--red); }
-.task-sym.green  { color: var(--green); }
-.task-sym.muted  { color: var(--text-3); }
-
-/* Review symbol is slightly bolder to distinguish ">" from "*" at a glance */
-.task-sym.review {
-  color: var(--amber);
-  font-weight: 600;
-  /* Using letter-spacing to prevent identical weight from blending with active */
-  letter-spacing: -0.04em;
-}
+.task-sym.amber   { color: var(--amber); }
+.task-sym.blue    { color: var(--blue); }
+.task-sym.red     { color: var(--red); }
+.task-sym.accent  { color: var(--accent); }
+.task-sym.green   { color: var(--green); }
+.task-sym.green-dim { color: var(--green-dim); }
+.task-sym.muted   { color: var(--text-3); }
+.task-sym.accent-2 { color: var(--accent-2); }
 
 .task-sym.pulsing { animation: pulse-opacity 2.5s ease-in-out infinite; }
 
-/* Title column */
+/* ============================================================================
+   Title Column
+   ============================================================================ */
 .task-title-col {
   min-width: 0;
   display: flex;
@@ -304,134 +364,71 @@ body {
   line-height: 1;
 }
 
-/* Pipeline column */
+/* ============================================================================
+   Pipeline Column
+   — Horizontal segment bars. One bar per stage. Color encodes state.
+     Bars stretch to fill the column. 4px height. 2px gap between segments.
+     Active segment pulses. No labels in the row context.
+
+   States:
+     pending  — surface-3 (pale grey)
+     done     — green-dim (quiet success)
+     active   — amber, pulsing (in motion)
+     review   — amber, steady (awaiting user)
+     failed   — red (error)
+     dim      — surface-2 (stages after a failure, unreachable)
+     complete — green-dim (all done)
+     integration — accent-2 (system-autonomous final state)
+   ============================================================================ */
 .pipeline-col {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-width: 0;
 }
 
-.pipeline-segs {
-  display: flex;
-  gap: 2px;
-  flex: 1;
-}
-
-.seg {
-  flex: 1;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--surface-3);
-}
-
-/* Completed stages — desaturated sage, not bright green */
-.seg.done    { background: var(--green-dim); }
-
-/* Active stage — amber pulse for "in review / needs attention" */
-.seg.review  {
-  background: var(--amber);
-  animation: seg-pulse 1.8s ease-in-out infinite;
-}
-
-/* Working stage — green pulse for actively running agent */
-.seg.working {
-  background: var(--amber);
-  animation: seg-pulse 1.5s ease-in-out infinite;
-}
-
-/* Failed stage — solid red, no downstream */
-.seg.failed  { background: var(--red); }
-
-/* Queued/idle — slightly lighter than default surface */
-.seg.queued  { background: var(--surface-3); }
-
-/* All complete — full bright green */
-.seg.complete { background: var(--green-dim); }
-
-.pipeline-stage-label {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-  color: var(--text-2);
-  min-width: 42px;
-  text-align: right;
-}
-
-.pipeline-stage-label.amber  { color: var(--amber); }
-.pipeline-stage-label.red    { color: var(--red); }
-.pipeline-stage-label.blue   { color: var(--blue); }
-.pipeline-stage-label.green  { color: var(--green-dim); }
-.pipeline-stage-label.muted  { color: var(--text-3); }
-
-/* Activity / status text column */
-.task-activity {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  line-height: 1.4;
-}
-
-.task-activity.live {
-  color: var(--text-1);
-}
-
-/* Live dot before activity text */
-.task-activity.live::before {
-  content: '';
-  display: inline-block;
-  width: 5px; height: 5px;
-  border-radius: 50%;
-  background: var(--green);
-  margin-right: 6px;
-  vertical-align: middle;
-  position: relative;
-  top: -1px;
-  animation: pulse-opacity 2.5s ease-in-out infinite;
-}
-
-.task-activity.error     { color: var(--red); }
-.task-activity.attention { color: var(--amber); }
-.task-activity.question  { color: var(--blue); }
-
-/* Subtask progress row — uses accent-2 for the in-progress fill */
-.subtask-inline {
+/* The bar container — stretches to fill the column */
+.pipe-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-2);
+  gap: 2px;
+  width: 100%;
 }
 
-.subtask-bar {
-  width: 60px; height: 3px;
-  background: var(--surface-3);
+/* Individual segment — fixed height, flex-grow so all segments share width equally */
+.ps {
+  height: 4px;
+  flex: 1;
   border-radius: 2px;
-  overflow: hidden;
-  display: flex;
+  min-width: 12px;
+}
+
+/* Segment states */
+.ps--pending  { background: var(--surface-3); }
+.ps--done     { background: var(--green-dim); }
+.ps--active   { background: var(--amber); animation: pipe-active-pulse 1.5s ease-in-out infinite; }
+.ps--review   { background: var(--amber); }
+.ps--failed   { background: var(--red); }
+.ps--dim      { background: var(--surface-3); opacity: 0.45; }
+.ps--complete { background: var(--green-dim); }
+.ps--integration { background: var(--accent-2); }
+
+/* Iteration badge — shown beside the pipeline bar when iteration count is notable */
+.pipe-iter {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  margin-left: 8px;
   flex-shrink: 0;
+  white-space: nowrap;
 }
+.pipe-iter.neutral { color: var(--text-2); }
+.pipe-iter.amber   { color: var(--amber); }
 
-.subtask-fill-done {
-  height: 100%;
-  background: var(--green-dim);
-}
-
-.subtask-fill-active {
-  height: 100%;
-  background: var(--accent-2);
-  animation: pulse-opacity 2.5s ease-in-out infinite;
-}
-
-/* Actions column */
+/* ============================================================================
+   Actions Column
+   — Outlined rectangle buttons. No pill. No fill. No radius > 6px.
+     Keyboard hints ONLY on the selected/focused row.
+   ============================================================================ */
 .task-actions {
   display: flex;
   align-items: center;
@@ -439,65 +436,72 @@ body {
   flex-shrink: 0;
 }
 
-/* Pill action buttons — no keyboard hints on per-row buttons */
-.btn-action {
+.btn-row {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   font-family: var(--font-ui);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 3px 10px;
-  border-radius: 20px;
+  padding: 4px 10px;
+  border-radius: 6px;
   border: 1px solid var(--border);
   cursor: pointer;
   background: transparent;
-  color: var(--text-1);
-  transition: background 120ms, border-color 120ms, color 120ms;
+  color: var(--text-0);
+  transition: background 80ms, border-color 80ms, color 80ms;
   white-space: nowrap;
+  line-height: 1.4;
+}
+
+.btn-row:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
+/* Review / Approve — accent border + text */
+.btn-row.review {
+  border-color: rgba(232, 53, 88, 0.40);
+  color: var(--accent);
+}
+.btn-row.review:hover { background: var(--accent-bg); border-color: var(--accent); }
+
+/* Answer — blue border + text */
+.btn-row.answer {
+  border-color: rgba(37, 99, 235, 0.35);
+  color: var(--blue);
+}
+.btn-row.answer:hover { background: var(--blue-bg); border-color: var(--blue); }
+
+/* Retry — red border + text */
+.btn-row.retry {
+  border-color: rgba(220, 38, 38, 0.35);
+  color: var(--red);
+}
+.btn-row.retry:hover { background: var(--red-bg); border-color: var(--red); }
+
+/* Neutral secondary — border only, text-1 */
+.btn-row.secondary {
+  border-color: var(--border);
+  color: var(--text-1);
+}
+.btn-row.secondary:hover { background: var(--surface-3); color: var(--text-0); }
+
+/* Keyboard hint — inside button, only shown on focused row */
+.btn-kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: inherit;
+  opacity: 0.55;
+  background: rgba(28, 24, 32, 0.06);
+  border-radius: 3px;
+  padding: 0 3px;
   line-height: 1.5;
   letter-spacing: 0;
 }
 
-.btn-action:hover { background: var(--surface-3); }
-
-/* Approve — accent (pink-red) */
-.btn-action.approve {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.btn-action.approve:hover {
-  background: var(--accent-bg);
-}
-
-/* Answer — blue */
-.btn-action.answer {
-  border-color: rgba(37, 99, 235, 0.35);
-  color: var(--blue);
-}
-.btn-action.answer:hover {
-  background: var(--blue-bg);
-}
-
-/* Retry — red */
-.btn-action.retry {
-  border-color: rgba(220, 38, 38, 0.35);
-  color: var(--red);
-}
-.btn-action.retry:hover {
-  background: var(--red-bg);
-}
-
-/* Reject — neutral, secondary */
-.btn-action.reject {
-  border-color: var(--border);
-  color: var(--text-2);
-}
-.btn-action.reject:hover {
-  background: var(--surface-3);
-  color: var(--text-1);
-}
-
-/* Elapsed time / timestamp label */
+/* Status-only badges (time, PR, etc.) */
 .task-time {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -505,20 +509,12 @@ body {
   white-space: nowrap;
 }
 
-/* PR link text */
 .task-pr {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-3);
 }
-
-.task-pr span {
-  color: var(--text-2);
-}
-
-/* Completed section — dimmed */
-.task-row.completed { opacity: 0.42; }
-.task-row.completed:hover { opacity: 0.68; }
+.task-pr span { color: var(--text-2); }
 
 /* ============================================================================
    Status Line
@@ -546,17 +542,6 @@ body {
 .status-branch { color: var(--accent); font-weight: 500; }
 .status-sep    { color: var(--border); }
 
-.status-line kbd {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 500;
-  color: var(--text-2);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0 4px;
-  line-height: 1.7;
-}
 </style>
 </head>
 <body>
@@ -568,16 +553,18 @@ body {
   <div class="top-bar">
     <div class="top-bar-left">
       <span class="app-name">Orkestra</span>
-
       <div class="metrics">
         <span class="metric-val amber">3</span>
-        <span class="metric-label">active</span>
+        <span class="metric-label">working</span>
         <span class="metric-sep">&middot;</span>
-        <span class="metric-val amber">2</span>
+        <span class="metric-val accent" style="color: var(--accent);">2</span>
         <span class="metric-label">review</span>
         <span class="metric-sep">&middot;</span>
         <span class="metric-val blue">1</span>
         <span class="metric-label">questions</span>
+        <span class="metric-sep">&middot;</span>
+        <span class="metric-val" style="color: var(--accent-2);">1</span>
+        <span class="metric-label">integrating</span>
       </div>
     </div>
     <div class="top-bar-right">
@@ -595,7 +582,7 @@ body {
     </div>
     <div class="command-bar-right">
       <span class="command-branch">feat/design-system-v2</span>
-      <span class="command-git-status">+2 &minus;0</span>
+      <span class="command-git-status">+3 &minus;0</span>
     </div>
   </div>
 
@@ -605,86 +592,69 @@ body {
   <div class="feed">
 
     <!-- ======================================================================
-         NEEDS ATTENTION
+         NEEDS REVIEW
          ====================================================================== -->
     <div class="section">
       <div class="section-header">
         <span>
-          <span class="section-title">Needs Attention</span>
-          <span class="section-count">(3)</span>
+          <span class="section-title">Needs Review</span>
+          <span class="section-count">(2)</span>
         </span>
       </div>
 
-      <!-- auth-middleware-refactor — in review -->
+      <!--
+        auth-middleware-refactor — review stage, iteration 3 (neutral suffix).
+        This is the FOCUSED row. Keyboard hints shown on buttons only here.
+        Pipeline: plan done, breakdown done, work done, checks done, REVIEW active, compound pending.
+      -->
       <div class="task-row selected">
-        <span class="task-sym review">&gt;</span>
+        <span class="task-sym accent">&gt;</span>
         <div class="task-title-col">
           <span class="task-title">auth-middleware-refactor</span>
-          <span class="task-id">swift-copper-heron &middot; it.2</span>
+          <span class="task-id">swift-copper-heron</span>
         </div>
         <div class="pipeline-col">
-          <div class="pipeline-segs">
-            <div class="seg done" title="Plan"></div>
-            <div class="seg done" title="Breakdown"></div>
-            <div class="seg done" title="Work"></div>
-            <div class="seg done" title="Checks"></div>
-            <div class="seg review" title="Review"></div>
-            <div class="seg" title="Compound"></div>
+          <div class="pipe-row">
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--review"></div>
+            <div class="ps ps--pending"></div>
           </div>
-          <span class="pipeline-stage-label amber">Review</span>
+          <span class="pipe-iter neutral">&middot;3</span>
         </div>
-        <div class="task-activity attention">Review plan ready &mdash; 7 changes across 4 files</div>
         <div class="task-actions">
-          <button class="btn-action approve">Approve</button>
-          <button class="btn-action reject">Reject</button>
+          <button class="btn-row review"><span class="btn-kbd">R</span> Review</button>
+          <button class="btn-row secondary"><span class="btn-kbd">X</span> Reject</button>
         </div>
       </div>
 
-      <!-- ci-pipeline-fix — checks failed -->
-      <div class="task-row">
-        <span class="task-sym red">!</span>
-        <div class="task-title-col">
-          <span class="task-title">ci-pipeline-fix</span>
-          <span class="task-id">quiet-silver-wren &middot; it.1</span>
-        </div>
-        <div class="pipeline-col">
-          <div class="pipeline-segs">
-            <div class="seg done" title="Plan"></div>
-            <div class="seg done" title="Breakdown"></div>
-            <div class="seg done" title="Work"></div>
-            <div class="seg failed" title="Checks"></div>
-            <div class="seg" title="Review"></div>
-            <div class="seg" title="Compound"></div>
-          </div>
-          <span class="pipeline-stage-label red">Checks</span>
-        </div>
-        <div class="task-activity error">3 test failures &mdash; auth::middleware::token_expiry</div>
-        <div class="task-actions">
-          <button class="btn-action retry">Retry</button>
-        </div>
-      </div>
-
-      <!-- database-schema-update — questions waiting -->
+      <!--
+        database-schema-update — planning stage with questions. Needs user input. Iteration 2.
+        Agent asked questions on its first pass; user answered; agent is now on a second planning
+        iteration with follow-up questions. ·2 in neutral — second pass, not yet alarming.
+        Pipeline: PLAN active (questions), breakdown pending, work pending, checks pending, review pending, compound pending.
+      -->
       <div class="task-row">
         <span class="task-sym blue">?</span>
         <div class="task-title-col">
           <span class="task-title">database-schema-update</span>
-          <span class="task-id">calm-amber-finch &middot; it.1</span>
+          <span class="task-id">calm-amber-finch</span>
         </div>
         <div class="pipeline-col">
-          <div class="pipeline-segs">
-            <div class="seg working" title="Plan"></div>
-            <div class="seg" title="Breakdown"></div>
-            <div class="seg" title="Work"></div>
-            <div class="seg" title="Checks"></div>
-            <div class="seg" title="Review"></div>
-            <div class="seg" title="Compound"></div>
+          <div class="pipe-row">
+            <div class="ps ps--review"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
           </div>
-          <span class="pipeline-stage-label blue">Planning</span>
+          <span class="pipe-iter neutral">&middot;2</span>
         </div>
-        <div class="task-activity question">2 questions waiting for your input</div>
         <div class="task-actions">
-          <button class="btn-action answer">Answer</button>
+          <button class="btn-row answer">Answer</button>
         </div>
       </div>
 
@@ -692,89 +662,87 @@ body {
     </div>
 
     <!-- ======================================================================
-         ACTIVE
+         IN PROGRESS
          ====================================================================== -->
     <div class="section">
       <div class="section-header">
         <span>
-          <span class="section-title">Active</span>
+          <span class="section-title">In Progress</span>
           <span class="section-count">(4)</span>
         </span>
       </div>
 
-      <!-- user-settings-page — work stage, agent running -->
+      <!--
+        user-settings-page — work stage, agent running. Iteration 2 (rejected once, retrying).
+        ·2 shown in neutral (text-2) — second iteration, noting but not alarming.
+        Pipeline: plan done, breakdown done, WORK active, checks pending, review pending, compound pending.
+      -->
       <div class="task-row">
         <span class="task-sym amber pulsing">*</span>
         <div class="task-title-col">
           <span class="task-title">user-settings-page</span>
-          <span class="task-id">bold-jade-osprey &middot; it.1</span>
+          <span class="task-id">bold-jade-osprey</span>
         </div>
         <div class="pipeline-col">
-          <div class="pipeline-segs">
-            <div class="seg done" title="Plan"></div>
-            <div class="seg done" title="Breakdown"></div>
-            <div class="seg working" title="Work"></div>
-            <div class="seg" title="Checks"></div>
-            <div class="seg" title="Review"></div>
-            <div class="seg" title="Compound"></div>
+          <div class="pipe-row">
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--active"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
           </div>
-          <span class="pipeline-stage-label amber">Work</span>
+          <span class="pipe-iter neutral">&middot;2</span>
         </div>
-        <div class="task-activity live">Reading src/components/Settings.tsx</div>
         <div class="task-actions">
           <span class="task-time">4m 17s</span>
         </div>
       </div>
 
-      <!-- api-rate-limiting — planning stage, agent running -->
+      <!--
+        api-rate-limiting — planning stage, agent running. Iteration 1.
+        Pipeline: PLAN active, breakdown pending, work pending, checks pending, review pending, compound pending.
+      -->
       <div class="task-row">
         <span class="task-sym amber pulsing">*</span>
         <div class="task-title-col">
           <span class="task-title">api-rate-limiting</span>
-          <span class="task-id">warm-teal-crane &middot; it.1</span>
+          <span class="task-id">warm-teal-crane</span>
         </div>
         <div class="pipeline-col">
-          <div class="pipeline-segs">
-            <div class="seg working" title="Plan"></div>
-            <div class="seg" title="Breakdown"></div>
-            <div class="seg" title="Work"></div>
-            <div class="seg" title="Checks"></div>
-            <div class="seg" title="Review"></div>
-            <div class="seg" title="Compound"></div>
+          <div class="pipe-row">
+            <div class="ps ps--active"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
           </div>
-          <span class="pipeline-stage-label amber">Planning</span>
         </div>
-        <div class="task-activity live">Analyzing requirements and existing middleware</div>
         <div class="task-actions">
           <span class="task-time">1m 42s</span>
         </div>
       </div>
 
-      <!-- test-infrastructure — waiting on subtasks (accent-2 indicator) -->
+      <!--
+        test-infrastructure — waiting on subtasks. Two subtasks nested below.
+        Parent shows no action buttons — subtasks are the actionable things.
+        Pipeline: plan done, breakdown done, WORK active (waiting on children), checks pending, review pending, compound pending.
+      -->
       <div class="task-row">
         <span class="task-sym amber pulsing">*</span>
         <div class="task-title-col">
           <span class="task-title">test-infrastructure</span>
-          <span class="task-id">keen-rose-falcon &middot; it.1</span>
+          <span class="task-id">keen-rose-falcon</span>
         </div>
         <div class="pipeline-col">
-          <div class="pipeline-segs">
-            <div class="seg done" title="Plan"></div>
-            <div class="seg done" title="Breakdown"></div>
-            <div class="seg working" title="Work"></div>
-            <div class="seg" title="Checks"></div>
-            <div class="seg" title="Review"></div>
-            <div class="seg" title="Compound"></div>
-          </div>
-          <span class="pipeline-stage-label amber">Work</span>
-        </div>
-        <div class="task-activity">
-          <div class="subtask-inline">
-            <div class="subtask-bar">
-              <div class="subtask-fill-done" style="width: 50%;"></div>
-              <div class="subtask-fill-active" style="width: 25%;"></div>
-            </div>
-            <span>2 / 4 subtasks complete</span>
+          <div class="pipe-row">
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--active"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
           </div>
         </div>
         <div class="task-actions">
@@ -782,92 +750,179 @@ body {
         </div>
       </div>
 
-      <!-- email-notification-refactor — queued/idle -->
-      <div class="task-row">
-        <span class="task-sym muted">~</span>
+      <!-- Subtask 1 — working. Quick flow: plan, work, checks, review (4 stages). -->
+      <div class="task-row subtask">
+        <span class="subtask-indent">&#8627;</span>
         <div class="task-title-col">
-          <span class="task-title">email-notification-refactor</span>
-          <span class="task-id">still-grey-lark &middot; it.1</span>
+          <span class="task-title">Migrate test fixtures to factory pattern</span>
+          <span class="task-id">pale-mint-hare</span>
         </div>
         <div class="pipeline-col">
-          <div class="pipeline-segs">
-            <div class="seg queued" title="Plan"></div>
-            <div class="seg queued" title="Breakdown"></div>
-            <div class="seg queued" title="Work"></div>
-            <div class="seg queued" title="Checks"></div>
-            <div class="seg queued" title="Review"></div>
-            <div class="seg queued" title="Compound"></div>
+          <div class="pipe-row">
+            <div class="ps ps--done"></div>
+            <div class="ps ps--active"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
           </div>
-          <span class="pipeline-stage-label muted">Queued</span>
         </div>
-        <div class="task-activity" style="color: var(--text-3);">Waiting for agent slot</div>
-        <div class="task-actions"></div>
+        <div class="task-actions">
+          <span class="task-time">6m 41s</span>
+        </div>
+      </div>
+
+      <!-- Subtask 2 — blocked/idle. Quick flow: plan, work, checks, review (4 stages). -->
+      <div class="task-row subtask">
+        <span class="subtask-indent">&#8627;</span>
+        <div class="task-title-col">
+          <span class="task-title">Add integration test coverage for API endpoints</span>
+          <span class="task-id">dusk-grey-moth</span>
+        </div>
+        <div class="pipeline-col">
+          <div class="pipe-row">
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+            <div class="ps ps--pending"></div>
+          </div>
+        </div>
+        <div class="task-actions">
+          <span class="task-time" style="color: var(--text-3);">blocked</span>
+        </div>
+      </div>
+
+      <!-- Subtask summary line — sits flush under the last subtask row -->
+      <div class="subtask-summary">
+        <span class="subtask-summary-done">1 working</span>
+        &nbsp;&nbsp;
+        <span class="subtask-summary-pend">1 pending</span>
+      </div>
+
+      <!--
+        ci-pipeline-fix — checks failed, iteration 4 (amber suffix = high iteration count).
+        Pipeline: plan done, breakdown done, work done, CHECKS failed, review dim, compound dim.
+      -->
+      <div class="task-row">
+        <span class="task-sym red">!</span>
+        <div class="task-title-col">
+          <span class="task-title">ci-pipeline-fix</span>
+          <span class="task-id">quiet-silver-wren</span>
+        </div>
+        <div class="pipeline-col">
+          <div class="pipe-row">
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--failed"></div>
+            <div class="ps ps--dim"></div>
+            <div class="ps ps--dim"></div>
+          </div>
+          <span class="pipe-iter amber">&middot;4</span>
+        </div>
+        <div class="task-actions">
+          <button class="btn-row retry">Retry</button>
+        </div>
       </div>
 
       <hr class="section-divider">
     </div>
 
     <!-- ======================================================================
-         COMPLETED TODAY
+         AWAITING INTEGRATION
          ====================================================================== -->
     <div class="section">
       <div class="section-header">
         <span>
-          <span class="section-title">Completed Today</span>
+          <span class="section-title">Awaiting Integration</span>
+          <span class="section-count">(1)</span>
+        </span>
+      </div>
+
+      <!--
+        email-notification-refactor — all stages complete, waiting to merge.
+        Diamond symbol in accent-2 (purple) = system-autonomous state.
+        Pipeline: plan done, breakdown done, work done, checks done, review done, INTEGRATION active.
+      -->
+      <div class="task-row">
+        <span class="task-sym accent-2">&#9671;</span>
+        <div class="task-title-col">
+          <span class="task-title">email-notification-refactor</span>
+          <span class="task-id">still-grey-lark</span>
+        </div>
+        <div class="pipeline-col">
+          <div class="pipe-row">
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--done"></div>
+            <div class="ps ps--integration"></div>
+          </div>
+        </div>
+        <div class="task-actions">
+          <button class="btn-row secondary">Create PR</button>
+          <button class="btn-row secondary">Merge</button>
+        </div>
+      </div>
+
+      <hr class="section-divider">
+    </div>
+
+    <!-- ======================================================================
+         COMPLETED
+         ====================================================================== -->
+    <div class="section">
+      <div class="section-header">
+        <span>
+          <span class="section-title">Completed</span>
           <span class="section-count">(2)</span>
         </span>
       </div>
 
-      <!-- database-migration — done, PR merged -->
+      <!-- database-migration — done, PR merged. All segments complete. -->
       <div class="task-row completed">
-        <span class="task-sym green">.</span>
+        <span class="task-sym green-dim">.</span>
         <div class="task-title-col">
           <span class="task-title">database-migration</span>
           <span class="task-id">gentle-swift-puma</span>
         </div>
         <div class="pipeline-col">
-          <div class="pipeline-segs">
-            <div class="seg complete" title="Plan"></div>
-            <div class="seg complete" title="Breakdown"></div>
-            <div class="seg complete" title="Work"></div>
-            <div class="seg complete" title="Checks"></div>
-            <div class="seg complete" title="Review"></div>
-            <div class="seg complete" title="Compound"></div>
+          <div class="pipe-row">
+            <div class="ps ps--complete"></div>
+            <div class="ps ps--complete"></div>
+            <div class="ps ps--complete"></div>
+            <div class="ps ps--complete"></div>
+            <div class="ps ps--complete"></div>
+            <div class="ps ps--complete"></div>
           </div>
-          <span class="pipeline-stage-label green">Done</span>
         </div>
-        <div class="task-activity">Done &middot; 12:34 &middot; PR #47 merged</div>
         <div class="task-actions">
-          <span class="task-pr"><span>+312 &minus;14</span></span>
+          <span class="task-pr"><span>+312 &minus;14</span> &middot; PR #47</span>
         </div>
       </div>
 
-      <!-- fix-auth-token-refresh — done -->
+      <!-- fix-auth-token-refresh — done. All segments complete. -->
       <div class="task-row completed">
-        <span class="task-sym green">.</span>
+        <span class="task-sym green-dim">.</span>
         <div class="task-title-col">
           <span class="task-title">fix-auth-token-refresh</span>
           <span class="task-id">brisk-calm-wren</span>
         </div>
         <div class="pipeline-col">
-          <div class="pipeline-segs">
-            <div class="seg complete" title="Plan"></div>
-            <div class="seg complete" title="Breakdown"></div>
-            <div class="seg complete" title="Work"></div>
-            <div class="seg complete" title="Checks"></div>
-            <div class="seg complete" title="Review"></div>
-            <div class="seg complete" title="Compound"></div>
+          <div class="pipe-row">
+            <div class="ps ps--complete"></div>
+            <div class="ps ps--complete"></div>
+            <div class="ps ps--complete"></div>
+            <div class="ps ps--complete"></div>
+            <div class="ps ps--complete"></div>
+            <div class="ps ps--complete"></div>
           </div>
-          <span class="pipeline-stage-label green">Done</span>
         </div>
-        <div class="task-activity">Done &middot; 10:15 &middot; 3 files changed</div>
         <div class="task-actions">
           <span class="task-pr"><span>+18 &minus;6</span></span>
         </div>
       </div>
 
     </div>
-    <!-- end feed sections -->
 
   </div>
   <!-- end feed -->
@@ -878,15 +933,13 @@ body {
   <div class="status-line">
     <div class="status-left">
       <span class="status-branch">main</span>
-      <span>+2 &minus;0</span>
+      <span>+3 &minus;0</span>
       <span class="status-sep">&middot;</span>
       <span>4 agents</span>
     </div>
     <div class="status-right">
-      <span><kbd>j</kbd> <kbd>k</kbd> navigate</span>
-      <span><kbd>enter</kbd> focus</span>
-      <span><kbd>a</kbd> approve</span>
-      <span><kbd>ctrl+\</kbd> split</span>
+      <span>enter focus</span>
+      <span>&uarr;&darr; navigate</span>
     </div>
   </div>
 

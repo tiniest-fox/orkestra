@@ -23,6 +23,7 @@
   --accent-2:       #A63CB5;
   --accent-2-bg:    rgba(166, 60, 181, 0.08);
   --green:          #16A34A;
+  --green-dim:      #A0C8B0;
   --green-bg:       rgba(22, 163, 74, 0.06);
   --amber:          #D97706;
   --amber-bg:       rgba(217, 119, 6, 0.06);
@@ -36,6 +37,10 @@
   --font-ui:        'IBM Plex Sans', system-ui, sans-serif;
   --font-mono:      'IBM Plex Mono', monospace;
   --shadow-sm:      0 1px 3px rgba(28, 24, 32, 0.08), 0 1px 2px rgba(28, 24, 32, 0.05);
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 }
 
 html { font-size: 16px; -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
@@ -67,9 +72,8 @@ body {
 .top-bar-right { display: flex; align-items: center; gap: 16px; }
 
 .app-name {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.10em;
-  text-transform: uppercase; color: var(--text-0); user-select: none;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui); font-size: 13px; font-weight: 700;
+  letter-spacing: -0.02em; color: var(--text-0); user-select: none;
 }
 
 .top-bar-metric { display: flex; align-items: center; gap: 6px; }
@@ -88,7 +92,7 @@ body {
 /* ============================================================================
    Left Pane — Task List
    ============================================================================ */
-.task-list-pane {
+.split-left {
   width: 240px;
   flex-shrink: 0;
   background: var(--surface-1);
@@ -98,48 +102,65 @@ body {
   overflow: hidden;
 }
 
-.task-list-header {
-  padding: 10px 14px 8px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+.split-left-scroll {
+  overflow-y: auto;
+  flex: 1;
+  padding: 12px 0;
 }
-.task-list-header-label {
-  font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--text-3); font-family: var(--font-mono);
-}
+.split-left-scroll::-webkit-scrollbar { width: 4px; }
+.split-left-scroll::-webkit-scrollbar-track { background: transparent; }
+.split-left-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-.task-list-scroll { overflow-y: auto; flex: 1; }
-.task-list-scroll::-webkit-scrollbar { width: 4px; }
-.task-list-scroll::-webkit-scrollbar-track { background: transparent; }
-.task-list-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.left-section { margin-bottom: 8px; }
+.left-section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 14px; margin-bottom: 2px;
+}
+.left-section-title {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-2);
+}
+.left-section-count { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); }
 
 .task-row {
-  display: flex; flex-direction: column; gap: 3px;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px;
   cursor: pointer;
+  transition: background 80ms;
   position: relative;
 }
 .task-row:hover { background: var(--surface-hover); }
-
-.task-row.selected {
-  background: var(--accent-bg);
-  border-left: 2px solid var(--accent);
-  padding-left: 12px;
+.task-row.active { background: var(--accent-bg); }
+.task-row.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--accent);
 }
 
-.task-row-title {
-  font-size: 12px; font-weight: 500; color: var(--text-0);
-  line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.task-sym {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  width: 16px; flex-shrink: 0; text-align: center;
 }
-.task-row.selected .task-row-title { color: var(--text-0); }
+.sym-working { color: var(--amber); animation: symbol-pulse 2.5s ease-in-out infinite; }
+@keyframes symbol-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.sym-review  { color: var(--amber); }
+.sym-done    { color: var(--green-dim); }
+.sym-idle    { color: var(--text-3); }
 
-.task-row-meta { display: flex; align-items: center; gap: 6px; }
-.task-row-stage {
-  font-size: 10px; font-family: var(--font-mono);
-  color: var(--text-2);
+.task-info { min-width: 0; flex: 1; }
+.task-name {
+  font-family: var(--font-ui); font-size: 12px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-0);
 }
-.task-row-status-dot { width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0; }
+.task-sub { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 1px; }
+.task-badge {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+  padding: 1px 5px; border-radius: 3px; white-space: nowrap; flex-shrink: 0;
+}
+.badge-review   { background: var(--amber-bg); color: var(--amber); }
+.badge-done     { background: var(--green-bg); color: var(--green); }
 
 /* ============================================================================
    Right Pane — Task Detail
@@ -154,7 +175,7 @@ body {
 
 /* Header */
 .detail-header {
-  padding: 16px 24px 12px;
+  padding: 24px 32px 20px;
   background: var(--surface-1);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -171,7 +192,8 @@ body {
   margin-bottom: 6px;
   display: flex; align-items: center; gap: 4px;
 }
-.pipeline-stage { color: var(--text-2); }
+.pipeline-stage { color: var(--text-3); }
+.pipeline-stage.done    { color: var(--green-dim); }
 .pipeline-stage.current { color: var(--amber); font-weight: 700; }
 .pipeline-sep { color: var(--text-3); }
 
@@ -297,7 +319,7 @@ body {
    ============================================================================ */
 .action-bar {
   display: flex; align-items: center; gap: 10px;
-  padding: 0 20px; height: 48px;
+  padding: 0 24px; height: 52px;
   background: var(--surface-1);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
@@ -309,7 +331,7 @@ body {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 11px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   background: transparent;
   font-family: var(--font-ui); font-size: 12px; font-weight: 500;
   color: var(--text-1);
@@ -325,7 +347,7 @@ body {
 .link-accent {
   font-size: 12px; font-weight: 500; color: var(--accent);
   text-decoration: none; padding: 5px 8px;
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   transition: background 0.1s;
 }
 .link-accent:hover { background: var(--accent-bg); }
@@ -333,7 +355,7 @@ body {
 .auto-toggle {
   display: flex; align-items: center; gap: 7px;
   padding: 4px 10px;
-  border-radius: 5px;
+  border-radius: var(--radius-md);
   background: var(--accent-2-bg);
   border: 1px solid rgba(166, 60, 181, 0.18);
   cursor: pointer;
@@ -405,65 +427,80 @@ body {
   <div class="main">
 
     <!-- Left Pane -->
-    <div class="task-list-pane">
-      <div class="task-list-header">
-        <span class="task-list-header-label">Tasks</span>
-      </div>
-      <div class="task-list-scroll">
+    <div class="split-left">
+      <div class="split-left-scroll">
 
-        <div class="task-row selected">
-          <div class="task-row-title">Refactor authentication middleware</div>
-          <div class="task-row-meta">
-            <div class="task-row-status-dot" style="background: var(--amber);"></div>
-            <span class="task-row-stage">work · iter 1</span>
+        <!-- Active section -->
+        <div class="left-section">
+          <div class="left-section-header">
+            <span class="left-section-title">Active</span>
+            <span class="left-section-count">3</span>
+          </div>
+
+          <div class="task-row active">
+            <span class="task-sym sym-working">*</span>
+            <div class="task-info">
+              <div class="task-name">Refactor authentication middleware</div>
+              <div class="task-sub">work · iter 1</div>
+            </div>
+          </div>
+
+          <div class="task-row">
+            <span class="task-sym sym-working">*</span>
+            <div class="task-info">
+              <div class="task-name">Migrate user sessions to Redis</div>
+              <div class="task-sub">work · iter 1</div>
+            </div>
+          </div>
+
+          <div class="task-row">
+            <span class="task-sym sym-working">*</span>
+            <div class="task-info">
+              <div class="task-name">Add OpenTelemetry tracing spans</div>
+              <div class="task-sub">work · iter 1</div>
+            </div>
           </div>
         </div>
 
-        <div class="task-row">
-          <div class="task-row-title">Add rate limiting to API endpoints</div>
-          <div class="task-row-meta">
-            <div class="task-row-status-dot" style="background: var(--accent);"></div>
-            <span class="task-row-stage">review · iter 2</span>
+        <!-- Needs Attention section -->
+        <div class="left-section">
+          <div class="left-section-header">
+            <span class="left-section-title">Needs Attention</span>
+            <span class="left-section-count">2</span>
+          </div>
+
+          <div class="task-row">
+            <span class="task-sym sym-review">&gt;</span>
+            <div class="task-info">
+              <div class="task-name">Add rate limiting to API endpoints</div>
+              <div class="task-sub">review · iter 2</div>
+            </div>
+            <span class="task-badge badge-review">rvw</span>
+          </div>
+
+          <div class="task-row">
+            <span class="task-sym sym-review">&gt;</span>
+            <div class="task-info">
+              <div class="task-name">Fix pagination on /api/events</div>
+              <div class="task-sub">review · iter 1</div>
+            </div>
+            <span class="task-badge badge-review">rvw</span>
           </div>
         </div>
 
-        <div class="task-row">
-          <div class="task-row-title">Migrate user sessions to Redis</div>
-          <div class="task-row-meta">
-            <div class="task-row-status-dot" style="background: var(--amber);"></div>
-            <span class="task-row-stage">work · iter 1</span>
+        <!-- Done section -->
+        <div class="left-section">
+          <div class="left-section-header">
+            <span class="left-section-title">Done</span>
+            <span class="left-section-count">1</span>
           </div>
-        </div>
 
-        <div class="task-row">
-          <div class="task-row-title">Fix pagination on /api/events</div>
-          <div class="task-row-meta">
-            <div class="task-row-status-dot" style="background: var(--accent);"></div>
-            <span class="task-row-stage">review · iter 1</span>
-          </div>
-        </div>
-
-        <div class="task-row">
-          <div class="task-row-title">Extract shared validation helpers</div>
-          <div class="task-row-meta">
-            <div class="task-row-status-dot" style="background: var(--green);"></div>
-            <span class="task-row-stage">integrating</span>
-          </div>
-        </div>
-
-        <div class="task-row">
-          <div class="task-row-title">Add OpenTelemetry tracing spans</div>
-          <div class="task-row-meta">
-            <div class="task-row-status-dot" style="background: var(--amber);"></div>
-            <span class="task-row-stage">work · iter 1</span>
-          </div>
-        </div>
-
-        <div class="task-row">
-          <div class="task-row-title">Deprecate legacy /v1 token endpoint</div>
-          <div class="task-row-meta">
-            <div class="task-row-status-dot" style="background: var(--text-3);"></div>
-            <span class="task-row-stage">planning</span>
+          <div class="task-row" style="opacity:0.45;">
+            <span class="task-sym sym-done">.</span>
+            <div class="task-info">
+              <div class="task-name">Extract shared validation helpers</div>
+              <div class="task-sub">merged · 1h ago</div>
+            </div>
           </div>
         </div>
 
@@ -477,9 +514,9 @@ body {
       <div class="detail-header">
         <div class="detail-title">Refactor authentication middleware</div>
         <div class="pipeline-breadcrumb">
-          <span class="pipeline-stage">pln</span>
+          <span class="pipeline-stage done">pln</span>
           <span class="pipeline-sep"> → </span>
-          <span class="pipeline-stage">tsk</span>
+          <span class="pipeline-stage done">tsk</span>
           <span class="pipeline-sep"> → </span>
           <span class="pipeline-stage current">WRK</span>
           <span class="pipeline-sep"> → </span>

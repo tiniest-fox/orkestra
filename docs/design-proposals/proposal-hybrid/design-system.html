@@ -601,13 +601,27 @@ body {
 
 /* Primary */
 .btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.btn--primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: #ffffff;
+}
+
+/* Success — green, for completion-state actions (e.g., Merge) */
+.btn--success {
   background: var(--green);
   border-color: var(--green);
   color: #141118;
   font-weight: 600;
 }
 
-.btn--primary:hover {
+.btn--success:hover {
   background: #3BC575;
   border-color: #3BC575;
   color: #141118;
@@ -653,13 +667,13 @@ body {
 /* Warning (reject, amber) */
 .btn--warning {
   background: transparent;
-  border-color: rgba(251, 191, 36, 0.25);
+  border-color: rgba(217, 119, 6, 0.25);
   color: var(--amber);
 }
 
 .btn--warning:hover {
   background: var(--amber-bg);
-  border-color: rgba(251, 191, 36, 0.5);
+  border-color: rgba(217, 119, 6, 0.5);
 }
 
 /* Accent */
@@ -736,10 +750,10 @@ body {
   color: var(--text-muted);
 }
 
-/* Individual task row */
+/* Individual task row — 5-column feed layout */
 .task-row {
   display: grid;
-  grid-template-columns: 20px 1fr auto auto;
+  grid-template-columns: 18px minmax(0, 200px) 148px minmax(0, 1fr) auto;
   gap: var(--sp-3);
   align-items: center;
   padding: 9px var(--sp-5) 9px var(--sp-4);
@@ -1964,6 +1978,7 @@ body {
           <div class="row-pipe-seg row-pipe-seg--review"></div>
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
         </div>
+        <span class="row-live">Review plan ready — 4 files</span>
         <span class="row-badge row-badge--review">Review</span>
       </div>
 
@@ -1982,6 +1997,7 @@ body {
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
         </div>
+        <span class="row-live" style="color:var(--red);">3 test failures</span>
         <span class="row-badge row-badge--failed">Failed</span>
       </div>
 
@@ -2000,6 +2016,7 @@ body {
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
         </div>
+        <span class="row-live" style="color:var(--blue);">2 questions waiting</span>
         <span class="row-badge row-badge--questions">2 Qs</span>
       </div>
 
@@ -2024,6 +2041,7 @@ body {
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
         </div>
+        <span class="row-live">Writing validateToken.ts</span>
         <span class="row-badge row-badge--working">Working</span>
       </div>
 
@@ -2032,7 +2050,7 @@ body {
         <span class="row-symbol row-symbol--working symbol-active">*</span>
         <div class="row-info">
           <div class="row-title">User settings page</div>
-          <div class="row-meta">ork-041 &middot; planning &middot; <span class="row-live">Analyzing codebase structure...</span></div>
+          <div class="row-meta">ork-041 &middot; planning</div>
         </div>
         <div class="row-pipeline">
           <div class="row-pipe-seg row-pipe-seg--active"></div>
@@ -2042,6 +2060,7 @@ body {
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
         </div>
+        <span class="row-live">Analyzing codebase structure...</span>
         <span class="row-badge row-badge--working">Working</span>
       </div>
 
@@ -2060,6 +2079,7 @@ body {
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
           <div class="row-pipe-seg row-pipe-seg--pending"></div>
         </div>
+        <span class="row-live">2 / 4 subtasks complete</span>
         <span class="row-badge row-badge--children">2/4</span>
       </div>
 
@@ -2074,7 +2094,7 @@ body {
         <span class="row-symbol row-symbol--done">.</span>
         <div class="row-info">
           <div class="row-title">Database migration v14</div>
-          <div class="row-meta">ork-035 &middot; 12:34 &middot; 3 files changed</div>
+          <div class="row-meta">ork-035</div>
         </div>
         <div class="row-pipeline">
           <div class="row-pipe-seg row-pipe-seg--complete"></div>
@@ -2084,6 +2104,7 @@ body {
           <div class="row-pipe-seg row-pipe-seg--complete"></div>
           <div class="row-pipe-seg row-pipe-seg--complete"></div>
         </div>
+        <span class="row-live">Done · 12:34 · 3 files changed</span>
         <span class="row-badge" style="color: var(--text-muted); background: transparent;">Done</span>
       </div>
 
@@ -2092,7 +2113,7 @@ body {
         <span class="row-symbol row-symbol--done">.</span>
         <div class="row-info">
           <div class="row-title">API rate limiting</div>
-          <div class="row-meta">ork-034 &middot; 11:20 &middot; PR #47 merged</div>
+          <div class="row-meta">ork-034</div>
         </div>
         <div class="row-pipeline">
           <div class="row-pipe-seg row-pipe-seg--complete"></div>
@@ -2102,6 +2123,7 @@ body {
           <div class="row-pipe-seg row-pipe-seg--complete"></div>
           <div class="row-pipe-seg row-pipe-seg--complete"></div>
         </div>
+        <span class="row-live">Done · 11:20 · PR #47 merged</span>
         <span class="row-badge" style="color: var(--text-muted); background: transparent;">Done</span>
       </div>
 
@@ -2110,12 +2132,13 @@ body {
     <div style="margin-top: var(--sp-6); padding: var(--sp-5); background: var(--surface-2); border-radius: var(--radius-md); border: 1px solid var(--border);">
       <div class="inline-label">Row anatomy</div>
       <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.7;">
-        <strong>Column 1 (20px):</strong> Status symbol in signal color. IBM Plex Mono 14px 600.
-        <strong>Column 2 (1fr):</strong> Title (IBM Plex Sans 500 13px primary) + meta (IBM Plex Mono 10px muted). Meta includes ID, stage, live status fragment.
-        <strong>Column 3 (auto):</strong> Compact pipeline bar — 4px tall segments, 20px wide, 2px gap.
-        <strong>Column 4 (auto):</strong> Status badge — IBM Plex Mono 600 10px in signal bg.
-        <strong>Focused row:</strong> <code style="font-family: var(--font-mono); font-size: 11px; color: var(--accent);">box-shadow: inset 2px 0 0 var(--accent)</code> plus accent-bg tint.
-        <strong>Row padding:</strong> 9px vertical, 16px horizontal (left), 20px (right).
+        <strong>Column 1 (18px):</strong> Status symbol in signal color. IBM Plex Mono 14px 600.
+        <strong>Column 2 (minmax 0, 200px):</strong> Title (IBM Plex Sans 500 13px primary) + ID (IBM Plex Mono 10px muted).
+        <strong>Column 3 (148px):</strong> Compact pipeline bar — 4px tall segments, flex, 2px gap. Stage label right-aligned in mono 9px.
+        <strong>Column 4 (minmax 0, 1fr):</strong> Live activity text — IBM Plex Mono 11px muted. Truncates.
+        <strong>Column 5 (auto):</strong> Actions — pill buttons or status badge.
+        <strong>Focused row:</strong> <code style="font-family: var(--font-mono); font-size: 11px; color: var(--accent);">border-left: 2px solid var(--accent)</code> plus accent-bg tint.
+        <strong>Row padding:</strong> 8px vertical, 24px horizontal.
       </p>
     </div>
   </section>

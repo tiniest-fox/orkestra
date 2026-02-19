@@ -1,6 +1,7 @@
 import { FileText } from "lucide-react";
 import type { HighlightedFileDiff, HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
+import type { PrComment } from "../../types/workflow";
 import { EmptyState, ErrorState, FlexContainer, Panel } from "../ui";
 import { DiffContent } from "./DiffContent";
 import { DiffFileList } from "./DiffFileList";
@@ -13,6 +14,7 @@ interface DiffPanelBodyProps {
   emptyMessage: string;
   selectedFile: HighlightedFileDiff | null;
   onSelectFile: (file: HighlightedFileDiff) => void;
+  comments: PrComment[];
 }
 
 export function DiffPanelBody({
@@ -22,6 +24,7 @@ export function DiffPanelBody({
   emptyMessage,
   selectedFile,
   onSelectFile,
+  comments,
 }: DiffPanelBodyProps) {
   const { css } = useSyntaxCss();
 
@@ -66,7 +69,7 @@ export function DiffPanelBody({
             onSelectFile={onSelectFile}
           />
           <Panel className="flex-1">
-            <DiffContent file={selectedFile} />
+            <DiffContent file={selectedFile} comments={comments} />
           </Panel>
         </FlexContainer>
       </>

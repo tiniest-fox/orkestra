@@ -54,6 +54,7 @@ export function CommitDiffPanel({ commitHash, onClose }: CommitDiffPanelProps) {
         emptyMessage="No changes in this commit"
         selectedFile={selectedFile}
         onSelectFile={handleSelectFile}
+        comments={[]}
       />
     </Panel>
   );

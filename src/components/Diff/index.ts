@@ -4,3 +4,4 @@ export { DiffFileEntry } from "./DiffFileEntry";
 export { DiffFileList } from "./DiffFileList";
 export { DiffLine } from "./DiffLine";
 export { DiffPanel } from "./DiffPanel";
+export { InlineCommentBlock } from "./InlineCommentBlock";

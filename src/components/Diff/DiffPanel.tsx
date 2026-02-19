@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from "react";
 import { type HighlightedFileDiff, useDiff } from "../../hooks/useDiff";
+import { usePrStatus } from "../../providers";
 import { Panel } from "../ui";
 import { DiffPanelBody } from "./DiffPanelBody";
 
@@ -21,7 +22,12 @@ interface DiffPanelProps {
 
 export function DiffPanel({ taskId, onClose }: DiffPanelProps) {
   const { diff, loading, error } = useDiff(taskId);
+  const { getPrStatus } = usePrStatus();
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+
+  // Get PR comments for this task
+  const prStatus = getPrStatus(taskId);
+  const comments = prStatus?.comments ?? [];
 
   // Derive selected file from path (survives diff refresh)
   const selectedFile = diff?.files.find((f) => f.path === selectedPath) ?? null;
@@ -52,6 +58,7 @@ export function DiffPanel({ taskId, onClose }: DiffPanelProps) {
         emptyMessage="No changes to display"
         selectedFile={selectedFile}
         onSelectFile={handleSelectFile}
+        comments={comments}
       />
     </Panel>
   );

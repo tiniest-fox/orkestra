@@ -7,17 +7,37 @@
  * - Hunks with automatic collapsing of large context sections
  */
 
+import { Fragment, useMemo } from "react";
 import type { HighlightedFileDiff, HighlightedLine } from "../../hooks/useDiff";
+import type { PrComment } from "../../types/workflow";
 import { CollapsedSection } from "./CollapsedSection";
 import { DiffLine } from "./DiffLine";
+import { InlineCommentBlock } from "./InlineCommentBlock";
 
 interface DiffContentProps {
   file: HighlightedFileDiff | null;
+  comments: PrComment[];
 }
 
 const COLLAPSE_THRESHOLD = 8;
 
-export function DiffContent({ file }: DiffContentProps) {
+export function DiffContent({ file, comments }: DiffContentProps) {
+  // Filter comments for this file and group by line number
+  const commentsByLine = useMemo(() => {
+    const map = new Map<number, PrComment[]>();
+    if (!file) return map;
+
+    for (const comment of comments) {
+      // Only include line-level comments (exclude file-level where line is null)
+      if (comment.path === file.path && comment.line !== null) {
+        const existing = map.get(comment.line) ?? [];
+        existing.push(comment);
+        map.set(comment.line, existing);
+      }
+    }
+    return map;
+  }, [comments, file]);
+
   if (!file) {
     return (
       <div className="flex-1 flex items-center justify-center text-stone-400 dark:text-stone-500">
@@ -62,7 +82,7 @@ export function DiffContent({ file }: DiffContentProps) {
             </div>
 
             {/* Hunk lines with smart collapsing */}
-            {renderHunkLines(hunk.lines)}
+            {renderHunkLines(hunk.lines, commentsByLine)}
           </div>
         ))}
       </div>
@@ -74,8 +94,9 @@ export function DiffContent({ file }: DiffContentProps) {
  * Render hunk lines with smart collapsing of large context sections.
  *
  * Shows first 3 and last 3 context lines, collapses the middle if > 8 lines.
+ * Renders inline comments after their corresponding lines.
  */
-function renderHunkLines(lines: HighlightedLine[]) {
+function renderHunkLines(lines: HighlightedLine[], commentsByLine: Map<number, PrComment[]>) {
   const sections: { type: "render" | "collapse"; lines: HighlightedLine[] }[] = [];
   let currentContextSection: HighlightedLine[] = [];
 
@@ -127,8 +148,19 @@ function renderHunkLines(lines: HighlightedLine[]) {
       // biome-ignore lint/suspicious/noArrayIndexKey: section order is stable within hunk
       <CollapsedSection key={i} lines={section.lines} />
     ) : (
-      // biome-ignore lint/suspicious/noArrayIndexKey: line order is stable within section
-      section.lines.map((line, j) => <DiffLine key={`${i}-${j}`} line={line} />)
+      section.lines.map((line, j) => {
+        const lineComments =
+          line.new_line_number !== null ? commentsByLine.get(line.new_line_number) : undefined;
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: line order is stable within section
+          <Fragment key={`${i}-${j}`}>
+            <DiffLine line={line} />
+            {lineComments && lineComments.length > 0 && (
+              <InlineCommentBlock comments={lineComments} />
+            )}
+          </Fragment>
+        );
+      })
     ),
   );
 }

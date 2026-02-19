@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra — Questions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --canvas:       #FAF8FC;
+  --surface-1:    #FFFFFF;
+  --surface-2:    #F4F0F8;
+  --surface-3:    #EBE6F0;
+  --surface-hover:#F0ECF4;
+  --border:       #E4DFE9;
+  --border-strong:rgba(28, 24, 32, 0.18);
+  --accent:       #E83558;
+  --accent-hover: #D42B4C;
+  --accent-bg:    rgba(232, 53, 88, 0.08);
+  --accent-2:     #A63CB5;
+  --accent-2-bg:  rgba(166, 60, 181, 0.08);
+  --green:        #16A34A;
+  --green-bg:     rgba(22, 163, 74, 0.06);
+  --amber:        #D97706;
+  --amber-bg:     rgba(217, 119, 6, 0.06);
+  --red:          #DC2626;
+  --blue:         #2563EB;
+  --blue-bg:      rgba(37, 99, 235, 0.06);
+  --text-0:       #1C1820;
+  --text-1:       #6B6078;
+  --text-2:       #9890A4;
+  --text-3:       #C4BCCC;
+  --font-ui:      'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono:    'IBM Plex Mono', monospace;
+  --shadow-sm:    0 1px 3px rgba(28, 24, 32, 0.08), 0 1px 2px rgba(28, 24, 32, 0.05);
+  --shadow-md:    0 4px 12px rgba(28, 24, 32, 0.10), 0 1px 3px rgba(28, 24, 32, 0.06);
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+body {
+  font-family: var(--font-ui);
+  background: var(--canvas);
+  color: var(--text-0);
+  line-height: 1.5;
+}
+
+/* ============================================================================
+   App shell
+   ============================================================================ */
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* Top bar */
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  height: 44px;
+  box-shadow: var(--shadow-sm);
+}
+.brand {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: -0.02em;
+  color: var(--text-0);
+}
+.top-bar-sep { width: 1px; height: 16px; background: var(--border-strong); flex-shrink: 0; }
+.top-bar-counts {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  flex: 1;
+}
+.count-item { display: flex; align-items: center; gap: 5px; }
+.count-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+}
+.dot-blue   { background: var(--blue); }
+.dot-amber  { background: var(--amber); }
+.dot-green  { background: var(--green); }
+.count-num { font-weight: 500; color: var(--text-1); }
+
+/* Split layout */
+.split-layout { display: grid; grid-template-columns: 240px 1fr; flex: 1; overflow: hidden; }
+
+/* ============================================================================
+   Left pane
+   ============================================================================ */
+.split-left {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px 0;
+  background: var(--surface-1);
+}
+.left-section { margin-bottom: 8px; }
+.left-section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 14px;
+  margin-bottom: 2px;
+}
+.left-section-title {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-2);
+}
+.left-section-count {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-3);
+}
+
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background 80ms;
+  position: relative;
+}
+.task-row:hover { background: var(--surface-hover); }
+.task-row.active {
+  background: var(--accent-bg);
+}
+.task-row.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+.task-sym {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+}
+.sym-questions { color: var(--blue); }
+.sym-working   { color: var(--green); }
+.sym-review    { color: var(--amber); }
+.sym-done      { color: var(--green); opacity: 0.45; }
+
+.task-info { min-width: 0; flex: 1; }
+.task-name {
+  font-size: 12px; font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text-0);
+}
+.task-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 1px;
+}
+.task-badge {
+  font-size: 10px; font-weight: 500;
+  padding: 1px 5px; border-radius: var(--radius-xs);
+  white-space: nowrap; flex-shrink: 0;
+}
+.badge-questions { background: var(--blue-bg); color: var(--blue); }
+.badge-review    { background: var(--amber-bg); color: var(--amber); }
+.badge-done      { background: var(--green-bg); color: var(--green); }
+
+/* ============================================================================
+   Right pane
+   ============================================================================ */
+.split-right {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas);
+}
+
+/* Detail header */
+.detail-header {
+  padding: 24px 32px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+  flex-shrink: 0;
+}
+.detail-title {
+  font-size: 18px; font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-0);
+  margin-bottom: 10px;
+  line-height: 1.3;
+}
+.pipeline-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 10px;
+}
+.pipeline-stage {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+.pipeline-stage.current { color: var(--blue); }
+.pipeline-stage.done    { color: var(--text-3); }
+.pipeline-sep {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  padding: 0 5px;
+}
+.detail-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.status-marker {
+  font-weight: 600;
+  color: var(--blue);
+}
+
+/* Scrollable content */
+.detail-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 32px 100px;
+}
+
+/* ============================================================================
+   Question cards
+   ============================================================================ */
+.questions-list { display: flex; flex-direction: column; }
+
+.question-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 24px 0;
+}
+
+.question-card {
+  display: flex;
+  gap: 20px;
+}
+.question-number {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1;
+  padding-top: 2px;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: right;
+}
+.question-body { flex: 1; min-width: 0; }
+.question-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-0);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+.question-hint {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+/* Radio group */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  cursor: pointer;
+  transition: background 80ms, border-color 80ms;
+  user-select: none;
+}
+.radio-option:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.radio-option.selected {
+  background: var(--accent-bg);
+  border-color: rgba(232, 53, 88, 0.3);
+}
+.radio-circle {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--text-3);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 80ms;
+}
+.radio-option.selected .radio-circle {
+  border-color: var(--accent);
+}
+.radio-inner {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: none;
+}
+.radio-option.selected .radio-inner { display: block; }
+.radio-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-0);
+}
+.radio-option.selected .radio-label { color: var(--accent); }
+
+/* Textarea */
+.question-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px 12px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text-0);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  resize: vertical;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 120ms;
+}
+.question-textarea::placeholder { color: var(--text-3); }
+.question-textarea:focus { border-color: rgba(232, 53, 88, 0.4); }
+
+/* ============================================================================
+   Action bar
+   ============================================================================ */
+.action-bar {
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  left: 240px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 32px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(28, 24, 32, 0.06);
+}
+.btn-primary {
+  padding: 8px 20px;
+  background: var(--accent);
+  color: #FFFFFF;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms;
+  letter-spacing: -0.01em;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.action-progress {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  margin-left: auto;
+}
+
+/* ============================================================================
+   Status line
+   ============================================================================ */
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  height: 26px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.kbd-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-2);
+}
+.kbd-hint kbd {
+  font-family: inherit;
+  color: var(--text-1);
+  font-weight: 500;
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <span class="brand">Orkestra</span>
+    <div class="top-bar-sep"></div>
+    <div class="top-bar-counts">
+      <div class="count-item">
+        <div class="count-dot dot-blue"></div>
+        <span class="count-num">2</span>
+        <span>questions</span>
+      </div>
+      <div class="count-item">
+        <div class="count-dot dot-amber"></div>
+        <span class="count-num">1</span>
+        <span>review</span>
+      </div>
+      <div class="count-item">
+        <div class="count-dot dot-green"></div>
+        <span class="count-num">3</span>
+        <span>working</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Split layout -->
+  <div class="split-layout" style="flex:1;overflow:hidden;">
+
+    <!-- Left pane -->
+    <div class="split-left">
+
+      <div class="left-section">
+        <div class="left-section-header">
+          <span class="left-section-title">Questions</span>
+          <span class="left-section-count">2</span>
+        </div>
+
+        <div class="task-row active">
+          <span class="task-sym sym-questions">?</span>
+          <div class="task-info">
+            <div class="task-name">Migrate user data to new schema</div>
+            <div class="task-sub">planning · 3 questions</div>
+          </div>
+          <span class="task-badge badge-questions">3q</span>
+        </div>
+
+        <div class="task-row">
+          <span class="task-sym sym-questions">?</span>
+          <div class="task-info">
+            <div class="task-name">Refactor auth token storage</div>
+            <div class="task-sub">planning · 1 question</div>
+          </div>
+          <span class="task-badge badge-questions">1q</span>
+        </div>
+      </div>
+
+      <div class="left-section">
+        <div class="left-section-header">
+          <span class="left-section-title">In Review</span>
+          <span class="left-section-count">1</span>
+        </div>
+
+        <div class="task-row">
+          <span class="task-sym sym-review">~</span>
+          <div class="task-info">
+            <div class="task-name">Add rate limiting to API</div>
+            <div class="task-sub">review · iter 1</div>
+          </div>
+          <span class="task-badge badge-review">rvw</span>
+        </div>
+      </div>
+
+      <div class="left-section">
+        <div class="left-section-header">
+          <span class="left-section-title">Working</span>
+          <span class="left-section-count">3</span>
+        </div>
+
+        <div class="task-row">
+          <span class="task-sym sym-working">*</span>
+          <div class="task-info">
+            <div class="task-name">Update email notification templates</div>
+            <div class="task-sub">work · 12m ago</div>
+          </div>
+        </div>
+
+        <div class="task-row">
+          <span class="task-sym sym-working">*</span>
+          <div class="task-info">
+            <div class="task-name">Add CSV export to reports</div>
+            <div class="task-sub">work · 34m ago</div>
+          </div>
+        </div>
+
+        <div class="task-row">
+          <span class="task-sym sym-working">*</span>
+          <div class="task-info">
+            <div class="task-name">Fix pagination on activity feed</div>
+            <div class="task-sub">checks · passing</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="left-section">
+        <div class="left-section-header">
+          <span class="left-section-title">Done</span>
+          <span class="left-section-count">4</span>
+        </div>
+
+        <div class="task-row" style="opacity:0.45;">
+          <span class="task-sym sym-done">.</span>
+          <div class="task-info">
+            <div class="task-name">Improve search relevance scoring</div>
+            <div class="task-sub">merged · 2h ago</div>
+          </div>
+        </div>
+
+        <div class="task-row" style="opacity:0.45;">
+          <span class="task-sym sym-done">.</span>
+          <div class="task-info">
+            <div class="task-name">Add webhook retry logic</div>
+            <div class="task-sub">merged · 5h ago</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right pane -->
+    <div class="split-right">
+
+      <!-- Detail header -->
+      <div class="detail-header">
+        <div class="detail-title">Migrate user data to new schema</div>
+
+        <div class="pipeline-row">
+          <span class="pipeline-stage current">PLN</span>
+          <span class="pipeline-sep">→</span>
+          <span class="pipeline-stage done">tsk</span>
+          <span class="pipeline-sep">→</span>
+          <span class="pipeline-stage done">wrk</span>
+          <span class="pipeline-sep">→</span>
+          <span class="pipeline-stage done">chk</span>
+          <span class="pipeline-sep">→</span>
+          <span class="pipeline-stage done">rvw</span>
+        </div>
+
+        <div class="detail-status">
+          <span class="status-marker">?</span>
+          <span>3 questions &nbsp;·&nbsp; planning stage &nbsp;·&nbsp; waiting for answers</span>
+        </div>
+      </div>
+
+      <!-- Scrollable content -->
+      <div class="detail-content">
+        <div class="questions-list">
+
+          <!-- Question 1 -->
+          <div class="question-card">
+            <div class="question-number">01</div>
+            <div class="question-body">
+              <div class="question-text">Should we run this migration as a zero-downtime operation, or is a maintenance window acceptable?</div>
+              <div class="question-hint">This affects the migration strategy — rolling migrations are safer but add complexity to the rollback path.</div>
+              <div class="radio-group">
+                <label class="radio-option selected">
+                  <div class="radio-circle"><div class="radio-inner"></div></div>
+                  <span class="radio-label">Zero-downtime (rolling)</span>
+                </label>
+                <label class="radio-option">
+                  <div class="radio-circle"><div class="radio-inner"></div></div>
+                  <span class="radio-label">Maintenance window (batch)</span>
+                </label>
+                <label class="radio-option">
+                  <div class="radio-circle"><div class="radio-inner"></div></div>
+                  <span class="radio-label">Let me decide later</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="question-divider"></div>
+
+          <!-- Question 2 -->
+          <div class="question-card">
+            <div class="question-number">02</div>
+            <div class="question-body">
+              <div class="question-text">The current schema has 3.2M user records. Should we process all of them, or only records created in the last 90 days?</div>
+              <div class="question-hint">Processing all records takes ~40–60 minutes on current hardware. A scoped migration is faster but leaves legacy records in place.</div>
+              <div class="radio-group">
+                <label class="radio-option">
+                  <div class="radio-circle"><div class="radio-inner"></div></div>
+                  <span class="radio-label">All records</span>
+                </label>
+                <label class="radio-option">
+                  <div class="radio-circle"><div class="radio-inner"></div></div>
+                  <span class="radio-label">Last 90 days only</span>
+                </label>
+                <label class="radio-option">
+                  <div class="radio-circle"><div class="radio-inner"></div></div>
+                  <span class="radio-label">Specific date range...</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="question-divider"></div>
+
+          <!-- Question 3 -->
+          <div class="question-card">
+            <div class="question-number">03</div>
+            <div class="question-body">
+              <div class="question-text">Are there any external systems that read directly from the user table that we need to notify?</div>
+              <div class="question-hint">The agent will generate a compatibility checklist for any services listed here before running the migration.</div>
+              <textarea class="question-textarea" placeholder="List any affected services..."></textarea>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Action bar -->
+      <div class="action-bar">
+        <button class="btn-primary">Submit Answers</button>
+        <span class="action-progress">1 of 3 answered</span>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Status line -->
+  <div class="status-line">
+    <span class="kbd-hint"><kbd>tab</kbd> next question</span>
+    <span class="kbd-hint"><kbd>enter</kbd> submit answers</span>
+    <span class="kbd-hint"><kbd>esc</kbd> discard</span>
+  </div>
+
+</div>
+</body>
+</html>

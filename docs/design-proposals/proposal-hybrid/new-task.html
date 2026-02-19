@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra — New Task</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --canvas:       #FAF8FC;
+  --surface-1:    #FFFFFF;
+  --surface-2:    #F4F0F8;
+  --surface-3:    #EBE6F0;
+  --surface-hover:#F0ECF4;
+  --border:       #E4DFE9;
+  --border-strong:rgba(28, 24, 32, 0.18);
+  --accent:       #E83558;
+  --accent-hover: #D42B4C;
+  --accent-bg:    rgba(232, 53, 88, 0.08);
+  --accent-2:     #A63CB5;
+  --accent-2-hover:#91339E;
+  --accent-2-bg:  rgba(166, 60, 181, 0.08);
+  --green:        #16A34A;
+  --green-bg:     rgba(22, 163, 74, 0.06);
+  --amber:        #D97706;
+  --amber-bg:     rgba(217, 119, 6, 0.06);
+  --red:          #DC2626;
+  --blue:         #2563EB;
+  --blue-bg:      rgba(37, 99, 235, 0.06);
+  --text-0:       #1C1820;
+  --text-1:       #6B6078;
+  --text-2:       #9890A4;
+  --text-3:       #C4BCCC;
+  --font-ui:      'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono:    'IBM Plex Mono', monospace;
+  --shadow-sm:    0 1px 3px rgba(28, 24, 32, 0.08), 0 1px 2px rgba(28, 24, 32, 0.05);
+  --shadow-md:    0 4px 12px rgba(28, 24, 32, 0.10), 0 1px 3px rgba(28, 24, 32, 0.06);
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+body {
+  font-family: var(--font-ui);
+  background: var(--canvas);
+  color: var(--text-0);
+  line-height: 1.5;
+}
+
+/* ============================================================================
+   App shell
+   ============================================================================ */
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* Top bar */
+.top-bar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 20px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; height: 44px;
+  box-shadow: var(--shadow-sm);
+}
+.brand { font-weight: 700; font-size: 13px; letter-spacing: -0.02em; color: var(--text-0); }
+.top-bar-sep { width: 1px; height: 16px; background: var(--border-strong); flex-shrink: 0; }
+.top-bar-counts {
+  display: flex; align-items: center; gap: 14px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-2);
+  flex: 1;
+}
+.count-item { display: flex; align-items: center; gap: 5px; }
+.count-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.dot-green  { background: var(--green); }
+.dot-amber  { background: var(--amber); }
+.dot-blue   { background: var(--blue); }
+.count-num  { font-weight: 500; color: var(--text-1); }
+
+/* Split layout */
+.split-layout { display: grid; grid-template-columns: 240px 1fr; flex: 1; overflow: hidden; }
+
+/* ============================================================================
+   Left pane
+   ============================================================================ */
+.split-left {
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 12px 0;
+  background: var(--surface-1);
+}
+.left-section { margin-bottom: 8px; }
+.left-section-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 14px; margin-bottom: 2px;
+}
+.left-section-title {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-2);
+}
+.left-section-count { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); }
+
+.task-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px; cursor: pointer;
+  transition: background 80ms; position: relative;
+}
+.task-row:hover { background: var(--surface-hover); }
+
+.task-sym { font-family: var(--font-mono); font-size: 12px; font-weight: 600; width: 16px; flex-shrink: 0; text-align: center; }
+.sym-working   { color: var(--green); }
+.sym-review    { color: var(--amber); }
+.sym-done      { color: var(--green); opacity: 0.45; }
+.sym-questions { color: var(--blue); }
+
+.task-info { min-width: 0; flex: 1; }
+.task-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-0); }
+.task-sub  { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 1px; }
+.task-badge { font-size: 10px; font-weight: 500; padding: 1px 5px; border-radius: var(--radius-xs); white-space: nowrap; flex-shrink: 0; }
+.badge-review    { background: var(--amber-bg); color: var(--amber); }
+.badge-questions { background: var(--blue-bg); color: var(--blue); }
+.badge-done      { background: var(--green-bg); color: var(--green); }
+
+/* ============================================================================
+   Right pane — new task form
+   ============================================================================ */
+.split-right {
+  overflow: hidden; display: flex; flex-direction: column;
+  background: var(--canvas);
+}
+
+/* Form pane — centered column inside the right pane */
+.form-pane {
+  flex: 1; overflow-y: auto;
+  padding: 36px 40px 100px;
+  display: flex; flex-direction: column;
+}
+
+/* Form header */
+.form-heading {
+  font-size: 17px; font-weight: 600;
+  letter-spacing: -0.02em; color: var(--text-0);
+  margin-bottom: 4px;
+}
+.form-subheading {
+  font-size: 12px; color: var(--text-2);
+  margin-bottom: 28px;
+}
+
+/* Field group */
+.field-group { margin-bottom: 22px; }
+.field-label {
+  display: block;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-2);
+  margin-bottom: 7px;
+}
+
+/* Description textarea */
+.description-textarea {
+  width: 100%;
+  min-height: 148px;
+  padding: 12px 14px;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--text-0);
+  background: var(--surface-1);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg);
+  resize: vertical;
+  line-height: 1.6;
+  outline: none;
+  transition: border-color 120ms, box-shadow 120ms;
+}
+.description-textarea::placeholder { color: var(--text-3); }
+.description-textarea:focus {
+  border-color: rgba(232, 53, 88, 0.35);
+  box-shadow: 0 0 0 3px rgba(232, 53, 88, 0.06);
+}
+
+/* Two-column row */
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 22px; }
+
+/* Select / dropdown */
+.field-select {
+  width: 100%;
+  padding: 8px 12px;
+  font-family: var(--font-ui);
+  font-size: 13px; font-weight: 500;
+  color: var(--text-0);
+  background: var(--surface-2);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: border-color 120ms;
+  /* Custom dropdown arrow */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239890A4' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+}
+.field-select:focus { border-color: rgba(232, 53, 88, 0.35); }
+
+/* Flow selector */
+.flow-options { display: flex; flex-direction: column; gap: 6px; }
+.flow-option {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  cursor: pointer;
+  transition: border-color 80ms, background 80ms;
+  user-select: none;
+}
+.flow-option:hover { background: var(--surface-2); border-color: rgba(28, 24, 32, 0.14); }
+.flow-option.selected {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.flow-radio {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 1.5px solid var(--text-3);
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 80ms;
+}
+.flow-option.selected .flow-radio { border-color: var(--accent); }
+.flow-radio-inner {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); display: none;
+}
+.flow-option.selected .flow-radio-inner { display: block; }
+
+.flow-label-col { flex: 1; min-width: 0; }
+.flow-name {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-0); margin-bottom: 2px;
+}
+.flow-option.selected .flow-name { color: var(--accent); }
+.flow-pipeline {
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}
+.flow-option.selected .flow-pipeline { color: rgba(232, 53, 88, 0.6); }
+
+/* Auto-approve toggle row */
+.toggle-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 14px;
+  background: var(--surface-1);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.toggle-label-group { flex: 1; }
+.toggle-label-text {
+  font-size: 13px; font-weight: 500; color: var(--text-0);
+  display: block; margin-bottom: 2px;
+}
+.toggle-hint { font-size: 11px; color: var(--text-2); }
+
+/* Toggle switch */
+.toggle-switch {
+  position: relative; width: 36px; height: 20px; flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-track {
+  position: absolute; inset: 0;
+  background: var(--surface-3); border-radius: 10px;
+  transition: background 160ms; cursor: pointer;
+}
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  left: 2px; top: 2px;
+  width: 16px; height: 16px;
+  background: var(--surface-1);
+  border-radius: 50%;
+  transition: transform 160ms;
+  box-shadow: 0 1px 3px rgba(28, 24, 32, 0.18);
+}
+.toggle-switch input:checked + .toggle-track {
+  background: var(--accent-2);
+}
+.toggle-switch input:checked + .toggle-track::after {
+  transform: translateX(16px);
+}
+
+/* ============================================================================
+   Action bar
+   ============================================================================ */
+.action-bar {
+  position: fixed; bottom: 26px; right: 0; left: 240px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 40px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(28, 24, 32, 0.06);
+}
+.btn-primary {
+  padding: 9px 24px;
+  background: var(--accent);
+  color: #FFFFFF;
+  border: none; border-radius: var(--radius-md);
+  font-family: var(--font-ui); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background 120ms; letter-spacing: -0.01em;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-cancel {
+  padding: 0; background: none; border: none;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-2); cursor: pointer;
+  transition: color 80ms;
+}
+.btn-cancel:hover { color: var(--text-1); }
+
+/* ============================================================================
+   Status line
+   ============================================================================ */
+.status-line {
+  display: flex; align-items: center; gap: 20px;
+  padding: 0 20px; height: 26px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  position: fixed; bottom: 0; left: 0; right: 0;
+}
+.kbd-hint { font-family: var(--font-mono); font-size: 10px; color: var(--text-2); }
+.kbd-hint kbd { font-family: inherit; color: var(--text-1); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Top bar -->
+  <div class="top-bar">
+    <span class="brand">Orkestra</span>
+    <div class="top-bar-sep"></div>
+    <div class="top-bar-counts">
+      <div class="count-item">
+        <div class="count-dot dot-amber"></div>
+        <span class="count-num">1</span>
+        <span>review</span>
+      </div>
+      <div class="count-item">
+        <div class="count-dot dot-green"></div>
+        <span class="count-num">3</span>
+        <span>working</span>
+      </div>
+      <div class="count-item">
+        <div class="count-dot dot-blue"></div>
+        <span class="count-num">2</span>
+        <span>questions</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Split layout -->
+  <div class="split-layout" style="flex:1;overflow:hidden;">
+
+    <!-- Left pane -->
+    <div class="split-left">
+
+      <div class="left-section">
+        <div class="left-section-header">
+          <span class="left-section-title">In Review</span>
+          <span class="left-section-count">1</span>
+        </div>
+        <div class="task-row">
+          <span class="task-sym sym-review">~</span>
+          <div class="task-info">
+            <div class="task-name">Add rate limiting to API</div>
+            <div class="task-sub">review · iter 1</div>
+          </div>
+          <span class="task-badge badge-review">rvw</span>
+        </div>
+      </div>
+
+      <div class="left-section">
+        <div class="left-section-header">
+          <span class="left-section-title">Questions</span>
+          <span class="left-section-count">2</span>
+        </div>
+        <div class="task-row">
+          <span class="task-sym sym-questions">?</span>
+          <div class="task-info">
+            <div class="task-name">Migrate user data to new schema</div>
+            <div class="task-sub">planning · 3 questions</div>
+          </div>
+          <span class="task-badge badge-questions">3q</span>
+        </div>
+        <div class="task-row">
+          <span class="task-sym sym-questions">?</span>
+          <div class="task-info">
+            <div class="task-name">Refactor auth token storage</div>
+            <div class="task-sub">planning · 1 question</div>
+          </div>
+          <span class="task-badge badge-questions">1q</span>
+        </div>
+      </div>
+
+      <div class="left-section">
+        <div class="left-section-header">
+          <span class="left-section-title">Working</span>
+          <span class="left-section-count">3</span>
+        </div>
+        <div class="task-row">
+          <span class="task-sym sym-working">*</span>
+          <div class="task-info">
+            <div class="task-name">Update email notification templates</div>
+            <div class="task-sub">work · 12m ago</div>
+          </div>
+        </div>
+        <div class="task-row">
+          <span class="task-sym sym-working">*</span>
+          <div class="task-info">
+            <div class="task-name">Add CSV export to reports</div>
+            <div class="task-sub">work · 34m ago</div>
+          </div>
+        </div>
+        <div class="task-row">
+          <span class="task-sym sym-working">*</span>
+          <div class="task-info">
+            <div class="task-name">Fix pagination on activity feed</div>
+            <div class="task-sub">checks · passing</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="left-section">
+        <div class="left-section-header">
+          <span class="left-section-title">Done</span>
+          <span class="left-section-count">4</span>
+        </div>
+        <div class="task-row" style="opacity:0.45;">
+          <span class="task-sym sym-done">.</span>
+          <div class="task-info">
+            <div class="task-name">Improve search relevance scoring</div>
+            <div class="task-sub">merged · 2h ago</div>
+          </div>
+        </div>
+        <div class="task-row" style="opacity:0.45;">
+          <span class="task-sym sym-done">.</span>
+          <div class="task-info">
+            <div class="task-name">Add webhook retry logic</div>
+            <div class="task-sub">merged · 5h ago</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right pane — new task form -->
+    <div class="split-right">
+
+      <div class="form-pane">
+
+        <div class="form-heading">New task</div>
+        <div class="form-subheading">Describe what needs to be done. The agent will plan and implement it.</div>
+
+        <!-- Description -->
+        <div class="field-group">
+          <label class="field-label">Description</label>
+          <textarea
+            class="description-textarea"
+            placeholder="Describe the task... What needs to be done? Include any relevant context, constraints, or goals."
+          ></textarea>
+        </div>
+
+        <!-- Branch + flow row -->
+        <div class="field-row">
+          <div>
+            <label class="field-label">Base branch</label>
+            <select class="field-select">
+              <option>main</option>
+              <option>develop</option>
+              <option>staging</option>
+            </select>
+          </div>
+          <div>
+            <!-- spacer column — intentionally empty, keeps visual weight balanced -->
+          </div>
+        </div>
+
+        <!-- Flow selector -->
+        <div class="field-group">
+          <label class="field-label">Flow</label>
+          <div class="flow-options">
+
+            <label class="flow-option selected">
+              <div class="flow-radio"><div class="flow-radio-inner"></div></div>
+              <div class="flow-label-col">
+                <div class="flow-name">Default</div>
+                <div class="flow-pipeline">pln → tsk → wrk → chk → rvw → cmp</div>
+              </div>
+            </label>
+
+            <label class="flow-option">
+              <div class="flow-radio"><div class="flow-radio-inner"></div></div>
+              <div class="flow-label-col">
+                <div class="flow-name">Quick</div>
+                <div class="flow-pipeline">pln → wrk → chk → rvw</div>
+              </div>
+            </label>
+
+            <label class="flow-option">
+              <div class="flow-radio"><div class="flow-radio-inner"></div></div>
+              <div class="flow-label-col">
+                <div class="flow-name">Hotfix</div>
+                <div class="flow-pipeline">wrk → chk → rvw</div>
+              </div>
+            </label>
+
+          </div>
+        </div>
+
+        <!-- Auto approve toggle -->
+        <div class="field-group">
+          <label class="field-label">Behavior</label>
+          <div class="toggle-row">
+            <div class="toggle-label-group">
+              <span class="toggle-label-text">Auto approve</span>
+              <span class="toggle-hint">Agent will auto-approve non-critical stages</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox">
+              <div class="toggle-track"></div>
+            </label>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Action bar -->
+      <div class="action-bar">
+        <button class="btn-primary">Create Task</button>
+        <button class="btn-cancel">esc cancel</button>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Status line -->
+  <div class="status-line">
+    <span class="kbd-hint"><kbd>enter</kbd> create task</span>
+    <span class="kbd-hint"><kbd>esc</kbd> cancel</span>
+  </div>
+
+</div>
+</body>
+</html>

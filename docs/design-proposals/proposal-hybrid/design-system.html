@@ -1,0 +1,2381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forge Design System — Orkestra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================================
+   Reset + Base
+   ============================================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ============================================================================
+   Design Tokens — Light Mode
+   ============================================================================ */
+:root {
+  /* Backgrounds */
+  --canvas:         #FAF8FC;
+  --surface-1:      #FFFFFF;
+  --surface-2:      #F4F0F8;
+  --surface-3:      #EBE6F0;
+  --surface-hover:  #F0ECF4;
+
+  /* Accent */
+  --accent:           #E83558;
+  --accent-hover:     #D42B4C;
+  --accent-bg:        rgba(232, 53, 88, 0.08);
+  --accent-bg-strong: rgba(232, 53, 88, 0.14);
+
+  /* Secondary Accent */
+  --accent-2:         #A63CB5;
+  --accent-2-hover:   #91339E;
+  --accent-2-bg:      rgba(166, 60, 181, 0.08);
+
+  /* Signal colors — calibrated for light backgrounds */
+  --green:          #16A34A;
+  --green-dim:      #A0C8B0;
+  --green-bg:       rgba(22, 163, 74, 0.06);
+  --amber:          #D97706;
+  --amber-dim:      #FDE68A;
+  --amber-bg:       rgba(217, 119, 6, 0.06);
+  --red:            #DC2626;
+  --red-bg:         rgba(220, 38, 38, 0.06);
+  --blue:           #2563EB;
+  --blue-bg:        rgba(37, 99, 235, 0.06);
+
+  /* Text hierarchy */
+  --text-primary:   #1C1820;
+  --text-secondary: #6B6078;
+  --text-tertiary:  #9890A4;
+  --text-muted:     #C4BED0;
+
+  /* Borders */
+  --border:         #E4DFE9;
+  --border-strong:  rgba(28, 24, 32, 0.18);
+
+  /* Shadows */
+  --shadow-sm:      0 1px 3px rgba(28, 24, 32, 0.08), 0 1px 2px rgba(28, 24, 32, 0.05);
+  --shadow-md:      0 4px 12px rgba(28, 24, 32, 0.10), 0 1px 3px rgba(28, 24, 32, 0.06);
+
+  /* Radius */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Typography */
+  --font-ui:   'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', 'Cascadia Code', monospace;
+
+  /* Spacing scale (4px base) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+}
+
+
+/* ============================================================================
+   Page Base
+   ============================================================================ */
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--canvas);
+  color: var(--text-primary);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ============================================================================
+   Page Header (not part of Forge chrome — just doc nav)
+   ============================================================================ */
+.doc-header {
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  padding: var(--sp-4) var(--sp-12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow-sm);
+}
+
+.doc-header-brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.doc-brand-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.doc-brand-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.doc-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+}
+
+.doc-nav a {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  transition: color 120ms;
+}
+
+.doc-nav a:hover { color: var(--text-secondary); }
+
+.theme-toggle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px var(--sp-2);
+  cursor: pointer;
+  transition: all 120ms;
+}
+
+.theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ============================================================================
+   Page Content Layout
+   ============================================================================ */
+.doc-content {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: var(--sp-12) var(--sp-12) 120px;
+}
+
+/* ============================================================================
+   Section Structure
+   ============================================================================ */
+.section {
+  margin-bottom: 80px;
+}
+
+.section-header {
+  margin-bottom: var(--sp-8);
+  padding-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.section-number {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 500;
+  margin-bottom: var(--sp-1);
+  display: block;
+}
+
+.section-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin-bottom: var(--sp-2);
+}
+
+.section-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-width: 600px;
+}
+
+/* ============================================================================
+   Subsection headings
+   ============================================================================ */
+.subsection {
+  margin-bottom: var(--sp-8);
+}
+
+.subsection-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: var(--sp-4);
+}
+
+/* ============================================================================
+   1. Color Palette
+   ============================================================================ */
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--sp-3);
+}
+
+.swatch-card {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.swatch-color {
+  height: 56px;
+  width: 100%;
+}
+
+.swatch-info {
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  background: var(--surface-1);
+}
+
+.swatch-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.swatch-hex {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.swatch-usage {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+/* Signal swatches row */
+.signal-row {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-6);
+}
+
+.signal-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 120px;
+}
+
+.signal-swatch {
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: #141118;
+}
+
+.signal-swatch.light-text {
+  color: rgba(240, 236, 244, 0.9);
+}
+
+.signal-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.signal-hex {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Text hierarchy demo */
+.text-hierarchy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.text-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.text-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ============================================================================
+   2. Typography Scale
+   ============================================================================ */
+.type-scale {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.type-row {
+  display: grid;
+  grid-template-columns: 220px 1fr 160px;
+  align-items: baseline;
+  gap: var(--sp-6);
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--radius-md);
+  transition: background 80ms;
+}
+
+.type-row:hover { background: var(--surface-hover); }
+
+.type-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.type-meta-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.type-meta-spec {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.type-example {
+  line-height: 1.4;
+}
+
+.type-usage {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+  text-align: right;
+}
+
+/* ============================================================================
+   3. Status Symbols
+   ============================================================================ */
+.symbol-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--sp-3);
+}
+
+.symbol-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: background 80ms;
+}
+
+.symbol-card:hover { background: var(--surface-2); }
+
+.symbol-glyph {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 600;
+  width: 32px;
+  text-align: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.symbol-info {}
+
+.symbol-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.symbol-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+/* Active symbol animation */
+@keyframes symbol-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.symbol-active {
+  animation: symbol-pulse 2.5s ease-in-out infinite;
+}
+
+/* ============================================================================
+   4. Pipeline Component
+   ============================================================================ */
+.pipeline-demos {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.pipeline-demo {
+  padding: var(--sp-5) var(--sp-6);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.pipeline-demo-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: var(--sp-4);
+}
+
+.pipeline-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-bottom: var(--sp-3);
+}
+
+.pipe-seg {
+  height: 6px;
+  flex: 1;
+  border-radius: 3px;
+  position: relative;
+  overflow: visible;
+}
+
+/* Pending */
+.pipe-seg--pending { background: var(--surface-3); }
+
+/* Done */
+.pipe-seg--done { background: var(--green-dim); }
+
+/* Active — pulse animation */
+@keyframes pipe-active-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.pipe-seg--active {
+  background: var(--amber);
+  animation: pipe-active-pulse 1.5s ease-in-out infinite;
+}
+
+/* Review — amber, steady */
+.pipe-seg--review { background: var(--amber); }
+
+/* Failed */
+.pipe-seg--failed { background: var(--red); }
+
+/* Dim pending (after fail) */
+.pipe-seg--dim { background: var(--surface-2); opacity: 0.5; }
+
+/* Completed — fully done */
+.pipe-seg--complete { background: var(--green-dim); }
+
+.pipeline-stage-labels {
+  display: flex;
+  gap: 3px;
+}
+
+.pipe-stage-label {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pipe-stage-label--done { color: var(--green-dim); }
+.pipe-stage-label--active { color: var(--amber); }
+.pipe-stage-label--review { color: var(--amber); font-weight: 500; }
+.pipe-stage-label--failed { color: var(--red); font-weight: 500; }
+.pipe-stage-label--complete { color: var(--green-dim); }
+
+/* ============================================================================
+   5. Buttons
+   ============================================================================ */
+.button-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
+
+.button-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.button-row-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 80px;
+  flex-shrink: 0;
+}
+
+/* Forge button base */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px var(--sp-4);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background 80ms, border-color 80ms, color 80ms;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.btn:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Primary */
+.btn--primary {
+  background: var(--green);
+  border-color: var(--green);
+  color: #141118;
+  font-weight: 600;
+}
+
+.btn--primary:hover {
+  background: #3BC575;
+  border-color: #3BC575;
+  color: #141118;
+}
+
+/* Secondary */
+.btn--secondary {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.btn--secondary:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+/* Ghost */
+.btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-tertiary);
+}
+
+.btn--ghost:hover {
+  background: var(--surface-hover);
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+/* Destructive */
+.btn--destructive {
+  background: transparent;
+  border-color: rgba(248, 113, 113, 0.3);
+  color: var(--red);
+}
+
+.btn--destructive:hover {
+  background: var(--red-bg);
+  border-color: var(--red);
+}
+
+/* Warning (reject, amber) */
+.btn--warning {
+  background: transparent;
+  border-color: rgba(251, 191, 36, 0.25);
+  color: var(--amber);
+}
+
+.btn--warning:hover {
+  background: var(--amber-bg);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+/* Accent */
+.btn--accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn--accent:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* Keyboard hint badge inside button */
+.btn-kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.65;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  padding: 1px 4px;
+  margin-left: 2px;
+  letter-spacing: 0;
+}
+
+.btn--primary .btn-kbd,
+.btn--accent .btn-kbd {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+/* Button sizes */
+.btn--sm {
+  font-size: 11px;
+  padding: 4px 10px;
+}
+
+.btn--lg {
+  font-size: 14px;
+  padding: 9px 20px;
+  font-weight: 600;
+}
+
+/* ============================================================================
+   6. Task Rows
+   ============================================================================ */
+.task-row-demos {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.task-row-section-header {
+  padding: var(--sp-2) var(--sp-5) var(--sp-2) var(--sp-4);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.task-row-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+
+.task-row-section-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Individual task row */
+.task-row {
+  display: grid;
+  grid-template-columns: 20px 1fr auto auto;
+  gap: var(--sp-3);
+  align-items: center;
+  padding: 9px var(--sp-5) 9px var(--sp-4);
+  min-height: 40px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 80ms;
+  position: relative;
+}
+
+.task-row:last-child { border-bottom: none; }
+
+.task-row:hover { background: var(--surface-hover); }
+
+/* Focused: left border accent */
+.task-row--focused {
+  background: var(--accent-bg);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.task-row--focused:hover { background: var(--accent-bg-strong); }
+
+/* Completed: dimmed */
+.task-row--done { opacity: 0.5; }
+.task-row--done:hover { opacity: 0.75; }
+
+/* Symbol */
+.row-symbol {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1;
+}
+
+.row-symbol--working  { color: var(--amber); }
+.row-symbol--review   { color: var(--amber); }
+.row-symbol--question { color: var(--blue); }
+.row-symbol--failed   { color: var(--red); }
+.row-symbol--done     { color: var(--green-dim); }
+.row-symbol--idle     { color: var(--text-muted); }
+
+/* Task info block */
+.row-info { min-width: 0; }
+
+.row-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 1px;
+}
+
+.row-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* Inline pipeline bar — compact */
+.row-pipeline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.row-pipe-seg {
+  height: 4px;
+  width: 20px;
+  border-radius: 2px;
+}
+
+.row-pipe-seg--pending  { background: var(--surface-3); }
+.row-pipe-seg--done     { background: var(--green-dim); }
+.row-pipe-seg--active   { background: var(--amber); animation: pipe-active-pulse 1.5s ease-in-out infinite; }
+.row-pipe-seg--review   { background: var(--amber); }
+.row-pipe-seg--failed   { background: var(--red); }
+.row-pipe-seg--complete { background: var(--green-dim); }
+.row-pipe-seg--dim      { background: var(--surface-2); }
+
+/* Status badge */
+.row-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.row-badge--working   { background: var(--amber-bg);  color: var(--amber); }
+.row-badge--review    { background: var(--amber-bg);  color: var(--amber); }
+.row-badge--questions { background: var(--blue-bg);   color: var(--blue); }
+.row-badge--failed    { background: var(--red-bg);    color: var(--red); }
+.row-badge--idle      { background: var(--surface-2); color: var(--text-muted); }
+.row-badge--children  { background: var(--accent-2-bg); color: var(--accent-2); }
+
+/* Live status fragment */
+.row-live {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+}
+
+/* ============================================================================
+   7. Spacing Scale
+   ============================================================================ */
+.spacing-scale {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.space-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+}
+
+.space-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  width: 60px;
+  flex-shrink: 0;
+}
+
+.space-bar-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.space-bar {
+  background: var(--accent);
+  height: 4px;
+  border-radius: 2px;
+  opacity: 0.7;
+}
+
+.space-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   8. Section Layout
+   ============================================================================ */
+.section-layout-demo {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* ============================================================================
+   Component Chrome — show actual Forge UI components
+   ============================================================================ */
+
+/* Command Bar (Forge chrome) */
+.forge-command-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-6);
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  height: 44px;
+  box-shadow: var(--shadow-sm);
+}
+
+.forge-brand {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.forge-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border-strong);
+  flex-shrink: 0;
+}
+
+.forge-prompt {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.forge-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  caret-color: var(--accent);
+}
+
+.forge-input::placeholder { color: var(--text-muted); }
+
+.forge-bar-hints {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.forge-bar-hints kbd {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Status Line (Forge chrome) */
+.forge-status-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-6);
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  height: 28px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.forge-status-left,
+.forge-status-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  color: var(--text-tertiary);
+}
+
+.forge-status-branch {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.forge-status-sep {
+  color: var(--surface-3);
+}
+
+.forge-status-hint kbd {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+/* Keyboard badge (standalone) */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  min-width: 20px;
+}
+
+/* ============================================================================
+   Utility
+   ============================================================================ */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-5);
+}
+
+.demo-box {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-6);
+}
+
+.demo-box + .demo-box { margin-top: 0; }
+
+.dot-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+  margin: var(--sp-5) 0;
+}
+
+.inline-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: var(--sp-3);
+}
+
+/* ============================================================================
+   Intro block
+   ============================================================================ */
+.intro {
+  margin-bottom: 72px;
+  padding: var(--sp-8) var(--sp-10);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  border-left: 3px solid var(--accent);
+}
+
+.intro-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  margin-bottom: var(--sp-2);
+}
+
+.intro-sub {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  margin-bottom: var(--sp-5);
+}
+
+.intro-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  max-width: 640px;
+}
+
+/* toc */
+.toc {
+  margin-top: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.toc-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.toc-num {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  flex-shrink: 0;
+  width: 20px;
+}
+
+.toc-link {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 120ms;
+}
+
+.toc-link:hover { color: var(--accent); }
+
+</style>
+</head>
+<body id="root">
+
+<!-- ========================================================================
+     Document Navigation
+     ======================================================================== -->
+<header class="doc-header">
+  <div class="doc-header-brand">
+    <span class="doc-brand-name">ORKESTRA</span>
+    <span class="doc-brand-sub">Forge Design System — v2.0</span>
+  </div>
+  <nav class="doc-nav">
+    <a href="#colors">Colors</a>
+    <a href="#typography">Typography</a>
+    <a href="#symbols">Symbols</a>
+    <a href="#pipeline">Pipeline</a>
+    <a href="#buttons">Buttons</a>
+    <a href="#task-rows">Task Rows</a>
+    <a href="#spacing">Spacing</a>
+    <a href="#layout">Layout</a>
+  </nav>
+</header>
+
+<!-- ========================================================================
+     Content
+     ======================================================================== -->
+<main class="doc-content">
+
+  <!-- Intro -->
+  <div class="intro">
+    <div class="intro-title">Forge Design System</div>
+    <div class="intro-sub">Orkestra UI — Canonical Reference</div>
+    <p class="intro-desc">
+      This is the definitive design system reference for Forge — the Orkestra desktop interface.
+      Every token, component, and state documented here is authoritative. All screens must be
+      built from these primitives. When in doubt, come back here. Do not invent new tokens.
+      Do not introduce new colors. Do not add radius values not in this system.
+    </p>
+    <div class="toc">
+      <div class="toc-item"><span class="toc-num">01</span><a class="toc-link" href="#colors">Color Palette — backgrounds, accent, signals, text</a></div>
+      <div class="toc-item"><span class="toc-num">02</span><a class="toc-link" href="#typography">Typography Scale — IBM Plex Sans + IBM Plex Mono, every level rendered live</a></div>
+      <div class="toc-item"><span class="toc-num">03</span><a class="toc-link" href="#symbols">Status Symbols — the seven glyphs and their meanings</a></div>
+      <div class="toc-item"><span class="toc-num">04</span><a class="toc-link" href="#pipeline">Pipeline Component — all states from pending to completed</a></div>
+      <div class="toc-item"><span class="toc-num">05</span><a class="toc-link" href="#buttons">Buttons — all variants with keyboard hint labels</a></div>
+      <div class="toc-item"><span class="toc-num">06</span><a class="toc-link" href="#task-rows">Task Row — the core list item in all states</a></div>
+      <div class="toc-item"><span class="toc-num">07</span><a class="toc-link" href="#spacing">Spacing Scale — 4px base grid, visual reference</a></div>
+      <div class="toc-item"><span class="toc-num">08</span><a class="toc-link" href="#layout">Section Layout — how the feed sections are structured</a></div>
+    </div>
+  </div>
+
+
+  <!-- ======================================================================
+       01. Color Palette
+       ====================================================================== -->
+  <section class="section" id="colors">
+    <div class="section-header">
+      <span class="section-number">01</span>
+      <h2 class="section-title">Color Palette</h2>
+      <p class="section-desc">
+        Light mode only. Every token has a single, non-negotiable purpose.
+        Do not use a background color for text. Do not use a signal color for chrome.
+        The warm purple undertone in all canvas and surface values is intentional — it separates Forge from cold neutral tools.
+      </p>
+    </div>
+
+    <!-- Dark backgrounds -->
+    <div class="subsection">
+      <div class="subsection-title">Dark Mode — Backgrounds</div>
+      <div class="palette-grid">
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: #141118;"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--canvas</div>
+            <div class="swatch-hex">#141118</div>
+            <div class="swatch-usage">App background. Warm near-black with purple undertone.</div>
+          </div>
+        </div>
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: #1C1820;"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--surface-1</div>
+            <div class="swatch-hex">#1C1820</div>
+            <div class="swatch-usage">Command bar, status line, elevated panels.</div>
+          </div>
+        </div>
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: #242029;"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--surface-2</div>
+            <div class="swatch-hex">#242029</div>
+            <div class="swatch-usage">Expanded sections, code blocks, nested content.</div>
+          </div>
+        </div>
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: #2E2936;"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--surface-3</div>
+            <div class="swatch-hex">#2E2936</div>
+            <div class="swatch-usage">Hover backgrounds, keyboard badges, active states.</div>
+          </div>
+        </div>
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: #282330;"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--surface-hover</div>
+            <div class="swatch-hex">#282330</div>
+            <div class="swatch-usage">Row hover highlight. Slightly more purple-shifted.</div>
+          </div>
+        </div>
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: rgba(168,162,178,0.12); border: 1px solid rgba(168,162,178,0.12);"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--border</div>
+            <div class="swatch-hex">rgba(168,162,178,0.12)</div>
+            <div class="swatch-usage">Structural borders. Barely visible. Never decorative.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Accent -->
+    <div class="subsection">
+      <div class="subsection-title">Primary Accent — Pink-Red</div>
+      <div class="palette-grid">
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: #E83558;"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--accent</div>
+            <div class="swatch-hex">#E83558</div>
+            <div class="swatch-usage">Interactive elements the user initiates: command prompt, focus rings, buttons, branch name, focused row border.</div>
+          </div>
+        </div>
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: #D42B4C;"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--accent-hover</div>
+            <div class="swatch-hex">#D42B4C</div>
+            <div class="swatch-usage">Hover state for accent elements.</div>
+          </div>
+        </div>
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: rgba(232,53,88,0.08);"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--accent-bg</div>
+            <div class="swatch-hex">rgba(232,53,88,0.08)</div>
+            <div class="swatch-usage">Focused row tint, selected state background.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Secondary Accent -->
+    <div class="subsection">
+      <div class="subsection-title">Secondary Accent — Pinky-Purple</div>
+      <p style="font-size: 12px; color: var(--text-tertiary); margin-bottom: var(--sp-5); line-height: 1.5;">
+        Use for system-autonomous states the user observes but does not directly initiate: subtask/waiting-on-children badges, auto-mode indicators, orchestration-level highlights. Do not use where primary accent is specified.
+      </p>
+      <div class="palette-grid">
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: #A63CB5;"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--accent-2</div>
+            <div class="swatch-hex">#A63CB5</div>
+            <div class="swatch-usage">Subtask badges, auto-mode indicator, secondary interactive layer.</div>
+          </div>
+        </div>
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: #91339E;"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--accent-2-hover</div>
+            <div class="swatch-hex">#91339E</div>
+            <div class="swatch-usage">Hover state for secondary accent elements.</div>
+          </div>
+        </div>
+        <div class="swatch-card">
+          <div class="swatch-color" style="background: rgba(166,60,181,0.08);"></div>
+          <div class="swatch-info">
+            <div class="swatch-name">--accent-2-bg</div>
+            <div class="swatch-hex">rgba(166,60,181,0.08)</div>
+            <div class="swatch-usage">Subtask badge background, secondary tint.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Signal colors -->
+    <div class="subsection">
+      <div class="subsection-title">Signal Colors</div>
+      <p style="font-size: 12px; color: var(--text-tertiary); margin-bottom: var(--sp-5); line-height: 1.5;">
+        Each signal color is calibrated for legibility on light backgrounds. Each has a companion <code style="font-family: var(--font-mono); font-size: 11px; color: var(--accent);">-bg</code> variant at 8% opacity for inline containers, and a <code style="font-family: var(--font-mono); font-size: 11px; color: var(--accent);">-dim</code> variant for completed/quieted states.
+      </p>
+      <div class="signal-row">
+        <div class="signal-card">
+          <div class="signal-swatch light-text" style="background: #16A34A;">16A34A</div>
+          <div class="signal-label">--green</div>
+          <div class="signal-hex">Done, complete, approved</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-swatch light-text" style="background: #A0C8B0;">A0C8B0</div>
+          <div class="signal-label">--green-dim</div>
+          <div class="signal-hex">Completed pipeline stages, done symbol</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-swatch" style="background: rgba(22,163,74,0.06); border: 1px solid var(--border);">+6%</div>
+          <div class="signal-label">--green-bg</div>
+          <div class="signal-hex">Done/approved badge background</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-swatch" style="background: #D97706; color: #fff;">D97706</div>
+          <div class="signal-label">--amber</div>
+          <div class="signal-hex">Working (agent running), review needed — in motion</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-swatch" style="background: rgba(217,119,6,0.06); border: 1px solid var(--border);">+6%</div>
+          <div class="signal-label">--amber-bg</div>
+          <div class="signal-hex">Working and review badge background</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-swatch light-text" style="background: #DC2626;">DC2626</div>
+          <div class="signal-label">--red</div>
+          <div class="signal-hex">Failed, blocked, error</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-swatch" style="background: rgba(220,38,38,0.06); border: 1px solid var(--border);">+6%</div>
+          <div class="signal-label">--red-bg</div>
+          <div class="signal-hex">Failed badge background</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-swatch light-text" style="background: #2563EB;">2563EB</div>
+          <div class="signal-label">--blue</div>
+          <div class="signal-hex">Questions, informational</div>
+        </div>
+        <div class="signal-card">
+          <div class="signal-swatch light-text" style="background: #A63CB5;">A63CB5</div>
+          <div class="signal-label">--accent-2</div>
+          <div class="signal-hex">Subtasks, auto-mode, system-autonomous states</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Text hierarchy -->
+    <div class="subsection">
+      <div class="subsection-title">Text Hierarchy</div>
+      <div class="text-hierarchy">
+        <div class="text-row">
+          <div class="text-label">--text-primary<br><span style="color: var(--text-muted); font-size: 9px;">#F0ECF4</span></div>
+          <span style="font-size: 14px; font-weight: 500; color: var(--text-primary);">Database schema update — task titles, headings, active content</span>
+        </div>
+        <div class="text-row">
+          <div class="text-label">--text-secondary<br><span style="color: var(--text-muted); font-size: 9px;">#B8B0C4</span></div>
+          <span style="font-size: 13px; color: var(--text-secondary);">Add session tracking and structured logging tables to support agent recovery. This is a non-breaking, additive change.</span>
+        </div>
+        <div class="text-row">
+          <div class="text-label">--text-tertiary<br><span style="color: var(--text-muted); font-size: 9px;">#706880</span></div>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary);">ork-042 · planning · 2h ago · iteration 2</span>
+        </div>
+        <div class="text-row">
+          <div class="text-label">--text-muted<br><span style="color: var(--text-muted); font-size: 9px;">#524A5C</span></div>
+          <span style="font-size: 11px; color: var(--text-muted);">Disabled states, decorative labels, upcoming pipeline stages</span>
+        </div>
+      </div>
+
+      <!-- Light mode backgrounds -->
+      <div style="margin-top: var(--sp-5);">
+        <div class="subsection-title">Light Mode — Backgrounds</div>
+        <div class="palette-grid">
+          <div class="swatch-card">
+            <div class="swatch-color" style="background: #FAF8FC; border-bottom: 1px solid #E4DFE9;"></div>
+            <div class="swatch-info">
+              <div class="swatch-name">--canvas (light)</div>
+              <div class="swatch-hex">#FAF8FC</div>
+              <div class="swatch-usage">Warm off-white with slight purple. Not pure white.</div>
+            </div>
+          </div>
+          <div class="swatch-card">
+            <div class="swatch-color" style="background: #FFFFFF; border-bottom: 1px solid #E4DFE9;"></div>
+            <div class="swatch-info">
+              <div class="swatch-name">--surface-1 (light)</div>
+              <div class="swatch-hex">#FFFFFF</div>
+              <div class="swatch-usage">Elevated surfaces in light mode.</div>
+            </div>
+          </div>
+          <div class="swatch-card">
+            <div class="swatch-color" style="background: #F4F0F8; border-bottom: 1px solid #E4DFE9;"></div>
+            <div class="swatch-info">
+              <div class="swatch-name">--surface-2 (light)</div>
+              <div class="swatch-hex">#F4F0F8</div>
+              <div class="swatch-usage">Nested content, code blocks.</div>
+            </div>
+          </div>
+          <div class="swatch-card">
+            <div class="swatch-color" style="background: #EBE6F0; border-bottom: 1px solid #E4DFE9;"></div>
+            <div class="swatch-info">
+              <div class="swatch-name">--surface-3 (light)</div>
+              <div class="swatch-hex">#EBE6F0</div>
+              <div class="swatch-usage">Hover states, keyboard badges.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ======================================================================
+       02. Typography Scale
+       ====================================================================== -->
+  <section class="section" id="typography">
+    <div class="section-header">
+      <span class="section-number">02</span>
+      <h2 class="section-title">Typography Scale</h2>
+      <p class="section-desc">
+        Two fonts. Clear separation of roles. IBM Plex Sans for UI (content you read to understand).
+        IBM Plex Mono for data (values you scan to act on). Every level below is rendered live — this is exactly how it looks in Forge.
+      </p>
+    </div>
+
+    <div class="subsection">
+      <div class="subsection-title">IBM Plex Sans — UI Font</div>
+      <div class="type-scale">
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">App title</span>
+            <span class="type-meta-spec">IBM Plex Sans 700 · 13px · -0.02em tracking</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-ui); font-size: 13px; font-weight: 700; letter-spacing: -0.02em; color: var(--text-primary);">ORKESTRA</span>
+          </div>
+          <div class="type-usage">Brand mark in command bar</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Section header</span>
+            <span class="type-meta-spec">IBM Plex Sans 600 · 11px · 0.06em · uppercase</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-ui); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary);">NEEDS ATTENTION (3)</span>
+          </div>
+          <div class="type-usage">Feed section dividers</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Task title</span>
+            <span class="type-meta-spec">IBM Plex Sans 500 · 13px · -0.01em tracking</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-ui); font-size: 13px; font-weight: 500; letter-spacing: -0.01em; color: var(--text-primary);">Database schema update</span>
+          </div>
+          <div class="type-usage">Task names in feed rows</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Focus title</span>
+            <span class="type-meta-spec">IBM Plex Sans 600 · 18px · -0.02em tracking</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-ui); font-size: 18px; font-weight: 600; letter-spacing: -0.02em; color: var(--text-primary);">Database schema update</span>
+          </div>
+          <div class="type-usage">Task title in right pane / focus view</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Body</span>
+            <span class="type-meta-spec">IBM Plex Sans 400 · 13px · normal tracking</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-ui); font-size: 13px; font-weight: 400; color: var(--text-secondary); line-height: 1.7;">Add session tracking and structured logging tables to support agent process recovery.</span>
+          </div>
+          <div class="type-usage">Artifact prose, descriptions</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Artifact H2</span>
+            <span class="type-meta-spec">IBM Plex Sans 600 · 16px · -0.01em</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-ui); font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--text-primary);">Migration Strategy</span>
+          </div>
+          <div class="type-usage">Headings inside artifact markdown</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Artifact H3</span>
+            <span class="type-meta-spec">IBM Plex Sans 600 · 14px</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-ui); font-size: 14px; font-weight: 600; color: var(--text-primary);">Affected Files</span>
+          </div>
+          <div class="type-usage">Subheadings inside artifact markdown</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Label / button</span>
+            <span class="type-meta-spec">IBM Plex Sans 500 · 11px</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-ui); font-size: 11px; font-weight: 500; color: var(--text-secondary);">Approve</span>
+          </div>
+          <div class="type-usage">Button text, tab labels</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dot-divider"></div>
+
+    <div class="subsection">
+      <div class="subsection-title">IBM Plex Mono — Data Font</div>
+      <div class="type-scale">
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Command input</span>
+            <span class="type-meta-spec">IBM Plex Mono 400 · 13px</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-mono); font-size: 13px; font-weight: 400; color: var(--text-primary);">new Fix the auth middleware bug</span>
+          </div>
+          <div class="type-usage">Command bar text input</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Task ID</span>
+            <span class="type-meta-spec">IBM Plex Mono 400 · 10px</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">ork-042 · planning · 2h ago</span>
+          </div>
+          <div class="type-usage">Metadata row beneath task title</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Data</span>
+            <span class="type-meta-spec">IBM Plex Mono 400 · 12px</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);">main +2 -0 · 3 agents running</span>
+          </div>
+          <div class="type-usage">Status line, git metadata, timestamps</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Keyboard badge</span>
+            <span class="type-meta-spec">IBM Plex Mono 500 · 10px</span>
+          </div>
+          <div class="type-example">
+            <span class="kbd">A</span>&nbsp;&nbsp;<span class="kbd">R</span>&nbsp;&nbsp;<span class="kbd">Ctrl+\</span>&nbsp;&nbsp;<span class="kbd">Cmd+K</span>
+          </div>
+          <div class="type-usage">Keyboard hints in action bars and status line</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Inline code</span>
+            <span class="type-meta-spec">IBM Plex Mono 400 · 12px</span>
+          </div>
+          <div class="type-example">
+            <code style="font-family: var(--font-mono); font-size: 12px; padding: 2px 6px; background: var(--surface-3); border-radius: 3px; color: var(--accent);">workflow_stage_sessions</code>
+          </div>
+          <div class="type-usage">Inline code in artifact markdown</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Stage label</span>
+            <span class="type-meta-spec">IBM Plex Mono 400 · 10px</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">plan · breakdown · work · checks · review · compound</span>
+          </div>
+          <div class="type-usage">Pipeline stage names beneath bar</div>
+        </div>
+        <div class="type-row">
+          <div class="type-meta">
+            <span class="type-meta-name">Badge text</span>
+            <span class="type-meta-spec">IBM Plex Mono 600 · 10px</span>
+          </div>
+          <div class="type-example">
+            <span style="font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--amber); background: var(--amber-bg); padding: 2px 8px; border-radius: 3px;">Working</span>&nbsp;&nbsp;
+            <span style="font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--amber); background: var(--amber-bg); padding: 2px 8px; border-radius: 3px;">Review</span>&nbsp;&nbsp;
+            <span style="font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--red); background: var(--red-bg); padding: 2px 8px; border-radius: 3px;">Failed</span>
+          </div>
+          <div class="type-usage">Status badges in task rows</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ======================================================================
+       03. Status Symbols
+       ====================================================================== -->
+  <section class="section" id="symbols">
+    <div class="section-header">
+      <span class="section-number">03</span>
+      <h2 class="section-title">Status Symbols</h2>
+      <p class="section-desc">
+        Seven glyphs. No icons. No icon font dependency. Each glyph is unambiguous at any size,
+        loads instantly, and can be read in peripheral vision. The signal color carries the semantic meaning —
+        the glyph carries the type distinction.
+      </p>
+    </div>
+
+    <div class="symbol-grid">
+      <div class="symbol-card">
+        <span class="symbol-glyph symbol-active" style="color: var(--amber);">*</span>
+        <div class="symbol-info">
+          <div class="symbol-name" style="color: var(--amber);">Working</div>
+          <div class="symbol-desc">Agent actively running. Pulses in amber at 2.5s cycle. Matches active pipeline segment color.</div>
+        </div>
+      </div>
+      <div class="symbol-card">
+        <span class="symbol-glyph" style="color: var(--blue);">?</span>
+        <div class="symbol-info">
+          <div class="symbol-name" style="color: var(--blue);">Questions</div>
+          <div class="symbol-desc">Agent has asked questions. Blocked until user responds.</div>
+        </div>
+      </div>
+      <div class="symbol-card">
+        <span class="symbol-glyph" style="color: var(--red);">!</span>
+        <div class="symbol-info">
+          <div class="symbol-name" style="color: var(--red);">Failed</div>
+          <div class="symbol-desc">Agent or script failed. User attention required.</div>
+        </div>
+      </div>
+      <div class="symbol-card">
+        <span class="symbol-glyph" style="color: var(--amber);">&gt;</span>
+        <div class="symbol-info">
+          <div class="symbol-name" style="color: var(--amber);">Review</div>
+          <div class="symbol-desc">Artifact ready. Waiting for approve or reject.</div>
+        </div>
+      </div>
+      <div class="symbol-card">
+        <span class="symbol-glyph" style="color: var(--green-dim);">.</span>
+        <div class="symbol-info">
+          <div class="symbol-name" style="color: var(--green-dim);">Done</div>
+          <div class="symbol-desc">Pipeline complete. Task integrated and closed.</div>
+        </div>
+      </div>
+      <div class="symbol-card">
+        <span class="symbol-glyph" style="color: var(--text-muted);">~</span>
+        <div class="symbol-info">
+          <div class="symbol-name" style="color: var(--text-muted);">Idle</div>
+          <div class="symbol-desc">Queued, waiting on dependencies, or not yet started.</div>
+        </div>
+      </div>
+      <div class="symbol-card">
+        <span class="symbol-glyph" style="color: var(--text-muted);">-</span>
+        <div class="symbol-info">
+          <div class="symbol-name" style="color: var(--text-muted);">Archived</div>
+          <div class="symbol-desc">Task archived. Does not appear in active feed.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: var(--sp-6); padding: var(--sp-5); background: var(--surface-2); border-radius: var(--radius-md); border: 1px solid var(--border);">
+      <div class="inline-label">Animation spec</div>
+      <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">
+        Only the <span style="color: var(--amber); font-family: var(--font-mono);">*</span> working symbol animates.
+        CSS <code style="font-family: var(--font-mono); font-size: 11px; color: var(--accent);">animation: pulse 2.5s ease-in-out infinite</code>. Opacity oscillates 0.4 to 1.0.
+        All other symbols are static. No other decorative motion in the list view.
+      </p>
+    </div>
+  </section>
+
+
+  <!-- ======================================================================
+       04. Pipeline Component
+       ====================================================================== -->
+  <section class="section" id="pipeline">
+    <div class="section-header">
+      <span class="section-number">04</span>
+      <h2 class="section-title">Pipeline Component</h2>
+      <p class="section-desc">
+        The visual signature of Forge. Every task row shows the full pipeline at a glance.
+        Segments are equal-width (proportional to stage count). Six stages: plan, breakdown, work, checks, review, compound.
+        The pipeline is the primary way a user understands task state without opening anything.
+      </p>
+    </div>
+
+    <div class="pipeline-demos">
+
+      <!-- All pending -->
+      <div class="pipeline-demo">
+        <div class="pipeline-demo-label">All pending — task just created</div>
+        <div class="pipeline-bar">
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+        </div>
+        <div class="pipeline-stage-labels">
+          <div class="pipe-stage-label">plan</div>
+          <div class="pipe-stage-label">breakdown</div>
+          <div class="pipe-stage-label">work</div>
+          <div class="pipe-stage-label">checks</div>
+          <div class="pipe-stage-label">review</div>
+          <div class="pipe-stage-label">compound</div>
+        </div>
+      </div>
+
+      <!-- Planning active -->
+      <div class="pipeline-demo">
+        <div class="pipeline-demo-label">Planning stage — agent working on first stage</div>
+        <div class="pipeline-bar">
+          <div class="pipe-seg pipe-seg--active"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+        </div>
+        <div class="pipeline-stage-labels">
+          <div class="pipe-stage-label pipe-stage-label--active">plan</div>
+          <div class="pipe-stage-label">breakdown</div>
+          <div class="pipe-stage-label">work</div>
+          <div class="pipe-stage-label">checks</div>
+          <div class="pipe-stage-label">review</div>
+          <div class="pipe-stage-label">compound</div>
+        </div>
+      </div>
+
+      <!-- Mid-progress, work stage active -->
+      <div class="pipeline-demo">
+        <div class="pipeline-demo-label">Work stage active — three stages complete, work running</div>
+        <div class="pipeline-bar">
+          <div class="pipe-seg pipe-seg--done"></div>
+          <div class="pipe-seg pipe-seg--done"></div>
+          <div class="pipe-seg pipe-seg--active"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+        </div>
+        <div class="pipeline-stage-labels">
+          <div class="pipe-stage-label pipe-stage-label--done">plan</div>
+          <div class="pipe-stage-label pipe-stage-label--done">breakdown</div>
+          <div class="pipe-stage-label pipe-stage-label--active">work</div>
+          <div class="pipe-stage-label">checks</div>
+          <div class="pipe-stage-label">review</div>
+          <div class="pipe-stage-label">compound</div>
+        </div>
+      </div>
+
+      <!-- At review — user action needed -->
+      <div class="pipeline-demo">
+        <div class="pipeline-demo-label">Awaiting review — user must approve or reject to advance</div>
+        <div class="pipeline-bar">
+          <div class="pipe-seg pipe-seg--done"></div>
+          <div class="pipe-seg pipe-seg--done"></div>
+          <div class="pipe-seg pipe-seg--done"></div>
+          <div class="pipe-seg pipe-seg--done"></div>
+          <div class="pipe-seg pipe-seg--review"></div>
+          <div class="pipe-seg pipe-seg--pending"></div>
+        </div>
+        <div class="pipeline-stage-labels">
+          <div class="pipe-stage-label pipe-stage-label--done">plan</div>
+          <div class="pipe-stage-label pipe-stage-label--done">breakdown</div>
+          <div class="pipe-stage-label pipe-stage-label--done">work</div>
+          <div class="pipe-stage-label pipe-stage-label--done">checks</div>
+          <div class="pipe-stage-label pipe-stage-label--review">review</div>
+          <div class="pipe-stage-label">compound</div>
+        </div>
+      </div>
+
+      <!-- Failed at checks -->
+      <div class="pipeline-demo">
+        <div class="pipeline-demo-label">Failed at checks — pipeline halted, user attention required</div>
+        <div class="pipeline-bar">
+          <div class="pipe-seg pipe-seg--done"></div>
+          <div class="pipe-seg pipe-seg--done"></div>
+          <div class="pipe-seg pipe-seg--done"></div>
+          <div class="pipe-seg pipe-seg--failed"></div>
+          <div class="pipe-seg pipe-seg--dim"></div>
+          <div class="pipe-seg pipe-seg--dim"></div>
+        </div>
+        <div class="pipeline-stage-labels">
+          <div class="pipe-stage-label pipe-stage-label--done">plan</div>
+          <div class="pipe-stage-label pipe-stage-label--done">breakdown</div>
+          <div class="pipe-stage-label pipe-stage-label--done">work</div>
+          <div class="pipe-stage-label pipe-stage-label--failed">checks</div>
+          <div class="pipe-stage-label">review</div>
+          <div class="pipe-stage-label">compound</div>
+        </div>
+      </div>
+
+      <!-- Completed -->
+      <div class="pipeline-demo">
+        <div class="pipeline-demo-label">Completed — all stages done, task integrated</div>
+        <div class="pipeline-bar">
+          <div class="pipe-seg pipe-seg--complete"></div>
+          <div class="pipe-seg pipe-seg--complete"></div>
+          <div class="pipe-seg pipe-seg--complete"></div>
+          <div class="pipe-seg pipe-seg--complete"></div>
+          <div class="pipe-seg pipe-seg--complete"></div>
+          <div class="pipe-seg pipe-seg--complete"></div>
+        </div>
+        <div class="pipeline-stage-labels">
+          <div class="pipe-stage-label pipe-stage-label--complete">plan</div>
+          <div class="pipe-stage-label pipe-stage-label--complete">breakdown</div>
+          <div class="pipe-stage-label pipe-stage-label--complete">work</div>
+          <div class="pipe-stage-label pipe-stage-label--complete">checks</div>
+          <div class="pipe-stage-label pipe-stage-label--complete">review</div>
+          <div class="pipe-stage-label pipe-stage-label--complete">compound</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="margin-top: var(--sp-6); padding: var(--sp-5); background: var(--surface-2); border-radius: var(--radius-md); border: 1px solid var(--border);">
+      <div class="inline-label">Spec</div>
+      <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.7;">
+        Full pipeline: <strong>6px height</strong>, segments separated by <strong>3px gap</strong>, each segment <strong>border-radius: 3px</strong>.
+        Compact pipeline in task rows: <strong>4px height</strong>, <strong>20px min-width per segment</strong>, <strong>2px gap</strong>, <strong>border-radius: 2px</strong>.
+        Active segment animation: <code style="font-family: var(--font-mono); font-size: 11px; color: var(--accent);">opacity 0.55–1.0, 1.5s ease-in-out infinite</code>.
+        No border. No shadow. No tooltip needed — label row provides stage identity.
+      </p>
+    </div>
+  </section>
+
+
+  <!-- ======================================================================
+       05. Buttons
+       ====================================================================== -->
+  <section class="section" id="buttons">
+    <div class="section-header">
+      <span class="section-number">05</span>
+      <h2 class="section-title">Buttons</h2>
+      <p class="section-desc">
+        Every button that has a keyboard equivalent shows its keybinding. This is non-negotiable.
+        Buttons have 6px radius. Never 0px (too harsh), never 12px (too soft for a power tool).
+        Hover transitions are 80ms — fast enough to feel responsive, not so fast they feel glitchy.
+      </p>
+    </div>
+
+    <div class="button-grid">
+      <div>
+        <div class="inline-label">Variants</div>
+        <div class="button-row">
+          <span class="button-row-label">Primary</span>
+          <button class="btn btn--primary"><span class="btn-kbd">A</span> Approve</button>
+          <button class="btn btn--primary btn--sm"><span class="btn-kbd">A</span> Approve</button>
+          <button class="btn btn--primary btn--lg"><span class="btn-kbd">A</span> Approve</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="button-row">
+          <span class="button-row-label">Warning</span>
+          <button class="btn btn--warning"><span class="btn-kbd">R</span> Reject</button>
+          <button class="btn btn--warning btn--sm"><span class="btn-kbd">R</span> Reject</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="button-row">
+          <span class="button-row-label">Secondary</span>
+          <button class="btn btn--secondary"><span class="btn-kbd">D</span> Diff</button>
+          <button class="btn btn--secondary"><span class="btn-kbd">L</span> Logs</button>
+          <button class="btn btn--secondary"><span class="btn-kbd">H</span> History</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="button-row">
+          <span class="button-row-label">Ghost</span>
+          <button class="btn btn--ghost">Cancel</button>
+          <button class="btn btn--ghost"><span class="btn-kbd">Esc</span> Back</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="button-row">
+          <span class="button-row-label">Destructive</span>
+          <button class="btn btn--destructive">Delete task</button>
+          <button class="btn btn--destructive btn--sm">Remove</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="button-row">
+          <span class="button-row-label">Accent</span>
+          <button class="btn btn--accent"><span class="btn-kbd">Cmd+K</span> Command</button>
+          <button class="btn btn--accent btn--sm">New task</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dot-divider"></div>
+
+    <!-- Action bar in context -->
+    <div class="inline-label">Action bar — as it appears at the bottom of the focus/review view</div>
+    <div style="padding: var(--sp-4) var(--sp-5); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface-1);">
+      <div style="display: flex; align-items: center; gap: var(--sp-3); padding-top: var(--sp-4); border-top: 1px solid var(--border);">
+        <button class="btn btn--primary"><span class="btn-kbd">A</span> Approve</button>
+        <button class="btn btn--warning"><span class="btn-kbd">R</span> Reject with feedback</button>
+        <div style="flex: 1;"></div>
+        <button class="btn btn--secondary"><span class="btn-kbd">D</span> Diff</button>
+        <button class="btn btn--secondary"><span class="btn-kbd">L</span> Logs</button>
+        <button class="btn btn--ghost"><span class="btn-kbd">H</span> History</button>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ======================================================================
+       06. Task Rows
+       ====================================================================== -->
+  <section class="section" id="task-rows">
+    <div class="section-header">
+      <span class="section-number">06</span>
+      <h2 class="section-title">Task Row</h2>
+      <p class="section-desc">
+        The core list item. Four columns: symbol, title+meta, pipeline bar, badge.
+        Minimum height 40px. No cards, no shadows, no border on individual rows.
+        The focused row gets a 2px left border in accent orange — the only row-level color treatment.
+        Completed rows are dimmed to 50% opacity.
+      </p>
+    </div>
+
+    <!-- NEEDS ATTENTION section -->
+    <div class="task-row-demos">
+      <div class="task-row-section-header">
+        <span class="task-row-section-title">Needs Attention</span>
+        <span class="task-row-section-count">3</span>
+      </div>
+
+      <!-- Review — focused -->
+      <div class="task-row task-row--focused">
+        <span class="row-symbol row-symbol--review">&gt;</span>
+        <div class="row-info">
+          <div class="row-title">Database schema update</div>
+          <div class="row-meta">ork-042 &middot; review</div>
+        </div>
+        <div class="row-pipeline">
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--review"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+        </div>
+        <span class="row-badge row-badge--review">Review</span>
+      </div>
+
+      <!-- Failed -->
+      <div class="task-row">
+        <span class="row-symbol row-symbol--failed">!</span>
+        <div class="row-info">
+          <div class="row-title">CI pipeline fix</div>
+          <div class="row-meta">ork-038 &middot; checks &middot; 3 failures</div>
+        </div>
+        <div class="row-pipeline">
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--failed"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+        </div>
+        <span class="row-badge row-badge--failed">Failed</span>
+      </div>
+
+      <!-- Questions -->
+      <div class="task-row">
+        <span class="row-symbol row-symbol--question">?</span>
+        <div class="row-info">
+          <div class="row-title">API endpoint design</div>
+          <div class="row-meta">ork-039 &middot; planning &middot; 2 questions</div>
+        </div>
+        <div class="row-pipeline">
+          <div class="row-pipe-seg row-pipe-seg--active"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+        </div>
+        <span class="row-badge row-badge--questions">2 Qs</span>
+      </div>
+
+      <!-- Active section -->
+      <div class="task-row-section-header" style="margin-top: 0;">
+        <span class="task-row-section-title">Active</span>
+        <span class="task-row-section-count">3</span>
+      </div>
+
+      <!-- Working -->
+      <div class="task-row">
+        <span class="row-symbol row-symbol--working symbol-active">*</span>
+        <div class="row-info">
+          <div class="row-title">Auth refactor</div>
+          <div class="row-meta">ork-040 &middot; work</div>
+        </div>
+        <div class="row-pipeline">
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--active"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+        </div>
+        <span class="row-badge row-badge--working">Working</span>
+      </div>
+
+      <!-- Working — with live status -->
+      <div class="task-row">
+        <span class="row-symbol row-symbol--working symbol-active">*</span>
+        <div class="row-info">
+          <div class="row-title">User settings page</div>
+          <div class="row-meta">ork-041 &middot; planning &middot; <span class="row-live">Analyzing codebase structure...</span></div>
+        </div>
+        <div class="row-pipeline">
+          <div class="row-pipe-seg row-pipe-seg--active"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+        </div>
+        <span class="row-badge row-badge--working">Working</span>
+      </div>
+
+      <!-- Children / subtasks -->
+      <div class="task-row">
+        <span class="row-symbol row-symbol--working symbol-active">*</span>
+        <div class="row-info">
+          <div class="row-title">Test infrastructure overhaul</div>
+          <div class="row-meta">ork-036 &middot; work &middot; 2/4 subtasks done</div>
+        </div>
+        <div class="row-pipeline">
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--done"></div>
+          <div class="row-pipe-seg row-pipe-seg--active"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+          <div class="row-pipe-seg row-pipe-seg--pending"></div>
+        </div>
+        <span class="row-badge row-badge--children">2/4</span>
+      </div>
+
+      <!-- Completed section -->
+      <div class="task-row-section-header" style="margin-top: 0;">
+        <span class="task-row-section-title">Completed Today</span>
+        <span class="task-row-section-count">2</span>
+      </div>
+
+      <!-- Done -->
+      <div class="task-row task-row--done">
+        <span class="row-symbol row-symbol--done">.</span>
+        <div class="row-info">
+          <div class="row-title">Database migration v14</div>
+          <div class="row-meta">ork-035 &middot; 12:34 &middot; 3 files changed</div>
+        </div>
+        <div class="row-pipeline">
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+        </div>
+        <span class="row-badge" style="color: var(--text-muted); background: transparent;">Done</span>
+      </div>
+
+      <!-- Done #2 -->
+      <div class="task-row task-row--done">
+        <span class="row-symbol row-symbol--done">.</span>
+        <div class="row-info">
+          <div class="row-title">API rate limiting</div>
+          <div class="row-meta">ork-034 &middot; 11:20 &middot; PR #47 merged</div>
+        </div>
+        <div class="row-pipeline">
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+          <div class="row-pipe-seg row-pipe-seg--complete"></div>
+        </div>
+        <span class="row-badge" style="color: var(--text-muted); background: transparent;">Done</span>
+      </div>
+
+    </div>
+
+    <div style="margin-top: var(--sp-6); padding: var(--sp-5); background: var(--surface-2); border-radius: var(--radius-md); border: 1px solid var(--border);">
+      <div class="inline-label">Row anatomy</div>
+      <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.7;">
+        <strong>Column 1 (20px):</strong> Status symbol in signal color. IBM Plex Mono 14px 600.
+        <strong>Column 2 (1fr):</strong> Title (IBM Plex Sans 500 13px primary) + meta (IBM Plex Mono 10px muted). Meta includes ID, stage, live status fragment.
+        <strong>Column 3 (auto):</strong> Compact pipeline bar — 4px tall segments, 20px wide, 2px gap.
+        <strong>Column 4 (auto):</strong> Status badge — IBM Plex Mono 600 10px in signal bg.
+        <strong>Focused row:</strong> <code style="font-family: var(--font-mono); font-size: 11px; color: var(--accent);">box-shadow: inset 2px 0 0 var(--accent)</code> plus accent-bg tint.
+        <strong>Row padding:</strong> 9px vertical, 16px horizontal (left), 20px (right).
+      </p>
+    </div>
+  </section>
+
+
+  <!-- ======================================================================
+       07. Spacing Scale
+       ====================================================================== -->
+  <section class="section" id="spacing">
+    <div class="section-header">
+      <span class="section-number">07</span>
+      <h2 class="section-title">Spacing Scale</h2>
+      <p class="section-desc">
+        4px base unit. All values are multiples of 4. Use named spacing tokens — do not invent arbitrary pixel values.
+        When a value isn't in the scale, use the nearest step and document the exception.
+      </p>
+    </div>
+
+    <div class="spacing-scale">
+      <div class="space-row">
+        <span class="space-label">--sp-1</span>
+        <div class="space-bar-wrap">
+          <div class="space-bar" style="width: 4px;"></div>
+          <span class="space-value">4px — dense gap (pipeline segments, symbol-to-content)</span>
+        </div>
+      </div>
+      <div class="space-row">
+        <span class="space-label">--sp-2</span>
+        <div class="space-bar-wrap">
+          <div class="space-bar" style="width: 8px;"></div>
+          <span class="space-value">8px — tight gap (icon+label, meta items, section gap)</span>
+        </div>
+      </div>
+      <div class="space-row">
+        <span class="space-label">--sp-3</span>
+        <div class="space-bar-wrap">
+          <div class="space-bar" style="width: 12px;"></div>
+          <span class="space-value">12px — element gap (button group, form fields)</span>
+        </div>
+      </div>
+      <div class="space-row">
+        <span class="space-label">--sp-4</span>
+        <div class="space-bar-wrap">
+          <div class="space-bar" style="width: 16px;"></div>
+          <span class="space-value">16px — row padding, list item padding</span>
+        </div>
+      </div>
+      <div class="space-row">
+        <span class="space-label">--sp-5</span>
+        <div class="space-bar-wrap">
+          <div class="space-bar" style="width: 20px;"></div>
+          <span class="space-value">20px — command bar padding, outer column padding</span>
+        </div>
+      </div>
+      <div class="space-row">
+        <span class="space-label">--sp-6</span>
+        <div class="space-bar-wrap">
+          <div class="space-bar" style="width: 24px;"></div>
+          <span class="space-value">24px — section margin, right pane padding</span>
+        </div>
+      </div>
+      <div class="space-row">
+        <span class="space-label">--sp-8</span>
+        <div class="space-bar-wrap">
+          <div class="space-bar" style="width: 32px;"></div>
+          <span class="space-value">32px — major section breaks</span>
+        </div>
+      </div>
+      <div class="space-row">
+        <span class="space-label">--sp-10</span>
+        <div class="space-bar-wrap">
+          <div class="space-bar" style="width: 40px;"></div>
+          <span class="space-value">40px — document-level padding</span>
+        </div>
+      </div>
+      <div class="space-row">
+        <span class="space-label">--sp-12</span>
+        <div class="space-bar-wrap">
+          <div class="space-bar" style="width: 48px;"></div>
+          <span class="space-value">48px — page margin, full-width section padding</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: var(--sp-6);">
+      <div class="inline-label">Border radius scale</div>
+      <div style="display: flex; align-items: center; gap: var(--sp-6); padding: var(--sp-5); background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-lg);">
+        <div style="text-align: center;">
+          <div style="width: 48px; height: 48px; background: var(--surface-3); border-radius: 3px; margin-bottom: var(--sp-2);"></div>
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">3px<br>badges</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="width: 48px; height: 48px; background: var(--surface-3); border-radius: 4px; margin-bottom: var(--sp-2);"></div>
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">4px<br>kbd, small</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="width: 48px; height: 48px; background: var(--surface-3); border-radius: 6px; margin-bottom: var(--sp-2);"></div>
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">6px<br>buttons, inputs</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="width: 48px; height: 48px; background: var(--surface-3); border-radius: 8px; margin-bottom: var(--sp-2);"></div>
+          <div style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">8px<br>panels, code</div>
+        </div>
+        <div style="flex: 1; padding-left: var(--sp-6);">
+          <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">Never: 0px (too harsh for hover targets), 12px+ (too soft for a power tool). No pill buttons.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ======================================================================
+       08. Section Layout
+       ====================================================================== -->
+  <section class="section" id="layout">
+    <div class="section-header">
+      <span class="section-number">08</span>
+      <h2 class="section-title">Section Layout</h2>
+      <p class="section-desc">
+        The feed is organized into three intent-based sections. Section headers are
+        11px IBM Plex Sans 600 uppercase, color text-tertiary. Sections are separated by a
+        1px border-color divider — not whitespace alone, not a heavy separator.
+        The command bar and status line are the persistent chrome — everything else scrolls.
+      </p>
+    </div>
+
+    <!-- Full Forge chrome demo -->
+    <div class="inline-label">Complete Forge layout — command bar + feed sections + status line</div>
+    <div style="border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;">
+
+      <!-- Command Bar -->
+      <div class="forge-command-bar">
+        <span class="forge-brand">Orkestra</span>
+        <span class="forge-sep"></span>
+        <span class="forge-prompt">&gt;</span>
+        <input class="forge-input" type="text" placeholder="Search tasks, run commands...">
+        <div class="forge-bar-hints">
+          <span>main</span>
+          <span style="color: var(--text-tertiary);">+2 -0</span>
+          <span><kbd>Cmd+K</kbd></span>
+          <span style="font-family: var(--font-mono); font-size: 10px; font-weight: 500; color: var(--text-muted); background: var(--surface-3); border: 1px solid var(--border); border-radius: 3px; padding: 2px 7px; cursor: pointer;">light</span>
+        </div>
+      </div>
+
+      <!-- Feed content -->
+      <div style="background: var(--canvas); padding: var(--sp-4) var(--sp-5);">
+
+        <!-- Section: Needs Attention -->
+        <div style="padding: var(--sp-2) 0 var(--sp-2); display: flex; align-items: center; gap: var(--sp-2);">
+          <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary);">Needs Attention</span>
+          <span style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">3</span>
+        </div>
+
+        <!-- 3 attention rows -->
+        <div class="task-row task-row--focused">
+          <span class="row-symbol row-symbol--review">&gt;</span>
+          <div class="row-info"><div class="row-title">Database schema update</div><div class="row-meta">ork-042 · review</div></div>
+          <div class="row-pipeline"><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--review"></div><div class="row-pipe-seg row-pipe-seg--pending"></div></div>
+          <span class="row-badge row-badge--review">Review</span>
+        </div>
+        <div class="task-row">
+          <span class="row-symbol row-symbol--failed">!</span>
+          <div class="row-info"><div class="row-title">CI pipeline fix</div><div class="row-meta">ork-038 · checks</div></div>
+          <div class="row-pipeline"><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--failed"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div></div>
+          <span class="row-badge row-badge--failed">Failed</span>
+        </div>
+        <div class="task-row">
+          <span class="row-symbol row-symbol--question">?</span>
+          <div class="row-info"><div class="row-title">API endpoint design</div><div class="row-meta">ork-039 · planning</div></div>
+          <div class="row-pipeline"><div class="row-pipe-seg row-pipe-seg--active"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div></div>
+          <span class="row-badge row-badge--questions">2 Qs</span>
+        </div>
+
+        <!-- Section divider -->
+        <div style="height: 1px; background: var(--border); margin: var(--sp-3) 0;"></div>
+
+        <!-- Section: Active -->
+        <div style="padding: var(--sp-2) 0 var(--sp-2); display: flex; align-items: center; gap: var(--sp-2);">
+          <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary);">Active</span>
+          <span style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">3</span>
+        </div>
+
+        <div class="task-row">
+          <span class="row-symbol row-symbol--working symbol-active">*</span>
+          <div class="row-info"><div class="row-title">Auth refactor</div><div class="row-meta">ork-040 · work · <span class="row-live">Reading src/middleware/auth.ts...</span></div></div>
+          <div class="row-pipeline"><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--active"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div></div>
+          <span class="row-badge row-badge--working">Working</span>
+        </div>
+        <div class="task-row">
+          <span class="row-symbol row-symbol--working symbol-active">*</span>
+          <div class="row-info"><div class="row-title">User settings page</div><div class="row-meta">ork-041 · planning</div></div>
+          <div class="row-pipeline"><div class="row-pipe-seg row-pipe-seg--active"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div></div>
+          <span class="row-badge row-badge--working">Working</span>
+        </div>
+        <div class="task-row">
+          <span class="row-symbol row-symbol--working symbol-active">*</span>
+          <div class="row-info"><div class="row-title">Test infrastructure overhaul</div><div class="row-meta">ork-036 · work · 2/4 subtasks</div></div>
+          <div class="row-pipeline"><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--done"></div><div class="row-pipe-seg row-pipe-seg--active"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div><div class="row-pipe-seg row-pipe-seg--pending"></div></div>
+          <span class="row-badge row-badge--children">2/4</span>
+        </div>
+
+        <!-- Section divider -->
+        <div style="height: 1px; background: var(--border); margin: var(--sp-3) 0;"></div>
+
+        <!-- Section: Completed Today -->
+        <div style="padding: var(--sp-2) 0 var(--sp-2); display: flex; align-items: center; gap: var(--sp-2);">
+          <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary);">Completed Today</span>
+          <span style="font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);">2</span>
+        </div>
+
+        <div class="task-row task-row--done">
+          <span class="row-symbol row-symbol--done">.</span>
+          <div class="row-info"><div class="row-title">Database migration v14</div><div class="row-meta">ork-035 · 12:34 · 3 files</div></div>
+          <div class="row-pipeline"><div class="row-pipe-seg row-pipe-seg--complete"></div><div class="row-pipe-seg row-pipe-seg--complete"></div><div class="row-pipe-seg row-pipe-seg--complete"></div><div class="row-pipe-seg row-pipe-seg--complete"></div><div class="row-pipe-seg row-pipe-seg--complete"></div><div class="row-pipe-seg row-pipe-seg--complete"></div></div>
+          <span class="row-badge" style="color: var(--text-muted);">Done</span>
+        </div>
+        <div class="task-row task-row--done">
+          <span class="row-symbol row-symbol--done">.</span>
+          <div class="row-info"><div class="row-title">API rate limiting</div><div class="row-meta">ork-034 · 11:20 · PR #47</div></div>
+          <div class="row-pipeline"><div class="row-pipe-seg row-pipe-seg--complete"></div><div class="row-pipe-seg row-pipe-seg--complete"></div><div class="row-pipe-seg row-pipe-seg--complete"></div><div class="row-pipe-seg row-pipe-seg--complete"></div><div class="row-pipe-seg row-pipe-seg--complete"></div><div class="row-pipe-seg row-pipe-seg--complete"></div></div>
+          <span class="row-badge" style="color: var(--text-muted);">Done</span>
+        </div>
+
+      </div>
+
+      <!-- Status Line -->
+      <div class="forge-status-line">
+        <div class="forge-status-left">
+          <span class="forge-status-branch">main</span>
+          <span style="color: var(--text-secondary);">+2 -0</span>
+          <span class="forge-status-sep">|</span>
+          <span>3 agents running</span>
+          <span class="forge-status-sep">|</span>
+          <span>1 awaiting review</span>
+        </div>
+        <div class="forge-status-right">
+          <span class="forge-status-hint"><kbd>J</kbd>/<kbd>K</kbd> nav</span>
+          <span class="forge-status-hint"><kbd>Enter</kbd> focus</span>
+          <span class="forge-status-hint"><kbd>Ctrl+\</kbd> split</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Layout spec notes -->
+    <div style="margin-top: var(--sp-6);">
+      <div class="two-col">
+        <div class="demo-box">
+          <div class="subsection-title">Feed Mode</div>
+          <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">Full-width. Command bar 44px fixed. Status line 28px fixed. Feed scrolls. Section headers are sticky within scroll. Max three sections: Needs Attention, Active, Completed Today.</p>
+        </div>
+        <div class="demo-box">
+          <div class="subsection-title">Split Mode (Ctrl+\)</div>
+          <p style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">Left pane: 360px fixed. Right pane: 1fr, scrollable. Divider: 1px border-color. Focused row gets inset left border (2px accent). Same section structure in left pane, compressed rows.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

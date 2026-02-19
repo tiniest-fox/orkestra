@@ -3,27 +3,38 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Operator -- Hybrid Proposal Index</title>
+<title>Forge — Orkestra Design Proposal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg-0: #111113; --bg-1: #1A1A1D; --bg-2: #232326; --bg-3: #2C2C30;
-  --border: rgba(255,255,255,0.08); --border-active: rgba(255,255,255,0.16);
-  --text-0: #F4F4F5; --text-1: #A1A1A6; --text-2: #63636B; --text-3: #3E3E44;
-  --accent: #E5653B; --accent-bg: rgba(229,101,59,0.10);
-  --green: #3DD68C; --amber: #F5B731; --red: #EF5A5A; --blue: #5B9EF5; --purple: #9B7BF5;
-  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --canvas:    #FAF8FC;
+  --surface-1: #FFFFFF;
+  --surface-2: #F4F0F8;
+  --surface-3: #EBE6F0;
+  --border:    #E4DFE9;
+  --accent:    #E83558;
+  --accent-2:  #A63CB5;
+  --accent-bg: rgba(232, 53, 88, 0.07);
+  --green:     #16A34A;
+  --amber:     #D97706;
+  --red:       #DC2626;
+  --blue:      #2563EB;
+  --text-0:    #1C1820;
+  --text-1:    #6B6078;
+  --text-2:    #9890A4;
+  --text-3:    #C4BCCC;
+  --font-ui:   'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
 }
 
 html { font-size: 16px; -webkit-font-smoothing: antialiased; }
 body {
   font-family: var(--font-ui);
-  background: var(--bg-0);
+  background: var(--canvas);
   color: var(--text-0);
   line-height: 1.5;
   padding: 48px;
@@ -31,39 +42,41 @@ body {
   margin: 0 auto;
 }
 
-h1 {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  margin-bottom: 4px;
-}
-.subtitle {
-  color: var(--text-1);
-  font-size: 13px;
-  margin-bottom: 8px;
-}
+h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
+.subtitle { color: var(--text-1); font-size: 13px; margin-bottom: 6px; }
 .tagline {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 11px;
   font-family: var(--font-mono);
-  margin-bottom: 32px;
+  margin-bottom: 36px;
+}
+
+.palette {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 40px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
 }
 
 .section-header {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-2);
-  padding: 16px 0 8px;
+  font-family: var(--font-mono);
+  padding: 20px 0 8px;
 }
-hr {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 0 0 4px;
-}
+hr { border: none; border-top: 1px solid var(--border); margin: 0 0 4px; }
 
-.preview-link {
+.file-link {
   display: block;
   padding: 10px 12px;
   margin: 0 -12px;
@@ -72,136 +85,109 @@ hr {
   border-radius: 6px;
   transition: background 100ms;
 }
-.preview-link:hover {
-  background: var(--accent-bg);
-}
-.preview-link .name {
+.file-link:hover { background: var(--accent-bg); }
+.file-link .name {
   font-size: 13px;
   font-weight: 500;
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.preview-link .name .arrow {
-  color: var(--accent);
   font-family: var(--font-mono);
-  font-size: 12px;
 }
-.preview-link .name .tag {
-  font-family: var(--font-mono);
+.file-link .arrow { color: var(--accent); font-size: 11px; }
+.file-link .tag {
   font-size: 10px;
   font-weight: 500;
   color: var(--text-2);
-  background: var(--bg-2);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 1px 5px;
+  font-family: var(--font-mono);
 }
-.preview-link .desc {
+.file-link .desc {
   color: var(--text-1);
   font-size: 12px;
-  padding-left: 20px;
+  padding-left: 16px;
   margin-top: 2px;
-}
-
-.palette {
-  display: flex;
-  gap: 8px;
-  margin: 16px 0 24px;
-  flex-wrap: wrap;
-}
-.swatch {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
+  font-family: var(--font-ui);
 }
 
 .note {
   color: var(--text-2);
   font-size: 11px;
   font-family: var(--font-mono);
-  margin-top: 32px;
-  line-height: 18px;
+  margin-top: 36px;
+  line-height: 20px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
 }
 </style>
 </head>
 <body>
 
-<h1>The Operator</h1>
-<div class="subtitle">Hybrid Design Proposal for Orkestra</div>
-<div class="tagline">Keyboard-first density + typographic warmth. "Linear meets Warp terminal."</div>
+<h1>Forge</h1>
+<div class="subtitle">Orkestra Design Proposal</div>
+<div class="tagline">keyboard-first · intent-grouped feed · IBM Plex · light palette · no icons</div>
 
 <div class="palette">
-  <div class="swatch" style="background: #111113;" title="--bg-0"></div>
-  <div class="swatch" style="background: #1A1A1D;" title="--bg-1"></div>
-  <div class="swatch" style="background: #232326;" title="--bg-2"></div>
-  <div class="swatch" style="background: #E5653B;" title="--accent"></div>
-  <div class="swatch" style="background: #3DD68C;" title="--green"></div>
-  <div class="swatch" style="background: #F5B731;" title="--amber"></div>
-  <div class="swatch" style="background: #EF5A5A;" title="--red"></div>
-  <div class="swatch" style="background: #5B9EF5;" title="--blue"></div>
-  <div class="swatch" style="background: #9B7BF5;" title="--purple"></div>
+  <div class="swatch" style="background:#FAF8FC;" title="canvas"></div>
+  <div class="swatch" style="background:#FFFFFF;" title="surface-1"></div>
+  <div class="swatch" style="background:#F4F0F8;" title="surface-2"></div>
+  <div class="swatch" style="background:#EBE6F0;" title="surface-3"></div>
+  <div class="swatch" style="background:#E83558;" title="accent — user actions"></div>
+  <div class="swatch" style="background:#A63CB5;" title="accent-2 — system states"></div>
+  <div class="swatch" style="background:#16A34A;" title="green — done"></div>
+  <div class="swatch" style="background:#D97706;" title="amber — working / review"></div>
+  <div class="swatch" style="background:#DC2626;" title="red — failed"></div>
+  <div class="swatch" style="background:#2563EB;" title="blue — questions"></div>
+  <div class="swatch" style="background:#1C1820;" title="text-primary"></div>
 </div>
+
+<div class="section-header">Foundation</div>
+<hr>
+<a class="file-link" href="design-system.html">
+  <div class="name"><span class="arrow">›</span> design-system.html <span class="tag">reference</span></div>
+  <div class="desc">Complete token reference — colors, typography, components, pipeline variants, status symbols, task rows</div>
+</a>
 
 <div class="section-header">Core Views</div>
 <hr>
-
-<a class="preview-link" href="feed.html">
-  <div class="name"><span class="arrow">&gt;</span> feed.html <span class="tag">primary</span></div>
-  <div class="desc">Main task feed -- intent-grouped list with pipeline visualization and live status</div>
-</a>
-<a class="preview-link" href="task-detail.html">
-  <div class="name"><span class="arrow">&gt;</span> task-detail.html</div>
-  <div class="desc">Full task detail in focus mode -- working state with live activity and metrics</div>
-</a>
-<a class="preview-link" href="review.html">
-  <div class="name"><span class="arrow">&gt;</span> review.html</div>
-  <div class="desc">Review mode -- artifact content with approve/reject action bar</div>
-</a>
-<a class="preview-link" href="questions.html">
-  <div class="name"><span class="arrow">&gt;</span> questions.html</div>
-  <div class="desc">Questions mode -- answering agent questions with keyboard selection</div>
+<a class="file-link" href="feed.html">
+  <div class="name"><span class="arrow">›</span> feed.html <span class="tag">primary</span></div>
+  <div class="desc">Main task feed — intent-grouped (Needs Attention / Active / Completed), pipeline bars, action buttons</div>
 </a>
 
-<div class="section-header">State Views</div>
+<div class="section-header">Task Detail</div>
 <hr>
+<a class="file-link" href="task-detail-working.html">
+  <div class="name"><span class="arrow">›</span> task-detail-working.html</div>
+  <div class="desc">Working state — live agent log with collapsible tool calls, interrupt action, auto-mode toggle</div>
+</a>
+<a class="file-link" href="task-detail-review.html">
+  <div class="name"><span class="arrow">›</span> task-detail-review.html</div>
+  <div class="desc">Review state — rendered artifact with iteration context, approve / request changes action bar</div>
+</a>
+<a class="file-link" href="task-detail-questions.html">
+  <div class="name"><span class="arrow">›</span> task-detail-questions.html</div>
+  <div class="desc">Q&A state — structured question form with radio + textarea inputs, submit answers</div>
+</a>
+<a class="file-link" href="task-detail-pr.html">
+  <div class="name"><span class="arrow">›</span> task-detail-pr.html</div>
+  <div class="desc">PR state — CI checks, reviewer status, inline comments, merge / address actions</div>
+</a>
 
-<a class="preview-link" href="failed.html">
-  <div class="name"><span class="arrow">&gt;</span> failed.html</div>
-  <div class="desc">Failed task -- error display with activity log and retry options</div>
-</a>
-<a class="preview-link" href="subtasks.html">
-  <div class="name"><span class="arrow">&gt;</span> subtasks.html</div>
-  <div class="desc">Parent task with subtask hierarchy, dependency graph, and progress tracking</div>
-</a>
-<a class="preview-link" href="monitoring.html">
-  <div class="name"><span class="arrow">&gt;</span> monitoring.html</div>
-  <div class="desc">Active agent monitoring with live tool calls and file edits</div>
-</a>
-
-<div class="section-header">Utilities</div>
+<div class="section-header">Flows</div>
 <hr>
-
-<a class="preview-link" href="diff.html">
-  <div class="name"><span class="arrow">&gt;</span> diff.html</div>
-  <div class="desc">Code diff viewer with file tree navigation and syntax highlighting</div>
+<a class="file-link" href="new-task.html">
+  <div class="name"><span class="arrow">›</span> new-task.html</div>
+  <div class="desc">Task creation — description, base branch, flow selector, auto-approve toggle</div>
 </a>
-<a class="preview-link" href="logs.html">
-  <div class="name"><span class="arrow">&gt;</span> logs.html</div>
-  <div class="desc">Full agent session log with type filters and session navigation</div>
-</a>
-<a class="preview-link" href="create.html">
-  <div class="name"><span class="arrow">&gt;</span> create.html</div>
-  <div class="desc">Task creation -- command bar quick-create with flow picker</div>
-</a>
-
-<hr style="margin-top: 16px;">
 
 <div class="note">
-  Each file is self-contained HTML/CSS. Open any directly in a browser.<br>
-  All views include dark/light mode toggle. Design system defined in README.md.<br>
-  Sources: Proposal A (density, pipeline), B (warmth, typography), C (keyboard, minimalism).
+  Each file is self-contained HTML — open any directly in a browser. Light mode only.<br>
+  Fonts: IBM Plex Sans (UI) · IBM Plex Mono (data/code)<br>
+  Accent: #E83558 user actions · #A63CB5 system states · amber working · green done
 </div>
 
 </body>

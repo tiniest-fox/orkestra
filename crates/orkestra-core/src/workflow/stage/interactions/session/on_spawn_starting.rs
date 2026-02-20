@@ -1,7 +1,7 @@
 //! Create session and iteration before spawn attempt, returning spawn context.
 
 use crate::orkestra_debug;
-use crate::workflow::domain::{SessionState, StageSession};
+use crate::workflow::domain::{IterationTrigger, SessionState, StageSession};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 use crate::workflow::stage::session::SessionSpawnContext;
@@ -48,32 +48,8 @@ pub(crate) fn execute(
 
     let stage_session_id = session.id.clone();
 
-    // Compute resume/reentry BEFORE saving the session or linking the iteration.
-    // is_resume: true if we have a session ID AND the agent produced output.
-    let is_resume = session.claude_session_id.is_some() && session.has_activity;
-
-    // When not resuming, replace stale session ID with fresh one (or clear it for
-    // own-ID providers). This prevents "Session ID already in use" errors when
-    // retrying after failure. For providers like OpenCode that generate their own
-    // IDs, initial_session_id is None, which correctly clears the stale ID.
-    if !is_resume && session.claude_session_id.is_some() {
-        session.claude_session_id = initial_session_id;
-    }
-
-    orkestra_debug!(
-        "session",
-        "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}, has_activity={}",
-        task_id,
-        stage,
-        session.claude_session_id,
-        session.session_state,
-        session.spawn_count,
-        session.has_activity
-    );
-
-    store.save_stage_session(&session)?;
-
-    // Get or create iteration — delegates to IterationService
+    // Fetch the active iteration BEFORE computing is_resume so we can inspect its trigger.
+    // This is read-only — no session state is affected by this fetch.
     let iteration = if let Some(active_iter) = store.get_active_iteration(task_id, stage)? {
         active_iter
     } else {
@@ -86,8 +62,45 @@ pub(crate) fn execute(
         iteration_service.create_iteration(task_id, stage, None)?
     };
 
+    // Compute resume/reentry BEFORE saving the session or linking the iteration.
+    // is_resume: true if we have a session ID AND either:
+    //   - the agent produced output (has_activity), OR
+    //   - the user explicitly resumed from interrupt (ManualResume trigger).
+    // The ManualResume case handles agents interrupted before producing structured output:
+    // has_activity stays false, but we still want to resume the existing session.
+    let is_manual_resume = matches!(
+        iteration.incoming_context,
+        Some(IterationTrigger::ManualResume { .. })
+    );
+    let is_resume =
+        session.claude_session_id.is_some() && (session.has_activity || is_manual_resume);
+
+    // When not resuming, replace stale session ID with fresh one (or clear it for
+    // own-ID providers). This prevents "Session ID already in use" errors when
+    // retrying after failure. For providers like OpenCode that generate their own
+    // IDs, initial_session_id is None, which correctly clears the stale ID.
+    if !is_resume && session.claude_session_id.is_some() {
+        session.claude_session_id = initial_session_id;
+    }
+
+    orkestra_debug!(
+        "session",
+        "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}, has_activity={}, is_manual_resume={}",
+        task_id,
+        stage,
+        session.claude_session_id,
+        session.session_state,
+        session.spawn_count,
+        session.has_activity,
+        is_manual_resume
+    );
+
+    store.save_stage_session(&session)?;
+
     // Detect untriggered re-entry BEFORE linking: resuming a session but with a
     // fresh iteration that has no trigger and wasn't linked to this session yet.
+    // ManualResume iterations have incoming_context = Some(...), so is_stage_reentry
+    // is correctly false for interrupt→resume (not a re-entry).
     let is_stage_reentry =
         is_resume && iteration.stage_session_id.is_none() && iteration.incoming_context.is_none();
 

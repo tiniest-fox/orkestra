@@ -4385,6 +4385,133 @@ fn test_reentry_without_restart_flag_uses_recheck() {
     );
 }
 
+/// Test that interrupt→resume on a `restart_on_reentry` stage does NOT start a
+/// fresh session. An interrupt→resume is NOT a stage re-entry — it's the same
+/// pass through the stage being continued after a pause.
+///
+/// Bug: Before the fix, if the agent was interrupted before producing structured
+/// output (`has_activity = false`), the next spawn would compute `is_resume = false`
+/// and replace the session ID with a fresh UUID, bypassing `--resume`.
+///
+/// Flow:
+/// 1. Review stage spawns and receives interrupt before producing output
+/// 2. User resumes (creates ManualResume iteration)
+/// 3. Review spawns again → must use same session ID (`is_resume = true`)
+/// 4. `restart_on_reentry` must NOT trigger (`is_stage_reentry = false`)
+#[test]
+fn test_interrupt_resume_on_restart_on_reentry_stage_preserves_session() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+
+    // Review stage has restart_on_reentry — the bug would cause it to spawn fresh
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md"),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+            .restart_on_reentry()
+            .automated(),
+    ]);
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+
+    let task = ctx.create_task(
+        "Interrupt resume reentry test",
+        "Test interrupt→resume does not trigger restart_on_reentry",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // =========================================================================
+    // Step 1: Work stage completes → task moves to review
+    // =========================================================================
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial work completed".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn work agent
+    ctx.advance(); // process work output
+
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // spawn reviewer (first time)
+
+    // Record the review session ID before interrupt
+    let first_session = ctx
+        .api()
+        .get_stage_session(&task_id, "review")
+        .unwrap()
+        .expect("Should have review session");
+    let original_session_id = first_session.claude_session_id.clone();
+
+    // Verify first review spawn is not a resume
+    let first_config = ctx.last_run_config();
+    assert!(!first_config.is_resume, "First spawn should not be a resume");
+
+    // =========================================================================
+    // Step 2: Interrupt before review produces output (has_activity stays false)
+    // =========================================================================
+    ctx.api().agent_started(&task_id).unwrap();
+    ctx.api().interrupt(&task_id).unwrap();
+
+    let session = ctx
+        .api()
+        .get_stage_session(&task_id, "review")
+        .unwrap()
+        .expect("Session should exist");
+    assert!(
+        !session.has_activity,
+        "Precondition: agent interrupted before producing output"
+    );
+
+    // =========================================================================
+    // Step 3: User resumes → should preserve session, not restart
+    // =========================================================================
+    ctx.api().resume(&task_id, None).unwrap();
+
+    // Set output for the resumed review agent
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "Looks good".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance(); // spawn reviewer (resumed — must use same session ID)
+
+    let resume_config = ctx.last_run_config();
+    assert!(
+        resume_config.is_resume,
+        "Resume after interrupt should use is_resume=true (ManualResume trigger)"
+    );
+
+    // The key assertion: session ID must NOT have been replaced with a fresh UUID
+    let current_session = ctx
+        .api()
+        .get_stage_session(&task_id, "review")
+        .unwrap()
+        .expect("Should have review session");
+    assert_eq!(
+        current_session.claude_session_id, original_session_id,
+        "Session ID must be preserved across interrupt→resume (not replaced with fresh UUID)"
+    );
+
+    // Only 1 review session should exist — no superseding
+    let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
+    let review_sessions: Vec<_> = all_sessions
+        .iter()
+        .filter(|s| s.stage == "review")
+        .collect();
+    assert_eq!(
+        review_sessions.len(),
+        1,
+        "Should have only 1 review session (interrupt→resume is not a re-entry)"
+    );
+}
+
 // =============================================================================
 // Disallowed Tools E2E Tests
 // =============================================================================

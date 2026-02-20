@@ -101,8 +101,33 @@ pub async fn workflow_get_task_diff(
     highlighter: tauri::State<'_, SyntaxHighlighter>,
 ) -> Result<HighlightedTaskDiff, TauriError> {
     registry.with_project(window.label(), |state| {
-        let api = state.api()?;
-        let raw_diff = api.get_task_diff(&task_id)?;
+        let (task, git) = {
+            let api = state.api()?;
+            let git = api
+                .git_service()
+                .ok_or_else(|| {
+                    orkestra_core::workflow::ports::WorkflowError::GitError(
+                        "No git service configured".into(),
+                    )
+                })?
+                .clone();
+            let task = api.get_task(&task_id)?;
+            (task, git)
+        }; // mutex released — git subprocess runs off the lock
+
+        let worktree_path = task.worktree_path.as_ref().ok_or(
+            orkestra_core::workflow::ports::WorkflowError::GitError("Task has no worktree".into()),
+        )?;
+        let branch_name = task.branch_name.as_ref().ok_or(
+            orkestra_core::workflow::ports::WorkflowError::GitError("Task has no branch".into()),
+        )?;
+        let raw_diff = git
+            .diff_against_base(
+                std::path::Path::new(worktree_path),
+                branch_name,
+                &task.base_branch,
+            )
+            .map_err(|e| orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()))?;
 
         // Convert to highlighted format
         let files = raw_diff
@@ -359,10 +384,13 @@ pub fn workflow_get_batch_file_counts(
     hashes: Vec<String>,
 ) -> Result<std::collections::HashMap<String, usize>, TauriError> {
     registry.with_project(window.label(), |state| {
-        let api = state.api()?;
-        let Some(git) = api.git_service() else {
-            return Ok(std::collections::HashMap::new());
-        };
+        let git = {
+            let api = state.api()?;
+            let Some(git) = api.git_service() else {
+                return Ok(std::collections::HashMap::new());
+            };
+            Arc::clone(git)
+        }; // mutex released here — git subprocess runs off the lock
         git.batch_file_counts(&hashes).map_err(|e| {
             orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()).into()
         })
@@ -378,10 +406,13 @@ pub fn workflow_get_commit_diff(
     highlighter: State<SyntaxHighlighter>,
 ) -> Result<HighlightedTaskDiff, TauriError> {
     registry.with_project(window.label(), |state| {
-        let api = state.api()?;
-        let Some(git) = api.git_service() else {
-            return Ok(HighlightedTaskDiff { files: vec![] });
-        };
+        let git = {
+            let api = state.api()?;
+            let Some(git) = api.git_service() else {
+                return Ok(HighlightedTaskDiff { files: vec![] });
+            };
+            Arc::clone(git)
+        }; // mutex released here — git subprocess runs off the lock
         let task_diff = git
             .commit_diff(&commit_hash)
             .map_err(|e| orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()))?;

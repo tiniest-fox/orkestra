@@ -472,6 +472,7 @@ pub fn run() {
             commands::workflow_git_sync_status,
             commands::workflow_git_push,
             commands::workflow_git_pull,
+            commands::workflow_git_fetch,
             commands::open_in_terminal,
             commands::open_in_editor,
             commands::detect_external_tools,

@@ -359,6 +359,10 @@ impl GitService for MockGitService {
             .pop_front()
             .unwrap_or(Ok(()))
     }
+
+    fn fetch_origin(&self) -> Result<(), GitError> {
+        Ok(())
+    }
 }
 
 // ============================================================================

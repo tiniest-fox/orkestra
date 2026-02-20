@@ -338,12 +338,25 @@ impl OrchestratorLoop {
         };
         for name in due {
             if name == "cleanup_worktrees" {
-                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
-                if let Some(ref git) = api.git_service {
+                let Some(git) = self.git_service.clone() else {
+                    continue;
+                };
+                let store = {
+                    let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+                    Arc::clone(&api.store)
+                }; // mutex released — git subprocesses run off the lock
+
+                let run = move || {
                     task_interactions::cleanup_orphaned_worktrees::execute(
-                        api.store.as_ref(),
+                        store.as_ref(),
                         git.as_ref(),
                     );
+                };
+
+                if self.sync_background {
+                    run();
+                } else {
+                    std::thread::spawn(run);
                 }
             }
         }

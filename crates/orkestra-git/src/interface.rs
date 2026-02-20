@@ -211,4 +211,7 @@ pub trait GitService: Send + Sync {
     /// Performs `git pull --ff-only origin {branch}` to fetch and fast-forward.
     /// Fails if local branch has diverged from origin (not fast-forwardable).
     fn pull_branch(&self) -> Result<(), GitError>;
+
+    /// Fetch from origin to update remote-tracking refs without merging.
+    fn fetch_origin(&self) -> Result<(), GitError>;
 }

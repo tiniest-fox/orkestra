@@ -1,3 +1,4 @@
+pub mod fetch;
 pub mod pull;
 pub mod push;
 pub mod sync_base;

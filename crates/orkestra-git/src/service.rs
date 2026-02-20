@@ -190,6 +190,10 @@ impl GitService for Git2GitService {
     fn pull_branch(&self) -> Result<(), GitError> {
         interactions::remote::pull::execute(&self.repo_path)
     }
+
+    fn fetch_origin(&self) -> Result<(), GitError> {
+        interactions::remote::fetch::execute(&self.repo_path)
+    }
 }
 
 // ============================================================================

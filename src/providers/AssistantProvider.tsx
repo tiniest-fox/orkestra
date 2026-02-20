@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePolling } from "../hooks/usePolling";
 import type {
   AssistantSession,
   LogEntry,
@@ -159,27 +160,17 @@ export function AssistantProvider({ children }: AssistantProviderProps) {
     }
   }, []);
 
-  // Poll logs when agent is working
-  useEffect(() => {
-    if (!isAgentWorking || !activeSession?.id) return;
+  // Wrapper to poll logs for the active session (uses existing activeSessionIdRef)
+  const fetchLogsForActiveSession = useCallback(async () => {
+    const sessionId = activeSessionIdRef.current;
+    if (sessionId) await fetchLogs(sessionId);
+  }, [fetchLogs]);
 
-    const interval = setInterval(() => {
-      fetchLogs(activeSession.id);
-    }, 2000);
+  // Poll logs while agent is working and a session is active
+  usePolling(isAgentWorking && activeSession?.id ? fetchLogsForActiveSession : null, 2000);
 
-    return () => clearInterval(interval);
-  }, [isAgentWorking, activeSession?.id, fetchLogs]);
-
-  // Poll sessions list to detect title updates
-  useEffect(() => {
-    if (!isAgentWorking) return;
-
-    const interval = setInterval(() => {
-      fetchSessions();
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [isAgentWorking, fetchSessions]);
+  // Poll sessions list while agent is working (detects title updates)
+  usePolling(isAgentWorking ? fetchSessions : null, 2000);
 
   // Load sessions on mount
   useEffect(() => {

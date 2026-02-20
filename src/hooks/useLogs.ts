@@ -8,6 +8,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LogEntry, StageLogInfo, WorkflowTaskView } from "../types/workflow";
+import { usePolling } from "./usePolling";
 import { useSmartDefault } from "./useSmartDefault";
 
 interface UseLogsResult {
@@ -165,30 +166,21 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
     }
   }, [task.id, activeLogStage, activeSessionId]);
 
-  // Fetch logs when active and stage is selected, with polling
+  // Fetch logs when stage/session changes (handles non-polling cases and initial load)
   useEffect(() => {
     if (!isActive || !activeLogStage) return;
-
     fetchLogs();
+  }, [isActive, activeLogStage, fetchLogs]);
 
-    // Poll while agent is running on current stage
-    const shouldPoll =
-      task.derived.is_working && activeLogStage === task.derived.current_stage && !error;
+  // Poll while agent is running on the current stage
+  const shouldPoll =
+    isActive &&
+    !!activeLogStage &&
+    task.derived.is_working &&
+    activeLogStage === task.derived.current_stage &&
+    !error;
 
-    if (shouldPoll) {
-      const interval = setInterval(fetchLogs, 2000);
-      return () => clearInterval(interval);
-    }
-
-    return undefined;
-  }, [
-    isActive,
-    activeLogStage,
-    task.derived.is_working,
-    task.derived.current_stage,
-    fetchLogs,
-    error,
-  ]);
+  usePolling(shouldPoll ? fetchLogs : null, 2000);
 
   return {
     logs,

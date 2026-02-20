@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePolling } from "../hooks/usePolling";
 import type { BranchList, CommitInfo, SyncStatus } from "../types/workflow";
 import { extractErrorMessage } from "../utils/errors";
 
@@ -41,8 +42,10 @@ interface GitHistoryContextValue extends SyncControls {
   operationError: OperationError | null;
   pushLoading: boolean;
   pullLoading: boolean;
+  fetchLoading: boolean;
   pushToOrigin: () => Promise<void>;
   pullFromOrigin: () => Promise<void>;
+  fetchFromOrigin: () => Promise<void>;
 }
 
 const GitHistoryContext = createContext<GitHistoryContextValue | null>(null);
@@ -72,6 +75,7 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [pushLoading, setPushLoading] = useState(false);
   const [pullLoading, setPullLoading] = useState(false);
+  const [fetchLoading, setFetchLoading] = useState(false);
   const [operationError, setOperationError] = useState<OperationError | null>(null);
   const requestedHashesRef = useRef<Set<string>>(new Set());
 
@@ -109,6 +113,21 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     }
   }, []);
 
+  const fetchFromOrigin = useCallback(async () => {
+    setFetchLoading(true);
+    setOperationError(null);
+    try {
+      await invoke("workflow_git_fetch");
+      const status = await invoke<SyncStatus | null>("workflow_git_sync_status");
+      setSyncStatus(status);
+    } catch (err) {
+      console.error("Fetch failed:", err);
+      setOperationError({ type: "pull", message: extractErrorMessage(err) });
+    } finally {
+      setFetchLoading(false);
+    }
+  }, []);
+
   const pullFromOrigin = useCallback(async () => {
     setPullLoading(true);
     setOperationError(null);
@@ -128,11 +147,7 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     }
   }, []);
 
-  useEffect(() => {
-    fetchCommits();
-    const interval = setInterval(fetchCommits, 2000);
-    return () => clearInterval(interval);
-  }, [fetchCommits]);
+  usePolling(fetchCommits, 2000);
 
   useEffect(() => {
     if (commits.length === 0) return;
@@ -185,8 +200,10 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     operationError,
     pushLoading,
     pullLoading,
+    fetchLoading,
     pushToOrigin,
     pullFromOrigin,
+    fetchFromOrigin,
     ...syncControls,
   };
 

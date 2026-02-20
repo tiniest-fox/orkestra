@@ -1,5 +1,7 @@
 //! Tauri commands for git diff operations.
 
+use std::sync::Arc;
+
 use orkestra_core::workflow::ports::{CommitInfo, FileChangeType, FileDiff};
 use serde::Serialize;
 use tauri::State;
@@ -333,10 +335,13 @@ pub fn workflow_get_commit_log(
     window: tauri::Window,
 ) -> Result<Vec<CommitInfo>, TauriError> {
     registry.with_project(window.label(), |state| {
-        let api = state.api()?;
-        let Some(git) = api.git_service() else {
-            return Ok(vec![]);
-        };
+        let git = {
+            let api = state.api()?;
+            let Some(git) = api.git_service() else {
+                return Ok(vec![]);
+            };
+            Arc::clone(git)
+        }; // mutex released here — git subprocess runs off the lock
         git.commit_log(20).map_err(|e| {
             orkestra_core::workflow::ports::WorkflowError::GitError(e.to_string()).into()
         })

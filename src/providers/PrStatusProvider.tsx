@@ -17,6 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePolling } from "../hooks/usePolling";
 import type { PrStatus } from "../types/workflow";
 import { useTasks } from "./TasksProvider";
 
@@ -66,6 +67,14 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
   // Track task IDs with terminal PR states (no more polling needed)
   const terminalTasksRef = useRef<Set<string>>(new Set());
 
+  // Stable ref for tasks — avoids re-creating polling callbacks when tasks change
+  const tasksRef = useRef(tasks);
+  tasksRef.current = tasks;
+
+  // Stable ref for activePollTaskId — avoids re-creating activePoll callback
+  const activePollTaskIdRef = useRef(activePollTaskId);
+  activePollTaskIdRef.current = activePollTaskId;
+
   // Track visibility changes
   useEffect(() => {
     const handler = () => setIsVisible(document.visibilityState === "visible");
@@ -105,54 +114,35 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
     }
   }, []);
 
-  // Background polling (10s) for all tasks with pr_url where status is not terminal
-  useEffect(() => {
-    if (!isVisible) return;
+  // Background polling (10s) — reads tasks via ref to avoid restarting on every task update
+  const backgroundPoll = useCallback(async () => {
+    const toFetch = tasksRef.current.flatMap((t) => {
+      if (!t.pr_url) return [];
+      // Skip if already known to be terminal
+      if (terminalTasksRef.current.has(t.id)) return [];
+      return [{ id: t.id, prUrl: t.pr_url }];
+    });
 
-    const poll = async () => {
-      const toFetch = tasks.flatMap((t) => {
-        if (!t.pr_url) return [];
-        // Skip if already known to be terminal
-        if (terminalTasksRef.current.has(t.id)) return [];
-        return [{ id: t.id, prUrl: t.pr_url }];
-      });
+    for (const { id, prUrl } of toFetch) {
+      fetchPrStatus(id, prUrl);
+    }
+  }, [fetchPrStatus]);
 
-      for (const { id, prUrl } of toFetch) {
-        fetchPrStatus(id, prUrl);
-      }
-    };
+  usePolling(isVisible ? backgroundPoll : null, 10_000);
 
-    poll();
-    const interval = setInterval(poll, 10000);
-    return () => clearInterval(interval);
-  }, [isVisible, tasks, fetchPrStatus]);
-
-  // Active polling (2s) for focused PR tab
-  useEffect(() => {
-    if (!isVisible || !activePollTaskId) return;
-
-    const task = tasks.find((t) => t.id === activePollTaskId);
+  // Active polling (2s) — only when visible and a task is focused
+  // activePollTaskId in deps so the cycle restarts immediately on task change
+  const activePoll = useCallback(async () => {
+    const taskId = activePollTaskIdRef.current;
+    if (!taskId) return;
+    // Re-check terminal state each tick
+    if (terminalTasksRef.current.has(taskId)) return;
+    const task = tasksRef.current.find((t) => t.id === taskId);
     if (!task?.pr_url) return;
+    await fetchPrStatus(taskId, task.pr_url);
+  }, [activePollTaskId, fetchPrStatus]); // activePollTaskId restarts cycle on task change
 
-    // Skip if already terminal
-    if (terminalTasksRef.current.has(activePollTaskId)) return;
-
-    fetchPrStatus(activePollTaskId, task.pr_url);
-
-    const interval = setInterval(() => {
-      // Re-check terminal state each tick (may have become terminal)
-      if (terminalTasksRef.current.has(activePollTaskId)) {
-        clearInterval(interval);
-        return;
-      }
-      const currentTask = tasks.find((t) => t.id === activePollTaskId);
-      if (currentTask?.pr_url) {
-        fetchPrStatus(activePollTaskId, currentTask.pr_url);
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [isVisible, activePollTaskId, tasks, fetchPrStatus]);
+  usePolling(isVisible && activePollTaskId ? activePoll : null, 2000);
 
   const getPrStatus = useCallback((taskId: string) => statuses.get(taskId), [statuses]);
 

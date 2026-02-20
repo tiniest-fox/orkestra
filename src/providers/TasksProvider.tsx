@@ -17,6 +17,7 @@ import {
   useState,
 } from "react";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
+import { usePolling } from "../hooks/usePolling";
 
 interface TasksContextValue {
   tasks: WorkflowTaskView[];
@@ -93,26 +94,18 @@ export function TasksProvider({ children }: TasksProviderProps) {
     }
   }, []);
 
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
-
-  const resetPolling = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(fetchTasks, 2000);
-  }, [fetchTasks]);
+  const { reset: resetPolling } = usePolling(fetchTasks, 2000);
 
   useEffect(() => {
-    fetchTasks();
     fetchArchivedTasks();
-    resetPolling();
 
     const unlistenPromise = listen<string>("task-updated", () => {
       fetchTasks();
       fetchArchivedTasks();
-      resetPolling(); // Reset interval so next poll is 2s from now
+      resetPolling(); // Restart the 2s cycle from now
     });
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
       unlistenPromise.then((unlisten) => unlisten());
     };
   }, [fetchTasks, fetchArchivedTasks, resetPolling]);

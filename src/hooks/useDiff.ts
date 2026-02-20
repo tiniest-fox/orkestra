@@ -6,7 +6,8 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { usePolling } from "./usePolling";
 
 export interface HighlightedLine {
   line_type: "add" | "delete" | "context";
@@ -49,46 +50,23 @@ export function useDiff(taskId: string | null): UseDiffResult {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
-  useEffect(() => {
-    if (!taskId) {
-      setDiff(null);
+  const fetchDiff = useCallback(async () => {
+    if (!taskId) return;
+
+    try {
+      setLoading(true);
       setError(null);
-      return;
+      const result = await invoke<HighlightedTaskDiff>("workflow_get_task_diff", { taskId });
+      setDiff(result);
+    } catch (err) {
+      console.error("Failed to fetch diff:", err);
+      setError(err);
+    } finally {
+      setLoading(false);
     }
-
-    let cancelled = false;
-
-    const fetchDiff = async () => {
-      if (cancelled) return;
-
-      try {
-        setLoading(true);
-        setError(null);
-        const result = await invoke<HighlightedTaskDiff>("workflow_get_task_diff", { taskId });
-        if (!cancelled) {
-          setDiff(result);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error("Failed to fetch diff:", err);
-          setError(err);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchDiff();
-
-    const intervalId = setInterval(fetchDiff, 2000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
   }, [taskId]);
+
+  usePolling(taskId ? fetchDiff : null, 2000);
 
   return { diff, loading, error };
 }

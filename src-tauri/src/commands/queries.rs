@@ -1,5 +1,7 @@
 //! Read-only query commands.
 
+use std::sync::Arc;
+
 use crate::{error::TauriError, project_registry::ProjectRegistry};
 use chrono::Utc;
 use orkestra_core::workflow::{
@@ -129,15 +131,17 @@ pub fn workflow_list_branches(
     window: Window,
 ) -> Result<BranchList, TauriError> {
     registry.with_project(window.label(), |state| {
-        let api = state.api()?;
-
-        let Some(git) = api.git_service() else {
-            return Ok(BranchList {
-                branches: vec![],
-                current: None,
-                latest_commit_message: None,
-            });
-        };
+        let git = {
+            let api = state.api()?;
+            let Some(git) = api.git_service() else {
+                return Ok(BranchList {
+                    branches: vec![],
+                    current: None,
+                    latest_commit_message: None,
+                });
+            };
+            Arc::clone(git)
+        }; // mutex released here — git subprocesses run off the lock
 
         let latest_commit_message = git
             .commit_log(1)

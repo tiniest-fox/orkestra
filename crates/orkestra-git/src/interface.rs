@@ -5,7 +5,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::types::{CommitInfo, GitError, MergeResult, SyncStatus, TaskDiff, WorktreeCreated};
+use crate::types::{
+    CommitInfo, GitError, MergeResult, SyncStatus, TaskDiff, WorktreeCreated, WorktreeState,
+};
 
 /// Port for git worktree and branch operations.
 ///
@@ -63,6 +65,12 @@ pub trait GitService: Send + Sync {
     /// Returns just the directory names (not full paths), which correspond to task IDs.
     /// Returns an empty vec if the worktrees directory doesn't exist.
     fn list_worktree_names(&self) -> Result<Vec<String>, GitError>;
+
+    /// Get the HEAD SHA and dirty status for a worktree.
+    ///
+    /// Uses git2 directly (no subprocess), so this is cheap (~1ms). Call this before
+    /// `diff_against_base` to check whether an existing cached diff is still valid.
+    fn get_worktree_state(&self, worktree_path: &Path) -> Result<WorktreeState, GitError>;
 
     // -- Branch --
 

@@ -17,7 +17,7 @@ pub use interface::GitService;
 pub use service::Git2GitService;
 pub use types::{
     CommitInfo, FileChangeType, FileDiff, GitError, MergeResult, SyncStatus, TaskDiff,
-    WorktreeCreated,
+    WorktreeCreated, WorktreeState,
 };
 
 #[cfg(any(test, feature = "testutil"))]

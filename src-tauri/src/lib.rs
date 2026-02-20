@@ -2,6 +2,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 mod commands;
+mod diff_cache;
 mod error;
 mod highlight;
 mod notifications;
@@ -307,6 +308,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .manage(ProjectRegistry::new())
+        .manage(diff_cache::DiffCacheState::new())
         .setup(move |app| {
             // Initialize syntax highlighter (Send + Sync, shared across commands)
             app.manage(highlight::SyntaxHighlighter::new());

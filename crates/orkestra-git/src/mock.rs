@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use crate::interface::GitService;
-use crate::types::{CommitInfo, GitError, MergeResult, SyncStatus, TaskDiff, WorktreeCreated};
+use crate::types::{
+    CommitInfo, GitError, MergeResult, SyncStatus, TaskDiff, WorktreeCreated, WorktreeState,
+};
 
 /// Mock git service for testing.
 ///
@@ -202,6 +204,13 @@ impl GitService for MockGitService {
 
     fn list_worktree_names(&self) -> Result<Vec<String>, GitError> {
         Ok(self.worktrees.lock().unwrap().keys().cloned().collect())
+    }
+
+    fn get_worktree_state(&self, _worktree_path: &Path) -> Result<WorktreeState, GitError> {
+        Ok(WorktreeState {
+            head_sha: "mock-sha".to_string(),
+            is_dirty: false,
+        })
     }
 
     // -- Branch --

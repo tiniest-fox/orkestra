@@ -58,6 +58,15 @@ impl From<std::io::Error> for GitError {
     }
 }
 
+/// HEAD SHA and dirty status for a worktree.
+#[derive(Debug, Clone)]
+pub struct WorktreeState {
+    /// The HEAD commit SHA.
+    pub head_sha: String,
+    /// Whether the worktree has uncommitted changes.
+    pub is_dirty: bool,
+}
+
 /// Result of a successful worktree creation.
 #[derive(Debug, Clone)]
 pub struct WorktreeCreated {
@@ -81,7 +90,7 @@ pub struct MergeResult {
 }
 
 /// Type of change made to a file in a diff.
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum FileChangeType {
     /// File was added.

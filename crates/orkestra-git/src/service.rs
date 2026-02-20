@@ -10,7 +10,9 @@ use git2::Repository;
 
 use crate::interactions;
 use crate::interface::GitService;
-use crate::types::{CommitInfo, GitError, MergeResult, SyncStatus, TaskDiff, WorktreeCreated};
+use crate::types::{
+    CommitInfo, GitError, MergeResult, SyncStatus, TaskDiff, WorktreeCreated, WorktreeState,
+};
 
 /// Git service implementation using git2 and git CLI.
 ///
@@ -80,6 +82,10 @@ impl GitService for Git2GitService {
 
     fn list_worktree_names(&self) -> Result<Vec<String>, GitError> {
         interactions::worktree::list::execute(&self.repo, &self.worktrees_dir)
+    }
+
+    fn get_worktree_state(&self, worktree_path: &Path) -> Result<WorktreeState, GitError> {
+        interactions::worktree::get_state::execute(worktree_path)
     }
 
     // -- Branch --

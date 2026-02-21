@@ -12,6 +12,9 @@ use super::markdown::markdown_to_html;
 /// The relative directory path for materialized artifact files.
 const ARTIFACTS_DIR: &str = ".orkestra/.artifacts";
 
+/// The artifact name used for the materialized activity log file.
+pub const ACTIVITY_LOG_ARTIFACT_NAME: &str = "activity_log";
+
 /// Returns the relative directory path for materialized artifact files.
 ///
 /// This is the canonical definition of the artifacts directory path.

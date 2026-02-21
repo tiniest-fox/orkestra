@@ -41,17 +41,6 @@ This task is part of a breakdown. Here are your siblings:
   {{this.description}}
 {{/each}}
 {{/if}}
-{{#if activity_logs}}
-## Activity Log
-
-Prior stages have recorded the following activity:
-
-{{#each activity_logs}}
-[{{this.stage}}]
-{{this.content}}
-
-{{/each}}
-{{/if}}
 {{#if question_history}}
 ## Previous Questions and Answers
 

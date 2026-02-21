@@ -45,9 +45,6 @@ pub struct StagePromptContext<'a> {
     /// Whether to show instructions for direct `StructuredOutput` usage (Claude Code specific).
     pub show_direct_structured_output_hint: bool,
 
-    /// Activity logs from prior completed iterations.
-    pub activity_logs: Vec<ActivityLogEntry>,
-
     /// Workflow stage entries for the overview section.
     pub workflow_stages: Vec<WorkflowStageEntry>,
 
@@ -88,17 +85,6 @@ pub struct IntegrationErrorContext<'a> {
     pub conflict_files: Vec<&'a str>,
     /// Base branch to rebase onto.
     pub base_branch: &'a str,
-}
-
-/// Context for an activity log entry from a prior iteration.
-#[derive(Debug, Clone, Serialize)]
-pub struct ActivityLogEntry {
-    /// Stage that produced this log (e.g., "planning", "work").
-    pub stage: String,
-    /// Iteration number within the stage.
-    pub iteration_number: u32,
-    /// The activity log content.
-    pub content: String,
 }
 
 /// Context for a sibling subtask in the prompt.
@@ -256,37 +242,6 @@ pub fn sibling_status_display(state: &TaskState) -> &'static str {
         | TaskState::AwaitingRejectionConfirmation { .. } => "reviewing",
         _ => "pending",
     }
-}
-
-/// Consolidate activity logs, collapsing only consecutive same-stage entries.
-///
-/// Uses "intervening stage prevents deduplication" semantics: consecutive entries from
-/// the same stage are collapsed (last wins), but if a different stage appears in between,
-/// both entries are preserved.
-///
-/// **Important**: Callers must provide logs in chronological order (by `started_at`).
-///
-/// Empty or whitespace-only logs are filtered out.
-pub fn deduplicate_activity_logs_by_stage(logs: Vec<ActivityLogEntry>) -> Vec<ActivityLogEntry> {
-    let mut result: Vec<ActivityLogEntry> = Vec::new();
-
-    for log in logs {
-        // Skip empty/whitespace-only logs
-        if log.content.trim().is_empty() {
-            continue;
-        }
-
-        // Only collapse if the immediately previous entry was from the same stage
-        if result.last().is_some_and(|prev| prev.stage == log.stage) {
-            // Consecutive same-stage: replace previous entry
-            *result.last_mut().unwrap() = log;
-        } else {
-            // Different stage (or first entry): keep both
-            result.push(log);
-        }
-    }
-
-    result
 }
 
 /// Helper to convert `QuestionAnswer` to context.

@@ -13,11 +13,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use super::types::{deduplicate_activity_logs_by_stage, ActivityLogEntry};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, LogEntry, Task};
 use crate::workflow::execution::{
-    deduplicate_activity_logs_by_stage, sibling_status_display, ActivityLogEntry, AgentRunner,
-    AgentRunnerTrait, ProviderRegistry, SiblingTaskContext, StageOutput,
+    sibling_status_display, AgentRunner, AgentRunnerTrait, ProviderRegistry, SiblingTaskContext,
+    StageOutput,
 };
 use crate::workflow::ports::WorkflowStore;
 

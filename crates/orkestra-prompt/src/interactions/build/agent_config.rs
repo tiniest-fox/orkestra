@@ -10,8 +10,8 @@ use orkestra_types::config::{StageConfig, WorkflowConfig};
 use orkestra_types::domain::Task;
 
 use crate::types::{
-    ActivityLogEntry, AgentConfigError, FlowOverrides, IntegrationErrorContext,
-    ResolvedAgentConfig, SiblingTaskContext,
+    AgentConfigError, FlowOverrides, IntegrationErrorContext, ResolvedAgentConfig,
+    SiblingTaskContext,
 };
 
 use super::context::PromptBuilder;
@@ -41,7 +41,6 @@ pub fn execute(
     integration_error: Option<IntegrationErrorContext<'_>>,
     flow_overrides: &FlowOverrides<'_>,
     show_direct_structured_output_hint: bool,
-    activity_logs: &[ActivityLogEntry],
     sibling_tasks: &[SiblingTaskContext],
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
@@ -67,7 +66,6 @@ pub fn execute(
             feedback,
             integration_error,
             show_direct_structured_output_hint,
-            activity_logs,
             sibling_tasks,
         )
         .ok_or_else(|| AgentConfigError::PromptBuildError("Failed to build context".into()))?;

@@ -8,7 +8,9 @@ mod markdown;
 mod outcome;
 mod status;
 
-pub use artifact::{artifact_file_path, artifacts_directory, Artifact, ArtifactStore};
+pub use artifact::{
+    artifact_file_path, artifacts_directory, Artifact, ArtifactStore, ACTIVITY_LOG_ARTIFACT_NAME,
+};
 pub use markdown::markdown_to_html;
 pub use outcome::Outcome;
 pub use status::TaskState;

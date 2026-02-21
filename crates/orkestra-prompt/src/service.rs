@@ -10,8 +10,8 @@ use orkestra_types::domain::{QuestionAnswer, Task};
 
 use crate::interactions;
 use crate::types::{
-    ActivityLogEntry, AgentConfigError, FlowOverrides, IntegrationErrorContext,
-    ResolvedAgentConfig, ResumeType, SiblingTaskContext, StagePromptContext,
+    AgentConfigError, FlowOverrides, IntegrationErrorContext, ResolvedAgentConfig, ResumeType,
+    SiblingTaskContext, StagePromptContext,
 };
 
 // ============================================================================
@@ -68,7 +68,6 @@ impl PromptService {
         integration_error: Option<IntegrationErrorContext<'_>>,
         flow_overrides: &FlowOverrides<'_>,
         show_direct_structured_output_hint: bool,
-        activity_logs: &[ActivityLogEntry],
         sibling_tasks: &[SiblingTaskContext],
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
         interactions::build::agent_config::execute(
@@ -83,7 +82,6 @@ impl PromptService {
             integration_error,
             flow_overrides,
             show_direct_structured_output_hint,
-            activity_logs,
             sibling_tasks,
         )
     }
@@ -111,15 +109,8 @@ impl PromptService {
         resume_type: &ResumeType,
         base_branch: &str,
         artifact_names: &[String],
-        activity_logs: &[ActivityLogEntry],
     ) -> Result<String, AgentConfigError> {
-        interactions::resume::build_prompt::execute(
-            stage,
-            resume_type,
-            base_branch,
-            artifact_names,
-            activity_logs,
-        )
+        interactions::resume::build_prompt::execute(stage, resume_type, base_branch, artifact_names)
     }
 
     /// Determine the resume type from context.

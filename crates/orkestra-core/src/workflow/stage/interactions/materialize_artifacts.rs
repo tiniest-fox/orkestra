@@ -2,44 +2,78 @@
 //!
 //! Writes all task artifacts to `.orkestra/.artifacts/{name}.md` before agent
 //! spawn so agents can read them on demand instead of receiving them inline.
+//! Also writes the activity log to `activity_log.md` when entries exist.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
 
-use orkestra_types::runtime::{artifact_file_path, artifacts_directory};
+use orkestra_types::runtime::{
+    artifact_file_path, artifacts_directory, ACTIVITY_LOG_ARTIFACT_NAME,
+};
 
 use crate::workflow::domain::Task;
+use crate::workflow::stage::types::ActivityLogEntry;
 
-/// Materialize all task artifacts to the worktree.
+/// Materialize all task artifacts and the activity log to the worktree.
 ///
 /// Creates `.orkestra/.artifacts/` directory if needed and writes each artifact
-/// as `{name}.md`. Overwrites existing files to ensure freshness.
+/// as `{name}.md`. When `activity_logs` is non-empty, writes `activity_log.md`
+/// and includes `"activity_log"` in the returned names. Overwrites existing
+/// files to ensure freshness.
 ///
 /// Returns the list of materialized artifact names (for prompt building).
-pub fn execute(task: &Task) -> std::io::Result<Vec<String>> {
-    let worktree_path = match &task.worktree_path {
-        Some(p) => Path::new(p),
-        None => return Ok(Vec::new()), // No worktree = no materialization
+pub fn execute(task: &Task, activity_logs: &[ActivityLogEntry]) -> std::io::Result<Vec<String>> {
+    let worktree_path = if let Some(p) = &task.worktree_path {
+        Path::new(p)
+    } else {
+        debug_assert!(
+            activity_logs.is_empty(),
+            "activity logs present but no worktree to write them to"
+        );
+        return Ok(Vec::new());
     };
 
     // Gather all artifact names
-    let artifact_names: Vec<String> = task.artifacts.all().map(|a| a.name.clone()).collect();
+    let mut artifact_names: Vec<String> = task.artifacts.all().map(|a| a.name.clone()).collect();
+    let has_activity_logs = !activity_logs.is_empty();
 
-    if artifact_names.is_empty() {
+    // Nothing to materialize
+    if artifact_names.is_empty() && !has_activity_logs {
         return Ok(Vec::new());
     }
 
-    // Create artifacts directory
+    // Create artifacts directory (needed for either regular artifacts or activity log)
     let artifacts_dir = worktree_path.join(artifacts_directory());
     fs::create_dir_all(&artifacts_dir)?;
 
-    // Write each artifact using canonical path function
+    // Write regular artifacts
     for artifact in task.artifacts.all() {
         let file_path = worktree_path.join(artifact_file_path(&artifact.name));
         fs::write(&file_path, &artifact.content)?;
     }
 
+    // Write activity log file
+    if has_activity_logs {
+        let content = format_activity_log(activity_logs);
+        let file_path = worktree_path.join(artifact_file_path(ACTIVITY_LOG_ARTIFACT_NAME));
+        fs::write(&file_path, content)?;
+        artifact_names.push(ACTIVITY_LOG_ARTIFACT_NAME.to_string());
+    }
+
     Ok(artifact_names)
+}
+
+// -- Helpers --
+
+/// Format activity log entries into markdown content.
+///
+/// Each entry is formatted as `[{stage}]\n{content}\n\n`.
+fn format_activity_log(logs: &[ActivityLogEntry]) -> String {
+    logs.iter().fold(String::new(), |mut s, log| {
+        write!(s, "[{}]\n{}\n\n", log.stage, log.content).expect("write to String is infallible");
+        s
+    })
 }
 
 // ============================================================================
@@ -50,14 +84,14 @@ pub fn execute(task: &Task) -> std::io::Result<Vec<String>> {
 mod tests {
     use super::*;
     use crate::workflow::domain::Task;
-    use orkestra_types::runtime::Artifact;
+    use orkestra_types::runtime::{Artifact, ACTIVITY_LOG_ARTIFACT_NAME};
     use tempfile::TempDir;
 
     #[test]
     fn test_no_worktree_returns_empty() {
         let task = Task::new("task-1", "Title", "Description", "work", "now");
 
-        let result = execute(&task).unwrap();
+        let result = execute(&task, &[]).unwrap();
         assert!(result.is_empty());
     }
 
@@ -69,7 +103,7 @@ mod tests {
         let task =
             Task::new("task-1", "Title", "Description", "work", "now").with_worktree(worktree_path);
 
-        let result = execute(&task).unwrap();
+        let result = execute(&task, &[]).unwrap();
         assert!(result.is_empty());
 
         // Directory should not be created for empty artifacts
@@ -87,7 +121,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("plan", "The plan content", "planning", "now"));
 
-        let result = execute(&task).unwrap();
+        let result = execute(&task, &[]).unwrap();
         assert_eq!(result, vec!["plan"]);
 
         // Verify file was created with correct content
@@ -114,7 +148,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("summary", "Summary content", "work", "now"));
 
-        let result = execute(&task).unwrap();
+        let result = execute(&task, &[]).unwrap();
         assert_eq!(result.len(), 3);
         assert!(result.contains(&"plan".to_string()));
         assert!(result.contains(&"breakdown".to_string()));
@@ -152,7 +186,7 @@ mod tests {
         task.artifacts
             .set(Artifact::new("plan", "New content", "planning", "now"));
 
-        let result = execute(&task).unwrap();
+        let result = execute(&task, &[]).unwrap();
         assert_eq!(result, vec!["plan"]);
 
         // Verify file was overwritten
@@ -173,7 +207,7 @@ mod tests {
         let artifacts_dir = temp_dir.path().join(".orkestra/.artifacts");
         assert!(!artifacts_dir.exists());
 
-        execute(&task).unwrap();
+        execute(&task, &[]).unwrap();
 
         // Directory should now exist
         assert!(artifacts_dir.exists());
@@ -188,7 +222,101 @@ mod tests {
         task.artifacts
             .set(Artifact::new("plan", "content", "planning", "now"));
 
-        let result = execute(&task);
+        let result = execute(&task, &[]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_materializes_activity_log() {
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path().to_str().unwrap();
+
+        let task =
+            Task::new("task-1", "Title", "Description", "work", "now").with_worktree(worktree_path);
+
+        let logs = vec![ActivityLogEntry {
+            stage: "work".to_string(),
+            iteration_number: 1,
+            content: "- Implemented the feature".to_string(),
+        }];
+
+        let result = execute(&task, &logs).unwrap();
+        assert_eq!(result, vec![ACTIVITY_LOG_ARTIFACT_NAME]);
+
+        // Directory should be created
+        let artifacts_dir = temp_dir.path().join(".orkestra/.artifacts");
+        assert!(artifacts_dir.exists());
+
+        // Activity log file should exist with correct content
+        let file_path = artifacts_dir.join("activity_log.md");
+        assert!(file_path.exists());
+        assert_eq!(
+            fs::read_to_string(&file_path).unwrap(),
+            "[work]\n- Implemented the feature\n\n"
+        );
+    }
+
+    #[test]
+    fn test_activity_log_with_regular_artifacts() {
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path().to_str().unwrap();
+
+        let mut task =
+            Task::new("task-1", "Title", "Description", "work", "now").with_worktree(worktree_path);
+        task.artifacts
+            .set(Artifact::new("plan", "Plan content", "planning", "now"));
+
+        let logs = vec![ActivityLogEntry {
+            stage: "work".to_string(),
+            iteration_number: 1,
+            content: "- Did the work".to_string(),
+        }];
+
+        let result = execute(&task, &logs).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"plan".to_string()));
+        assert!(result.contains(&ACTIVITY_LOG_ARTIFACT_NAME.to_string()));
+
+        let artifacts_dir = temp_dir.path().join(".orkestra/.artifacts");
+        assert!(artifacts_dir.join("plan.md").exists());
+        assert!(artifacts_dir.join("activity_log.md").exists());
+    }
+
+    #[test]
+    fn test_empty_activity_logs_no_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let worktree_path = temp_dir.path().to_str().unwrap();
+
+        let mut task =
+            Task::new("task-1", "Title", "Description", "work", "now").with_worktree(worktree_path);
+        task.artifacts
+            .set(Artifact::new("plan", "Plan content", "planning", "now"));
+
+        let result = execute(&task, &[]).unwrap();
+        assert_eq!(result, vec!["plan"]);
+
+        let artifacts_dir = temp_dir.path().join(".orkestra/.artifacts");
+        assert!(artifacts_dir.join("plan.md").exists());
+        assert!(!artifacts_dir.join("activity_log.md").exists());
+        assert!(!result.contains(&ACTIVITY_LOG_ARTIFACT_NAME.to_string()));
+    }
+
+    #[test]
+    fn test_activity_log_format() {
+        let logs = vec![
+            ActivityLogEntry {
+                stage: "work".to_string(),
+                iteration_number: 1,
+                content: "- Line one".to_string(),
+            },
+            ActivityLogEntry {
+                stage: "review".to_string(),
+                iteration_number: 2,
+                content: "- Line two".to_string(),
+            },
+        ];
+
+        let formatted = format_activity_log(&logs);
+        assert_eq!(formatted, "[work]\n- Line one\n\n[review]\n- Line two\n\n");
     }
 }

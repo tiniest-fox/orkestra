@@ -7,11 +7,12 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
+use super::types::ActivityLogEntry;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
-    ActivityLogEntry, AgentConfigError, AgentRunnerTrait, ProviderRegistry, RegistryError,
-    RunError, RunEvent, SiblingTaskContext,
+    AgentConfigError, AgentRunnerTrait, ProviderRegistry, RegistryError, RunError, RunEvent,
+    SiblingTaskContext,
 };
 use crate::workflow::prompt::PromptService;
 

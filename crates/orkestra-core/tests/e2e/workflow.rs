@@ -3780,21 +3780,17 @@ fn activity_log_injected_into_next_stage_prompt() {
     // Capture the prompt that was sent to the work stage agent
     let work_prompt = ctx.last_prompt_for(&task_id);
 
-    // Assert the prompt contains "Activity Log" section
+    // Assert the prompt references the activity log file path (not inline content)
     assert!(
-        work_prompt.contains("Activity Log") || work_prompt.contains("activity log"),
-        "Work stage prompt should contain Activity Log section. Got prompt:\n{}",
+        work_prompt.contains(".orkestra/.artifacts/activity_log.md"),
+        "Work stage prompt should reference activity_log.md file. Got prompt:\n{}",
         &work_prompt[..work_prompt.len().min(1000)]
     );
 
-    // Assert the prompt contains the planning stage's activity log text
+    // Assert the prompt does NOT contain inline activity log content
     assert!(
-        work_prompt.contains("Researched JWT libraries"),
-        "Work stage prompt should contain planning activity log content"
-    );
-    assert!(
-        work_prompt.contains("Selected jsonwebtoken crate"),
-        "Work stage prompt should contain all planning activity log details"
+        !work_prompt.contains("Researched JWT libraries"),
+        "Work stage prompt should NOT contain inline activity log content"
     );
 }
 
@@ -3874,30 +3870,20 @@ fn activity_log_accumulates_across_stages() {
     // Capture review stage prompt
     let review_prompt = ctx.last_prompt_for(&task_id);
 
-    // Assert prompt contains BOTH planning and work activity logs
+    // Assert prompt references the activity log file path (not inline content)
     assert!(
-        review_prompt.contains("Planned architecture"),
-        "Review prompt should contain planning activity log"
-    );
-    assert!(
-        review_prompt.contains("Chose microservices pattern"),
-        "Review prompt should contain full planning activity log"
-    );
-    assert!(
-        review_prompt.contains("Implemented REST API"),
-        "Review prompt should contain work activity log"
-    );
-    assert!(
-        review_prompt.contains("Wrote unit tests"),
-        "Review prompt should contain full work activity log"
+        review_prompt.contains(".orkestra/.artifacts/activity_log.md"),
+        "Review prompt should reference activity_log.md file"
     );
 
-    // Assert logs appear in chronological order (planning before work)
-    let planning_pos = review_prompt.find("Planned architecture").unwrap();
-    let work_pos = review_prompt.find("Implemented REST API").unwrap();
+    // Assert the prompt does NOT contain inline activity log content
     assert!(
-        planning_pos < work_pos,
-        "Activity logs should appear in chronological order (planning before work)"
+        !review_prompt.contains("Planned architecture"),
+        "Review prompt should NOT contain inline planning activity log content"
+    );
+    assert!(
+        !review_prompt.contains("Implemented REST API"),
+        "Review prompt should NOT contain inline work activity log content"
     );
 }
 
@@ -3968,18 +3954,90 @@ fn activity_log_none_does_not_break() {
     );
     ctx.advance(); // spawn work
 
-    // Verify work stage prompt does NOT contain "Activity Log" section
-    let _work_prompt = ctx.last_prompt_for(&task_id);
+    // Verify work stage prompt does NOT reference activity_log.md (no logs exist)
+    let work_prompt = ctx.last_prompt_for(&task_id);
+    assert!(
+        !work_prompt.contains(".orkestra/.artifacts/activity_log.md"),
+        "Work stage prompt should NOT reference activity_log.md when no activity logs exist"
+    );
 
-    // Since there's no activity log from planning, the prompt should NOT have an activity log section
-    // (or if it does, it should be empty/indicate no logs)
-    // The exact behavior depends on the prompt builder implementation, but it shouldn't crash
-    // Let's just verify the task advanced successfully
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
         task.current_stage(),
         Some("work"),
         "Task should have advanced to work stage successfully"
+    );
+}
+
+/// Test that `activity_log.md` is actually written to the worktree with correct content.
+#[test]
+fn activity_log_file_written_with_correct_content() {
+    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use std::fs;
+
+    let workflow = WorkflowConfig {
+        version: 1,
+        stages: vec![
+            StageConfig::new("planning", "plan")
+                .with_prompt("planner.md")
+                .with_capabilities(StageCapabilities::with_questions()),
+            StageConfig::new("work", "summary").with_prompt("worker.md"),
+        ],
+        integration: orkestra_core::workflow::config::IntegrationConfig::new("work"),
+        flows: indexmap::IndexMap::new(),
+    };
+
+    let ctx = TestEnv::with_git(&workflow, &["planner", "worker"]);
+    let task = ctx.create_task("Test file content", "Verify activity_log.md content", None);
+    let task_id = task.id.clone();
+
+    // Planning with activity log
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "plan".to_string(),
+            content: "The plan".to_string(),
+            activity_log: Some("- Researched the problem\n- Decided on approach".to_string()),
+        },
+    );
+    ctx.advance(); // spawn planning
+    ctx.advance(); // process planning
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // process approval -> advance to work stage
+
+    // Work stage starts — activity log should be written
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Done".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn work agent
+
+    // Read the actual file from the worktree
+    let task = ctx.api().get_task(&task_id).unwrap();
+    let worktree_path = task
+        .worktree_path
+        .as_ref()
+        .expect("task should have worktree");
+    let activity_log_path =
+        std::path::Path::new(worktree_path).join(".orkestra/.artifacts/activity_log.md");
+
+    assert!(
+        activity_log_path.exists(),
+        "activity_log.md should exist in worktree"
+    );
+
+    let content = fs::read_to_string(&activity_log_path).unwrap();
+    assert!(
+        content.contains("[planning]"),
+        "activity_log.md should contain [planning] stage tag. Got: {content}"
+    );
+    assert!(
+        content.contains("Researched the problem"),
+        "activity_log.md should contain the planning log content. Got: {content}"
     );
 }
 
@@ -4836,39 +4894,13 @@ fn test_activity_log_intervening_stage_preserves_entries() {
     );
     ctx.advance(); // spawns reviewer
 
-    // NOW verify the reviewer's prompt contains BOTH Log A and Log B
-    // because review intervened between them (work → review → work)
+    // NOW verify the reviewer's prompt references the activity log file
+    // (content ordering/deduplication is verified by materialize_artifacts unit tests)
     let review_prompt = ctx.last_prompt();
 
-    // Should contain Log A (preserved because review intervened before Log B)
     assert!(
-        review_prompt.contains("Log A"),
-        "Review prompt should contain Log A (review intervened, so not collapsed). Full prompt:\n{review_prompt}"
-    );
-
-    // Should contain Log B (second work iteration)
-    assert!(
-        review_prompt.contains("Log B"),
-        "Review prompt should contain Log B. Full prompt:\n{review_prompt}"
-    );
-
-    // Should contain Log R (review log from different stage)
-    assert!(
-        review_prompt.contains("Log R"),
-        "Review prompt should contain Log R (from first review). Full prompt:\n{review_prompt}"
-    );
-
-    // Should have TWO [work] sections (A and B preserved separately)
-    let work_tag_count = review_prompt.matches("[work]").count();
-    assert_eq!(
-        work_tag_count, 2,
-        "Should have TWO [work] activity log entries (review intervened). Full prompt:\n{review_prompt}"
-    );
-
-    // Should use [review] format
-    assert!(
-        review_prompt.contains("[review]"),
-        "Activity log should use [review] format. Full prompt:\n{review_prompt}"
+        review_prompt.contains(".orkestra/.artifacts/activity_log.md"),
+        "Review prompt should reference activity log file. Full prompt:\n{review_prompt}"
     );
 }
 
@@ -4918,11 +4950,11 @@ fn test_activity_log_keeps_different_stages() {
     );
     ctx.advance(); // spawns breakdown
 
-    // Verify breakdown's full prompt contains planning log
+    // Verify breakdown's full prompt references the activity log file
     let breakdown_prompt = ctx.last_prompt();
     assert!(
-        breakdown_prompt.contains("Log P"),
-        "Breakdown prompt should contain planning log P. Full prompt:\n{breakdown_prompt}"
+        breakdown_prompt.contains(".orkestra/.artifacts/activity_log.md"),
+        "Breakdown prompt should reference activity log file. Full prompt:\n{breakdown_prompt}"
     );
 
     ctx.advance(); // processes breakdown output
@@ -4941,40 +4973,30 @@ fn test_activity_log_keeps_different_stages() {
     );
     ctx.advance(); // spawns worker
 
-    // Verify work's full prompt contains BOTH planning and breakdown logs
+    // Verify work's full prompt references the activity log file
+    // (content accumulation is verified by materialize_artifacts unit tests)
     let work_prompt = ctx.last_prompt();
     assert!(
-        work_prompt.contains("Log P"),
-        "Work prompt should contain planning log P. Full prompt:\n{work_prompt}"
-    );
-    assert!(
-        work_prompt.contains("Log B"),
-        "Work prompt should contain breakdown log B. Full prompt:\n{work_prompt}"
-    );
-
-    // Verify the format uses [stage] not ### stage
-    assert!(
-        work_prompt.contains("[planning]"),
-        "Activity log should use [planning] format. Full prompt:\n{work_prompt}"
-    );
-    assert!(
-        work_prompt.contains("[breakdown]"),
-        "Activity log should use [breakdown] format. Full prompt:\n{work_prompt}"
+        work_prompt.contains(".orkestra/.artifacts/activity_log.md"),
+        "Work prompt should reference activity log file. Full prompt:\n{work_prompt}"
     );
 }
 
-/// Test that activity logs use the new `[stage]` format in prompts.
+/// Test that prompts reference the activity log file path when logs are present.
 ///
-/// Verifies:
-/// - Format is `[stage]` followed by content
-/// - Old `### stage` format is not used
-/// - Iteration numbers are not shown
+/// The activity log is now materialized as a file (.`orkestra/.artifacts/activity_log.md`)
+/// and referenced by path in prompts. Inline injection no longer occurs.
+/// Format and content are verified by `materialize_artifacts` unit tests.
 #[test]
-fn test_activity_log_format() {
+fn test_activity_log_file_reference_in_prompt() {
     let workflow = test_default_workflow();
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
-    let task = ctx.create_task("Test activity log format", "Verify new format", None);
+    let task = ctx.create_task(
+        "Test activity log file reference",
+        "Verify file path in prompt",
+        None,
+    );
     let task_id = task.id.clone();
 
     // Planning produces an activity log
@@ -4992,7 +5014,7 @@ fn test_activity_log_format() {
     ctx.api().approve(&task_id).unwrap();
     ctx.advance(); // commit pipeline, advances to breakdown
 
-    // Set breakdown output and verify the prompt format
+    // Set breakdown output so we can capture its prompt
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -5003,49 +5025,19 @@ fn test_activity_log_format() {
     );
     ctx.advance(); // spawns breakdown
 
-    // Check the prompt sent to breakdown agent
+    // Prompt should reference the activity log file, not inject inline content
     let prompt = ctx.last_prompt();
-
-    // Should have Activity Log section
     assert!(
-        prompt.contains("## Activity Log"),
-        "Prompt should contain Activity Log section"
-    );
-
-    // Should use [stage] format
-    assert!(
-        prompt.contains("[planning]"),
-        "Activity log should use [planning] tag. Full prompt:\n{prompt}"
-    );
-
-    // Should NOT use old ### format
-    assert!(
-        !prompt.contains("### planning"),
-        "Activity log should NOT use ### format. Full prompt:\n{prompt}"
-    );
-
-    // Should NOT include iteration numbers in the activity log section
-    // (iteration numbers were part of the old format)
-    let activity_section_start = prompt.find("## Activity Log").unwrap();
-    let activity_section = &prompt[activity_section_start..];
-    let section_end = activity_section
-        .find("\n##")
-        .unwrap_or(activity_section.len());
-    let activity_section = &activity_section[..section_end];
-
-    assert!(
-        !activity_section.contains("iteration #"),
-        "Activity log should not contain iteration numbers. Activity section:\n{activity_section}"
+        prompt.contains(".orkestra/.artifacts/activity_log.md"),
+        "Prompt should reference activity log file. Full prompt:\n{prompt}"
     );
     assert!(
-        !activity_section.contains("Iteration"),
-        "Activity log should not mention 'Iteration'. Activity section:\n{activity_section}"
+        !prompt.contains("## Activity Log"),
+        "Prompt should NOT contain inline Activity Log section. Full prompt:\n{prompt}"
     );
-
-    // Content should be present
     assert!(
-        prompt.contains("Made a key decision"),
-        "Activity log content should be present. Full prompt:\n{prompt}"
+        !prompt.contains("Made a key decision"),
+        "Prompt should NOT contain inline activity log content. Full prompt:\n{prompt}"
     );
 }
 
@@ -5150,29 +5142,11 @@ fn test_activity_log_with_script_and_review_rejection() {
 
     let review_prompt = ctx.last_prompt();
 
-    // Should contain Log A (review intervened, so not collapsed with Log B)
+    // Prompt should reference the activity log file
+    // (content ordering is verified by materialize_artifacts unit tests)
     assert!(
-        review_prompt.contains("Log A"),
-        "Review prompt should contain Log A (review intervened between A and B). Full prompt:\n{review_prompt}"
-    );
-
-    // Should contain Log B (second work iteration)
-    assert!(
-        review_prompt.contains("Log B"),
-        "Review prompt should contain Log B. Full prompt:\n{review_prompt}"
-    );
-
-    // Should contain Log R (review log from different stage)
-    assert!(
-        review_prompt.contains("Log R"),
-        "Review prompt should contain Log R (from first review). Full prompt:\n{review_prompt}"
-    );
-
-    // Verify we have TWO [work] sections (review intervened, so both preserved)
-    let work_tag_count = review_prompt.matches("[work]").count();
-    assert_eq!(
-        work_tag_count, 2,
-        "Should have TWO [work] activity log entries (review intervened). Full prompt:\n{review_prompt}"
+        review_prompt.contains(".orkestra/.artifacts/activity_log.md"),
+        "Review prompt should reference activity log file. Full prompt:\n{review_prompt}"
     );
 }
 

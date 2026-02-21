@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::{
-    resolve_stage_agent_config_for, ActivityLogEntry, AgentConfigError, FlowOverrides,
-    IntegrationErrorContext, ResolvedAgentConfig, SiblingTaskContext,
+    resolve_stage_agent_config_for, AgentConfigError, FlowOverrides, IntegrationErrorContext,
+    ResolvedAgentConfig, SiblingTaskContext,
 };
 
 // ============================================================================
@@ -54,7 +54,6 @@ impl PromptService {
     /// * `artifact_names` - Names of artifacts that have been materialized to the worktree
     /// * `feedback` - Optional rejection feedback to incorporate
     /// * `integration_error` - Optional merge conflict information
-    /// * `activity_logs` - Activity logs from prior completed iterations
     /// * `sibling_tasks` - Sibling subtask context for subtasks
     ///
     /// # Returns
@@ -68,7 +67,6 @@ impl PromptService {
         feedback: Option<&str>,
         integration_error: Option<IntegrationErrorContext<'_>>,
         show_direct_structured_output_hint: bool,
-        activity_logs: &[ActivityLogEntry],
         sibling_tasks: &[SiblingTaskContext],
     ) -> Result<ResolvedAgentConfig, AgentConfigError> {
         let stage_name = task
@@ -100,7 +98,6 @@ impl PromptService {
             integration_error,
             &flow_overrides,
             show_direct_structured_output_hint,
-            activity_logs,
             sibling_tasks,
         )
     }
@@ -133,7 +130,7 @@ mod tests {
         let mut task = Task::new("task-1", "Test", "Desc", "planning", "now");
         task.state = crate::workflow::runtime::TaskState::Done;
 
-        let result = service.resolve_config(&workflow, &task, &[], None, None, false, &[], &[]);
+        let result = service.resolve_config(&workflow, &task, &[], None, None, false, &[]);
         assert!(matches!(result, Err(AgentConfigError::NotInActiveStage)));
     }
 
@@ -145,7 +142,7 @@ mod tests {
         // Task in an unknown stage
         let task = Task::new("task-1", "Test", "Desc", "nonexistent", "now");
 
-        let result = service.resolve_config(&workflow, &task, &[], None, None, false, &[], &[]);
+        let result = service.resolve_config(&workflow, &task, &[], None, None, false, &[]);
         assert!(matches!(result, Err(AgentConfigError::UnknownStage(_))));
     }
 }

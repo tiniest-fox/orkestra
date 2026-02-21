@@ -13,12 +13,11 @@ use crate::workflow::domain::Task;
 
 // Re-export everything from orkestra-prompt for backward compatibility.
 pub use orkestra_prompt::{
-    deduplicate_activity_logs_by_stage, sibling_status_display, ActivityLogEntry, AgentConfigError,
-    ArtifactContext, FlowOverrides, IntegrationErrorContext, PrComment, PromptBuilder,
-    PromptService as PromptRenderer, QuestionAnswerContext, ResolvedAgentConfig,
-    ResumeQuestionAnswer, ResumeType, SiblingTaskContext, StagePromptContext,
+    sibling_status_display, AgentConfigError, ArtifactContext, FlowOverrides,
+    IntegrationErrorContext, PrComment, PromptBuilder, PromptService as PromptRenderer,
+    QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
+    SiblingTaskContext, StagePromptContext,
 };
-
 /// Lazy-initialized prompt renderer (owns pre-compiled Handlebars templates).
 static RENDERER: LazyLock<PromptRenderer> = LazyLock::new(PromptRenderer::new);
 
@@ -137,7 +136,6 @@ pub fn resolve_stage_agent_config_for(
     integration_error: Option<IntegrationErrorContext<'_>>,
     flow_overrides: &FlowOverrides<'_>,
     show_direct_structured_output_hint: bool,
-    activity_logs: &[ActivityLogEntry],
     sibling_tasks: &[SiblingTaskContext],
 ) -> Result<ResolvedAgentConfig, AgentConfigError> {
     let stage = workflow
@@ -188,7 +186,6 @@ pub fn resolve_stage_agent_config_for(
         integration_error,
         flow_overrides,
         show_direct_structured_output_hint,
-        activity_logs,
         sibling_tasks,
     )
 }
@@ -204,15 +201,8 @@ pub fn build_resume_prompt(
     resume_type: &ResumeType,
     base_branch: &str,
     artifact_names: &[String],
-    activity_logs: &[ActivityLogEntry],
 ) -> Result<String, AgentConfigError> {
-    RENDERER.build_resume_prompt(
-        stage,
-        resume_type,
-        base_branch,
-        artifact_names,
-        activity_logs,
-    )
+    RENDERER.build_resume_prompt(stage, resume_type, base_branch, artifact_names)
 }
 
 /// Determine the resume type from context.
@@ -234,6 +224,7 @@ mod tests {
     use crate::workflow::config::{
         FlowConfig, FlowStageEntry, StageCapabilities, StageConfig, WorkflowConfig,
     };
+    use crate::workflow::stage::types::{deduplicate_activity_logs_by_stage, ActivityLogEntry};
     use indexmap::IndexMap;
 
     fn test_workflow() -> WorkflowConfig {
@@ -265,7 +256,7 @@ mod tests {
         );
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[], &[])
+            .build_context("planning", &task, &[], None, None, false, &[])
             .unwrap();
 
         assert_eq!(ctx.stage.name, "planning");
@@ -291,16 +282,7 @@ mod tests {
         // Pass artifact names (artifacts are materialized to files before spawn)
         let artifact_names = vec!["plan".to_string(), "summary".to_string()];
         let ctx = builder
-            .build_context(
-                "review",
-                &task,
-                &artifact_names,
-                None,
-                None,
-                false,
-                &[],
-                &[],
-            )
+            .build_context("review", &task, &artifact_names, None, None, false, &[])
             .unwrap();
 
         assert_eq!(ctx.stage.name, "review");
@@ -316,7 +298,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Desc", "planning", "now");
 
-        let ctx = builder.build_context("nonexistent", &task, &[], None, None, false, &[], &[]);
+        let ctx = builder.build_context("nonexistent", &task, &[], None, None, false, &[]);
         assert!(ctx.is_none());
     }
 
@@ -336,7 +318,7 @@ mod tests {
         // Pass artifact names (artifacts are materialized to files before agent spawn)
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[], &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[])
             .unwrap();
 
         // Verify context has artifact with file path (not inline content)
@@ -353,7 +335,7 @@ mod tests {
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[], &[])
+            .build_context("planning", &task, &[], None, None, false, &[])
             .unwrap();
 
         assert!(ctx.stage.capabilities.ask_questions);
@@ -369,16 +351,7 @@ mod tests {
         // Pass artifact names for review stage inputs
         let artifact_names = vec!["plan".to_string(), "summary".to_string()];
         let ctx = builder
-            .build_context(
-                "review",
-                &task,
-                &artifact_names,
-                None,
-                None,
-                false,
-                &[],
-                &[],
-            )
+            .build_context("review", &task, &artifact_names, None, None, false, &[])
             .unwrap();
 
         assert!(ctx.stage.capabilities.has_approval());
@@ -407,7 +380,6 @@ mod tests {
                 None,
                 false,
                 &[],
-                &[],
             )
             .unwrap();
 
@@ -421,7 +393,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[], &[])
+            .build_context("planning", &task, &[], None, None, false, &[])
             .unwrap();
 
         assert!(ctx.question_history.is_empty());
@@ -473,8 +445,7 @@ mod tests {
     fn test_build_resume_prompt_continue() {
         let artifact_names = vec!["plan".to_string()];
         let prompt =
-            build_resume_prompt("work", &ResumeType::Continue, "main", &artifact_names, &[])
-                .unwrap();
+            build_resume_prompt("work", &ResumeType::Continue, "main", &artifact_names).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -491,7 +462,6 @@ mod tests {
             },
             "main",
             &artifact_names,
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:feedback>"));
@@ -511,7 +481,6 @@ mod tests {
             },
             "feature/parent-branch",
             &artifact_names,
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:integration>"));
@@ -541,7 +510,6 @@ mod tests {
             },
             "main",
             &artifact_names,
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:planning:answers>"));
@@ -556,8 +524,7 @@ mod tests {
     fn test_build_resume_prompt_recheck() {
         let artifact_names = vec!["summary".to_string(), "check_results".to_string()];
         let prompt =
-            build_resume_prompt("review", &ResumeType::Recheck, "main", &artifact_names, &[])
-                .unwrap();
+            build_resume_prompt("review", &ResumeType::Recheck, "main", &artifact_names).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
         assert!(prompt.contains("re-run"));
         assert!(prompt.contains("re-examine"));
@@ -571,43 +538,26 @@ mod tests {
     }
 
     #[test]
-    fn test_build_resume_prompt_recheck_with_activity_logs() {
-        let artifact_names = vec!["summary".to_string()];
-        let activity_logs = vec![
-            ActivityLogEntry {
-                stage: "work".to_string(),
-                iteration_number: 1,
-                content: "- Implemented the feature\n- Added tests".to_string(),
-            },
-            ActivityLogEntry {
-                stage: "review".to_string(),
-                iteration_number: 1,
-                content: "- Found issue with error handling\n- Requested changes".to_string(),
-            },
+    fn test_build_resume_prompt_recheck_with_activity_log_artifact() {
+        use orkestra_types::runtime::ACTIVITY_LOG_ARTIFACT_NAME;
+        // Activity logs are now referenced by file path (via artifact list), not inline.
+        let artifact_names = vec![
+            "summary".to_string(),
+            ACTIVITY_LOG_ARTIFACT_NAME.to_string(),
         ];
-        let prompt = build_resume_prompt(
-            "review",
-            &ResumeType::Recheck,
-            "main",
-            &artifact_names,
-            &activity_logs,
-        )
-        .unwrap();
+        let prompt =
+            build_resume_prompt("review", &ResumeType::Recheck, "main", &artifact_names).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
-        assert!(prompt.contains("Activity Log"));
-        assert!(prompt.contains("Prior stages have recorded the following activity"));
-        assert!(prompt.contains("[work]"));
-        assert!(prompt.contains("Implemented the feature"));
-        assert!(prompt.contains("[review]"));
-        assert!(prompt.contains("Found issue with error handling"));
         assert!(prompt.contains("Updated Input Artifacts"));
-        // New format: file paths instead of inline content
         assert!(prompt.contains(".orkestra/.artifacts/summary.md"));
+        assert!(prompt.contains(".orkestra/.artifacts/activity_log.md"));
+        // Should NOT contain old inline Activity Log section
+        assert!(!prompt.contains("Prior stages have recorded the following activity"));
     }
 
     #[test]
     fn test_build_resume_prompt_no_artifacts() {
-        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[], &[]).unwrap();
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[]).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -624,7 +574,6 @@ mod tests {
             },
             "main",
             &artifact_names,
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:manual_resume>"));
@@ -641,7 +590,6 @@ mod tests {
             "review",
             &ResumeType::ManualResume { message: None },
             "main",
-            &[],
             &[],
         )
         .unwrap();
@@ -675,7 +623,6 @@ mod tests {
             },
             "main",
             &[],
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:pr_comments>"));
@@ -704,7 +651,6 @@ mod tests {
                 guidance: None,
             },
             "main",
-            &[],
             &[],
         )
         .unwrap();
@@ -794,7 +740,6 @@ mod tests {
             &FlowOverrides::default(),
             false,
             &[],
-            &[],
         )
         .unwrap();
 
@@ -832,7 +777,7 @@ mod tests {
 
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[], &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[])
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -859,7 +804,7 @@ mod tests {
 
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[], &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[])
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -874,7 +819,7 @@ mod tests {
 
     #[test]
     fn test_resume_prompt_has_no_system_prompt() {
-        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[], &[]).unwrap();
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[]).unwrap();
 
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(!prompt.contains("Output Format"));
@@ -894,7 +839,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "work", "now");
         let ctx = builder
-            .build_context("work", &task, &[], None, None, false, &[], &[])
+            .build_context("work", &task, &[], None, None, false, &[])
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -940,7 +885,7 @@ mod tests {
         task.flow = Some("quick".into());
 
         let ctx = builder
-            .build_context("work", &task, &[], None, None, false, &[], &[])
+            .build_context("work", &task, &[], None, None, false, &[])
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -979,7 +924,7 @@ mod tests {
         ];
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[], &siblings)
+            .build_context("planning", &task, &[], None, None, false, &siblings)
             .unwrap();
 
         let user_message = build_user_message(&ctx);
@@ -1002,7 +947,7 @@ mod tests {
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[], &[])
+            .build_context("planning", &task, &[], None, None, false, &[])
             .unwrap();
 
         let user_message = build_user_message(&ctx);

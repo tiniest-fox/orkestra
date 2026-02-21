@@ -7,8 +7,7 @@ use orkestra_types::domain::Task;
 use orkestra_types::runtime::artifact_file_path;
 
 use crate::types::{
-    ActivityLogEntry, ArtifactContext, IntegrationErrorContext, SiblingTaskContext,
-    StagePromptContext,
+    ArtifactContext, IntegrationErrorContext, SiblingTaskContext, StagePromptContext,
 };
 
 use super::workflow_overview;
@@ -47,7 +46,6 @@ impl<'a> PromptBuilder<'a> {
         feedback: Option<&'a str>,
         integration_error: Option<IntegrationErrorContext<'a>>,
         show_direct_structured_output_hint: bool,
-        activity_logs: &[ActivityLogEntry],
         sibling_tasks: &[SiblingTaskContext],
     ) -> Option<StagePromptContext<'a>> {
         let stage = self.workflow.stage(stage_name)?;
@@ -59,7 +57,6 @@ impl<'a> PromptBuilder<'a> {
             feedback,
             integration_error,
             show_direct_structured_output_hint,
-            activity_logs,
             sibling_tasks,
         ))
     }
@@ -81,7 +78,6 @@ impl<'a> PromptBuilder<'a> {
         feedback: Option<&'a str>,
         integration_error: Option<IntegrationErrorContext<'a>>,
         show_direct_structured_output_hint: bool,
-        activity_logs: &[ActivityLogEntry],
         sibling_tasks: &[SiblingTaskContext],
     ) -> Option<StagePromptContext<'a>> {
         Some(build_context_from_stage(
@@ -92,7 +88,6 @@ impl<'a> PromptBuilder<'a> {
             feedback,
             integration_error,
             show_direct_structured_output_hint,
-            activity_logs,
             sibling_tasks,
         ))
     }
@@ -109,7 +104,6 @@ fn build_context_from_stage<'a>(
     feedback: Option<&'a str>,
     integration_error: Option<IntegrationErrorContext<'a>>,
     show_direct_structured_output_hint: bool,
-    activity_logs: &[ActivityLogEntry],
     sibling_tasks: &[SiblingTaskContext],
 ) -> StagePromptContext<'a> {
     // Build artifact contexts with file paths instead of content.
@@ -149,7 +143,6 @@ fn build_context_from_stage<'a>(
         base_branch: task.base_branch.as_str(),
         base_commit: task.base_commit.as_str(),
         show_direct_structured_output_hint,
-        activity_logs: activity_logs.to_vec(),
         workflow_stages,
         sibling_tasks: sibling_tasks.to_vec(),
     }

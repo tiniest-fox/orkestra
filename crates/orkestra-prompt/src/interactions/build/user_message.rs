@@ -6,8 +6,8 @@ use handlebars::Handlebars;
 use serde::Serialize;
 
 use crate::types::{
-    ActivityLogEntry, ArtifactContext, IntegrationErrorContext, QuestionAnswerContext,
-    SiblingTaskContext, StagePromptContext, WorkflowStageEntry,
+    ArtifactContext, IntegrationErrorContext, QuestionAnswerContext, SiblingTaskContext,
+    StagePromptContext, WorkflowStageEntry,
 };
 
 // ============================================================================
@@ -31,7 +31,6 @@ pub fn execute(templates: &Handlebars<'static>, ctx: &StagePromptContext<'_>) ->
         worktree_path: ctx.worktree_path,
         base_branch: ctx.base_branch,
         base_commit: ctx.base_commit,
-        activity_logs: &ctx.activity_logs,
         workflow_stages: &ctx.workflow_stages,
         sibling_tasks: &ctx.sibling_tasks,
     };
@@ -57,7 +56,6 @@ struct UserMessageContext<'a> {
     worktree_path: Option<&'a str>,
     base_branch: &'a str,
     base_commit: &'a str,
-    activity_logs: &'a [ActivityLogEntry],
     workflow_stages: &'a [WorkflowStageEntry],
     sibling_tasks: &'a [SiblingTaskContext],
 }
@@ -114,7 +112,7 @@ mod tests {
         // Pass artifact names (artifacts are materialized to files before spawn)
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[], &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[])
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -143,7 +141,7 @@ mod tests {
 
         let artifact_names = vec!["plan".to_string()];
         let ctx = builder
-            .build_context("work", &task, &artifact_names, None, None, false, &[], &[])
+            .build_context("work", &task, &artifact_names, None, None, false, &[])
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -180,7 +178,7 @@ mod tests {
         ];
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[], &siblings)
+            .build_context("planning", &task, &[], None, None, false, &siblings)
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -203,7 +201,7 @@ mod tests {
         let task = Task::new("task-1", "Test", "Description", "planning", "now");
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[], &[])
+            .build_context("planning", &task, &[], None, None, false, &[])
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -223,7 +221,7 @@ mod tests {
             .with_base_commit("abc123def456");
 
         let ctx = builder
-            .build_context("planning", &task, &[], None, None, false, &[], &[])
+            .build_context("planning", &task, &[], None, None, false, &[])
             .unwrap();
 
         let user_message = execute(&templates, &ctx);
@@ -246,7 +244,7 @@ mod tests {
 
         let task = Task::new("task-1", "Test", "Description", "work", "now");
         let ctx = builder
-            .build_context("work", &task, &[], None, None, false, &[], &[])
+            .build_context("work", &task, &[], None, None, false, &[])
             .unwrap();
 
         let user_message = execute(&templates, &ctx);

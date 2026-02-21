@@ -7,6 +7,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use super::stage::{StageCapabilities, StageConfig, ToolRestriction};
+use crate::runtime::ACTIVITY_LOG_ARTIFACT_NAME;
 
 /// Complete workflow configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -530,6 +531,13 @@ impl WorkflowConfig {
             if name.is_empty() {
                 errors.push(format!(
                     "Stage \"{}\" has an empty artifact name. Artifact names must be non-empty.",
+                    stage.name
+                ));
+                continue;
+            }
+            if name == ACTIVITY_LOG_ARTIFACT_NAME {
+                errors.push(format!(
+                    "Stage \"{}\" uses reserved artifact name \"{name}\". This name is used internally for the activity log.",
                     stage.name
                 ));
                 continue;
@@ -1677,6 +1685,14 @@ integration:
 
         let effective = workflow.effective_disallowed_tools("work", Some("unrestricted"));
         assert!(effective.is_empty());
+    }
+
+    #[test]
+    fn test_reserved_artifact_name_rejected() {
+        let config = WorkflowConfig::new(vec![StageConfig::new("work", "activity_log")]);
+        let errors = config.validate();
+        assert!(!errors.is_empty());
+        assert!(errors[0].contains("reserved artifact name"));
     }
 
     #[test]

@@ -10,12 +10,13 @@ use crate::orkestra_debug;
 use crate::workflow::config::{ToolRestriction, WorkflowConfig};
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
-    build_resume_prompt, ActivityLogEntry, AgentRunnerTrait, PrComment, ProviderCapabilities,
-    ProviderRegistry, ResumeQuestionAnswer, ResumeType, RunConfig, SiblingTaskContext,
+    build_resume_prompt, AgentRunnerTrait, PrComment, ProviderCapabilities, ProviderRegistry,
+    ResumeQuestionAnswer, ResumeType, RunConfig, SiblingTaskContext,
 };
 use crate::workflow::prompt::PromptService;
 use crate::workflow::stage::agents::{ExecutionError, ExecutionHandle};
 use crate::workflow::stage::session::SessionSpawnContext;
+use crate::workflow::stage::types::ActivityLogEntry;
 
 // ============================================================================
 // Entry Point
@@ -51,9 +52,10 @@ pub(crate) fn execute(
     );
 
     // 0. Materialize artifacts to worktree files before building prompts
-    let artifact_names = super::materialize_artifacts::execute(task).map_err(|e| {
-        ExecutionError::ConfigError(format!("Failed to materialize artifacts: {e}"))
-    })?;
+    let artifact_names =
+        super::materialize_artifacts::execute(task, activity_logs).map_err(|e| {
+            ExecutionError::ConfigError(format!("Failed to materialize artifacts: {e}"))
+        })?;
 
     orkestra_debug!(
         "exec",
@@ -82,7 +84,6 @@ pub(crate) fn execute(
         &artifact_names,
         feedback,
         resolved.capabilities.requires_direct_structured_output,
-        activity_logs,
         sibling_tasks,
     )?;
 
@@ -102,7 +103,6 @@ pub(crate) fn execute(
         spawn_context.is_stage_reentry,
         trigger,
         resolved.capabilities.requires_direct_structured_output,
-        activity_logs,
         sibling_tasks,
     )?;
 
@@ -181,7 +181,6 @@ fn build_system_prompt(
     artifact_names: &[String],
     feedback: Option<&str>,
     show_direct_structured_output_hint: bool,
-    activity_logs: &[ActivityLogEntry],
     sibling_tasks: &[SiblingTaskContext],
 ) -> Result<String, ExecutionError> {
     let config = prompt_service.resolve_config(
@@ -191,7 +190,6 @@ fn build_system_prompt(
         feedback,
         None, // No integration error for system prompt
         show_direct_structured_output_hint,
-        activity_logs,
         sibling_tasks,
     )?;
     Ok(config.system_prompt)
@@ -212,7 +210,6 @@ fn build_user_prompt(
     is_stage_reentry: bool,
     trigger: Option<&IterationTrigger>,
     show_direct_structured_output_hint: bool,
-    activity_logs: &[ActivityLogEntry],
     sibling_tasks: &[SiblingTaskContext],
 ) -> Result<String, ExecutionError> {
     if is_resume {
@@ -222,14 +219,8 @@ fn build_user_prompt(
             trigger_to_resume_type(trigger)
         };
 
-        build_resume_prompt(
-            stage,
-            &resume_type,
-            &task.base_branch,
-            artifact_names,
-            activity_logs,
-        )
-        .map_err(ExecutionError::from)
+        build_resume_prompt(stage, &resume_type, &task.base_branch, artifact_names)
+            .map_err(ExecutionError::from)
     } else {
         // Extract feedback from trigger if present (fresh spawn after session reset)
         let feedback = extract_feedback_text(trigger);
@@ -241,7 +232,6 @@ fn build_user_prompt(
             feedback,
             None, // No integration error on first spawn
             show_direct_structured_output_hint,
-            activity_logs,
             sibling_tasks,
         )?;
         Ok(config.prompt)

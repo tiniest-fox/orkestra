@@ -5,7 +5,7 @@
 use handlebars::Handlebars;
 use orkestra_types::runtime::artifact_file_path;
 
-use crate::types::{ActivityLogEntry, AgentConfigError, ResumeType};
+use crate::types::{AgentConfigError, ResumeType};
 
 // ============================================================================
 // Template Constants
@@ -34,7 +34,6 @@ pub fn execute(
     resume_type: &ResumeType,
     base_branch: &str,
     artifact_names: &[String],
-    activity_logs: &[ActivityLogEntry],
 ) -> Result<String, AgentConfigError> {
     let (template, mut context) = match &resume_type {
         ResumeType::Continue => (RESUME_CONTINUE, serde_json::json!({})),
@@ -91,11 +90,6 @@ pub fn execute(
         context["artifacts"] = serde_json::json!(artifact_values);
     }
 
-    // Inject activity logs for Recheck resume type
-    if matches!(resume_type, ResumeType::Recheck) && !activity_logs.is_empty() {
-        context["activity_logs"] = serde_json::json!(activity_logs);
-    }
-
     render_template(template, &context)
 }
 
@@ -123,7 +117,7 @@ mod tests {
     #[test]
     fn test_continue() {
         let artifact_names = vec!["plan".to_string()];
-        let prompt = execute("work", &ResumeType::Continue, "main", &artifact_names, &[]).unwrap();
+        let prompt = execute("work", &ResumeType::Continue, "main", &artifact_names).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -140,7 +134,6 @@ mod tests {
             },
             "main",
             &artifact_names,
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:feedback>"));
@@ -160,7 +153,6 @@ mod tests {
             },
             "feature/parent-branch",
             &artifact_names,
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:integration>"));
@@ -190,7 +182,6 @@ mod tests {
             },
             "main",
             &artifact_names,
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:planning:answers>"));
@@ -204,7 +195,7 @@ mod tests {
     #[test]
     fn test_recheck() {
         let artifact_names = vec!["summary".to_string(), "check_results".to_string()];
-        let prompt = execute("review", &ResumeType::Recheck, "main", &artifact_names, &[]).unwrap();
+        let prompt = execute("review", &ResumeType::Recheck, "main", &artifact_names).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
         assert!(prompt.contains("re-run"));
         assert!(prompt.contains("re-examine"));
@@ -218,43 +209,22 @@ mod tests {
     }
 
     #[test]
-    fn test_recheck_with_activity_logs() {
-        let artifact_names = vec!["summary".to_string()];
-        let activity_logs = vec![
-            ActivityLogEntry {
-                stage: "work".to_string(),
-                iteration_number: 1,
-                content: "- Implemented the feature\n- Added tests".to_string(),
-            },
-            ActivityLogEntry {
-                stage: "review".to_string(),
-                iteration_number: 1,
-                content: "- Found issue with error handling\n- Requested changes".to_string(),
-            },
-        ];
-        let prompt = execute(
-            "review",
-            &ResumeType::Recheck,
-            "main",
-            &artifact_names,
-            &activity_logs,
-        )
-        .unwrap();
+    fn test_recheck_with_activity_log_artifact() {
+        // Activity logs are now referenced by file path (via artifact list), not inline.
+        let artifact_names = vec!["summary".to_string(), "activity_log".to_string()];
+        let prompt = execute("review", &ResumeType::Recheck, "main", &artifact_names).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
-        assert!(prompt.contains("Activity Log"));
-        assert!(prompt.contains("Prior stages have recorded the following activity"));
-        assert!(prompt.contains("[work]"));
-        assert!(prompt.contains("Implemented the feature"));
-        assert!(prompt.contains("[review]"));
-        assert!(prompt.contains("Found issue with error handling"));
         assert!(prompt.contains("Updated Input Artifacts"));
-        // New format: file paths instead of inline content
+        // File paths are referenced, not inline content
         assert!(prompt.contains(".orkestra/.artifacts/summary.md"));
+        assert!(prompt.contains(".orkestra/.artifacts/activity_log.md"));
+        // Should NOT contain old inline Activity Log section
+        assert!(!prompt.contains("Prior stages have recorded the following activity"));
     }
 
     #[test]
     fn test_no_artifacts() {
-        let prompt = execute("work", &ResumeType::Continue, "main", &[], &[]).unwrap();
+        let prompt = execute("work", &ResumeType::Continue, "main", &[]).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(!prompt.contains("Updated Input Artifacts"));
@@ -270,7 +240,6 @@ mod tests {
             },
             "main",
             &artifact_names,
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:manual_resume>"));
@@ -287,7 +256,6 @@ mod tests {
             "review",
             &ResumeType::ManualResume { message: None },
             "main",
-            &[],
             &[],
         )
         .unwrap();
@@ -321,7 +289,6 @@ mod tests {
             },
             "main",
             &[],
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:pr_comments>"));
@@ -351,7 +318,6 @@ mod tests {
             },
             "main",
             &[],
-            &[],
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:pr_comments>"));
@@ -363,7 +329,7 @@ mod tests {
 
     #[test]
     fn test_no_system_prompt_in_resume() {
-        let prompt = execute("work", &ResumeType::Continue, "main", &[], &[]).unwrap();
+        let prompt = execute("work", &ResumeType::Continue, "main", &[]).unwrap();
 
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(!prompt.contains("Output Format"));

@@ -12,8 +12,7 @@ pub mod types;
 pub use interactions::build::context::PromptBuilder;
 pub use service::PromptService;
 pub use types::{
-    deduplicate_activity_logs_by_stage, sibling_status_display, ActivityLogEntry, AgentConfigError,
-    ArtifactContext, FlowOverrides, IntegrationErrorContext, PrComment, QuestionAnswerContext,
-    ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType, SiblingTaskContext, StagePromptContext,
-    WorkflowStageEntry,
+    sibling_status_display, AgentConfigError, ArtifactContext, FlowOverrides,
+    IntegrationErrorContext, PrComment, QuestionAnswerContext, ResolvedAgentConfig,
+    ResumeQuestionAnswer, ResumeType, SiblingTaskContext, StagePromptContext, WorkflowStageEntry,
 };

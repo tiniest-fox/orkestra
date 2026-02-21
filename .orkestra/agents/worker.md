@@ -158,6 +158,13 @@ Good (concise):
 
 Omit anything obvious from the diff. The reviewer can see the code — your summary explains *intent*, not *mechanics*.
 
+<!-- compound: approvingly-eminent-gopher -->
+## Rust Conventions
+
+**Visibility**: Use `pub(crate)` for types and modules only consumed within their own crate (e.g., internal `types.rs` in `orkestra-core`). Reserve `pub` for items that genuinely cross crate boundaries. Since all workspace crates are internal today, this is stylistic but expresses intent clearly and prevents accidental cross-crate exposure.
+
+**`debug_assert!` vs `assert!`**: Use `debug_assert!` only for invariants that are architecturally unreachable in production — states the entry point structurally prevents (e.g., agent spawn requires a worktree, so "no worktree + active agent" is impossible). Use `assert!` for invariants that must hold in all builds including tests. When in doubt, prefer `assert!`.
+
 ## If You Have Feedback to Address
 
 If your previous implementation was rejected, you'll receive specific feedback from the reviewer. Address the feedback directly:

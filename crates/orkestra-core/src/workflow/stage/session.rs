@@ -669,8 +669,7 @@ mod tests {
             "interrupt→resume is not a stage re-entry"
         );
         assert_eq!(
-            ctx.session_id,
-            first_ctx.session_id,
+            ctx.session_id, first_ctx.session_id,
             "original session ID must be preserved"
         );
     }

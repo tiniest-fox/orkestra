@@ -4470,11 +4470,13 @@ fn test_interrupt_resume_on_restart_on_reentry_stage_preserves_session() {
         "Should have exactly 1 review session (interrupt→resume is not a re-entry)"
     );
 
-    // The session must have a valid claude_session_id (not cleared/reset)
+    // Session ID is assigned on spawn and must not be cleared by the ManualResume path.
+    // (Precise regression coverage for is_resume is in unit test
+    // `test_resume_when_manual_resume_trigger_no_activity` in session.rs.)
     let session = review_sessions[0];
     assert!(
         session.claude_session_id.is_some(),
-        "Session ID must not be cleared after interrupt→resume"
+        "Session ID must be assigned and not cleared after interrupt→resume"
     );
 }
 

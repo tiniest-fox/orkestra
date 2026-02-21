@@ -4394,7 +4394,7 @@ fn test_reentry_without_restart_flag_uses_recheck() {
 /// and replace the session ID with a fresh UUID, bypassing `--resume`.
 ///
 /// Flow:
-/// 1. Review stage is simulated as started (agent_started) then interrupted
+/// 1. Review stage is simulated as started (`agent_started`) then interrupted
 /// 2. User resumes (creates `ManualResume` iteration)
 /// 3. Review spawns via orchestrator → must use `is_resume = true`
 /// 4. `restart_on_reentry` must NOT trigger (`is_stage_reentry = false`)

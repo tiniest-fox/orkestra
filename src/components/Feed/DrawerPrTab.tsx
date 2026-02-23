@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePrStatus } from "../../providers/PrStatusProvider";
 import type { PrCheck, PrComment, PrCommentData, PrReview, PrStatus } from "../../types/workflow";
-import { groupCommentsByReview } from "../TaskDetail/groupCommentsByReview";
+import { groupCommentsByReview } from "./groupCommentsByReview";
 
 // ============================================================================
 // Public types

@@ -1,7 +1,6 @@
 import type { RenderOptions } from "@testing-library/react";
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { DisplayContextProvider } from "../../providers/DisplayContextProvider";
 import { TasksProvider } from "../../providers/TasksProvider";
 import { WorkflowConfigProvider } from "../../providers/WorkflowConfigProvider";
 
@@ -12,9 +11,7 @@ import { WorkflowConfigProvider } from "../../providers/WorkflowConfigProvider";
 export function renderWithProviders(ui: ReactElement, options?: RenderOptions) {
   return render(
     <WorkflowConfigProvider>
-      <TasksProvider>
-        <DisplayContextProvider>{ui}</DisplayContextProvider>
-      </TasksProvider>
+      <TasksProvider>{ui}</TasksProvider>
     </WorkflowConfigProvider>,
     options,
   );

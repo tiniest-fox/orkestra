@@ -1,8 +1,5 @@
 import { Orkestra } from "./components/Orkestra";
 import {
-  AssistantProvider,
-  AutoTaskTemplatesProvider,
-  DisplayContextProvider,
   GitHistoryProvider,
   PrStatusProvider,
   TasksProvider,
@@ -16,19 +13,13 @@ import {
 function App() {
   return (
     <WorkflowConfigProvider>
-      <AutoTaskTemplatesProvider>
-        <TasksProvider>
-          <PrStatusProvider>
-            <AssistantProvider>
-              <GitHistoryProvider>
-                <DisplayContextProvider>
-                  <Orkestra />
-                </DisplayContextProvider>
-              </GitHistoryProvider>
-            </AssistantProvider>
-          </PrStatusProvider>
-        </TasksProvider>
-      </AutoTaskTemplatesProvider>
+      <TasksProvider>
+        <PrStatusProvider>
+          <GitHistoryProvider>
+            <Orkestra />
+          </GitHistoryProvider>
+        </PrStatusProvider>
+      </TasksProvider>
     </WorkflowConfigProvider>
   );
 }

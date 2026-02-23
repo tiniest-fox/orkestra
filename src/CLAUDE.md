@@ -106,7 +106,7 @@ useEffect(() => {
 
 The Forge design system is an alternate visual language used by `FeedView` and its components. It uses IBM Plex fonts, a warm purple-undertone palette, and pink-red accent (`--accent-1`).
 
-**Scoping:** Forge tokens are CSS custom properties defined in `.forge-theme` in `src/index.css` (following the `.artifact-prose` pattern). Apply the `.forge-theme` class at the top-level container of any Forge component (`FeedView`), not globally — this prevents Forge colors leaking into the kanban.
+**Scoping:** Forge tokens are CSS custom properties defined in `.forge-theme` in `src/index.css` (following the `.artifact-prose` pattern). The `.forge-theme` class is applied at the root in `Orkestra.tsx` and on `FeedView`'s own container (harmless to have it twice).
 
 **Tailwind exception — `StatusSymbol`:** `StatusSymbol.tsx` is the one component that legitimately uses inline `style` props. The reason: both `color` (a CSS variable selected by runtime state from an object) and `animation` (conditionally present) are genuinely dynamic — not one of a fixed set of values. Tailwind arbitrary classes like `text-[var(--x)]` require the variable name to be statically known at write time. This is a deliberate, documented exception; all other Forge components must use Tailwind classes only.
 

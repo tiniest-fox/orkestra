@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mock B — Stage Strip</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'IBM Plex Sans', sans-serif;
+  background: #E8E5EF;
+  min-height: 100vh;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 32px;
+}
+
+.label {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: #7B7490;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: rgba(232,229,239,0.9);
+  padding: 4px 12px;
+  border-radius: 100px;
+}
+
+.drawer {
+  width: 520px;
+  background: #F9F8FC;
+  border: 1px solid #DDD9E8;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: calc(100vh - 80px);
+  box-shadow: 0 4px 24px rgba(28,24,32,0.08), 0 1px 4px rgba(28,24,32,0.06);
+}
+
+/* Header — minimal, just title + close */
+.header {
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid #E2DEED;
+  flex-shrink: 0;
+}
+.header-row1 {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.task-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1C1820;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.close-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #9D95AD;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.close-btn:hover { color: #3D3647; }
+.kbd {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: #9D95AD;
+  border: 1px solid #CCC8D8;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+.header-row2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pipeline {
+  height: 4px;
+  background: #EAE7EF;
+  border-radius: 2px;
+  overflow: hidden;
+  flex: 1;
+  max-width: 140px;
+}
+.pipeline-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #EA580C 0%, #0D9488 35%, #7C3AED 65%);
+  border-radius: 2px;
+  width: 75%;
+}
+.pipeline-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: #9D95AD;
+  letter-spacing: 0.04em;
+}
+
+/* =====================
+   STAGE STRIP — the main nav
+   ===================== */
+.stage-strip {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid #E2DEED;
+  background: #F3F1F6;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+
+.stage-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-right: 1px solid #E2DEED;
+  min-width: 0;
+  flex-shrink: 0;
+  position: relative;
+  transition: background 0.1s;
+  border-bottom: 2px solid transparent;
+}
+.stage-chip:last-child { border-right: none; }
+.stage-chip:hover { background: #EAE7EF; }
+
+.stage-chip.active {
+  background: #F9F8FC;
+  border-bottom-color: var(--stage-color, #7C3AED);
+}
+
+.stage-name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6B6279;
+}
+.stage-chip.active .stage-name {
+  color: var(--stage-color, #7C3AED);
+}
+
+.stage-meta {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: #9D95AD;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.stage-outcome {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.stage-outcome.approved { background: #0D9488; }
+.stage-outcome.current { background: #7C3AED; }
+.stage-outcome.rejected { background: #DC2626; }
+
+/* Iteration sub-strip — only visible on current stage with multiple iterations */
+.iter-strip {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 6px 16px;
+  background: #F9F8FC;
+  border-bottom: 1px solid #E2DEED;
+  flex-shrink: 0;
+}
+
+.iter-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: #9D95AD;
+  margin-right: 8px;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.iter-pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.iter-pill {
+  height: 22px;
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  border: 1.5px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.1s;
+  gap: 3px;
+}
+
+.iter-pill.rejected {
+  border-color: #DC2626;
+  color: #DC2626;
+  background: #FFF8F8;
+}
+.iter-pill.rejected:hover, .iter-pill.rejected.active {
+  background: #DC2626;
+  color: white;
+}
+.iter-pill.current {
+  border-color: #7C3AED;
+  color: #7C3AED;
+  background: #F3EEFF;
+}
+.iter-pill.current.active, .iter-pill.current:hover {
+  background: #7C3AED;
+  color: white;
+}
+
+.iter-pill-icon { font-size: 9px; }
+
+/* Context strip — shows what stage/iteration you're in */
+.context-strip {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: #FFF5F5;
+  border-bottom: 1px solid #FEE2E2;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: #991B1B;
+  flex-shrink: 0;
+}
+.context-strip.visible { display: flex; }
+
+.ctx-badge {
+  font-size: 9px;
+  font-weight: 600;
+  background: #DC2626;
+  color: white;
+  border-radius: 3px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ctx-back {
+  margin-left: auto;
+  font-size: 11px;
+  color: #DC2626;
+  cursor: pointer;
+  text-decoration: underline;
+  font-weight: 500;
+}
+.ctx-back:hover { opacity: 0.7; }
+
+/* Tabs */
+.tabs {
+  display: flex;
+  height: 36px;
+  border-bottom: 1px solid #E2DEED;
+  flex-shrink: 0;
+}
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #9D95AD;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.1s;
+}
+.tab:hover { background: #F1EFF6; color: #3D3647; }
+.tab.active { color: var(--accent-color, #7C3AED); border-bottom-color: var(--accent-color, #7C3AED); font-weight: 500; }
+.tab.active.red { --accent-color: #DC2626; }
+.tab-hotkey {
+  font-size: 9px;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 1px 3px;
+  opacity: 0.55;
+}
+
+/* Body */
+.body { flex: 1; overflow-y: auto; min-height: 0; }
+.body-panel { display: none; height: 100%; }
+.body-panel.visible { display: flex; flex-direction: column; }
+
+.artifact { padding: 20px; font-size: 13px; color: #1C1820; line-height: 1.6; }
+.artifact h3 { font-size: 13px; font-weight: 600; color: #1C1820; margin-bottom: 8px; margin-top: 16px; }
+.artifact h3:first-child { margin-top: 0; }
+.artifact p { color: #3D3647; margin-bottom: 8px; font-size: 13px; }
+.artifact ul { padding-left: 16px; color: #3D3647; font-size: 13px; }
+.artifact li { margin-bottom: 4px; }
+.artifact code { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; background: #EAE7EF; border-radius: 3px; padding: 1px 4px; color: #4A3F6B; }
+
+.feedback-panel { padding: 20px; }
+.feedback-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #DC2626; margin-bottom: 8px; }
+.feedback-text { font-size: 13px; color: #3D3647; line-height: 1.6; background: #FFF5F5; border: 1px solid #FEE2E2; border-radius: 6px; padding: 12px 14px; }
+.outcome-row { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9D95AD; }
+.outcome-badge { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 3px; }
+.outcome-badge.rejected { background: #FEE2E2; color: #991B1B; }
+.outcome-badge.approved { background: #D1FAF2; color: #0F766E; }
+
+.logs { padding: 12px 16px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #4A3F6B; line-height: 1.7; }
+.log-line { margin-bottom: 1px; }
+.log-line .ts { color: #9D95AD; margin-right: 8px; }
+.log-line.dim { color: #9D95AD; }
+.log-line.ok { color: #0D9488; }
+.log-line.err { color: #DC2626; }
+
+.empty { padding: 24px 20px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9D95AD; }
+
+/* past-stage artifact in teal / peach */
+.past-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 100px;
+  margin-bottom: 12px;
+}
+.past-badge.approved { background: #CCFBF1; color: #0F766E; }
+.past-badge.peach { background: #FEF3C7; color: #92400E; }
+
+/* Footer */
+.footer { padding: 0 20px; border-top: 1px solid #E2DEED; display: flex; align-items: center; gap: 8px; height: 52px; flex-shrink: 0; }
+.btn { display: inline-flex; align-items: center; gap: 6px; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 600; padding: 7px 16px; border-radius: 6px; border: 1px solid; cursor: pointer; transition: all 0.1s; white-space: nowrap; line-height: 1.3; }
+.btn-approve { background: #7C3AED; border-color: transparent; color: white; }
+.btn-approve:hover { background: #6D28D9; }
+.btn-reject { background: transparent; border-color: #DDD9E8; color: #3D3647; }
+.btn-reject:hover { background: #F1EFF6; border-color: #9D95AD; }
+.btn-hotkey { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 400; opacity: 0.6; border: 1px solid currentColor; border-radius: 3px; padding: 1px 4px; }
+
+.annotation {
+  margin-top: 20px;
+  max-width: 260px;
+  align-self: flex-start;
+  padding: 14px 16px;
+  background: #F3EEFF;
+  border: 1px solid #D4C8F7;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #4A3F6B;
+  line-height: 1.5;
+}
+.annotation strong { color: #1C1820; }
+</style>
+</head>
+<body>
+
+<div class="label">Mock B — Stage Strip + Iteration Sub-Nav</div>
+
+<div class="drawer" id="drawer">
+  <!-- Minimal header -->
+  <div class="header">
+    <div class="header-row1">
+      <div class="task-title">Add OAuth login flow</div>
+      <div class="close-btn">
+        <span class="kbd">esc</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </div>
+    </div>
+    <div class="header-row2">
+      <span class="pipeline-label">3 stages</span>
+      <div class="pipeline"><div class="pipeline-fill"></div></div>
+    </div>
+  </div>
+
+  <!-- Stage strip -->
+  <div class="stage-strip">
+    <div class="stage-chip" id="stage-planning" style="--stage-color: #EA580C" onclick="selectStage('planning')">
+      <span class="stage-name">Planning</span>
+      <div class="stage-meta"><div class="stage-outcome approved"></div>1 iteration</div>
+    </div>
+    <div class="stage-chip" id="stage-breakdown" style="--stage-color: #0D9488" onclick="selectStage('breakdown')">
+      <span class="stage-name">Breakdown</span>
+      <div class="stage-meta"><div class="stage-outcome approved"></div>1 iteration</div>
+    </div>
+    <div class="stage-chip active" id="stage-work" style="--stage-color: #7C3AED" onclick="selectStage('work')">
+      <span class="stage-name">Work</span>
+      <div class="stage-meta"><div class="stage-outcome current"></div>3 iterations</div>
+    </div>
+  </div>
+
+  <!-- Iteration sub-nav (only for work, hidden for other stages) -->
+  <div class="iter-strip" id="iterStrip">
+    <span class="iter-label">Iteration</span>
+    <div class="iter-pills">
+      <div class="iter-pill rejected" id="iter1" onclick="selectIter(1)">
+        1 <span class="iter-pill-icon">✗</span>
+      </div>
+      <div class="iter-pill rejected" id="iter2" onclick="selectIter(2)">
+        2 <span class="iter-pill-icon">✗</span>
+      </div>
+      <div class="iter-pill current active" id="iter3" onclick="selectIter(3)">
+        3 <span class="iter-pill-icon">←</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context banner (past iterations) -->
+  <div class="context-strip" id="contextStrip">
+    <span class="ctx-badge" id="ctxLabel">Iter 1 · Rejected</span>
+    <span id="ctxText" style="color:#6B6279; font-size:11px;">Historical view — no actions</span>
+    <span class="ctx-back" onclick="selectIter(3)">← Current</span>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs" id="tabBar">
+    <div class="tab active" onclick="selectTab('artifact')">Artifact <span class="tab-hotkey">a</span></div>
+    <div class="tab" onclick="selectTab('diff')">Diff <span class="tab-hotkey">d</span></div>
+    <div class="tab" onclick="selectTab('logs')">Logs <span class="tab-hotkey">l</span></div>
+  </div>
+
+  <!-- Body -->
+  <div class="body">
+
+    <!-- WORK / iter 3 (current) -->
+    <div class="body-panel visible" id="p-work-3-artifact">
+      <div class="artifact">
+        <h3>OAuth 2.0 Login Implementation</h3>
+        <p>Added complete OAuth 2.0 authentication flow with GitHub as the initial provider. Redirect URIs are configurable, provider errors are handled gracefully.</p>
+        <h3>Changes made</h3>
+        <ul>
+          <li>Added <code>/auth/github/callback</code> route handler with PKCE support</li>
+          <li>Redirect URI from <code>OAUTH_REDIRECT_URI</code> env var</li>
+          <li>Token exchange with retry + exponential backoff</li>
+          <li>Graceful degradation when GitHub is unavailable</li>
+          <li>Session hydration updated for OAuth tokens</li>
+        </ul>
+      </div>
+    </div>
+    <div class="body-panel" id="p-work-3-diff">
+      <div class="empty">Diff — all changes on this task's branch</div>
+    </div>
+    <div class="body-panel" id="p-work-3-logs">
+      <div class="logs">
+        <div class="log-line"><span class="ts">14:32:01</span>Starting work iteration 3</div>
+        <div class="log-line dim"><span class="ts">14:32:02</span>Reading rejection feedback…</div>
+        <div class="log-line ok"><span class="ts">14:33:12</span>Moved redirect URI to env config ✓</div>
+        <div class="log-line ok"><span class="ts">14:36:48</span>Added provider health check ✓</div>
+        <div class="log-line ok"><span class="ts">14:38:22</span>All tests passing ✓</div>
+        <div class="log-line"><span class="ts">14:38:23</span>Submitting for review</div>
+      </div>
+    </div>
+
+    <!-- WORK / iter 1 (rejected) -->
+    <div class="body-panel" id="p-work-1-artifact">
+      <div class="artifact">
+        <h3>OAuth 2.0 Login Implementation</h3>
+        <p>Added OAuth 2.0 authentication flow with GitHub provider.</p>
+        <ul>
+          <li>Added <code>/auth/github/callback</code> route handler</li>
+          <li>Hardcoded redirect to <code>http://localhost:3000/callback</code></li>
+          <li>Basic token exchange, no error handling</li>
+        </ul>
+      </div>
+    </div>
+    <div class="body-panel" id="p-work-1-feedback">
+      <div class="feedback-panel">
+        <div class="feedback-label">Rejection feedback</div>
+        <div class="feedback-text">"The redirect_uri is hardcoded to localhost:3000. This needs to come from environment config. Also no error handling if GitHub is down."</div>
+        <div class="outcome-row">
+          <span class="outcome-badge rejected">Rejected</span>
+          <span>by christian · 14 Jan at 14:28</span>
+        </div>
+      </div>
+    </div>
+    <div class="body-panel" id="p-work-1-logs">
+      <div class="logs">
+        <div class="log-line"><span class="ts">13:51:04</span>Starting work iteration 1</div>
+        <div class="log-line ok"><span class="ts">13:54:18</span>Implemented callback handler ✓</div>
+        <div class="log-line"><span class="ts">13:56:44</span>Submitting for review</div>
+      </div>
+    </div>
+
+    <!-- WORK / iter 2 (rejected) -->
+    <div class="body-panel" id="p-work-2-artifact">
+      <div class="artifact">
+        <h3>OAuth 2.0 Login Implementation</h3>
+        <p>Redirect URI now configurable via env var. Token exchange updated.</p>
+        <ul>
+          <li>Redirect URI from <code>OAUTH_REDIRECT_URI</code> env var ✓</li>
+          <li>No error handling yet for provider downtime</li>
+        </ul>
+      </div>
+    </div>
+    <div class="body-panel" id="p-work-2-feedback">
+      <div class="feedback-panel">
+        <div class="feedback-label">Rejection feedback</div>
+        <div class="feedback-text">"Good fix on the redirect URI. Still no error handling when GitHub is unavailable — users get a 500. Need graceful degradation."</div>
+        <div class="outcome-row">
+          <span class="outcome-badge rejected">Rejected</span>
+          <span>by christian · 14 Jan at 14:08</span>
+        </div>
+      </div>
+    </div>
+    <div class="body-panel" id="p-work-2-logs">
+      <div class="logs">
+        <div class="log-line"><span class="ts">14:01:12</span>Starting work iteration 2</div>
+        <div class="log-line ok"><span class="ts">14:04:44</span>Moved redirect URI to env config ✓</div>
+        <div class="log-line err"><span class="ts">14:07:01</span>Skipped error handling</div>
+        <div class="log-line"><span class="ts">14:07:22</span>Submitting for review</div>
+      </div>
+    </div>
+
+    <!-- PLANNING (past stage, approved) -->
+    <div class="body-panel" id="p-planning-1-artifact">
+      <div class="artifact">
+        <span class="past-badge peach">✓ Planning — Approved</span>
+        <h3>Implementation Plan: OAuth Login</h3>
+        <p>OAuth 2.0 with GitHub as initial provider. Use PKCE flow for security. Redirect URIs must be configurable per environment.</p>
+        <h3>Key decisions</h3>
+        <ul>
+          <li>PKCE flow (no client secret exposure)</li>
+          <li>Redirect URI from env var, validated against allowlist</li>
+          <li>Session-based token storage (not JWT)</li>
+          <li>Graceful degradation if provider is down</li>
+        </ul>
+        <h3>Stages planned</h3>
+        <ul>
+          <li>Breakdown → Work → Review</li>
+        </ul>
+      </div>
+    </div>
+    <div class="body-panel" id="p-planning-1-logs">
+      <div class="logs">
+        <div class="log-line"><span class="ts">13:20:01</span>Starting planning stage</div>
+        <div class="log-line dim"><span class="ts">13:20:03</span>Reading task description…</div>
+        <div class="log-line ok"><span class="ts">13:24:18</span>Implementation plan complete ✓</div>
+        <div class="log-line"><span class="ts">13:24:19</span>Submitting for approval</div>
+      </div>
+    </div>
+
+    <!-- BREAKDOWN (past stage, approved) -->
+    <div class="body-panel" id="p-breakdown-1-artifact">
+      <div class="artifact">
+        <span class="past-badge approved">✓ Breakdown — Approved</span>
+        <h3>Subtask Breakdown</h3>
+        <p>Decomposed OAuth login into 3 implementation subtasks:</p>
+        <ul>
+          <li><strong>OAuth route handler</strong> — callback endpoint + PKCE verification</li>
+          <li><strong>Token exchange service</strong> — exchange code for token with retry logic</li>
+          <li><strong>Session integration</strong> — hydrate session with OAuth-issued identity</li>
+        </ul>
+        <p>All subtasks assigned to work stage. No cross-dependencies.</p>
+      </div>
+    </div>
+    <div class="body-panel" id="p-breakdown-1-logs">
+      <div class="logs">
+        <div class="log-line"><span class="ts">13:28:04</span>Starting breakdown stage</div>
+        <div class="log-line dim"><span class="ts">13:28:06</span>Reading planning artifact…</div>
+        <div class="log-line ok"><span class="ts">13:31:22</span>Subtask breakdown complete ✓</div>
+        <div class="log-line"><span class="ts">13:31:23</span>Submitting for approval</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="footer" id="footer">
+    <button class="btn btn-approve">Approve <span class="btn-hotkey">a</span></button>
+    <button class="btn btn-reject">Reject <span class="btn-hotkey">r</span></button>
+  </div>
+</div>
+
+<div style="max-width: 260px; align-self: flex-start; margin-top: 60px;">
+  <div class="annotation">
+    <strong>How it works</strong><br><br>
+    A <strong>stage strip</strong> sits just below the header. Click any stage to see its content. The active stage gets an accent underline.<br><br>
+    For the current work stage, an <strong>iteration sub-nav</strong> appears — numbered pills showing each run and its outcome. Click to navigate.<br><br>
+    Past stages (planning, breakdown) show their artifact directly — no iterations to navigate since each had only one run.<br><br>
+    <em>Try clicking Planning or Breakdown above to see past stage artifacts, then click Work → iter 1 to see a rejection.</em><br><br>
+    <em>Key tradeoff:</em> Two rows of nav chrome above the tabs. Clear hierarchy but takes vertical space.
+  </div>
+</div>
+
+<script>
+let selectedStage = 'work';
+let selectedIter = 3;
+let selectedTab = 'artifact';
+
+const stageData = {
+  planning: { iters: 1, color: '#EA580C' },
+  breakdown: { iters: 1, color: '#0D9488' },
+  work: { iters: 3, color: '#7C3AED' },
+};
+
+const stageTabsByIter = {
+  // work current
+  'work-3': ['artifact', 'diff', 'logs'],
+  // work rejected
+  'work-1': ['artifact', 'feedback', 'logs'],
+  'work-2': ['artifact', 'feedback', 'logs'],
+  // past stages
+  'planning-1': ['artifact', 'logs'],
+  'breakdown-1': ['artifact', 'logs'],
+};
+
+function selectStage(stage) {
+  selectedStage = stage;
+
+  // Update strip highlight
+  document.querySelectorAll('.stage-chip').forEach(c => c.classList.remove('active'));
+  document.getElementById('stage-' + stage).classList.add('active');
+
+  // Show/hide iter strip
+  const iterStrip = document.getElementById('iterStrip');
+  if (stage === 'work') {
+    iterStrip.style.display = 'flex';
+    selectedIter = 3; // default to current
+    updateIterPills();
+  } else {
+    iterStrip.style.display = 'none';
+    selectedIter = 1; // single iteration for past stages
+  }
+
+  // Clear context strip
+  document.getElementById('contextStrip').classList.remove('visible');
+
+  // Set tabs and show panel
+  const tabKey = stage + '-' + selectedIter;
+  const tabs = stageTabsByIter[tabKey] || ['artifact', 'logs'];
+  rebuildTabs(tabs, stage === 'work' && selectedIter === 3);
+  selectTab(tabs[0]);
+
+  // Footer
+  document.getElementById('footer').style.display = (stage === 'work' && selectedIter === 3) ? 'flex' : 'none';
+}
+
+function selectIter(n) {
+  selectedIter = n;
+  updateIterPills();
+
+  const isCurrent = (selectedStage === 'work' && n === 3);
+
+  // Context strip
+  const ctx = document.getElementById('contextStrip');
+  if (!isCurrent) {
+    ctx.classList.add('visible');
+    document.getElementById('ctxLabel').textContent = 'Iter ' + n + ' · Rejected';
+    document.getElementById('ctxText').textContent = 'Historical view — no actions';
+  } else {
+    ctx.classList.remove('visible');
+  }
+
+  const tabKey = selectedStage + '-' + n;
+  const tabs = stageTabsByIter[tabKey] || ['artifact', 'logs'];
+  rebuildTabs(tabs, isCurrent);
+  selectTab(tabs[0]);
+
+  document.getElementById('footer').style.display = isCurrent ? 'flex' : 'none';
+}
+
+function updateIterPills() {
+  document.querySelectorAll('.iter-pill').forEach((p, i) => {
+    p.classList.toggle('active', i + 1 === selectedIter);
+  });
+}
+
+function rebuildTabs(tabs, isCurrent) {
+  const accentColor = isCurrent ? '#7C3AED' : '#DC2626';
+  document.documentElement.style.setProperty('--accent-color', accentColor);
+
+  const tabBar = document.getElementById('tabBar');
+  tabBar.innerHTML = '';
+  tabs.forEach((t, i) => {
+    const label = t.charAt(0).toUpperCase() + t.slice(1);
+    const active = i === 0 ? 'active' : '';
+    const red = (!isCurrent && t === 'feedback') ? 'red' : '';
+    tabBar.innerHTML += `<div class="tab ${active} ${red}" onclick="selectTab('${t}')">${label} <span class="tab-hotkey">${t[0]}</span></div>`;
+  });
+}
+
+function selectTab(tab) {
+  selectedTab = tab;
+
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.textContent.trim().toLowerCase().startsWith(tab));
+  });
+
+  document.querySelectorAll('.body-panel').forEach(p => p.classList.remove('visible'));
+
+  const key = selectedStage + '-' + selectedIter + '-' + tab;
+  const el = document.getElementById('p-' + key);
+  if (el) el.classList.add('visible');
+}
+</script>
+</body>
+</html>

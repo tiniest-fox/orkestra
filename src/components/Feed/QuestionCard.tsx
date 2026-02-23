@@ -1,0 +1,164 @@
+//! Individual question card — free-text and multiple-choice, with answered/unanswered
+//! visual states and keyboard navigation focus ring.
+
+import { useRef } from "react";
+import { useNavItem } from "../ui/NavigationScope";
+import type { WorkflowQuestion } from "../../types/workflow";
+
+interface QuestionCardProps {
+  index: number;
+  question: WorkflowQuestion;
+  value: string;
+  onChange: (value: string) => void;
+  /** Flat index of this question's first navigable item. */
+  flatStartIndex: number;
+  /** Current global flat index for keyboard navigation. */
+  keyboardFlatIdx: number;
+  /** Ref callback for the textarea. */
+  textareaRef?: (el: HTMLTextAreaElement | null) => void;
+  /** Called when the user clicks an MC option (syncs flatIdx). */
+  onOptionClick?: (optIdx: number) => void;
+  /** Called when the user hovers an MC option (syncs flatIdx, may be suppressed). */
+  onOptionHover?: (optIdx: number) => void;
+  /** Called when the textarea receives DOM focus (syncs flatIdx). */
+  onTextareaFocus?: () => void;
+  /** Called on textarea mouseenter (may be suppressed when another textarea is focused). */
+  onTextareaHover?: () => void;
+  /** Called when Enter is pressed inside the textarea (confirm + advance). */
+  onTextareaEnter?: () => void;
+  /** Called when Escape is pressed inside the textarea (clear + blur). */
+  onTextareaEscape?: () => void;
+}
+
+export function QuestionCard({
+  index,
+  question,
+  value,
+  onChange,
+  flatStartIndex,
+  keyboardFlatIdx,
+  textareaRef,
+  onOptionClick,
+  onOptionHover,
+  onTextareaFocus,
+  onTextareaHover,
+  onTextareaEnter,
+  onTextareaEscape,
+}: QuestionCardProps) {
+  const answered = value.trim().length > 0;
+  const num = String(index + 1).padStart(2, "0");
+  const cardRef = useRef<HTMLDivElement>(null);
+  useNavItem(String(index), cardRef);
+
+  function textareaKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      onTextareaEnter?.();
+      e.currentTarget.blur();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onTextareaEscape?.();
+      e.currentTarget.blur();
+    }
+  }
+
+  return (
+    <div ref={cardRef} className="px-6 py-5">
+      {/* Question header */}
+      <div className="flex items-start gap-3 mb-3">
+        <span
+          className="font-forge-mono text-[13px] font-semibold shrink-0 leading-snug w-5 text-center"
+          style={{ color: answered ? "var(--green)" : "var(--blue)" }}
+        >
+          {answered ? "✓" : num}
+        </span>
+        <div className="min-w-0">
+          <div
+            className="font-forge-sans text-[13px] font-medium tracking-[-0.01em] leading-snug"
+            style={{ color: answered ? "var(--text-1)" : "var(--text-0)" }}
+          >
+            {question.question}
+          </div>
+          {question.context && (
+            <div className="font-forge-mono text-[11px] text-[var(--text-2)] mt-1 leading-relaxed">
+              {question.context}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Answer input */}
+      <div className="ml-8">
+        {question.options ? (
+          <div className="flex flex-col gap-1.5">
+            {question.options.map((opt, oi) => {
+              const selected = value === opt.label;
+              const kbdFocused = flatStartIndex + oi === keyboardFlatIdx;
+              return (
+                <button
+                  key={opt.label}
+                  onClick={() => {
+                    onChange(selected ? "" : opt.label);
+                    onOptionClick?.(oi);
+                  }}
+                  onMouseEnter={() => onOptionHover?.(oi)}
+                  className={[
+                    "text-left w-full px-3 py-2 rounded-md border transition-colors outline-none",
+                    selected
+                      ? "bg-[var(--blue-bg)] border-[var(--blue-border)] text-[var(--blue)]"
+                      : "border-[var(--border)] text-[var(--text-1)] hover:bg-[var(--surface-hover)]",
+                    answered && !selected ? "opacity-45" : "",
+                    kbdFocused && !selected ? "ring-1 ring-[var(--blue)] ring-offset-1" : "",
+                    kbdFocused && selected ? "ring-1 ring-[var(--blue)] ring-offset-1" : "",
+                  ].join(" ")}
+                >
+                  <div className="font-forge-sans text-[12px] font-medium leading-snug">{opt.label}</div>
+                  {opt.description && (
+                    <div className="font-forge-mono text-[10px] text-[var(--text-2)] mt-0.5">{opt.description}</div>
+                  )}
+                </button>
+              );
+            })}
+            {/* Write-in textarea — value only when no option is selected */}
+            {(() => {
+              const writeInValue = question.options.some((o) => o.label === value) ? "" : value;
+              const kbdFocused = flatStartIndex + question.options.length === keyboardFlatIdx;
+              return (
+                <textarea
+                  ref={textareaRef}
+                  value={writeInValue}
+                  onChange={(e) => onChange(e.target.value)}
+                  onFocus={onTextareaFocus}
+                  onMouseEnter={onTextareaHover}
+                  onKeyDown={textareaKeyDown}
+                  placeholder="Or write your own answer…"
+                  rows={2}
+                  className={[
+                    "w-full font-forge-sans text-[12px] text-[var(--text-0)] placeholder:text-[var(--text-3)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-2 outline-none transition-colors resize-none leading-relaxed",
+                    kbdFocused ? "ring-1 ring-[var(--blue)] ring-offset-1 focus:border-[var(--blue-border-focus)]" : "focus:border-[var(--blue-border-focus)]",
+                    answered && writeInValue.length === 0 ? "opacity-45" : "",
+                  ].join(" ")}
+                />
+              );
+            })()}
+          </div>
+        ) : (
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onFocus={onTextareaFocus}
+            onMouseEnter={onTextareaHover}
+            onKeyDown={textareaKeyDown}
+            placeholder="Your answer…"
+            rows={3}
+            className={[
+              "w-full font-forge-sans text-[12px] text-[var(--text-0)] placeholder:text-[var(--text-3)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-2 outline-none focus:border-[var(--blue-border-focus)] transition-colors resize-none leading-relaxed",
+              flatStartIndex === keyboardFlatIdx ? "ring-1 ring-[var(--blue)] ring-offset-1" : "",
+            ].join(" ")}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

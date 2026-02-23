@@ -64,15 +64,15 @@ export function useChunkedHtml(fullHtml: string, defer = false): UseChunkedHtmlR
   const [initial, rest] = splitHtml(fullHtml, INITIAL_ELEMENT_COUNT);
   const hasRest = rest.length > 0;
 
-  // Start showing full content immediately only if there's nothing to
-  // chunk AND we're not being asked to defer.
-  const [showFull, setShowFull] = useState(() => !hasRest && !defer);
+  // When not deferred (no animation running), show full content immediately.
+  // When deferred (animation in progress), start with the initial chunk only.
+  const [showFull, setShowFull] = useState(() => !defer);
   const prevHtmlRef = useRef(fullHtml);
 
   // Reset when content changes (e.g. switching artifacts)
   if (prevHtmlRef.current !== fullHtml) {
     prevHtmlRef.current = fullHtml;
-    setShowFull(!hasRest && !defer);
+    setShowFull(!defer);
   }
 
   useEffect(() => {

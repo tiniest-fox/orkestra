@@ -2,22 +2,37 @@
 
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { FeedRow } from "./FeedRow";
+import { IterationChain } from "./IterationChain";
 
 interface FeedSubtaskRowProps {
   subtask: WorkflowTaskView;
-  parentTitle: string;
   config: WorkflowConfig;
+  isFocused: boolean;
+  onMouseEnter: () => void;
+  onReview: () => void;
+  onAnswer: () => void;
+  onMerge?: () => void;
+  onOpenPr?: () => void;
+  onArchive?: () => void;
+  onClick?: () => void;
 }
 
-export function FeedSubtaskRow({ subtask, parentTitle, config }: FeedSubtaskRowProps) {
-  const displayId = subtask.short_id ?? subtask.id;
-
+export function FeedSubtaskRow({ subtask, config, isFocused, onMouseEnter, onReview, onAnswer, onMerge, onOpenPr, onArchive, onClick }: FeedSubtaskRowProps) {
   return (
     <FeedRow
       task={subtask}
       config={config}
-      paddingClass="pl-[44px] pr-6"
-      subtitle={`${parentTitle} · ${displayId}`}
+      paddingClass="px-6"
+      subtitle={<IterationChain iterations={subtask.iterations} />}
+      isSubtask
+      isFocused={isFocused}
+      onMouseEnter={onMouseEnter}
+      onReview={onReview}
+      onAnswer={onAnswer}
+      onMerge={onMerge}
+      onOpenPr={onOpenPr}
+      onArchive={onArchive}
+      onClick={onClick}
     />
   );
 }

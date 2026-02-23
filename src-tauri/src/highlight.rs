@@ -13,7 +13,7 @@ use syntect::parsing::SyntaxSet;
 /// CSS is generated once at initialization for both light and dark themes.
 pub struct SyntaxHighlighter {
     syntax_set: SyntaxSet,
-    /// CSS for light theme (`InspiredGitHub`).
+    /// CSS for light theme (`Solarized (light)`).
     pub light_css: String,
     /// CSS for dark theme (base16-ocean.dark).
     pub dark_css: String,
@@ -28,7 +28,7 @@ impl SyntaxHighlighter {
         let theme_set = ThemeSet::load_defaults();
 
         // Generate CSS for light theme
-        let light_theme = &theme_set.themes["InspiredGitHub"];
+        let light_theme = &theme_set.themes["Solarized (light)"];
         let light_css = syntect::html::css_for_theme_with_class_style(
             light_theme,
             ClassStyle::SpacedPrefixed { prefix: "syn-" },

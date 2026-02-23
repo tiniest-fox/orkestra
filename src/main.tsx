@@ -16,9 +16,11 @@ function getProjectPath(): string | null {
  * Mount the project picker for selecting a project.
  */
 function mountPicker() {
+  const params = new URLSearchParams(window.location.search);
+  const errorMessage = params.get("error") ?? undefined;
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <ProjectPicker />
+      <ProjectPicker errorMessage={errorMessage} />
     </React.StrictMode>,
   );
 }

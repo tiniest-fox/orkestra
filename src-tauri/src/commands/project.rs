@@ -37,6 +37,126 @@ struct ReviewReadyPayload {
     parent_id: Option<String>,
 }
 
+/// Register a project under the calling window's label without creating a new window.
+///
+/// Called from the picker UI. After this returns `Ok`, the frontend navigates
+/// to `/?project={path}` in the same window, reloading it as a project window.
+#[tauri::command]
+pub async fn load_project_in_window(
+    app_handle: AppHandle,
+    registry: State<'_, ProjectRegistry>,
+    window: tauri::Window,
+    path: String,
+) -> Result<(), TauriError> {
+    let project_path = PathBuf::from(&path);
+    let window_label = window.label().to_string();
+
+    validate_project_path(&project_path).map_err(|e| {
+        TauriError::new("INVALID_PROJECT_PATH", format!("Invalid project path: {e}"))
+    })?;
+
+    let project_state = initialize_project(&project_path).map_err(|e| {
+        TauriError::new(
+            "PROJECT_INIT_FAILED",
+            format!("Failed to initialize project: {e}"),
+        )
+    })?;
+
+    if let Ok(api) = project_state.api() {
+        match api.cleanup_orphaned_agents() {
+            Ok(orphans) if orphans > 0 => {
+                orkestra_debug!("project", "Cleaned up {} orphaned agent(s)", orphans);
+            }
+            Ok(_) => {}
+            Err(e) => {
+                orkestra_debug!("project", "Failed to clean up orphaned agents: {}", e);
+            }
+        }
+    }
+
+    orkestra_core::workflow::cleanup_stale_target_lock(&project_path);
+
+    registry
+        .register(window_label.clone(), project_state)
+        .map_err(|e| {
+            TauriError::new(
+                "PROJECT_REGISTRATION_FAILED",
+                format!("Failed to register project: {e}"),
+            )
+        })?;
+
+    {
+        let mut roots = crate::PROJECT_ROOTS.lock().unwrap();
+        roots.push(project_path);
+    }
+
+    orkestra_debug!(
+        "project",
+        "Registered project {} under window '{}'",
+        path,
+        window_label
+    );
+
+    start_project_orchestrator(&app_handle, &window_label);
+    add_to_recents(&app_handle, &path)?;
+
+    Ok(())
+}
+
+/// Initialize a project and register it under `window_label` without creating a window.
+///
+/// Used during startup to pre-register the last project so the picker window
+/// opens directly at `/?project={path}`. Called synchronously in setup before
+/// the window is created, ensuring commands work immediately after page load.
+pub fn startup_register_project(
+    app_handle: &AppHandle,
+    window_label: &str,
+    path: &str,
+) -> Result<(), TauriError> {
+    let project_path = PathBuf::from(path);
+
+    let project_state = initialize_project(&project_path).map_err(|e| {
+        TauriError::new(
+            "PROJECT_INIT_FAILED",
+            format!("Failed to initialize project: {e}"),
+        )
+    })?;
+
+    if let Ok(api) = project_state.api() {
+        match api.cleanup_orphaned_agents() {
+            Ok(orphans) if orphans > 0 => {
+                orkestra_debug!("project", "Cleaned up {} orphaned agent(s) on startup", orphans);
+            }
+            Ok(_) => {}
+            Err(e) => {
+                orkestra_debug!("project", "Failed to clean up orphaned agents: {}", e);
+            }
+        }
+    }
+
+    orkestra_core::workflow::cleanup_stale_target_lock(&project_path);
+
+    let registry: tauri::State<'_, ProjectRegistry> = app_handle.state();
+    registry
+        .register(window_label.to_string(), project_state)
+        .map_err(|e| {
+            TauriError::new(
+                "PROJECT_REGISTRATION_FAILED",
+                format!("Failed to register project: {e}"),
+            )
+        })?;
+
+    {
+        let mut roots = crate::PROJECT_ROOTS.lock().unwrap();
+        roots.push(project_path);
+    }
+
+    add_to_recents(app_handle, path)?;
+    start_project_orchestrator(app_handle, window_label);
+
+    Ok(())
+}
+
 /// Open a project folder.
 ///
 /// Creates a new window for the project if it's not already open.

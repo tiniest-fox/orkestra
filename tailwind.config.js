@@ -51,9 +51,27 @@ export default {
         'forge-sans': ['IBM Plex Sans', 'system-ui', '-apple-system', 'sans-serif'],
         'forge-mono': ['IBM Plex Mono', 'SF Mono', 'Cascadia Code', 'monospace'],
       },
+      fontSize: {
+        // Forge typography scale — IBM Plex Mono/Sans, size + line-height paired
+        'forge-mono-sm':    ['11px', { lineHeight: '16px' }],  // tool calls, script output
+        'forge-mono-md':    ['12px', { lineHeight: '18px' }],  // diff lines, code content
+        'forge-mono-label': ['10px', { lineHeight: '14px' }],  // structural labels, dividers
+        'forge-body':       ['13px', { lineHeight: '20px' }],  // thinking, assistant prose
+        'forge-body-md':    ['14px', { lineHeight: '20px' }],  // prose h2, slightly above body
+        'forge-body-lg':    ['15px', { lineHeight: '22px' }],  // prose h1, top of heading scale
+      },
       borderRadius: {
         'panel': '12px',
         'panel-sm': '8px',
+      },
+      animation: {
+        'drawer-in': 'drawer-in 180ms ease-out both',
+      },
+      keyframes: {
+        'drawer-in': {
+          from: { transform: 'translateX(100%)' },
+          to: { transform: 'translateX(0)' },
+        },
       },
       boxShadow: {
         // Soft, diffuse shadows with multiple layers for a "growing out of background" effect

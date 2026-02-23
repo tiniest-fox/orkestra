@@ -4,6 +4,8 @@ Technical debt and future improvements.
 
 ## Bugs
 
+- [ ] **PR creation uses wrong base branch** — When creating a PR, Orkestra should pass the task's actual base branch (the branch it was forked from) explicitly to `gh pr create --base <branch>`, rather than relying on gh's default detection. Currently, if the main worktree has a non-main branch checked out, gh picks that up as the base, causing "No commits between X and Y" errors.
+
 - [ ] **Fix session resume after agent failure** — Two bugs cause retries to always fail after a broken session:
 
   **Bug 1: `has_activity` set too eagerly.** `persist_activity_flags` is called whenever any `LogLine` event arrives during streaming (even garbage output from a failed resume). This sets `has_activity=true` in the DB, causing `is_resume=true` on the next spawn. Fix: stop calling `persist_activity_flags` during streaming; only set `has_activity=true` in the DB when `dispatch_completion` processes a successful agent completion (`ExecutionResult::AgentSuccess`). The in-memory `ActiveAgent::has_activity` flag stays as-is (it powers the 5-minute startup timeout). Files: `stage/service.rs` (`persist_activity_flags` caller), `agent/interactions/dispatch_completion.rs` (add activity flag persistence on success).
@@ -113,6 +115,17 @@ No polling. No daemon. No event callbacks. Just a sequential function that reuse
 - **Commit inline** — instead of spawning background commit threads, commit synchronously after each stage. The commit message generation (which calls an LLM) blocks, but that's fine for CLI.
 - **Integration is opt-out** — by default, merge the result back to base branch. `--no-integrate` skips this.
 - **Subtasks are serial** — parallel execution is a Phase 4 optimization. Serial is correct and simple.
+
+## Feed UI Punchlist
+
+Features from the old Kanban UI not yet in the new Feed UI, in priority order.
+
+- [ ] **PR details view + inline comment workflow** — PR tab in TaskDrawer showing CI checks, review status, description. Workflow for triggering an agent to address PR review comments. Conflict handling. Design-ux mockup in progress: `docs/design-proposals/proposal-hybrid/task-detail-pr-feed.html`.
+- [ ] **Archive/unarchive** — Archive action in task drawer, archived task list view. Currently absent from Feed.
+- [ ] **Open worktree in terminal/editor** — Surface existing external tool commands from the task drawer.
+- [ ] **Commit history browsing** — Navigate commit history in the diff/history tab. Old UI had interactive CommitHistoryPanel.
+- [x] **Project switcher** — Open recent/different projects from the Feed header (ProjectPicker equivalent).
+- [ ] **Push/pull sync controls** — Branch sync status + push/pull actions in the Feed header (BranchIndicator equivalent).
 
 ## UI Feature Ideas
 

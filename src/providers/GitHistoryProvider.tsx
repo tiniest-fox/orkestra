@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { prefetchCommitDiff } from "../hooks/useCommitDiff";
 import { usePolling } from "../hooks/usePolling";
 import type { BranchList, CommitInfo, SyncStatus } from "../types/workflow";
 import { extractErrorMessage } from "../utils/errors";
@@ -148,6 +149,13 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   }, []);
 
   usePolling(fetchCommits, 2000);
+
+  // Pre-warm the diff cache for the most recent commit so the first open is instant.
+  useEffect(() => {
+    if (commits.length > 0) {
+      prefetchCommitDiff(commits[0].hash);
+    }
+  }, [commits]);
 
   useEffect(() => {
     if (commits.length === 0) return;

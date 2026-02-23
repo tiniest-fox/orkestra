@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<!--
+  TASK FOCUS — ACTIVITY LOG VIEW
+  ============================================================================
+  This is the split-mode view shown when a user clicks into a running (*) task
+  from the feed. The feed narrows to the left; the activity log fills the right.
+
+  Design decisions:
+  - Pipeline uses segment bars in the header, not text breadcrumbs. The bars
+    are the visual signature of this system — they appear everywhere they fit.
+  - Log entries have distinct visual forms by type, not just label color:
+      context/prompt  → left border blue, surface-1 bg
+      reasoning       → no border, surface-2 bg, italic prose (thinking happens inside)
+      tool use        → monospace row, collapsible, chevron left
+      tool in-progress → amber text, pulse dot, amber left border
+      error           → red tint, full-width
+  - The interrupt button is prominent and docked — it's the only user action
+    available in this state. It is not hidden in an action bar alongside other
+    buttons. It stands alone.
+  - Elapsed timer ticks via JS to reinforce "alive" quality.
+  - No decorative elements, no gradients on chrome, no rounded corners > 8px.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orkestra — Task Focus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ============================================================================
+   Design Tokens — Light Mode (canonical from design-system.html)
+   ============================================================================ */
+:root {
+  --canvas:           #FAF8FC;
+  --surface-1:        #FFFFFF;
+  --surface-2:        #F4F0F8;
+  --surface-3:        #EBE6F0;
+  --surface-hover:    #F0ECF4;
+  --border:           #E4DFE9;
+  --border-strong:    rgba(28, 24, 32, 0.18);
+
+  --accent:           #E83558;
+  --accent-hover:     #D42B4C;
+  --accent-bg:        rgba(232, 53, 88, 0.08);
+  --accent-bg-strong: rgba(232, 53, 88, 0.14);
+  --accent-2:         #A63CB5;
+  --accent-2-bg:      rgba(166, 60, 181, 0.08);
+
+  --green:            #16A34A;
+  --green-dim:        #A0C8B0;
+  --green-bg:         rgba(22, 163, 74, 0.06);
+  --amber:            #D97706;
+  --amber-bg:         rgba(217, 119, 6, 0.06);
+  --red:              #DC2626;
+  --red-bg:           rgba(220, 38, 38, 0.06);
+  --blue:             #2563EB;
+  --blue-bg:          rgba(37, 99, 235, 0.06);
+
+  --text-0:           #1C1820;
+  --text-1:           #6B6078;
+  --text-2:           #9890A4;
+  --text-3:           #C4BCCC;
+
+  --font-ui:          'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:        'IBM Plex Mono', 'SF Mono', 'Cascadia Code', monospace;
+
+  --shadow-sm:        0 1px 3px rgba(28, 24, 32, 0.08), 0 1px 2px rgba(28, 24, 32, 0.05);
+  --shadow-md:        0 4px 12px rgba(28, 24, 32, 0.10), 0 1px 3px rgba(28, 24, 32, 0.06);
+
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-variant-numeric: tabular-nums;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--canvas);
+  color: var(--text-0);
+  line-height: 1.5;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ============================================================================
+   Animations
+   ============================================================================ */
+@keyframes symbol-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.40; }
+}
+
+@keyframes pipe-active-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.70); }
+}
+
+/* ============================================================================
+   App Shell
+   ============================================================================ */
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* ============================================================================
+   Top Bar
+   ============================================================================ */
+.top-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 44px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+  z-index: 20;
+}
+
+.top-bar-left  { display: flex; align-items: center; gap: 0; }
+.top-bar-right { display: flex; align-items: center; gap: 12px; }
+
+.app-name {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-0);
+  user-select: none;
+  margin-right: 20px;
+}
+
+.metrics {
+  display: flex; align-items: center; gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-1);
+}
+.metric-val        { font-weight: 600; }
+.metric-val.amber  { color: var(--amber); }
+.metric-val.accent { color: var(--accent); }
+.metric-val.blue   { color: var(--blue); }
+.metric-label      { color: var(--text-2); font-weight: 400; }
+.metric-sep        { color: var(--text-3); margin: 0 3px; }
+
+.kbd-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: border-color 120ms, color 120ms;
+  line-height: 1.5;
+}
+.kbd-badge:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ============================================================================
+   Command Bar
+   ============================================================================ */
+.command-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 38px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.command-bar-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+
+.command-prompt {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.command-input {
+  background: none; border: none; outline: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-0);
+  flex: 1;
+  caret-color: var(--accent);
+}
+.command-input::placeholder { color: var(--text-3); }
+
+.command-bar-right {
+  display: flex; align-items: center; gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+.command-branch { color: var(--accent); font-weight: 500; }
+
+/* ============================================================================
+   Main Layout — Split
+   ============================================================================ */
+.main { display: flex; flex: 1; overflow: hidden; }
+
+/* ============================================================================
+   Left Pane — Compressed Feed List
+   ============================================================================ */
+.split-left {
+  width: 248px;
+  flex-shrink: 0;
+  background: var(--surface-1);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.split-left-header {
+  padding: 12px 14px 8px;
+  flex-shrink: 0;
+}
+
+.split-left-scroll {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0 12px;
+}
+.split-left-scroll::-webkit-scrollbar { width: 3px; }
+.split-left-scroll::-webkit-scrollbar-track { background: transparent; }
+.split-left-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.left-section { margin-bottom: 4px; }
+
+.left-section-label {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px 3px;
+}
+
+.left-section-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.10em;
+  color: var(--text-2);
+}
+
+.left-section-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+/* Task rows in the narrow left pane */
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 80ms;
+  position: relative;
+  border-left: 2px solid transparent;
+  min-height: 36px;
+}
+.list-row:hover { background: var(--surface-hover); }
+
+/* The focused/active row — accent left border, tinted bg */
+.list-row.focused {
+  background: var(--accent-bg);
+  border-left-color: var(--accent);
+}
+
+.list-sym {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  line-height: 1;
+}
+.list-sym.amber  { color: var(--amber); animation: symbol-pulse 2.5s ease-in-out infinite; }
+.list-sym.accent { color: var(--accent); }
+.list-sym.blue   { color: var(--blue); }
+.list-sym.red    { color: var(--red); }
+.list-sym.dim    { color: var(--green-dim); }
+.list-sym.muted  { color: var(--text-3); }
+
+/* Paused animation on the focused row's symbol */
+.list-row.focused .list-sym { animation: none; opacity: 1; }
+
+.list-info { min-width: 0; flex: 1; }
+
+.list-name {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-0);
+  line-height: 1.3;
+}
+
+.list-sub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Pipeline mini-bar in the left pane — 3px, very compact */
+.list-pipe {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  width: 48px;
+}
+
+.lp {
+  height: 3px;
+  flex: 1;
+  border-radius: 1px;
+  min-width: 5px;
+}
+.lp--done    { background: var(--green-dim); }
+.lp--active  { background: var(--amber); animation: pipe-active-pulse 1.5s ease-in-out infinite; }
+.lp--pending { background: var(--surface-3); }
+.lp--failed  { background: var(--red); }
+.lp--dim     { background: var(--surface-3); opacity: 0.45; }
+
+.list-row.completed { opacity: 0.38; }
+.list-row.completed:hover { opacity: 0.60; }
+
+/* ============================================================================
+   Right Pane — Activity Log
+   ============================================================================ */
+.detail-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--canvas);
+  min-width: 0;
+}
+
+/* ============================================================================
+   Detail Header
+   ============================================================================ */
+.detail-header {
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  padding: 20px 28px 16px;
+}
+
+.detail-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.detail-title-block { min-width: 0; flex: 1; }
+
+.detail-title {
+  font-family: var(--font-ui);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-0);
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-task-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-3);
+  letter-spacing: 0.01em;
+}
+
+/* Interrupt button — prominent, isolated, the only action in this state */
+.btn-interrupt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid rgba(220, 38, 38, 0.30);
+  border-radius: var(--radius-md);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--red);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.btn-interrupt:hover {
+  background: var(--red-bg);
+  border-color: var(--red);
+}
+.btn-interrupt .btn-kbd-inline {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.60;
+  background: rgba(220, 38, 38, 0.08);
+  border-radius: var(--radius-xs);
+  padding: 1px 4px;
+  line-height: 1.4;
+}
+
+/* Pipeline bar in the detail header — full-width, labeled, prominent */
+.detail-pipeline {
+  margin-bottom: 12px;
+}
+
+.detail-pipe-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-bottom: 5px;
+}
+
+/* Each segment is a labeled unit */
+.dp-seg {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dp-bar {
+  height: 5px;
+  border-radius: 2px;
+  width: 100%;
+}
+
+.dp-seg--done     .dp-bar { background: var(--green-dim); }
+.dp-seg--active   .dp-bar { background: var(--amber); animation: pipe-active-pulse 1.5s ease-in-out infinite; }
+.dp-seg--pending  .dp-bar { background: var(--surface-3); }
+.dp-seg--failed   .dp-bar { background: var(--red); }
+.dp-seg--dim      .dp-bar { background: var(--surface-3); opacity: 0.45; }
+
+.dp-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+
+.dp-seg--done    .dp-label { color: var(--green-dim); }
+.dp-seg--active  .dp-label { color: var(--amber); font-weight: 600; letter-spacing: 0.04em; }
+.dp-seg--pending .dp-label { color: var(--text-3); }
+.dp-seg--failed  .dp-label { color: var(--red); }
+.dp-seg--dim     .dp-label { color: var(--text-3); opacity: 0.55; }
+
+/* Meta line: status symbol, stage, iteration, elapsed */
+.detail-meta-line {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.meta-sym {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--amber);
+  animation: symbol-pulse 2.5s ease-in-out infinite;
+  margin-right: 8px;
+  line-height: 1;
+}
+
+.meta-dot { color: var(--text-3); margin: 0 6px; }
+
+.meta-stage { color: var(--amber); font-weight: 600; }
+
+.meta-elapsed { color: var(--text-2); }
+
+.meta-iter { color: var(--text-2); }
+
+/* ============================================================================
+   Log Stream
+   ============================================================================ */
+.log-stream {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+.log-stream::-webkit-scrollbar { width: 4px; }
+.log-stream::-webkit-scrollbar-track { background: transparent; }
+.log-stream::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Base entry */
+.log-entry {
+  border-bottom: 1px solid var(--border);
+}
+
+/* ─── Context / Prompt entry ─────────────────────────────────────────────── */
+/* The task context the agent received at the start of the run. Blue = informational. */
+.log-entry.entry-context {
+  background: var(--surface-1);
+  border-left: 2px solid var(--blue);
+  padding: 10px 16px 10px 14px;
+}
+
+.entry-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.entry-context .entry-label { color: var(--blue); }
+
+.entry-text {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text-1);
+  line-height: 1.55;
+}
+
+.entry-text code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  color: var(--text-0);
+}
+
+/* ─── Reasoning / Thinking entry ─────────────────────────────────────────── */
+/* Agent prose. No left border — this is internal thought, not a message.
+   Surface-2 background distinguishes it from tool use (canvas bg). */
+.log-entry.entry-reasoning {
+  background: var(--surface-2);
+  padding: 10px 16px 10px 16px;
+}
+
+.entry-reasoning .entry-label { color: var(--text-3); }
+
+.entry-prose {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text-1);
+  line-height: 1.60;
+  font-style: italic;
+}
+
+.entry-prose p + p { margin-top: 8px; }
+
+.entry-prose code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--surface-3);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  color: var(--text-0);
+  font-style: normal;
+}
+
+/* ─── Tool use entry ─────────────────────────────────────────────────────── */
+/* Collapsed by default. One-liner with tool name + path/summary.
+   Expand on click to see the full input/output. */
+.log-entry.entry-tool {
+  background: var(--canvas);
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 7px 16px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 80ms;
+}
+.tool-row:hover { background: var(--surface-hover); }
+
+.tool-chevron {
+  font-size: 8px;
+  color: var(--text-3);
+  margin-right: 9px;
+  flex-shrink: 0;
+  transition: transform 140ms;
+  line-height: 1;
+}
+.log-entry.entry-tool.expanded .tool-chevron {
+  transform: rotate(90deg);
+  color: var(--text-2);
+}
+
+.tool-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-1);
+  min-width: 56px;
+  flex-shrink: 0;
+  letter-spacing: 0.01em;
+}
+
+.tool-summary {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-summary.is-path { color: var(--text-1); }
+
+.tool-outcome {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+  flex-shrink: 0;
+  margin-left: 10px;
+  white-space: nowrap;
+}
+
+.tool-outcome.ok   { color: var(--green); }
+.tool-outcome.warn { color: var(--amber); }
+.tool-outcome.err  { color: var(--red); }
+
+/* Expanded body */
+.tool-body {
+  display: none;
+  padding: 0 16px 12px 32px;
+  background: var(--surface-2);
+}
+.log-entry.entry-tool.expanded .tool-body { display: block; }
+
+.tool-body pre {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-1);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ─── Tool in-progress ───────────────────────────────────────────────────── */
+/* The active operation. Amber left border + pulse dot. Not collapsible. */
+.log-entry.entry-tool-active {
+  background: var(--canvas);
+  border-left: 2px solid var(--amber);
+}
+
+.tool-active-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 7px 16px 7px 14px;
+}
+
+.tool-active-name {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amber);
+  min-width: 56px;
+  flex-shrink: 0;
+  letter-spacing: 0.01em;
+}
+
+.tool-active-summary {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--amber);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-active-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+  padding-left: 12px;
+}
+
+.active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
+
+.active-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--amber);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ─── Output / Result entry ──────────────────────────────────────────────── */
+/* When a tool produces notable output we want to surface inline. */
+.log-entry.entry-output {
+  background: var(--canvas);
+  border-left: 2px solid var(--green);
+  padding: 8px 16px 8px 14px;
+}
+
+.entry-output .entry-label { color: var(--green); }
+
+.entry-output pre {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-1);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* ─── Log group separator ────────────────────────────────────────────────── */
+/* Visual breathing room between major phases within the same session */
+.log-group-sep {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--border);
+}
+
+.log-group-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.log-group-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-3);
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+/* ============================================================================
+   Bottom Bar — Interrupt only
+   — In the working state, there is one user action: interrupt.
+     It doesn't belong in a multi-button action bar. It gets its own strip.
+   ============================================================================ */
+.bottom-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  height: 48px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.bottom-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bottom-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-ghost-sm {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-1);
+  cursor: pointer;
+  transition: background 80ms;
+  white-space: nowrap;
+}
+.btn-ghost-sm:hover { background: var(--surface-hover); }
+
+.btn-kbd-sm {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-2);
+  opacity: 0.55;
+  background: rgba(28, 24, 32, 0.05);
+  border-radius: var(--radius-xs);
+  padding: 0 3px;
+  line-height: 1.4;
+}
+
+/* Auto-mode toggle */
+.auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+  background: var(--accent-2-bg);
+  border: 1px solid rgba(166, 60, 181, 0.18);
+  cursor: pointer;
+  transition: background 80ms;
+}
+.auto-toggle:hover { background: rgba(166, 60, 181, 0.13); }
+
+.auto-toggle-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-2);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.auto-toggle-track {
+  width: 24px;
+  height: 13px;
+  border-radius: 7px;
+  background: var(--accent-2);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.auto-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: white;
+}
+
+/* ============================================================================
+   Status Line
+   ============================================================================ */
+.status-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 28px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.status-left, .status-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.status-branch { color: var(--accent); font-weight: 500; }
+.status-sep    { color: var(--border); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ========================================================================
+       Top Bar
+       ======================================================================== -->
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <span class="app-name">Orkestra</span>
+      <div class="metrics">
+        <span class="metric-val amber">3</span>
+        <span class="metric-label">working</span>
+        <span class="metric-sep">&middot;</span>
+        <span class="metric-val accent" style="color: var(--accent);">2</span>
+        <span class="metric-label">review</span>
+        <span class="metric-sep">&middot;</span>
+        <span class="metric-val blue">1</span>
+        <span class="metric-label">questions</span>
+        <span class="metric-sep">&middot;</span>
+        <span class="metric-val" style="color: var(--accent-2);">1</span>
+        <span class="metric-label">integrating</span>
+      </div>
+    </div>
+    <div class="top-bar-right">
+      <button class="kbd-badge">cmd+k</button>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       Command Bar
+       ======================================================================== -->
+  <div class="command-bar">
+    <div class="command-bar-left">
+      <span class="command-prompt">&gt;</span>
+      <input type="text" class="command-input" placeholder="Filter tasks or type a command...">
+    </div>
+    <div class="command-bar-right">
+      <span class="command-branch">feat/auth-middleware</span>
+      <span style="color: var(--text-3);">+8 &minus;3</span>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       Main Split Layout
+       ======================================================================== -->
+  <div class="main">
+
+    <!-- ======================================================================
+         Left Pane — Compressed Task List
+         ====================================================================== -->
+    <div class="split-left">
+      <div class="split-left-scroll">
+
+        <!-- Needs Review section -->
+        <div class="left-section">
+          <div class="left-section-label">
+            <span class="left-section-title">Needs Review</span>
+            <span class="left-section-count">2</span>
+          </div>
+
+          <div class="list-row">
+            <span class="list-sym accent">&gt;</span>
+            <div class="list-info">
+              <div class="list-name">auth-middleware-refactor</div>
+              <div class="list-sub">review · iter 3</div>
+            </div>
+            <div class="list-pipe">
+              <div class="lp lp--done"></div>
+              <div class="lp lp--done"></div>
+              <div class="lp lp--done"></div>
+              <div class="lp lp--done"></div>
+              <div class="lp lp--active"></div>
+              <div class="lp lp--pending"></div>
+            </div>
+          </div>
+
+          <div class="list-row">
+            <span class="list-sym blue">?</span>
+            <div class="list-info">
+              <div class="list-name">database-schema-update</div>
+              <div class="list-sub">planning · questions</div>
+            </div>
+            <div class="list-pipe">
+              <div class="lp lp--active"></div>
+              <div class="lp lp--pending"></div>
+              <div class="lp lp--pending"></div>
+              <div class="lp lp--pending"></div>
+              <div class="lp lp--pending"></div>
+              <div class="lp lp--pending"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- In Progress section -->
+        <div class="left-section">
+          <div class="left-section-label">
+            <span class="left-section-title">In Progress</span>
+            <span class="left-section-count">3</span>
+          </div>
+
+          <!-- FOCUSED ROW — the task we're viewing -->
+          <div class="list-row focused">
+            <span class="list-sym amber">*</span>
+            <div class="list-info">
+              <div class="list-name">user-settings-page</div>
+              <div class="list-sub">work · iter 2</div>
+            </div>
+            <div class="list-pipe">
+              <div class="lp lp--done"></div>
+              <div class="lp lp--done"></div>
+              <div class="lp lp--active"></div>
+              <div class="lp lp--pending"></div>
+              <div class="lp lp--pending"></div>
+              <div class="lp lp--pending"></div>
+            </div>
+          </div>
+
+          <div class="list-row">
+            <span class="list-sym amber">*</span>
+            <div class="list-info">
+              <div class="list-name">api-rate-limiting</div>
+              <div class="list-sub">planning · iter 1</div>
+            </div>
+            <div class="list-pipe">
+              <div class="lp lp--active"></div>
+              <div class="lp lp--pending"></div>
+              <div class="lp lp--pending"></div>
+              <div class="lp lp--pending"></div>
+              <div class="lp lp--pending"></div>
+              <div class="lp lp--pending"></div>
+            </div>
+          </div>
+
+          <div class="list-row">
+            <span class="list-sym red">!</span>
+            <div class="list-info">
+              <div class="list-name">ci-pipeline-fix</div>
+              <div class="list-sub">checks · failed</div>
+            </div>
+            <div class="list-pipe">
+              <div class="lp lp--done"></div>
+              <div class="lp lp--done"></div>
+              <div class="lp lp--done"></div>
+              <div class="lp lp--failed"></div>
+              <div class="lp lp--dim"></div>
+              <div class="lp lp--dim"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Completed section -->
+        <div class="left-section">
+          <div class="left-section-label">
+            <span class="left-section-title">Completed</span>
+            <span class="left-section-count">2</span>
+          </div>
+
+          <div class="list-row completed">
+            <span class="list-sym dim">.</span>
+            <div class="list-info">
+              <div class="list-name">database-migration</div>
+              <div class="list-sub">merged · 2h ago</div>
+            </div>
+          </div>
+
+          <div class="list-row completed">
+            <span class="list-sym dim">.</span>
+            <div class="list-info">
+              <div class="list-name">fix-auth-token-refresh</div>
+              <div class="list-sub">merged · 3h ago</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <!-- end split-left -->
+
+    <!-- ======================================================================
+         Right Pane — Activity Log
+         ====================================================================== -->
+    <div class="detail-pane">
+
+      <!-- Detail Header -->
+      <div class="detail-header">
+
+        <div class="detail-header-top">
+          <div class="detail-title-block">
+            <div class="detail-title">user-settings-page</div>
+            <div class="detail-task-id">bold-jade-osprey</div>
+          </div>
+          <!-- The one action available in this state -->
+          <button class="btn-interrupt">
+            Interrupt
+            <span class="btn-kbd-inline">i</span>
+          </button>
+        </div>
+
+        <!-- Pipeline bar — full labels, prominent -->
+        <div class="detail-pipeline">
+          <div class="detail-pipe-row">
+            <div class="dp-seg dp-seg--done">
+              <div class="dp-bar"></div>
+              <div class="dp-label">plan</div>
+            </div>
+            <div class="dp-seg dp-seg--done">
+              <div class="dp-bar"></div>
+              <div class="dp-label">breakdown</div>
+            </div>
+            <div class="dp-seg dp-seg--active">
+              <div class="dp-bar"></div>
+              <div class="dp-label">WORK</div>
+            </div>
+            <div class="dp-seg dp-seg--pending">
+              <div class="dp-bar"></div>
+              <div class="dp-label">checks</div>
+            </div>
+            <div class="dp-seg dp-seg--pending">
+              <div class="dp-bar"></div>
+              <div class="dp-label">review</div>
+            </div>
+            <div class="dp-seg dp-seg--pending">
+              <div class="dp-bar"></div>
+              <div class="dp-label">compound</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Meta: status, stage, iteration, timer -->
+        <div class="detail-meta-line">
+          <span class="meta-sym">*</span>
+          <span class="meta-stage">work</span>
+          <span class="meta-dot">&middot;</span>
+          <span class="meta-iter">iteration 2</span>
+          <span class="meta-dot">&middot;</span>
+          <span class="meta-elapsed" id="elapsed">7m 14s</span>
+        </div>
+      </div>
+
+      <!-- Activity Log Stream -->
+      <div class="log-stream" id="log-stream">
+
+        <!-- ── Session context ──────────────────────────────────────────── -->
+        <div class="log-entry entry-context">
+          <div class="entry-label">context</div>
+          <div class="entry-text">
+            Implementing <strong>user-settings-page</strong>. The breakdown artifact defines a
+            <code>UserSettings</code> container component backed by <code>useSettingsForm</code>
+            hook. Persist via <code>PATCH /api/users/me/settings</code>. Iteration 1 was rejected:
+            the form submitted on every keystroke rather than on explicit save.
+          </div>
+        </div>
+
+        <!-- ── Reasoning ────────────────────────────────────────────────── -->
+        <div class="log-entry entry-reasoning">
+          <div class="entry-label">thinking</div>
+          <div class="entry-prose">
+            <p>The rejection feedback said the form was submitting on every keystroke. That means
+            I tied the <code>onChange</code> handler directly to the API call in the first iteration.
+            I'll fix this by decoupling form state from submission: hold draft values in local state,
+            only call the API when the user clicks Save.</p>
+            <p>I should also check what the test file expects — there may be test cases covering
+            the save-on-change behavior that I'd need to update.</p>
+          </div>
+        </div>
+
+        <!-- ── Tool: Read ───────────────────────────────────────────────── -->
+        <div class="log-entry entry-tool" onclick="this.classList.toggle('expanded')">
+          <div class="tool-row">
+            <span class="tool-chevron">&#9654;</span>
+            <span class="tool-name">Read</span>
+            <span class="tool-summary is-path">src/components/UserSettings.tsx</span>
+            <span class="tool-outcome ok">312 lines</span>
+          </div>
+          <div class="tool-body">
+            <pre>import React, { useState, useEffect } from 'react';
+import { useSettingsForm } from '../hooks/useSettingsForm';
+
+export function UserSettings() {
+  const { values, onChange, onSubmit, saving } = useSettingsForm();
+
+  return (
+    &lt;form onSubmit={onSubmit}&gt;
+      &lt;input
+        name="displayName"
+        value={values.displayName}
+        onChange={e => { onChange(e); onSubmit(); }}  {/* ← bug: submits on change */}
+      /&gt;
+      {/* ... */}
+    &lt;/form&gt;
+  );
+}</pre>
+          </div>
+        </div>
+
+        <!-- ── Tool: Read ───────────────────────────────────────────────── -->
+        <div class="log-entry entry-tool" onclick="this.classList.toggle('expanded')">
+          <div class="tool-row">
+            <span class="tool-chevron">&#9654;</span>
+            <span class="tool-name">Read</span>
+            <span class="tool-summary is-path">src/components/UserSettings.test.tsx</span>
+            <span class="tool-outcome ok">148 lines</span>
+          </div>
+          <div class="tool-body">
+            <pre>// 14 test cases — covers form rendering, field validation, and save behavior.
+// test: "does not submit on field change" — this test was added by the reviewer
+// and is currently failing in iteration 1's output.
+describe('UserSettings', () => {
+  it('does not submit on field change', async () => {
+    const onSave = jest.fn();
+    render(&lt;UserSettings onSave={onSave} /&gt;);
+    fireEvent.change(screen.getByRole('textbox', { name: /display name/i }), {
+      target: { value: 'New Name' }
+    });
+    expect(onSave).not.toHaveBeenCalled();
+  });
+  // ...
+});</pre>
+          </div>
+        </div>
+
+        <!-- ── Tool: Read ───────────────────────────────────────────────── -->
+        <div class="log-entry entry-tool" onclick="this.classList.toggle('expanded')">
+          <div class="tool-row">
+            <span class="tool-chevron">&#9654;</span>
+            <span class="tool-name">Read</span>
+            <span class="tool-summary is-path">src/hooks/useSettingsForm.ts</span>
+            <span class="tool-outcome ok">84 lines</span>
+          </div>
+          <div class="tool-body">
+            <pre>export function useSettingsForm() {
+  const [values, setValues] = useState&lt;SettingsValues&gt;(defaults);
+  const [saving, setSaving] = useState(false);
+
+  const onChange = (e: React.ChangeEvent&lt;HTMLInputElement&gt;) => {
+    setValues(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const onSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setSaving(true);
+    await api.patch('/users/me/settings', values);
+    setSaving(false);
+  };
+
+  return { values, onChange, onSubmit, saving };
+}</pre>
+          </div>
+        </div>
+
+        <!-- ── Reasoning ────────────────────────────────────────────────── -->
+        <div class="log-entry entry-reasoning">
+          <div class="entry-label">thinking</div>
+          <div class="entry-prose">
+            <p>The hook itself is correct — <code>onChange</code> only updates local state,
+            <code>onSubmit</code> calls the API. The bug is in the component: it was calling
+            <code>onSubmit()</code> inside the <code>onChange</code> handler. Easy fix. I'll
+            update the component to remove that call and add an explicit Save button.</p>
+          </div>
+        </div>
+
+        <!-- ── Tool: Edit ───────────────────────────────────────────────── -->
+        <div class="log-entry entry-tool" onclick="this.classList.toggle('expanded')">
+          <div class="tool-row">
+            <span class="tool-chevron">&#9654;</span>
+            <span class="tool-name">Edit</span>
+            <span class="tool-summary is-path">src/components/UserSettings.tsx</span>
+            <span class="tool-outcome ok">saved</span>
+          </div>
+          <div class="tool-body">
+            <pre>// Replaced onChange handler — removed erroneous onSubmit() call
+// Before:
+//   onChange={e => { onChange(e); onSubmit(); }}
+// After:
+//   onChange={onChange}
+
+// Added explicit Save button:
+//   &lt;button type="submit" disabled={saving}&gt;
+//     {saving ? 'Saving...' : 'Save changes'}
+//   &lt;/button&gt;</pre>
+          </div>
+        </div>
+
+        <!-- ── Tool: Read ───────────────────────────────────────────────── -->
+        <div class="log-entry entry-tool" onclick="this.classList.toggle('expanded')">
+          <div class="tool-row">
+            <span class="tool-chevron">&#9654;</span>
+            <span class="tool-name">Read</span>
+            <span class="tool-summary is-path">src/components/UserSettings.tsx</span>
+            <span class="tool-outcome ok">verify</span>
+          </div>
+          <div class="tool-body">
+            <pre>// Confirming the edit applied correctly.
+// Line 22: onChange={onChange}  ✓
+// Line 38-40: Save button present  ✓</pre>
+          </div>
+        </div>
+
+        <!-- ── Reasoning ────────────────────────────────────────────────── -->
+        <div class="log-entry entry-reasoning">
+          <div class="entry-label">thinking</div>
+          <div class="entry-prose">
+            <p>Component looks correct. Now I need to verify the type check passes and the
+            test suite is green. Running TypeScript first since it's faster than Jest.</p>
+          </div>
+        </div>
+
+        <!-- ── Tool: Bash (tsc) ─────────────────────────────────────────── -->
+        <div class="log-entry entry-tool" onclick="this.classList.toggle('expanded')">
+          <div class="tool-row">
+            <span class="tool-chevron">&#9654;</span>
+            <span class="tool-name">Bash</span>
+            <span class="tool-summary">npx tsc --noEmit src/components/UserSettings.tsx</span>
+            <span class="tool-outcome ok">clean</span>
+          </div>
+          <div class="tool-body">
+            <pre>// No output — type check passed.</pre>
+          </div>
+        </div>
+
+        <!-- ── Output: Type check passed ───────────────────────────────── -->
+        <div class="log-group-sep">
+          <div class="log-group-line"></div>
+          <span class="log-group-label">running tests</span>
+          <div class="log-group-line"></div>
+        </div>
+
+        <!-- ── Active tool: Jest running ───────────────────────────────── -->
+        <div class="log-entry entry-tool-active">
+          <div class="tool-active-row">
+            <span class="tool-active-name">Bash</span>
+            <span class="tool-active-summary">npx jest src/components/UserSettings.test.tsx --no-coverage</span>
+            <div class="tool-active-indicator">
+              <div class="active-dot"></div>
+              <span class="active-label">running</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <!-- end log-stream -->
+
+      <!-- Bottom Bar -->
+      <div class="bottom-bar">
+        <div class="bottom-bar-left">
+          <button class="btn-ghost-sm" style="border-color: rgba(220,38,38,0.30); color: var(--red);">
+            Interrupt
+            <span class="btn-kbd-sm" style="opacity:0.5; background: rgba(220,38,38,0.08);">i</span>
+          </button>
+          <button class="btn-ghost-sm">
+            View Diff
+            <span class="btn-kbd-sm">d</span>
+          </button>
+          <button class="btn-ghost-sm">
+            Open Editor
+            <span class="btn-kbd-sm">e</span>
+          </button>
+        </div>
+        <div class="bottom-bar-right">
+          <div class="auto-toggle">
+            <span class="auto-toggle-label">Auto</span>
+            <div class="auto-toggle-track">
+              <div class="auto-toggle-thumb"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <!-- end detail-pane -->
+
+  </div>
+  <!-- end main -->
+
+  <!-- ========================================================================
+       Status Line
+       ======================================================================== -->
+  <div class="status-line">
+    <div class="status-left">
+      <span class="status-branch">feat/auth-middleware</span>
+      <span>+8 &minus;3</span>
+      <span class="status-sep">&middot;</span>
+      <span>3 agents active</span>
+    </div>
+    <div class="status-right">
+      <span>esc close</span>
+      <span>&uarr;&darr; navigate</span>
+      <span>i interrupt</span>
+    </div>
+  </div>
+
+</div>
+<!-- end app -->
+
+<script>
+// ============================================================================
+// Live timer — elapsed time since iteration started
+// ============================================================================
+(function() {
+  // Start time: 7m 14s ago (we'll count up from there)
+  const startOffset = (7 * 60 + 14) * 1000;
+  const startAt = Date.now() - startOffset;
+
+  function formatDuration(ms) {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    if (m > 0) {
+      return m + 'm ' + String(rem).padStart(2, '0') + 's';
+    }
+    return rem + 's';
+  }
+
+  function tick() {
+    const elapsed = Date.now() - startAt;
+
+    const elapsedEl = document.getElementById('elapsed');
+    if (elapsedEl) elapsedEl.textContent = formatDuration(elapsed);
+  }
+
+  tick();
+  setInterval(tick, 1000);
+})();
+
+// ============================================================================
+// Tool expand/collapse
+// ============================================================================
+// Handled inline via onclick, but we also want the chevron to update
+// properly when keyboard-navigating. The onclick toggle on .entry-tool
+// handles this without additional JS.
+
+// ============================================================================
+// Auto-scroll
+// ============================================================================
+// Keep the log stream scrolled to the bottom as new entries arrive.
+// In the real app this would be driven by streaming log events.
+(function() {
+  const stream = document.getElementById('log-stream');
+  if (stream) {
+    stream.scrollTop = stream.scrollHeight;
+  }
+})();
+</script>
+</body>
+</html>

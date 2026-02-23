@@ -3,6 +3,33 @@
  */
 
 /**
+ * Prose classes for the Forge design language.
+ * Used in FeedLogList, ActivityLog, and other Forge-scoped components.
+ */
+export const FORGE_PROSE = [
+  "prose prose-sm max-w-none",
+  "font-forge-sans",
+  "prose-headings:font-forge-sans prose-headings:not-italic",
+  "prose-h1:text-forge-body-lg prose-h1:font-semibold prose-h1:text-[var(--text-0)]",
+  "prose-h2:text-forge-body-md prose-h2:font-semibold prose-h2:text-[var(--text-0)]",
+  "prose-h3:text-forge-body prose-h3:font-semibold prose-h3:text-[var(--text-1)]",
+  "prose-h4:text-forge-body prose-h4:font-medium prose-h4:text-[var(--text-2)]",
+  "prose-h5:text-forge-body prose-h5:font-medium prose-h5:text-[var(--text-2)]",
+  "prose-h6:text-forge-body prose-h6:font-medium prose-h6:text-[var(--text-3)]",
+  "prose-headings:mt-2 prose-headings:mb-0.5",
+  "prose-p:text-[var(--text-0)] prose-p:my-1.5",
+  "prose-strong:text-[var(--text-0)]",
+  "prose-em:text-[var(--text-0)]",
+  "prose-li:text-[var(--text-0)] prose-li:my-0.5",
+  "prose-ul:my-1.5 prose-ol:my-1.5",
+  "prose-a:text-[var(--accent)] prose-a:no-underline hover:prose-a:underline",
+  "prose-code:font-forge-mono prose-code:bg-[var(--surface-2)] prose-code:text-[var(--text-0)] prose-code:px-1 prose-code:rounded",
+  "prose-pre:bg-[var(--surface-2)] prose-pre:font-forge-mono prose-pre:my-2",
+  "prose-blockquote:text-[var(--text-2)] prose-blockquote:border-[var(--border)] prose-blockquote:my-1.5",
+  "prose-hr:border-[var(--border)] prose-hr:my-2",
+].join(" ");
+
+/**
  * Prose classes for light backgrounds with dark mode support.
  * Used in contexts like ArtifactView where both light and dark modes are needed.
  */

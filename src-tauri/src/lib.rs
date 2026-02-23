@@ -15,7 +15,6 @@ use project_registry::{ProjectRegistry, RecentProject};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::thread;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
@@ -331,6 +330,8 @@ pub fn run() {
                 .item(&open_project)
                 .separator()
                 .close_window()
+                .separator()
+                .quit()
                 .build()?;
 
             // Create Edit submenu with standard clipboard shortcuts
@@ -357,16 +358,39 @@ pub fn run() {
             app.on_menu_event(move |_app, event| {
                 match event.id().as_ref() {
                     "new_window" | "open_project" => {
-                        // Create or focus picker window
-                        if let Some(picker) = app_handle.get_webview_window("picker") {
-                            let _ = picker.set_focus();
+                        // Find a window that is still showing the picker UI (no
+                        // "?project=" in its URL). Once load_project_in_window runs,
+                        // the original "picker" window navigates to /?project=... and
+                        // keeps the "picker" label — it must not be re-focused here.
+                        let existing_picker =
+                            app_handle.webview_windows().into_iter().find_map(
+                                |(_label, win)| {
+                                    let url = win.url().ok()?;
+                                    let is_picker =
+                                        !url.query_pairs().any(|(k, _)| k == "project");
+                                    if is_picker { Some(win) } else { None }
+                                },
+                            );
+
+                        if let Some(win) = existing_picker {
+                            let _ = win.set_focus();
                         } else {
+                            // Use a timestamped label so it never collides with the
+                            // "picker" label now used by a project window.
+                            let label = format!(
+                                "picker-{}",
+                                std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis()
+                            );
                             let _ = WebviewWindowBuilder::new(
                                 &app_handle,
-                                "picker",
+                                &label,
                                 WebviewUrl::App("index.html".into()),
                             )
-                            .title("Open Project")
+                            .title("Orkestra")
+                            .inner_size(1200.0, 800.0)
                             .build();
                         }
                     }
@@ -374,7 +398,10 @@ pub fn run() {
                 }
             });
 
-            // Launch phase: check for recent projects and auto-open or show picker
+            // Launch phase: check for recent projects and auto-open or show picker.
+            // Always creates a single 1200x800 "picker" window. When a valid last
+            // project exists, it is pre-registered so the window opens directly at
+            // /?project={path} without showing the picker UI.
             let store = app
                 .store("recents.json")
                 .expect("Failed to initialize store");
@@ -384,49 +411,77 @@ pub fn run() {
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
 
-            // Try to auto-open the last project
             if let Some(last_project) = recents.first() {
                 let path = PathBuf::from(&last_project.path);
                 if path.exists() {
-                    // Auto-open last project
-                    let app_handle = app.handle().clone();
                     let path_str = last_project.path.clone();
-                    thread::spawn(move || {
-                        let registry = app_handle.state::<ProjectRegistry>();
-                        let _ = tauri::async_runtime::block_on(commands::open_project(
-                            app_handle.clone(),
-                            registry,
-                            path_str,
-                        ));
-                    });
+                    let app_handle = app.handle().clone();
+
+                    // Pre-register the project synchronously so commands work
+                    // immediately after the page loads. The orchestrator spawns
+                    // its own thread, so this does not block significantly.
+                    match commands::startup_register_project(&app_handle, "picker", &path_str) {
+                        Ok(()) => {
+                            let url = format!("/?project={}", urlencoding::encode(&path_str));
+                            WebviewWindowBuilder::new(
+                                app,
+                                "picker",
+                                WebviewUrl::App(url.parse().unwrap()),
+                            )
+                            .title("Orkestra")
+                            .inner_size(1200.0, 800.0)
+                            .build()?;
+                        }
+                        Err(e) => {
+                            let error_msg =
+                                format!("Could not open {}: {}", path_str, e.message);
+                            let url =
+                                format!("/?error={}", urlencoding::encode(&error_msg));
+                            WebviewWindowBuilder::new(
+                                app,
+                                "picker",
+                                WebviewUrl::App(url.parse().unwrap()),
+                            )
+                            .title("Orkestra")
+                            .inner_size(1200.0, 800.0)
+                            .build()?;
+                        }
+                    }
                 } else {
-                    // Path invalid, show picker with error
+                    // Path no longer exists — show picker with error
                     let error_msg = format!("Folder not found: {}", last_project.path);
-                    let url = format!("index.html?error={}", urlencoding::encode(&error_msg));
-                    WebviewWindowBuilder::new(app, "picker", WebviewUrl::App(url.into()))
-                        .title("Open Project")
-                        .build()?;
+                    let url = format!("/?error={}", urlencoding::encode(&error_msg));
+                    WebviewWindowBuilder::new(
+                        app,
+                        "picker",
+                        WebviewUrl::App(url.parse().unwrap()),
+                    )
+                    .title("Orkestra")
+                    .inner_size(1200.0, 800.0)
+                    .build()?;
                 }
             } else {
-                // No recents, show picker
-                WebviewWindowBuilder::new(app, "picker", WebviewUrl::App("index.html".into()))
-                    .title("Open Project")
-                    .build()?;
+                // No recents — show the project picker
+                WebviewWindowBuilder::new(
+                    app,
+                    "picker",
+                    WebviewUrl::App("index.html".into()),
+                )
+                .title("Orkestra")
+                .inner_size(1200.0, 800.0)
+                .build()?;
             }
 
             Ok(())
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { .. } = event {
-                let label = window.label();
-                // Don't clean up picker window
-                if label != "picker" {
-                    handle_window_close(window.app_handle(), label);
-                }
+                handle_window_close(window.app_handle(), window.label());
             }
         })
         .invoke_handler(tauri::generate_handler![
             // Project commands
+            commands::load_project_in_window,
             commands::open_project,
             commands::get_project_info,
             commands::get_recent_projects,

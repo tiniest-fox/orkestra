@@ -1,9 +1,16 @@
 //! Feed view displaying tasks grouped by intent with pipeline bars and status symbols.
 
-import { useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { TaskDrawer } from "./TaskDrawer";
+import { GitHistoryDrawer } from "./GitHistoryDrawer";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
+import { NavigationScope } from "../ui/NavigationScope";
+import { FeedHeader } from "./FeedHeader";
 import { FeedSection } from "./FeedSection";
+import { FeedStatusLine } from "./FeedStatusLine";
+import { useFeedNavigation } from "./useFeedNavigation";
 
 interface FeedViewProps {
   config: WorkflowConfig;
@@ -11,33 +18,120 @@ interface FeedViewProps {
 }
 
 export function FeedView({ config, tasks }: FeedViewProps) {
-  const { sections, surfacedSubtasks } = useMemo(() => groupTasksForFeed(tasks), [tasks]);
+  const feedBodyRef = useRef<HTMLDivElement>(null);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [rejectMode, setRejectMode] = useState(false);
+  const [gitHistoryOpen, setGitHistoryOpen] = useState(false);
 
-  const parentTitleById = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const task of tasks) {
-      map[task.id] = task.title;
+  const drawerOpen = activeTaskId !== null || gitHistoryOpen;
+  const activeTask = activeTaskId ? (tasks.find((t) => t.id === activeTaskId) ?? null) : null;
+
+  // Derive drawer mode for FeedStatusLine keyboard hints.
+  const drawerMode = gitHistoryOpen
+    ? "git-history" as const
+    : activeTask
+      ? activeTask.derived.needs_review
+        ? rejectMode ? "review-reject" as const : "review" as const
+        : activeTask.derived.has_questions
+          ? "answer" as const
+          : activeTask.derived.is_working || activeTask.derived.is_interrupted
+            ? "focus" as const
+            : activeTask.derived.is_done
+              ? "ship" as const
+              : "focus" as const
+      : null;
+
+  const { sections, surfacedSubtasks, workingSubtasks } = useMemo(
+    () => groupTasksForFeed(tasks),
+    [tasks],
+  );
+
+  const orderedIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const section of sections) {
+      const sectionSubtasks =
+        section.name === "needs_review"
+          ? surfacedSubtasks
+          : section.name === "in_progress"
+            ? workingSubtasks
+            : [];
+      for (const task of section.tasks) {
+        ids.push(task.id);
+        for (const sub of sectionSubtasks.filter((s) => s.parent_id === task.id)) {
+          ids.push(sub.id);
+        }
+      }
     }
-    return map;
-  }, [tasks]);
+    return ids;
+  }, [sections, surfacedSubtasks, workingSubtasks]);
 
-  const isEmpty = sections.every((s) => s.tasks.length === 0) && surfacedSubtasks.length === 0;
+  const onStripRowClick = useCallback((taskId: string) => {
+    setGitHistoryOpen(false);
+    setActiveTaskId(taskId);
+  }, []);
+
+  // Disable feed navigation while the drawer is open; suppress focusedId so row scopes deactivate.
+  const { focusedId: rawFocusedId, setFocusedId, scrollSeq } = useFeedNavigation(orderedIds, drawerOpen, onStripRowClick);
+  const focusedId = drawerOpen ? null : rawFocusedId;
+
+  const isEmpty =
+    sections.every((s) => s.tasks.length === 0) &&
+    surfacedSubtasks.length === 0 &&
+    workingSubtasks.length === 0;
 
   return (
-    <div className="forge-theme h-full overflow-y-auto rounded-panel">
-      {sections.map((section) => (
-        <FeedSection
-          key={section.name}
-          section={section}
-          surfacedSubtasks={section.name === "needs_review" ? surfacedSubtasks : undefined}
-          parentTitleById={parentTitleById}
-          config={config}
+    <div className="forge-theme h-full flex flex-col rounded-panel overflow-hidden relative">
+      <FeedHeader tasks={tasks} />
+      <div ref={feedBodyRef} className="flex-1 overflow-y-auto">
+        <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
+        {sections.map((section) => (
+          <FeedSection
+            key={section.name}
+            section={section}
+            surfacedSubtasks={
+              section.name === "needs_review"
+                ? surfacedSubtasks
+                : section.name === "in_progress"
+                  ? workingSubtasks
+                  : undefined
+            }
+            config={config}
+            focusedId={focusedId}
+            onFocusRow={setFocusedId}
+            onReview={setActiveTaskId}
+            onAnswer={setActiveTaskId}
+            onMerge={(taskId) => { invoke("workflow_merge_task", { taskId }); }}
+            onOpenPr={(taskId) => { invoke("workflow_open_pr", { taskId }); }}
+            onArchive={(taskId) => { invoke("workflow_archive", { taskId }); }}
+            onRowClick={onStripRowClick}
+          />
+        ))}
+        {isEmpty && (
+          <div className="p-6 text-[var(--text-2)]">
+            <p className="font-forge-sans text-sm">No tasks yet</p>
+          </div>
+        )}
+        </NavigationScope>
+      </div>
+      <FeedStatusLine
+        tasks={tasks}
+        drawerMode={drawerMode}
+        onToggleHistory={() => {
+          setGitHistoryOpen((o) => !o);
+          setActiveTaskId(null);
+        }}
+      />
+      {gitHistoryOpen && (
+        <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />
+      )}
+      {activeTask && (
+        <TaskDrawer
+          task={activeTask}
+          allTasks={tasks}
+          onClose={() => setActiveTaskId(null)}
+          onOpenTask={setActiveTaskId}
+          onRejectModeChange={setRejectMode}
         />
-      ))}
-      {isEmpty && (
-        <div className="p-6 text-[var(--text-2)]">
-          <p className="font-forge-sans text-sm">No tasks yet</p>
-        </div>
       )}
     </div>
   );

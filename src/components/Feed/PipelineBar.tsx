@@ -9,7 +9,7 @@ interface PipelineBarProps {
 
 export function PipelineBar({ segments }: PipelineBarProps) {
   return (
-    <div className="flex gap-0.5 items-center w-[148px]">
+    <div className="flex gap-0.5 items-center w-full">
       {segments.map((seg) => (
         <PipelineSegment key={seg.stageName} state={seg.state} />
       ))}

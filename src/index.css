@@ -108,26 +108,71 @@ body {
 /* Forge design language — scoped to feed view */
 .forge-theme {
   --canvas: #FAF8FC;
-  --surface-3: #EBE6F0;
-  --surface-hover: #F0ECF4;
+  --surface-2: #F4F0F8;
+  --surface-3: #DDD7E4;
+  --surface-hover: #F5F2F8;
   --border: #E4DFE9;
   --accent: #E83558;
   --accent-hover: #D42B4C;
+  --accent-bg: rgba(232, 53, 88, 0.08);
   --accent-bg-strong: rgba(232, 53, 88, 0.14);
   --accent-2: #A63CB5;
+  --accent-2-bg: rgba(166, 60, 181, 0.06);
   --green: #16A34A;
   --green-dim: #A0C8B0;
   --amber: #D97706;
   --red: #DC2626;
+  --red-bg: rgba(220, 38, 38, 0.06);
+  --red-gutter: rgba(220, 38, 38, 0.11);
+  --red-gutter-solid: color-mix(in srgb, #FAF8FC 89%, #DC2626 11%);
+  --green-bg: rgba(22, 163, 74, 0.07);
+  --green-gutter: rgba(22, 163, 74, 0.13);
+  --green-gutter-solid: color-mix(in srgb, #FAF8FC 87%, #16A34A 13%);
   --blue: #2563EB;
+  --blue-hover: #1D4FD8;
+  --blue-bg: rgba(37, 99, 235, 0.06);
+  --blue-border: rgba(37, 99, 235, 0.30);
+  --blue-border-focus: rgba(37, 99, 235, 0.40);
+  /* Expanded palette — syntax tokens + future UI accents */
+  --violet: #7C3AED;
+  --violet-bg: rgba(124, 58, 237, 0.06);
+  --teal: #0D9488;
+  --teal-bg: rgba(13, 148, 136, 0.07);
+  --sky: #0284C7;
+  --sky-bg: rgba(2, 132, 199, 0.06);
+  --peach: #C85A4C;
+  --peach-hover: #B85040;
+  --peach-bg: rgba(200, 90, 76, 0.07);
+  --peach-border: rgba(200, 90, 76, 0.28);
+  --peach-border-focus: rgba(200, 90, 76, 0.40);
+  --violet-hover: #6D28D9;
+  --violet-border: rgba(124, 58, 237, 0.28);
+  --violet-border-focus: rgba(124, 58, 237, 0.40);
+  --teal-hover: #0B7D74;
+  --teal-border: rgba(13, 148, 136, 0.28);
+  --teal-border-focus: rgba(13, 148, 136, 0.40);
+  /* Semantic bubble tokens — user message types */
+  --bubble-human-bg: rgba(232, 53, 88, 0.07);
+  --bubble-human-border: rgba(232, 53, 88, 0.22);
+  --bubble-initial-bg: rgba(166, 60, 181, 0.08);
+  --bubble-initial-border: rgba(166, 60, 181, 0.24);
   --text-0: #1C1820;
-  --text-1: #6B6078;
-  --text-2: #9890A4;
-  --text-3: #C4BCCC;
+  --text-1: #5A5068;
+  --text-2: #7A7288;
+  --text-3: #9E96AC;
   --font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'IBM Plex Mono', 'SF Mono', 'Cascadia Code', monospace;
   --radius-md: 6px;
   --shadow-bar: 0 1px 3px rgba(28, 24, 32, 0.08), 0 1px 2px rgba(28, 24, 32, 0.05);
+  /* Typography scale — size/line-height pairs, not raw pixel values */
+  --text-mono-sm: 11px;
+  --text-mono-sm-lh: 16px;
+  --text-mono-md: 12px;
+  --text-mono-md-lh: 18px;
+  --text-mono-label: 10px;
+  --text-mono-label-lh: 14px;
+  --text-body: 13px;
+  --text-body-lh: 20px;
 
   font-family: var(--font-ui);
   background-color: var(--canvas);

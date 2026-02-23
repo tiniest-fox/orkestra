@@ -9,18 +9,16 @@ interface IterationBadgeProps {
 export function IterationBadge({ task }: IterationBadgeProps) {
   const { derived, iterations } = task;
 
-  if (derived.is_done || derived.is_archived) return null;
-
   const currentStage = derived.current_stage;
-  if (!currentStage) return null;
+  const count = currentStage ? iterations.filter((i) => i.stage === currentStage).length : 0;
+  const show = !derived.is_done && !derived.is_archived && count >= 2;
 
-  const count = iterations.filter((i) => i.stage === currentStage).length;
-  if (count < 2) return null;
+  if (!show) return <span />;
 
   const display = count > 9 ? "·9+" : `·${count}`;
   const colorClass = count >= 4 ? "text-[var(--amber)]" : "text-[var(--text-2)]";
 
   return (
-    <span className={`font-forge-mono text-[10px] ml-2 shrink-0 ${colorClass}`}>{display}</span>
+    <span className={`font-forge-mono text-[10px] font-medium shrink-0 ${colorClass}`}>{display}</span>
   );
 }

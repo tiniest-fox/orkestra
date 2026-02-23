@@ -6,7 +6,6 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import {
   createContext,
   type ReactNode,
@@ -17,6 +16,7 @@ import {
   useState,
 } from "react";
 import { usePolling } from "../hooks/usePolling";
+import { useTauriListener } from "../hooks/useTauriListener";
 import { startupData } from "../main";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 
@@ -69,10 +69,9 @@ export function TasksProvider({ children }: TasksProviderProps) {
     try {
       let result: WorkflowTaskView[];
 
-      // Fast path: consume prefetched data pushed from Tauri on startup.
+      // Fast path: use prefetched data pushed from Tauri on startup.
       if (firstFetchRef.current && startupData.value) {
         result = startupData.value.tasks;
-        startupData.value = null; // clear after both providers have consumed it
         firstFetchRef.current = false;
         console.timeEnd("[startup] tasks");
       } else {
@@ -116,17 +115,13 @@ export function TasksProvider({ children }: TasksProviderProps) {
 
   useEffect(() => {
     fetchArchivedTasks();
+  }, [fetchArchivedTasks]);
 
-    const unlistenPromise = listen<string>("task-updated", () => {
-      fetchTasks();
-      fetchArchivedTasks();
-      resetPolling(); // Restart the 2s cycle from now
-    });
-
-    return () => {
-      unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, [fetchTasks, fetchArchivedTasks, resetPolling]);
+  useTauriListener("task-updated", () => {
+    fetchTasks();
+    fetchArchivedTasks();
+    resetPolling();
+  });
 
   const createTask = useCallback(
     async (

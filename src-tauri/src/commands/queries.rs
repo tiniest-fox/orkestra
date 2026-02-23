@@ -41,8 +41,7 @@ pub struct StartupData {
 /// Consume the pre-fetched startup data (one-shot).
 ///
 /// Returns `Some(StartupData)` if the background prefetch has completed,
-/// `None` if it hasn't finished yet (React should fall back to normal invokes).
-/// Clears the slot after reading — subsequent calls return `None`.
+/// `None` if it hasn't finished yet (React should fall back to polling).
 #[tauri::command]
 #[allow(clippy::unnecessary_wraps)]
 pub fn workflow_get_startup_data(
@@ -51,10 +50,10 @@ pub fn workflow_get_startup_data(
 ) -> Result<Option<StartupData>, TauriError> {
     registry.with_project(window.label(), |state| {
         let arc = state.startup_tasks();
-        let mut slot = arc.lock().unwrap();
-        Ok(slot.take().map(|tasks| StartupData {
+        let slot = arc.lock().unwrap();
+        Ok(slot.as_ref().map(|tasks| StartupData {
             config: state.config().clone(),
-            tasks,
+            tasks: tasks.clone(),
         }))
     })
 }

@@ -10,6 +10,7 @@ import { listen } from "@tauri-apps/api/event";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { startupData, startupError } from "../main";
 import type { WorkflowConfig, WorkflowTaskView } from "../types/workflow";
+import { safeUnlisten } from "../utils/safeUnlisten";
 
 interface WorkflowConfigState {
   config: WorkflowConfig | null;
@@ -60,14 +61,12 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
   useEffect(() => {
     console.timeEnd("[startup] config:react");
 
-    // Fast path: startup-error arrived before React mounted.
+    // Fast path: module-level slots already populated before React mounted.
     if (startupError.value) {
       setError(startupError.value);
       setLoading(false);
       return;
     }
-
-    // Fast path: startup-data arrived before React mounted.
     if (startupData.value) {
       console.timeEnd("[startup] config");
       setConfig(startupData.value.config);
@@ -75,17 +74,33 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
       return;
     }
 
-    // Slow path: wait for startup events that haven't arrived yet.
+    // Slow path: startup data wasn't captured before React mounted.
+    // Poll the IPC slot until it's populated (idempotent — no take semantics).
     let cancelled = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const dataPromise = listen<StartupData>("startup-data", ({ payload }) => {
-      if (cancelled) return;
-      startupData.value = payload;
-      console.timeEnd("[startup] config");
-      setConfig(payload.config);
-      setLoading(false);
-    });
+    function poll() {
+      invoke<StartupData | null>("workflow_get_startup_data")
+        .then((data) => {
+          if (cancelled) return;
+          if (data) {
+            startupData.value = data;
+            console.timeEnd("[startup] config");
+            setConfig(data.config);
+            setLoading(false);
+          } else {
+            pollTimer = setTimeout(poll, 100);
+          }
+        })
+        .catch(() => {
+          // Project not registered yet — retry.
+          if (!cancelled) pollTimer = setTimeout(poll, 100);
+        });
+    }
 
+    poll();
+
+    // Listen for startup-error in case init fails.
     const errorPromise = listen<{ message: string }>("startup-error", ({ payload }) => {
       if (cancelled) return;
       startupError.value = payload.message;
@@ -95,8 +110,8 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
 
     return () => {
       cancelled = true;
-      dataPromise.then((unlisten) => unlisten());
-      errorPromise.then((unlisten) => unlisten());
+      if (pollTimer) clearTimeout(pollTimer);
+      safeUnlisten(errorPromise);
     };
   }, []);
 
@@ -117,8 +132,8 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
       startupData.value = payload;
       setConfig(payload.config);
       setLoading(false);
-      dataPromise.then((unlisten) => unlisten());
-      errorPromise.then((unlisten) => unlisten());
+      safeUnlisten(dataPromise);
+      safeUnlisten(errorPromise);
     });
 
     const errorPromise = listen<{ message: string }>("startup-error", ({ payload }) => {
@@ -127,8 +142,8 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
       startupError.value = payload.message;
       setError(payload.message);
       setLoading(false);
-      dataPromise.then((unlisten) => unlisten());
-      errorPromise.then((unlisten) => unlisten());
+      safeUnlisten(dataPromise);
+      safeUnlisten(errorPromise);
     });
 
     invoke("workflow_retry_startup", { path }).catch((e: unknown) => {
@@ -136,8 +151,8 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
       settled = true;
       setError(e);
       setLoading(false);
-      dataPromise.then((unlisten) => unlisten());
-      errorPromise.then((unlisten) => unlisten());
+      safeUnlisten(dataPromise);
+      safeUnlisten(errorPromise);
     });
   }
 

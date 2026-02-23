@@ -39,7 +39,9 @@ export function ForgeDiffLine({ line }: ForgeDiffLineProps) {
   return (
     // min-w-max ensures the row expands to content width so the bg color fills behind long lines.
     // Wrapping rows (markdown) fill the container naturally and don't need this.
-    <div className={`flex font-forge-mono text-forge-mono-md transition-colors ${bgColor} ${hoverColor}`}>
+    <div
+      className={`flex font-forge-mono text-forge-mono-md transition-colors ${bgColor} ${hoverColor}`}
+    >
       <div className={`flex flex-shrink-0 ${gutterBg}`}>
         <div className="w-10 select-none text-right pr-2 text-[var(--text-3)]">
           {line.old_line_number ?? ""}

@@ -37,7 +37,9 @@ export function FeedSection({
     (t) => t.derived.needs_review || t.derived.has_questions || t.derived.is_failed,
   ).length;
   const totalCount =
-    section.name === "needs_review" ? selfCount + subtasks.length : section.tasks.length + subtasks.length;
+    section.name === "needs_review"
+      ? selfCount + subtasks.length
+      : section.tasks.length + subtasks.length;
 
   if (totalCount === 0) return null;
 
@@ -48,7 +50,9 @@ export function FeedSection({
           <span className="font-forge-mono text-[10px] font-semibold tracking-[0.10em] uppercase text-[var(--accent)]">
             {section.label}
           </span>
-          <span className="font-forge-mono text-[10px] font-medium text-[var(--text-3)]">{totalCount}</span>
+          <span className="font-forge-mono text-[10px] font-medium text-[var(--text-3)]">
+            {totalCount}
+          </span>
         </div>
         <div className="border-b mt-3 mx-0 border-[var(--border)]" />
       </div>

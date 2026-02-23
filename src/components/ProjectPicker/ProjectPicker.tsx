@@ -40,9 +40,7 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
   const [loadError, setLoadError] = useState<ErrorInfo | null>(null);
 
   useEffect(() => {
-    invoke<RecentProject[]>("get_recent_projects")
-      .then(setRecents)
-      .catch(console.error);
+    invoke<RecentProject[]>("get_recent_projects").then(setRecents).catch(console.error);
   }, []);
 
   const openProject = useCallback(async (path: string) => {
@@ -66,21 +64,18 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
     }
   }, [openProject]);
 
-  const removeRecent = useCallback(
-    async (path: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      try {
-        const updated = await invoke<RecentProject[]>("remove_recent_project", {
-          path,
-        });
-        setRecents(updated);
-        setSelectedIdx((i) => Math.min(i, Math.max(0, updated.length - 1)));
-      } catch (err) {
-        console.error("Failed to remove recent:", err);
-      }
-    },
-    [],
-  );
+  const removeRecent = useCallback(async (path: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const updated = await invoke<RecentProject[]>("remove_recent_project", {
+        path,
+      });
+      setRecents(updated);
+      setSelectedIdx((i) => Math.min(i, Math.max(0, updated.length - 1)));
+    } catch (err) {
+      console.error("Failed to remove recent:", err);
+    }
+  }, []);
 
   const backToPicker = useCallback(() => {
     setView("picker");
@@ -102,18 +97,13 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
       } else if (e.key === "Enter" && recents.length > 0) {
         e.preventDefault();
         void openProject(recents[selectedIdx].path);
-      } else if (
-        (e.key === "Backspace" || e.key === "Delete") &&
-        recents.length > 0
-      ) {
+      } else if ((e.key === "Backspace" || e.key === "Delete") && recents.length > 0) {
         e.preventDefault();
         const path = recents[selectedIdx].path;
         invoke<RecentProject[]>("remove_recent_project", { path })
           .then((updated) => {
             setRecents(updated);
-            setSelectedIdx((i) =>
-              Math.min(i, Math.max(0, updated.length - 1)),
-            );
+            setSelectedIdx((i) => Math.min(i, Math.max(0, updated.length - 1)));
           })
           .catch(console.error);
       } else if (e.metaKey && e.key === "o") {
@@ -149,9 +139,7 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
     return () => document.removeEventListener("keydown", onKey);
   }, [view, backToPicker, handleBrowse]);
 
-  const loadingName = loadingPath
-    ? (loadingPath.split("/").pop() ?? loadingPath)
-    : "";
+  const loadingName = loadingPath ? (loadingPath.split("/").pop() ?? loadingPath) : "";
 
   return (
     <div className="forge-theme h-screen flex flex-col">
@@ -197,9 +185,7 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
                         role="button"
                         tabIndex={0}
                         onClick={() => openProject(project.path)}
-                        onKeyDown={(e) =>
-                          e.key === "Enter" && openProject(project.path)
-                        }
+                        onKeyDown={(e) => e.key === "Enter" && openProject(project.path)}
                         className={[
                           "group flex items-center justify-between px-[14px] py-[10px] cursor-pointer relative transition-colors",
                           idx < Math.min(recents.length - 1, 3)

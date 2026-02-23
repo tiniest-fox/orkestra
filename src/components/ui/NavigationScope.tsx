@@ -68,7 +68,9 @@ export function NavigationScope({
 
   const register = useCallback((id: string, ref: RefObject<HTMLElement | null>) => {
     itemsRef.current.set(id, ref);
-    return () => { itemsRef.current.delete(id); };
+    return () => {
+      itemsRef.current.delete(id);
+    };
   }, []);
 
   // When scrollSeq is provided, scroll only when the counter increments (keyboard nav).
@@ -89,8 +91,7 @@ export function NavigationScope({
     const cr = container.getBoundingClientRect();
     const ar = el.getBoundingClientRect();
 
-    const needsScroll =
-      ar.top < cr.top + buffer || ar.bottom > cr.bottom - buffer;
+    const needsScroll = ar.top < cr.top + buffer || ar.bottom > cr.bottom - buffer;
     if (!needsScroll) return;
 
     if (ar.top < cr.top + buffer) {
@@ -102,13 +103,15 @@ export function NavigationScope({
     // Suppress hover effects on the container until the mouse physically moves.
     // Without this, elements scrolling under a stationary cursor fire mouseenter.
     container.style.pointerEvents = "none";
-    const restore = () => { container.style.pointerEvents = ""; };
+    const restore = () => {
+      container.style.pointerEvents = "";
+    };
     window.addEventListener("pointermove", restore, { once: true });
     return () => {
       window.removeEventListener("pointermove", restore);
       container.style.pointerEvents = "";
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollSeq !== undefined ? scrollSeq : activeId, containerRef, buffer]);
 
   return (

@@ -22,7 +22,9 @@ export function ActivityLog({ iterations }: ActivityLogProps) {
   if (iterations.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <span className="font-forge-mono text-forge-mono-sm text-[var(--text-3)]">No activity yet.</span>
+        <span className="font-forge-mono text-forge-mono-sm text-[var(--text-3)]">
+          No activity yet.
+        </span>
       </div>
     );
   }
@@ -72,9 +74,7 @@ function IterationEntry({ iteration }: { iteration: WorkflowIteration }) {
 
   return (
     <div>
-      {iteration.incoming_context && (
-        <ContextCallout trigger={iteration.incoming_context} />
-      )}
+      {iteration.incoming_context && <ContextCallout trigger={iteration.incoming_context} />}
       <div className="flex items-center gap-2">
         <OutcomeDot outcome={iteration.outcome} />
         <span className="font-forge-mono text-forge-mono-label text-[var(--text-3)]">
@@ -135,7 +135,9 @@ function OutcomeBadge({ outcome }: { outcome?: WorkflowOutcome }) {
   if (!outcome) return null;
   const { label, color } = badgeLabel(outcome);
   return (
-    <span className={`font-forge-mono text-forge-mono-label px-1.5 py-0.5 rounded bg-[var(--surface-2)] ${color}`}>
+    <span
+      className={`font-forge-mono text-forge-mono-label px-1.5 py-0.5 rounded bg-[var(--surface-2)] ${color}`}
+    >
       {label}
     </span>
   );
@@ -143,21 +145,35 @@ function OutcomeBadge({ outcome }: { outcome?: WorkflowOutcome }) {
 
 function badgeLabel(outcome: WorkflowOutcome): { label: string; color: string } {
   switch (outcome.type) {
-    case "approved":              return { label: "Approved",          color: "text-[var(--green)]" };
-    case "completed":             return { label: "Done",              color: "text-[var(--green)]" };
+    case "approved":
+      return { label: "Approved", color: "text-[var(--green)]" };
+    case "completed":
+      return { label: "Done", color: "text-[var(--green)]" };
     case "rejected":
-    case "rejection":             return { label: "Rejected",          color: "text-[var(--amber)]" };
-    case "awaiting_rejection_review": return { label: "Pending Review",color: "text-[var(--amber)]" };
-    case "awaiting_answers":      return { label: "Waiting",           color: "text-[var(--blue)]" };
-    case "interrupted":           return { label: "Interrupted",       color: "text-[var(--amber)]" };
-    case "agent_error":           return { label: "Error",             color: "text-[var(--red)]" };
-    case "spawn_failed":          return { label: "Spawn Failed",      color: "text-[var(--red)]" };
-    case "script_failed":         return { label: "Script Failed",     color: "text-[var(--red)]" };
-    case "commit_failed":         return { label: "Commit Failed",     color: "text-[var(--red)]" };
-    case "integration_failed":    return { label: "Merge Failed",      color: "text-[var(--red)]" };
-    case "blocked":               return { label: "Blocked",           color: "text-[var(--text-3)]" };
-    case "skipped":               return { label: "Skipped",           color: "text-[var(--text-3)]" };
-    default:                      return { label: "Unknown",           color: "text-[var(--text-3)]" };
+    case "rejection":
+      return { label: "Rejected", color: "text-[var(--amber)]" };
+    case "awaiting_rejection_review":
+      return { label: "Pending Review", color: "text-[var(--amber)]" };
+    case "awaiting_answers":
+      return { label: "Waiting", color: "text-[var(--blue)]" };
+    case "interrupted":
+      return { label: "Interrupted", color: "text-[var(--amber)]" };
+    case "agent_error":
+      return { label: "Error", color: "text-[var(--red)]" };
+    case "spawn_failed":
+      return { label: "Spawn Failed", color: "text-[var(--red)]" };
+    case "script_failed":
+      return { label: "Script Failed", color: "text-[var(--red)]" };
+    case "commit_failed":
+      return { label: "Commit Failed", color: "text-[var(--red)]" };
+    case "integration_failed":
+      return { label: "Merge Failed", color: "text-[var(--red)]" };
+    case "blocked":
+      return { label: "Blocked", color: "text-[var(--text-3)]" };
+    case "skipped":
+      return { label: "Skipped", color: "text-[var(--text-3)]" };
+    default:
+      return { label: "Unknown", color: "text-[var(--text-3)]" };
   }
 }
 
@@ -170,7 +186,9 @@ function ContextCallout({ trigger }: { trigger: IterationTrigger }) {
   if (!info) return null;
 
   return (
-    <div className={`border-l-2 ${info.borderColor} bg-[var(--surface-2)] rounded-r px-3 py-2 mb-3`}>
+    <div
+      className={`border-l-2 ${info.borderColor} bg-[var(--surface-2)] rounded-r px-3 py-2 mb-3`}
+    >
       <div className="font-forge-mono text-forge-mono-label text-[var(--text-3)] uppercase tracking-wider mb-1">
         {info.label}
       </div>
@@ -194,7 +212,11 @@ function calloutInfo(
         borderColor: "border-[var(--blue)]",
       };
     case "integration":
-      return { label: "Integration Note", content: trigger.message, borderColor: "border-[var(--surface-3)]" };
+      return {
+        label: "Integration Note",
+        content: trigger.message,
+        borderColor: "border-[var(--surface-3)]",
+      };
     case "interrupted":
       return null;
     default:
@@ -204,9 +226,7 @@ function calloutInfo(
 
 function answersContent(answers: WorkflowQuestionAnswer[]): string {
   if (answers.length === 0) return "Answers provided.";
-  return answers
-    .map((a) => `- ${a.question}\n  - ${a.answer}`)
-    .join("\n\n");
+  return answers.map((a) => `- ${a.question}\n  - ${a.answer}`).join("\n\n");
 }
 
 // ============================================================================

@@ -53,7 +53,10 @@ export function IterationChain({ iterations }: IterationChainProps) {
     <div className="min-w-0">
       <span className="whitespace-nowrap font-forge-mono text-[10px] font-medium">
         {hidden > 0 && (
-          <span className="text-[var(--text-3)]">+{hidden}<span className="mx-[2px]">·</span></span>
+          <span className="text-[var(--text-3)]">
+            +{hidden}
+            <span className="mx-[2px]">·</span>
+          </span>
         )}
         {visible.map((iter, idx) => {
           const abbrev = abbreviateStage(iter.stage);
@@ -62,9 +65,7 @@ export function IterationChain({ iterations }: IterationChainProps) {
             <span key={iter.id}>
               {idx > 0 && <span className="text-[var(--text-3)] mx-[2px]">·</span>}
               <span className={abbrevColor}>{abbrev}</span>
-              {glyph && (
-                <span className={`ml-[2px] ${abbrevColor}`}>{glyph}</span>
-              )}
+              {glyph && <span className={`ml-[2px] ${abbrevColor}`}>{glyph}</span>}
             </span>
           );
         })}

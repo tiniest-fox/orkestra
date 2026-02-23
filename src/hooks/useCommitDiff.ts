@@ -35,8 +35,8 @@ interface UseCommitDiffResult {
 }
 
 export function useCommitDiff(commitHash: string | null): UseCommitDiffResult {
-  const [diff, setDiff] = useState<HighlightedTaskDiff | null>(
-    () => (commitHash ? (diffCache.get(commitHash) ?? null) : null),
+  const [diff, setDiff] = useState<HighlightedTaskDiff | null>(() =>
+    commitHash ? (diffCache.get(commitHash) ?? null) : null,
   );
   const [loading, setLoading] = useState<boolean>(
     () => commitHash !== null && !diffCache.has(commitHash),

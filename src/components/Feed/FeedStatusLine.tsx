@@ -55,7 +55,19 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [drawerMode, drawerOpen, canPush, canPull, pushToOrigin, pullFromOrigin, fetchFromOrigin, pushLoading, pullLoading, fetchLoading, onToggleHistory]);
+  }, [
+    drawerMode,
+    drawerOpen,
+    canPush,
+    canPull,
+    pushToOrigin,
+    pullFromOrigin,
+    fetchFromOrigin,
+    pushLoading,
+    pullLoading,
+    fetchLoading,
+    onToggleHistory,
+  ]);
 
   const hasGitInfo = currentBranch !== null;
   const latestCommit = commits[0]?.message ?? null;
@@ -98,8 +110,10 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
           <>
             {hasGitInfo && <span className="text-[var(--text-3)] shrink-0">·</span>}
             <span className="shrink-0">
-              <span className="font-medium" style={{ color: "var(--amber)" }}>{agentCount}</span>
-              {" "}agent{agentCount !== 1 ? "s" : ""} running
+              <span className="font-medium" style={{ color: "var(--amber)" }}>
+                {agentCount}
+              </span>{" "}
+              agent{agentCount !== 1 ? "s" : ""} running
             </span>
           </>
         )}

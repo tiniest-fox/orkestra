@@ -17,7 +17,18 @@ interface FeedSubtaskRowProps {
   onClick?: () => void;
 }
 
-export function FeedSubtaskRow({ subtask, config, isFocused, onMouseEnter, onReview, onAnswer, onMerge, onOpenPr, onArchive, onClick }: FeedSubtaskRowProps) {
+export function FeedSubtaskRow({
+  subtask,
+  config,
+  isFocused,
+  onMouseEnter,
+  onReview,
+  onAnswer,
+  onMerge,
+  onOpenPr,
+  onArchive,
+  onClick,
+}: FeedSubtaskRowProps) {
   return (
     <FeedRow
       task={subtask}

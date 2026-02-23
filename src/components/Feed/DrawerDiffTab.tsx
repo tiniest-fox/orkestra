@@ -162,8 +162,14 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
         const elTop = el.getBoundingClientRect().top;
         const containerTop = container.getBoundingClientRect().top;
         const targetScrollTop = container.scrollTop + (elTop - containerTop);
-        setCollapsedPaths((prev) => { const next = new Set(prev); next.add(path); return next; });
-        requestAnimationFrame(() => { container.scrollTop = targetScrollTop; });
+        setCollapsedPaths((prev) => {
+          const next = new Set(prev);
+          next.add(path);
+          return next;
+        });
+        requestAnimationFrame(() => {
+          container.scrollTop = targetScrollTop;
+        });
         return;
       }
     }
@@ -180,7 +186,9 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
   function handleJumpTo(path: string) {
     setActivePath(path);
     if (jumpingRef.current) clearTimeout(jumpingRef.current);
-    jumpingRef.current = setTimeout(() => { jumpingRef.current = null; }, 600);
+    jumpingRef.current = setTimeout(() => {
+      jumpingRef.current = null;
+    }, 600);
     const el = fileSectionRefs.current.get(path);
     if (el && scrollRef.current) {
       el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -203,10 +211,14 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
       const rect = el.getBoundingClientRect();
       if (rect.top <= containerTop) {
         if (rect.bottom > containerTop + ACTIVE_FILE_BUFFER && rect.top > bestTop) {
-          bestTop = rect.top; active = path;
+          bestTop = rect.top;
+          active = path;
         }
       } else {
-        if (rect.top < nextTop) { nextTop = rect.top; nextPath = path; }
+        if (rect.top < nextTop) {
+          nextTop = rect.top;
+          nextPath = path;
+        }
       }
     }
 
@@ -228,18 +240,28 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
   }, [collapsedPaths, pickActiveFile]);
 
   // Keyboard navigation — only meaningful when this tab is active.
-  useNavHandler("ArrowDown", () => { if (active) scrollRef.current?.scrollBy({ top: 120, behavior: "smooth" }); });
-  useNavHandler("j",         () => { if (active) scrollRef.current?.scrollBy({ top: 120, behavior: "smooth" }); });
-  useNavHandler("ArrowUp",   () => { if (active) scrollRef.current?.scrollBy({ top: -120, behavior: "smooth" }); });
-  useNavHandler("k",         () => { if (active) scrollRef.current?.scrollBy({ top: -120, behavior: "smooth" }); });
-  useNavHandler("c",         () => { if (active && activePath) handleToggleCollapsed(activePath); });
-  useNavHandler("]",         () => {
+  useNavHandler("ArrowDown", () => {
+    if (active) scrollRef.current?.scrollBy({ top: 120, behavior: "smooth" });
+  });
+  useNavHandler("j", () => {
+    if (active) scrollRef.current?.scrollBy({ top: 120, behavior: "smooth" });
+  });
+  useNavHandler("ArrowUp", () => {
+    if (active) scrollRef.current?.scrollBy({ top: -120, behavior: "smooth" });
+  });
+  useNavHandler("k", () => {
+    if (active) scrollRef.current?.scrollBy({ top: -120, behavior: "smooth" });
+  });
+  useNavHandler("c", () => {
+    if (active && activePath) handleToggleCollapsed(activePath);
+  });
+  useNavHandler("]", () => {
     if (!active || !diff) return;
     const paths = diff.files.map((f) => f.path);
     const next = paths[(activePath ? paths.indexOf(activePath) : -1) + 1];
     if (next) handleJumpTo(next);
   });
-  useNavHandler("[",         () => {
+  useNavHandler("[", () => {
     if (!active || !diff) return;
     const paths = diff.files.map((f) => f.path);
     const prev = paths[(activePath ? paths.indexOf(activePath) : paths.length) - 1];
@@ -255,7 +277,9 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
         />
       )}
       {diffLoading && !diff ? (
-        <div className="flex-1 overflow-auto p-4"><DiffSkeleton /></div>
+        <div className="flex-1 overflow-auto p-4">
+          <DiffSkeleton />
+        </div>
       ) : diff && diff.files.length > 0 ? (
         <>
           <div className="w-56 shrink-0 overflow-y-auto border-r border-[var(--border)]">
@@ -273,7 +297,9 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
           </div>
         </>
       ) : (
-        <div className="flex-1 p-6 font-forge-mono text-[11px] text-[var(--text-3)]">No changes.</div>
+        <div className="flex-1 p-6 font-forge-mono text-[11px] text-[var(--text-3)]">
+          No changes.
+        </div>
       )}
     </div>
   );

@@ -17,16 +17,26 @@ export function StatusSymbol({ task }: StatusSymbolProps) {
   if (derived.is_waiting_on_children && derived.subtask_progress) {
     const p = derived.subtask_progress;
     if (p.failed > 0) {
-      symbol = "!"; color = "var(--red)"; bgColor = "var(--red-bg)";
+      symbol = "!";
+      color = "var(--red)";
+      bgColor = "var(--red-bg)";
     } else if (p.has_questions > 0) {
-      symbol = "?"; color = "var(--blue)"; bgColor = "var(--blue-bg)";
+      symbol = "?";
+      color = "var(--blue)";
+      bgColor = "var(--blue-bg)";
     } else if (p.needs_review > 0) {
-      symbol = "⦿"; color = "var(--violet)"; bgColor = "var(--violet-bg)";
+      symbol = "⦿";
+      color = "var(--violet)";
+      bgColor = "var(--violet-bg)";
     } else if (p.working > 0) {
-      symbol = "*"; color = "var(--accent-2)"; bgColor = "var(--accent-2-bg)";
+      symbol = "*";
+      color = "var(--accent-2)";
+      bgColor = "var(--accent-2-bg)";
       extraClass = "animate-spin-bounce";
     } else {
-      symbol = "~"; color = "var(--text-3)"; bgColor = "transparent";
+      symbol = "~";
+      color = "var(--text-3)";
+      bgColor = "transparent";
     }
   } else if (derived.is_failed) {
     symbol = "!";

@@ -37,7 +37,11 @@ export function FeedLogList({ logs, error }: FeedLogListProps) {
   if (logs.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <EmptyState icon={Terminal} message="No activity yet." description="Agent output will appear here." />
+        <EmptyState
+          icon={Terminal}
+          message="No activity yet."
+          description="Agent output will appear here."
+        />
       </div>
     );
   }
@@ -63,7 +67,15 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
     const hidden = toolCalls.length - shown.length;
     return (
       <>
-        <ToolLine label="Task" summary={entry.taskEntry.input.tool === "task" ? (entry.taskEntry.input as { description?: string }).description ?? "" : ""} variant="task" />
+        <ToolLine
+          label="Task"
+          summary={
+            entry.taskEntry.input.tool === "task"
+              ? ((entry.taskEntry.input as { description?: string }).description ?? "")
+              : ""
+          }
+          variant="task"
+        />
         <div className="ml-[2px] pl-4 border-l border-[var(--border)]">
           {hidden > 0 && (
             <div className="font-forge-mono text-forge-mono-sm text-[var(--text-3)] py-[3px]">
@@ -74,7 +86,7 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
             sub.type === "subagent_tool_use" ? (
               // biome-ignore lint/suspicious/noArrayIndexKey: no stable ID
               <ToolLine key={i} label={sub.tool} summary={toolSummary(sub.input)} variant="tool" />
-            ) : null
+            ) : null,
           )}
         </div>
       </>
@@ -108,8 +120,12 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
 
     case "script_exit":
       return (
-        <div className={`font-forge-mono text-forge-mono-sm py-0.5 ${entry.success ? "text-[var(--text-3)]" : "text-[var(--red)]"}`}>
-          {entry.success ? "✓ done" : `✗ exit ${entry.code}${entry.timed_out ? " (timed out)" : ""}`}
+        <div
+          className={`font-forge-mono text-forge-mono-sm py-0.5 ${entry.success ? "text-[var(--text-3)]" : "text-[var(--red)]"}`}
+        >
+          {entry.success
+            ? "✓ done"
+            : `✗ exit ${entry.code}${entry.timed_out ? " (timed out)" : ""}`}
         </div>
       );
 
@@ -122,17 +138,26 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
 // Entry components
 // ============================================================================
 
-
 const TOOL_VARIANTS = {
-  tool:   "text-[var(--text-2)]",
-  task:   "text-[var(--accent)]",
+  tool: "text-[var(--text-2)]",
+  task: "text-[var(--accent)]",
   script: "text-[var(--text-2)]",
 } as const;
 
-function ToolLine({ label, summary, variant }: { label: string; summary: string; variant: keyof typeof TOOL_VARIANTS }) {
+function ToolLine({
+  label,
+  summary,
+  variant,
+}: {
+  label: string;
+  summary: string;
+  variant: keyof typeof TOOL_VARIANTS;
+}) {
   return (
     <div className="flex items-baseline gap-2 py-1">
-      <span className={`font-forge-mono text-forge-mono-sm font-medium shrink-0 ${TOOL_VARIANTS[variant]}`}>
+      <span
+        className={`font-forge-mono text-forge-mono-sm font-medium shrink-0 ${TOOL_VARIANTS[variant]}`}
+      >
         {label}
       </span>
       {summary && (
@@ -145,7 +170,9 @@ function ToolLine({ label, summary, variant }: { label: string; summary: string;
 }
 
 function ThinkingLine({ content }: { content: string }) {
-  const cleaned = content.replace(/<parameter name="content">[\s\S]*?<\/antml:parameter>/g, "").trim();
+  const cleaned = content
+    .replace(/<parameter name="content">[\s\S]*?<\/antml:parameter>/g, "")
+    .trim();
   if (!cleaned) return null;
   return (
     <div className={`text-forge-body py-3 ${FORGE_PROSE}`}>
@@ -154,7 +181,6 @@ function ThinkingLine({ content }: { content: string }) {
   );
 }
 
-
 // Bubble style groups — color communicates type, no label needed.
 // human:  direct human input (feedback, answers, manual resume) — warm accent tint
 // system: automatic continuations — neutral, nearly invisible
@@ -162,21 +188,21 @@ function ThinkingLine({ content }: { content: string }) {
 type BubbleGroup = "human" | "system" | "initial";
 
 const RESUME_GROUP: Record<ResumeType, BubbleGroup> = {
-  initial:       "initial",
-  feedback:      "human",
-  answers:       "human",
+  initial: "initial",
+  feedback: "human",
+  answers: "human",
   manual_resume: "human",
-  continue:      "system",
-  recheck:       "system",
-  retry_failed:  "system",
+  continue: "system",
+  recheck: "system",
+  retry_failed: "system",
   retry_blocked: "system",
-  integration:   "system",
+  integration: "system",
 };
 
 const BUBBLE_STYLES: Record<BubbleGroup, string> = {
-  human:   "bg-[var(--bubble-human-bg)]   border border-[var(--bubble-human-border)]",
+  human: "bg-[var(--bubble-human-bg)]   border border-[var(--bubble-human-border)]",
   initial: "bg-[var(--bubble-initial-bg)] border border-[var(--bubble-initial-border)]",
-  system:  "bg-[var(--surface-2)]         border border-[var(--border)]",
+  system: "bg-[var(--surface-2)]         border border-[var(--border)]",
 };
 
 function UserBubble({ content, resumeType }: { content: string; resumeType?: ResumeType }) {
@@ -216,30 +242,50 @@ function ScriptOutputLine({ content }: { content: string }) {
 
 function toolSummary(input: ToolInput): string {
   switch (input.tool) {
-    case "bash":       return input.command.slice(0, 120);
-    case "read":       return formatPath(input.file_path);
-    case "write":      return formatPath(input.file_path);
-    case "edit":       return formatPath(input.file_path);
-    case "glob":       return input.pattern;
-    case "grep":       return input.pattern;
-    case "task":       return input.description ?? "";
-    case "web_search": return input.query;
-    case "web_fetch":  return input.url;
-    case "todo_write": return `${input.todos.length} item${input.todos.length !== 1 ? "s" : ""}`;
-    case "ork":        return orkSummary(input.ork_action);
-    case "structured_output": return input.output_type ?? "";
-    case "other":      return input.summary ?? "";
-    default:           return "";
+    case "bash":
+      return input.command.slice(0, 120);
+    case "read":
+      return formatPath(input.file_path);
+    case "write":
+      return formatPath(input.file_path);
+    case "edit":
+      return formatPath(input.file_path);
+    case "glob":
+      return input.pattern;
+    case "grep":
+      return input.pattern;
+    case "task":
+      return input.description ?? "";
+    case "web_search":
+      return input.query;
+    case "web_fetch":
+      return input.url;
+    case "todo_write":
+      return `${input.todos.length} item${input.todos.length !== 1 ? "s" : ""}`;
+    case "ork":
+      return orkSummary(input.ork_action);
+    case "structured_output":
+      return input.output_type ?? "";
+    case "other":
+      return input.summary ?? "";
+    default:
+      return "";
   }
 }
 
 function orkSummary(action: OrkAction): string {
   switch (action.action) {
-    case "complete":        return `complete ${action.task_id}`;
-    case "fail":            return `fail ${action.task_id}`;
-    case "block":           return `block ${action.task_id}`;
-    case "approve":         return `approve ${action.task_id}`;
-    case "create_subtask":  return action.title ?? "";
-    default:                return action.action;
+    case "complete":
+      return `complete ${action.task_id}`;
+    case "fail":
+      return `fail ${action.task_id}`;
+    case "block":
+      return `block ${action.task_id}`;
+    case "approve":
+      return `approve ${action.task_id}`;
+    case "create_subtask":
+      return action.title ?? "";
+    default:
+      return action.action;
   }
 }

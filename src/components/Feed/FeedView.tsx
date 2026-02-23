@@ -28,17 +28,19 @@ export function FeedView({ config, tasks }: FeedViewProps) {
 
   // Derive drawer mode for FeedStatusLine keyboard hints.
   const drawerMode = gitHistoryOpen
-    ? "git-history" as const
+    ? ("git-history" as const)
     : activeTask
       ? activeTask.derived.needs_review
-        ? rejectMode ? "review-reject" as const : "review" as const
+        ? rejectMode
+          ? ("review-reject" as const)
+          : ("review" as const)
         : activeTask.derived.has_questions
-          ? "answer" as const
+          ? ("answer" as const)
           : activeTask.derived.is_working || activeTask.derived.is_interrupted
-            ? "focus" as const
+            ? ("focus" as const)
             : activeTask.derived.is_done
-              ? "ship" as const
-              : "focus" as const
+              ? ("ship" as const)
+              : ("focus" as const)
       : null;
 
   const { sections, surfacedSubtasks, workingSubtasks } = useMemo(
@@ -71,7 +73,11 @@ export function FeedView({ config, tasks }: FeedViewProps) {
   }, []);
 
   // Disable feed navigation while the drawer is open; suppress focusedId so row scopes deactivate.
-  const { focusedId: rawFocusedId, setFocusedId, scrollSeq } = useFeedNavigation(orderedIds, drawerOpen, onStripRowClick);
+  const {
+    focusedId: rawFocusedId,
+    setFocusedId,
+    scrollSeq,
+  } = useFeedNavigation(orderedIds, drawerOpen, onStripRowClick);
   const focusedId = drawerOpen ? null : rawFocusedId;
 
   const isEmpty =
@@ -84,33 +90,39 @@ export function FeedView({ config, tasks }: FeedViewProps) {
       <FeedHeader tasks={tasks} />
       <div ref={feedBodyRef} className="flex-1 overflow-y-auto">
         <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
-        {sections.map((section) => (
-          <FeedSection
-            key={section.name}
-            section={section}
-            surfacedSubtasks={
-              section.name === "needs_review"
-                ? surfacedSubtasks
-                : section.name === "in_progress"
-                  ? workingSubtasks
-                  : undefined
-            }
-            config={config}
-            focusedId={focusedId}
-            onFocusRow={setFocusedId}
-            onReview={setActiveTaskId}
-            onAnswer={setActiveTaskId}
-            onMerge={(taskId) => { invoke("workflow_merge_task", { taskId }); }}
-            onOpenPr={(taskId) => { invoke("workflow_open_pr", { taskId }); }}
-            onArchive={(taskId) => { invoke("workflow_archive", { taskId }); }}
-            onRowClick={onStripRowClick}
-          />
-        ))}
-        {isEmpty && (
-          <div className="p-6 text-[var(--text-2)]">
-            <p className="font-forge-sans text-sm">No tasks yet</p>
-          </div>
-        )}
+          {sections.map((section) => (
+            <FeedSection
+              key={section.name}
+              section={section}
+              surfacedSubtasks={
+                section.name === "needs_review"
+                  ? surfacedSubtasks
+                  : section.name === "in_progress"
+                    ? workingSubtasks
+                    : undefined
+              }
+              config={config}
+              focusedId={focusedId}
+              onFocusRow={setFocusedId}
+              onReview={setActiveTaskId}
+              onAnswer={setActiveTaskId}
+              onMerge={(taskId) => {
+                invoke("workflow_merge_task", { taskId });
+              }}
+              onOpenPr={(taskId) => {
+                invoke("workflow_open_pr", { taskId });
+              }}
+              onArchive={(taskId) => {
+                invoke("workflow_archive", { taskId });
+              }}
+              onRowClick={onStripRowClick}
+            />
+          ))}
+          {isEmpty && (
+            <div className="p-6 text-[var(--text-2)]">
+              <p className="font-forge-sans text-sm">No tasks yet</p>
+            </div>
+          )}
         </NavigationScope>
       </div>
       <FeedStatusLine
@@ -121,9 +133,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
           setActiveTaskId(null);
         }}
       />
-      {gitHistoryOpen && (
-        <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />
-      )}
+      {gitHistoryOpen && <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />}
       {activeTask && (
         <TaskDrawer
           task={activeTask}

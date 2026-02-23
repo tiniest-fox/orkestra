@@ -61,8 +61,12 @@ export function DrawerHeader({
   );
 
   const worktreePath = task.worktree_path;
-  useNavHandler("T", () => { if (worktreePath) invoke("open_in_terminal", { path: worktreePath }); });
-  useNavHandler("E", () => { if (worktreePath) invoke("open_in_editor", { path: worktreePath }); });
+  useNavHandler("T", () => {
+    if (worktreePath) invoke("open_in_terminal", { path: worktreePath });
+  });
+  useNavHandler("E", () => {
+    if (worktreePath) invoke("open_in_editor", { path: worktreePath });
+  });
 
   return (
     <div className="shrink-0 px-6 pt-4 pb-3 border-b border-[var(--border)]">
@@ -111,16 +115,17 @@ export function DrawerHeader({
             selectedRunIdx={selectedRunIdx}
             onSelect={onSelectRun}
             accent={accent}
-            waitingStage={task.derived.is_waiting_on_children ? (task.derived.current_stage ?? undefined) : undefined}
+            waitingStage={
+              task.derived.is_waiting_on_children
+                ? (task.derived.current_stage ?? undefined)
+                : undefined
+            }
             isWaitingSelected={isWaitingChipSelected}
             onWaitingSelect={onWaitingChipClick}
           />
         )}
         {task.derived.subtask_progress && (
-          <SubtaskProgressBar
-            progress={task.derived.subtask_progress}
-            onClick={onProgressClick}
-          />
+          <SubtaskProgressBar progress={task.derived.subtask_progress} onClick={onProgressClick} />
         )}
         <div className="flex-1 max-w-[160px] ml-auto shrink-0">
           <PipelineBar segments={segments} />

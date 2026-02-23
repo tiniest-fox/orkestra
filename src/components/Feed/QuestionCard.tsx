@@ -112,9 +112,13 @@ export function QuestionCard({
                     kbdFocused && selected ? "ring-1 ring-[var(--blue)] ring-offset-1" : "",
                   ].join(" ")}
                 >
-                  <div className="font-forge-sans text-[12px] font-medium leading-snug">{opt.label}</div>
+                  <div className="font-forge-sans text-[12px] font-medium leading-snug">
+                    {opt.label}
+                  </div>
                   {opt.description && (
-                    <div className="font-forge-mono text-[10px] text-[var(--text-2)] mt-0.5">{opt.description}</div>
+                    <div className="font-forge-mono text-[10px] text-[var(--text-2)] mt-0.5">
+                      {opt.description}
+                    </div>
                   )}
                 </button>
               );
@@ -135,7 +139,9 @@ export function QuestionCard({
                   rows={2}
                   className={[
                     "w-full font-forge-sans text-[12px] text-[var(--text-0)] placeholder:text-[var(--text-3)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-2 outline-none transition-colors resize-none leading-relaxed",
-                    kbdFocused ? "ring-1 ring-[var(--blue)] ring-offset-1 focus:border-[var(--blue-border-focus)]" : "focus:border-[var(--blue-border-focus)]",
+                    kbdFocused
+                      ? "ring-1 ring-[var(--blue)] ring-offset-1 focus:border-[var(--blue-border-focus)]"
+                      : "focus:border-[var(--blue-border-focus)]",
                     answered && writeInValue.length === 0 ? "opacity-45" : "",
                   ].join(" ")}
                 />

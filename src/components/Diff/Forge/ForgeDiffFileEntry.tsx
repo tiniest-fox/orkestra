@@ -11,7 +11,13 @@ interface ForgeDiffFileEntryProps {
   onClick: () => void;
 }
 
-export function ForgeDiffFileEntry({ file, name, depth, isActive, onClick }: ForgeDiffFileEntryProps) {
+export function ForgeDiffFileEntry({
+  file,
+  name,
+  depth,
+  isActive,
+  onClick,
+}: ForgeDiffFileEntryProps) {
   const statusColor = getStatusColor(file.change_type);
   const btnRef = useRef<HTMLButtonElement>(null);
 
@@ -28,9 +34,7 @@ export function ForgeDiffFileEntry({ file, name, depth, isActive, onClick }: For
       onClick={onClick}
       style={{ paddingLeft: depth * 12 + 8 }}
       className={`scroll-my-6 w-full text-left pr-2 py-1 flex items-center gap-1.5 transition-colors rounded-tl rounded-bl ${
-        isActive
-          ? "bg-[var(--surface-2)]"
-          : "hover:bg-[var(--surface-hover)]"
+        isActive ? "bg-[var(--surface-2)]" : "hover:bg-[var(--surface-hover)]"
       }`}
     >
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${statusColor}`} />
@@ -46,10 +50,15 @@ export function ForgeDiffFileEntry({ file, name, depth, isActive, onClick }: For
 
 function getStatusColor(changeType: string): string {
   switch (changeType) {
-    case "added":    return "bg-[var(--green)]";
-    case "modified": return "bg-[var(--blue)]";
-    case "deleted":  return "bg-[var(--red)]";
-    case "renamed":  return "bg-[var(--amber)]";
-    default:         return "bg-[var(--text-3)]";
+    case "added":
+      return "bg-[var(--green)]";
+    case "modified":
+      return "bg-[var(--blue)]";
+    case "deleted":
+      return "bg-[var(--red)]";
+    case "renamed":
+      return "bg-[var(--amber)]";
+    default:
+      return "bg-[var(--text-3)]";
   }
 }

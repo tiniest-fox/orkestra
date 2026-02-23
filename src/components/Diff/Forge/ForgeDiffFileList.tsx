@@ -14,7 +14,7 @@ interface ForgeDiffFileListProps {
 // ============================================================================
 
 type FileNode = { kind: "file"; name: string; file: HighlightedFileDiff };
-type DirNode  = { kind: "dir";  name: string; children: TreeNode[] };
+type DirNode = { kind: "dir"; name: string; children: TreeNode[] };
 type TreeNode = FileNode | DirNode;
 
 function buildTree(files: HighlightedFileDiff[]): TreeNode[] {
@@ -24,9 +24,7 @@ function buildTree(files: HighlightedFileDiff[]): TreeNode[] {
     const parts = file.path.split("/");
     let node = root;
     for (let i = 0; i < parts.length - 1; i++) {
-      let child = node.children.find(
-        (c): c is DirNode => c.kind === "dir" && c.name === parts[i],
-      );
+      let child = node.children.find((c): c is DirNode => c.kind === "dir" && c.name === parts[i]);
       if (!child) {
         child = { kind: "dir", name: parts[i], children: [] };
         node.children.push(child);

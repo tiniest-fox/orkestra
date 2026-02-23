@@ -40,10 +40,14 @@ export function groupIterationsIntoRuns(
       const stageConfig = config.stages.find((s) => s.name === iter.stage);
       const artKey = stageConfig ? artifactName(stageConfig.artifact) : iter.stage;
       // Use title-cased artifact key as the tab label (e.g., "plan" → "Plan", "summary" → "Summary").
-      const artLabel = artKey
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
-      runs.push({ stage: iter.stage, artifactLabel: artLabel, artifactKey: artKey, iterations: [iter], isCurrentRun: false });
+      const artLabel = artKey.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+      runs.push({
+        stage: iter.stage,
+        artifactLabel: artLabel,
+        artifactKey: artKey,
+        iterations: [iter],
+        isCurrentRun: false,
+      });
     }
   }
 

@@ -60,7 +60,9 @@ export function FeedRow({
       {isSubtask ? (
         <>
           <div />
-          <span className="text-center font-forge-mono text-sm text-[var(--text-3)] self-start">↳</span>
+          <span className="text-center font-forge-mono text-sm text-[var(--text-3)] self-start">
+            ↳
+          </span>
         </>
       ) : (
         <StatusSymbol task={task} />
@@ -70,7 +72,9 @@ export function FeedRow({
           {task.title || task.description}
         </div>
         <div className="font-forge-mono text-[10px] text-[var(--text-3)]">{task.id}</div>
-        <div className="font-forge-mono text-[10px] font-medium text-[var(--text-2)]">{subtitle}</div>
+        <div className="font-forge-mono text-[10px] font-medium text-[var(--text-2)]">
+          {subtitle}
+        </div>
       </div>
       <div className="font-forge-mono text-[10px] font-semibold uppercase tracking-wide text-[var(--text-3)] text-right truncate">
         {task.derived.current_stage ?? ""}

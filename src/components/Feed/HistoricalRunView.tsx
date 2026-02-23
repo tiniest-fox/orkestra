@@ -23,7 +23,7 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
 
   const tabs: DrawerTab[] = [
     { id: "artifact", label: run.artifactLabel, hotkey: "a" },
-    { id: "logs",     label: "Logs",            hotkey: "l" },
+    { id: "logs", label: "Logs", hotkey: "l" },
   ];
 
   const [activeTab, setActiveTab] = useDrawerTabs("artifact");
@@ -33,12 +33,12 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
   const setActiveLogStageRef = useRef(setActiveLogStage);
   setActiveLogStageRef.current = setActiveLogStage;
 
-  useNavHandler("a",         () => setActiveTab("artifact"));
-  useNavHandler("l",         () => setActiveTab("logs"));
+  useNavHandler("a", () => setActiveTab("artifact"));
+  useNavHandler("l", () => setActiveTab("logs"));
   useNavHandler("ArrowDown", () => scrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }));
-  useNavHandler("j",         () => scrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }));
-  useNavHandler("ArrowUp",   () => scrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
-  useNavHandler("k",         () => scrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
+  useNavHandler("j", () => scrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }));
+  useNavHandler("ArrowUp", () => scrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
+  useNavHandler("k", () => scrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
 
   useEffect(() => {
     if (isLogsActive) setActiveLogStageRef.current(run.stage);

@@ -20,7 +20,14 @@ interface ForgeDiffContentProps {
 
 const COLLAPSE_THRESHOLD = 8;
 
-export function ForgeDiffContent({ files, comments, activePath, collapsedPaths, onToggleCollapsed, onFileSectionRef }: ForgeDiffContentProps) {
+export function ForgeDiffContent({
+  files,
+  comments,
+  activePath,
+  collapsedPaths,
+  onToggleCollapsed,
+  onFileSectionRef,
+}: ForgeDiffContentProps) {
   const commentsByFile = useMemo(() => {
     const map = new Map<string, Map<number, PrComment[]>>();
     for (const comment of comments) {
@@ -83,7 +90,9 @@ function FileSection({
   if (file.is_binary) {
     return (
       <div className="p-4">
-        <div className="font-forge-sans text-forge-body font-medium text-[var(--text-1)] mb-1">{file.path}</div>
+        <div className="font-forge-sans text-forge-body font-medium text-[var(--text-1)] mb-1">
+          {file.path}
+        </div>
         <div className="font-forge-sans text-forge-body text-[var(--text-2)]">Binary file</div>
       </div>
     );
@@ -105,24 +114,26 @@ function FileSection({
         </span>
         <span className="flex items-center gap-1.5 shrink-0">
           {isActive && <Kbd>C</Kbd>}
-          {isCollapsed
-            ? <ChevronRight size={13} className="text-[var(--text-3)]" />
-            : <ChevronDown size={13} className="text-[var(--text-3)]" />
-          }
+          {isCollapsed ? (
+            <ChevronRight size={13} className="text-[var(--text-3)]" />
+          ) : (
+            <ChevronDown size={13} className="text-[var(--text-3)]" />
+          )}
         </span>
       </button>
 
-      {!isCollapsed && file.hunks.map((hunk) => (
-        <div
-          key={`${hunk.old_start}-${hunk.new_start}`}
-          className="border-b border-[var(--border)] last:border-b-0"
-        >
-          <div className="bg-[var(--canvas)] px-4 py-1 font-forge-mono text-forge-mono-label text-[var(--text-3)]">
-            @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@
+      {!isCollapsed &&
+        file.hunks.map((hunk) => (
+          <div
+            key={`${hunk.old_start}-${hunk.new_start}`}
+            className="border-b border-[var(--border)] last:border-b-0"
+          >
+            <div className="bg-[var(--canvas)] px-4 py-1 font-forge-mono text-forge-mono-label text-[var(--text-3)]">
+              @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@
+            </div>
+            {renderHunkLines(hunk.lines, commentsByLine)}
           </div>
-          {renderHunkLines(hunk.lines, commentsByLine)}
-        </div>
-      ))}
+        ))}
     </>
   );
 }
@@ -174,7 +185,9 @@ function renderHunkLines(lines: HighlightedLine[], commentsByLine: Map<number, P
             {lineComments && lineComments.length > 0 && (
               <div className="px-4 py-2 font-forge-sans text-forge-body bg-[var(--surface-2)] border-b border-[var(--border)]">
                 {lineComments.map((c) => (
-                  <div key={c.id} className="text-[var(--text-2)]">{c.author}: {c.body}</div>
+                  <div key={c.id} className="text-[var(--text-2)]">
+                    {c.author}: {c.body}
+                  </div>
                 ))}
               </div>
             )}

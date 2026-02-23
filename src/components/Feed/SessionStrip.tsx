@@ -42,7 +42,15 @@ function runOutcomeStyle(run: StageRun): { glyph: string | null; color: string }
   }
 }
 
-export function SessionStrip({ runs, selectedRunIdx, onSelect, accent, waitingStage, isWaitingSelected, onWaitingSelect }: SessionStripProps) {
+export function SessionStrip({
+  runs,
+  selectedRunIdx,
+  onSelect,
+  accent,
+  waitingStage,
+  isWaitingSelected,
+  onWaitingSelect,
+}: SessionStripProps) {
   if (runs.length === 0 && !waitingStage) return null;
 
   const isViewingPast = selectedRunIdx !== null;
@@ -54,7 +62,11 @@ export function SessionStrip({ runs, selectedRunIdx, onSelect, accent, waitingSt
     <div className="min-w-0 overflow-hidden flex items-center gap-[3px] flex-shrink">
       {runs.map((run, realIdx) => {
         const isCurrent = run.isCurrentRun && !runsArePast;
-        const isSelected = runsArePast ? selectedRunIdx === realIdx : (isCurrent ? !isViewingPast : selectedRunIdx === realIdx);
+        const isSelected = runsArePast
+          ? selectedRunIdx === realIdx
+          : isCurrent
+            ? !isViewingPast
+            : selectedRunIdx === realIdx;
         const { glyph, color } = runOutcomeStyle(run);
         const abbrev = abbreviateStage(run.stage).toUpperCase();
 
@@ -64,7 +76,9 @@ export function SessionStrip({ runs, selectedRunIdx, onSelect, accent, waitingSt
         const clickable = !isCurrent || isViewingPast || glyph !== null;
         // When clicking the current chip while viewing a past run → return to current view.
         // All other clicks → navigate to that run's historical view.
-        const onClick = clickable ? () => onSelect(isCurrent && isViewingPast ? null : realIdx) : undefined;
+        const onClick = clickable
+          ? () => onSelect(isCurrent && isViewingPast ? null : realIdx)
+          : undefined;
 
         return (
           <span key={realIdx} className="flex items-center gap-[3px]">
@@ -120,7 +134,15 @@ function WaitingChip({ abbrev, isSelected, accent, onClick }: WaitingChipProps) 
 
   if (isSelected) {
     return (
-      <button type="button" onClick={onClick} className={`${base} text-[var(--text-0)]`} style={{ borderColor: accent, backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)` }}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${base} text-[var(--text-0)]`}
+        style={{
+          borderColor: accent,
+          backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`,
+        }}
+      >
         <span>{abbrev}</span>
         <span className="text-[8px] opacity-60">…</span>
       </button>
@@ -128,7 +150,11 @@ function WaitingChip({ abbrev, isSelected, accent, onClick }: WaitingChipProps) 
   }
 
   return (
-    <button type="button" onClick={onClick} className={`${base} border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:border-[var(--border-mid)] hover:text-[var(--text-1)]`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${base} border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:border-[var(--border-mid)] hover:text-[var(--text-1)]`}
+    >
       <span>{abbrev}</span>
       <span className="text-[8px] opacity-60">…</span>
     </button>
@@ -199,9 +225,7 @@ function Chip({
     >
       <span>{abbrev}</span>
       {glyph && <span className={`text-[9px] ${glyphColor}`}>{glyph}</span>}
-      {count > 1 && (
-        <span className="text-[var(--text-3)] text-[9px] ml-[1px]">×{count}</span>
-      )}
+      {count > 1 && <span className="text-[var(--text-3)] text-[9px] ml-[1px]">×{count}</span>}
     </button>
   );
 }

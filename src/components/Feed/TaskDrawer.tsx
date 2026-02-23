@@ -2,19 +2,17 @@
 //! Replaces FocusDrawer, ReviewDrawer, AnswerDrawer, ShipDrawer, and ChildrenDrawer.
 
 import { invoke } from "@tauri-apps/api/core";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { useLogs } from "../../hooks/useLogs";
 import { useWorkflowConfig } from "../../providers";
 import { artifactName } from "../../types/workflow";
-import type { WorkflowArtifact, WorkflowConfig, WorkflowQuestion, WorkflowTaskView } from "../../types/workflow";
+import type {
+  WorkflowArtifact,
+  WorkflowConfig,
+  WorkflowQuestion,
+  WorkflowTaskView,
+} from "../../types/workflow";
 import type { FeedSection as FeedSectionData, FeedSectionName } from "../../utils/feedGrouping";
 import { groupIterationsIntoRuns } from "../../utils/stageRuns";
 import { openExternal } from "../../utils/openExternal";
@@ -81,46 +79,46 @@ function availableTabs(task: WorkflowTaskView): DrawerTab[] {
   if (task.derived.has_questions) {
     return [
       { id: "questions", label: "Questions", hotkey: "q" },
-      { id: "diff",      label: "Diff",      hotkey: "d" },
-      { id: "logs",      label: "Logs",      hotkey: "l" },
-      { id: "history",   label: "History",   hotkey: "h" },
+      { id: "diff", label: "Diff", hotkey: "d" },
+      { id: "logs", label: "Logs", hotkey: "l" },
+      { id: "history", label: "History", hotkey: "h" },
     ];
   }
   if (task.derived.is_waiting_on_children) {
     return [
       { id: "subtasks", label: "Subtasks", hotkey: "t" },
-      { id: "diff",     label: "Diff",     hotkey: "d" },
-      { id: "history",  label: "History",  hotkey: "h" },
+      { id: "diff", label: "Diff", hotkey: "d" },
+      { id: "history", label: "History", hotkey: "h" },
     ];
   }
   if (task.derived.is_done) {
     if (task.pr_url) {
       return [
-        { id: "pr",       label: "PR",       hotkey: "p" },
-        { id: "diff",     label: "Diff",     hotkey: "d" },
+        { id: "pr", label: "PR", hotkey: "p" },
+        { id: "diff", label: "Diff", hotkey: "d" },
         { id: "artifact", label: "Artifact", hotkey: "a" },
-        { id: "history",  label: "History",  hotkey: "h" },
+        { id: "history", label: "History", hotkey: "h" },
       ];
     }
     return [
-      { id: "diff",     label: "Diff",     hotkey: "d" },
+      { id: "diff", label: "Diff", hotkey: "d" },
       { id: "artifact", label: "Artifact", hotkey: "a" },
-      { id: "history",  label: "History",  hotkey: "h" },
+      { id: "history", label: "History", hotkey: "h" },
     ];
   }
   if (task.derived.needs_review) {
     return [
       { id: "artifact", label: "Artifact", hotkey: "a" },
-      { id: "diff",     label: "Diff",     hotkey: "d" },
-      { id: "logs",     label: "Logs",     hotkey: "l" },
-      { id: "history",  label: "History",  hotkey: "h" },
+      { id: "diff", label: "Diff", hotkey: "d" },
+      { id: "logs", label: "Logs", hotkey: "l" },
+      { id: "history", label: "History", hotkey: "h" },
     ];
   }
   return [
-    { id: "logs",     label: "Logs",     hotkey: "l" },
-    { id: "diff",     label: "Diff",     hotkey: "d" },
+    { id: "logs", label: "Logs", hotkey: "l" },
+    { id: "diff", label: "Diff", hotkey: "d" },
     { id: "artifact", label: "Artifact", hotkey: "a" },
-    { id: "history",  label: "History",  hotkey: "h" },
+    { id: "history", label: "History", hotkey: "h" },
   ];
 }
 
@@ -131,14 +129,14 @@ function availableTabs(task: WorkflowTaskView): DrawerTab[] {
 const base =
   "inline-flex items-center font-forge-sans text-[13px] font-semibold px-4 py-[7px] rounded-md border cursor-pointer transition-colors whitespace-nowrap leading-snug disabled:opacity-40 disabled:cursor-not-allowed";
 const btnSecondary = `${base} bg-transparent border-[var(--border)] text-[var(--text-1)] hover:bg-[var(--surface-hover)] hover:border-[var(--text-3)]`;
-const btnBlue    = `${base} bg-[var(--blue)]  hover:bg-[var(--blue-hover)]   text-white border-transparent`;
-const btnMerge   = `${base} bg-[var(--peach)] hover:bg-[var(--peach-hover)]  text-white border-transparent`;
-const btnOpenPr  = `${base} bg-transparent border-[var(--peach-border)] text-[var(--peach)] hover:bg-[var(--peach-bg)]`;
-const btnAmber   = `${base} bg-[var(--amber)] hover:opacity-90 text-white border-transparent`;
+const btnBlue = `${base} bg-[var(--blue)]  hover:bg-[var(--blue-hover)]   text-white border-transparent`;
+const btnMerge = `${base} bg-[var(--peach)] hover:bg-[var(--peach-hover)]  text-white border-transparent`;
+const btnOpenPr = `${base} bg-transparent border-[var(--peach-border)] text-[var(--peach)] hover:bg-[var(--peach-bg)]`;
+const btnAmber = `${base} bg-[var(--amber)] hover:opacity-90 text-white border-transparent`;
 
 const btnApproveFor: Record<StageReviewType, string> = {
   violet: `${base} bg-[var(--violet)] hover:bg-[var(--violet-hover)] text-white border-transparent`,
-  teal:   `${base} bg-[var(--teal)]   hover:bg-[var(--teal-hover)]   text-white border-transparent`,
+  teal: `${base} bg-[var(--teal)]   hover:bg-[var(--teal-hover)]   text-white border-transparent`,
 };
 
 // ============================================================================
@@ -169,7 +167,11 @@ function groupChildren(children: WorkflowTaskView[], allTasks: WorkflowTaskView[
     const hasUnfinishedDeps = (child.depends_on ?? []).some((depId) => !doneIds.has(depId));
     if (hasUnfinishedDeps || child.derived.is_blocked) {
       waiting.push(child);
-    } else if (child.derived.needs_review || child.derived.has_questions || child.derived.is_failed) {
+    } else if (
+      child.derived.needs_review ||
+      child.derived.has_questions ||
+      child.derived.is_failed
+    ) {
       needsReview.push(child);
     } else if (child.derived.is_done) {
       readyToShip.push(child);
@@ -181,10 +183,10 @@ function groupChildren(children: WorkflowTaskView[], allTasks: WorkflowTaskView[
   }
 
   const sections: Array<{ name: FeedSectionName; label: string; tasks: WorkflowTaskView[] }> = [
-    { name: "needs_review",  label: "NEEDS REVIEW",  tasks: needsReview.sort(byUpdatedAt)  },
-    { name: "in_progress",   label: "IN PROGRESS",   tasks: inProgress.sort(byUpdatedAt)   },
-    { name: "ready_to_ship", label: "READY TO SHIP", tasks: readyToShip.sort(byUpdatedAt)  },
-    { name: "completed",     label: "COMPLETED",     tasks: completed.sort(byUpdatedAt)     },
+    { name: "needs_review", label: "NEEDS REVIEW", tasks: needsReview.sort(byUpdatedAt) },
+    { name: "in_progress", label: "IN PROGRESS", tasks: inProgress.sort(byUpdatedAt) },
+    { name: "ready_to_ship", label: "READY TO SHIP", tasks: readyToShip.sort(byUpdatedAt) },
+    { name: "completed", label: "COMPLETED", tasks: completed.sort(byUpdatedAt) },
   ];
 
   return { sections, waitingTasks: waiting.sort(byUpdatedAt) };
@@ -233,8 +235,7 @@ function WaitingSection({
                 dep !== undefined && !dep.derived.is_done && !dep.derived.is_archived,
             );
 
-          const blockedReason =
-            task.state.type === "blocked" ? task.state.reason : undefined;
+          const blockedReason = task.state.type === "blocked" ? task.state.reason : undefined;
 
           const actionsSlot =
             blockingDeps.length > 0 ? (
@@ -242,7 +243,9 @@ function WaitingSection({
                 <span className="font-forge-mono text-[10px] text-[var(--text-3)]">after</span>
                 {blockingDeps.map((dep, i) => (
                   <span key={dep.id} className="flex items-center gap-1">
-                    {i > 0 && <span className="font-forge-mono text-[10px] text-[var(--text-3)]">·</span>}
+                    {i > 0 && (
+                      <span className="font-forge-mono text-[10px] text-[var(--text-3)]">·</span>
+                    )}
                     <span className="font-forge-mono text-[10px] text-[var(--text-2)] bg-[var(--surface-2)] px-1.5 py-0.5 rounded">
                       {dep.short_id ?? dep.id.split("-").pop()}
                     </span>
@@ -251,7 +254,9 @@ function WaitingSection({
               </div>
             ) : blockedReason ? (
               <div className="flex items-center justify-end w-full">
-                <span className="font-forge-mono text-[10px] text-[var(--text-3)] truncate">{blockedReason}</span>
+                <span className="font-forge-mono text-[10px] text-[var(--text-3)] truncate">
+                  {blockedReason}
+                </span>
               </div>
             ) : null;
 
@@ -389,7 +394,7 @@ function QuestionsSection({
     }
   }
   useNavHandler("Enter", selectFocused);
-  useNavHandler(" ",     selectFocused);
+  useNavHandler(" ", selectFocused);
 
   // "Type to enter" — when flatIdx points at a textarea and no textarea has DOM focus.
   useEffect(() => {
@@ -409,7 +414,7 @@ function QuestionsSection({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — handleSetAnswer is stable via closure
+    // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — handleSetAnswer is stable via closure
   }, [flatIdx, flatItems, answers, questions, loading]);
 
   const activeQuestionId = flatItems[flatIdx] ? String(flatItems[flatIdx].qIdx) : undefined;
@@ -424,7 +429,12 @@ function QuestionsSection({
 
   return (
     <div ref={bodyRef} className="flex-1 overflow-y-auto">
-      <NavigationScope activeId={activeQuestionId} containerRef={bodyRef} buffer={48} scrollSeq={scrollSeq}>
+      <NavigationScope
+        activeId={activeQuestionId}
+        containerRef={bodyRef}
+        buffer={48}
+        scrollSeq={scrollSeq}
+      >
         <div className="divide-y divide-[var(--border)]">
           {questions.map((q, qi) => (
             <QuestionCard
@@ -513,8 +523,12 @@ function SubtasksSection({ task, allTasks, active, onOpenTask }: SubtasksSection
     handleOpenChild,
   );
 
-  const sectionsBefore = sections.filter((s) => s.name === "needs_review" || s.name === "in_progress");
-  const sectionsAfter  = sections.filter((s) => s.name === "ready_to_ship" || s.name === "completed");
+  const sectionsBefore = sections.filter(
+    (s) => s.name === "needs_review" || s.name === "in_progress",
+  );
+  const sectionsAfter = sections.filter(
+    (s) => s.name === "ready_to_ship" || s.name === "completed",
+  );
   const isEmpty = children.length === 0;
 
   return (
@@ -601,10 +615,15 @@ function TaskDrawerBody({
 
   // -- Run history --
   const [selectedRunIdx, setSelectedRunIdx] = useState<number | null>(null);
-  const runs = useMemo(() => groupIterationsIntoRuns(task.iterations, config), [task.iterations, config]);
+  const runs = useMemo(
+    () => groupIterationsIntoRuns(task.iterations, config),
+    [task.iterations, config],
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
-  useEffect(() => { setSelectedRunIdx(null); }, [task.id]);
+  useEffect(() => {
+    setSelectedRunIdx(null);
+  }, [task.id]);
 
   // -- Answers (questions tab) --
   const questions = task.derived.pending_questions;
@@ -673,37 +692,57 @@ function TaskDrawerBody({
   const [loading, setLoading] = useState(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
-  useEffect(() => { setLoading(false); }, [task.id]);
+  useEffect(() => {
+    setLoading(false);
+  }, [task.id]);
 
   // -- PR tab state (drives footer) --
   const [prTabState, setPrTabState] = useState<PrTabFooterState>({ type: "loading" });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
-  useEffect(() => { setPrTabState({ type: "loading" }); }, [task.id]);
+  useEffect(() => {
+    setPrTabState({ type: "loading" });
+  }, [task.id]);
 
   // -- Logs (logs tab) --
   const showLogs = activeTab === "logs" && selectedRunIdx === null;
   const { logs, error: logsError } = useLogs(task, showLogs);
   const logScrollRef = useRef<HTMLDivElement>(null);
-  const { containerRef: logAutoScrollRef, handleScroll: handleLogScroll } = useAutoScroll<HTMLDivElement>(showLogs);
-  const logContainerRef = useCallback((node: HTMLDivElement | null) => {
-    (logScrollRef as { current: HTMLDivElement | null }).current = node;
-    logAutoScrollRef(node);
-  }, [logAutoScrollRef]);
+  const { containerRef: logAutoScrollRef, handleScroll: handleLogScroll } =
+    useAutoScroll<HTMLDivElement>(showLogs);
+  const logContainerRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      (logScrollRef as { current: HTMLDivElement | null }).current = node;
+      logAutoScrollRef(node);
+    },
+    [logAutoScrollRef],
+  );
 
   // -- Scroll ref for non-log tabs --
   const bodyRef = useRef<HTMLDivElement>(null);
   const activeScrollRef = showLogs ? logScrollRef : bodyRef;
 
   // -- Hotkeys --
-  useNavHandler("ArrowDown", () => activeScrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }));
-  useNavHandler("j",         () => activeScrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }));
-  useNavHandler("ArrowUp",   () => activeScrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
-  useNavHandler("k",         () => activeScrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
-  useNavHandler("l", () => { if (selectedRunIdx === null) setActiveTab("logs"); });
-  useNavHandler("d", () => { if (selectedRunIdx === null) setActiveTab("diff"); });
-  useNavHandler("a", () => { if (selectedRunIdx === null) setActiveTab("artifact"); });
-  useNavHandler("h", () => { if (selectedRunIdx === null) setActiveTab("history"); });
+  useNavHandler("ArrowDown", () =>
+    activeScrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }),
+  );
+  useNavHandler("j", () => activeScrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }));
+  useNavHandler("ArrowUp", () =>
+    activeScrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }),
+  );
+  useNavHandler("k", () => activeScrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
+  useNavHandler("l", () => {
+    if (selectedRunIdx === null) setActiveTab("logs");
+  });
+  useNavHandler("d", () => {
+    if (selectedRunIdx === null) setActiveTab("diff");
+  });
+  useNavHandler("a", () => {
+    if (selectedRunIdx === null) setActiveTab("artifact");
+  });
+  useNavHandler("h", () => {
+    if (selectedRunIdx === null) setActiveTab("history");
+  });
   useNavHandler("q", () => {
     if (task.derived.has_questions && selectedRunIdx === null) setActiveTab("questions");
   });
@@ -814,7 +853,10 @@ function TaskDrawerBody({
     if (loading) return;
     setLoading(true);
     try {
-      await invoke("workflow_address_pr_conflicts", { taskId: task.id, baseBranch: `origin/${task.base_branch}` });
+      await invoke("workflow_address_pr_conflicts", {
+        taskId: task.id,
+        baseBranch: `origin/${task.base_branch}`,
+      });
       onClose();
     } catch (err) {
       console.error("Failed to fix conflicts:", err);
@@ -865,17 +907,25 @@ function TaskDrawerBody({
 
   const breakdownStageName = task.state.type === "waiting_on_children" ? task.state.stage : null;
   const completionStage = breakdownStageName
-    ? config.stages.find((s) => s.name === breakdownStageName)?.capabilities.subtasks?.completion_stage
+    ? config.stages.find((s) => s.name === breakdownStageName)?.capabilities.subtasks
+        ?.completion_stage
     : null;
 
   const progress = task.derived.subtask_progress;
 
   // onProgressClick: when viewing historical run, clicking the subtask bar returns to subtasks tab.
-  const onProgressClick = selectedRunIdx !== null
-    ? () => { setSelectedRunIdx(null); setActiveTab("subtasks"); }
-    : undefined;
+  const onProgressClick =
+    selectedRunIdx !== null
+      ? () => {
+          setSelectedRunIdx(null);
+          setActiveTab("subtasks");
+        }
+      : undefined;
 
-  const onWaitingChipClick = () => { setSelectedRunIdx(null); setActiveTab("subtasks"); };
+  const onWaitingChipClick = () => {
+    setSelectedRunIdx(null);
+    setActiveTab("subtasks");
+  };
   const isWaitingChipSelected = selectedRunIdx === null;
 
   return (
@@ -890,14 +940,21 @@ function TaskDrawerBody({
         onSelectRun={setSelectedRunIdx}
         onProgressClick={onProgressClick}
         onWaitingChipClick={task.derived.is_waiting_on_children ? onWaitingChipClick : undefined}
-        isWaitingChipSelected={task.derived.is_waiting_on_children ? isWaitingChipSelected : undefined}
+        isWaitingChipSelected={
+          task.derived.is_waiting_on_children ? isWaitingChipSelected : undefined
+        }
       />
 
       {selectedRun ? (
         <HistoricalRunView task={task} run={selectedRun} accent={accent} />
       ) : (
         <>
-          <DrawerTabBar tabs={tabs} activeTab={activeTab} onTabChange={(id) => setActiveTab(id as DrawerTabId)} accent={accent} />
+          <DrawerTabBar
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={(id) => setActiveTab(id as DrawerTabId)}
+            accent={accent}
+          />
 
           {/* Body */}
           {activeTab === "diff" ? (
@@ -915,7 +972,9 @@ function TaskDrawerBody({
               {artifact ? (
                 <ArtifactView artifact={artifact} />
               ) : (
-                <div className="p-6 font-forge-mono text-[11px] text-[var(--text-3)]">No artifact yet.</div>
+                <div className="p-6 font-forge-mono text-[11px] text-[var(--text-3)]">
+                  No artifact yet.
+                </div>
               )}
             </div>
           ) : activeTab === "history" ? (
@@ -974,12 +1033,19 @@ function TaskDrawerBody({
                 onChange={(e) => setFeedback(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleReject();
-                  if (e.key === "Escape") { e.stopPropagation(); exitRejectMode(); }
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    exitRejectMode();
+                  }
                 }}
                 placeholder="What needs to change?"
                 className="flex-1 font-forge-sans text-[12px] text-[var(--text-0)] placeholder:text-[var(--text-3)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-1.5 outline-none focus:border-[var(--text-3)] transition-colors"
               />
-              <button className={btnApprove} onClick={handleReject} disabled={loading || !feedback.trim()}>
+              <button
+                className={btnApprove}
+                onClick={handleReject}
+                disabled={loading || !feedback.trim()}
+              >
                 Send feedback
               </button>
               <button className={btnSecondary} onClick={exitRejectMode} disabled={loading}>
@@ -988,10 +1054,21 @@ function TaskDrawerBody({
             </div>
           ) : task.derived.needs_review && !rejectMode ? (
             <div className="shrink-0 px-6 border-t border-[var(--border)] flex items-center gap-2.5 h-[52px]">
-              <HotkeyButton hotkey="a" onAccent className={btnApprove} onClick={handleApprove} disabled={loading}>
+              <HotkeyButton
+                hotkey="a"
+                onAccent
+                className={btnApprove}
+                onClick={handleApprove}
+                disabled={loading}
+              >
                 Approve
               </HotkeyButton>
-              <HotkeyButton hotkey="r" className={btnSecondary} onClick={enterRejectMode} disabled={loading}>
+              <HotkeyButton
+                hotkey="r"
+                className={btnSecondary}
+                onClick={enterRejectMode}
+                disabled={loading}
+              >
                 Reject
               </HotkeyButton>
             </div>
@@ -1017,7 +1094,9 @@ function TaskDrawerBody({
                 className="inline-flex items-center justify-between font-forge-sans text-[13px] font-semibold px-4 py-[7px] rounded-md border cursor-pointer transition-colors whitespace-nowrap leading-snug disabled:opacity-40 disabled:cursor-not-allowed bg-[var(--accent)] border-[var(--accent)] text-white hover:opacity-90"
               >
                 {resuming ? "Resuming…" : "Resume"}
-                {!resuming && <span className="font-forge-mono text-[10px] font-medium opacity-60">⌘↵</span>}
+                {!resuming && (
+                  <span className="font-forge-mono text-[10px] font-medium opacity-60">⌘↵</span>
+                )}
               </button>
             </div>
           ) : task.derived.is_working && !task.derived.is_interrupted ? (
@@ -1040,34 +1119,85 @@ function TaskDrawerBody({
                     <button className={btnAmber} onClick={handleFixConflicts} disabled={loading}>
                       {loading ? "Fixing…" : "Fix Conflicts"}
                     </button>
-                    <HotkeyButton hotkey="v" className={btnSecondary} onClick={() => openExternal(task.pr_url!)}>View PR ↗</HotkeyButton>
+                    <HotkeyButton
+                      hotkey="v"
+                      className={btnSecondary}
+                      onClick={() => openExternal(task.pr_url!)}
+                    >
+                      View PR ↗
+                    </HotkeyButton>
                   </>
                 ) : activeTab === "pr" && prTabState.type === "comments_selected" ? (
                   <>
                     <button className={btnMerge} onClick={handleAddressComments} disabled={loading}>
-                      {loading ? "Sending…" : `Address ${prTabState.count} comment${prTabState.count !== 1 ? "s" : ""}`}
+                      {loading
+                        ? "Sending…"
+                        : `Address ${prTabState.count} comment${prTabState.count !== 1 ? "s" : ""}`}
                     </button>
-                    <HotkeyButton hotkey="v" className={btnSecondary} onClick={() => openExternal(task.pr_url!)}>View PR ↗</HotkeyButton>
+                    <HotkeyButton
+                      hotkey="v"
+                      className={btnSecondary}
+                      onClick={() => openExternal(task.pr_url!)}
+                    >
+                      View PR ↗
+                    </HotkeyButton>
                   </>
                 ) : (
                   <>
-                    <HotkeyButton hotkey="m" className={btnMerge} onAccent onClick={handleMerge} disabled={loading}>
+                    <HotkeyButton
+                      hotkey="m"
+                      className={btnMerge}
+                      onAccent
+                      onClick={handleMerge}
+                      disabled={loading}
+                    >
                       {loading ? "Merging…" : "Merge"}
                     </HotkeyButton>
-                    <HotkeyButton hotkey="v" className={btnOpenPr} onClick={() => openExternal(task.pr_url!)}>View PR ↗</HotkeyButton>
-                    <HotkeyButton hotkey="x" className={btnSecondary} onClick={handleArchive} disabled={loading}>Archive</HotkeyButton>
+                    <HotkeyButton
+                      hotkey="v"
+                      className={btnOpenPr}
+                      onClick={() => openExternal(task.pr_url!)}
+                    >
+                      View PR ↗
+                    </HotkeyButton>
+                    <HotkeyButton
+                      hotkey="x"
+                      className={btnSecondary}
+                      onClick={handleArchive}
+                      disabled={loading}
+                    >
+                      Archive
+                    </HotkeyButton>
                   </>
                 )
               ) : (
                 // No PR yet — offer to open one
                 <>
-                  <HotkeyButton hotkey="m" className={btnMerge} onAccent onClick={handleMerge} disabled={loading}>
+                  <HotkeyButton
+                    hotkey="m"
+                    className={btnMerge}
+                    onAccent
+                    onClick={handleMerge}
+                    disabled={loading}
+                  >
                     {loading ? "Merging…" : "Merge"}
                   </HotkeyButton>
-                  <HotkeyButton hotkey="o" className={btnOpenPr} onClick={handleOpenPr} disabled={loading}>
+                  <HotkeyButton
+                    hotkey="o"
+                    className={btnOpenPr}
+                    onClick={handleOpenPr}
+                    disabled={loading}
+                  >
                     {loading ? "Opening…" : "Open PR"}
                   </HotkeyButton>
-                  <HotkeyButton hotkey="x" className={btnSecondary} onClick={handleArchive} disabled={loading}>Archive</HotkeyButton>
+                  <HotkeyButton
+                    hotkey="x"
+                    className={btnSecondary}
+                    onClick={handleArchive}
+                    disabled={loading}
+                  >
+                    Archive
+                  </HotkeyButton>
                 </>
               )}
             </div>

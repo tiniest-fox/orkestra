@@ -21,14 +21,21 @@ const base =
 
 const variants = {
   reviewViolet: `${base} border-[var(--violet-border)] text-[var(--violet)] hover:bg-[var(--violet-bg)] hover:border-[var(--violet)]`,
-  reviewTeal:   `${base} border-[var(--teal-border)]   text-[var(--teal)]   hover:bg-[var(--teal-bg)]   hover:border-[var(--teal)]`,
+  reviewTeal: `${base} border-[var(--teal-border)]   text-[var(--teal)]   hover:bg-[var(--teal-bg)]   hover:border-[var(--teal)]`,
   secondary: `${base} border-[var(--border)] text-[var(--text-1)] hover:bg-[var(--surface-2)] hover:border-[var(--text-3)]`,
   answer: `${base} border-[var(--blue-border)] text-[var(--blue)] hover:bg-[var(--blue-bg)] hover:border-[var(--blue)]`,
   retry: `${base} border-[rgba(220,38,38,0.35)] text-[var(--red)] hover:bg-[var(--red-bg)] hover:border-[var(--red)]`,
   ship: `${base} border-[var(--peach-border)] text-[var(--peach)] hover:bg-[var(--peach-bg)] hover:border-[var(--peach)]`,
 };
 
-export function FeedRowActions({ task, onReview, onAnswer, onMerge, onOpenPr, onArchive }: FeedRowActionsProps) {
+export function FeedRowActions({
+  task,
+  onReview,
+  onAnswer,
+  onMerge,
+  onOpenPr,
+  onArchive,
+}: FeedRowActionsProps) {
   const config = useWorkflowConfig();
   const { derived } = task;
 
@@ -40,7 +47,9 @@ export function FeedRowActions({ task, onReview, onAnswer, onMerge, onOpenPr, on
   if (derived.is_failed) {
     return (
       <div className="flex items-center gap-1.5">
-        <HotkeyButton hotkey="r" className={variants.retry}>Retry</HotkeyButton>
+        <HotkeyButton hotkey="r" className={variants.retry}>
+          Retry
+        </HotkeyButton>
       </div>
     );
   }
@@ -48,7 +57,9 @@ export function FeedRowActions({ task, onReview, onAnswer, onMerge, onOpenPr, on
   if (derived.has_questions) {
     return (
       <div className="flex items-center gap-1.5">
-        <HotkeyButton hotkey="a" className={variants.answer} onClick={onAnswer}>Answer</HotkeyButton>
+        <HotkeyButton hotkey="a" className={variants.answer} onClick={onAnswer}>
+          Answer
+        </HotkeyButton>
       </div>
     );
   }
@@ -56,8 +67,12 @@ export function FeedRowActions({ task, onReview, onAnswer, onMerge, onOpenPr, on
   if (derived.needs_review) {
     return (
       <div className="flex items-center gap-1.5">
-        <HotkeyButton hotkey="r" className={reviewVariant} onClick={onReview}>Review</HotkeyButton>
-        <HotkeyButton hotkey="a" className={variants.secondary}>Approve</HotkeyButton>
+        <HotkeyButton hotkey="r" className={reviewVariant} onClick={onReview}>
+          Review
+        </HotkeyButton>
+        <HotkeyButton hotkey="a" className={variants.secondary}>
+          Approve
+        </HotkeyButton>
       </div>
     );
   }
@@ -65,9 +80,15 @@ export function FeedRowActions({ task, onReview, onAnswer, onMerge, onOpenPr, on
   if (derived.is_done && !task.pr_url) {
     return (
       <div className="flex items-center gap-1.5">
-        <HotkeyButton hotkey="m" className={variants.ship} onClick={onMerge}>Merge</HotkeyButton>
-        <HotkeyButton hotkey="p" className={variants.ship} onClick={onOpenPr}>Open PR</HotkeyButton>
-        <HotkeyButton hotkey="x" className={variants.secondary} onClick={onArchive}>Archive</HotkeyButton>
+        <HotkeyButton hotkey="m" className={variants.ship} onClick={onMerge}>
+          Merge
+        </HotkeyButton>
+        <HotkeyButton hotkey="p" className={variants.ship} onClick={onOpenPr}>
+          Open PR
+        </HotkeyButton>
+        <HotkeyButton hotkey="x" className={variants.secondary} onClick={onArchive}>
+          Archive
+        </HotkeyButton>
       </div>
     );
   }
@@ -76,8 +97,19 @@ export function FeedRowActions({ task, onReview, onAnswer, onMerge, onOpenPr, on
     const prUrl = task.pr_url;
     return (
       <div className="flex items-center gap-1.5">
-        <HotkeyButton hotkey="p" className={variants.ship} onClick={onReview}>PR</HotkeyButton>
-        <HotkeyButton hotkey="v" className={variants.secondary} onClick={(e) => { e.stopPropagation(); openExternal(prUrl); }}>View ↗</HotkeyButton>
+        <HotkeyButton hotkey="p" className={variants.ship} onClick={onReview}>
+          PR
+        </HotkeyButton>
+        <HotkeyButton
+          hotkey="v"
+          className={variants.secondary}
+          onClick={(e) => {
+            e.stopPropagation();
+            openExternal(prUrl);
+          }}
+        >
+          View ↗
+        </HotkeyButton>
       </div>
     );
   }

@@ -19,6 +19,8 @@ export function IterationBadge({ task }: IterationBadgeProps) {
   const colorClass = count >= 4 ? "text-[var(--amber)]" : "text-[var(--text-2)]";
 
   return (
-    <span className={`font-forge-mono text-[10px] font-medium shrink-0 ${colorClass}`}>{display}</span>
+    <span className={`font-forge-mono text-[10px] font-medium shrink-0 ${colorClass}`}>
+      {display}
+    </span>
   );
 }

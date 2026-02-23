@@ -33,7 +33,8 @@ export function ArtifactsTab({ taskId, currentStage, artifacts, config }: Artifa
 
   // Map currentStage (stage name) to the corresponding artifact name
   const currentStageEntry = config.stages.find((s) => s.name === currentStage);
-  const currentStageArtifact = currentStageEntry != null ? artifactName(currentStageEntry.artifact) : null;
+  const currentStageArtifact =
+    currentStageEntry != null ? artifactName(currentStageEntry.artifact) : null;
 
   const { selectedItem, setSelectedItem } = useSmartDefault({
     taskId,

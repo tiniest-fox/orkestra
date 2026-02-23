@@ -19,7 +19,19 @@ interface FeedTaskRowProps {
   actionsSlot?: React.ReactNode;
 }
 
-export function FeedTaskRow({ task, config, isFocused, onMouseEnter, onReview, onAnswer, onMerge, onOpenPr, onArchive, onClick, actionsSlot }: FeedTaskRowProps) {
+export function FeedTaskRow({
+  task,
+  config,
+  isFocused,
+  onMouseEnter,
+  onReview,
+  onAnswer,
+  onMerge,
+  onOpenPr,
+  onArchive,
+  onClick,
+  actionsSlot,
+}: FeedTaskRowProps) {
   const isCompleted = task.derived.is_archived;
 
   return (
@@ -28,9 +40,11 @@ export function FeedTaskRow({ task, config, isFocused, onMouseEnter, onReview, o
       config={config}
       paddingClass="px-6"
       subtitle={
-        task.derived.subtask_progress
-          ? <SubtaskProgressBar progress={task.derived.subtask_progress} />
-          : <IterationChain iterations={task.iterations} />
+        task.derived.subtask_progress ? (
+          <SubtaskProgressBar progress={task.derived.subtask_progress} />
+        ) : (
+          <IterationChain iterations={task.iterations} />
+        )
       }
       faded={isCompleted}
       isFocused={isFocused}

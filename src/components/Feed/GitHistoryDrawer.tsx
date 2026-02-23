@@ -168,7 +168,6 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
   const diffScrollRef = useRef<HTMLDivElement>(null);
   const fileSectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-
   // Reset per-commit state when selection changes.
   useEffect(() => {
     setActivePath(null);
@@ -226,7 +225,9 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
     }
   }
 
-  const selectedCommit = selectedHash ? (commits.find((c) => c.hash === selectedHash) ?? null) : null;
+  const selectedCommit = selectedHash
+    ? (commits.find((c) => c.hash === selectedHash) ?? null)
+    : null;
 
   return (
     <Drawer onClose={onClose}>
@@ -243,7 +244,10 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
             Git History
           </span>
           {currentBranch && (
-            <span className="font-forge-mono text-[11px] shrink-0" style={{ color: "var(--accent)" }}>
+            <span
+              className="font-forge-mono text-[11px] shrink-0"
+              style={{ color: "var(--accent)" }}
+            >
               {currentBranch}
             </span>
           )}
@@ -261,7 +265,10 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
         {/* Body: commit list (left) + commit detail (right) */}
         <div className="flex flex-1 overflow-hidden">
           {/* Commit list */}
-          <div ref={listRef} className="w-60 shrink-0 overflow-y-auto border-r border-[var(--border)]">
+          <div
+            ref={listRef}
+            className="w-60 shrink-0 overflow-y-auto border-r border-[var(--border)]"
+          >
             {commits.map((commit) => (
               <CommitRow
                 key={commit.hash}

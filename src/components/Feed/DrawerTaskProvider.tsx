@@ -30,7 +30,10 @@ export function DrawerTaskProvider({ taskId, children }: DrawerTaskProviderProps
   );
 }
 
-export function useDrawerDiff(): Pick<DrawerTaskContextValue, "diff" | "diffLoading" | "diffError"> {
+export function useDrawerDiff(): Pick<
+  DrawerTaskContextValue,
+  "diff" | "diffLoading" | "diffError"
+> {
   const ctx = useContext(DrawerTaskContext);
   if (!ctx) throw new Error("useDrawerDiff must be used inside DrawerTaskProvider");
   return { diff: ctx.diff, diffLoading: ctx.diffLoading, diffError: ctx.diffError };

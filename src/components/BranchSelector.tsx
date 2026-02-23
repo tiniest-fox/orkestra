@@ -1,6 +1,7 @@
 /**
  * BranchSelector - Subtle branch picker for task creation.
  * Shows current branch as a button; clicking opens a list of available branches.
+ * Keyboard navigable when open: ↑/↓ move focus, Enter selects, Escape closes.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -17,6 +18,7 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [focusedIndex, setFocusedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -44,7 +46,15 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
     };
   }, []);
 
-  // Close dropdown when clicking outside
+  // Initialise focused index when dropdown opens.
+  useEffect(() => {
+    if (!open) return;
+    const displayValue = value || currentBranch || "";
+    const idx = branches.indexOf(displayValue);
+    setFocusedIndex(Math.max(0, idx));
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close dropdown when clicking outside.
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
@@ -67,13 +77,43 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
     );
   }
 
-  // No branches available (no git service)
+  // No branches available (no git service).
   if (branches.length === 0) {
     return null;
   }
 
+  // Only one branch — show as static label, no dropdown.
+  if (branches.length === 1) {
+    return (
+      <div className="inline-flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400 px-1.5 py-1 select-none">
+        <BranchIcon />
+        <span>{displayValue}</span>
+      </div>
+    );
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (!open) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedIndex((i) => Math.min(branches.length - 1, i + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusedIndex((i) => Math.max(0, i - 1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      onChange(branches[focusedIndex]);
+      setOpen(false);
+    } else if (e.key === "Escape") {
+      // Stop propagation so the parent modal doesn't also close.
+      e.nativeEvent.stopImmediatePropagation();
+      setOpen(false);
+    }
+  }
+
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative" onKeyDown={handleKeyDown}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -85,8 +125,8 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-10 w-64 max-h-48 overflow-y-auto bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-panel-sm shadow-lg">
-          {branches.map((branch) => (
+        <div className="absolute left-0 bottom-full mb-1 z-10 w-64 max-h-48 overflow-y-auto bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-panel-sm shadow-lg">
+          {branches.map((branch, idx) => (
             <button
               key={branch}
               type="button"
@@ -94,7 +134,11 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
                 onChange(branch);
                 setOpen(false);
               }}
-              className={`w-full text-left px-3 py-1.5 text-sm hover:bg-stone-50 dark:hover:bg-stone-700 flex items-center gap-2 ${
+              className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 ${
+                idx === focusedIndex
+                  ? "bg-stone-100 dark:bg-stone-700"
+                  : "hover:bg-stone-50 dark:hover:bg-stone-700"
+              } ${
                 branch === displayValue
                   ? "text-orange-600 dark:text-orange-400 font-medium"
                   : "text-stone-700 dark:text-stone-200"

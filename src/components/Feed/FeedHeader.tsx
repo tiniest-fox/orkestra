@@ -2,9 +2,13 @@
 
 import { useMemo } from "react";
 import type { WorkflowTaskView } from "../../types/workflow";
+import { HotkeyButton } from "../ui/HotkeyButton";
+import { HotkeyScope } from "../ui/HotkeyScope";
 
 interface FeedHeaderProps {
   tasks: WorkflowTaskView[];
+  onNewTask: () => void;
+  hotkeyActive: boolean;
 }
 
 interface Metric {
@@ -13,7 +17,7 @@ interface Metric {
   color: string;
 }
 
-export function FeedHeader({ tasks }: FeedHeaderProps) {
+export function FeedHeader({ tasks, onNewTask, hotkeyActive }: FeedHeaderProps) {
   const metrics = useMemo<Metric[]>(() => {
     const topLevel = tasks.filter((t) => !t.parent_id);
     const working = topLevel.filter((t) => t.derived.is_working).length;
@@ -49,9 +53,20 @@ export function FeedHeader({ tasks }: FeedHeaderProps) {
           </div>
         )}
       </div>
-      <kbd className="font-forge-mono text-[10px] font-medium text-[var(--text-2)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 select-none">
-        cmd+k
-      </kbd>
+      <div className="flex items-center gap-2">
+        <HotkeyScope active={hotkeyActive}>
+          <HotkeyButton
+            hotkey="n"
+            onClick={onNewTask}
+            className="inline-flex items-center font-forge-sans text-[13px] font-semibold px-4 py-[7px] rounded-md border cursor-pointer transition-colors whitespace-nowrap leading-snug bg-transparent border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent-bg)]"
+          >
+            New task
+          </HotkeyButton>
+        </HotkeyScope>
+        <kbd className="font-forge-mono text-[10px] font-medium text-[var(--text-2)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 select-none">
+          cmd+k
+        </kbd>
+      </div>
     </div>
   );
 }

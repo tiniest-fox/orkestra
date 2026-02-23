@@ -7,7 +7,7 @@ import { Kbd } from "../ui/Kbd";
 
 interface FeedStatusLineProps {
   tasks: WorkflowTaskView[];
-  drawerMode: null | "review" | "review-reject" | "answer" | "focus" | "ship" | "git-history";
+  drawerMode: null | "review" | "review-reject" | "answer" | "focus" | "ship" | "git-history" | "new-task";
   onToggleHistory?: () => void;
 }
 
@@ -34,7 +34,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       // H toggles git history only when no task drawer is open (avoids conflicting with
       // the task history tab shortcut inside the task drawer's HotkeyScope).
-      if (e.key === "h" && (drawerMode === null || drawerMode === "git-history")) {
+      if (e.key === "h" && (drawerMode === null || drawerMode === "git-history" || drawerMode === "new-task")) {
         e.preventDefault();
         onToggleHistory?.();
         return;
@@ -120,7 +120,24 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
           </>
         )}
       </div>
-      {drawerMode === "git-history" ? (
+      {drawerMode === "new-task" ? (
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="flex items-center gap-1.5">
+            <Kbd>tab</Kbd>
+            <span>next field</span>
+          </span>
+          <span className="text-[var(--text-3)]">·</span>
+          <span className="flex items-center gap-1.5">
+            <Kbd>cmd+enter</Kbd>
+            <span>create</span>
+          </span>
+          <span className="text-[var(--text-3)]">·</span>
+          <span className="flex items-center gap-1.5">
+            <Kbd>esc</Kbd>
+            <span>cancel</span>
+          </span>
+        </div>
+      ) : drawerMode === "git-history" ? (
         <div className="flex items-center gap-3 shrink-0">
           <span className="flex items-center gap-1.5">
             <Kbd>j/k</Kbd>

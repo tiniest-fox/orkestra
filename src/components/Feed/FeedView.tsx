@@ -4,13 +4,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
+import { ModalPanel } from "../ui/ModalPanel";
 import { NavigationScope } from "../ui/NavigationScope";
 import { FeedHeader } from "./FeedHeader";
 import { FeedSection } from "./FeedSection";
 import { FeedStatusLine } from "./FeedStatusLine";
 import { GitHistoryDrawer } from "./GitHistoryDrawer";
+import { NewTaskModal } from "./NewTaskModal";
 import { TaskDrawer } from "./TaskDrawer";
 import { useFeedNavigation } from "./useFeedNavigation";
+import { useNewTask } from "./useNewTask";
 
 interface FeedViewProps {
   config: WorkflowConfig;
@@ -23,11 +26,16 @@ export function FeedView({ config, tasks }: FeedViewProps) {
   const [rejectMode, setRejectMode] = useState(false);
   const [gitHistoryOpen, setGitHistoryOpen] = useState(false);
 
-  const drawerOpen = activeTaskId !== null || gitHistoryOpen;
+  const panelOpen = activeTaskId !== null || gitHistoryOpen;
+  const { isNewTaskOpen, openNewTask, closeNewTask } = useNewTask();
+
+  const drawerOpen = panelOpen || isNewTaskOpen;
   const activeTask = activeTaskId ? (tasks.find((t) => t.id === activeTaskId) ?? null) : null;
 
   // Derive drawer mode for FeedStatusLine keyboard hints.
-  const drawerMode = gitHistoryOpen
+  const drawerMode = isNewTaskOpen
+    ? ("new-task" as const)
+    : gitHistoryOpen
     ? ("git-history" as const)
     : activeTask
       ? activeTask.derived.needs_review
@@ -87,7 +95,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
 
   return (
     <div className="forge-theme h-full flex flex-col rounded-panel overflow-hidden relative">
-      <FeedHeader tasks={tasks} />
+      <FeedHeader tasks={tasks} onNewTask={openNewTask} hotkeyActive={!drawerOpen} />
       <div ref={feedBodyRef} className="flex-1 overflow-y-auto">
         <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
           {sections.map((section) => (
@@ -133,6 +141,27 @@ export function FeedView({ config, tasks }: FeedViewProps) {
           setActiveTaskId(null);
         }}
       />
+      <ModalPanel
+        isOpen={isNewTaskOpen}
+        onClose={closeNewTask}
+        className="top-[15%] left-0 right-0 mx-auto w-fit"
+      >
+        {isNewTaskOpen && (
+          <NewTaskModal
+            config={config}
+            onClose={closeNewTask}
+            onCreate={async (description, autoMode, baseBranch, flow) => {
+              await invoke("workflow_create_task", {
+                title: "",
+                description,
+                baseBranch: baseBranch || null,
+                autoMode,
+                flow: flow ?? null,
+              });
+            }}
+          />
+        )}
+      </ModalPanel>
       {gitHistoryOpen && <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />}
       {activeTask && (
         <TaskDrawer

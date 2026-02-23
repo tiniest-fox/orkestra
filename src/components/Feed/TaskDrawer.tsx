@@ -725,13 +725,20 @@ function TaskDrawerBody({
   const activeScrollRef = showLogs ? logScrollRef : bodyRef;
 
   // -- Hotkeys --
-  useNavHandler("ArrowDown", () =>
-    activeScrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }),
-  );
+  // Arrow keys scroll only when questions/subtasks aren't active — those tabs own arrow-key
+  // navigation themselves. Using a direct window listener (not useNavHandler) prevents the
+  // HotkeyScope stack from shadowing child-registered handlers on initial mount.
+  useEffect(() => {
+    if (activeTab === "questions" || activeTab === "subtasks") return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "ArrowDown") activeScrollRef.current?.scrollBy({ top: 56, behavior: "smooth" });
+      if (e.key === "ArrowUp") activeScrollRef.current?.scrollBy({ top: -56, behavior: "smooth" });
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeTab, activeScrollRef]);
   useNavHandler("j", () => activeScrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }));
-  useNavHandler("ArrowUp", () =>
-    activeScrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }),
-  );
   useNavHandler("k", () => activeScrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
   useNavHandler("l", () => {
     if (selectedRunIdx === null) setActiveTab("logs");
@@ -1091,6 +1098,10 @@ function TaskDrawerBody({
                     e.preventDefault();
                     handleResume();
                   }
+                  if (e.key === "Escape") {
+                    e.stopPropagation();
+                    resumeTextareaRef.current?.blur();
+                  }
                 }}
                 placeholder="Optional guidance for the agent…"
                 rows={2}
@@ -1100,7 +1111,7 @@ function TaskDrawerBody({
                 type="button"
                 onClick={handleResume}
                 disabled={resuming}
-                className="inline-flex items-center justify-between font-forge-sans text-[13px] font-semibold px-4 py-[7px] rounded-md border cursor-pointer transition-colors whitespace-nowrap leading-snug disabled:opacity-40 disabled:cursor-not-allowed bg-[var(--accent)] border-[var(--accent)] text-white hover:opacity-90"
+                className="w-full inline-flex items-center justify-center gap-3 font-forge-sans text-[13px] font-semibold px-4 py-[7px] rounded-md border cursor-pointer transition-colors whitespace-nowrap leading-snug disabled:opacity-40 disabled:cursor-not-allowed bg-[var(--accent)] border-[var(--accent)] text-white hover:opacity-90"
               >
                 {resuming ? "Resuming…" : "Resume"}
                 {!resuming && (

@@ -1,25 +1,39 @@
 /**
  * Provider for workflow configuration.
- * Loads config once on mount and blocks rendering until loaded.
+ * Always renders children immediately — callers must check loading/error state.
+ * Orkestra is the single gate that decides what to show based on both this
+ * and TasksProvider loading state.
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
-import { FeedLoadingSkeleton } from "../components/Feed/FeedLoadingSkeleton";
-import { ErrorState } from "../components/ui";
 import type { WorkflowConfig } from "../types/workflow";
 
-const WorkflowConfigContext = createContext<WorkflowConfig | null>(null);
+interface WorkflowConfigState {
+  config: WorkflowConfig | null;
+  loading: boolean;
+  error: unknown;
+}
+
+const WorkflowConfigContext = createContext<WorkflowConfigState | null>(null);
 
 /**
- * Access workflow configuration. Guaranteed non-null when used inside WorkflowConfigProvider.
+ * Access the raw config loading state. Use in gating components (Orkestra).
+ */
+export function useWorkflowConfigState(): WorkflowConfigState {
+  const ctx = useContext(WorkflowConfigContext);
+  if (!ctx) throw new Error("useWorkflowConfigState must be used within WorkflowConfigProvider");
+  return ctx;
+}
+
+/**
+ * Access workflow configuration. Only call from components that render after
+ * Orkestra's loading gate — config is guaranteed non-null at that point.
  */
 export function useWorkflowConfig(): WorkflowConfig {
   const ctx = useContext(WorkflowConfigContext);
-  if (!ctx) {
-    throw new Error("useWorkflowConfig must be used within WorkflowConfigProvider");
-  }
-  return ctx;
+  if (!ctx?.config) throw new Error("useWorkflowConfig called before config loaded");
+  return ctx.config;
 }
 
 interface WorkflowConfigProviderProps {
@@ -28,23 +42,30 @@ interface WorkflowConfigProviderProps {
 
 export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps) {
   const [config, setConfig] = useState<WorkflowConfig | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    invoke<WorkflowConfig>("workflow_get_config").then(setConfig).catch(setError);
+    console.timeEnd("[startup] config:react");
+    console.time("[startup] config:ipc");
+    invoke<WorkflowConfig>("workflow_get_config")
+      .then((c) => {
+        console.timeEnd("[startup] config:ipc");
+        console.timeEnd("[startup] config");
+        setConfig(c);
+        setLoading(false);
+      })
+      .catch((e) => {
+        console.timeEnd("[startup] config:ipc");
+        console.timeEnd("[startup] config");
+        setError(e);
+        setLoading(false);
+      });
   }, []);
 
-  if (error != null) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <ErrorState message="Failed to load workflow config" error={error} />
-      </div>
-    );
-  }
-
-  if (!config) {
-    return <FeedLoadingSkeleton />;
-  }
-
-  return <WorkflowConfigContext.Provider value={config}>{children}</WorkflowConfigContext.Provider>;
+  return (
+    <WorkflowConfigContext.Provider value={{ config, loading, error }}>
+      {children}
+    </WorkflowConfigContext.Provider>
+  );
 }

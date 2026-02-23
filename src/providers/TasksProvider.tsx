@@ -62,9 +62,15 @@ export function TasksProvider({ children }: TasksProviderProps) {
   // Track task IDs with pending deletes so polling doesn't re-add them
   const deletingIdsRef = useRef<Set<string>>(new Set());
 
+  const firstFetchRef = useRef(true);
+
   const fetchTasks = useCallback(async () => {
     try {
       const result = await invoke<WorkflowTaskView[]>("workflow_get_tasks");
+      if (firstFetchRef.current) {
+        firstFetchRef.current = false;
+        console.timeEnd("[startup] tasks");
+      }
       const deleting = deletingIdsRef.current;
       if (deleting.size > 0) {
         const fetched = result.filter((t) => !deleting.has(t.id));

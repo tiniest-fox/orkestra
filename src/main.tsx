@@ -44,7 +44,14 @@ function main() {
 
   if (projectPath) {
     // Project window: mount the main app
-    console.log(`[routing] Mounting project app for: ${projectPath}`);
+    const bundleMs = Math.round(
+      performance.now() - ((window as { __htmlLoadTime?: number }).__htmlLoadTime ?? 0),
+    );
+    console.log(`[startup] bundle parse+eval: ${bundleMs}ms`);
+    console.time("[startup] config");
+    console.time("[startup] config:react");
+    console.time("[startup] tasks");
+    console.time("[startup] ready");
     mountApp();
   } else {
     // Picker window: mount the project picker

@@ -15,10 +15,7 @@ import { safeUnlisten } from "../utils/safeUnlisten";
  * The handler is captured by ref so callers don't need to memoize it.
  * Pass `null` as event to disable the listener.
  */
-export function useTauriListener<T>(
-  event: string | null,
-  handler: (payload: T) => void,
-): void {
+export function useTauriListener<T>(event: string | null, handler: (payload: T) => void): void {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 

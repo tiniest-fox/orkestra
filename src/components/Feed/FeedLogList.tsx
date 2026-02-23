@@ -7,12 +7,12 @@
 import { Terminal } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { EmptyState, ErrorState } from "../ui";
-import { useGroupedLogs } from "../Logs/useGroupedLogs";
-import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import type { LogEntry, OrkAction, ResumeType, ToolInput } from "../../types/workflow";
 import { formatPath } from "../../utils/formatters";
 import { FORGE_PROSE } from "../../utils/prose";
+import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
+import { useGroupedLogs } from "../Logs/useGroupedLogs";
+import { EmptyState, ErrorState } from "../ui";
 
 // ============================================================================
 // Public component

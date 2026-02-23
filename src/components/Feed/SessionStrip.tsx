@@ -81,6 +81,7 @@ export function SessionStrip({
           : undefined;
 
         return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: realIdx is the run number, not array index
           <span key={realIdx} className="flex items-center gap-[3px]">
             {realIdx > 0 && (
               <span className="text-[var(--text-3)] font-forge-mono text-[9px] mx-[1px]">·</span>

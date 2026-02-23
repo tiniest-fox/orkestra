@@ -2,9 +2,9 @@
 //! conflicts, and drives the footer state for address-comments / fix-conflicts actions.
 
 import { useCallback, useEffect, useState } from "react";
-import { groupCommentsByReview } from "../TaskDetail/groupCommentsByReview";
 import { usePrStatus } from "../../providers/PrStatusProvider";
-import type { PrComment, PrCommentData, PrCheck, PrReview, PrStatus } from "../../types/workflow";
+import type { PrCheck, PrComment, PrCommentData, PrReview, PrStatus } from "../../types/workflow";
+import { groupCommentsByReview } from "../TaskDetail/groupCommentsByReview";
 
 // ============================================================================
 // Public types
@@ -45,6 +45,7 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
   const [guidance, setGuidance] = useState("");
 
   // Reset selection when task changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: taskId is the intentional trigger; setters are stable
   useEffect(() => {
     setSelectedIds(new Set());
     setGuidance("");
@@ -308,8 +309,8 @@ function ChecksSection({
         Checks
       </div>
       <div className="divide-y divide-[var(--border)]">
-        {checks.map((check, i) => (
-          <CheckRow key={i} check={check} />
+        {checks.map((check) => (
+          <CheckRow key={check.name} check={check} />
         ))}
       </div>
     </div>

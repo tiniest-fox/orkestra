@@ -14,9 +14,19 @@ export function SubtaskProgressBar({ progress, onClick }: SubtaskProgressBarProp
   const failedPct = total > 0 ? (failed / total) * 100 : 0;
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: role is conditionally set to "button" when onClick is provided
     <span
       className={`inline-flex items-center gap-1.5 shrink-0${onClick ? " cursor-pointer hover:opacity-75 transition-opacity" : ""}`}
       onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") onClick();
+            }
+          : undefined
+      }
     >
       <span className="font-forge-mono text-[10px] text-[var(--text-2)] tabular-nums">
         {done}/{total}

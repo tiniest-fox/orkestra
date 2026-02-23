@@ -2,9 +2,9 @@
 
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Fragment, useMemo } from "react";
-import { Kbd } from "../../ui/Kbd";
 import type { HighlightedFileDiff, HighlightedLine } from "../../../hooks/useDiff";
 import type { PrComment } from "../../../types/workflow";
+import { Kbd } from "../../ui/Kbd";
 import { ForgeCollapsedSection } from "./ForgeCollapsedSection";
 import { ForgeDiffLine } from "./ForgeDiffLine";
 
@@ -33,7 +33,8 @@ export function ForgeDiffContent({
     for (const comment of comments) {
       if (!comment.path || comment.line === null) continue;
       if (!map.has(comment.path)) map.set(comment.path, new Map());
-      const byLine = map.get(comment.path)!;
+      const byLine = map.get(comment.path);
+      if (!byLine) continue;
       const existing = byLine.get(comment.line) ?? [];
       existing.push(comment);
       byLine.set(comment.line, existing);

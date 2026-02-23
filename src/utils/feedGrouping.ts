@@ -40,7 +40,7 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
   const subtaskNeedsAttention = new Set(
     allSubtasks
       .filter((t) => t.derived.needs_review || t.derived.has_questions || t.derived.is_failed)
-      .map((t) => t.parent_id!),
+      .map((t) => t.parent_id as string),
   );
 
   const subtasks = allSubtasks.filter(

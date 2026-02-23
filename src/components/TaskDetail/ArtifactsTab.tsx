@@ -4,8 +4,8 @@
 
 import { FileOutput } from "lucide-react";
 import { useSmartDefault } from "../../hooks/useSmartDefault";
-import { artifactName } from "../../types/workflow";
 import type { WorkflowArtifact, WorkflowConfig } from "../../types/workflow";
+import { artifactName } from "../../types/workflow";
 import { titleCase } from "../../utils/formatters";
 import { ArtifactTabs, EmptyState, ExpandablePanel, FlexContainer, TabbedPanel } from "../ui";
 import { ArtifactView } from "./ArtifactView";

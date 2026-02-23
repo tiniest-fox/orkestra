@@ -2,13 +2,13 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { FORGE_PROSE } from "../../utils/prose";
 import type {
   IterationTrigger,
   WorkflowIteration,
   WorkflowOutcome,
   WorkflowQuestionAnswer,
 } from "../../types/workflow";
+import { FORGE_PROSE } from "../../utils/prose";
 
 // ============================================================================
 // Public component

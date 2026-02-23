@@ -169,6 +169,7 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
   const fileSectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // Reset per-commit state when selection changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: selectedHash is the intentional trigger; setters are stable
   useEffect(() => {
     setActivePath(null);
     setBodyExpanded(true);

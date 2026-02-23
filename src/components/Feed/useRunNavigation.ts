@@ -4,8 +4,8 @@
 //! navigation takes priority on the diff tab and session navigation resumes
 //! automatically when DrawerDiffTab unmounts.
 
-import { useNavHandler } from "../ui/HotkeyScope";
 import type { StageRun } from "../../utils/stageRuns";
+import { useNavHandler } from "../ui/HotkeyScope";
 
 /**
  * Register [ and ] hotkeys for navigating between stage runs.

@@ -3,8 +3,8 @@
 import { useMemo, useRef } from "react";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { computePipelineSegments } from "../../utils/pipelineSegments";
-import { useNavItem } from "../ui/NavigationScope";
 import { HotkeyScope } from "../ui/HotkeyScope";
+import { useNavItem } from "../ui/NavigationScope";
 import { FeedRowActions } from "./FeedRowActions";
 import { IterationBadge } from "./IterationBadge";
 import { PipelineBar } from "./PipelineBar";
@@ -51,10 +51,16 @@ export function FeedRow({
   useNavItem(task.id, rowRef);
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: grid layout requires div; role+tabIndex+onKeyDown provide accessibility
     <div
       ref={rowRef}
+      role="button"
+      tabIndex={0}
       onMouseEnter={onMouseEnter}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onClick?.();
+      }}
       className={`grid grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_auto_minmax(0,1fr)_160px] gap-4 ${paddingClass} py-2 min-h-[40px] items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out ${isFocused ? "bg-[var(--accent-bg)] border-l-[var(--accent)]" : "border-l-transparent hover:bg-[var(--surface-hover)]"}${faded && !isFocused ? " opacity-50" : ""}`}
     >
       {isSubtask ? (

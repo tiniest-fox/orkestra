@@ -180,14 +180,13 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
                   {recents.slice(0, 4).map((project, idx) => {
                     const isSelected = idx === selectedIdx;
                     return (
-                      <div
+                      <button
                         key={project.path}
-                        role="button"
-                        tabIndex={0}
+                        type="button"
                         onClick={() => openProject(project.path)}
                         onKeyDown={(e) => e.key === "Enter" && openProject(project.path)}
                         className={[
-                          "group flex items-center justify-between px-[14px] py-[10px] cursor-pointer relative transition-colors",
+                          "group flex items-center justify-between w-full text-left px-[14px] py-[10px] relative transition-colors",
                           idx < Math.min(recents.length - 1, 3)
                             ? "border-b border-[var(--border)]"
                             : "",
@@ -219,7 +218,7 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
                         >
                           ×
                         </button>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -241,6 +240,7 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
+                  <title>Browse for folder</title>
                   <path d="M1 4.5C1 3.67 1.67 3 2.5 3h2.586a1 1 0 01.707.293L6.5 4H11.5c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5h-9C1.67 12 1 11.33 1 10.5V4.5z" />
                 </svg>
                 Browse for folder…

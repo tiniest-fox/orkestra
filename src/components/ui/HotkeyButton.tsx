@@ -2,7 +2,7 @@
 //! Shows an animated badge when the scope is active (row focused / panel open).
 
 import { AnimatePresence, motion } from "framer-motion";
-import { forwardRef, useEffect, useRef, type ButtonHTMLAttributes } from "react";
+import { type ButtonHTMLAttributes, forwardRef, useEffect, useRef } from "react";
 import { useHotkeyScope } from "./HotkeyScope";
 
 interface HotkeyButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

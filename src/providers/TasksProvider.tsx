@@ -16,8 +16,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 import { usePolling } from "../hooks/usePolling";
+import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 
 interface TasksContextValue {
   tasks: WorkflowTaskView[];

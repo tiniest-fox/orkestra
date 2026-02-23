@@ -2,14 +2,14 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { TaskDrawer } from "./TaskDrawer";
-import { GitHistoryDrawer } from "./GitHistoryDrawer";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
 import { NavigationScope } from "../ui/NavigationScope";
 import { FeedHeader } from "./FeedHeader";
 import { FeedSection } from "./FeedSection";
 import { FeedStatusLine } from "./FeedStatusLine";
+import { GitHistoryDrawer } from "./GitHistoryDrawer";
+import { TaskDrawer } from "./TaskDrawer";
 import { useFeedNavigation } from "./useFeedNavigation";
 
 interface FeedViewProps {

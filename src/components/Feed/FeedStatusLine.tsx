@@ -88,6 +88,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
         )}
         {syncStatus && syncStatus.ahead > 0 && (
           <button
+            type="button"
             onClick={pushToOrigin}
             disabled={pushLoading}
             className="shrink-0 text-[var(--text-2)] hover:text-[var(--text-0)] transition-colors disabled:opacity-40 cursor-default"
@@ -98,6 +99,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
         )}
         {syncStatus && syncStatus.behind > 0 && (
           <button
+            type="button"
             onClick={pullFromOrigin}
             disabled={pullLoading}
             className="shrink-0 text-[var(--text-2)] hover:text-[var(--text-0)] transition-colors disabled:opacity-40 cursor-default"

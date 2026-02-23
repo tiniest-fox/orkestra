@@ -4,11 +4,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
-import { useDrawerDiff } from "./DrawerTaskProvider";
+import { DiffSkeleton } from "../Diff/DiffSkeleton";
 import { ForgeDiffContent } from "../Diff/Forge/ForgeDiffContent";
 import { ForgeDiffFileList } from "../Diff/Forge/ForgeDiffFileList";
-import { DiffSkeleton } from "../Diff/DiffSkeleton";
 import { useNavHandler } from "../ui/HotkeyScope";
+import { useDrawerDiff } from "./DrawerTaskProvider";
 
 // Forge syntax theme — Catppuccin Latte spirit, Forge palette.
 //
@@ -237,7 +237,7 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
   useEffect(() => {
     const id = requestAnimationFrame(pickActiveFile);
     return () => cancelAnimationFrame(id);
-  }, [collapsedPaths, pickActiveFile]);
+  }, [pickActiveFile]);
 
   // Keyboard navigation — only meaningful when this tab is active.
   useNavHandler("ArrowDown", () => {

@@ -6,23 +6,29 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { useLogs } from "../../hooks/useLogs";
 import { useWorkflowConfig } from "../../providers";
-import { artifactName } from "../../types/workflow";
 import type {
   WorkflowArtifact,
   WorkflowConfig,
   WorkflowQuestion,
   WorkflowTaskView,
 } from "../../types/workflow";
+import { artifactName } from "../../types/workflow";
 import type { FeedSection as FeedSectionData, FeedSectionName } from "../../utils/feedGrouping";
-import { groupIterationsIntoRuns } from "../../utils/stageRuns";
 import { openExternal } from "../../utils/openExternal";
+import { groupIterationsIntoRuns } from "../../utils/stageRuns";
+import { ArtifactView } from "../TaskDetail/ArtifactView";
+import { Drawer } from "../ui/Drawer/Drawer";
+import { HotkeyButton } from "../ui/HotkeyButton";
+import { HotkeyScope, useNavHandler } from "../ui/HotkeyScope";
+import { Kbd } from "../ui/Kbd";
+import { NavigationScope } from "../ui/NavigationScope";
 import { ActivityLog } from "./ActivityLog";
-import { DrawerPrTab } from "./DrawerPrTab";
-import type { PrTabFooterState } from "./DrawerPrTab";
 import { DrawerDiffTab } from "./DrawerDiffTab";
 import { DrawerHeader, drawerAccent } from "./DrawerHeader";
-import { DrawerTabBar } from "./DrawerTabBar";
+import type { PrTabFooterState } from "./DrawerPrTab";
+import { DrawerPrTab } from "./DrawerPrTab";
 import type { DrawerTab } from "./DrawerTabBar";
+import { DrawerTabBar } from "./DrawerTabBar";
 import { DrawerTaskProvider } from "./DrawerTaskProvider";
 import { FeedLogList } from "./FeedLogList";
 import { FeedSection } from "./FeedSection";
@@ -31,12 +37,6 @@ import { HistoricalRunView } from "./HistoricalRunView";
 import { QuestionCard } from "./QuestionCard";
 import { useFeedNavigation } from "./useFeedNavigation";
 import { useRunNavigation } from "./useRunNavigation";
-import { ArtifactView } from "../TaskDetail/ArtifactView";
-import { Drawer } from "../ui/Drawer/Drawer";
-import { HotkeyButton } from "../ui/HotkeyButton";
-import { HotkeyScope, useNavHandler } from "../ui/HotkeyScope";
-import { Kbd } from "../ui/Kbd";
-import { NavigationScope } from "../ui/NavigationScope";
 
 // ============================================================================
 // Types
@@ -389,7 +389,7 @@ function QuestionsSection({
     const item = flatItems[flatIdx];
     if (!item) return;
     if (item.type === "option") {
-      const optLabel = questions[item.qIdx].options![item.optIdx].label;
+      const optLabel = questions[item.qIdx].options?.[item.optIdx]?.label ?? "";
       handleSetAnswer(item.qIdx, answers[item.qIdx] === optLabel ? "" : optLabel);
     }
   }
@@ -397,6 +397,7 @@ function QuestionsSection({
   useNavHandler(" ", selectFocused);
 
   // "Type to enter" — when flatIdx points at a textarea and no textarea has DOM focus.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: handleSetAnswer and textareaHasFocus are stable via closure
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (loading) return;
@@ -414,7 +415,6 @@ function QuestionsSection({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — handleSetAnswer is stable via closure
   }, [flatIdx, flatItems, answers, questions, loading]);
 
   const activeQuestionId = flatItems[flatIdx] ? String(flatItems[flatIdx].qIdx) : undefined;
@@ -438,6 +438,7 @@ function QuestionsSection({
         <div className="divide-y divide-[var(--border)]">
           {questions.map((q, qi) => (
             <QuestionCard
+              // biome-ignore lint/suspicious/noArrayIndexKey: questions lack stable IDs
               key={qi}
               index={qi}
               question={q}
@@ -1042,13 +1043,19 @@ function TaskDrawerBody({
                 className="flex-1 font-forge-sans text-[12px] text-[var(--text-0)] placeholder:text-[var(--text-3)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-1.5 outline-none focus:border-[var(--text-3)] transition-colors"
               />
               <button
+                type="button"
                 className={btnApprove}
                 onClick={handleReject}
                 disabled={loading || !feedback.trim()}
               >
                 Send feedback
               </button>
-              <button className={btnSecondary} onClick={exitRejectMode} disabled={loading}>
+              <button
+                type="button"
+                className={btnSecondary}
+                onClick={exitRejectMode}
+                disabled={loading}
+              >
                 Cancel
               </button>
             </div>
@@ -1089,6 +1096,7 @@ function TaskDrawerBody({
                 className="w-full font-forge-sans text-forge-body text-[var(--text-0)] placeholder:text-[var(--text-3)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-3 py-2 resize-none focus:outline-none focus:border-[var(--text-2)] transition-colors"
               />
               <button
+                type="button"
                 onClick={handleResume}
                 disabled={resuming}
                 className="inline-flex items-center justify-between font-forge-sans text-[13px] font-semibold px-4 py-[7px] rounded-md border cursor-pointer transition-colors whitespace-nowrap leading-snug disabled:opacity-40 disabled:cursor-not-allowed bg-[var(--accent)] border-[var(--accent)] text-white hover:opacity-90"
@@ -1102,6 +1110,7 @@ function TaskDrawerBody({
           ) : task.derived.is_working && !task.derived.is_interrupted ? (
             <div className="shrink-0 px-6 border-t border-[var(--border)] flex items-center h-[52px]">
               <button
+                type="button"
                 onClick={handleInterrupt}
                 disabled={interrupting}
                 className="inline-flex items-center gap-2 font-forge-sans text-[13px] font-semibold px-4 py-[7px] rounded-md border cursor-pointer transition-colors whitespace-nowrap leading-snug disabled:opacity-40 disabled:cursor-not-allowed bg-transparent border-[var(--border)] text-[var(--text-1)] hover:bg-[var(--surface-hover)] hover:border-[var(--text-3)]"
@@ -1116,20 +1125,30 @@ function TaskDrawerBody({
                 // PR-aware footer — four states driven by the PR tab
                 activeTab === "pr" && prTabState.type === "conflicts" ? (
                   <>
-                    <button className={btnAmber} onClick={handleFixConflicts} disabled={loading}>
+                    <button
+                      type="button"
+                      className={btnAmber}
+                      onClick={handleFixConflicts}
+                      disabled={loading}
+                    >
                       {loading ? "Fixing…" : "Fix Conflicts"}
                     </button>
                     <HotkeyButton
                       hotkey="v"
                       className={btnSecondary}
-                      onClick={() => openExternal(task.pr_url!)}
+                      onClick={() => openExternal(task.pr_url as string)}
                     >
                       View PR ↗
                     </HotkeyButton>
                   </>
                 ) : activeTab === "pr" && prTabState.type === "comments_selected" ? (
                   <>
-                    <button className={btnMerge} onClick={handleAddressComments} disabled={loading}>
+                    <button
+                      type="button"
+                      className={btnMerge}
+                      onClick={handleAddressComments}
+                      disabled={loading}
+                    >
                       {loading
                         ? "Sending…"
                         : `Address ${prTabState.count} comment${prTabState.count !== 1 ? "s" : ""}`}
@@ -1137,7 +1156,7 @@ function TaskDrawerBody({
                     <HotkeyButton
                       hotkey="v"
                       className={btnSecondary}
-                      onClick={() => openExternal(task.pr_url!)}
+                      onClick={() => openExternal(task.pr_url as string)}
                     >
                       View PR ↗
                     </HotkeyButton>
@@ -1156,7 +1175,7 @@ function TaskDrawerBody({
                     <HotkeyButton
                       hotkey="v"
                       className={btnOpenPr}
-                      onClick={() => openExternal(task.pr_url!)}
+                      onClick={() => openExternal(task.pr_url as string)}
                     >
                       View PR ↗
                     </HotkeyButton>

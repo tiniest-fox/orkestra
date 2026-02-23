@@ -1,7 +1,7 @@
 //! Group task iterations into stage runs — contiguous sequences of same-stage iterations.
 
-import { artifactName } from "../types/workflow";
 import type { WorkflowConfig, WorkflowIteration } from "../types/workflow";
+import { artifactName } from "../types/workflow";
 
 /**
  * A contiguous sequence of iterations for the same stage.

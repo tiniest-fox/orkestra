@@ -1,7 +1,7 @@
 //! Shared header for Feed drawers — title row + pipeline + session strip.
 
 import { invoke } from "@tauri-apps/api/core";
-import { SquareTerminal, SquarePen, X } from "lucide-react";
+import { SquarePen, SquareTerminal, X } from "lucide-react";
 import { useMemo } from "react";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { computePipelineSegments } from "../../utils/pipelineSegments";
@@ -78,6 +78,7 @@ export function DrawerHeader({
         {task.worktree_path && (
           <div className="shrink-0 flex items-center gap-2 mt-0.5">
             <button
+              type="button"
               onClick={() => invoke("open_in_terminal", { path: task.worktree_path })}
               className="flex items-center gap-1.5 text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors"
               title="Open in terminal (⇧T)"
@@ -86,6 +87,7 @@ export function DrawerHeader({
               <SquareTerminal size={14} />
             </button>
             <button
+              type="button"
               onClick={() => invoke("open_in_editor", { path: task.worktree_path })}
               className="flex items-center gap-1.5 text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors"
               title="Open in editor (⇧E)"
@@ -96,6 +98,7 @@ export function DrawerHeader({
           </div>
         )}
         <button
+          type="button"
           onClick={onClose}
           className="shrink-0 flex items-center gap-1.5 text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors mt-0.5"
           title="Close (Esc)"

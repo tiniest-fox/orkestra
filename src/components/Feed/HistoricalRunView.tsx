@@ -3,13 +3,13 @@
 import { useEffect, useRef } from "react";
 import { useLogs } from "../../hooks/useLogs";
 import type { WorkflowTaskView } from "../../types/workflow";
+import type { StageRun } from "../../utils/stageRuns";
 import { ArtifactView } from "../TaskDetail/ArtifactView";
-import { DrawerTabBar } from "./DrawerTabBar";
+import { useNavHandler } from "../ui/HotkeyScope";
 import type { DrawerTab } from "./DrawerTabBar";
+import { DrawerTabBar } from "./DrawerTabBar";
 import { FeedLogList } from "./FeedLogList";
 import { useDrawerTabs } from "./useDrawerTabs";
-import { useNavHandler } from "../ui/HotkeyScope";
-import type { StageRun } from "../../utils/stageRuns";
 
 interface HistoricalRunViewProps {
   task: WorkflowTaskView;

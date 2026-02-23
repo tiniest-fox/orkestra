@@ -2,8 +2,8 @@
 //! visual states and keyboard navigation focus ring.
 
 import { useRef } from "react";
-import { useNavItem } from "../ui/NavigationScope";
 import type { WorkflowQuestion } from "../../types/workflow";
+import { useNavItem } from "../ui/NavigationScope";
 
 interface QuestionCardProps {
   index: number;
@@ -96,6 +96,7 @@ export function QuestionCard({
               const kbdFocused = flatStartIndex + oi === keyboardFlatIdx;
               return (
                 <button
+                  type="button"
                   key={opt.label}
                   onClick={() => {
                     onChange(selected ? "" : opt.label);

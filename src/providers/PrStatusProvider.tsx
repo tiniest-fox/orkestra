@@ -132,6 +132,7 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
 
   // Active polling (2s) — only when visible and a task is focused
   // activePollTaskId in deps so the cycle restarts immediately on task change
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activePollTaskId restarts the polling cycle on task change
   const activePoll = useCallback(async () => {
     const taskId = activePollTaskIdRef.current;
     if (!taskId) return;

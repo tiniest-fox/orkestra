@@ -17,12 +17,12 @@
 
 import {
   createContext,
+  type ReactNode,
+  type RefObject,
   useCallback,
   useContext,
   useEffect,
   useRef,
-  type ReactNode,
-  type RefObject,
 } from "react";
 
 // ============================================================================
@@ -81,6 +81,7 @@ export function NavigationScope({
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scrollSeq ?? activeId is intentional composite trigger
   useEffect(() => {
     const id = activeIdRef.current;
     if (!id) return;
@@ -135,5 +136,5 @@ export function NavigationScope({
 export function useNavItem(id: string, ref: RefObject<HTMLElement | null>): void {
   const { register } = useContext(NavigationScopeContext);
   // register is stable (useCallback []); re-register only if id changes.
-  useEffect(() => register(id, ref), [id, register]);
+  useEffect(() => register(id, ref), [id, ref, register]);
 }

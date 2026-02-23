@@ -5,8 +5,8 @@
 //! dropped automatically when the drawer closes and the provider unmounts.
 
 import { createContext, useContext } from "react";
-import { useDiff } from "../../hooks/useDiff";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
+import { useDiff } from "../../hooks/useDiff";
 
 interface DrawerTaskContextValue {
   diff: HighlightedTaskDiff | null;

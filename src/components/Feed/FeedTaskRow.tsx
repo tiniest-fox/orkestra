@@ -3,7 +3,6 @@
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { FeedRow } from "./FeedRow";
 import { IterationChain } from "./IterationChain";
-import { SubtaskProgressBar } from "./SubtaskProgressBar";
 
 interface FeedTaskRowProps {
   task: WorkflowTaskView;
@@ -39,13 +38,7 @@ export function FeedTaskRow({
       task={task}
       config={config}
       paddingClass="px-6"
-      subtitle={
-        task.derived.subtask_progress ? (
-          <SubtaskProgressBar progress={task.derived.subtask_progress} />
-        ) : (
-          <IterationChain iterations={task.iterations} />
-        )
-      }
+      subtitle={<IterationChain iterations={task.iterations} />}
       faded={isCompleted}
       isFocused={isFocused}
       onMouseEnter={onMouseEnter}

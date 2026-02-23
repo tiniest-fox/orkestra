@@ -6,9 +6,9 @@ import { computePipelineSegments } from "../../utils/pipelineSegments";
 import { HotkeyScope } from "../ui/HotkeyScope";
 import { useNavItem } from "../ui/NavigationScope";
 import { FeedRowActions } from "./FeedRowActions";
-import { IterationBadge } from "./IterationBadge";
 import { PipelineBar } from "./PipelineBar";
 import { StatusSymbol } from "./StatusSymbol";
+import { SubtaskProgressBar } from "./SubtaskProgressBar";
 
 interface FeedRowProps {
   task: WorkflowTaskView;
@@ -61,7 +61,7 @@ export function FeedRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onClick?.();
       }}
-      className={`grid grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_auto_minmax(0,1fr)_160px] gap-4 ${paddingClass} py-2 min-h-[40px] items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out ${isFocused ? "bg-[var(--accent-bg)] border-l-[var(--accent)]" : "border-l-transparent hover:bg-[var(--surface-hover)]"}${faded && !isFocused ? " opacity-50" : ""}`}
+      className={`grid grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_minmax(0,1fr)_160px] gap-4 ${paddingClass} py-2 min-h-[40px] items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out ${isFocused ? "bg-[var(--accent-bg)] border-l-[var(--accent)]" : "border-l-transparent hover:bg-[var(--surface-hover)]"}${faded && !isFocused ? " opacity-50" : ""}`}
     >
       {isSubtask ? (
         <>
@@ -86,8 +86,11 @@ export function FeedRow({
         {task.derived.current_stage ?? ""}
       </div>
       <PipelineBar segments={segments} />
-      <IterationBadge task={task} />
-      <div />
+      <div>
+        {task.derived.subtask_progress && (
+          <SubtaskProgressBar progress={task.derived.subtask_progress} />
+        )}
+      </div>
       {actionsSlot ?? (
         <HotkeyScope active={isFocused ?? false}>
           <div className="flex items-center gap-2 shrink-0">

@@ -6,81 +6,105 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Orkestra</title>
     <style>
-      /* Skeleton loader styles - shown before React loads */
+      /* Pre-React skeleton — matches FeedLoadingSkeleton exactly */
       * {
         margin: 0;
         padding: 0;
         box-sizing: border-box;
       }
-      
-      .skeleton-loader {
+
+      body {
+        background: #fff;
+      }
+
+      .skeleton {
         height: 100vh;
         width: 100vw;
-        background: linear-gradient(to bottom right, #fafaf9, #f5f5f4);
         display: flex;
         flex-direction: column;
-        padding: 1rem;
-        gap: 1rem;
-        font-family: system-ui, -apple-system, sans-serif;
+        overflow: hidden;
+        background: #fff;
+        font-family: 'IBM Plex Sans', system-ui, sans-serif;
       }
-      
+
+      /* Header — matches FeedHeader */
       .skeleton-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 0.5rem;
+        padding: 0 24px;
+        height: 44px;
+        border-bottom: 1px solid #e5e4e2;
+        background: #fff;
         flex-shrink: 0;
       }
-      
+
       .skeleton-title {
-        font-size: 1.125rem;
-        font-weight: 600;
-        color: #292524;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #1a1714;
+        user-select: none;
       }
-      
-      .skeleton-panel {
+
+      .skeleton-kbd {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        font-weight: 500;
+        color: #a09b96;
+        background: #f5f4f2;
+        border: 1px solid #e5e4e2;
+        border-radius: 4px;
+        padding: 2px 6px;
+        line-height: 1;
+        user-select: none;
+        opacity: 0.5;
+      }
+
+      /* Body — centered spinner */
+      .skeleton-body {
         flex: 1;
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02);
-        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #FAF8FC;
       }
-      
-      @keyframes pulse {
-        0%, 100% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0.5;
-        }
+
+      .skeleton-spinner {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid #e5e4e2;
+        border-top-color: #6b6560;
+        animation: spin 0.8s linear infinite;
       }
-      
-      /* Dark mode */
-      @media (prefers-color-scheme: dark) {
-        .skeleton-loader {
-          background: linear-gradient(to bottom right, #0c0a09, #1c1917);
-        }
-        
-        .skeleton-title {
-          color: #f5f5f4;
-        }
-        
-        .skeleton-panel {
-          background: #1c1917;
-          box-shadow: 0px 0px 16px 4px rgb(0 0 0 / 0.3), 0px 0px 2px 1px rgb(0 0 0 / 0.1);
-        }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      /* Footer — matches FeedStatusLine */
+      .skeleton-footer {
+        height: 28px;
+        border-top: 1px solid #e5e4e2;
+        background: #fff;
+        flex-shrink: 0;
       }
     </style>
   </head>
   <body>
     <div id="root">
-      <!-- Skeleton loader - replaced by React when it loads -->
-      <div class="skeleton-loader">
+      <!-- Pre-React skeleton, replaced when React mounts -->
+      <div class="skeleton">
         <div class="skeleton-header">
-          <h1 class="skeleton-title">Orkestra</h1>
+          <span class="skeleton-title">Orkestra</span>
+          <kbd class="skeleton-kbd">cmd+k</kbd>
         </div>
-        <div class="skeleton-panel"></div>
+        <div class="skeleton-body">
+          <div class="skeleton-spinner"></div>
+        </div>
+        <div class="skeleton-footer"></div>
       </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>

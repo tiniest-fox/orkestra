@@ -5,6 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { FeedLoadingSkeleton } from "../components/Feed/FeedLoadingSkeleton";
 import { ErrorState } from "../components/ui";
 import type { WorkflowConfig } from "../types/workflow";
 
@@ -42,13 +43,7 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
   }
 
   if (!config) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-stone-500 dark:text-stone-400 text-sm">
-          Loading workflow configuration...
-        </div>
-      </div>
-    );
+    return <FeedLoadingSkeleton />;
   }
 
   return <WorkflowConfigContext.Provider value={config}>{children}</WorkflowConfigContext.Provider>;

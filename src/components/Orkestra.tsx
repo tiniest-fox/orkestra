@@ -5,11 +5,16 @@
 import { useNotificationPermission } from "../hooks/useNotificationPermission";
 import { useTasks, useWorkflowConfig } from "../providers";
 import { FeedView } from "./Feed";
+import { FeedLoadingSkeleton } from "./Feed/FeedLoadingSkeleton";
 
 export function Orkestra() {
   useNotificationPermission();
-  const { tasks } = useTasks();
+  const { tasks, loading } = useTasks();
   const config = useWorkflowConfig();
+
+  if (loading) {
+    return <FeedLoadingSkeleton />;
+  }
 
   return (
     <div className="forge-theme w-screen h-screen overflow-clip">

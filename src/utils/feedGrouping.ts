@@ -39,12 +39,24 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
 
   const subtaskNeedsAttention = new Set(
     allSubtasks
-      .filter((t) => t.derived.needs_review || t.derived.has_questions || t.derived.is_failed)
+      .filter(
+        (t) =>
+          t.derived.needs_review ||
+          t.derived.has_questions ||
+          t.derived.is_failed ||
+          t.derived.is_interrupted ||
+          t.derived.is_blocked,
+      )
       .map((t) => t.parent_id as string),
   );
 
   const subtasks = allSubtasks.filter(
-    (t) => t.derived.needs_review || t.derived.has_questions || t.derived.is_failed,
+    (t) =>
+      t.derived.needs_review ||
+      t.derived.has_questions ||
+      t.derived.is_failed ||
+      t.derived.is_interrupted ||
+      t.derived.is_blocked,
   );
   const working = allSubtasks.filter((t) => t.derived.is_working);
 
@@ -55,9 +67,14 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
 
   for (const task of topLevel) {
     const subtaskNeedsReview = subtaskNeedsAttention.has(task.id);
-    if (task.derived.needs_review || task.derived.has_questions || subtaskNeedsReview) {
+    if (
+      task.derived.needs_review ||
+      task.derived.has_questions ||
+      task.derived.is_blocked ||
+      subtaskNeedsReview
+    ) {
       needsReview.push(task);
-    } else if (task.derived.is_done) {
+    } else if (task.derived.is_done || task.state.type === "integrating") {
       readyToShip.push(task);
     } else if (task.derived.is_archived) {
       completed.push(task);

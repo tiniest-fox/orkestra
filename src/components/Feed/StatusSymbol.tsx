@@ -16,10 +16,14 @@ export function StatusSymbol({ task }: StatusSymbolProps) {
 
   if (derived.is_waiting_on_children && derived.subtask_progress) {
     const p = derived.subtask_progress;
-    if (p.failed > 0) {
+    if (p.failed > 0 || p.blocked > 0) {
       symbol = "!";
       color = "var(--red)";
       bgColor = "var(--red-bg)";
+    } else if (p.interrupted > 0) {
+      symbol = "\u2016";
+      color = "var(--accent-2)";
+      bgColor = "var(--accent-2-bg)";
     } else if (p.has_questions > 0) {
       symbol = "?";
       color = "var(--blue)";
@@ -38,7 +42,7 @@ export function StatusSymbol({ task }: StatusSymbolProps) {
       color = "var(--text-3)";
       bgColor = "transparent";
     }
-  } else if (derived.is_failed) {
+  } else if (derived.is_failed || derived.is_blocked) {
     symbol = "!";
     color = "var(--red)";
     bgColor = "var(--red-bg)";
@@ -50,7 +54,15 @@ export function StatusSymbol({ task }: StatusSymbolProps) {
     symbol = "⦿";
     color = "var(--violet)";
     bgColor = "var(--violet-bg)";
-  } else if (derived.is_working) {
+  } else if (derived.is_interrupted) {
+    symbol = "\u2016";
+    color = "var(--accent-2)";
+    bgColor = "var(--accent-2-bg)";
+  } else if (
+    derived.is_working ||
+    derived.is_preparing ||
+    (derived.is_system_active && state.type !== "integrating")
+  ) {
     symbol = "*";
     color = "var(--accent-2)";
     bgColor = "var(--accent-2-bg)";
@@ -67,6 +79,7 @@ export function StatusSymbol({ task }: StatusSymbolProps) {
     symbol = "\u25C7";
     color = "var(--accent-2)";
     bgColor = "var(--accent-2-bg)";
+    extraClass = "animate-spin-bounce";
   } else {
     symbol = "~";
     color = "var(--text-3)";

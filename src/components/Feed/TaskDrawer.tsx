@@ -170,7 +170,8 @@ function groupChildren(children: WorkflowTaskView[], allTasks: WorkflowTaskView[
     } else if (
       child.derived.needs_review ||
       child.derived.has_questions ||
-      child.derived.is_failed
+      child.derived.is_failed ||
+      child.derived.is_interrupted
     ) {
       needsReview.push(child);
     } else if (child.derived.is_done) {

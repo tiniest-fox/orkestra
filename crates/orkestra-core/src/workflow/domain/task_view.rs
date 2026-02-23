@@ -33,6 +33,7 @@ pub struct DerivedTaskState {
     pub current_stage: Option<String>,
     pub is_working: bool,
     pub is_system_active: bool,
+    pub is_preparing: bool,
     pub phase_icon: Option<String>,
     pub is_interrupted: bool,
     pub is_failed: bool,
@@ -126,6 +127,12 @@ impl DerivedTaskState {
             current_stage: task.current_stage().map(str::to_string),
             is_working: !task.is_terminal() && task.state.has_active_agent(),
             is_system_active: !task.is_terminal() && task.state.is_system_active(),
+            is_preparing: matches!(
+                task.state,
+                TaskState::AwaitingSetup { .. }
+                    | TaskState::SettingUp { .. }
+                    | TaskState::Queued { .. }
+            ),
             phase_icon: compute_phase_icon(task),
             is_interrupted: matches!(task.state, TaskState::Interrupted { .. }),
             is_failed: task.is_failed(),
@@ -234,7 +241,7 @@ fn compute_subtask_progress(subtask_states: &[DerivedTaskState]) -> Option<Subta
             progress.has_questions += 1;
         } else if s.needs_review {
             progress.needs_review += 1;
-        } else if s.is_working || s.is_system_active {
+        } else if s.is_working || s.is_system_active || s.is_preparing {
             progress.working += 1;
         } else {
             progress.waiting += 1;
@@ -585,10 +592,10 @@ mod tests {
         assert_eq!(progress.total, 3);
         assert_eq!(progress.done, 1);
         assert_eq!(progress.failed, 1);
-        assert_eq!(progress.waiting, 1);
+        assert_eq!(progress.waiting, 0);
         assert_eq!(progress.has_questions, 0);
         assert_eq!(progress.needs_review, 0);
-        assert_eq!(progress.working, 0);
+        assert_eq!(progress.working, 1); // Queued sub2 counts as preparing → working
         assert_eq!(progress.blocked, 0);
     }
 
@@ -663,7 +670,8 @@ mod tests {
             progress.done, 2,
             "Both Done and Archived should count as done"
         );
-        assert_eq!(progress.waiting, 1);
+        assert_eq!(progress.working, 1); // Queued sub3 counts as preparing → working
+        assert_eq!(progress.waiting, 0);
     }
 
     #[test]
@@ -889,8 +897,8 @@ mod tests {
 
         let progress = derived.subtask_progress.unwrap();
         assert_eq!(progress.total, 3);
-        assert_eq!(progress.working, 2); // Both system-active and agent-working count as working
-        assert_eq!(progress.waiting, 1);
+        assert_eq!(progress.working, 3); // system-active, agent-working, and queued (preparing) all count as working
+        assert_eq!(progress.waiting, 0);
         assert_eq!(progress.done, 0);
         assert_eq!(progress.failed, 0);
     }

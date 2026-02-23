@@ -28,6 +28,7 @@ export function createMockDerivedState(overrides?: Partial<DerivedTaskState>): D
     current_stage: "planning",
     is_working: false,
     is_system_active: false,
+    is_preparing: false,
     phase_icon: null,
     is_interrupted: false,
     is_failed: false,

@@ -33,6 +33,7 @@ function createMockTask(id: string, prUrl?: string): WorkflowTaskView {
       current_stage: null,
       is_working: false,
       is_system_active: false,
+      is_preparing: false,
       phase_icon: null,
       is_interrupted: false,
       is_failed: false,

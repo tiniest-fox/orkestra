@@ -430,6 +430,7 @@ export interface DerivedTaskState {
   current_stage: string | null;
   is_working: boolean;
   is_system_active: boolean;
+  is_preparing: boolean;
   phase_icon: string | null;
   is_interrupted: boolean;
   is_failed: boolean;

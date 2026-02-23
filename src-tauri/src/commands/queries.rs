@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::{error::TauriError, project_registry::ProjectRegistry};
 use chrono::Utc;
 use orkestra_core::workflow::{
-    Artifact, AutoTaskTemplate, Iteration, LogEntry, Question, WorkflowConfig,
+    Artifact, AutoTaskTemplate, Iteration, LogEntry, Question, TaskView, WorkflowConfig,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -24,6 +24,39 @@ pub fn workflow_get_config(
     window: Window,
 ) -> Result<WorkflowConfig, TauriError> {
     registry.with_project(window.label(), |state| Ok(state.config().clone()))
+}
+
+/// Bundled startup data pushed from the Tauri side before React mounts.
+///
+/// Lets React skip IPC calls for the initial render — both config and tasks
+/// are already in memory when the window opens.
+#[derive(serde::Serialize, Clone)]
+pub struct StartupData {
+    /// Workflow config (already loaded at startup).
+    pub config: WorkflowConfig,
+    /// Task list pre-fetched in the background thread.
+    pub tasks: Vec<TaskView>,
+}
+
+/// Consume the pre-fetched startup data (one-shot).
+///
+/// Returns `Some(StartupData)` if the background prefetch has completed,
+/// `None` if it hasn't finished yet (React should fall back to normal invokes).
+/// Clears the slot after reading — subsequent calls return `None`.
+#[tauri::command]
+#[allow(clippy::unnecessary_wraps)]
+pub fn workflow_get_startup_data(
+    registry: State<ProjectRegistry>,
+    window: Window,
+) -> Result<Option<StartupData>, TauriError> {
+    registry.with_project(window.label(), |state| {
+        let arc = state.startup_tasks();
+        let mut slot = arc.lock().unwrap();
+        Ok(slot.take().map(|tasks| StartupData {
+            config: state.config().clone(),
+            tasks,
+        }))
+    })
 }
 
 /// Get auto-task templates.

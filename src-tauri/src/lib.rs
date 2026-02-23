@@ -363,14 +363,18 @@ pub fn run() {
                         // the original "picker" window navigates to /?project=... and
                         // keeps the "picker" label — it must not be re-focused here.
                         let existing_picker =
-                            app_handle.webview_windows().into_iter().find_map(
-                                |(_label, win)| {
+                            app_handle
+                                .webview_windows()
+                                .into_iter()
+                                .find_map(|(_label, win)| {
                                     let url = win.url().ok()?;
-                                    let is_picker =
-                                        !url.query_pairs().any(|(k, _)| k == "project");
-                                    if is_picker { Some(win) } else { None }
-                                },
-                            );
+                                    let is_picker = !url.query_pairs().any(|(k, _)| k == "project");
+                                    if is_picker {
+                                        Some(win)
+                                    } else {
+                                        None
+                                    }
+                                });
 
                         if let Some(win) = existing_picker {
                             let _ = win.set_focus();
@@ -417,59 +421,29 @@ pub fn run() {
                     let path_str = last_project.path.clone();
                     let app_handle = app.handle().clone();
 
-                    // Pre-register the project synchronously so commands work
-                    // immediately after the page loads. The orchestrator spawns
-                    // its own thread, so this does not block significantly.
-                    match commands::startup_register_project(&app_handle, "picker", &path_str) {
-                        Ok(()) => {
-                            let url = format!("/?project={}", urlencoding::encode(&path_str));
-                            WebviewWindowBuilder::new(
-                                app,
-                                "picker",
-                                WebviewUrl::App(url.parse().unwrap()),
-                            )
-                            .title("Orkestra")
-                            .inner_size(1200.0, 800.0)
-                            .build()?;
-                        }
-                        Err(e) => {
-                            let error_msg =
-                                format!("Could not open {}: {}", path_str, e.message);
-                            let url =
-                                format!("/?error={}", urlencoding::encode(&error_msg));
-                            WebviewWindowBuilder::new(
-                                app,
-                                "picker",
-                                WebviewUrl::App(url.parse().unwrap()),
-                            )
-                            .title("Orkestra")
-                            .inner_size(1200.0, 800.0)
-                            .build()?;
-                        }
-                    }
+                    // Open the window immediately — init happens in a background thread.
+                    // On success the thread emits `startup-data`; on failure `startup-error`.
+                    let url = format!("/?project={}", urlencoding::encode(&path_str));
+                    WebviewWindowBuilder::new(app, "picker", WebviewUrl::App(url.parse().unwrap()))
+                        .title("Orkestra")
+                        .inner_size(1200.0, 800.0)
+                        .build()?;
+                    commands::spawn_background_startup(app_handle, "picker", &path_str);
                 } else {
-                    // Path no longer exists — show picker with error
+                    // Path no longer exists — show picker with error (nothing to open).
                     let error_msg = format!("Folder not found: {}", last_project.path);
                     let url = format!("/?error={}", urlencoding::encode(&error_msg));
-                    WebviewWindowBuilder::new(
-                        app,
-                        "picker",
-                        WebviewUrl::App(url.parse().unwrap()),
-                    )
-                    .title("Orkestra")
-                    .inner_size(1200.0, 800.0)
-                    .build()?;
+                    WebviewWindowBuilder::new(app, "picker", WebviewUrl::App(url.parse().unwrap()))
+                        .title("Orkestra")
+                        .inner_size(1200.0, 800.0)
+                        .build()?;
                 }
             } else {
                 // No recents — show the project picker
-                WebviewWindowBuilder::new(
-                    app,
-                    "picker",
-                    WebviewUrl::App("index.html".into()),
-                )
-                .title("Orkestra")
-                .inner_size(1200.0, 800.0)
-                .build()?;
+                WebviewWindowBuilder::new(app, "picker", WebviewUrl::App("index.html".into()))
+                    .title("Orkestra")
+                    .inner_size(1200.0, 800.0)
+                    .build()?;
             }
 
             Ok(())
@@ -487,6 +461,7 @@ pub fn run() {
             commands::get_recent_projects,
             commands::remove_recent_project,
             commands::pick_folder,
+            commands::workflow_retry_startup,
             // Workflow commands
             commands::workflow_get_tasks,
             commands::workflow_create_task,
@@ -510,6 +485,7 @@ pub fn run() {
             commands::workflow_interrupt,
             commands::workflow_resume,
             commands::workflow_get_config,
+            commands::workflow_get_startup_data,
             commands::workflow_get_auto_task_templates,
             commands::workflow_get_iterations,
             commands::workflow_get_artifact,

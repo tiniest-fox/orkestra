@@ -18,8 +18,8 @@ use orkestra_core::workflow::execution::{
 };
 use orkestra_core::workflow::ports::ProcessSpawner;
 use orkestra_core::workflow::{
-    AutoTaskTemplate, Git2GitService, GitService, SqliteWorkflowStore, WorkflowApi, WorkflowConfig,
-    WorkflowStore,
+    AutoTaskTemplate, Git2GitService, GitService, SqliteWorkflowStore, TaskView, WorkflowApi,
+    WorkflowConfig, WorkflowStore,
 };
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +46,8 @@ pub struct ProjectState {
     provider_registry: Arc<ProviderRegistry>,
     /// Stop flag for the orchestrator loop.
     pub(crate) stop_flag: Arc<AtomicBool>,
+    /// Prefetched tasks from startup, consumed once by React.
+    startup_tasks: Arc<Mutex<Option<Vec<TaskView>>>>,
 }
 
 impl ProjectState {
@@ -134,6 +136,7 @@ impl ProjectState {
             has_gh_cli,
             provider_registry: Arc::new(provider_registry),
             stop_flag,
+            startup_tasks: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -149,6 +152,11 @@ impl ProjectState {
     /// Get a clone of the Arc<Mutex<WorkflowApi>> for the orchestrator.
     pub fn api_arc(&self) -> Arc<Mutex<WorkflowApi>> {
         self.api.clone()
+    }
+
+    /// Get the startup tasks slot for prefetch results.
+    pub fn startup_tasks(&self) -> Arc<Mutex<Option<Vec<TaskView>>>> {
+        self.startup_tasks.clone()
     }
 
     /// Get the workflow configuration.

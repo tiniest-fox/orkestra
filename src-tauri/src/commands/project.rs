@@ -1,5 +1,6 @@
 //! Project management commands.
 
+use crate::commands::queries::StartupData;
 use crate::error::TauriError;
 use crate::notifications::TaskNotifier;
 use crate::project_init::{initialize_project, validate_project_path};
@@ -7,6 +8,7 @@ use crate::project_registry::{ProjectRegistry, RecentProject};
 use orkestra_core::orkestra_debug;
 use serde::Serialize;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_store::StoreExt;
 
@@ -30,11 +32,94 @@ pub struct ProjectInfo {
     pub has_gh_cli: bool,
 }
 
+/// Payload for the `startup-error` event.
+#[derive(Debug, Clone, Serialize)]
+pub struct StartupError {
+    pub message: String,
+}
+
 /// Payload for review-ready events.
 #[derive(Debug, Clone, Serialize)]
 struct ReviewReadyPayload {
     task_id: String,
     parent_id: Option<String>,
+}
+
+/// Spawn a background thread that pre-fetches tasks and emits a `startup-data` event.
+///
+/// Runs concurrently with JS bundle load. Stores result in the startup slot for
+/// `workflow_get_startup_data` as a fallback if the event fires before the listener.
+pub fn spawn_startup_prefetch(
+    registry: &ProjectRegistry,
+    window_label: &str,
+    window: tauri::WebviewWindow,
+) {
+    let Ok(api_arc) = registry.with_project(window_label, |s| Ok(s.api_arc())) else {
+        return;
+    };
+    let Ok(config) = registry.with_project(window_label, |s| Ok(s.config().clone())) else {
+        return;
+    };
+    let Ok(slot) = registry.with_project(window_label, |s| Ok(s.startup_tasks())) else {
+        return;
+    };
+
+    std::thread::spawn(move || {
+        let tasks = api_arc
+            .lock()
+            .ok()
+            .and_then(|api| api.list_task_views().ok())
+            .unwrap_or_default();
+
+        *slot.lock().unwrap() = Some(tasks.clone());
+        let _ = window.emit("startup-data", StartupData { config, tasks });
+    });
+}
+
+/// Spawn a background thread to initialize a project and emit startup events.
+///
+/// On success: calls `spawn_startup_prefetch` which emits `startup-data`.
+/// On failure: emits `startup-error { message }` to the window.
+pub fn spawn_background_startup(app_handle: AppHandle, window_label: &str, path: &str) {
+    let window_label = window_label.to_string();
+    let path = path.to_string();
+
+    std::thread::spawn(
+        move || match startup_register_project(&app_handle, &window_label, &path) {
+            Ok(()) => {
+                let registry: tauri::State<ProjectRegistry> = app_handle.state();
+                if let Some(window) = app_handle.get_webview_window(&window_label) {
+                    spawn_startup_prefetch(&registry, &window_label, window);
+                }
+            }
+            Err(e) => {
+                if let Some(window) = app_handle.get_webview_window(&window_label) {
+                    let _ = window.emit("startup-error", StartupError { message: e.message });
+                }
+            }
+        },
+    );
+}
+
+/// Retry project startup from the React frontend.
+///
+/// Removes any partial registration and spawns a new background init thread.
+/// Returns immediately — the frontend listens for `startup-data` or `startup-error`.
+#[tauri::command]
+pub fn workflow_retry_startup(
+    app_handle: AppHandle,
+    registry: State<'_, ProjectRegistry>,
+    window: tauri::Window,
+    path: String,
+) {
+    let window_label = window.label().to_string();
+
+    // Stop orchestrator and remove any partial registration, ignoring not-found.
+    if let Ok(Some(state)) = registry.remove(&window_label) {
+        state.stop_flag.store(true, Ordering::Relaxed);
+    }
+
+    spawn_background_startup(app_handle, &window_label, &path);
 }
 
 /// Register a project under the calling window's label without creating a new window.
@@ -125,7 +210,11 @@ pub fn startup_register_project(
     if let Ok(api) = project_state.api() {
         match api.cleanup_orphaned_agents() {
             Ok(orphans) if orphans > 0 => {
-                orkestra_debug!("project", "Cleaned up {} orphaned agent(s) on startup", orphans);
+                orkestra_debug!(
+                    "project",
+                    "Cleaned up {} orphaned agent(s) on startup",
+                    orphans
+                );
             }
             Ok(_) => {}
             Err(e) => {
@@ -159,8 +248,11 @@ pub fn startup_register_project(
 
 /// Open a project folder.
 ///
-/// Creates a new window for the project if it's not already open.
-/// If already open, focuses the existing window.
+/// Creates a new window for the project immediately, then initializes the project
+/// in a background thread. The window emits `startup-data` on success or
+/// `startup-error` on failure (allowing the React app to show a retry button).
+///
+/// Only returns an error to the picker if the path doesn't exist or is already open.
 #[tauri::command]
 pub async fn open_project(
     app_handle: AppHandle,
@@ -169,7 +261,7 @@ pub async fn open_project(
 ) -> Result<OpenProjectResponse, TauriError> {
     let project_path = PathBuf::from(&path);
 
-    // Validate the path
+    // Validate the path exists — errors here stay in the picker (nothing to retry in a window).
     validate_project_path(&project_path).map_err(|e| {
         TauriError::new("INVALID_PROJECT_PATH", format!("Invalid project path: {e}"))
     })?;
@@ -181,7 +273,6 @@ pub async fn open_project(
             "Project already open in window '{existing_label}', focusing"
         );
 
-        // Focus the existing window
         if let Some(window) = app_handle.get_webview_window(&existing_label) {
             window.set_focus().ok();
         }
@@ -192,52 +283,12 @@ pub async fn open_project(
         });
     }
 
-    // Initialize the project (creates .orkestra if needed)
-    let project_state = initialize_project(&project_path).map_err(|e| {
-        TauriError::new(
-            "PROJECT_INIT_FAILED",
-            format!("Failed to initialize project: {e}"),
-        )
-    })?;
-
-    // Clean up orphaned agents from previous crash
-    if let Ok(api) = project_state.api() {
-        match api.cleanup_orphaned_agents() {
-            Ok(orphans) if orphans > 0 => {
-                orkestra_debug!("project", "Cleaned up {} orphaned agent(s)", orphans);
-            }
-            Ok(_) => {}
-            Err(e) => {
-                orkestra_debug!("project", "Failed to clean up orphaned agents: {}", e);
-            }
-        }
-    }
-
-    // Clean up stale target lock from killed check scripts
-    orkestra_core::workflow::cleanup_stale_target_lock(&project_path);
-
     // Generate window label
     let window_label = ProjectRegistry::label_for_path(&project_path);
 
-    // Register the project state
-    registry
-        .register(window_label.clone(), project_state)
-        .map_err(|e| {
-            TauriError::new(
-                "PROJECT_REGISTRATION_FAILED",
-                format!("Failed to register project: {e}"),
-            )
-        })?;
-
-    // Add to global project roots list for signal handler cleanup
-    {
-        let mut roots = crate::PROJECT_ROOTS.lock().unwrap();
-        roots.push(project_path.clone());
-    }
-
-    // Create a new window for this project
+    // Open the window immediately at /?project=... — React mounts and waits for startup events.
     let url = format!("/?project={}", urlencoding::encode(&path));
-    let _window = WebviewWindowBuilder::new(
+    WebviewWindowBuilder::new(
         &app_handle,
         &window_label,
         WebviewUrl::App(url.parse().unwrap()),
@@ -259,11 +310,8 @@ pub async fn open_project(
         path
     );
 
-    // Start orchestrator for this project
-    start_project_orchestrator(&app_handle, &window_label);
-
-    // Update recent projects
-    add_to_recents(&app_handle, &path)?;
+    // Initialize project in background — emits startup-data or startup-error to the window.
+    spawn_background_startup(app_handle, &window_label, &path);
 
     Ok(OpenProjectResponse {
         window_label,

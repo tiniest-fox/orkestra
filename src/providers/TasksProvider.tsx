@@ -17,6 +17,7 @@ import {
   useState,
 } from "react";
 import { usePolling } from "../hooks/usePolling";
+import { startupData } from "../main";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 
 interface TasksContextValue {
@@ -66,11 +67,22 @@ export function TasksProvider({ children }: TasksProviderProps) {
 
   const fetchTasks = useCallback(async () => {
     try {
-      const result = await invoke<WorkflowTaskView[]>("workflow_get_tasks");
-      if (firstFetchRef.current) {
+      let result: WorkflowTaskView[];
+
+      // Fast path: consume prefetched data pushed from Tauri on startup.
+      if (firstFetchRef.current && startupData.value) {
+        result = startupData.value.tasks;
+        startupData.value = null; // clear after both providers have consumed it
         firstFetchRef.current = false;
         console.timeEnd("[startup] tasks");
+      } else {
+        result = await invoke<WorkflowTaskView[]>("workflow_get_tasks");
+        if (firstFetchRef.current) {
+          firstFetchRef.current = false;
+          console.timeEnd("[startup] tasks");
+        }
       }
+
       const deleting = deletingIdsRef.current;
       if (deleting.size > 0) {
         const fetched = result.filter((t) => !deleting.has(t.id));

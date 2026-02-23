@@ -13,14 +13,22 @@ import { ErrorState } from "./ui";
 
 export function Orkestra() {
   useNotificationPermission();
-  const { config, error: configError } = useWorkflowConfigState();
+  const configState = useWorkflowConfigState();
+  const { config, error: configError } = configState;
   const { tasks, loading: tasksLoading } = useTasks();
   const readyLoggedRef = useRef(false);
 
   if (configError) {
     return (
-      <div className="forge-theme w-screen h-screen flex items-center justify-center bg-[var(--canvas)]">
+      <div className="forge-theme w-screen h-screen flex flex-col items-center justify-center gap-4 bg-[var(--canvas)]">
         <ErrorState message="Failed to load workflow config" error={configError} />
+        <button
+          type="button"
+          onClick={configState.retry}
+          className="px-4 py-2 text-sm rounded-panel-sm bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
+        >
+          Retry
+        </button>
       </div>
     );
   }

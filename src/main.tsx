@@ -1,8 +1,27 @@
+import { listen } from "@tauri-apps/api/event";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ProjectPicker } from "./components/ProjectPicker";
 import "./index.css";
+import type { WorkflowConfig, WorkflowTaskView } from "./types/workflow";
+
+interface StartupData {
+  config: WorkflowConfig;
+  tasks: WorkflowTaskView[];
+}
+
+/**
+ * Module-level slot for startup data pushed from Tauri before React mounts.
+ * Providers consume this on first render to skip IPC calls.
+ */
+export const startupData: { value: StartupData | null } = { value: null };
+
+/**
+ * Module-level slot for a startup error emitted before React's provider mounts.
+ * WorkflowConfigProvider checks this on mount and surfaces it as a retryable error.
+ */
+export const startupError: { value: string | null } = { value: null };
 
 /**
  * Extract the project path from URL query parameters.
@@ -52,6 +71,16 @@ function main() {
     console.time("[startup] config:react");
     console.time("[startup] tasks");
     console.time("[startup] ready");
+
+    // Register startup event listeners before React mounts so we catch events
+    // that arrive during bundle evaluation.
+    listen<StartupData>("startup-data", ({ payload }) => {
+      startupData.value = payload;
+    });
+    listen<{ message: string }>("startup-error", ({ payload }) => {
+      startupError.value = payload.message;
+    });
+
     mountApp();
   } else {
     // Picker window: mount the project picker

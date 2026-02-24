@@ -51,10 +51,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
                 : ("focus" as const)
         : null;
 
-  const { sections, subtaskRows } = useMemo(
-    () => groupTasksForFeed(tasks),
-    [tasks],
-  );
+  const { sections, subtaskRows } = useMemo(() => groupTasksForFeed(tasks), [tasks]);
 
   const orderedIds = useMemo(() => {
     const ids: string[] = [];

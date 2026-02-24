@@ -109,9 +109,7 @@ export function DiffContent({
         </div>
       ))}
       {truncated && (
-        <div className="px-4 py-3 font-mono text-[10px] text-text-quaternary">
-          Loading…
-        </div>
+        <div className="px-4 py-3 font-mono text-[10px] text-text-quaternary">Loading…</div>
       )}
     </div>
   );

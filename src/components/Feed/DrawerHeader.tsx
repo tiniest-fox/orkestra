@@ -1,13 +1,15 @@
 //! Shared header for Feed drawers — title row + pipeline + session strip.
 
 import { invoke } from "@tauri-apps/api/core";
-import { SquarePen, SquareTerminal, X } from "lucide-react";
-import { useMemo } from "react";
+import { SquarePen, SquareTerminal, Trash2, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { computePipelineSegments } from "../../utils/pipelineSegments";
 import { groupIterationsIntoRuns } from "../../utils/stageRuns";
+import { Button } from "../ui/Button";
 import { useNavHandler } from "../ui/HotkeyScope";
 import { Kbd } from "../ui/Kbd";
+import { ModalPanel } from "../ui/ModalPanel";
 import { STATUS_HEX } from "../ui/taskStateColors";
 import { PipelineBar } from "./PipelineBar";
 import { SessionStrip } from "./SessionStrip";
@@ -55,6 +57,7 @@ export function DrawerHeader({
   onWaitingChipClick,
   isWaitingChipSelected,
 }: DrawerHeaderProps) {
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const segments = useMemo(() => computePipelineSegments(task, config), [task, config]);
   const runs = useMemo(
     () => groupIterationsIntoRuns(task.iterations, config),
@@ -67,6 +70,9 @@ export function DrawerHeader({
   });
   useNavHandler("E", () => {
     if (worktreePath) invoke("open_in_editor", { path: worktreePath });
+  });
+  useNavHandler("D", () => {
+    setShowDeleteConfirm(true);
   });
 
   return (
@@ -98,6 +104,15 @@ export function DrawerHeader({
             </button>
           </div>
         )}
+        <button
+          type="button"
+          onClick={() => setShowDeleteConfirm(true)}
+          className="shrink-0 flex items-center gap-1.5 text-text-quaternary hover:text-status-error transition-colors mt-0.5"
+          title="Delete task (⇧D)"
+        >
+          <Kbd>⇧D</Kbd>
+          <Trash2 size={14} />
+        </button>
         <button
           type="button"
           onClick={onClose}
@@ -135,6 +150,33 @@ export function DrawerHeader({
           <PipelineBar segments={segments} />
         </div>
       </div>
+
+      <ModalPanel
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        className="top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80"
+      >
+        <div className="bg-canvas border border-border rounded-panel shadow-lg p-5 flex flex-col gap-4">
+          <div>
+            <p className="text-[14px] font-semibold text-text-primary">Delete task?</p>
+            <p className="mt-1 text-[13px] text-text-tertiary line-clamp-2">
+              {task.title || task.description}
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowDeleteConfirm(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => invoke("workflow_delete_task", { taskId: task.id }).then(onClose)}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </ModalPanel>
     </div>
   );
 }

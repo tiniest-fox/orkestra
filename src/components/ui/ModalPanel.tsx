@@ -45,12 +45,19 @@ export function ModalPanel({ isOpen, onClose, children, className = "" }: ModalP
           />
           <motion.div
             className={`fixed z-50 ${className}`}
-            initial={{ opacity: 0, scale: 0.95, y: -8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -8 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.12, ease: "easeOut" }}
           >
-            {children}
+            <motion.div
+              initial={{ scale: 0.95, y: -8 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: -8 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+            >
+              {children}
+            </motion.div>
           </motion.div>
         </>
       )}

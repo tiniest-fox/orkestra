@@ -13,7 +13,6 @@ interface FeedRowActionsProps {
   onAnswer: () => void;
   onMerge: () => void;
   onOpenPr: () => void;
-  onArchive: () => void;
 }
 
 export function FeedRowActions({
@@ -22,7 +21,6 @@ export function FeedRowActions({
   onAnswer,
   onMerge,
   onOpenPr,
-  onArchive,
 }: FeedRowActionsProps) {
   const config = useWorkflowConfig();
   const { derived } = task;
@@ -73,9 +71,6 @@ export function FeedRowActions({
         </Button>
         <Button hotkey="p" variant="merge-outline" size="sm" onClick={onOpenPr}>
           Open PR
-        </Button>
-        <Button hotkey="x" variant="secondary" size="sm" onClick={onArchive}>
-          Archive
         </Button>
       </div>
     );

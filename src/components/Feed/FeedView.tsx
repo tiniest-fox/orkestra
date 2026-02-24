@@ -102,9 +102,6 @@ export function FeedView({ config, tasks }: FeedViewProps) {
               onOpenPr={(taskId) => {
                 invoke("workflow_open_pr", { taskId });
               }}
-              onArchive={(taskId) => {
-                invoke("workflow_archive", { taskId });
-              }}
               onRowClick={onStripRowClick}
             />
           ))}

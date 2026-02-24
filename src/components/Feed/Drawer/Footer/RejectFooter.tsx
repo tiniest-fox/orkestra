@@ -40,12 +40,7 @@ export function RejectFooter({
         className="flex-1 font-sans text-[12px] text-text-primary placeholder:text-text-quaternary bg-[#F4F0F8] border border-border rounded-md px-3 py-1.5 outline-none focus:border-text-quaternary transition-colors"
       />
       <Button
-        variant="custom"
-        className={
-          reviewVariant === "violet"
-            ? "bg-[#7C3AED] hover:bg-[#6D28D9] text-white border-transparent"
-            : "bg-[#0D9488] hover:bg-[#0B7D74] text-white border-transparent"
-        }
+        variant={reviewVariant === "violet" ? "violet" : "teal"}
         onClick={onReject}
         disabled={loading || !feedback.trim()}
       >

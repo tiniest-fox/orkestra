@@ -38,7 +38,7 @@ export function drawerAccent(task: WorkflowTaskView, config: WorkflowConfig): st
     const stage = config.stages.find((s) => s.name === task.derived.current_stage);
     return stage?.capabilities.subtasks ? STATUS_HEX.cyan : STATUS_HEX.purple;
   }
-  if (task.derived.is_done) return STATUS_HEX.success;
+  if (task.derived.is_done) return STATUS_HEX.merge;
   if (task.derived.is_archived) return STATUS_HEX.muted;
   return STATUS_HEX.accent;
 }

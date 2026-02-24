@@ -13,6 +13,8 @@ interface DiffContentProps {
   comments: PrComment[];
   activePath: string | null;
   collapsedPaths: Set<string>;
+  /** Max lines to render. Lines beyond this are deferred. Defaults to Infinity. */
+  lineLimit?: number;
   onToggleCollapsed: (path: string) => void;
   /** Called with each file section's DOM node so the parent can build a jump map. */
   onFileSectionRef: (path: string, el: HTMLDivElement | null) => void;
@@ -20,11 +22,48 @@ interface DiffContentProps {
 
 const COLLAPSE_THRESHOLD = 8;
 
+function sliceFilesToLimit(
+  files: HighlightedFileDiff[],
+  limit: number,
+): { visibleFiles: HighlightedFileDiff[]; truncated: boolean } {
+  if (limit === Infinity) return { visibleFiles: files, truncated: false };
+
+  let remaining = limit;
+  const visibleFiles: HighlightedFileDiff[] = [];
+  let truncated = false;
+
+  for (const file of files) {
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
+    const visibleHunks = [];
+    for (const hunk of file.hunks) {
+      if (remaining <= 0) {
+        truncated = true;
+        break;
+      }
+      if (hunk.lines.length <= remaining) {
+        visibleHunks.push(hunk);
+        remaining -= hunk.lines.length;
+      } else {
+        visibleHunks.push({ ...hunk, lines: hunk.lines.slice(0, remaining) });
+        remaining = 0;
+        truncated = true;
+      }
+    }
+    visibleFiles.push({ ...file, hunks: visibleHunks });
+  }
+
+  return { visibleFiles, truncated };
+}
+
 export function DiffContent({
   files,
   comments,
   activePath,
   collapsedPaths,
+  lineLimit = Infinity,
   onToggleCollapsed,
   onFileSectionRef,
 }: DiffContentProps) {
@@ -42,6 +81,8 @@ export function DiffContent({
     return map;
   }, [comments]);
 
+  const { visibleFiles, truncated } = sliceFilesToLimit(files, lineLimit);
+
   if (files.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center font-sans text-forge-body text-text-quaternary">
@@ -52,7 +93,7 @@ export function DiffContent({
 
   return (
     <div>
-      {files.map((file) => (
+      {visibleFiles.map((file) => (
         <div
           key={file.path}
           ref={(el) => onFileSectionRef(file.path, el)}
@@ -67,6 +108,11 @@ export function DiffContent({
           />
         </div>
       ))}
+      {truncated && (
+        <div className="px-4 py-3 font-mono text-[10px] text-text-quaternary">
+          Loading…
+        </div>
+      )}
     </div>
   );
 }

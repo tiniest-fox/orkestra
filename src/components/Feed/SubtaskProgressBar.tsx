@@ -16,7 +16,7 @@ export function SubtaskProgressBar({ progress, onClick }: SubtaskProgressBarProp
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: role is conditionally set to "button" when onClick is provided
     <span
-      className={`inline-flex items-center gap-1.5 shrink-0${onClick ? " cursor-pointer hover:opacity-75 transition-opacity" : ""}`}
+      className={`flex items-center gap-1.5 shrink-0${onClick ? " cursor-pointer hover:opacity-75 transition-opacity" : ""}`}
       onClick={onClick}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
@@ -31,7 +31,7 @@ export function SubtaskProgressBar({ progress, onClick }: SubtaskProgressBarProp
       <span className="font-mono text-[10px] text-text-tertiary tabular-nums">
         {done}/{total}
       </span>
-      <span className="relative w-14 h-[5px] bg-canvas rounded-full overflow-hidden">
+      <span className="relative w-14 h-[5px] bg-surface-3 rounded-full overflow-hidden">
         <span
           className="absolute inset-y-0 left-0 bg-status-success rounded-full transition-all"
           style={{ width: `${pct}%` }}

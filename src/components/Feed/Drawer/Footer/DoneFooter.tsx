@@ -39,12 +39,7 @@ export function DoneFooter({
     if (activeTab === "pr" && prTabState.type === "conflicts") {
       return (
         <FooterBar>
-          <Button
-            variant="custom"
-            className="bg-[#D97706] hover:opacity-90 text-white border-transparent"
-            onClick={onFixConflicts}
-            disabled={loading}
-          >
+          <Button variant="warning" onClick={onFixConflicts} disabled={loading}>
             {loading ? "Fixing…" : "Fix Conflicts"}
           </Button>
           {viewPrButton}
@@ -55,12 +50,7 @@ export function DoneFooter({
     if (activeTab === "pr" && prTabState.type === "comments_selected") {
       return (
         <FooterBar>
-          <Button
-            variant="custom"
-            className="bg-[#C85A4C] hover:bg-[#B85040] text-white border-transparent"
-            onClick={onAddressComments}
-            disabled={loading}
-          >
+          <Button variant="merge" onClick={onAddressComments} disabled={loading}>
             {loading
               ? "Sending…"
               : `Address ${prTabState.count} comment${prTabState.count !== 1 ? "s" : ""}`}
@@ -72,20 +62,12 @@ export function DoneFooter({
 
     return (
       <FooterBar>
-        <Button
-          hotkey="m"
-          onAccent
-          variant="custom"
-          className="bg-[#C85A4C] hover:bg-[#B85040] text-white border-transparent"
-          onClick={onMerge}
-          disabled={loading}
-        >
+        <Button hotkey="m" onAccent variant="merge" onClick={onMerge} disabled={loading}>
           {loading ? "Merging…" : "Merge"}
         </Button>
         <Button
           hotkey="v"
-          variant="custom"
-          className="bg-transparent border-[#C85A4C]/30 text-[#C85A4C] hover:bg-[#C85A4C]/7"
+          variant="merge-outline"
           onClick={() => openExternal(task.pr_url as string)}
         >
           View PR ↗
@@ -99,23 +81,10 @@ export function DoneFooter({
 
   return (
     <FooterBar>
-      <Button
-        hotkey="m"
-        onAccent
-        variant="custom"
-        className="bg-[#C85A4C] hover:bg-[#B85040] text-white border-transparent"
-        onClick={onMerge}
-        disabled={loading}
-      >
+      <Button hotkey="m" onAccent variant="merge" onClick={onMerge} disabled={loading}>
         {loading ? "Merging…" : "Merge"}
       </Button>
-      <Button
-        hotkey="o"
-        variant="custom"
-        className="bg-transparent border-[#C85A4C]/30 text-[#C85A4C] hover:bg-[#C85A4C]/7"
-        onClick={onOpenPr}
-        disabled={loading}
-      >
+      <Button hotkey="o" variant="merge-outline" onClick={onOpenPr} disabled={loading}>
         {loading ? "Opening…" : "Open PR"}
       </Button>
       <Button hotkey="x" variant="secondary" onClick={onArchive} disabled={loading}>

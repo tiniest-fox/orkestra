@@ -21,12 +21,7 @@ export function ReviewFooter({
       <Button
         hotkey="a"
         onAccent
-        variant="custom"
-        className={
-          reviewVariant === "violet"
-            ? "bg-[#7C3AED] hover:bg-[#6D28D9] text-white border-transparent"
-            : "bg-[#0D9488] hover:bg-[#0B7D74] text-white border-transparent"
-        }
+        variant={reviewVariant === "violet" ? "violet" : "teal"}
         onClick={onApprove}
         disabled={loading}
       >

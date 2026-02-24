@@ -33,13 +33,7 @@ export function FeedSection({
   onRowClick,
 }: FeedSectionProps) {
   const subtasks = surfacedSubtasks ?? [];
-  const selfCount = section.tasks.filter(
-    (t) => t.derived.needs_review || t.derived.has_questions || t.derived.is_failed,
-  ).length;
-  const totalCount =
-    section.name === "needs_review"
-      ? selfCount + subtasks.length
-      : section.tasks.length + subtasks.length;
+  const totalCount = section.tasks.length;
 
   if (totalCount === 0) return null;
 

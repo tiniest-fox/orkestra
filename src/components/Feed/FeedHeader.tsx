@@ -53,7 +53,7 @@ export function FeedHeader({ tasks, onNewTask, hotkeyActive }: FeedHeaderProps) 
       </div>
       <div className="flex items-center gap-2">
         <HotkeyScope active={hotkeyActive}>
-          <Button hotkey="n" variant="primary" onClick={onNewTask}>
+          <Button hotkey="n" variant="primary" size="sm" onClick={onNewTask}>
             New task
           </Button>
         </HotkeyScope>

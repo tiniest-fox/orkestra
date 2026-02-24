@@ -27,6 +27,7 @@ export const STATUS_HEX = {
   purple: "#9333ea",
   accent: "#E83558",
   muted: "#9E96AC",
+  merge: "#C85A4C",
 } as const;
 
 export const taskStateColors = {

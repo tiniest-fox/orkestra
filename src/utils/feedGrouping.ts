@@ -17,10 +17,8 @@ export interface FeedSection {
 
 export interface FeedGroupResult {
   sections: FeedSection[];
-  /** Subtasks surfaced into Needs Review */
-  surfacedSubtasks: WorkflowTaskView[];
-  /** Subtasks surfaced into In Progress */
-  workingSubtasks: WorkflowTaskView[];
+  /** Notable subtasks (working or needing attention) surfaced under their parent row. */
+  subtaskRows: WorkflowTaskView[];
 }
 
 /**
@@ -37,28 +35,25 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
   const topLevel = tasks.filter((t) => !t.parent_id);
   const allSubtasks = tasks.filter((t) => t.parent_id !== undefined);
 
+  const needsAttention = (t: WorkflowTaskView) =>
+    t.derived.needs_review ||
+    t.derived.has_questions ||
+    t.derived.is_failed ||
+    t.derived.is_interrupted ||
+    t.derived.is_blocked;
+
   const subtaskNeedsAttention = new Set(
-    allSubtasks
-      .filter(
-        (t) =>
-          t.derived.needs_review ||
-          t.derived.has_questions ||
-          t.derived.is_failed ||
-          t.derived.is_interrupted ||
-          t.derived.is_blocked,
-      )
-      .map((t) => t.parent_id as string),
+    allSubtasks.filter(needsAttention).map((t) => t.parent_id as string),
   );
 
-  const subtasks = allSubtasks.filter(
-    (t) =>
-      t.derived.needs_review ||
-      t.derived.has_questions ||
-      t.derived.is_failed ||
-      t.derived.is_interrupted ||
-      t.derived.is_blocked,
-  );
-  const working = allSubtasks.filter((t) => t.derived.is_working);
+  const doneIds = new Set(tasks.filter((t) => t.derived.is_done || t.derived.is_archived).map((t) => t.id));
+
+  const notableSubtasks = allSubtasks.filter((t) => {
+    if (t.derived.is_done || t.derived.is_archived || t.derived.is_waiting_on_children) return false;
+    // Queued subtasks with unfinished dependencies are still waiting — don't surface them.
+    if (t.state.type === "queued" && t.depends_on.some((dep) => !doneIds.has(dep))) return false;
+    return true;
+  });
 
   const needsReview: WorkflowTaskView[] = [];
   const readyToShip: WorkflowTaskView[] = [];
@@ -66,12 +61,11 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
   const completed: WorkflowTaskView[] = [];
 
   for (const task of topLevel) {
-    const subtaskNeedsReview = subtaskNeedsAttention.has(task.id);
     if (
       task.derived.needs_review ||
       task.derived.has_questions ||
       task.derived.is_blocked ||
-      subtaskNeedsReview
+      subtaskNeedsAttention.has(task.id)
     ) {
       needsReview.push(task);
     } else if (task.derived.is_done || task.state.type === "integrating") {
@@ -106,7 +100,6 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
         tasks: completed.sort(byUpdatedAt),
       },
     ],
-    surfacedSubtasks: subtasks.sort(byUpdatedAt),
-    workingSubtasks: working.sort(byUpdatedAt),
+    subtaskRows: notableSubtasks.sort(byUpdatedAt),
   };
 }

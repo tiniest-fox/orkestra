@@ -38,14 +38,19 @@ export default {
         // Status colors
         status: {
           success: { DEFAULT: '#16A34A', bg: 'rgba(22, 163, 74, 0.07)' },
-          error:   { DEFAULT: '#DC2626', bg: 'rgba(220, 38, 38, 0.06)' },
+          error:   { DEFAULT: '#DC2626', hover: '#B91C1C', bg: 'rgba(220, 38, 38, 0.06)' },
           warning: { DEFAULT: '#D97706', bg: '#fef3c7' },
-          info:    { DEFAULT: '#2563EB', bg: 'rgba(37, 99, 235, 0.06)' },
+          info:    { DEFAULT: '#2563EB', hover: '#1D4FD8', bg: 'rgba(37, 99, 235, 0.06)' },
           purple:  { DEFAULT: '#9333ea', bg: '#f3e8ff' },
           pink:    { DEFAULT: '#db2777', bg: '#fce7f3' },
           cyan:    { DEFAULT: '#0891b2', bg: '#cffafe' },
           orange:  { DEFAULT: '#ea580c', bg: '#ffedd5' },
         },
+
+        // Workflow action colors
+        violet: { DEFAULT: '#7C3AED', hover: '#6D28D9' }, // approval — standard stage
+        teal:   { DEFAULT: '#0D9488', hover: '#0B7D74' }, // approval — subtask stage
+        merge:  { DEFAULT: '#C85A4C', hover: '#B85040' }, // merge / address comments
 
         // Keep standard Tailwind stone palette for one-off use
         stone: colors.stone,

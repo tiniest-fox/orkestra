@@ -14,8 +14,16 @@ export type ButtonVariant =
   | "secondary" // bordered ghost — secondary action
   | "ghost" // borderless ghost — low-emphasis
   | "submit" // blue fill — submit / confirm
+  | "outline-submit" // blue outline — answer / inline submit
   | "destructive" // red fill — irreversible delete
-  | "custom"; // base layout only — caller provides colors via className
+  | "outline-destructive" // red outline — inline destructive (retry)
+  | "violet" // violet fill — approve (standard stage)
+  | "outline-violet" // violet outline — inline review (standard stage)
+  | "teal" // teal fill — approve (subtask stage)
+  | "outline-teal" // teal outline — inline review (subtask stage)
+  | "merge" // terracotta fill — merge / address comments
+  | "merge-outline" // terracotta outline — open/view PR
+  | "warning"; // amber fill — fix conflicts
 
 type ButtonSize = "sm" | "md" | "lg";
 
@@ -37,20 +45,30 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 // Styles
 // ============================================================================
 
+// Sizing is separate from base so size classes never conflict with each other.
 const base =
-  "inline-flex items-center font-sans text-[13px] font-semibold px-4 py-[7px] rounded-md border cursor-pointer transition-colors whitespace-nowrap leading-snug disabled:opacity-40 disabled:cursor-not-allowed";
+  "inline-flex items-center font-sans font-semibold rounded-md border cursor-pointer transition-colors whitespace-nowrap leading-snug disabled:opacity-40 disabled:cursor-not-allowed";
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary: `${base} bg-accent border-accent text-white hover:bg-accent-hover`,
-  secondary: `${base} bg-transparent border-border text-text-secondary hover:bg-[#F5F2F8] hover:border-text-quaternary`,
-  ghost: `${base} bg-transparent border-transparent text-text-secondary hover:bg-[#F5F2F8]`,
-  submit: `${base} bg-[#2563EB] hover:bg-[#1D4FD8] text-white border-transparent`,
-  destructive: `${base} bg-[#DC2626] hover:bg-[#B91C1C] text-white border-transparent`,
-  custom: base,
+  secondary: `${base} bg-white border-border text-text-secondary hover:bg-surface-hover hover:border-text-quaternary`,
+  ghost: `${base} bg-transparent border-transparent text-text-secondary hover:bg-surface-hover`,
+  submit: `${base} bg-status-info hover:bg-status-info-hover text-white border-transparent`,
+  "outline-submit": `${base} bg-white border-status-info/40 text-status-info hover:bg-surface-hover`,
+  destructive: `${base} bg-status-error hover:bg-status-error-hover text-white border-transparent`,
+  "outline-destructive": `${base} bg-white border-status-error/40 text-status-error hover:bg-surface-hover`,
+  violet: `${base} bg-violet hover:bg-violet-hover text-white border-transparent`,
+  "outline-violet": `${base} bg-white border-violet/40 text-violet hover:bg-surface-hover`,
+  teal: `${base} bg-teal hover:bg-teal-hover text-white border-transparent`,
+  "outline-teal": `${base} bg-white border-teal/40 text-teal hover:bg-surface-hover`,
+  merge: `${base} bg-merge hover:bg-merge-hover text-white border-transparent`,
+  "merge-outline": `${base} bg-white border-merge/30 text-merge hover:bg-surface-hover`,
+  warning: `${base} bg-status-warning hover:opacity-90 text-white border-transparent`,
 };
 
-const sizeOverrides: Partial<Record<ButtonSize, string>> = {
+const sizeStyles: Record<ButtonSize, string> = {
   sm: "text-[12px] px-2.5 py-1",
+  md: "text-[13px] px-4 py-[7px]",
   lg: "text-[14px] px-5 py-2.5",
 };
 
@@ -93,7 +111,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   }, [register, hotkey]);
 
   const badge = hotkeyLabel ?? (hotkey && hotkey.length === 1 ? hotkey.toUpperCase() : hotkey);
-  const sizeClass = sizeOverrides[size] ?? "";
+  const sizeClass = sizeStyles[size];
 
   return (
     <button

@@ -20,6 +20,9 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
   const { diff, diffLoading } = useDrawerDiff();
   const { css } = useSyntaxCss();
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [lineLimit, setLineLimit] = useState(150);
+  const diffExpandedRef = useRef(false);
+  const expandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
   const fileSectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -27,6 +30,37 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
   const setScrollRef = useCallback((el: HTMLDivElement | null) => {
     (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
     setScrollEl(el);
+  }, []);
+
+  // Expand from the initial 150-line stub to full diff after animation settles.
+  // Timer lives in a ref so poll-driven effect re-runs don't cancel it mid-flight.
+  useEffect(() => {
+    if (!diff) {
+      // Task switched or drawer closed — reset for next load.
+      diffExpandedRef.current = false;
+      if (expandTimerRef.current) {
+        clearTimeout(expandTimerRef.current);
+        expandTimerRef.current = null;
+      }
+      setLineLimit(150);
+      return;
+    }
+    if (diffExpandedRef.current) return;
+    diffExpandedRef.current = true;
+    setLineLimit(150);
+    expandTimerRef.current = setTimeout(() => {
+      expandTimerRef.current = null;
+      setLineLimit(Infinity);
+    }, 300);
+  }, [diff]);
+
+  // Cancel any pending expansion on unmount (real or Strict Mode simulated).
+  // Also reset diffExpandedRef so a Strict Mode remount can start a fresh timer.
+  useEffect(() => {
+    return () => {
+      if (expandTimerRef.current) clearTimeout(expandTimerRef.current);
+      diffExpandedRef.current = false;
+    };
   }, []);
 
   // Pre-select the first file when the diff loads.
@@ -179,6 +213,7 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
               comments={[]}
               activePath={activePath}
               collapsedPaths={collapsedPaths}
+              lineLimit={lineLimit}
               onToggleCollapsed={handleToggleCollapsed}
               onFileSectionRef={handleFileSectionRef}
             />

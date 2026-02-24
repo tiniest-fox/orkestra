@@ -51,7 +51,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
                 : ("focus" as const)
         : null;
 
-  const { sections, surfacedSubtasks, workingSubtasks } = useMemo(
+  const { sections, subtaskRows } = useMemo(
     () => groupTasksForFeed(tasks),
     [tasks],
   );
@@ -59,21 +59,15 @@ export function FeedView({ config, tasks }: FeedViewProps) {
   const orderedIds = useMemo(() => {
     const ids: string[] = [];
     for (const section of sections) {
-      const sectionSubtasks =
-        section.name === "needs_review"
-          ? surfacedSubtasks
-          : section.name === "in_progress"
-            ? workingSubtasks
-            : [];
       for (const task of section.tasks) {
         ids.push(task.id);
-        for (const sub of sectionSubtasks.filter((s) => s.parent_id === task.id)) {
+        for (const sub of subtaskRows.filter((s) => s.parent_id === task.id)) {
           ids.push(sub.id);
         }
       }
     }
     return ids;
-  }, [sections, surfacedSubtasks, workingSubtasks]);
+  }, [sections, subtaskRows]);
 
   const onStripRowClick = useCallback((taskId: string) => {
     setGitHistoryOpen(false);
@@ -88,13 +82,10 @@ export function FeedView({ config, tasks }: FeedViewProps) {
   } = useFeedNavigation(orderedIds, drawerOpen, onStripRowClick);
   const focusedId = drawerOpen ? null : rawFocusedId;
 
-  const isEmpty =
-    sections.every((s) => s.tasks.length === 0) &&
-    surfacedSubtasks.length === 0 &&
-    workingSubtasks.length === 0;
+  const isEmpty = sections.every((s) => s.tasks.length === 0) && subtaskRows.length === 0;
 
   return (
-    <div className="h-full flex flex-col rounded-panel overflow-hidden relative">
+    <div className="h-full flex flex-col rounded-panel overflow-hidden relative bg-canvas">
       <FeedHeader tasks={tasks} onNewTask={openNewTask} hotkeyActive={!drawerOpen} />
       <div ref={feedBodyRef} className="flex-1 overflow-y-auto">
         <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
@@ -102,13 +93,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
             <FeedSection
               key={section.name}
               section={section}
-              surfacedSubtasks={
-                section.name === "needs_review"
-                  ? surfacedSubtasks
-                  : section.name === "in_progress"
-                    ? workingSubtasks
-                    : undefined
-              }
+              surfacedSubtasks={subtaskRows}
               config={config}
               focusedId={focusedId}
               onFocusRow={setFocusedId}

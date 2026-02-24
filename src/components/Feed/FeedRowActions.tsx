@@ -27,17 +27,15 @@ export function FeedRowActions({
   const config = useWorkflowConfig();
   const { derived } = task;
 
-  const approveClass = (() => {
+  const approveVariant = (() => {
     const stage = config.stages.find((s) => s.name === derived.current_stage);
-    return stage?.capabilities.subtasks
-      ? "bg-[#0D9488] hover:bg-[#0B7D74] text-white border-transparent"
-      : "bg-[#7C3AED] hover:bg-[#6D28D9] text-white border-transparent";
+    return stage?.capabilities.subtasks ? ("outline-teal" as const) : ("outline-violet" as const);
   })();
 
   if (derived.is_failed) {
     return (
       <div className="flex items-center gap-1.5">
-        <Button hotkey="r" variant="destructive" size="sm">
+        <Button hotkey="r" variant="outline-destructive" size="sm">
           Retry
         </Button>
       </div>
@@ -47,7 +45,7 @@ export function FeedRowActions({
   if (derived.has_questions) {
     return (
       <div className="flex items-center gap-1.5">
-        <Button hotkey="a" variant="submit" size="sm" onClick={onAnswer}>
+        <Button hotkey="a" variant="outline-submit" size="sm" onClick={onAnswer}>
           Answer
         </Button>
       </div>
@@ -57,7 +55,7 @@ export function FeedRowActions({
   if (derived.needs_review) {
     return (
       <div className="flex items-center gap-1.5">
-        <Button hotkey="r" variant="custom" size="sm" className={approveClass} onClick={onReview}>
+        <Button hotkey="r" variant={approveVariant} size="sm" onClick={onReview}>
           Review
         </Button>
         <Button hotkey="a" variant="secondary" size="sm">
@@ -70,22 +68,10 @@ export function FeedRowActions({
   if (derived.is_done && !task.pr_url) {
     return (
       <div className="flex items-center gap-1.5">
-        <Button
-          hotkey="m"
-          variant="custom"
-          size="sm"
-          className="bg-[#C85A4C] hover:bg-[#B85040] text-white border-transparent"
-          onClick={onMerge}
-        >
+        <Button hotkey="m" variant="merge-outline" size="sm" onClick={onMerge}>
           Merge
         </Button>
-        <Button
-          hotkey="p"
-          variant="custom"
-          size="sm"
-          className="bg-transparent border-[#C85A4C]/30 text-[#C85A4C] hover:bg-[#C85A4C]/7"
-          onClick={onOpenPr}
-        >
+        <Button hotkey="p" variant="merge-outline" size="sm" onClick={onOpenPr}>
           Open PR
         </Button>
         <Button hotkey="x" variant="secondary" size="sm" onClick={onArchive}>
@@ -99,13 +85,7 @@ export function FeedRowActions({
     const prUrl = task.pr_url;
     return (
       <div className="flex items-center gap-1.5">
-        <Button
-          hotkey="p"
-          variant="custom"
-          size="sm"
-          className="bg-[#C85A4C] hover:bg-[#B85040] text-white border-transparent"
-          onClick={onReview}
-        >
+        <Button hotkey="p" variant="merge-outline" size="sm" onClick={onReview}>
           PR
         </Button>
         <Button

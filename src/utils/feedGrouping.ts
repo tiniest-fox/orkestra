@@ -53,8 +53,8 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
   const notableSubtasks = allSubtasks.filter((t) => {
     if (t.derived.is_done || t.derived.is_archived || t.derived.is_waiting_on_children)
       return false;
-    // Queued subtasks with unfinished dependencies are still waiting — don't surface them.
-    if (t.state.type === "queued" && t.depends_on.some((dep) => !doneIds.has(dep))) return false;
+    // Subtasks with unfinished dependencies are still waiting — don't surface them.
+    if (t.depends_on.some((dep) => !doneIds.has(dep))) return false;
     return true;
   });
 

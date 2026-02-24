@@ -66,7 +66,8 @@ export function useLogs(
   const [isLoading, setIsLoading] = useState(() => activeLogStage !== null);
   const [error, setError] = useState<unknown>(null);
 
-  // Clear stale logs immediately when stage or session changes
+  // Clear stale logs immediately when stage or session changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deps are intentional triggers, not values used inside
   useEffect(() => {
     setLogs([]);
     setError(null);

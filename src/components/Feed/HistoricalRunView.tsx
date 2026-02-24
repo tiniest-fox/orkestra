@@ -1,6 +1,6 @@
 //! Historical run view — artifact and logs for a past stage run.
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { useLogs } from "../../hooks/useLogs";
 import type { WorkflowTaskView } from "../../types/workflow";
 import type { StageRun } from "../../utils/stageRuns";
@@ -29,9 +29,7 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
   const [activeTab, setActiveTab] = useDrawerTabs("artifact");
   const isLogsActive = activeTab === "logs";
 
-  const { logs, error, setActiveLogStage } = useLogs(task, isLogsActive);
-  const setActiveLogStageRef = useRef(setActiveLogStage);
-  setActiveLogStageRef.current = setActiveLogStage;
+  const { logs, error } = useLogs(task, isLogsActive, run.stage);
 
   useNavHandler("a", () => setActiveTab("artifact"));
   useNavHandler("l", () => setActiveTab("logs"));
@@ -39,10 +37,6 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
   useNavHandler("j", () => scrollRef.current?.scrollBy({ top: 56, behavior: "smooth" }));
   useNavHandler("ArrowUp", () => scrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
   useNavHandler("k", () => scrollRef.current?.scrollBy({ top: -56, behavior: "smooth" }));
-
-  useEffect(() => {
-    if (isLogsActive) setActiveLogStageRef.current(run.stage);
-  }, [isLogsActive, run.stage]);
 
   return (
     <>

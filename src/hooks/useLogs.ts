@@ -9,7 +9,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LogEntry, StageLogInfo, WorkflowTaskView } from "../types/workflow";
 import { usePolling } from "./usePolling";
-import { useSmartDefault } from "./useSmartDefault";
 
 interface UseLogsResult {
   /** Current log entries. */
@@ -24,36 +23,15 @@ interface UseLogsResult {
   activeLogStage: string | null;
   /** Currently selected session ID within the stage. */
   activeSessionId: string | null;
-  /** Set the active log stage (selects the current session by default). */
-  setActiveLogStage: (stage: string | null) => void;
-  /** Set the active session ID directly (for sub-tab selection). */
-  setActiveSessionId: (sessionId: string | null) => void;
-  /** Clear error state. */
-  clearError: () => void;
-  /** Reset all state (for task changes). */
-  reset: () => void;
 }
 
-export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResult {
+export function useLogs(
+  task: WorkflowTaskView,
+  isActive: boolean,
+  targetStage?: string,
+): UseLogsResult {
   // Stages with logs come from the task view — no async fetch needed
   const stagesWithLogs = task.derived.stages_with_logs;
-
-  // Extract just the stage names for useSmartDefault
-  const stageNames = useMemo(() => stagesWithLogs.map((s) => s.stage), [stagesWithLogs]);
-
-  const { selectedItem: activeLogStage, setSelectedItem: setActiveLogStageInternal } =
-    useSmartDefault({
-      taskId: task.id,
-      currentStage: task.derived.current_stage,
-      availableItems: stageNames,
-      isActive,
-    });
-
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  // Start loading if we have an initial stage selected (fetch will fire on mount)
-  const [isLoading, setIsLoading] = useState(() => activeLogStage !== null);
-  const [error, setError] = useState<unknown>(null);
-  const [activeSessionId, setActiveSessionIdInternal] = useState<string | null>(null);
 
   // Helper to find the default session for a stage (current session, or last one)
   const findDefaultSession = useCallback(
@@ -70,65 +48,35 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
     [stagesWithLogs],
   );
 
-  const setActiveLogStage = useCallback(
-    (stage: string | null) => {
-      setError(null);
-      setLogs([]);
-      if (stage !== null) {
-        setIsLoading(true);
-        const defaultSessionId = findDefaultSession(stage);
-        setActiveSessionIdInternal(defaultSessionId);
-      } else {
-        setActiveSessionIdInternal(null);
-      }
-      setActiveLogStageInternal(stage);
-    },
-    [setActiveLogStageInternal, findDefaultSession],
+  // Derive active stage directly from the task — no state lag on task or stage changes
+  const activeLogStage = useMemo((): string | null => {
+    if (targetStage !== undefined) return targetStage;
+    const currentStage = task.derived.current_stage;
+    if (currentStage) return currentStage;
+    return stagesWithLogs.length > 0 ? stagesWithLogs[stagesWithLogs.length - 1].stage : null;
+  }, [targetStage, task.derived.current_stage, stagesWithLogs]);
+
+  // Derive session from stage — also no state lag
+  const activeSessionId = useMemo(
+    () => (activeLogStage ? findDefaultSession(activeLogStage) : null),
+    [activeLogStage, findDefaultSession],
   );
 
-  const setActiveSessionId = useCallback((sessionId: string | null) => {
-    setError(null);
-    setLogs([]);
-    if (sessionId !== null) {
-      setIsLoading(true);
-    }
-    setActiveSessionIdInternal(sessionId);
-  }, []);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(() => activeLogStage !== null);
+  const [error, setError] = useState<unknown>(null);
 
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
-
-  const reset = useCallback(() => {
-    setError(null);
+  // Clear stale logs immediately when stage or session changes
+  useEffect(() => {
     setLogs([]);
-    setIsLoading(false);
-    setActiveSessionIdInternal(null);
-  }, []);
+    setError(null);
+  }, [activeLogStage, activeSessionId]);
 
   // Track activeLogStage and activeSessionId in refs for race condition protection
   const activeLogStageRef = useRef(activeLogStage);
   activeLogStageRef.current = activeLogStage;
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
-
-  // Initialize session ID when stage is first selected by useSmartDefault.
-  //
-  // This duplicates logic in setActiveLogStage, which is intentional:
-  // - setActiveLogStage: Called when user explicitly clicks a stage tab
-  // - This effect: Called when useSmartDefault sets the initial stage on mount
-  //
-  // The useSmartDefault hook can set activeLogStage before this hook's own
-  // setActiveLogStage is ever called, so we need this effect to catch that case
-  // and initialize the session ID accordingly.
-  useEffect(() => {
-    if (activeLogStage && !activeSessionId) {
-      const defaultSessionId = findDefaultSession(activeLogStage);
-      if (defaultSessionId) {
-        setActiveSessionIdInternal(defaultSessionId);
-      }
-    }
-  }, [activeLogStage, activeSessionId, findDefaultSession]);
 
   // Fetch logs for active stage with race condition protection
   const fetchLogs = useCallback(async () => {
@@ -189,9 +137,5 @@ export function useLogs(task: WorkflowTaskView, isActive: boolean): UseLogsResul
     stagesWithLogs,
     activeLogStage,
     activeSessionId,
-    setActiveLogStage,
-    setActiveSessionId,
-    clearError,
-    reset,
   };
 }

@@ -10,6 +10,9 @@
 //! When active, pressing "r" or "a" fires the corresponding button's onClick.
 //! When inactive, nothing dispatches and badges are hidden.
 //!
+//! Hotkey strings support modifier prefixes: "meta+Enter", "ctrl+k", "shift+a".
+//! Modifier combos fire even from inputs/textareas (intentional global shortcuts).
+//!
 //! useNavHandler registers an arbitrary handler for a key with the nearest
 //! HotkeyScope, using a ref so the handler is never stale. Use for scroll/nav
 //! behavior that doesn't have a visible button badge:
@@ -17,6 +20,23 @@
 //!   useNavHandler("ArrowDown", () => containerRef.current?.scrollBy({ top: 56 }));
 
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef } from "react";
+
+// ============================================================================
+// Hotkey matching
+// ============================================================================
+
+/** Returns true if a keyboard event matches the given hotkey string. */
+export function hotkeyMatches(hotkey: string, e: KeyboardEvent): boolean {
+  const parts = hotkey.split("+");
+  const key = parts[parts.length - 1];
+  const mods = new Set(parts.slice(0, -1).map((m) => m.toLowerCase()));
+  if (e.key !== key) return false;
+  if (mods.has("meta") !== e.metaKey) return false;
+  if (mods.has("ctrl") !== e.ctrlKey) return false;
+  if (mods.has("shift") !== e.shiftKey) return false;
+  if (mods.has("alt") !== e.altKey) return false;
+  return true;
+}
 
 // ============================================================================
 // Context
@@ -69,11 +89,19 @@ export function HotkeyScope({ active, children }: HotkeyScopeProps) {
     if (!active) return;
 
     function onKeyDown(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const stack = handlersRef.current.get(e.key);
-      if (!stack || stack.length === 0) return;
-      e.preventDefault();
-      stack[stack.length - 1]();
+      const isFromInput =
+        e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+
+      for (const [hotkey, stack] of handlersRef.current) {
+        if (!stack || stack.length === 0) continue;
+        if (!hotkeyMatches(hotkey, e)) continue;
+        // Plain keys (no modifiers) skip input elements; modifier combos always fire.
+        const hasModifier = hotkey.includes("+");
+        if (isFromInput && !hasModifier) continue;
+        e.preventDefault();
+        stack[stack.length - 1]();
+        return;
+      }
     }
 
     window.addEventListener("keydown", onKeyDown);

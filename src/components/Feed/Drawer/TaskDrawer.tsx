@@ -99,7 +99,6 @@ function TaskDrawerBody({
     selectedRunIdx,
     setSelectedRunIdx,
     runs,
-    onInterrupt: state.handleInterrupt,
     onArchive: state.handleArchive,
   });
 

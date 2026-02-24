@@ -1,7 +1,6 @@
 //! Footer for the working state — interrupt button.
 
 import { Button } from "../../../ui/Button";
-import { Kbd } from "../../../ui/Kbd";
 import { FooterBar } from "./FooterBar";
 
 interface WorkingFooterProps {
@@ -12,15 +11,8 @@ interface WorkingFooterProps {
 export function WorkingFooter({ interrupting, onInterrupt }: WorkingFooterProps) {
   return (
     <FooterBar>
-      <Button variant="secondary" onClick={onInterrupt} disabled={interrupting} className="gap-2">
-        {interrupting ? (
-          "Interrupting…"
-        ) : (
-          <>
-            <span>Interrupt</span>
-            <Kbd>i</Kbd>
-          </>
-        )}
+      <Button variant="secondary" hotkey="i" onClick={onInterrupt} disabled={interrupting}>
+        {interrupting ? "Interrupting…" : "Interrupt"}
       </Button>
     </FooterBar>
   );

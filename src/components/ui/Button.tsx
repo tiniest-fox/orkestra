@@ -73,6 +73,42 @@ const sizeStyles: Record<ButtonSize, string> = {
 };
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+const MODIFIER_SYMBOLS: Record<string, string> = {
+  meta: "⌘",
+  ctrl: "⌃",
+  alt: "⌥",
+  shift: "⇧",
+};
+
+const KEY_SYMBOLS: Record<string, string> = {
+  enter: "↵",
+  arrowup: "↑",
+  arrowdown: "↓",
+  arrowleft: "←",
+  arrowright: "→",
+  backspace: "⌫",
+  escape: "⎋",
+  tab: "⇥",
+};
+
+function formatHotkeyBadge(hotkey: string): string {
+  return hotkey
+    .split("+")
+    .map((part) => {
+      const lower = part.toLowerCase();
+      return (
+        MODIFIER_SYMBOLS[lower] ??
+        KEY_SYMBOLS[lower] ??
+        (part.length === 1 ? part.toUpperCase() : part)
+      );
+    })
+    .join("");
+}
+
+// ============================================================================
 // Component
 // ============================================================================
 
@@ -110,7 +146,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     });
   }, [register, hotkey]);
 
-  const badge = hotkeyLabel ?? (hotkey && hotkey.length === 1 ? hotkey.toUpperCase() : hotkey);
+  const badge = hotkeyLabel ?? (hotkey ? formatHotkeyBadge(hotkey) : undefined);
   const sizeClass = sizeStyles[size];
 
   return (

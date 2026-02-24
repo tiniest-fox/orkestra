@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WorkflowConfig } from "../../types/workflow";
 import { BranchSelector } from "../BranchSelector";
+import { Button } from "../ui/Button";
+import { HotkeyScope } from "../ui/HotkeyScope";
 import { FlowPicker } from "./FlowPicker";
 
 interface NewTaskModalProps {
@@ -47,16 +49,12 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
   const flowKeys: (string | null)[] = useMemo(() => [null, ...Object.keys(flows)], [flows]);
 
   // Modifier-key shortcuts — safe to fire from anywhere including the textarea.
+  // ⌘Enter is handled by the Button's HotkeyScope below.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const cmd = e.metaKey || e.ctrlKey;
       if (!cmd) return;
 
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleSubmit();
-        return;
-      }
       if (e.key === "a") {
         e.preventDefault();
         setAutoMode((m) => !m);
@@ -82,7 +80,7 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleSubmit, hasFlows, flowKeys]);
+  }, [hasFlows, flowKeys]);
 
   return (
     <div className="w-[520px] bg-surface border border-border rounded-panel shadow-xl flex flex-col">
@@ -134,19 +132,19 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
             </kbd>
           </label>
         </div>
-        <button
-          type="button"
-          disabled={!canSubmit}
-          onClick={handleSubmit}
-          className="shrink-0 inline-flex items-center gap-1.5 font-sans text-[12px] font-semibold px-3 py-1.5 rounded bg-accent text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {submitting ? "Creating…" : "Create Task"}
-          {!submitting && (
-            <kbd className="font-mono text-[10px] font-normal opacity-70 bg-white/20 border border-white/30 rounded px-1 py-0.5 leading-none">
-              ⌘↵
-            </kbd>
-          )}
-        </button>
+        <HotkeyScope active>
+          <Button
+            variant="primary"
+            size="sm"
+            hotkey="meta+Enter"
+            onAccent
+            disabled={!canSubmit}
+            onClick={handleSubmit}
+            className="shrink-0 px-3 py-1.5"
+          >
+            {submitting ? "Creating…" : "Create Task"}
+          </Button>
+        </HotkeyScope>
       </div>
     </div>
   );

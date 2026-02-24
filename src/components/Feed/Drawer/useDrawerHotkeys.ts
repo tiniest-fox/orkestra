@@ -16,7 +16,6 @@ interface DrawerHotkeysOptions {
   selectedRunIdx: number | null;
   setSelectedRunIdx: (idx: number | null) => void;
   runs: StageRun[];
-  onInterrupt: () => void;
   onArchive: () => void;
 }
 
@@ -28,7 +27,6 @@ export function useDrawerHotkeys({
   selectedRunIdx,
   setSelectedRunIdx,
   runs,
-  onInterrupt,
   onArchive,
 }: DrawerHotkeysOptions) {
   useEffect(() => {
@@ -64,9 +62,6 @@ export function useDrawerHotkeys({
   });
   useNavHandler("p", () => {
     if (task.derived.is_done && task.pr_url && selectedRunIdx === null) setActiveTab("pr");
-  });
-  useNavHandler("i", () => {
-    if (task.derived.is_working) onInterrupt();
   });
   useNavHandler("x", () => {
     if (task.derived.is_done) onArchive();

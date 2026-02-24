@@ -141,6 +141,7 @@ function TaskDrawerBody({
         isWaitingChipSelected={
           task.derived.is_waiting_on_children ? selectedRunIdx === null : undefined
         }
+        onToggleAutoMode={state.handleToggleAutoMode}
       />
 
       {selectedRun ? (

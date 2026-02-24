@@ -88,6 +88,13 @@ function resolveColors(task: WorkflowTaskView): {
     (derived.is_system_active && state.type !== "integrating")
   ) {
     extraClass = "animate-spin-bounce";
+    if (task.auto_mode) {
+      return {
+        colors: { bg: "bg-purple-100", icon: "text-purple-500" },
+        symbol: "ϟ",
+        extraClass,
+      };
+    }
     return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "*", extraClass };
   }
   if (derived.is_done) {

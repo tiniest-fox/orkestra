@@ -52,6 +52,7 @@ export interface TaskDrawerState {
   handleFixConflicts: () => Promise<void>;
   handleAddressComments: () => Promise<void>;
   handleSubmitAnswers: (questions: WorkflowQuestion[]) => Promise<void>;
+  handleToggleAutoMode: () => Promise<void>;
 }
 
 // ============================================================================
@@ -240,6 +241,10 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     [task.id, answers, allAnswered, loading, onClose],
   );
 
+  const handleToggleAutoMode = useCallback(async () => {
+    await invoke("workflow_set_auto_mode", { taskId: task.id, autoMode: !task.auto_mode });
+  }, [task.id, task.auto_mode]);
+
   return {
     answers,
     setAnswer,
@@ -270,5 +275,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     handleFixConflicts,
     handleAddressComments,
     handleSubmitAnswers,
+    handleToggleAutoMode,
   };
 }

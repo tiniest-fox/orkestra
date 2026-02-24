@@ -26,7 +26,7 @@ export interface FeedGroupResult {
  * subtasks that need attention into the Needs Review section.
  *
  * Classification order (first match wins):
- * - needs_review: derived.needs_review || derived.has_questions || subtask needs review
+ * - needs_review: derived.needs_review || derived.has_questions || is_blocked || is_interrupted || subtask needs review
  * - ready_to_ship: derived.is_done (false once archived, so no extra guard needed)
  * - completed: derived.is_archived
  * - in_progress: everything else
@@ -68,6 +68,7 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
       task.derived.needs_review ||
       task.derived.has_questions ||
       task.derived.is_blocked ||
+      task.derived.is_interrupted ||
       subtaskNeedsAttention.has(task.id)
     ) {
       needsReview.push(task);

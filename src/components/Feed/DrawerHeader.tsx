@@ -30,6 +30,7 @@ interface DrawerHeaderProps {
   /** When viewing a waiting-on-children task, clicking the waiting chip shows subtasks. */
   onWaitingChipClick?: () => void;
   isWaitingChipSelected?: boolean;
+  onToggleAutoMode?: () => void;
 }
 
 /** Compute the accent color for a drawer from the task's current state. */
@@ -56,6 +57,7 @@ export function DrawerHeader({
   onProgressClick,
   onWaitingChipClick,
   isWaitingChipSelected,
+  onToggleAutoMode,
 }: DrawerHeaderProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const segments = useMemo(() => computePipelineSegments(task, config), [task, config]);
@@ -74,6 +76,9 @@ export function DrawerHeader({
   useNavHandler("D", () => {
     setShowDeleteConfirm(true);
   });
+  useNavHandler("A", () => {
+    if (!task.derived.is_done && !task.derived.is_archived) onToggleAutoMode?.();
+  });
 
   return (
     <div className="shrink-0 px-6 pt-4 pb-3 border-b border-border">
@@ -84,6 +89,36 @@ export function DrawerHeader({
         </div>
         {task.worktree_path && (
           <div className="shrink-0 flex items-center gap-2 mt-0.5">
+            {!task.derived.is_done && !task.derived.is_archived && (
+              <label
+                className="flex items-center gap-1.5 cursor-pointer select-none mr-1"
+                title={`${task.auto_mode ? "Disable" : "Enable"} auto mode (⇧A)`}
+              >
+                <Kbd>⇧A</Kbd>
+                <span
+                  className={`text-[11px] font-medium transition-colors ${
+                    task.auto_mode ? "text-purple-500" : "text-text-quaternary"
+                  }`}
+                >
+                  Auto
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={task.auto_mode}
+                  onClick={onToggleAutoMode}
+                  className={`relative inline-flex h-[18px] w-8 items-center rounded-full transition-colors ${
+                    task.auto_mode ? "bg-purple-500" : "bg-surface-3"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${
+                      task.auto_mode ? "translate-x-[17px]" : "translate-x-[3px]"
+                    }`}
+                  />
+                </button>
+              </label>
+            )}
             <button
               type="button"
               onClick={() => invoke("open_in_terminal", { path: task.worktree_path })}

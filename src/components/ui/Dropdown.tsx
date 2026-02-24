@@ -88,7 +88,7 @@ function DropdownRoot({
 
       {isOpen && (
         <div
-          className={`absolute top-full mt-1 z-10 min-w-[160px] bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-panel-sm shadow-lg overflow-hidden ${alignmentClass} ${className}`}
+          className={`absolute top-full mt-1 z-10 min-w-[160px] bg-surface border border-border rounded-panel-sm shadow-lg overflow-hidden ${alignmentClass} ${className}`}
         >
           {children}
         </div>
@@ -102,7 +102,7 @@ function DropdownItem({ children, onClick, className = "" }: DropdownItemProps) 
     <button
       type="button"
       onClick={onClick}
-      className={`w-full text-left px-3 py-2 text-sm text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-700 ${className}`}
+      className={`w-full text-left px-3 py-2 text-sm text-text-secondary hover:bg-canvas ${className}`}
     >
       {children}
     </button>

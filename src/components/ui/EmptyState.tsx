@@ -23,11 +23,9 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div className={`flex flex-col items-center justify-center py-8 ${className}`}>
-      <Icon className="w-8 h-8 text-stone-300 dark:text-stone-600" />
-      <p className="text-sm text-stone-500 dark:text-stone-400 mt-3 text-center">{message}</p>
-      {description && (
-        <p className="text-xs text-stone-400 dark:text-stone-500 mt-1 text-center">{description}</p>
-      )}
+      <Icon className="w-8 h-8 text-text-quaternary" />
+      <p className="text-sm text-text-tertiary mt-3 text-center">{message}</p>
+      {description && <p className="text-xs text-text-tertiary mt-1 text-center">{description}</p>}
     </div>
   );
 }

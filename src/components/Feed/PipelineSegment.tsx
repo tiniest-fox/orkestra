@@ -7,13 +7,13 @@ interface PipelineSegmentProps {
 }
 
 const STATE_CLASSES: Record<SegmentState, string> = {
-  done: "bg-[var(--green-dim)]",
-  active: "bg-[var(--amber)] [animation:pipe-active-pulse_1.5s_ease-in-out_infinite]",
-  review: "bg-[var(--amber)]",
-  failed: "bg-[var(--red)]",
-  pending: "bg-[var(--surface-3)]",
-  dim: "bg-[var(--surface-3)] opacity-45",
-  integration: "bg-[var(--accent-2)]",
+  done: "bg-status-success-bg",
+  active: "bg-status-warning [animation:pipe-active-pulse_1.5s_ease-in-out_infinite]",
+  review: "bg-status-warning",
+  failed: "bg-status-error",
+  pending: "bg-canvas",
+  dim: "bg-canvas opacity-45",
+  integration: "bg-accent",
 };
 
 export function PipelineSegment({ state }: PipelineSegmentProps) {

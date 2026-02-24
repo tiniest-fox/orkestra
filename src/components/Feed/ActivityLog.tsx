@@ -8,7 +8,7 @@ import type {
   WorkflowOutcome,
   WorkflowQuestionAnswer,
 } from "../../types/workflow";
-import { FORGE_PROSE } from "../../utils/prose";
+import { PROSE_CLASSES } from "../../utils/prose";
 
 // ============================================================================
 // Public component
@@ -22,9 +22,7 @@ export function ActivityLog({ iterations }: ActivityLogProps) {
   if (iterations.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <span className="font-forge-mono text-forge-mono-sm text-[var(--text-3)]">
-          No activity yet.
-        </span>
+        <span className="font-mono text-forge-mono-sm text-text-quaternary">No activity yet.</span>
       </div>
     );
   }
@@ -36,10 +34,10 @@ export function ActivityLog({ iterations }: ActivityLogProps) {
       {runs.map((run, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: run order is stable
         <div key={i}>
-          <div className="font-forge-mono text-forge-mono-label text-[var(--text-3)] uppercase tracking-widest mb-2">
+          <div className="font-mono text-forge-mono-label text-text-quaternary uppercase tracking-widest mb-2">
             {run.stage}
           </div>
-          <div className="border-l-2 border-[var(--surface-3)] ml-[3px] pl-4 space-y-4">
+          <div className="border-l-2 border-canvas ml-[3px] pl-4 space-y-4">
             {run.iterations.map((iter) => (
               <IterationEntry key={iter.id} iteration={iter} />
             ))}
@@ -77,18 +75,18 @@ function IterationEntry({ iteration }: { iteration: WorkflowIteration }) {
       {iteration.incoming_context && <ContextCallout trigger={iteration.incoming_context} />}
       <div className="flex items-center gap-2">
         <OutcomeDot outcome={iteration.outcome} />
-        <span className="font-forge-mono text-forge-mono-label text-[var(--text-3)]">
+        <span className="font-mono text-forge-mono-label text-text-quaternary">
           #{iteration.iteration_number}
         </span>
         <OutcomeBadge outcome={iteration.outcome} />
         {duration && (
-          <span className="font-forge-mono text-forge-mono-label text-[var(--text-3)] ml-auto">
+          <span className="font-mono text-forge-mono-label text-text-quaternary ml-auto">
             {duration}
           </span>
         )}
       </div>
       {iteration.activity_log && (
-        <div className={`text-forge-body mt-2 ${FORGE_PROSE}`}>
+        <div className={`text-forge-body mt-2 ${PROSE_CLASSES}`}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{iteration.activity_log}</ReactMarkdown>
         </div>
       )}
@@ -101,7 +99,7 @@ function IterationEntry({ iteration }: { iteration: WorkflowIteration }) {
 // ============================================================================
 
 function OutcomeDot({ outcome }: { outcome?: WorkflowOutcome }) {
-  const color = outcome == null ? "bg-[var(--surface-3)]" : dotColor(outcome);
+  const color = outcome == null ? "bg-canvas" : dotColor(outcome);
   return <span className={`w-2 h-2 rounded-full flex-shrink-0 ${color}`} />;
 }
 
@@ -109,25 +107,25 @@ function dotColor(outcome: WorkflowOutcome): string {
   switch (outcome.type) {
     case "approved":
     case "completed":
-      return "bg-[var(--green)]";
+      return "bg-status-success";
     case "rejected":
     case "rejection":
     case "awaiting_rejection_review":
     case "interrupted":
-      return "bg-[var(--amber)]";
+      return "bg-status-warning";
     case "agent_error":
     case "spawn_failed":
     case "script_failed":
     case "commit_failed":
     case "integration_failed":
-      return "bg-[var(--red)]";
+      return "bg-status-error";
     case "awaiting_answers":
-      return "bg-[var(--blue)]";
+      return "bg-status-info";
     case "blocked":
     case "skipped":
-      return "bg-[var(--text-3)]";
+      return "bg-text-quaternary";
     default:
-      return "bg-[var(--surface-3)]";
+      return "bg-canvas";
   }
 }
 
@@ -135,9 +133,7 @@ function OutcomeBadge({ outcome }: { outcome?: WorkflowOutcome }) {
   if (!outcome) return null;
   const { label, color } = badgeLabel(outcome);
   return (
-    <span
-      className={`font-forge-mono text-forge-mono-label px-1.5 py-0.5 rounded bg-[var(--surface-2)] ${color}`}
-    >
+    <span className={`font-mono text-forge-mono-label px-1.5 py-0.5 rounded bg-canvas ${color}`}>
       {label}
     </span>
   );
@@ -146,34 +142,34 @@ function OutcomeBadge({ outcome }: { outcome?: WorkflowOutcome }) {
 function badgeLabel(outcome: WorkflowOutcome): { label: string; color: string } {
   switch (outcome.type) {
     case "approved":
-      return { label: "Approved", color: "text-[var(--green)]" };
+      return { label: "Approved", color: "text-status-success" };
     case "completed":
-      return { label: "Done", color: "text-[var(--green)]" };
+      return { label: "Done", color: "text-status-success" };
     case "rejected":
     case "rejection":
-      return { label: "Rejected", color: "text-[var(--amber)]" };
+      return { label: "Rejected", color: "text-status-warning" };
     case "awaiting_rejection_review":
-      return { label: "Pending Review", color: "text-[var(--amber)]" };
+      return { label: "Pending Review", color: "text-status-warning" };
     case "awaiting_answers":
-      return { label: "Waiting", color: "text-[var(--blue)]" };
+      return { label: "Waiting", color: "text-status-info" };
     case "interrupted":
-      return { label: "Interrupted", color: "text-[var(--amber)]" };
+      return { label: "Interrupted", color: "text-status-warning" };
     case "agent_error":
-      return { label: "Error", color: "text-[var(--red)]" };
+      return { label: "Error", color: "text-status-error" };
     case "spawn_failed":
-      return { label: "Spawn Failed", color: "text-[var(--red)]" };
+      return { label: "Spawn Failed", color: "text-status-error" };
     case "script_failed":
-      return { label: "Script Failed", color: "text-[var(--red)]" };
+      return { label: "Script Failed", color: "text-status-error" };
     case "commit_failed":
-      return { label: "Commit Failed", color: "text-[var(--red)]" };
+      return { label: "Commit Failed", color: "text-status-error" };
     case "integration_failed":
-      return { label: "Merge Failed", color: "text-[var(--red)]" };
+      return { label: "Merge Failed", color: "text-status-error" };
     case "blocked":
-      return { label: "Blocked", color: "text-[var(--text-3)]" };
+      return { label: "Blocked", color: "text-text-quaternary" };
     case "skipped":
-      return { label: "Skipped", color: "text-[var(--text-3)]" };
+      return { label: "Skipped", color: "text-text-quaternary" };
     default:
-      return { label: "Unknown", color: "text-[var(--text-3)]" };
+      return { label: "Unknown", color: "text-text-quaternary" };
   }
 }
 
@@ -186,13 +182,11 @@ function ContextCallout({ trigger }: { trigger: IterationTrigger }) {
   if (!info) return null;
 
   return (
-    <div
-      className={`border-l-2 ${info.borderColor} bg-[var(--surface-2)] rounded-r px-3 py-2 mb-3`}
-    >
-      <div className="font-forge-mono text-forge-mono-label text-[var(--text-3)] uppercase tracking-wider mb-1">
+    <div className={`border-l-2 ${info.borderColor} bg-canvas rounded-r px-3 py-2 mb-3`}>
+      <div className="font-mono text-forge-mono-label text-text-quaternary uppercase tracking-wider mb-1">
         {info.label}
       </div>
-      <div className={`text-forge-body text-[var(--text-2)] ${FORGE_PROSE}`}>
+      <div className={`text-forge-body text-text-tertiary ${PROSE_CLASSES}`}>
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{info.content}</ReactMarkdown>
       </div>
     </div>
@@ -204,18 +198,18 @@ function calloutInfo(
 ): { label: string; content: string; borderColor: string } | null {
   switch (trigger.type) {
     case "feedback":
-      return { label: "Feedback", content: trigger.feedback, borderColor: "border-[var(--amber)]" };
+      return { label: "Feedback", content: trigger.feedback, borderColor: "border-status-warning" };
     case "answers":
       return {
         label: "Questions Answered",
         content: answersContent(trigger.answers),
-        borderColor: "border-[var(--blue)]",
+        borderColor: "border-status-info",
       };
     case "integration":
       return {
         label: "Integration Note",
         content: trigger.message,
-        borderColor: "border-[var(--surface-3)]",
+        borderColor: "border-canvas",
       };
     case "interrupted":
       return null;

@@ -1,0 +1,113 @@
+//! Tab body content switcher — renders the correct panel based on the active tab.
+
+import type { RefCallback } from "react";
+import type { LogEntry, WorkflowArtifact, WorkflowTaskView } from "../../../types/workflow";
+import { ActivityLog } from "../ActivityLog";
+import { ArtifactView } from "../ArtifactView";
+import { DrawerDiffTab } from "../DrawerDiffTab";
+import { DrawerPrTab } from "../DrawerPrTab";
+import { FeedLogList } from "../FeedLogList";
+import type { DrawerTabId } from "./drawerTabs";
+import { QuestionsSection } from "./Sections/QuestionsSection";
+import { SubtasksSection } from "./Sections/SubtasksSection";
+import type { TaskDrawerState } from "./useTaskDrawerState";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface DrawerTabContentProps {
+  task: WorkflowTaskView;
+  allTasks: WorkflowTaskView[];
+  activeTab: DrawerTabId;
+  artifact: WorkflowArtifact | null;
+  logs: LogEntry[];
+  logsError: unknown;
+  logContainerRef: RefCallback<HTMLDivElement>;
+  handleLogScroll: (e: React.UIEvent<HTMLDivElement>) => void;
+  bodyRef: React.RefObject<HTMLDivElement>;
+  state: TaskDrawerState;
+  onOpenTask: (id: string) => void;
+}
+
+// ============================================================================
+// Component
+// ============================================================================
+
+export function DrawerTabContent({
+  task,
+  allTasks,
+  activeTab,
+  artifact,
+  logs,
+  logsError,
+  logContainerRef,
+  handleLogScroll,
+  bodyRef,
+  state,
+  onOpenTask,
+}: DrawerTabContentProps) {
+  const { submitRef } = state;
+
+  if (activeTab === "diff") {
+    return <DrawerDiffTab active />;
+  }
+
+  if (activeTab === "logs") {
+    return (
+      <div ref={logContainerRef} onScroll={handleLogScroll} className="flex-1 overflow-y-auto p-4">
+        <FeedLogList logs={logs} error={logsError} />
+      </div>
+    );
+  }
+
+  if (activeTab === "artifact") {
+    return (
+      <div ref={bodyRef} className="flex-1 overflow-y-auto">
+        {artifact ? (
+          <ArtifactView artifact={artifact} />
+        ) : (
+          <div className="p-6 font-mono text-[11px] text-text-quaternary">No artifact yet.</div>
+        )}
+      </div>
+    );
+  }
+
+  if (activeTab === "history") {
+    return (
+      <div ref={bodyRef} className="flex-1 overflow-y-auto">
+        <ActivityLog iterations={task.iterations} />
+      </div>
+    );
+  }
+
+  if (activeTab === "questions") {
+    return (
+      <QuestionsSection
+        task={task}
+        questions={task.derived.pending_questions}
+        answers={state.answers}
+        setAnswer={state.setAnswer}
+        onFocusSubmit={() => submitRef.current?.focus()}
+        loading={state.loading}
+      />
+    );
+  }
+
+  if (activeTab === "subtasks") {
+    return <SubtasksSection task={task} allTasks={allTasks} active onOpenTask={onOpenTask} />;
+  }
+
+  if (activeTab === "pr" && task.pr_url) {
+    return (
+      <DrawerPrTab
+        taskId={task.id}
+        prUrl={task.pr_url}
+        baseBranch={task.base_branch}
+        onPrStateChange={state.setPrTabState}
+      />
+    );
+  }
+
+  return null;
+}

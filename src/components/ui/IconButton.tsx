@@ -19,9 +19,9 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<IconButtonVariant, string> = {
   ghost:
-    "bg-transparent text-stone-500 hover:bg-stone-100 hover:text-stone-700 active:bg-stone-200 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-200 dark:active:bg-stone-700",
+    "bg-transparent text-text-tertiary hover:bg-canvas hover:text-text-secondary active:bg-canvas",
   secondary:
-    "bg-stone-100 text-stone-600 hover:bg-stone-200 hover:text-stone-700 active:bg-stone-300 dark:bg-stone-800 dark:text-stone-300 dark:hover:bg-stone-700 dark:hover:text-stone-200 dark:active:bg-stone-600",
+    "bg-canvas text-text-secondary hover:bg-canvas hover:text-text-secondary active:bg-canvas",
 };
 
 const sizeStyles: Record<IconButtonSize, string> = {
@@ -44,7 +44,7 @@ export function IconButton({
   ...props
 }: IconButtonProps) {
   const baseStyles =
-    "inline-flex items-center justify-center rounded-panel-sm transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 dark:focus:ring-offset-stone-900 disabled:opacity-50 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center rounded-panel-sm transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
     <button

@@ -1,145 +1,173 @@
-/**
- * DiffContent - Right-side unified diff view.
- *
- * Displays:
- * - File path header
- * - Binary file message if applicable
- * - Hunks with automatic collapsing of large context sections
- */
+//! Diff content — all files stacked for continuous scrolling.
 
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { Fragment, useMemo } from "react";
 import type { HighlightedFileDiff, HighlightedLine } from "../../hooks/useDiff";
 import type { PrComment } from "../../types/workflow";
+import { Kbd } from "../ui/Kbd";
 import { CollapsedSection } from "./CollapsedSection";
 import { DiffLine } from "./DiffLine";
-import { InlineCommentBlock } from "./InlineCommentBlock";
 
 interface DiffContentProps {
-  file: HighlightedFileDiff | null;
+  files: HighlightedFileDiff[];
   comments: PrComment[];
+  activePath: string | null;
+  collapsedPaths: Set<string>;
+  onToggleCollapsed: (path: string) => void;
+  /** Called with each file section's DOM node so the parent can build a jump map. */
+  onFileSectionRef: (path: string, el: HTMLDivElement | null) => void;
 }
 
 const COLLAPSE_THRESHOLD = 8;
 
-export function DiffContent({ file, comments }: DiffContentProps) {
-  // Filter comments for this file and group by line number
-  const commentsByLine = useMemo(() => {
-    const map = new Map<number, PrComment[]>();
-    if (!file) return map;
-
+export function DiffContent({
+  files,
+  comments,
+  activePath,
+  collapsedPaths,
+  onToggleCollapsed,
+  onFileSectionRef,
+}: DiffContentProps) {
+  const commentsByFile = useMemo(() => {
+    const map = new Map<string, Map<number, PrComment[]>>();
     for (const comment of comments) {
-      // Only include line-level comments (exclude file-level where line is null)
-      if (comment.path === file.path && comment.line !== null) {
-        const existing = map.get(comment.line) ?? [];
-        existing.push(comment);
-        map.set(comment.line, existing);
-      }
+      if (!comment.path || comment.line === null) continue;
+      if (!map.has(comment.path)) map.set(comment.path, new Map());
+      const byLine = map.get(comment.path);
+      if (!byLine) continue;
+      const existing = byLine.get(comment.line) ?? [];
+      existing.push(comment);
+      byLine.set(comment.line, existing);
     }
     return map;
-  }, [comments, file]);
+  }, [comments]);
 
-  if (!file) {
+  if (files.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-stone-400 dark:text-stone-500">
-        Select a file to view changes
-      </div>
-    );
-  }
-
-  if (file.is_binary) {
-    return (
-      <div className="flex-1 p-4">
-        <div className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-2">
-          {file.path}
-        </div>
-        <div className="text-stone-500 dark:text-stone-400">Binary file</div>
+      <div className="flex-1 flex items-center justify-center font-sans text-forge-body text-text-quaternary">
+        No changes.
       </div>
     );
   }
 
   return (
-    <div className="grow shrink basis-0 overflow-auto bg-white dark:bg-stone-900">
-      {/* File path header */}
-      <div className="sticky top-0 bg-stone-50 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700 px-4 py-2 text-sm font-medium text-stone-600 dark:text-stone-300">
-        {file.path}
-        {file.old_path && (
-          <span className="text-stone-400 dark:text-stone-500 ml-2">
-            (renamed from {file.old_path})
-          </span>
-        )}
-      </div>
-
-      {/* Hunks */}
-      <div>
-        {file.hunks.map((hunk) => (
-          <div
-            key={`${hunk.old_start}-${hunk.new_start}`}
-            className="border-b border-stone-100 dark:border-stone-800"
-          >
-            {/* Hunk header */}
-            <div className="bg-stone-100 dark:bg-stone-800 px-4 py-1 text-xs font-mono text-stone-500 dark:text-stone-400">
-              @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@
-            </div>
-
-            {/* Hunk lines with smart collapsing */}
-            {renderHunkLines(hunk.lines, commentsByLine)}
-          </div>
-        ))}
-      </div>
+    <div>
+      {files.map((file) => (
+        <div
+          key={file.path}
+          ref={(el) => onFileSectionRef(file.path, el)}
+          className="border-b border-border"
+        >
+          <FileSection
+            file={file}
+            commentsByLine={commentsByFile.get(file.path) ?? new Map()}
+            isActive={file.path === activePath}
+            isCollapsed={collapsedPaths.has(file.path)}
+            onToggleCollapsed={() => onToggleCollapsed(file.path)}
+          />
+        </div>
+      ))}
     </div>
   );
 }
 
-/**
- * Render hunk lines with smart collapsing of large context sections.
- *
- * Shows first 3 and last 3 context lines, collapses the middle if > 8 lines.
- * Renders inline comments after their corresponding lines.
- */
+// ============================================================================
+// FileSection — one file's header + hunks
+// ============================================================================
+
+function FileSection({
+  file,
+  commentsByLine,
+  isActive,
+  isCollapsed,
+  onToggleCollapsed,
+}: {
+  file: HighlightedFileDiff;
+  commentsByLine: Map<number, PrComment[]>;
+  isActive: boolean;
+  isCollapsed: boolean;
+  onToggleCollapsed: () => void;
+}) {
+  if (file.is_binary) {
+    return (
+      <div className="p-4">
+        <div className="font-sans text-forge-body font-medium text-text-primary mb-1">
+          {file.path}
+        </div>
+        <div className="font-sans text-forge-body text-text-tertiary">Binary file</div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* File path header — clickable to collapse/expand. sticky top-0 keeps it pinned. */}
+      <button
+        type="button"
+        onClick={onToggleCollapsed}
+        className="sticky top-0 z-10 w-full text-left bg-surface-2 border-b border-border px-4 py-2 font-sans text-forge-body font-medium text-text-primary flex items-center gap-2 hover:bg-surface-3 transition-colors"
+      >
+        <span className="flex-1 truncate">
+          {file.path}
+          {file.old_path && (
+            <span className="text-text-quaternary ml-2">(renamed from {file.old_path})</span>
+          )}
+        </span>
+        <span className="flex items-center gap-1.5 shrink-0">
+          {isActive && <Kbd>C</Kbd>}
+          {isCollapsed ? (
+            <ChevronRight size={13} className="text-text-quaternary" />
+          ) : (
+            <ChevronDown size={13} className="text-text-quaternary" />
+          )}
+        </span>
+      </button>
+
+      {!isCollapsed &&
+        file.hunks.map((hunk) => (
+          <div
+            key={`${hunk.old_start}-${hunk.new_start}`}
+            className="border-b border-border last:border-b-0"
+          >
+            <div className="bg-canvas px-4 py-1 font-mono text-forge-mono-label text-text-quaternary">
+              @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@
+            </div>
+            {renderHunkLines(hunk.lines, commentsByLine)}
+          </div>
+        ))}
+    </>
+  );
+}
+
 function renderHunkLines(lines: HighlightedLine[], commentsByLine: Map<number, PrComment[]>) {
   const sections: { type: "render" | "collapse"; lines: HighlightedLine[] }[] = [];
-  let currentContextSection: HighlightedLine[] = [];
+  let currentContext: HighlightedLine[] = [];
 
   for (const line of lines) {
     if (line.line_type === "context") {
-      currentContextSection.push(line);
+      currentContext.push(line);
     } else {
-      // Flush any accumulated context
-      if (currentContextSection.length > 0) {
-        sections.push(
-          currentContextSection.length > COLLAPSE_THRESHOLD
-            ? {
-                type: "collapse",
-                lines: currentContextSection.slice(3, -3),
-              }
-            : { type: "render", lines: currentContextSection },
-        );
-        // Keep first 3 and last 3 if collapsing
-        if (currentContextSection.length > COLLAPSE_THRESHOLD) {
-          sections.push({ type: "render", lines: currentContextSection.slice(0, 3) });
-          sections.push({ type: "render", lines: currentContextSection.slice(-3) });
+      if (currentContext.length > 0) {
+        if (currentContext.length > COLLAPSE_THRESHOLD) {
+          sections.push({ type: "render", lines: currentContext.slice(0, 3) });
+          sections.push({ type: "collapse", lines: currentContext.slice(3, -3) });
+          sections.push({ type: "render", lines: currentContext.slice(-3) });
+        } else {
+          sections.push({ type: "render", lines: currentContext });
         }
-        currentContextSection = [];
+        currentContext = [];
       }
-
-      // Render add/delete line
       sections.push({ type: "render", lines: [line] });
     }
   }
 
-  // Flush remaining context
-  if (currentContextSection.length > 0) {
-    sections.push(
-      currentContextSection.length > COLLAPSE_THRESHOLD
-        ? {
-            type: "collapse",
-            lines: currentContextSection.slice(3, -3),
-          }
-        : { type: "render", lines: currentContextSection },
-    );
-    if (currentContextSection.length > COLLAPSE_THRESHOLD) {
-      sections.push({ type: "render", lines: currentContextSection.slice(0, 3) });
-      sections.push({ type: "render", lines: currentContextSection.slice(-3) });
+  if (currentContext.length > 0) {
+    if (currentContext.length > COLLAPSE_THRESHOLD) {
+      sections.push({ type: "render", lines: currentContext.slice(0, 3) });
+      sections.push({ type: "collapse", lines: currentContext.slice(3, -3) });
+      sections.push({ type: "render", lines: currentContext.slice(-3) });
+    } else {
+      sections.push({ type: "render", lines: currentContext });
     }
   }
 
@@ -156,7 +184,13 @@ function renderHunkLines(lines: HighlightedLine[], commentsByLine: Map<number, P
           <Fragment key={`${i}-${j}`}>
             <DiffLine line={line} />
             {lineComments && lineComments.length > 0 && (
-              <InlineCommentBlock comments={lineComments} />
+              <div className="px-4 py-2 font-sans text-forge-body bg-surface-2 border-b border-border">
+                {lineComments.map((c) => (
+                  <div key={c.id} className="text-text-tertiary">
+                    {c.author}: {c.body}
+                  </div>
+                ))}
+              </div>
             )}
           </Fragment>
         );

@@ -6,7 +6,7 @@ interface KbdProps {
 
 export function Kbd({ children }: KbdProps) {
   return (
-    <kbd className="inline-flex items-center font-forge-mono text-[10px] font-medium text-[var(--text-2)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-1.5 py-0.5 leading-none select-none">
+    <kbd className="inline-flex items-center font-mono text-[10px] font-medium text-text-tertiary bg-canvas border border-border rounded px-1.5 py-0.5 leading-none select-none">
       {children}
     </kbd>
   );

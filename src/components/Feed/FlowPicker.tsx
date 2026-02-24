@@ -46,20 +46,21 @@ export function FlowPicker({ flows, stages, selected, onChange }: FlowPickerProp
   const [focusedIndex, setFocusedIndex] = useState(Math.max(0, selectedIndex));
 
   // Keep focused index in sync when selected changes externally.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional sync only when selected changes
   useEffect(() => {
     const idx = cards.findIndex((c) => c.id === selected);
     if (idx >= 0) setFocusedIndex(idx);
-  }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   if (cards.length <= 1) return null;
 
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <span className="font-forge-sans text-[11px] font-medium text-[var(--text-2)] uppercase tracking-[0.06em] select-none">
+        <span className="font-sans text-[11px] font-medium text-text-tertiary uppercase tracking-[0.06em] select-none">
           Flow
         </span>
-        <span className="font-forge-mono text-[10px] text-[var(--text-3)] select-none">⌘← ⌘→</span>
+        <span className="font-mono text-[10px] text-text-quaternary select-none">⌘← ⌘→</span>
       </div>
       <div
         role="radiogroup"
@@ -85,6 +86,7 @@ export function FlowPicker({ flows, stages, selected, onChange }: FlowPickerProp
         {cards.map((card, index) => {
           const isSelected = selected === card.id;
           return (
+            // biome-ignore lint/a11y/useSemanticElements: custom styled radio card; button with role="radio" inside radiogroup is valid ARIA
             <button
               key={card.id ?? "__default__"}
               type="button"
@@ -99,21 +101,21 @@ export function FlowPicker({ flows, stages, selected, onChange }: FlowPickerProp
                 "text-left rounded px-3 py-2 border transition-colors focus:outline-none",
                 "flex flex-col gap-1",
                 isSelected
-                  ? "border-[var(--accent)] bg-[var(--surface-1)]"
-                  : "border-[var(--border)] bg-[var(--surface-0)] hover:bg-[var(--surface-2)] hover:border-[var(--text-3)]",
+                  ? "border-accent bg-canvas"
+                  : "border-border bg-surface hover:bg-canvas hover:border-text-quaternary",
               ].join(" ")}
             >
               <div className="flex items-center gap-1.5">
                 <span
                   className={[
-                    "font-forge-sans text-[12px] font-semibold",
-                    isSelected ? "text-[var(--accent)]" : "text-[var(--text-0)]",
+                    "font-sans text-[12px] font-semibold",
+                    isSelected ? "text-accent" : "text-text-primary",
                   ].join(" ")}
                 >
                   {card.name}
                 </span>
               </div>
-              <span className="font-forge-mono text-[10px] text-[var(--text-2)] leading-relaxed">
+              <span className="font-mono text-[10px] text-text-tertiary leading-relaxed">
                 {card.stageNames.join(" → ")}
               </span>
             </button>

@@ -4,124 +4,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
+import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
+import { DiffContent } from "../Diff/DiffContent";
+import { DiffFileList } from "../Diff/DiffFileList";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
-import { ForgeDiffContent } from "../Diff/Forge/ForgeDiffContent";
-import { ForgeDiffFileList } from "../Diff/Forge/ForgeDiffFileList";
 import { useNavHandler } from "../ui/HotkeyScope";
 import { useDrawerDiff } from "./DrawerTaskProvider";
-
-// Forge syntax theme — Catppuccin Latte spirit, Forge palette.
-//
-// Six hue families (strings and functions are now distinct):
-//   Violet  (#7C3AED, --violet)     keywords, storage, modifiers
-//   Sky     (#0284C7, --sky)        strings  — passive data, lighter/airier
-//   Blue    (#1D64D8, --blue-family) functions — active, callable
-//   Amber/Peach/Rust               constants, types, attrs, macros
-//   Teal    (#0D9488, --teal)       string escapes, character constants
-//   Pink-red (#C42444, --accent)   HTML/JSX tag names
-//
-// Scoped to .forge-theme + !important to beat syntect's high-specificity selectors.
-const FORGE_SYNTAX_OVERRIDES = `
-/* -- Comments — intentionally muted, italic -- */
-.forge-theme .syn-comment,
-.forge-theme .syn-comment span { color: #A090B8 !important; font-style: italic !important; }
-
-/* -- Strings — sky blue (--sky: #0284C7), passive/data feel -- */
-.forge-theme [class*="syn-string"],
-.forge-theme [class*="syn-string"] span { color: #0284C7 !important; }
-
-/* -- String escapes — teal (--teal: #0D9488), distinct from string body -- */
-.forge-theme [class*="syn-string"] [class*="syn-escape"],
-.forge-theme [class*="syn-constant"][class*="syn-character"][class*="syn-escape"] { color: #0D9488 !important; }
-
-/* -- Keywords and storage — vivid violet (--violet: #7C3AED) -- */
-.forge-theme .syn-keyword,
-.forge-theme .syn-keyword span,
-.forge-theme .syn-storage,
-.forge-theme .syn-storage span,
-.forge-theme .syn-storage.syn-type,
-.forge-theme .syn-storage.syn-type span,
-.forge-theme .syn-storage.syn-modifier,
-.forge-theme .syn-storage.syn-modifier span,
-.forge-theme .syn-keyword.syn-control,
-.forge-theme .syn-keyword.syn-control span,
-.forge-theme .syn-keyword.syn-operator,
-.forge-theme .syn-keyword.syn-operator span,
-.forge-theme .syn-keyword.syn-other,
-.forge-theme .syn-keyword.syn-other span { color: #7C3AED !important; }
-
-/* -- Numeric constants — deep amber (--amber: #D97706) -- */
-.forge-theme .syn-constant.syn-numeric,
-.forge-theme .syn-constant.syn-numeric span { color: #C96800 !important; }
-
-/* -- Language constants (true/false/nil/null) — peach (--peach: #EA580C) -- */
-.forge-theme .syn-constant.syn-language,
-.forge-theme .syn-constant.syn-language span { color: #EA580C !important; }
-
-/* -- Character constants — teal (--teal: #0D9488) -- */
-.forge-theme .syn-constant.syn-character,
-.forge-theme .syn-constant.syn-character span { color: #0D9488 !important; }
-
-/* -- Other constants — amber -- */
-.forge-theme .syn-constant.syn-other,
-.forge-theme .syn-constant.syn-other span { color: #C96800 !important; }
-
-/* -- Function names — royal blue (--blue: #2563EB), deeper than sky strings -- */
-.forge-theme .syn-entity.syn-name.syn-function,
-.forge-theme .syn-entity.syn-name.syn-function span { color: #1D64D8 !important; }
-
-/* -- Support/builtin functions — same blue family, slightly lighter -- */
-.forge-theme .syn-support.syn-function,
-.forge-theme .syn-support.syn-function span { color: #2B74D6 !important; }
-
-/* -- Type / class names — golden amber -- */
-.forge-theme .syn-entity.syn-name.syn-type,
-.forge-theme .syn-entity.syn-name.syn-type span,
-.forge-theme .syn-entity.syn-name.syn-class,
-.forge-theme .syn-entity.syn-name.syn-class span,
-.forge-theme .syn-support.syn-type,
-.forge-theme .syn-support.syn-type span,
-.forge-theme .syn-support.syn-class,
-.forge-theme .syn-support.syn-class span { color: #B8850A !important; }
-
-/* -- HTML/JSX tag names — dark pink-red (brand --accent) -- */
-.forge-theme .syn-entity.syn-name.syn-tag,
-.forge-theme .syn-entity.syn-name.syn-tag span { color: #C42444 !important; }
-
-/* -- HTML/JSX attribute names — rust-orange -- */
-.forge-theme .syn-entity.syn-other.syn-attribute-name,
-.forge-theme .syn-entity.syn-other.syn-attribute-name span { color: #AD5C1A !important; }
-
-/* -- Variable parameters — vivid violet, lighter than keyword violet -- */
-.forge-theme .syn-variable.syn-parameter,
-.forge-theme .syn-variable.syn-parameter span { color: #8B5CF6 !important; }
-
-/* -- Other variables — base text, don't over-color -- */
-.forge-theme .syn-variable,
-.forge-theme .syn-variable span { color: #1C1820 !important; }
-
-/* -- Punctuation — intentionally muted purple-neutral -- */
-.forge-theme .syn-punctuation,
-.forge-theme .syn-punctuation span,
-.forge-theme .syn-meta.syn-brace,
-.forge-theme .syn-meta.syn-brace span { color: #7A7090 !important; }
-
-/* -- Preprocessor / macros — peach (--peach: #EA580C) -- */
-.forge-theme .syn-meta.syn-preprocessor,
-.forge-theme .syn-meta.syn-preprocessor span,
-.forge-theme .syn-support.syn-other.syn-macro,
-.forge-theme .syn-support.syn-other.syn-macro span { color: #EA580C !important; }
-
-/* -- Module / namespace names — golden amber -- */
-.forge-theme .syn-entity.syn-name.syn-module,
-.forge-theme .syn-entity.syn-name.syn-module span,
-.forge-theme .syn-entity.syn-name.syn-namespace,
-.forge-theme .syn-entity.syn-name.syn-namespace span { color: #B8850A !important; }
-
-/* -- Invalid tokens — red (--red: #DC2626) -- */
-.forge-theme .syn-invalid,
-.forge-theme .syn-invalid span { color: #DC2626 !important; }
-`;
 
 interface DrawerDiffTabProps {
   /** Whether this tab is currently visible — controls data loading and hotkey registration. */
@@ -282,11 +170,11 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
         </div>
       ) : diff && diff.files.length > 0 ? (
         <>
-          <div className="w-56 shrink-0 overflow-y-auto border-r border-[var(--border)]">
-            <ForgeDiffFileList files={diff.files} activePath={activePath} onJumpTo={handleJumpTo} />
+          <div className="w-56 shrink-0 overflow-y-auto border-r border-border">
+            <DiffFileList files={diff.files} activePath={activePath} onJumpTo={handleJumpTo} />
           </div>
           <div ref={setScrollRef} className="flex-1 overflow-y-auto">
-            <ForgeDiffContent
+            <DiffContent
               files={diff.files}
               comments={[]}
               activePath={activePath}
@@ -297,9 +185,7 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
           </div>
         </>
       ) : (
-        <div className="flex-1 p-6 font-forge-mono text-[11px] text-[var(--text-3)]">
-          No changes.
-        </div>
+        <div className="flex-1 p-6 font-mono text-[11px] text-text-quaternary">No changes.</div>
       )}
     </div>
   );

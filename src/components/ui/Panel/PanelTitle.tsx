@@ -11,9 +11,7 @@ interface PanelTitleProps {
 
 export function PanelTitle({ children, className = "" }: PanelTitleProps) {
   return (
-    <h2
-      className={`font-heading font-semibold text-lg text-stone-800 dark:text-stone-100 ${className}`}
-    >
+    <h2 className={`font-heading font-semibold text-lg text-text-primary ${className}`}>
       {children}
     </h2>
   );

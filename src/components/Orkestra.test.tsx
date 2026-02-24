@@ -14,6 +14,12 @@ vi.mock("./Feed", () => ({
 
 vi.mock("../providers", () => ({
   useWorkflowConfig: vi.fn(() => mockConfig),
+  useWorkflowConfigState: vi.fn(() => ({
+    config: mockConfig,
+    loading: false,
+    error: null,
+    retry: vi.fn(),
+  })),
   useTasks: vi.fn(() => ({
     tasks: [],
     archivedTasks: [],

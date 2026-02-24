@@ -15,7 +15,7 @@ interface DrawerTabBarProps {
   tabs: DrawerTab[];
   activeTab: string;
   onTabChange: (id: string) => void;
-  /** CSS color value for the active indicator, e.g. "var(--violet)" */
+  /** CSS color value for the active indicator, e.g. "#9333ea" */
   accent: string;
 }
 
@@ -32,7 +32,7 @@ export function DrawerTabBar({ tabs, activeTab, onTabChange, accent }: DrawerTab
   });
 
   return (
-    <div className="flex shrink-0 h-[36px] border-b border-[var(--border)]">
+    <div className="flex shrink-0 h-[36px] border-b border-border">
       {tabs.map((tab) => {
         const isActive = tab.id === activeTab;
         return (
@@ -40,10 +40,10 @@ export function DrawerTabBar({ tabs, activeTab, onTabChange, accent }: DrawerTab
             key={tab.id}
             type="button"
             onClick={() => onTabChange(tab.id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 font-forge-mono text-[11px] tracking-[0.05em] uppercase transition-colors duration-100 border-b-2 ${
+            className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[11px] tracking-[0.05em] uppercase transition-colors duration-100 border-b-2 ${
               isActive
                 ? "font-medium border-transparent"
-                : "text-[var(--text-2)] border-transparent hover:bg-[var(--surface-hover)] hover:text-[var(--text-1)]"
+                : "text-text-tertiary border-transparent hover:bg-canvas hover:text-text-secondary"
             }`}
             style={isActive ? { color: accent, borderBottomColor: accent } : {}}
           >

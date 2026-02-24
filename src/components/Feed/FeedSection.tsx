@@ -45,16 +45,16 @@ export function FeedSection({
 
   return (
     <div>
-      <div className="sticky top-0 z-10 px-6 pt-4 bg-[var(--canvas)]">
+      <div className="sticky top-0 z-10 px-6 pt-4 bg-canvas">
         <div className="flex items-baseline gap-2">
-          <span className="font-forge-mono text-[10px] font-semibold tracking-[0.10em] uppercase text-[var(--accent)]">
+          <span className="font-mono text-[10px] font-semibold tracking-[0.10em] uppercase text-accent">
             {section.label}
           </span>
-          <span className="font-forge-mono text-[10px] font-medium text-[var(--text-3)]">
+          <span className="font-mono text-[10px] font-medium text-text-quaternary">
             {totalCount}
           </span>
         </div>
-        <div className="border-b mt-3 mx-0 border-[var(--border)]" />
+        <div className="border-b mt-3 mx-0 border-border" />
       </div>
       <div>
         {section.tasks.map((task) => {

@@ -8,78 +8,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useCommitDiff } from "../../hooks/useCommitDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
+import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
 import type { CommitInfo } from "../../types/workflow";
+import { DiffContent } from "../Diff/DiffContent";
+import { DiffFileList } from "../Diff/DiffFileList";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
-import { ForgeDiffContent } from "../Diff/Forge/ForgeDiffContent";
-import { ForgeDiffFileList } from "../Diff/Forge/ForgeDiffFileList";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { Kbd } from "../ui/Kbd";
-
-// Forge syntax theme — matches DrawerDiffTab overrides.
-const FORGE_SYNTAX_OVERRIDES = `
-.forge-theme .syn-comment,
-.forge-theme .syn-comment span { color: #A090B8 !important; font-style: italic !important; }
-.forge-theme [class*="syn-string"],
-.forge-theme [class*="syn-string"] span { color: #0284C7 !important; }
-.forge-theme [class*="syn-string"] [class*="syn-escape"],
-.forge-theme [class*="syn-constant"][class*="syn-character"][class*="syn-escape"] { color: #0D9488 !important; }
-.forge-theme .syn-keyword,
-.forge-theme .syn-keyword span,
-.forge-theme .syn-storage,
-.forge-theme .syn-storage span,
-.forge-theme .syn-storage.syn-type,
-.forge-theme .syn-storage.syn-type span,
-.forge-theme .syn-storage.syn-modifier,
-.forge-theme .syn-storage.syn-modifier span,
-.forge-theme .syn-keyword.syn-control,
-.forge-theme .syn-keyword.syn-control span,
-.forge-theme .syn-keyword.syn-operator,
-.forge-theme .syn-keyword.syn-operator span,
-.forge-theme .syn-keyword.syn-other,
-.forge-theme .syn-keyword.syn-other span { color: #7C3AED !important; }
-.forge-theme .syn-constant.syn-numeric,
-.forge-theme .syn-constant.syn-numeric span { color: #C96800 !important; }
-.forge-theme .syn-constant.syn-language,
-.forge-theme .syn-constant.syn-language span { color: #EA580C !important; }
-.forge-theme .syn-constant.syn-character,
-.forge-theme .syn-constant.syn-character span { color: #0D9488 !important; }
-.forge-theme .syn-constant.syn-other,
-.forge-theme .syn-constant.syn-other span { color: #C96800 !important; }
-.forge-theme .syn-entity.syn-name.syn-function,
-.forge-theme .syn-entity.syn-name.syn-function span { color: #1D64D8 !important; }
-.forge-theme .syn-support.syn-function,
-.forge-theme .syn-support.syn-function span { color: #2B74D6 !important; }
-.forge-theme .syn-entity.syn-name.syn-type,
-.forge-theme .syn-entity.syn-name.syn-type span,
-.forge-theme .syn-entity.syn-name.syn-class,
-.forge-theme .syn-entity.syn-name.syn-class span,
-.forge-theme .syn-support.syn-type,
-.forge-theme .syn-support.syn-type span,
-.forge-theme .syn-support.syn-class,
-.forge-theme .syn-support.syn-class span { color: #B8850A !important; }
-.forge-theme .syn-entity.syn-name.syn-tag,
-.forge-theme .syn-entity.syn-name.syn-tag span { color: #C42444 !important; }
-.forge-theme .syn-entity.syn-other.syn-attribute-name,
-.forge-theme .syn-entity.syn-other.syn-attribute-name span { color: #AD5C1A !important; }
-.forge-theme .syn-variable.syn-parameter,
-.forge-theme .syn-variable.syn-parameter span { color: #8B5CF6 !important; }
-.forge-theme .syn-variable,
-.forge-theme .syn-variable span { color: #1C1820 !important; }
-.forge-theme .syn-punctuation,
-.forge-theme .syn-punctuation span,
-.forge-theme .syn-meta.syn-brace,
-.forge-theme .syn-meta.syn-brace span { color: #7A7090 !important; }
-.forge-theme .syn-meta.syn-preprocessor,
-.forge-theme .syn-meta.syn-preprocessor span,
-.forge-theme .syn-support.syn-other.syn-macro,
-.forge-theme .syn-support.syn-other.syn-macro span { color: #EA580C !important; }
-.forge-theme .syn-entity.syn-name.syn-module,
-.forge-theme .syn-entity.syn-name.syn-module span,
-.forge-theme .syn-entity.syn-name.syn-namespace,
-.forge-theme .syn-entity.syn-name.syn-namespace span { color: #B8850A !important; }
-.forge-theme .syn-invalid,
-.forge-theme .syn-invalid span { color: #DC2626 !important; }
-`;
 
 // ============================================================================
 // Helpers
@@ -117,21 +52,19 @@ function CommitRow({ commit, fileCount, selected, onClick }: CommitRowProps) {
       data-hash={commit.hash}
       onClick={onClick}
       className={[
-        "w-full text-left px-3 py-2.5 border-b border-[var(--border)] transition-colors",
-        selected
-          ? "bg-[var(--accent-bg)] border-l-2 border-l-[var(--accent)] !pl-[10px]"
-          : "hover:bg-[var(--surface-hover)]",
+        "w-full text-left px-3 py-2.5 border-b border-border transition-colors",
+        selected ? "bg-accent-soft border-l-2 border-l-accent !pl-[10px]" : "hover:bg-canvas",
       ].join(" ")}
     >
       <div className="flex items-center gap-1.5 mb-[3px]">
-        <span className="font-forge-mono text-[10px] text-[var(--text-3)] bg-[var(--surface-2)] px-[5px] py-[1px] rounded leading-tight shrink-0">
+        <span className="font-mono text-[10px] text-text-quaternary bg-canvas px-[5px] py-[1px] rounded leading-tight shrink-0">
           {commit.hash}
         </span>
       </div>
-      <div className="font-forge-sans text-[12px] text-[var(--text-0)] leading-snug line-clamp-2 mb-[3px]">
+      <div className="font-sans text-[12px] text-text-primary leading-snug line-clamp-2 mb-[3px]">
         {commit.message}
       </div>
-      <div className="flex items-center gap-1.5 font-forge-mono text-[10px] text-[var(--text-3)]">
+      <div className="flex items-center gap-1.5 font-mono text-[10px] text-text-quaternary">
         <span className="truncate max-w-[80px]">{commit.author.split(" ")[0]}</span>
         <span>·</span>
         <span className="shrink-0">{relativeTime(commit.timestamp)}</span>
@@ -240,22 +173,17 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
       )}
       <div className="flex flex-col h-full">
         {/* Header */}
-        <div className="shrink-0 flex items-center gap-3 px-6 h-11 border-b border-[var(--border)]">
-          <span className="font-forge-sans text-[13px] font-semibold text-[var(--text-0)] flex-1">
+        <div className="shrink-0 flex items-center gap-3 px-6 h-11 border-b border-border">
+          <span className="font-sans text-[13px] font-semibold text-text-primary flex-1">
             Git History
           </span>
           {currentBranch && (
-            <span
-              className="font-forge-mono text-[11px] shrink-0"
-              style={{ color: "var(--accent)" }}
-            >
-              {currentBranch}
-            </span>
+            <span className="font-mono text-[11px] shrink-0 text-accent">{currentBranch}</span>
           )}
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 flex items-center gap-1.5 text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors"
+            className="shrink-0 flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
             title="Close (Esc)"
           >
             <Kbd>esc</Kbd>
@@ -266,10 +194,7 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
         {/* Body: commit list (left) + commit detail (right) */}
         <div className="flex flex-1 overflow-hidden">
           {/* Commit list */}
-          <div
-            ref={listRef}
-            className="w-60 shrink-0 overflow-y-auto border-r border-[var(--border)]"
-          >
+          <div ref={listRef} className="w-60 shrink-0 overflow-y-auto border-r border-border">
             {commits.map((commit) => (
               <CommitRow
                 key={commit.hash}
@@ -280,9 +205,7 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
               />
             ))}
             {commits.length === 0 && (
-              <div className="p-4 font-forge-mono text-[10px] text-[var(--text-3)]">
-                No commits.
-              </div>
+              <div className="p-4 font-mono text-[10px] text-text-quaternary">No commits.</div>
             )}
           </div>
 
@@ -290,13 +213,13 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
           {selectedCommit ? (
             <div className="flex flex-col flex-1 overflow-hidden">
               {/* Commit info */}
-              <div className="shrink-0 px-6 py-4 border-b border-[var(--border)]">
+              <div className="shrink-0 px-6 py-4 border-b border-border">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="font-forge-mono text-[10px] text-[var(--text-3)] bg-[var(--surface-2)] px-[5px] py-[1px] rounded leading-tight">
+                  <span className="font-mono text-[10px] text-text-quaternary bg-canvas px-[5px] py-[1px] rounded leading-tight">
                     {selectedCommit.hash}
                   </span>
                 </div>
-                <div className="font-forge-sans text-[14px] font-semibold tracking-[-0.01em] text-[var(--text-0)] leading-snug mb-2">
+                <div className="font-sans text-[14px] font-semibold tracking-[-0.01em] text-text-primary leading-snug mb-2">
                   {selectedCommit.message}
                 </div>
                 {selectedCommit.body && (
@@ -304,19 +227,19 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
                     <button
                       type="button"
                       onClick={() => setBodyExpanded((e) => !e)}
-                      className="flex items-center gap-[3px] font-forge-mono text-[10px] text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors mb-1"
+                      className="flex items-center gap-[3px] font-mono text-[10px] text-text-quaternary hover:text-text-secondary transition-colors mb-1"
                     >
                       {bodyExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                       {bodyExpanded ? "hide description" : "show description"}
                     </button>
                     {bodyExpanded && (
-                      <pre className="font-forge-mono text-[11px] text-[var(--text-2)] leading-relaxed whitespace-pre-wrap">
+                      <pre className="font-mono text-[11px] text-text-tertiary leading-relaxed whitespace-pre-wrap">
                         {selectedCommit.body}
                       </pre>
                     )}
                   </div>
                 )}
-                <div className="flex items-center gap-3 font-forge-mono text-[10px] text-[var(--text-3)]">
+                <div className="flex items-center gap-3 font-mono text-[10px] text-text-quaternary">
                   <span>{selectedCommit.author}</span>
                   <span>·</span>
                   <span>{relativeTime(selectedCommit.timestamp)}</span>
@@ -337,15 +260,15 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
                   </div>
                 ) : diff && diff.files.length > 0 ? (
                   <>
-                    <div className="w-48 shrink-0 overflow-y-auto border-r border-[var(--border)]">
-                      <ForgeDiffFileList
+                    <div className="w-48 shrink-0 overflow-y-auto border-r border-border">
+                      <DiffFileList
                         files={diff.files}
                         activePath={activePath}
                         onJumpTo={handleJumpTo}
                       />
                     </div>
                     <div ref={diffScrollRef} className="flex-1 overflow-y-auto">
-                      <ForgeDiffContent
+                      <DiffContent
                         files={diff.files}
                         comments={[]}
                         activePath={activePath}
@@ -356,14 +279,14 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
                     </div>
                   </>
                 ) : diff ? (
-                  <div className="flex-1 p-6 font-forge-mono text-[11px] text-[var(--text-3)]">
+                  <div className="flex-1 p-6 font-mono text-[11px] text-text-quaternary">
                     No changes.
                   </div>
                 ) : null}
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center font-forge-mono text-[11px] text-[var(--text-3)]">
+            <div className="flex-1 flex items-center justify-center font-mono text-[11px] text-text-quaternary">
               Select a commit to view details.
             </div>
           )}

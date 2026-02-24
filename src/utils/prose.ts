@@ -3,74 +3,29 @@
  */
 
 /**
- * Prose classes for the Forge design language.
- * Used in FeedLogList, ActivityLog, and other Forge-scoped components.
+ * Unified prose classes using Forge design tokens.
+ * Used in feed components, artifact views, and log entries.
  */
-export const FORGE_PROSE = [
-  "prose prose-sm max-w-none",
-  "font-forge-sans",
-  "prose-headings:font-forge-sans prose-headings:not-italic",
-  "prose-h1:text-forge-body-lg prose-h1:font-semibold prose-h1:text-[var(--text-0)]",
-  "prose-h2:text-forge-body-md prose-h2:font-semibold prose-h2:text-[var(--text-0)]",
-  "prose-h3:text-forge-body prose-h3:font-semibold prose-h3:text-[var(--text-1)]",
-  "prose-h4:text-forge-body prose-h4:font-medium prose-h4:text-[var(--text-2)]",
-  "prose-h5:text-forge-body prose-h5:font-medium prose-h5:text-[var(--text-2)]",
-  "prose-h6:text-forge-body prose-h6:font-medium prose-h6:text-[var(--text-3)]",
-  "prose-headings:mt-2 prose-headings:mb-0.5",
-  "prose-p:text-[var(--text-0)] prose-p:my-1.5",
-  "prose-strong:text-[var(--text-0)]",
-  "prose-em:text-[var(--text-0)]",
-  "prose-li:text-[var(--text-0)] prose-li:my-0.5",
-  "prose-ul:my-1.5 prose-ol:my-1.5",
-  "prose-a:text-[var(--accent)] prose-a:no-underline hover:prose-a:underline",
-  "prose-code:font-forge-mono prose-code:bg-[var(--surface-2)] prose-code:text-[var(--text-0)] prose-code:px-1 prose-code:rounded",
-  "prose-pre:bg-[var(--surface-2)] prose-pre:font-forge-mono prose-pre:my-2",
-  "prose-blockquote:text-[var(--text-2)] prose-blockquote:border-[var(--border)] prose-blockquote:my-1.5",
-  "prose-hr:border-[var(--border)] prose-hr:my-2",
-].join(" ");
-
-/**
- * Prose classes for light backgrounds with dark mode support.
- * Used in contexts like ArtifactView where both light and dark modes are needed.
- */
-export const PROSE_CLASSES_LIGHT = [
-  // Base prose
+export const PROSE_CLASSES = [
   "prose prose-sm max-w-none break-words",
-  // Colors
-  "prose-headings:text-stone-800",
-  "dark:prose-headings:text-stone-200",
-  "prose-p:text-stone-700",
-  "dark:prose-p:text-stone-200",
-  "prose-strong:text-stone-800",
-  "dark:prose-strong:text-stone-200",
-  "prose-li:text-stone-700",
-  "dark:prose-li:text-stone-200",
-  "prose-a:text-orange-600",
-  "dark:prose-a:text-orange-400",
-  "prose-blockquote:text-stone-600 prose-blockquote:border-stone-300",
-  "dark:prose-blockquote:text-stone-300 dark:prose-blockquote:border-stone-600",
-  "prose-code:bg-stone-100 prose-code:px-1 prose-code:rounded prose-code:text-stone-800",
-  "dark:prose-code:bg-stone-800 dark:prose-code:text-stone-200",
-  "prose-pre:bg-stone-100 prose-pre:text-stone-800",
-  "dark:prose-pre:bg-stone-800 dark:prose-pre:text-stone-200",
-  "prose-th:text-stone-800 prose-td:text-stone-700",
-  "dark:prose-th:text-stone-200 dark:prose-td:text-stone-300",
-  // Compact heading sizes: h1 ~16px (1.143em of 14px base), h2 ~15px, h3 ~14.5px, h4-h6 at base
-  "prose-h1:text-[1.143em] prose-h1:font-semibold",
-  "prose-h2:text-[1.071em] prose-h2:font-semibold",
-  "prose-h3:text-[1.035em] prose-h3:font-semibold",
-  "prose-h4:text-sm prose-h4:font-semibold",
-  "prose-h5:text-sm prose-h5:font-medium",
-  "prose-h6:text-sm prose-h6:font-medium",
-  // Compact vertical spacing with breathing room
-  "prose-headings:mt-3 prose-headings:mb-1.5",
-  "prose-p:my-2",
-  "prose-ul:my-2 prose-ol:my-2",
-  // padding-left set in index.css with specificity to override prose-sm defaults
-  "prose-li:my-1",
-  "prose-pre:my-2",
-  "prose-blockquote:my-2",
-  "prose-hr:my-3",
-  // Table overflow
+  "font-sans",
+  "prose-headings:font-sans prose-headings:not-italic",
+  "prose-h1:text-forge-body-lg prose-h1:font-semibold prose-h1:text-text-primary",
+  "prose-h2:text-forge-body-md prose-h2:font-semibold prose-h2:text-text-primary",
+  "prose-h3:text-forge-body prose-h3:font-semibold prose-h3:text-text-secondary",
+  "prose-h4:text-forge-body prose-h4:font-medium prose-h4:text-text-tertiary",
+  "prose-h5:text-forge-body prose-h5:font-medium prose-h5:text-text-tertiary",
+  "prose-h6:text-forge-body prose-h6:font-medium prose-h6:text-text-quaternary",
+  "prose-headings:mt-2 prose-headings:mb-0.5",
+  "prose-p:text-text-primary prose-p:my-1.5",
+  "prose-strong:text-text-primary",
+  "prose-em:text-text-primary",
+  "prose-li:text-text-primary prose-li:my-0.5",
+  "prose-ul:my-1.5 prose-ol:my-1.5",
+  "prose-a:text-accent prose-a:no-underline hover:prose-a:underline",
+  "prose-code:font-mono prose-code:bg-canvas prose-code:text-text-primary prose-code:px-1 prose-code:rounded",
+  "prose-pre:bg-canvas prose-pre:font-mono prose-pre:my-2",
+  "prose-blockquote:text-text-tertiary prose-blockquote:border-border prose-blockquote:my-1.5",
+  "prose-hr:border-border prose-hr:my-2",
   "artifact-prose",
 ].join(" ");

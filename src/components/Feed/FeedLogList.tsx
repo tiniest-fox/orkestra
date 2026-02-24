@@ -2,14 +2,14 @@
 //!
 //! A variant of LogList tuned for the Feed's compact, monospaced aesthetic.
 //! Tool calls are compact one-liners; thinking is subtle prose; user messages
-//! are minimal dividers. All colours use Forge CSS custom properties.
+//! are minimal dividers. All colours use Forge design system Tailwind tokens.
 
 import { Terminal } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { LogEntry, OrkAction, ResumeType, ToolInput } from "../../types/workflow";
 import { formatPath } from "../../utils/formatters";
-import { FORGE_PROSE } from "../../utils/prose";
+import { PROSE_CLASSES } from "../../utils/prose";
 import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { EmptyState, ErrorState } from "../ui";
@@ -76,9 +76,9 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
           }
           variant="task"
         />
-        <div className="ml-[2px] pl-4 border-l border-[var(--border)]">
+        <div className="ml-[2px] pl-4 border-l border-border">
           {hidden > 0 && (
-            <div className="font-forge-mono text-forge-mono-sm text-[var(--text-3)] py-[3px]">
+            <div className="font-mono text-forge-mono-sm text-text-quaternary py-[3px]">
               +{hidden} tool call{hidden !== 1 ? "s" : ""}
             </div>
           )}
@@ -121,7 +121,7 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
     case "script_exit":
       return (
         <div
-          className={`font-forge-mono text-forge-mono-sm py-0.5 ${entry.success ? "text-[var(--text-3)]" : "text-[var(--red)]"}`}
+          className={`font-mono text-forge-mono-sm py-0.5 ${entry.success ? "text-text-quaternary" : "text-status-error"}`}
         >
           {entry.success
             ? "✓ done"
@@ -139,9 +139,9 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
 // ============================================================================
 
 const TOOL_VARIANTS = {
-  tool: "text-[var(--text-2)]",
-  task: "text-[var(--accent)]",
-  script: "text-[var(--text-2)]",
+  tool: "text-text-tertiary",
+  task: "text-accent",
+  script: "text-text-tertiary",
 } as const;
 
 function ToolLine({
@@ -156,12 +156,12 @@ function ToolLine({
   return (
     <div className="flex items-baseline gap-2 py-1">
       <span
-        className={`font-forge-mono text-forge-mono-sm font-medium shrink-0 ${TOOL_VARIANTS[variant]}`}
+        className={`font-mono text-forge-mono-sm font-medium shrink-0 ${TOOL_VARIANTS[variant]}`}
       >
         {label}
       </span>
       {summary && (
-        <span className="font-forge-mono text-forge-mono-sm text-[var(--text-3)] truncate min-w-0">
+        <span className="font-mono text-forge-mono-sm text-text-quaternary truncate min-w-0">
           {summary}
         </span>
       )}
@@ -175,7 +175,7 @@ function ThinkingLine({ content }: { content: string }) {
     .trim();
   if (!cleaned) return null;
   return (
-    <div className={`text-forge-body py-3 ${FORGE_PROSE}`}>
+    <div className={`text-forge-body py-3 ${PROSE_CLASSES}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleaned}</ReactMarkdown>
     </div>
   );
@@ -200,9 +200,9 @@ const RESUME_GROUP: Record<ResumeType, BubbleGroup> = {
 };
 
 const BUBBLE_STYLES: Record<BubbleGroup, string> = {
-  human: "bg-[var(--bubble-human-bg)]   border border-[var(--bubble-human-border)]",
-  initial: "bg-[var(--bubble-initial-bg)] border border-[var(--bubble-initial-border)]",
-  system: "bg-[var(--surface-2)]         border border-[var(--border)]",
+  human: "bg-accent-soft border border-accent",
+  initial: "bg-status-purple-bg border border-status-purple",
+  system: "bg-canvas border border-border",
 };
 
 function UserBubble({ content, resumeType }: { content: string; resumeType?: ResumeType }) {
@@ -210,7 +210,7 @@ function UserBubble({ content, resumeType }: { content: string; resumeType?: Res
   return (
     <div className="flex justify-end py-3">
       <div className={`max-w-[85%] rounded-lg px-3 py-2 ${BUBBLE_STYLES[group]}`}>
-        <div className={`text-forge-body text-[var(--text-0)] ${FORGE_PROSE}`}>
+        <div className={`text-forge-body text-text-primary ${PROSE_CLASSES}`}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
       </div>
@@ -220,7 +220,7 @@ function UserBubble({ content, resumeType }: { content: string; resumeType?: Res
 
 function ErrorLine({ message }: { message: string }) {
   return (
-    <div className="font-forge-mono text-forge-mono-sm text-[var(--red)] py-2 border-l-2 border-[var(--red)] pl-2 my-2">
+    <div className="font-mono text-forge-mono-sm text-status-error py-2 border-l-2 border-status-error pl-2 my-2">
       {message}
     </div>
   );
@@ -230,7 +230,7 @@ function ScriptOutputLine({ content }: { content: string }) {
   const trimmed = content.trimEnd();
   if (!trimmed) return null;
   return (
-    <div className="font-forge-mono text-forge-mono-sm text-[var(--text-2)] py-[2px] whitespace-pre-wrap">
+    <div className="font-mono text-forge-mono-sm text-text-tertiary py-[2px] whitespace-pre-wrap">
       {trimmed}
     </div>
   );

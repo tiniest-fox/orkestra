@@ -1,11 +1,11 @@
 //! Action buttons for a feed row, keyed to the task's current state.
-//! Keyboard shortcuts are declared on the buttons themselves via HotkeyButton —
+//! Keyboard shortcuts are declared on the buttons themselves via Button —
 //! the enclosing HotkeyScope (on the focused row) dispatches matching keypresses.
 
 import { useWorkflowConfig } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { openExternal } from "../../utils/openExternal";
-import { HotkeyButton } from "../ui/HotkeyButton";
+import { Button } from "../ui/Button";
 
 interface FeedRowActionsProps {
   task: WorkflowTaskView;
@@ -15,18 +15,6 @@ interface FeedRowActionsProps {
   onOpenPr: () => void;
   onArchive: () => void;
 }
-
-const base =
-  "inline-flex items-center font-forge-sans text-[12px] font-medium px-2.5 py-1 rounded-md border cursor-pointer bg-white transition-colors whitespace-nowrap leading-snug";
-
-const variants = {
-  reviewViolet: `${base} border-[var(--violet-border)] text-[var(--violet)] hover:bg-[var(--violet-bg)] hover:border-[var(--violet)]`,
-  reviewTeal: `${base} border-[var(--teal-border)]   text-[var(--teal)]   hover:bg-[var(--teal-bg)]   hover:border-[var(--teal)]`,
-  secondary: `${base} border-[var(--border)] text-[var(--text-1)] hover:bg-[var(--surface-2)] hover:border-[var(--text-3)]`,
-  answer: `${base} border-[var(--blue-border)] text-[var(--blue)] hover:bg-[var(--blue-bg)] hover:border-[var(--blue)]`,
-  retry: `${base} border-[rgba(220,38,38,0.35)] text-[var(--red)] hover:bg-[var(--red-bg)] hover:border-[var(--red)]`,
-  ship: `${base} border-[var(--peach-border)] text-[var(--peach)] hover:bg-[var(--peach-bg)] hover:border-[var(--peach)]`,
-};
 
 export function FeedRowActions({
   task,
@@ -39,17 +27,19 @@ export function FeedRowActions({
   const config = useWorkflowConfig();
   const { derived } = task;
 
-  const reviewVariant = (() => {
+  const approveClass = (() => {
     const stage = config.stages.find((s) => s.name === derived.current_stage);
-    return stage?.capabilities.subtasks ? variants.reviewTeal : variants.reviewViolet;
+    return stage?.capabilities.subtasks
+      ? "bg-[#0D9488] hover:bg-[#0B7D74] text-white border-transparent"
+      : "bg-[#7C3AED] hover:bg-[#6D28D9] text-white border-transparent";
   })();
 
   if (derived.is_failed) {
     return (
       <div className="flex items-center gap-1.5">
-        <HotkeyButton hotkey="r" className={variants.retry}>
+        <Button hotkey="r" variant="destructive" size="sm">
           Retry
-        </HotkeyButton>
+        </Button>
       </div>
     );
   }
@@ -57,9 +47,9 @@ export function FeedRowActions({
   if (derived.has_questions) {
     return (
       <div className="flex items-center gap-1.5">
-        <HotkeyButton hotkey="a" className={variants.answer} onClick={onAnswer}>
+        <Button hotkey="a" variant="submit" size="sm" onClick={onAnswer}>
           Answer
-        </HotkeyButton>
+        </Button>
       </div>
     );
   }
@@ -67,12 +57,12 @@ export function FeedRowActions({
   if (derived.needs_review) {
     return (
       <div className="flex items-center gap-1.5">
-        <HotkeyButton hotkey="r" className={reviewVariant} onClick={onReview}>
+        <Button hotkey="r" variant="custom" size="sm" className={approveClass} onClick={onReview}>
           Review
-        </HotkeyButton>
-        <HotkeyButton hotkey="a" className={variants.secondary}>
+        </Button>
+        <Button hotkey="a" variant="secondary" size="sm">
           Approve
-        </HotkeyButton>
+        </Button>
       </div>
     );
   }
@@ -80,15 +70,27 @@ export function FeedRowActions({
   if (derived.is_done && !task.pr_url) {
     return (
       <div className="flex items-center gap-1.5">
-        <HotkeyButton hotkey="m" className={variants.ship} onClick={onMerge}>
+        <Button
+          hotkey="m"
+          variant="custom"
+          size="sm"
+          className="bg-[#C85A4C] hover:bg-[#B85040] text-white border-transparent"
+          onClick={onMerge}
+        >
           Merge
-        </HotkeyButton>
-        <HotkeyButton hotkey="p" className={variants.ship} onClick={onOpenPr}>
+        </Button>
+        <Button
+          hotkey="p"
+          variant="custom"
+          size="sm"
+          className="bg-transparent border-[#C85A4C]/30 text-[#C85A4C] hover:bg-[#C85A4C]/7"
+          onClick={onOpenPr}
+        >
           Open PR
-        </HotkeyButton>
-        <HotkeyButton hotkey="x" className={variants.secondary} onClick={onArchive}>
+        </Button>
+        <Button hotkey="x" variant="secondary" size="sm" onClick={onArchive}>
           Archive
-        </HotkeyButton>
+        </Button>
       </div>
     );
   }
@@ -97,19 +99,26 @@ export function FeedRowActions({
     const prUrl = task.pr_url;
     return (
       <div className="flex items-center gap-1.5">
-        <HotkeyButton hotkey="p" className={variants.ship} onClick={onReview}>
+        <Button
+          hotkey="p"
+          variant="custom"
+          size="sm"
+          className="bg-[#C85A4C] hover:bg-[#B85040] text-white border-transparent"
+          onClick={onReview}
+        >
           PR
-        </HotkeyButton>
-        <HotkeyButton
+        </Button>
+        <Button
           hotkey="v"
-          className={variants.secondary}
+          variant="secondary"
+          size="sm"
           onClick={(e) => {
             e.stopPropagation();
             openExternal(prUrl);
           }}
         >
           View ↗
-        </HotkeyButton>
+        </Button>
       </div>
     );
   }

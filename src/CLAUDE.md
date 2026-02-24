@@ -91,26 +91,17 @@ useEffect(() => {
 ## Styling
 
 - Tailwind classes only. No CSS modules, styled-components, or inline style objects.
-- Use the project's custom design tokens: `stone-*` (neutrals), `orange-*` (accent), semantic colors (`info`, `warning`, `error`, `success`), `panel` border radius and shadows.
+- Use the project's Forge design tokens: `canvas`, `surface-*`, `text-primary/secondary/tertiary/quaternary`, `accent-*`, `status-*`, `border`. These are native Tailwind tokens defined in `tailwind.config.js`.
   - **Border radius tokens**: `rounded-panel` (12px) for structural panels, `rounded-panel-sm` (8px) for smaller containers. For chat-like UI elements (messages, bubbles), `rounded-2xl` (16px) is acceptable to differentiate conversational UI from structural panels.
-- **Dark mode pattern**: Always use `light-value dark:dark-value` for all color classes. Never hardcode only light or only dark colors. Dark mode is via `darkMode: 'media'` (system preference).
-  - Text: `text-stone-700 dark:text-stone-300` (600-700 for light, 200-300 for dark)
-  - Backgrounds: `bg-stone-50 dark:bg-stone-900` (50-100 for light, 800-900 for dark)
-  - Borders: `border-stone-300 dark:border-stone-700` (200-300 for light, 600-700 for dark)
-  - Accents: `text-orange-600 dark:text-orange-400` (600 for light, 400 for dark)
-- Use `PROSE_CLASSES_LIGHT` from `utils/prose.ts` for markdown rendering - it includes dual-mode variants. Don't use `PROSE_CLASSES_DARK`.
+  - **Verify token names before using them.** Only classes defined in `tailwind.config.js` generate CSS. For example, status colors use `status-*` tokens (e.g., `bg-status-success`, `text-status-error`) — there are no `success-*`, `error-*`, `info-*`, or `warning-*` tokens. When in doubt, check `tailwind.config.js` first.
+- **Light mode only**: The project is light-mode only. Do not add `dark:` variant classes.
+- Use `PROSE_CLASSES` from `utils/prose.ts` for markdown rendering.
 
 ## Forge Design System
 
 <!-- compound: unthinkingly-inventive-dugong -->
 
-The Forge design system is an alternate visual language used by `FeedView` and its components. It uses IBM Plex fonts, a warm purple-undertone palette, and pink-red accent (`--accent-1`).
-
-**Scoping:** Forge tokens are CSS custom properties defined in `.forge-theme` in `src/index.css` (following the `.artifact-prose` pattern). The `.forge-theme` class is applied at the root in `Orkestra.tsx` and on `FeedView`'s own container (harmless to have it twice).
-
-**Tailwind exception — `StatusSymbol`:** `StatusSymbol.tsx` is the one component that legitimately uses inline `style` props. The reason: both `color` (a CSS variable selected by runtime state from an object) and `animation` (conditionally present) are genuinely dynamic — not one of a fixed set of values. Tailwind arbitrary classes like `text-[var(--x)]` require the variable name to be statically known at write time. This is a deliberate, documented exception; all other Forge components must use Tailwind classes only.
-
-**Dark mode:** `.forge-theme` defines light-mode-only values. Dark mode for Forge tokens is explicitly deferred. When added, a `@media (prefers-color-scheme: dark) { .forge-theme { ... } }` block in `src/index.css` is the right place.
+Forge is the project's design language — it is not an alternate or scoped visual language. It uses IBM Plex fonts, a warm purple-undertone palette, and pink-red accent (`accent`/`accent-*`). All components use Forge tokens by default.
 
 **Animation coupling:** Keyframe names (`pipe-active-pulse`, `forge-pulse-opacity`) are coupled by string between `index.css` and TSX files with no compile-time check. Be careful when renaming them.
 

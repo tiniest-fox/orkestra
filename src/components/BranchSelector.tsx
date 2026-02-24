@@ -47,12 +47,13 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
   }, []);
 
   // Initialise focused index when dropdown opens.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional initialization only when open changes
   useEffect(() => {
     if (!open) return;
     const displayValue = value || currentBranch || "";
     const idx = branches.indexOf(displayValue);
     setFocusedIndex(Math.max(0, idx));
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Close dropdown when clicking outside.
   useEffect(() => {
@@ -70,7 +71,7 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
 
   if (loading) {
     return (
-      <div className="text-xs text-stone-400 flex items-center gap-1.5">
+      <div className="text-xs text-text-quaternary flex items-center gap-1.5">
         <BranchIcon />
         <span>Loading...</span>
       </div>
@@ -85,7 +86,7 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
   // Only one branch — show as static label, no dropdown.
   if (branches.length === 1) {
     return (
-      <div className="inline-flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400 px-1.5 py-1 select-none">
+      <div className="inline-flex items-center gap-1.5 text-xs text-text-secondary px-1.5 py-1 select-none">
         <BranchIcon />
         <span>{displayValue}</span>
       </div>
@@ -113,11 +114,12 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
   }
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: wrapper div captures keyboard events for custom combobox dropdown
     <div ref={containerRef} className="relative" onKeyDown={handleKeyDown}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 rounded px-1.5 py-1 transition-colors"
+        className="inline-flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary hover:bg-canvas rounded px-1.5 py-1 transition-colors"
       >
         <BranchIcon />
         <span>{displayValue}</span>
@@ -125,7 +127,7 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
       </button>
 
       {open && (
-        <div className="absolute left-0 bottom-full mb-1 z-10 w-64 max-h-48 overflow-y-auto bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-panel-sm shadow-lg">
+        <div className="absolute left-0 bottom-full mb-1 z-10 w-64 max-h-48 overflow-y-auto bg-surface border border-border rounded-panel-sm shadow-lg">
           {branches.map((branch, idx) => (
             <button
               key={branch}
@@ -135,19 +137,13 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
                 setOpen(false);
               }}
               className={`w-full text-left px-3 py-1.5 text-sm flex items-center gap-2 ${
-                idx === focusedIndex
-                  ? "bg-stone-100 dark:bg-stone-700"
-                  : "hover:bg-stone-50 dark:hover:bg-stone-700"
-              } ${
-                branch === displayValue
-                  ? "text-orange-600 dark:text-orange-400 font-medium"
-                  : "text-stone-700 dark:text-stone-200"
-              }`}
+                idx === focusedIndex ? "bg-canvas" : "hover:bg-canvas"
+              } ${branch === displayValue ? "text-accent font-medium" : "text-text-primary"}`}
             >
               <BranchIcon />
               <span className="truncate">{branch}</span>
               {branch === currentBranch && (
-                <span className="ml-auto text-xs text-stone-400 flex-shrink-0">current</span>
+                <span className="ml-auto text-xs text-text-quaternary flex-shrink-0">current</span>
               )}
             </button>
           ))}

@@ -2,7 +2,6 @@ const colors = require('tailwindcss/colors')
 
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: 'media',
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
@@ -10,49 +9,54 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Stone - Warm neutral base
-        stone: {
-          50: '#fafaf9',
-          100: '#f5f5f4',
-          200: '#e7e5e4',
-          300: '#d6d3d1',
-          400: '#a8a29e',
-          500: '#78716c',
-          600: '#57534e',
-          700: '#44403c',
-          800: '#292524',
-          900: '#1c1917',
+        // Backgrounds
+        canvas: '#FAF8FC',            // page background (was --canvas)
+        surface: '#FFFFFF',            // card/panel bg
+        'surface-raised': '#FEFCFA',  // elevated surface
+        'surface-2': '#F4F0F8',       // elevated panel bg (was --surface-2)
+        'surface-3': '#DDD7E4',       // pressed/active surface (was --surface-3)
+        'surface-hover': '#F5F2F8',   // hover surface (was --surface-hover)
+
+        // Text
+        text: {
+          primary: '#1C1820',          // was --text-0
+          secondary: '#5A5068',        // was --text-1
+          tertiary: '#7A7288',         // was --text-2
+          quaternary: '#9E96AC',       // was --text-3
         },
-        // Accent colors — orange shifted toward red, anchored at #F04A00
-        orange: {
-          50: '#fff5ef',
-          100: '#ffe8d9',
-          200: '#ffcdb3',
-          300: '#ffa87a',
-          400: '#ff7a3d',
-          500: '#F04A00',
-          600: '#cc3d00',
-          700: '#a33000',
-          800: '#7a2400',
-          900: '#521800',
-          950: '#2e0d00',
+
+        // Border
+        border: '#E4DFE9',             // was --border
+
+        // Accent (pink-red, was --accent)
+        accent: {
+          DEFAULT: '#E83558',
+          soft: 'rgba(232, 53, 88, 0.08)',
+          hover: '#D42B4C',
         },
+
+        // Status colors
+        status: {
+          success: { DEFAULT: '#16A34A', bg: 'rgba(22, 163, 74, 0.07)' },
+          error:   { DEFAULT: '#DC2626', bg: 'rgba(220, 38, 38, 0.06)' },
+          warning: { DEFAULT: '#D97706', bg: '#fef3c7' },
+          info:    { DEFAULT: '#2563EB', bg: 'rgba(37, 99, 235, 0.06)' },
+          purple:  { DEFAULT: '#9333ea', bg: '#f3e8ff' },
+          pink:    { DEFAULT: '#db2777', bg: '#fce7f3' },
+          cyan:    { DEFAULT: '#0891b2', bg: '#cffafe' },
+          orange:  { DEFAULT: '#ea580c', bg: '#ffedd5' },
+        },
+
+        // Keep standard Tailwind stone palette for one-off use
+        stone: colors.stone,
         purple: colors.purple,
-        // Semantic color aliases
-        success: colors.emerald,
-        warning: colors.amber,
-        error: colors.red,
-        info: colors.blue,
       },
       fontFamily: {
-        sans: ['Geist', 'system-ui', 'sans-serif'],
-        heading: ['Geist', 'system-ui', 'sans-serif'],
-        mono: ['Geist Mono', 'ui-monospace', 'monospace'],
-        'forge-sans': ['IBM Plex Sans', 'system-ui', '-apple-system', 'sans-serif'],
-        'forge-mono': ['IBM Plex Mono', 'SF Mono', 'Cascadia Code', 'monospace'],
+        sans: ['IBM Plex Sans', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'SF Mono', 'Cascadia Code', 'monospace'],
       },
       fontSize: {
-        // Forge typography scale — IBM Plex Mono/Sans, size + line-height paired
+        // Typography scale — IBM Plex Mono/Sans, size + line-height paired
         'forge-mono-sm':    ['11px', { lineHeight: '16px' }],  // tool calls, script output
         'forge-mono-md':    ['12px', { lineHeight: '18px' }],  // diff lines, code content
         'forge-mono-label': ['10px', { lineHeight: '14px' }],  // structural labels, dividers

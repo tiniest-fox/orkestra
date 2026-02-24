@@ -37,9 +37,9 @@ export function buildColumns(config: WorkflowConfig): KanbanColumn[] {
 
   // Add terminal state columns - using semantic colors
   columns.push(
-    { id: "done", label: "Done", color: "bg-success-500" },
-    { id: "failed", label: "Failed", color: "bg-error-500" },
-    { id: "blocked", label: "Blocked", color: "bg-warning-500" },
+    { id: "done", label: "Done", color: "bg-status-success" },
+    { id: "failed", label: "Failed", color: "bg-status-error" },
+    { id: "blocked", label: "Blocked", color: "bg-status-warning" },
   );
 
   return columns;

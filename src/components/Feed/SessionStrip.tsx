@@ -24,19 +24,19 @@ function runOutcomeStyle(run: StageRun): { glyph: string | null; color: string }
   switch (outcome.type) {
     case "approved":
     case "completed":
-      return { glyph: "✓", color: "text-[var(--green)]" };
+      return { glyph: "✓", color: "text-status-success" };
     case "rejected":
     case "rejection":
     case "awaiting_rejection_review":
-      return { glyph: "×", color: "text-[var(--red)]" };
+      return { glyph: "×", color: "text-status-error" };
     case "agent_error":
     case "spawn_failed":
     case "script_failed":
     case "commit_failed":
     case "integration_failed":
-      return { glyph: "!", color: "text-[var(--amber)]" };
+      return { glyph: "!", color: "text-status-warning" };
     case "awaiting_answers":
-      return { glyph: "?", color: "text-[var(--blue)]" };
+      return { glyph: "?", color: "text-status-info" };
     default:
       return { glyph: null, color: "" };
   }
@@ -84,7 +84,7 @@ export function SessionStrip({
           // biome-ignore lint/suspicious/noArrayIndexKey: realIdx is the run number, not array index
           <span key={realIdx} className="flex items-center gap-[3px]">
             {realIdx > 0 && (
-              <span className="text-[var(--text-3)] font-forge-mono text-[9px] mx-[1px]">·</span>
+              <span className="text-text-quaternary font-mono text-[9px] mx-[1px]">·</span>
             )}
             <Chip
               abbrev={abbrev}
@@ -104,7 +104,7 @@ export function SessionStrip({
       {waitingStage && (
         <span className="flex items-center gap-[3px]">
           {runs.length > 0 && (
-            <span className="text-[var(--text-3)] font-forge-mono text-[9px] mx-[1px]">·</span>
+            <span className="text-text-quaternary font-mono text-[9px] mx-[1px]">·</span>
           )}
           <WaitingChip
             abbrev={abbreviateStage(waitingStage).toUpperCase()}
@@ -131,14 +131,14 @@ interface WaitingChipProps {
 
 function WaitingChip({ abbrev, isSelected, accent, onClick }: WaitingChipProps) {
   const base =
-    "inline-flex items-center gap-[2px] px-[6px] py-[3px] rounded font-forge-mono text-[10px] font-medium transition-colors border cursor-pointer";
+    "inline-flex items-center gap-[2px] px-[6px] py-[3px] rounded font-mono text-[10px] font-medium transition-colors border cursor-pointer";
 
   if (isSelected) {
     return (
       <button
         type="button"
         onClick={onClick}
-        className={`${base} text-[var(--text-0)]`}
+        className={`${base} text-text-primary`}
         style={{
           borderColor: accent,
           backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`,
@@ -154,7 +154,7 @@ function WaitingChip({ abbrev, isSelected, accent, onClick }: WaitingChipProps) 
     <button
       type="button"
       onClick={onClick}
-      className={`${base} border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:border-[var(--border-mid)] hover:text-[var(--text-1)]`}
+      className={`${base} border-border bg-canvas text-text-tertiary hover:bg-canvas hover:border-border hover:text-text-secondary`}
     >
       <span>{abbrev}</span>
       <span className="text-[8px] opacity-60">…</span>
@@ -193,27 +193,27 @@ function Chip({
 }: ChipProps) {
   // Base classes for all chips
   const base =
-    "inline-flex items-center gap-[2px] px-[6px] py-[3px] rounded font-forge-mono text-[10px] font-medium transition-colors border";
+    "inline-flex items-center gap-[2px] px-[6px] py-[3px] rounded font-mono text-[10px] font-medium transition-colors border";
 
   let chipClass: string;
   let inlineStyle: React.CSSProperties | undefined;
 
   if (isSelected && isCurrent) {
     // Active current run: colored border + tinted bg using accent
-    chipClass = `${base} text-[var(--text-0)] cursor-default`;
+    chipClass = `${base} text-text-primary cursor-default`;
     inlineStyle = {
       borderColor: accent,
       backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)`,
     };
   } else if (isSelected) {
     // Selected past run
-    chipClass = `${base} border-[var(--violet)] bg-[rgba(124,111,247,0.15)] text-[var(--text-0)] cursor-pointer`;
+    chipClass = `${base} border-status-purple bg-status-purple-bg text-text-primary cursor-pointer`;
   } else if (isCurrent && isViewingPast) {
     // Current chip while viewing a past run — muted, clickable to return
-    chipClass = `${base} border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-2)] hover:text-[var(--text-1)] hover:border-[var(--border-mid)] cursor-pointer`;
+    chipClass = `${base} border-border bg-canvas text-text-tertiary hover:text-text-secondary hover:border-border cursor-pointer`;
   } else {
     // Unselected past chip — always show as a button
-    chipClass = `${base} border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-2)] hover:bg-[var(--surface-3)] hover:border-[var(--border-mid)] hover:text-[var(--text-1)] cursor-pointer`;
+    chipClass = `${base} border-border bg-canvas text-text-tertiary hover:bg-canvas hover:border-border hover:text-text-secondary cursor-pointer`;
   }
 
   return (
@@ -226,7 +226,7 @@ function Chip({
     >
       <span>{abbrev}</span>
       {glyph && <span className={`text-[9px] ${glyphColor}`}>{glyph}</span>}
-      {count > 1 && <span className="text-[var(--text-3)] text-[9px] ml-[1px]">×{count}</span>}
+      {count > 1 && <span className="text-text-quaternary text-[9px] ml-[1px]">×{count}</span>}
     </button>
   );
 }

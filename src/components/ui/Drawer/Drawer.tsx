@@ -29,7 +29,7 @@ export function Drawer({ onClose, disableEscape = false, children }: DrawerProps
   return (
     // Clipping container: always occupies the target area, clips the slide animation.
     <div className="absolute top-11 left-60 right-0 bottom-0 z-30 overflow-hidden">
-      <div className="absolute inset-0 bg-white border-l border-[var(--border)] animate-drawer-in">
+      <div className="absolute inset-0 bg-surface border-l border-border animate-drawer-in">
         {children}
       </div>
     </div>

@@ -142,14 +142,14 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
   const loadingName = loadingPath ? (loadingPath.split("/").pop() ?? loadingPath) : "";
 
   return (
-    <div className="forge-theme h-screen flex flex-col">
+    <div className="h-screen flex flex-col">
       {/* App header — same structure as the loaded project header */}
-      <div className="flex items-center justify-between px-6 h-11 flex-shrink-0 bg-white border-b border-[var(--border)]">
-        <span className="font-forge-sans text-[13px] font-bold tracking-[0.06em] uppercase text-[var(--text-0)] select-none">
+      <div className="flex items-center justify-between px-6 h-11 flex-shrink-0 bg-surface border-b border-border">
+        <span className="font-sans text-[13px] font-bold tracking-[0.06em] uppercase text-text-primary select-none">
           Orkestra
         </span>
         {/* cmd+k at reduced opacity — unavailable until a project is open */}
-        <kbd className="font-forge-mono text-[10px] font-medium text-[var(--text-3)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-[6px] py-[2px] leading-none select-none opacity-50">
+        <kbd className="font-mono text-[10px] font-medium text-text-quaternary bg-canvas border border-border rounded px-[6px] py-[2px] leading-none select-none opacity-50">
           cmd+k
         </kbd>
       </div>
@@ -160,23 +160,23 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
           <div className="w-[440px]">
             {/* Startup error banner (folder not found etc.) */}
             {errorMessage && (
-              <div className="mb-4 px-3 py-2 rounded-[7px] bg-[var(--red-bg)] border border-[rgba(220,38,38,0.2)] text-[var(--red)] font-forge-sans text-[13px]">
+              <div className="mb-4 px-3 py-2 rounded-[7px] bg-status-error-bg border border-status-error/20 text-status-error font-sans text-[13px]">
                 {errorMessage}
               </div>
             )}
 
             {/* Picker card */}
-            <div className="bg-white border border-[var(--border)] rounded-[10px] p-7 shadow-[0_8px_32px_rgba(28,24,32,0.10),0_2px_8px_rgba(28,24,32,0.06)]">
-              <h1 className="font-forge-sans text-[20px] font-semibold tracking-[-0.02em] text-[var(--text-0)] mb-[6px]">
+            <div className="bg-surface border border-border rounded-[10px] p-7 shadow-[0_8px_32px_rgba(28,24,32,0.10),0_2px_8px_rgba(28,24,32,0.06)]">
+              <h1 className="font-sans text-[20px] font-semibold tracking-[-0.02em] text-text-primary mb-[6px]">
                 Open a project
               </h1>
-              <p className="font-forge-sans text-[13px] text-[var(--text-2)] mb-6">
+              <p className="font-sans text-[13px] text-text-tertiary mb-6">
                 Pick a recent project or browse for a folder.
               </p>
 
               {/* Recent projects list */}
               {recents.length > 0 && (
-                <div className="border border-[var(--border)] rounded-[7px] overflow-hidden mb-[10px]">
+                <div className="border border-border rounded-[7px] overflow-hidden mb-[10px]">
                   {recents.slice(0, 4).map((project, idx) => {
                     const isSelected = idx === selectedIdx;
                     return (
@@ -187,33 +187,31 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
                         onKeyDown={(e) => e.key === "Enter" && openProject(project.path)}
                         className={[
                           "group flex items-center justify-between w-full text-left px-[14px] py-[10px] relative transition-colors",
-                          idx < Math.min(recents.length - 1, 3)
-                            ? "border-b border-[var(--border)]"
-                            : "",
+                          idx < Math.min(recents.length - 1, 3) ? "border-b border-border" : "",
                           isSelected
-                            ? "bg-[var(--accent-bg)] border-l-2 border-l-[var(--accent)] !pl-[12px]"
-                            : "hover:bg-[var(--surface-hover)]",
+                            ? "bg-accent-soft border-l-2 border-l-accent !pl-[12px]"
+                            : "hover:bg-canvas",
                         ]
                           .filter(Boolean)
                           .join(" ")}
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="font-forge-sans text-[13px] font-semibold text-[var(--text-0)] mb-[2px]">
+                          <div className="font-sans text-[13px] font-semibold text-text-primary mb-[2px]">
                             {project.display_name}
                           </div>
-                          <div className="font-forge-mono text-[10px] text-[var(--text-3)] truncate">
+                          <div className="font-mono text-[10px] text-text-quaternary truncate">
                             {project.path}
                           </div>
                         </div>
                         {/* Number chip — visible at rest, fades on row hover */}
-                        <span className="font-forge-mono text-[10px] font-medium text-[var(--text-2)] bg-black/5 rounded-[3px] px-[5px] py-[1px] leading-[1.5] flex-shrink-0 ml-[10px] transition-opacity group-hover:opacity-0 group-hover:pointer-events-none">
+                        <span className="font-mono text-[10px] font-medium text-text-tertiary bg-black/5 rounded-[3px] px-[5px] py-[1px] leading-[1.5] flex-shrink-0 ml-[10px] transition-opacity group-hover:opacity-0 group-hover:pointer-events-none">
                           {idx + 1}
                         </span>
                         {/* Remove button — hidden at rest, appears on row hover */}
                         <button
                           type="button"
                           onClick={(e) => removeRecent(project.path, e)}
-                          className="absolute right-[14px] font-forge-mono text-[13px] text-[var(--text-3)] opacity-0 group-hover:opacity-100 px-[6px] py-[3px] rounded border-0 bg-transparent cursor-pointer hover:text-[var(--text-1)] hover:bg-[var(--surface-3)] transition-opacity"
+                          className="absolute right-[14px] font-mono text-[13px] text-text-quaternary opacity-0 group-hover:opacity-100 px-[6px] py-[3px] rounded border-0 bg-transparent cursor-pointer hover:text-text-secondary hover:bg-canvas transition-opacity"
                           aria-label={`Remove ${project.display_name} from recents`}
                         >
                           ×
@@ -228,7 +226,7 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
               <button
                 type="button"
                 onClick={handleBrowse}
-                className="w-full h-[38px] flex items-center justify-center gap-[7px] border border-dashed border-[var(--border)] rounded-[7px] bg-transparent cursor-pointer font-forge-sans text-[13px] text-[var(--text-2)] transition-colors hover:border-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-2)] mb-[18px]"
+                className="w-full h-[38px] flex items-center justify-center gap-[7px] border border-dashed border-border rounded-[7px] bg-transparent cursor-pointer font-sans text-[13px] text-text-tertiary transition-colors hover:border-text-quaternary hover:text-text-secondary hover:bg-canvas mb-[18px]"
               >
                 <svg
                   width="13"
@@ -244,29 +242,29 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
                   <path d="M1 4.5C1 3.67 1.67 3 2.5 3h2.586a1 1 0 01.707.293L6.5 4H11.5c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5h-9C1.67 12 1 11.33 1 10.5V4.5z" />
                 </svg>
                 Browse for folder…
-                <span className="font-forge-mono text-[10px] font-medium opacity-55 bg-black/[0.06] rounded-[3px] px-[4px] leading-[1.5]">
+                <span className="font-mono text-[10px] font-medium opacity-55 bg-black/[0.06] rounded-[3px] px-[4px] leading-[1.5]">
                   ⌘O
                 </span>
               </button>
 
               {/* Keyboard hint bar */}
-              <div className="flex items-center justify-center flex-wrap gap-[6px] font-forge-mono text-[10px] text-[var(--text-3)]">
-                <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded-[3px] px-[5px] py-[1px] font-forge-mono text-[10px] text-[var(--text-2)]">
+              <div className="flex items-center justify-center flex-wrap gap-[6px] font-mono text-[10px] text-text-quaternary">
+                <kbd className="bg-canvas border border-border rounded-[3px] px-[5px] py-[1px] font-mono text-[10px] text-text-tertiary">
                   ↑↓
                 </kbd>
                 {" navigate"}
-                <span className="text-[var(--border)]">·</span>
-                <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded-[3px] px-[5px] py-[1px] font-forge-mono text-[10px] text-[var(--text-2)]">
+                <span className="text-border">·</span>
+                <kbd className="bg-canvas border border-border rounded-[3px] px-[5px] py-[1px] font-mono text-[10px] text-text-tertiary">
                   1–4
                 </kbd>
                 {" jump to"}
-                <span className="text-[var(--border)]">·</span>
-                <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded-[3px] px-[5px] py-[1px] font-forge-mono text-[10px] text-[var(--text-2)]">
+                <span className="text-border">·</span>
+                <kbd className="bg-canvas border border-border rounded-[3px] px-[5px] py-[1px] font-mono text-[10px] text-text-tertiary">
                   ↵
                 </kbd>
                 {" open"}
-                <span className="text-[var(--border)]">·</span>
-                <kbd className="bg-[var(--surface-2)] border border-[var(--border)] rounded-[3px] px-[5px] py-[1px] font-forge-mono text-[10px] text-[var(--text-2)]">
+                <span className="text-border">·</span>
+                <kbd className="bg-canvas border border-border rounded-[3px] px-[5px] py-[1px] font-mono text-[10px] text-text-tertiary">
                   ⌫
                 </kbd>
                 {" remove"}
@@ -279,19 +277,17 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
       {/* Loading canvas */}
       {view === "loading" && (
         <div className="flex-1 flex flex-col items-center justify-center gap-[10px]">
-          <div className="w-[18px] h-[18px] rounded-full border-2 border-[var(--border)] border-t-[var(--text-2)] animate-spin mb-[2px]" />
-          <div className="font-forge-sans text-[13px] font-semibold text-[var(--text-0)]">
+          <div className="w-[18px] h-[18px] rounded-full border-2 border-border border-t-text-tertiary animate-spin mb-[2px]" />
+          <div className="font-sans text-[13px] font-semibold text-text-primary">
             Opening {loadingName}…
           </div>
-          <div className="font-forge-mono text-[10px] text-[var(--text-3)] mb-[4px]">
-            {loadingPath}
-          </div>
+          <div className="font-mono text-[10px] text-text-quaternary mb-[4px]">{loadingPath}</div>
           <button
             type="button"
             onClick={backToPicker}
-            className="inline-flex items-center gap-[6px] font-forge-sans text-[12px] font-medium px-3 py-[5px] rounded-[6px] border border-[var(--border)] cursor-pointer bg-transparent text-[var(--text-1)] hover:bg-[var(--surface-3)] hover:text-[var(--text-0)] transition-colors whitespace-nowrap leading-[1.4]"
+            className="inline-flex items-center gap-[6px] font-sans text-[12px] font-medium px-3 py-[5px] rounded-[6px] border border-border cursor-pointer bg-transparent text-text-secondary hover:bg-canvas hover:text-text-primary transition-colors whitespace-nowrap leading-[1.4]"
           >
-            <span className="font-forge-mono text-[10px] font-medium opacity-55 bg-black/[0.06] rounded-[3px] px-[3px] leading-[1.5]">
+            <span className="font-mono text-[10px] font-medium opacity-55 bg-black/[0.06] rounded-[3px] px-[3px] leading-[1.5]">
               Esc
             </span>
             Cancel
@@ -302,22 +298,22 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
       {/* Error canvas */}
       {view === "error" && (
         <div className="flex-1 flex flex-col items-center justify-center gap-[10px]">
-          <div className="w-9 h-9 rounded-full bg-[var(--red-bg)] flex items-center justify-center text-[15px] text-[var(--red)] mb-[2px]">
+          <div className="w-9 h-9 rounded-full bg-status-error-bg flex items-center justify-center text-[15px] text-status-error mb-[2px]">
             ✕
           </div>
-          <div className="font-forge-sans text-[13px] font-semibold text-[var(--red)]">
+          <div className="font-sans text-[13px] font-semibold text-status-error">
             Could not open project
           </div>
-          <div className="font-forge-mono text-[10px] text-[var(--text-3)] max-w-[360px] text-center leading-[1.6] mb-[4px]">
+          <div className="font-mono text-[10px] text-text-quaternary max-w-[360px] text-center leading-[1.6] mb-[4px]">
             {loadError?.message}
           </div>
           <div className="flex gap-2 mt-[6px]">
             <button
               type="button"
               onClick={backToPicker}
-              className="inline-flex items-center gap-[6px] font-forge-sans text-[12px] font-medium px-3 py-[5px] rounded-[6px] border border-[var(--border)] cursor-pointer bg-transparent text-[var(--text-1)] hover:bg-[var(--surface-3)] hover:text-[var(--text-0)] transition-colors whitespace-nowrap leading-[1.4]"
+              className="inline-flex items-center gap-[6px] font-sans text-[12px] font-medium px-3 py-[5px] rounded-[6px] border border-border cursor-pointer bg-transparent text-text-secondary hover:bg-canvas hover:text-text-primary transition-colors whitespace-nowrap leading-[1.4]"
             >
-              <span className="font-forge-mono text-[10px] font-medium opacity-55 bg-black/[0.06] rounded-[3px] px-[3px] leading-[1.5]">
+              <span className="font-mono text-[10px] font-medium opacity-55 bg-black/[0.06] rounded-[3px] px-[3px] leading-[1.5]">
                 Esc
               </span>
               Back to projects
@@ -325,9 +321,9 @@ export function ProjectPicker({ errorMessage }: ProjectPickerProps) {
             <button
               type="button"
               onClick={handleBrowse}
-              className="inline-flex items-center gap-[6px] font-forge-sans text-[12px] font-medium px-3 py-[5px] rounded-[6px] border border-[rgba(220,38,38,0.35)] cursor-pointer bg-transparent text-[var(--red)] hover:bg-[var(--red-bg)] hover:border-[var(--red)] transition-colors whitespace-nowrap leading-[1.4]"
+              className="inline-flex items-center gap-[6px] font-sans text-[12px] font-medium px-3 py-[5px] rounded-[6px] border border-status-error/35 cursor-pointer bg-transparent text-status-error hover:bg-status-error-bg hover:border-status-error transition-colors whitespace-nowrap leading-[1.4]"
             >
-              <span className="font-forge-mono text-[10px] font-medium opacity-55 bg-black/[0.06] rounded-[3px] px-[3px] leading-[1.5]">
+              <span className="font-mono text-[10px] font-medium opacity-55 bg-black/[0.06] rounded-[3px] px-[3px] leading-[1.5]">
                 ⌘O
               </span>
               Browse for folder…

@@ -30,17 +30,15 @@ export function CollapsibleSection({
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 w-full py-1.5 px-2 rounded text-sm font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800/50 transition-colors"
+        className="flex items-center gap-2 w-full py-1.5 px-2 rounded text-sm font-medium text-text-secondary hover:bg-canvas transition-colors"
       >
         {expanded ? (
-          <ChevronDown className="w-4 h-4 text-stone-500 dark:text-stone-400" />
+          <ChevronDown className="w-4 h-4 text-text-tertiary" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-stone-500 dark:text-stone-400" />
+          <ChevronRight className="w-4 h-4 text-text-tertiary" />
         )}
         <span>{title}</span>
-        {count !== undefined && (
-          <span className="text-xs text-stone-500 dark:text-stone-400">({count})</span>
-        )}
+        {count !== undefined && <span className="text-xs text-text-tertiary">({count})</span>}
       </button>
       {expanded && <div className="mt-2">{children}</div>}
     </div>

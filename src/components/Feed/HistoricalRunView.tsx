@@ -52,7 +52,7 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
           artifact ? (
             <ArtifactView artifact={artifact} />
           ) : (
-            <div className="p-6 font-forge-mono text-[11px] text-[var(--text-3)]">
+            <div className="p-6 font-mono text-[11px] text-text-quaternary">
               No artifact for this stage.
             </div>
           )

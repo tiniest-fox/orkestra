@@ -18,39 +18,39 @@ export interface StageColorSet {
   badge: string;
 }
 
-/** Orange → purple gradient palette for workflow stages. */
+/** Accent → purple gradient palette for workflow stages. */
 export const STAGE_PALETTE: StageColorSet[] = [
   {
-    dot: "bg-orange-500",
-    badge: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
+    dot: "bg-accent",
+    badge: "bg-accent-soft text-accent",
   },
   {
-    dot: "bg-orange-400",
-    badge: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+    dot: "bg-accent",
+    badge: "bg-amber-100 text-amber-700",
   },
   {
     dot: "bg-purple-400",
-    badge: "bg-violet-100 text-violet-600 dark:bg-violet-900 dark:text-violet-300",
+    badge: "bg-violet-100 text-violet-600",
   },
   {
     dot: "bg-purple-500",
-    badge: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
+    badge: "bg-purple-100 text-purple-700",
   },
   {
     dot: "bg-purple-600",
-    badge: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
+    badge: "bg-purple-100 text-purple-700",
   },
   {
     dot: "bg-purple-700",
-    badge: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
+    badge: "bg-purple-100 text-purple-800",
   },
   {
     dot: "bg-purple-800",
-    badge: "bg-purple-100 text-purple-900 dark:bg-purple-900 dark:text-purple-200",
+    badge: "bg-purple-100 text-purple-900",
   },
   {
     dot: "bg-stone-500",
-    badge: "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300",
+    badge: "bg-stone-100 text-stone-600",
   },
 ];
 

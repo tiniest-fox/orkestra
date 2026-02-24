@@ -16,72 +16,85 @@ export interface StateColorSet {
   icon: string;
 }
 
+/** Raw hex values for contexts requiring inline styles (e.g., accent gradients).
+ *  Must stay in sync with `status.*` tokens in tailwind.config.js. */
+export const STATUS_HEX = {
+  error: "#DC2626",
+  info: "#2563EB",
+  success: "#16A34A",
+  warning: "#D97706",
+  cyan: "#0891b2",
+  purple: "#9333ea",
+  accent: "#E83558",
+  muted: "#9E96AC",
+} as const;
+
 export const taskStateColors = {
   done: {
-    bg: "bg-success-500 dark:bg-success-400",
-    badge: "bg-success-100 text-success-700 dark:bg-success-900 dark:text-success-300",
-    icon: "bg-success-100 dark:bg-success-900 text-success-600 dark:text-success-300",
+    bg: "bg-status-success",
+    badge: "bg-status-success-bg text-status-success",
+    icon: "bg-status-success-bg text-status-success",
   },
   working: {
-    bg: "bg-orange-400 dark:bg-orange-500",
-    badge: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
-    icon: "bg-orange-100 dark:bg-orange-900 text-orange-600 dark:text-orange-300",
+    bg: "bg-accent",
+    badge: "bg-accent-soft text-accent",
+    icon: "bg-accent-soft text-accent",
   },
   questions: {
-    bg: "bg-info-400 dark:bg-info-500",
-    badge: "bg-info-100 text-info-700 dark:bg-info-900 dark:text-info-300",
-    icon: "bg-info-100 dark:bg-info-900 text-info-600 dark:text-info-300",
+    bg: "bg-status-info",
+    badge: "bg-status-info-bg text-status-info",
+    icon: "bg-status-info-bg text-status-info",
   },
   review: {
-    bg: "bg-warning-400 dark:bg-warning-500",
-    badge: "bg-warning-100 text-warning-700 dark:bg-warning-900 dark:text-warning-300",
-    icon: "bg-warning-100 dark:bg-warning-900 text-warning-700 dark:text-warning-300",
+    bg: "bg-status-warning",
+    badge: "bg-status-warning-bg text-status-warning",
+    icon: "bg-status-warning-bg text-status-warning",
   },
   blocked: {
-    bg: "bg-warning-300 dark:bg-warning-600",
-    badge: "bg-warning-100 text-warning-700 dark:bg-warning-900 dark:text-warning-300",
-    icon: "bg-warning-100 dark:bg-warning-900 text-warning-600 dark:text-warning-300",
+    bg: "bg-status-warning",
+    badge: "bg-status-warning-bg text-status-warning",
+    icon: "bg-status-warning-bg text-status-warning",
   },
   failed: {
-    bg: "bg-error-500 dark:bg-error-400",
-    badge: "bg-error-100 text-error-700 dark:bg-error-900 dark:text-error-300",
-    icon: "bg-error-100 dark:bg-error-900 text-error-600 dark:text-error-300",
+    bg: "bg-status-error",
+    badge: "bg-status-error-bg text-status-error",
+    icon: "bg-status-error-bg text-status-error",
   },
   waiting: {
-    bg: "bg-stone-300 dark:bg-stone-600",
-    badge: "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300",
-    icon: "bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400",
+    bg: "bg-stone-300",
+    badge: "bg-stone-100 text-stone-600",
+    icon: "bg-stone-100 text-stone-500",
   },
   interrupted: {
-    bg: "bg-amber-500 dark:bg-amber-600",
-    badge: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-    icon: "bg-amber-100 dark:bg-amber-900 text-amber-600 dark:text-amber-300",
+    bg: "bg-amber-500",
+    badge: "bg-amber-100 text-amber-700",
+    icon: "bg-amber-100 text-amber-600",
   },
   auto: {
-    bg: "bg-purple-500 dark:bg-purple-400",
-    badge: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
-    icon: "text-purple-500 dark:text-purple-400",
+    bg: "bg-purple-500",
+    badge: "bg-purple-100 text-purple-700",
+    icon: "text-purple-500",
   },
   // PR states
   pr_open: {
-    bg: "bg-purple-500 dark:bg-purple-400",
-    badge: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
-    icon: "bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300",
+    bg: "bg-purple-500",
+    badge: "bg-purple-100 text-purple-700",
+    icon: "bg-purple-100 text-purple-600",
   },
   pr_merged: {
-    bg: "bg-success-500 dark:bg-success-400",
-    badge: "bg-success-100 text-success-700 dark:bg-success-900 dark:text-success-300",
-    icon: "bg-success-100 dark:bg-success-900 text-success-600 dark:text-success-300",
+    bg: "bg-status-success",
+    badge: "bg-status-success-bg text-status-success",
+    icon: "bg-status-success-bg text-status-success",
   },
   pr_closed: {
-    bg: "bg-error-500 dark:bg-error-400",
-    badge: "bg-error-100 text-error-700 dark:bg-error-900 dark:text-error-300",
-    icon: "bg-error-100 dark:bg-error-900 text-error-600 dark:text-error-300",
+    bg: "bg-status-error",
+    badge: "bg-status-error-bg text-status-error",
+    icon: "bg-status-error-bg text-status-error",
   },
   pr_unknown: {
-    bg: "bg-stone-400 dark:bg-stone-500",
-    badge: "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300",
-    icon: "bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400",
+    bg: "bg-stone-400",
+    badge: "bg-stone-100 text-stone-600",
+    icon: "bg-stone-100 text-stone-500",
   },
 } as const;
 

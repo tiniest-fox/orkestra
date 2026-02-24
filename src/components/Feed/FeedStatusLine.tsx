@@ -7,7 +7,15 @@ import { Kbd } from "../ui/Kbd";
 
 interface FeedStatusLineProps {
   tasks: WorkflowTaskView[];
-  drawerMode: null | "review" | "review-reject" | "answer" | "focus" | "ship" | "git-history" | "new-task";
+  drawerMode:
+    | null
+    | "review"
+    | "review-reject"
+    | "answer"
+    | "focus"
+    | "ship"
+    | "git-history"
+    | "new-task";
   onToggleHistory?: () => void;
 }
 
@@ -34,7 +42,10 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       // H toggles git history only when no task drawer is open (avoids conflicting with
       // the task history tab shortcut inside the task drawer's HotkeyScope).
-      if (e.key === "h" && (drawerMode === null || drawerMode === "git-history" || drawerMode === "new-task")) {
+      if (
+        e.key === "h" &&
+        (drawerMode === null || drawerMode === "git-history" || drawerMode === "new-task")
+      ) {
         e.preventDefault();
         onToggleHistory?.();
         return;
@@ -74,15 +85,11 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
   const hasSyncActions = canPush || canPull;
 
   return (
-    <div className="flex items-center justify-between px-6 h-7 border-t border-[var(--border)] bg-white shrink-0 font-forge-mono text-[11px] text-[var(--text-2)]">
+    <div className="flex items-center justify-between px-6 h-7 border-t border-border bg-surface shrink-0 font-mono text-[11px] text-text-tertiary">
       <div className="flex items-center gap-3 min-w-0">
-        {hasGitInfo && (
-          <span className="font-medium shrink-0" style={{ color: "var(--accent)" }}>
-            {currentBranch}
-          </span>
-        )}
+        {hasGitInfo && <span className="font-medium shrink-0 text-accent">{currentBranch}</span>}
         {latestCommit && (
-          <span className="text-[var(--text-3)] truncate max-w-[240px]" title={latestCommit}>
+          <span className="text-text-quaternary truncate max-w-[240px]" title={latestCommit}>
             {latestCommit}
           </span>
         )}
@@ -91,7 +98,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
             type="button"
             onClick={pushToOrigin}
             disabled={pushLoading}
-            className="shrink-0 text-[var(--text-2)] hover:text-[var(--text-0)] transition-colors disabled:opacity-40 cursor-default"
+            className="shrink-0 text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 cursor-default"
             title={`Push ${syncStatus.ahead} commit${syncStatus.ahead !== 1 ? "s" : ""} (P)`}
           >
             ↑{syncStatus.ahead}
@@ -102,7 +109,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
             type="button"
             onClick={pullFromOrigin}
             disabled={pullLoading}
-            className="shrink-0 text-[var(--text-2)] hover:text-[var(--text-0)] transition-colors disabled:opacity-40 cursor-default"
+            className="shrink-0 text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40 cursor-default"
             title={`Pull ${syncStatus.behind} commit${syncStatus.behind !== 1 ? "s" : ""} (F)`}
           >
             ↓{syncStatus.behind}
@@ -110,12 +117,10 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
         )}
         {agentCount > 0 && (
           <>
-            {hasGitInfo && <span className="text-[var(--text-3)] shrink-0">·</span>}
+            {hasGitInfo && <span className="text-text-quaternary shrink-0">·</span>}
             <span className="shrink-0">
-              <span className="font-medium" style={{ color: "var(--amber)" }}>
-                {agentCount}
-              </span>{" "}
-              agent{agentCount !== 1 ? "s" : ""} running
+              <span className="font-medium text-status-warning">{agentCount}</span> agent
+              {agentCount !== 1 ? "s" : ""} running
             </span>
           </>
         )}
@@ -126,12 +131,12 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
             <Kbd>tab</Kbd>
             <span>next field</span>
           </span>
-          <span className="text-[var(--text-3)]">·</span>
+          <span className="text-text-quaternary">·</span>
           <span className="flex items-center gap-1.5">
             <Kbd>cmd+enter</Kbd>
             <span>create</span>
           </span>
-          <span className="text-[var(--text-3)]">·</span>
+          <span className="text-text-quaternary">·</span>
           <span className="flex items-center gap-1.5">
             <Kbd>esc</Kbd>
             <span>cancel</span>
@@ -143,7 +148,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
             <Kbd>j/k</Kbd>
             <span>navigate</span>
           </span>
-          <span className="text-[var(--text-3)]">·</span>
+          <span className="text-text-quaternary">·</span>
           <span className="flex items-center gap-1.5">
             <Kbd>esc</Kbd>
             <span>close</span>
@@ -157,7 +162,7 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
                 <Kbd>enter</Kbd>
                 <span>send</span>
               </span>
-              <span className="text-[var(--text-3)]">·</span>
+              <span className="text-text-quaternary">·</span>
               <span className="flex items-center gap-1.5">
                 <Kbd>esc</Kbd>
                 <span>cancel</span>
@@ -184,12 +189,12 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
                 <Kbd>A</Kbd>
                 <span>approve</span>
               </span>
-              <span className="text-[var(--text-3)]">·</span>
+              <span className="text-text-quaternary">·</span>
               <span className="flex items-center gap-1.5">
                 <Kbd>R</Kbd>
                 <span>reject</span>
               </span>
-              <span className="text-[var(--text-3)]">·</span>
+              <span className="text-text-quaternary">·</span>
               <span className="flex items-center gap-1.5">
                 <Kbd>L</Kbd>
                 <span>logs</span>
@@ -213,24 +218,24 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
                   <span>pull</span>
                 </span>
               )}
-              <span className="text-[var(--text-3)]">·</span>
+              <span className="text-text-quaternary">·</span>
             </>
           )}
           <span className="flex items-center gap-1.5">
             <Kbd>G</Kbd>
             <span>fetch</span>
           </span>
-          <span className="text-[var(--text-3)]">·</span>
+          <span className="text-text-quaternary">·</span>
           <span className="flex items-center gap-1.5">
             <Kbd>H</Kbd>
             <span>history</span>
           </span>
-          <span className="text-[var(--text-3)]">·</span>
+          <span className="text-text-quaternary">·</span>
           <span className="flex items-center gap-1.5">
             <Kbd>enter</Kbd>
             <span>focus</span>
           </span>
-          <span className="text-[var(--text-3)]">·</span>
+          <span className="text-text-quaternary">·</span>
           <span className="flex items-center gap-1.5">
             <Kbd>↑↓</Kbd>
             <Kbd>j/k</Kbd>

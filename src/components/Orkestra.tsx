@@ -20,12 +20,12 @@ export function Orkestra() {
 
   if (configError) {
     return (
-      <div className="forge-theme w-screen h-screen flex flex-col items-center justify-center gap-4 bg-[var(--canvas)]">
+      <div className="w-screen h-screen flex flex-col items-center justify-center gap-4 bg-canvas">
         <ErrorState message="Failed to load workflow config" error={configError} />
         <button
           type="button"
           onClick={configState.retry}
-          className="px-4 py-2 text-sm rounded-panel-sm bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
+          className="px-4 py-2 text-sm rounded-panel-sm bg-surface-2 text-text-secondary hover:bg-surface-3 transition-colors"
         >
           Retry
         </button>
@@ -43,7 +43,7 @@ export function Orkestra() {
   }
 
   return (
-    <div className="forge-theme w-screen h-screen overflow-clip">
+    <div className="w-screen h-screen overflow-clip">
       <FeedView config={config} tasks={tasks} />
     </div>
   );

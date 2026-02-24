@@ -1,14 +1,19 @@
 //! Task creation form rendered inside a ModalPanel overlay.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BranchSelector } from "../BranchSelector";
 import type { WorkflowConfig } from "../../types/workflow";
+import { BranchSelector } from "../BranchSelector";
 import { FlowPicker } from "./FlowPicker";
 
 interface NewTaskModalProps {
   config: WorkflowConfig;
   onClose: () => void;
-  onCreate: (description: string, autoMode: boolean, baseBranch: string, flow?: string) => Promise<void>;
+  onCreate: (
+    description: string,
+    autoMode: boolean,
+    baseBranch: string,
+    flow?: string,
+  ) => Promise<void>;
 }
 
 export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
@@ -39,11 +44,7 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
 
   const flows = config.flows ?? {};
   const hasFlows = Object.keys(flows).length > 0;
-  const flowKeys: (string | null)[] = useMemo(
-    () => [null, ...Object.keys(flows)],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [config.flows],
-  );
+  const flowKeys: (string | null)[] = useMemo(() => [null, ...Object.keys(flows)], [flows]);
 
   // Modifier-key shortcuts — safe to fire from anywhere including the textarea.
   useEffect(() => {
@@ -84,19 +85,23 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
   }, [handleSubmit, hasFlows, flowKeys]);
 
   return (
-    <div className="forge-theme w-[520px] bg-[var(--surface-0)] border border-[var(--border)] rounded-panel shadow-xl flex flex-col">
+    <div className="w-[520px] bg-surface border border-border rounded-panel shadow-xl flex flex-col">
       {/* Description */}
       <div className="px-4 pt-4 pb-3">
-        <label className="block font-forge-sans text-[11px] font-medium text-[var(--text-2)] uppercase tracking-[0.06em] mb-1.5 select-none">
+        <label
+          htmlFor="new-task-description"
+          className="block font-sans text-[11px] font-medium text-text-tertiary uppercase tracking-[0.06em] mb-1.5 select-none"
+        >
           Description
         </label>
         <textarea
+          id="new-task-description"
           ref={textareaRef}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="What needs to be done?"
           rows={3}
-          className="w-full font-forge-sans text-[13px] text-[var(--text-0)] bg-[var(--surface-1)] border border-[var(--border)] rounded px-3 py-2 resize-none placeholder:text-[var(--text-3)] focus:outline-none focus:border-[var(--accent)] transition-colors min-h-[80px]"
+          className="w-full font-sans text-[13px] text-text-primary bg-canvas border border-border rounded px-3 py-2 resize-none placeholder:text-text-quaternary focus:outline-none focus:border-accent transition-colors min-h-[80px]"
         />
       </div>
 
@@ -113,7 +118,7 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
       )}
 
       {/* Footer */}
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-[var(--border)] bg-[var(--surface-1)] rounded-b-panel">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border bg-canvas rounded-b-panel">
         <div className="flex items-center gap-3 min-w-0">
           <BranchSelector value={baseBranch} onChange={setBaseBranch} />
           <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0">
@@ -121,12 +126,10 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
               type="checkbox"
               checked={autoMode}
               onChange={(e) => setAutoMode(e.target.checked)}
-              className="w-3.5 h-3.5 accent-[var(--accent)] cursor-pointer"
+              className="w-3.5 h-3.5 accent-accent cursor-pointer"
             />
-            <span className="font-forge-sans text-[12px] text-[var(--text-1)]">
-              Run automatically
-            </span>
-            <kbd className="font-forge-mono text-[10px] text-[var(--text-3)] bg-[var(--surface-2)] border border-[var(--border)] rounded px-1 leading-none select-none">
+            <span className="font-sans text-[12px] text-text-secondary">Run automatically</span>
+            <kbd className="font-mono text-[10px] text-text-quaternary bg-canvas border border-border rounded px-1 leading-none select-none">
               ⌘A
             </kbd>
           </label>
@@ -135,11 +138,11 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
           type="button"
           disabled={!canSubmit}
           onClick={handleSubmit}
-          className="shrink-0 inline-flex items-center gap-1.5 font-forge-sans text-[12px] font-semibold px-3 py-1.5 rounded bg-[var(--accent)] text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+          className="shrink-0 inline-flex items-center gap-1.5 font-sans text-[12px] font-semibold px-3 py-1.5 rounded bg-accent text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {submitting ? "Creating…" : "Create Task"}
           {!submitting && (
-            <kbd className="font-forge-mono text-[10px] font-normal opacity-70 bg-white/20 border border-white/30 rounded px-1 py-0.5 leading-none">
+            <kbd className="font-mono text-[10px] font-normal opacity-70 bg-white/20 border border-white/30 rounded px-1 py-0.5 leading-none">
               ⌘↵
             </kbd>
           )}

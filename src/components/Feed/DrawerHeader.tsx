@@ -8,6 +8,7 @@ import { computePipelineSegments } from "../../utils/pipelineSegments";
 import { groupIterationsIntoRuns } from "../../utils/stageRuns";
 import { useNavHandler } from "../ui/HotkeyScope";
 import { Kbd } from "../ui/Kbd";
+import { STATUS_HEX } from "../ui/taskStateColors";
 import { PipelineBar } from "./PipelineBar";
 import { SessionStrip } from "./SessionStrip";
 import { SubtaskProgressBar } from "./SubtaskProgressBar";
@@ -31,15 +32,15 @@ interface DrawerHeaderProps {
 
 /** Compute the accent color for a drawer from the task's current state. */
 export function drawerAccent(task: WorkflowTaskView, config: WorkflowConfig): string {
-  if (task.derived.is_failed) return "var(--red)";
-  if (task.derived.has_questions) return "var(--blue)";
+  if (task.derived.is_failed) return STATUS_HEX.error;
+  if (task.derived.has_questions) return STATUS_HEX.info;
   if (task.derived.needs_review) {
     const stage = config.stages.find((s) => s.name === task.derived.current_stage);
-    return stage?.capabilities.subtasks ? "var(--teal)" : "var(--violet)";
+    return stage?.capabilities.subtasks ? STATUS_HEX.cyan : STATUS_HEX.purple;
   }
-  if (task.derived.is_done) return "var(--peach)";
-  if (task.derived.is_archived) return "var(--text-3)";
-  return "var(--accent-2)";
+  if (task.derived.is_done) return STATUS_HEX.success;
+  if (task.derived.is_archived) return STATUS_HEX.muted;
+  return STATUS_HEX.accent;
 }
 
 export function DrawerHeader({
@@ -69,10 +70,10 @@ export function DrawerHeader({
   });
 
   return (
-    <div className="shrink-0 px-6 pt-4 pb-3 border-b border-[var(--border)]">
+    <div className="shrink-0 px-6 pt-4 pb-3 border-b border-border">
       {/* Row 1: Title + external tool links + close */}
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1 font-forge-sans text-[14px] font-semibold tracking-[-0.01em] text-[var(--text-0)] leading-snug truncate">
+        <div className="min-w-0 flex-1 font-sans text-[14px] font-semibold tracking-[-0.01em] text-text-primary leading-snug truncate">
           {task.title || task.description}
         </div>
         {task.worktree_path && (
@@ -80,7 +81,7 @@ export function DrawerHeader({
             <button
               type="button"
               onClick={() => invoke("open_in_terminal", { path: task.worktree_path })}
-              className="flex items-center gap-1.5 text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors"
+              className="flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
               title="Open in terminal (⇧T)"
             >
               <Kbd>⇧T</Kbd>
@@ -89,7 +90,7 @@ export function DrawerHeader({
             <button
               type="button"
               onClick={() => invoke("open_in_editor", { path: task.worktree_path })}
-              className="flex items-center gap-1.5 text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors"
+              className="flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
               title="Open in editor (⇧E)"
             >
               <Kbd>⇧E</Kbd>
@@ -100,7 +101,7 @@ export function DrawerHeader({
         <button
           type="button"
           onClick={onClose}
-          className="shrink-0 flex items-center gap-1.5 text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors mt-0.5"
+          className="shrink-0 flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors mt-0.5"
           title="Close (Esc)"
         >
           <span className={`flex items-center ${escHidden ? "invisible" : "visible"}`}>

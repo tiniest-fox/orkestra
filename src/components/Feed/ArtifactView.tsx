@@ -11,8 +11,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useChunkedHtml } from "../../hooks/useChunkedHtml";
 import type { WorkflowArtifact } from "../../types/workflow";
-import { formatTimestamp, PROSE_CLASSES_LIGHT } from "../../utils";
-import { ExpandButton, useContentSettled } from "../ui";
+import { formatTimestamp, PROSE_CLASSES } from "../../utils";
+import { useContentSettled } from "../ui";
 
 interface ArtifactViewProps {
   artifact: WorkflowArtifact;
@@ -28,19 +28,18 @@ export function ArtifactView({ artifact }: ArtifactViewProps) {
 
   return (
     <div className="p-4">
-      <ExpandButton />
-      <div className="text-xs text-stone-500 dark:text-stone-400 mb-2">
+      <div className="text-xs text-text-secondary mb-2">
         Stage: {artifact.stage} | Iteration: {artifact.iteration} |{" "}
         {formatTimestamp(artifact.created_at)}
       </div>
       {hasPreRendered ? (
         <div
-          className={PROSE_CLASSES_LIGHT}
+          className={PROSE_CLASSES}
           // biome-ignore lint/security/noDangerouslySetInnerHtml: HTML is pre-rendered by the backend from trusted markdown
           dangerouslySetInnerHTML={{ __html: chunked.html }}
         />
       ) : (
-        <div className={PROSE_CLASSES_LIGHT}>
+        <div className={PROSE_CLASSES}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{artifact.content}</ReactMarkdown>
         </div>
       )}

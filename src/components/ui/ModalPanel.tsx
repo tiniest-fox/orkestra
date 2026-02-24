@@ -36,7 +36,7 @@ export function ModalPanel({ isOpen, onClose, children, className = "" }: ModalP
       {isOpen && (
         <>
           <motion.div
-            className="fixed inset-0 bg-black/20 dark:bg-black/40 z-50"
+            className="fixed inset-0 bg-black/20 z-50"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

@@ -28,17 +28,17 @@ export function SubtaskProgressBar({ progress, onClick }: SubtaskProgressBarProp
           : undefined
       }
     >
-      <span className="font-forge-mono text-[10px] text-[var(--text-2)] tabular-nums">
+      <span className="font-mono text-[10px] text-text-tertiary tabular-nums">
         {done}/{total}
       </span>
-      <span className="relative w-14 h-[5px] bg-[var(--surface-3)] rounded-full overflow-hidden">
+      <span className="relative w-14 h-[5px] bg-canvas rounded-full overflow-hidden">
         <span
-          className="absolute inset-y-0 left-0 bg-[var(--green)] rounded-full transition-all"
+          className="absolute inset-y-0 left-0 bg-status-success rounded-full transition-all"
           style={{ width: `${pct}%` }}
         />
         {failed > 0 && (
           <span
-            className="absolute inset-y-0 right-0 bg-[var(--red)] rounded-full"
+            className="absolute inset-y-0 right-0 bg-status-error rounded-full"
             style={{ width: `${failedPct}%` }}
           />
         )}

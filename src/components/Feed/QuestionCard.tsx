@@ -67,20 +67,18 @@ export function QuestionCard({
       {/* Question header */}
       <div className="flex items-start gap-3 mb-3">
         <span
-          className="font-forge-mono text-[13px] font-semibold shrink-0 leading-snug w-5 text-center"
-          style={{ color: answered ? "var(--green)" : "var(--blue)" }}
+          className={`font-mono text-[13px] font-semibold shrink-0 leading-snug w-5 text-center ${answered ? "text-status-success" : "text-status-info"}`}
         >
           {answered ? "✓" : num}
         </span>
         <div className="min-w-0">
           <div
-            className="font-forge-sans text-[13px] font-medium tracking-[-0.01em] leading-snug"
-            style={{ color: answered ? "var(--text-1)" : "var(--text-0)" }}
+            className={`font-sans text-[13px] font-medium tracking-[-0.01em] leading-snug ${answered ? "text-text-secondary" : "text-text-primary"}`}
           >
             {question.question}
           </div>
           {question.context && (
-            <div className="font-forge-mono text-[11px] text-[var(--text-2)] mt-1 leading-relaxed">
+            <div className="font-mono text-[11px] text-text-tertiary mt-1 leading-relaxed">
               {question.context}
             </div>
           )}
@@ -106,18 +104,16 @@ export function QuestionCard({
                   className={[
                     "text-left w-full px-3 py-2 rounded-md border transition-colors outline-none",
                     selected
-                      ? "bg-[var(--blue-bg)] border-[var(--blue-border)] text-[var(--blue)]"
-                      : "border-[var(--border)] text-[var(--text-1)] hover:bg-[var(--surface-hover)]",
+                      ? "bg-status-info-bg border-status-info text-status-info"
+                      : "border-border text-text-secondary hover:bg-canvas",
                     answered && !selected ? "opacity-45" : "",
-                    kbdFocused && !selected ? "ring-1 ring-[var(--blue)] ring-offset-1" : "",
-                    kbdFocused && selected ? "ring-1 ring-[var(--blue)] ring-offset-1" : "",
+                    kbdFocused && !selected ? "ring-1 ring-status-info ring-offset-1" : "",
+                    kbdFocused && selected ? "ring-1 ring-status-info ring-offset-1" : "",
                   ].join(" ")}
                 >
-                  <div className="font-forge-sans text-[12px] font-medium leading-snug">
-                    {opt.label}
-                  </div>
+                  <div className="font-sans text-[12px] font-medium leading-snug">{opt.label}</div>
                   {opt.description && (
-                    <div className="font-forge-mono text-[10px] text-[var(--text-2)] mt-0.5">
+                    <div className="font-mono text-[10px] text-text-tertiary mt-0.5">
                       {opt.description}
                     </div>
                   )}
@@ -139,10 +135,10 @@ export function QuestionCard({
                   placeholder="Or write your own answer…"
                   rows={2}
                   className={[
-                    "w-full font-forge-sans text-[12px] text-[var(--text-0)] placeholder:text-[var(--text-3)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-2 outline-none transition-colors resize-none leading-relaxed",
+                    "w-full font-sans text-[12px] text-text-primary placeholder:text-text-quaternary bg-canvas border border-border rounded-md px-3 py-2 outline-none transition-colors resize-none leading-relaxed",
                     kbdFocused
-                      ? "ring-1 ring-[var(--blue)] ring-offset-1 focus:border-[var(--blue-border-focus)]"
-                      : "focus:border-[var(--blue-border-focus)]",
+                      ? "ring-1 ring-status-info ring-offset-1 focus:border-status-info"
+                      : "focus:border-status-info",
                     answered && writeInValue.length === 0 ? "opacity-45" : "",
                   ].join(" ")}
                 />
@@ -160,8 +156,8 @@ export function QuestionCard({
             placeholder="Your answer…"
             rows={3}
             className={[
-              "w-full font-forge-sans text-[12px] text-[var(--text-0)] placeholder:text-[var(--text-3)] bg-[var(--surface-2)] border border-[var(--border)] rounded-md px-3 py-2 outline-none focus:border-[var(--blue-border-focus)] transition-colors resize-none leading-relaxed",
-              flatStartIndex === keyboardFlatIdx ? "ring-1 ring-[var(--blue)] ring-offset-1" : "",
+              "w-full font-sans text-[12px] text-text-primary placeholder:text-text-quaternary bg-canvas border border-border rounded-md px-3 py-2 outline-none focus:border-status-info transition-colors resize-none leading-relaxed",
+              flatStartIndex === keyboardFlatIdx ? "ring-1 ring-status-info ring-offset-1" : "",
             ].join(" ")}
           />
         )}

@@ -61,28 +61,24 @@ export function FeedRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onClick?.();
       }}
-      className={`grid grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_minmax(0,1fr)_160px] gap-4 ${paddingClass} py-2 min-h-[40px] items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out ${isFocused ? "bg-[var(--accent-bg)] border-l-[var(--accent)]" : "border-l-transparent hover:bg-[var(--surface-hover)]"}${faded && !isFocused ? " opacity-50" : ""}`}
+      className={`grid grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_minmax(0,1fr)_160px] gap-4 ${paddingClass} py-2 min-h-[40px] items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out ${isFocused ? "bg-accent-soft border-l-accent" : "border-l-transparent hover:bg-canvas"}${faded && !isFocused ? " opacity-50" : ""}`}
     >
       {isSubtask ? (
         <>
           <div />
-          <span className="text-center font-forge-mono text-sm text-[var(--text-3)] self-start">
-            ↳
-          </span>
+          <span className="text-center font-mono text-sm text-text-quaternary self-start">↳</span>
         </>
       ) : (
         <StatusSymbol task={task} />
       )}
       <div className={`min-w-0 ${!isSubtask ? "col-span-2" : ""}`}>
-        <div className="font-forge-sans text-[13px] font-medium tracking-[-0.01em] truncate text-[var(--text-0)]">
+        <div className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary">
           {task.title || task.description}
         </div>
-        <div className="font-forge-mono text-[10px] text-[var(--text-3)]">{task.id}</div>
-        <div className="font-forge-mono text-[10px] font-medium text-[var(--text-2)]">
-          {subtitle}
-        </div>
+        <div className="font-mono text-[10px] text-text-quaternary">{task.id}</div>
+        <div className="font-mono text-[10px] font-medium text-text-tertiary">{subtitle}</div>
       </div>
-      <div className="font-forge-mono text-[10px] font-semibold uppercase tracking-wide text-[var(--text-3)] text-right truncate">
+      <div className="font-mono text-[10px] font-semibold uppercase tracking-wide text-text-quaternary text-right truncate">
         {task.derived.current_stage ?? ""}
       </div>
       <PipelineBar segments={segments} />

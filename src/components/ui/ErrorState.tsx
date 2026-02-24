@@ -46,12 +46,10 @@ export function ErrorState({
 
   return (
     <div className={`flex flex-col items-center justify-center py-8 ${className}`}>
-      <Icon className="w-8 h-8 text-error-300 dark:text-error-600" />
-      <p className="text-sm text-error-500 dark:text-error-400 mt-3 text-center">
-        {resolvedMessage}
-      </p>
+      <Icon className="w-8 h-8 text-status-error/50" />
+      <p className="text-sm text-status-error mt-3 text-center">{resolvedMessage}</p>
       {resolvedDescription && (
-        <p className="text-xs text-error-400 dark:text-error-500 mt-1 text-center max-w-md">
+        <p className="text-xs text-status-error/70 mt-1 text-center max-w-md">
           {resolvedDescription}
         </p>
       )}

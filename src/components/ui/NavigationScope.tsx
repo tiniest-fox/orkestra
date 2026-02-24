@@ -112,7 +112,6 @@ export function NavigationScope({
       window.removeEventListener("pointermove", restore);
       container.style.pointerEvents = "";
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollSeq !== undefined ? scrollSeq : activeId, containerRef, buffer]);
 
   return (

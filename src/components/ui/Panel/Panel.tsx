@@ -55,13 +55,11 @@ const variantStyles: Record<PanelVariant, string> = {
 };
 
 const accentStyles: Record<PanelAccent, string> = {
-  none: "bg-white dark:bg-stone-900",
-  info: "bg-gradient-to-br from-info-50 to-info-100 dark:from-info-950 dark:to-info-900",
-  warning:
-    "bg-gradient-to-br from-warning-50 to-warning-100 dark:from-warning-950 dark:to-warning-900",
-  error: "bg-gradient-to-br from-error-50 to-error-100 dark:from-error-950 dark:to-error-900",
-  success:
-    "bg-gradient-to-br from-success-50 to-success-100 dark:from-success-950 dark:to-success-900",
+  none: "bg-surface",
+  info: "bg-status-info-bg",
+  warning: "bg-status-warning-bg",
+  error: "bg-status-error-bg",
+  success: "bg-status-success-bg",
 };
 
 // Context to reset shadow suppression for nested panels
@@ -97,7 +95,7 @@ function PanelRoot(props: PanelProps) {
 
   // Button mode: interactive shadow transitions + button style resets + focus ring
   const buttonClasses = isButton
-    ? "text-left appearance-none cursor-pointer transition-shadow duration-150 hover:shadow-panel-hover active:shadow-panel-press focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-900"
+    ? "text-left appearance-none cursor-pointer transition-shadow duration-150 hover:shadow-panel-hover active:shadow-panel-press focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
     : "";
 
   const combinedClassName = `panel rounded-panel ${variantStyles[effectiveVariant]} ${accentStyles[accent]} ${extraClasses} ${buttonClasses} ${className}`;

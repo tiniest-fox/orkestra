@@ -169,7 +169,7 @@ export function Slot({
   }, [parentAnimation, id, phase]);
 
   // Visual styling classes (shadow, rounded corners, background) - skip if plain
-  const visualClasses = plain ? "" : "shadow-panel rounded-panel bg-white dark:bg-stone-900";
+  const visualClasses = plain ? "" : "shadow-panel rounded-panel bg-surface";
 
   // When plain, reset PanelContainerContext so Panels inside render their own shadows
   const content = <div className="flex-1 min-h-0 flex flex-col">{displayedContent}</div>;

@@ -15,30 +15,30 @@ interface OutcomeStyle {
 function outcomeStyle(outcome: WorkflowOutcome | undefined): OutcomeStyle {
   if (!outcome) {
     // In-progress: no glyph, active color.
-    return { abbrevColor: "text-[var(--text-2)]", glyph: null };
+    return { abbrevColor: "text-text-tertiary", glyph: null };
   }
   switch (outcome.type) {
     case "approved":
     case "completed":
-      return { abbrevColor: "text-[var(--green)]", glyph: "✓" };
+      return { abbrevColor: "text-status-success", glyph: "✓" };
     case "rejected":
     case "rejection":
     case "awaiting_rejection_review":
-      return { abbrevColor: "text-[var(--red)]", glyph: "×" };
+      return { abbrevColor: "text-status-error", glyph: "×" };
     case "agent_error":
     case "spawn_failed":
     case "script_failed":
     case "commit_failed":
     case "integration_failed":
-      return { abbrevColor: "text-[var(--amber)]", glyph: "!" };
+      return { abbrevColor: "text-status-warning", glyph: "!" };
     case "interrupted":
     case "skipped":
     case "blocked":
-      return { abbrevColor: "text-[var(--text-3)]", glyph: "—" };
+      return { abbrevColor: "text-text-quaternary", glyph: "—" };
     case "awaiting_answers":
-      return { abbrevColor: "text-[var(--blue)]", glyph: "?" };
+      return { abbrevColor: "text-status-info", glyph: "?" };
     default:
-      return { abbrevColor: "text-[var(--text-2)]", glyph: null };
+      return { abbrevColor: "text-text-tertiary", glyph: null };
   }
 }
 
@@ -51,9 +51,9 @@ export function IterationChain({ iterations }: IterationChainProps) {
 
   return (
     <div className="min-w-0">
-      <span className="whitespace-nowrap font-forge-mono text-[10px] font-medium">
+      <span className="whitespace-nowrap font-mono text-[10px] font-medium">
         {hidden > 0 && (
-          <span className="text-[var(--text-3)]">
+          <span className="text-text-quaternary">
             +{hidden}
             <span className="mx-[2px]">·</span>
           </span>
@@ -63,7 +63,7 @@ export function IterationChain({ iterations }: IterationChainProps) {
           const { abbrevColor, glyph } = outcomeStyle(iter.outcome);
           return (
             <span key={iter.id}>
-              {idx > 0 && <span className="text-[var(--text-3)] mx-[2px]">·</span>}
+              {idx > 0 && <span className="text-text-quaternary mx-[2px]">·</span>}
               <span className={abbrevColor}>{abbrev}</span>
               {glyph && <span className={`ml-[2px] ${abbrevColor}`}>{glyph}</span>}
             </span>

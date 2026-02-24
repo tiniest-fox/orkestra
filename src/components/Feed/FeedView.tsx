@@ -6,12 +6,12 @@ import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
 import { ModalPanel } from "../ui/ModalPanel";
 import { NavigationScope } from "../ui/NavigationScope";
+import { TaskDrawer } from "./Drawer/TaskDrawer";
 import { FeedHeader } from "./FeedHeader";
 import { FeedSection } from "./FeedSection";
 import { FeedStatusLine } from "./FeedStatusLine";
 import { GitHistoryDrawer } from "./GitHistoryDrawer";
 import { NewTaskModal } from "./NewTaskModal";
-import { TaskDrawer } from "./TaskDrawer";
 import { useFeedNavigation } from "./useFeedNavigation";
 import { useNewTask } from "./useNewTask";
 
@@ -36,20 +36,20 @@ export function FeedView({ config, tasks }: FeedViewProps) {
   const drawerMode = isNewTaskOpen
     ? ("new-task" as const)
     : gitHistoryOpen
-    ? ("git-history" as const)
-    : activeTask
-      ? activeTask.derived.needs_review
-        ? rejectMode
-          ? ("review-reject" as const)
-          : ("review" as const)
-        : activeTask.derived.has_questions
-          ? ("answer" as const)
-          : activeTask.derived.is_working || activeTask.derived.is_interrupted
-            ? ("focus" as const)
-            : activeTask.derived.is_done
-              ? ("ship" as const)
-              : ("focus" as const)
-      : null;
+      ? ("git-history" as const)
+      : activeTask
+        ? activeTask.derived.needs_review
+          ? rejectMode
+            ? ("review-reject" as const)
+            : ("review" as const)
+          : activeTask.derived.has_questions
+            ? ("answer" as const)
+            : activeTask.derived.is_working || activeTask.derived.is_interrupted
+              ? ("focus" as const)
+              : activeTask.derived.is_done
+                ? ("ship" as const)
+                : ("focus" as const)
+        : null;
 
   const { sections, surfacedSubtasks, workingSubtasks } = useMemo(
     () => groupTasksForFeed(tasks),
@@ -94,7 +94,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
     workingSubtasks.length === 0;
 
   return (
-    <div className="forge-theme h-full flex flex-col rounded-panel overflow-hidden relative">
+    <div className="h-full flex flex-col rounded-panel overflow-hidden relative">
       <FeedHeader tasks={tasks} onNewTask={openNewTask} hotkeyActive={!drawerOpen} />
       <div ref={feedBodyRef} className="flex-1 overflow-y-auto">
         <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
@@ -127,8 +127,8 @@ export function FeedView({ config, tasks }: FeedViewProps) {
             />
           ))}
           {isEmpty && (
-            <div className="p-6 text-[var(--text-2)]">
-              <p className="font-forge-sans text-sm">No tasks yet</p>
+            <div className="p-6 text-text-tertiary">
+              <p className="font-sans text-sm">No tasks yet</p>
             </div>
           )}
         </NavigationScope>

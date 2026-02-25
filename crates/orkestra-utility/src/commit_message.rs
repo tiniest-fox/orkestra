@@ -10,11 +10,8 @@ use std::fmt::Write;
 use serde_json::json;
 
 use crate::runner::UtilityRunner;
+use orkestra_types::config::models::friendly_model_name;
 use orkestra_types::config::WorkflowConfig;
-
-/// Display name for the utility model used by commit message generation.
-/// Must match the model used by `UtilityRunner::new()` (currently haiku).
-const UTILITY_MODEL_DISPLAY_NAME: &str = "Claude Haiku 4.5";
 
 // =============================================================================
 // CommitMessageGenerator Trait
@@ -175,34 +172,6 @@ pub fn format_commit_message(title: &str, body: &str, model_names: &[String]) ->
     msg
 }
 
-/// Map a model spec to a friendly display name for Co-authored-by.
-///
-/// Static lookup table for known models:
-/// - `None` → "Claude Sonnet 4.5" (default)
-/// - Aliases like "sonnet", "opus", "haiku" → Claude model names
-/// - Provider-prefixed like "claudecode/sonnet" → Claude model names
-/// - `OpenCode` models like "kimi-k2.5" → Kimi model names
-/// - Unknown specs → return the raw string
-pub fn friendly_model_name(model_spec: Option<&str>) -> &str {
-    match model_spec {
-        None => "Claude Sonnet 4.5",
-        Some(spec) => match spec {
-            // Claude Sonnet — alias, provider-prefixed, and raw model ID
-            "sonnet" | "claudecode/sonnet" | "claude-sonnet-4-5-20250929" => "Claude Sonnet 4.5",
-            // Claude Opus
-            "opus" | "claudecode/opus" | "claude-opus-4-5-20251101" => "Claude Opus 4.5",
-            // Claude Haiku
-            "haiku" | "claudecode/haiku" | "claude-haiku-4-5-20251001" => "Claude Haiku 4.5",
-            // Kimi K2.5
-            "kimi-k2.5" | "opencode/kimi-k2.5" | "opencode/kimi-k2.5-free" => "Kimi K2.5",
-            // Kimi K2
-            "kimi-k2" | "opencode/kimi-k2" | "moonshot/kimi-k2-0711-preview" => "Kimi K2",
-            // Unknown — return raw spec
-            _ => spec,
-        },
-    }
-}
-
 /// Collect unique model names from a workflow configuration.
 ///
 /// Iterates all agent stages (skipping script stages), resolves effective model specs
@@ -223,7 +192,7 @@ pub fn collect_model_names(workflow: &WorkflowConfig, task_flow: Option<&str>) -
     }
 
     // Add the commit message generator model if not already present
-    let utility_model = UTILITY_MODEL_DISPLAY_NAME.to_string();
+    let utility_model = friendly_model_name(Some("haiku")).to_string();
     if seen.insert(utility_model.clone()) {
         names.push(utility_model);
     }
@@ -252,92 +221,14 @@ mod tests {
     use orkestra_types::config::{IntegrationConfig, StageConfig};
 
     #[test]
-    fn test_friendly_model_name_default() {
-        assert_eq!(friendly_model_name(None), "Claude Sonnet 4.5");
-    }
-
-    #[test]
-    fn test_friendly_model_name_aliases() {
-        assert_eq!(friendly_model_name(Some("sonnet")), "Claude Sonnet 4.5");
-        assert_eq!(friendly_model_name(Some("opus")), "Claude Opus 4.5");
-        assert_eq!(friendly_model_name(Some("haiku")), "Claude Haiku 4.5");
-    }
-
-    #[test]
-    fn test_friendly_model_name_provider_prefixed() {
-        assert_eq!(
-            friendly_model_name(Some("claudecode/sonnet")),
-            "Claude Sonnet 4.5"
-        );
-        assert_eq!(
-            friendly_model_name(Some("claudecode/opus")),
-            "Claude Opus 4.5"
-        );
-        assert_eq!(
-            friendly_model_name(Some("claudecode/haiku")),
-            "Claude Haiku 4.5"
-        );
-    }
-
-    #[test]
-    fn test_friendly_model_name_raw_model_ids() {
-        assert_eq!(
-            friendly_model_name(Some("claude-sonnet-4-5-20250929")),
-            "Claude Sonnet 4.5"
-        );
-        assert_eq!(
-            friendly_model_name(Some("claude-opus-4-5-20251101")),
-            "Claude Opus 4.5"
-        );
-        assert_eq!(
-            friendly_model_name(Some("claude-haiku-4-5-20251001")),
-            "Claude Haiku 4.5"
-        );
-        assert_eq!(
-            friendly_model_name(Some("moonshot/kimi-k2-0711-preview")),
-            "Kimi K2"
-        );
-        assert_eq!(
-            friendly_model_name(Some("opencode/kimi-k2.5-free")),
-            "Kimi K2.5"
-        );
-    }
-
-    #[test]
-    fn test_friendly_model_name_kimi() {
-        assert_eq!(friendly_model_name(Some("kimi-k2.5")), "Kimi K2.5");
-        assert_eq!(friendly_model_name(Some("kimi-k2")), "Kimi K2");
-        assert_eq!(friendly_model_name(Some("opencode/kimi-k2.5")), "Kimi K2.5");
-        assert_eq!(friendly_model_name(Some("opencode/kimi-k2")), "Kimi K2");
-    }
-
-    #[test]
-    fn test_friendly_model_name_unknown() {
-        assert_eq!(friendly_model_name(Some("unknown-model")), "unknown-model");
-    }
-
-    #[test]
-    fn test_friendly_model_name_unknown_passes_through() {
-        assert_eq!(
-            friendly_model_name(Some("some-new-model")),
-            "some-new-model"
-        );
-        // Verify old contains-based false positives no longer match
-        assert_eq!(
-            friendly_model_name(Some("my-custom-opus-variant")),
-            "my-custom-opus-variant"
-        );
-    }
-
-    #[test]
     fn test_format_commit_message() {
         let msg = format_commit_message(
             "Add feature",
             "This adds a new feature.",
-            &["Claude Sonnet 4.5".to_string()],
+            &["Claude Sonnet 4".to_string()],
         );
         assert!(msg.starts_with("Add feature\n\nThis adds a new feature.\n\n"));
-        assert!(msg.contains("Co-authored-by: Claude Sonnet 4.5"));
+        assert!(msg.contains("Co-authored-by: Claude Sonnet 4"));
         assert!(msg.contains("⚡ Powered by Orkestra"));
     }
 
@@ -365,8 +256,8 @@ mod tests {
         };
 
         let names = collect_model_names(&workflow, None);
-        assert_eq!(names.len(), 2); // "Claude Sonnet 4.5" (once) + "Claude Haiku 4.5"
-        assert_eq!(names[0], "Claude Sonnet 4.5");
+        assert_eq!(names.len(), 2); // "Claude Sonnet 4" (once) + "Claude Haiku 4.5"
+        assert_eq!(names[0], "Claude Sonnet 4");
         assert_eq!(names[1], "Claude Haiku 4.5");
     }
 
@@ -385,7 +276,7 @@ mod tests {
         };
 
         let names = collect_model_names(&workflow, None);
-        assert_eq!(names.len(), 2); // "Claude Sonnet 4.5" + "Claude Haiku 4.5"
+        assert_eq!(names.len(), 2); // "Claude Sonnet 4" + "Claude Haiku 4.5"
         assert!(!names.contains(&"checks".to_string()));
     }
 
@@ -452,15 +343,15 @@ mod tests {
 
         // Default flow includes all stages
         let names_default = collect_model_names(&workflow, None);
-        assert!(names_default.contains(&"Claude Sonnet 4.5".to_string())); // planning + breakdown
-        assert!(names_default.contains(&"Claude Opus 4.5".to_string())); // work
+        assert!(names_default.contains(&"Claude Sonnet 4".to_string())); // planning + breakdown
+        assert!(names_default.contains(&"Claude Opus 4".to_string())); // work
         assert!(names_default.contains(&"Claude Haiku 4.5".to_string())); // review + utility
         assert_eq!(names_default.len(), 3); // sonnet + opus + haiku (deduplicated)
 
         // Hotfix flow only includes work and review (excludes planning and breakdown)
         let names_hotfix = collect_model_names(&workflow, Some("hotfix"));
-        assert!(!names_hotfix.contains(&"Claude Sonnet 4.5".to_string())); // planning/breakdown excluded
-        assert!(names_hotfix.contains(&"Claude Opus 4.5".to_string())); // work included
+        assert!(!names_hotfix.contains(&"Claude Sonnet 4".to_string())); // planning/breakdown excluded
+        assert!(names_hotfix.contains(&"Claude Opus 4".to_string())); // work included
         assert!(names_hotfix.contains(&"Claude Haiku 4.5".to_string())); // review + utility (deduplicated)
         assert_eq!(names_hotfix.len(), 2); // opus + haiku only
     }

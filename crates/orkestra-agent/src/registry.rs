@@ -53,7 +53,7 @@ struct RegisteredProvider {
     /// Provider capabilities.
     capabilities: ProviderCapabilities,
     /// Alias map: friendly name → resolved model ID.
-    /// e.g., "sonnet" → "claude-sonnet-4-5-20250929"
+    /// e.g., "sonnet" → "claude-sonnet-4-6"
     aliases: HashMap<String, String>,
 }
 
@@ -296,25 +296,18 @@ impl ProviderRegistry {
 
 /// Claude Code provider alias table.
 pub fn claudecode_aliases() -> HashMap<String, String> {
-    HashMap::from([
-        ("sonnet".to_string(), "claude-sonnet-4-6".to_string()),
-        ("opus".to_string(), "claude-opus-4-6".to_string()),
-        ("haiku".to_string(), "claude-haiku-4-5-20251001".to_string()),
-    ])
+    orkestra_types::config::models::claudecode_model_entries()
+        .iter()
+        .map(|e| (e.alias.to_string(), e.model_id.to_string()))
+        .collect()
 }
 
 /// `OpenCode` provider alias table.
 pub fn opencode_aliases() -> HashMap<String, String> {
-    HashMap::from([
-        (
-            "kimi-k2".to_string(),
-            "moonshot/kimi-k2-0711-preview".to_string(),
-        ),
-        (
-            "kimi-k2.5".to_string(),
-            "opencode/kimi-k2.5-free".to_string(),
-        ),
-    ])
+    orkestra_types::config::models::opencode_model_entries()
+        .iter()
+        .map(|e| (e.alias.to_string(), e.model_id.to_string()))
+        .collect()
 }
 
 /// Claude Code provider capabilities.

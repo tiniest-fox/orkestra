@@ -53,9 +53,10 @@ impl std::error::Error for UtilityError {}
 // -- Re-exports --
 
 pub use commit_message::{
-    collect_model_names, fallback_commit_message, format_commit_message, friendly_model_name,
+    collect_model_names, fallback_commit_message, format_commit_message,
     ClaudeCommitMessageGenerator, CommitMessageGenerator,
 };
+pub use orkestra_types::config::models::friendly_model_name;
 pub use pr_description::{format_pr_footer, ClaudePrDescriptionGenerator, PrDescriptionGenerator};
 pub use runner::UtilityRunner;
 pub use title::{

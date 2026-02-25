@@ -58,7 +58,7 @@ let output = runner.run("generate_title", &context)?;
 
 | Function | Purpose |
 |----------|---------|
-| `friendly_model_name(spec)` | Map model ID to display name ("claudecode/sonnet" → "Claude Sonnet 4.5") |
+| `friendly_model_name(spec)` | Map model ID to display name ("claudecode/sonnet" → "Claude Sonnet 4"). Implemented in `orkestra_types::config::models`, re-exported here. |
 | `collect_model_names(workflow, flow)` | Gather unique model names from workflow config for co-author attribution |
 | `format_commit_message(title, body, models)` | Format commit with trailers |
 | `fallback_commit_message(title, task_id)` | Fallback when AI unavailable |
@@ -80,11 +80,11 @@ let output = runner.run("generate_title", &context)?;
 
 ### Model Name Resolution
 
-`friendly_model_name()` uses a static lookup table with exact matches. Unknown specs pass through unchanged:
+`friendly_model_name()` uses a lookup table in `orkestra_types::config::models` with exact matches. Unknown specs pass through unchanged:
 
 ```rust
-friendly_model_name(Some("sonnet"))           // "Claude Sonnet 4.5"
-friendly_model_name(Some("claudecode/sonnet")) // "Claude Sonnet 4.5"
+friendly_model_name(Some("sonnet"))           // "Claude Sonnet 4"
+friendly_model_name(Some("claudecode/sonnet")) // "Claude Sonnet 4"
 friendly_model_name(Some("unknown-model"))    // "unknown-model"
 ```
 

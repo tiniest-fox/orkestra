@@ -4,7 +4,7 @@
 
 use orkestra_types::config::{StageConfig, WorkflowConfig};
 use orkestra_types::domain::Task;
-use orkestra_types::runtime::artifact_file_path;
+use orkestra_types::runtime::{absolute_artifact_file_path, artifact_file_path};
 
 use crate::types::{
     ArtifactContext, IntegrationErrorContext, SiblingTaskContext, StagePromptContext,
@@ -108,6 +108,7 @@ fn build_context_from_stage<'a>(
 ) -> StagePromptContext<'a> {
     // Build artifact contexts with file paths instead of content.
     // Artifacts are materialized to files before agent spawn.
+    // Use absolute paths when worktree_path is available to avoid ambiguity in nested worktrees.
     let artifacts: Vec<ArtifactContext> = artifact_names
         .iter()
         .map(|name| {
@@ -116,9 +117,13 @@ fn build_context_from_stage<'a>(
                 .iter()
                 .find(|s| s.artifact_name() == name)
                 .and_then(|s| s.artifact.description.clone());
+            let file_path = match &task.worktree_path {
+                Some(wt) => absolute_artifact_file_path(wt, name),
+                None => artifact_file_path(name),
+            };
             ArtifactContext {
                 name: name.clone(),
-                file_path: artifact_file_path(name),
+                file_path,
                 description,
             }
         })

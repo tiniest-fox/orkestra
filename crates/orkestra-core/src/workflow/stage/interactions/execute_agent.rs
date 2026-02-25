@@ -219,8 +219,14 @@ fn build_user_prompt(
             trigger_to_resume_type(trigger)
         };
 
-        build_resume_prompt(stage, &resume_type, &task.base_branch, artifact_names)
-            .map_err(ExecutionError::from)
+        build_resume_prompt(
+            stage,
+            &resume_type,
+            &task.base_branch,
+            artifact_names,
+            task.worktree_path.as_deref(),
+        )
+        .map_err(ExecutionError::from)
     } else {
         // Extract feedback from trigger if present (fresh spawn after session reset)
         let feedback = extract_feedback_text(trigger);

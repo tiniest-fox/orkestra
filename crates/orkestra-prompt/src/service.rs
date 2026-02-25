@@ -109,8 +109,15 @@ impl PromptService {
         resume_type: &ResumeType,
         base_branch: &str,
         artifact_names: &[String],
+        worktree_path: Option<&str>,
     ) -> Result<String, AgentConfigError> {
-        interactions::resume::build_prompt::execute(stage, resume_type, base_branch, artifact_names)
+        interactions::resume::build_prompt::execute(
+            stage,
+            resume_type,
+            base_branch,
+            artifact_names,
+            worktree_path,
+        )
     }
 
     /// Determine the resume type from context.

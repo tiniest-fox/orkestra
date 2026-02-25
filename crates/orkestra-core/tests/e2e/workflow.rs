@@ -6271,10 +6271,14 @@ fn test_artifact_materialization() {
     // =========================================================================
     let prompt = ctx.last_prompt();
 
-    // Prompt should reference the artifact file path
+    // Prompt should reference the absolute artifact file path (not a relative path)
+    let expected_plan_path = format!(
+        "{}/.orkestra/.artifacts/plan.md",
+        worktree_path.to_str().unwrap()
+    );
     assert!(
-        prompt.contains(".orkestra/.artifacts/plan.md"),
-        "Prompt should contain artifact file path. Got prompt:\n{}",
+        prompt.contains(&expected_plan_path),
+        "Prompt should contain absolute artifact file path '{expected_plan_path}'. Got prompt:\n{}",
         &prompt[..prompt.len().min(2000)]
     );
 
@@ -6387,17 +6391,21 @@ fn test_multiple_artifacts_materialized() {
     );
 
     // =========================================================================
-    // Step 4: Verify prompt references both artifact paths
+    // Step 4: Verify prompt references both artifact paths (absolute)
     // =========================================================================
     let prompt = ctx.last_prompt();
 
+    let wt = worktree_path.to_str().unwrap();
+    let expected_plan_path = format!("{wt}/.orkestra/.artifacts/plan.md");
+    let expected_summary_path = format!("{wt}/.orkestra/.artifacts/summary.md");
+
     assert!(
-        prompt.contains(".orkestra/.artifacts/plan.md"),
-        "Prompt should reference plan artifact path"
+        prompt.contains(&expected_plan_path),
+        "Prompt should reference absolute plan artifact path '{expected_plan_path}'"
     );
     assert!(
-        prompt.contains(".orkestra/.artifacts/summary.md"),
-        "Prompt should reference summary artifact path"
+        prompt.contains(&expected_summary_path),
+        "Prompt should reference absolute summary artifact path '{expected_summary_path}'"
     );
 
     // Prompt should NOT contain inline content
@@ -6518,10 +6526,14 @@ fn test_recheck_resume_references_file_paths() {
     // Get full prompt including system prompt
     let prompt = ctx.last_prompt();
 
-    // Recheck prompts should mention updated artifacts with file paths
+    // Recheck prompts should mention updated artifacts with absolute file paths
+    let expected_summary_path = format!(
+        "{}/.orkestra/.artifacts/summary.md",
+        worktree_path.to_str().unwrap()
+    );
     assert!(
-        prompt.contains(".orkestra/.artifacts/summary.md"),
-        "Recheck prompt should reference artifact file path. Got:\n{}",
+        prompt.contains(&expected_summary_path),
+        "Recheck prompt should reference absolute artifact file path '{expected_summary_path}'. Got:\n{}",
         &prompt[..prompt.len().min(2000)]
     );
 

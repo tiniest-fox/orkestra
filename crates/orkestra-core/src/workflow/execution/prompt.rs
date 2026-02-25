@@ -201,8 +201,15 @@ pub fn build_resume_prompt(
     resume_type: &ResumeType,
     base_branch: &str,
     artifact_names: &[String],
+    worktree_path: Option<&str>,
 ) -> Result<String, AgentConfigError> {
-    RENDERER.build_resume_prompt(stage, resume_type, base_branch, artifact_names)
+    RENDERER.build_resume_prompt(
+        stage,
+        resume_type,
+        base_branch,
+        artifact_names,
+        worktree_path,
+    )
 }
 
 /// Determine the resume type from context.
@@ -328,6 +335,34 @@ mod tests {
     }
 
     #[test]
+    fn test_build_context_with_artifacts_absolute_path() {
+        let workflow = test_workflow();
+        let builder = PromptBuilder::new(&workflow);
+
+        let mut task = Task::new(
+            "task-1",
+            "Implement login",
+            "Add login feature",
+            "work",
+            "now",
+        );
+        task.worktree_path = Some("/path/to/worktree".to_string());
+
+        let artifact_names = vec!["plan".to_string()];
+        let ctx = builder
+            .build_context("work", &task, &artifact_names, None, None, false, &[])
+            .unwrap();
+
+        // With worktree_path set, should use absolute paths
+        assert_eq!(ctx.artifacts.len(), 1);
+        assert_eq!(ctx.artifacts[0].name, "plan");
+        assert_eq!(
+            ctx.artifacts[0].file_path,
+            "/path/to/worktree/.orkestra/.artifacts/plan.md"
+        );
+    }
+
+    #[test]
     fn test_build_context_with_capabilities() {
         let workflow = test_workflow();
         let builder = PromptBuilder::new(&workflow);
@@ -445,7 +480,8 @@ mod tests {
     fn test_build_resume_prompt_continue() {
         let artifact_names = vec!["plan".to_string()];
         let prompt =
-            build_resume_prompt("work", &ResumeType::Continue, "main", &artifact_names).unwrap();
+            build_resume_prompt("work", &ResumeType::Continue, "main", &artifact_names, None)
+                .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -462,6 +498,7 @@ mod tests {
             },
             "main",
             &artifact_names,
+            None,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:feedback>"));
@@ -481,6 +518,7 @@ mod tests {
             },
             "feature/parent-branch",
             &artifact_names,
+            None,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:integration>"));
@@ -510,6 +548,7 @@ mod tests {
             },
             "main",
             &artifact_names,
+            None,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:planning:answers>"));
@@ -523,8 +562,14 @@ mod tests {
     #[test]
     fn test_build_resume_prompt_recheck() {
         let artifact_names = vec!["summary".to_string(), "check_results".to_string()];
-        let prompt =
-            build_resume_prompt("review", &ResumeType::Recheck, "main", &artifact_names).unwrap();
+        let prompt = build_resume_prompt(
+            "review",
+            &ResumeType::Recheck,
+            "main",
+            &artifact_names,
+            None,
+        )
+        .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
         assert!(prompt.contains("re-run"));
         assert!(prompt.contains("re-examine"));
@@ -538,6 +583,24 @@ mod tests {
     }
 
     #[test]
+    fn test_build_resume_prompt_recheck_with_worktree_path() {
+        let artifact_names = vec!["summary".to_string(), "check_results".to_string()];
+        let worktree = "/path/to/worktree";
+        let prompt = build_resume_prompt(
+            "review",
+            &ResumeType::Recheck,
+            "main",
+            &artifact_names,
+            Some(worktree),
+        )
+        .unwrap();
+        assert!(prompt.contains("Updated Input Artifacts"));
+        // Should use absolute paths
+        assert!(prompt.contains("/path/to/worktree/.orkestra/.artifacts/summary.md"));
+        assert!(prompt.contains("/path/to/worktree/.orkestra/.artifacts/check_results.md"));
+    }
+
+    #[test]
     fn test_build_resume_prompt_recheck_with_activity_log_artifact() {
         use orkestra_types::runtime::ACTIVITY_LOG_ARTIFACT_NAME;
         // Activity logs are now referenced by file path (via artifact list), not inline.
@@ -545,8 +608,14 @@ mod tests {
             "summary".to_string(),
             ACTIVITY_LOG_ARTIFACT_NAME.to_string(),
         ];
-        let prompt =
-            build_resume_prompt("review", &ResumeType::Recheck, "main", &artifact_names).unwrap();
+        let prompt = build_resume_prompt(
+            "review",
+            &ResumeType::Recheck,
+            "main",
+            &artifact_names,
+            None,
+        )
+        .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
         assert!(prompt.contains("Updated Input Artifacts"));
         assert!(prompt.contains(".orkestra/.artifacts/summary.md"));
@@ -557,7 +626,7 @@ mod tests {
 
     #[test]
     fn test_build_resume_prompt_no_artifacts() {
-        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[]).unwrap();
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[], None).unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(prompt.contains("interrupted"));
         assert!(prompt.contains("JSON"));
@@ -574,6 +643,7 @@ mod tests {
             },
             "main",
             &artifact_names,
+            None,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:manual_resume>"));
@@ -591,6 +661,7 @@ mod tests {
             &ResumeType::ManualResume { message: None },
             "main",
             &[],
+            None,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:review:manual_resume>"));
@@ -623,6 +694,7 @@ mod tests {
             },
             "main",
             &[],
+            None,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:pr_comments>"));
@@ -652,6 +724,7 @@ mod tests {
             },
             "main",
             &[],
+            None,
         )
         .unwrap();
         assert!(prompt.starts_with("<!orkestra:resume:work:pr_comments>"));
@@ -819,7 +892,7 @@ mod tests {
 
     #[test]
     fn test_resume_prompt_has_no_system_prompt() {
-        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[]).unwrap();
+        let prompt = build_resume_prompt("work", &ResumeType::Continue, "main", &[], None).unwrap();
 
         assert!(prompt.starts_with("<!orkestra:resume:work:continue>"));
         assert!(!prompt.contains("Output Format"));

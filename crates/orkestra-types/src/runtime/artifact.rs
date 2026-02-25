@@ -43,6 +43,30 @@ pub fn artifact_file_path(name: &str) -> String {
     format!("{ARTIFACTS_DIR}/{name}.md")
 }
 
+/// Returns the absolute file path for a named artifact, given the worktree path.
+///
+/// Use this when constructing artifact paths for display in agent prompts.
+/// The absolute path removes ambiguity when agents run in nested worktrees.
+///
+/// # Example
+/// ```
+/// use orkestra_types::runtime::absolute_artifact_file_path;
+/// assert_eq!(
+///     absolute_artifact_file_path("/path/to/worktree", "plan"),
+///     "/path/to/worktree/.orkestra/.artifacts/plan.md"
+/// );
+/// ```
+///
+/// # Panics
+/// Panics if `name` contains path separators (`/`, `\`) or parent references (`..`).
+pub fn absolute_artifact_file_path(worktree_path: &str, name: &str) -> String {
+    use std::path::Path;
+    Path::new(worktree_path)
+        .join(artifact_file_path(name))
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// A named artifact produced by a stage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Artifact {
@@ -337,6 +361,18 @@ mod tests {
         assert_eq!(
             artifact_file_path("summary"),
             ".orkestra/.artifacts/summary.md"
+        );
+    }
+
+    #[test]
+    fn test_absolute_artifact_file_path() {
+        assert_eq!(
+            absolute_artifact_file_path("/path/to/worktree", "plan"),
+            "/path/to/worktree/.orkestra/.artifacts/plan.md"
+        );
+        assert_eq!(
+            absolute_artifact_file_path("/home/user/project", "summary"),
+            "/home/user/project/.orkestra/.artifacts/summary.md"
         );
     }
 

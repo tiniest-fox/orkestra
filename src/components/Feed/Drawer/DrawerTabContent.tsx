@@ -1,13 +1,16 @@
 //! Tab body content switcher — renders the correct panel based on the active tab.
 
+import { FileText } from "lucide-react";
 import type { RefCallback } from "react";
 import type { LogEntry, WorkflowArtifact, WorkflowTaskView } from "../../../types/workflow";
+import { EmptyState } from "../../ui/EmptyState";
 import { ActivityLog } from "../ActivityLog";
 import { ArtifactView } from "../ArtifactView";
 import { DrawerDiffTab } from "../DrawerDiffTab";
 import { DrawerPrTab } from "../DrawerPrTab";
 import { FeedLogList } from "../FeedLogList";
 import type { DrawerTabId } from "./drawerTabs";
+import { ErrorTab } from "./Sections/ErrorTab";
 import { QuestionsSection } from "./Sections/QuestionsSection";
 import { SubtasksSection } from "./Sections/SubtasksSection";
 import type { TaskDrawerState } from "./useTaskDrawerState";
@@ -49,6 +52,10 @@ export function DrawerTabContent({
 }: DrawerTabContentProps) {
   const { submitRef } = state;
 
+  if (activeTab === "error") {
+    return <ErrorTab task={task} bodyRef={bodyRef} />;
+  }
+
   if (activeTab === "diff") {
     return <DrawerDiffTab active />;
   }
@@ -67,7 +74,7 @@ export function DrawerTabContent({
         {artifact ? (
           <ArtifactView artifact={artifact} />
         ) : (
-          <div className="p-6 font-mono text-[11px] text-text-quaternary">No artifact yet.</div>
+          <EmptyState icon={FileText} message="No artifact yet." />
         )}
       </div>
     );

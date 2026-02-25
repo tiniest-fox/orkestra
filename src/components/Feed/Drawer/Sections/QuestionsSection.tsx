@@ -1,7 +1,9 @@
 //! Keyboard-navigable questions form with option selection and textarea entry.
 
+import { HelpCircle } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
+import { EmptyState } from "../../../ui/EmptyState";
 import { useNavHandler } from "../../../ui/HotkeyScope";
 import { NavigationScope } from "../../../ui/NavigationScope";
 import { QuestionCard } from "../../QuestionCard";
@@ -159,7 +161,7 @@ export function QuestionsSection({
   if (questions.length === 0) {
     return (
       <div ref={bodyRef} className="flex-1 overflow-y-auto">
-        <div className="p-6 font-mono text-[11px] text-text-quaternary">No questions.</div>
+        <EmptyState icon={HelpCircle} message="No questions." />
       </div>
     );
   }

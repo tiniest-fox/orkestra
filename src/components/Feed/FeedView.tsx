@@ -1,9 +1,11 @@
 //! Feed view displaying tasks grouped by intent with pipeline bars and status symbols.
 
 import { invoke } from "@tauri-apps/api/core";
+import { Inbox } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
+import { EmptyState } from "../ui/EmptyState";
 import { ModalPanel } from "../ui/ModalPanel";
 import { NavigationScope } from "../ui/NavigationScope";
 import { TaskDrawer } from "./Drawer/TaskDrawer";
@@ -106,9 +108,11 @@ export function FeedView({ config, tasks }: FeedViewProps) {
             />
           ))}
           {isEmpty && (
-            <div className="p-6 text-text-tertiary">
-              <p className="font-sans text-sm">No tasks yet</p>
-            </div>
+            <EmptyState
+              icon={Inbox}
+              message="No tasks yet."
+              description="Create a task to get started."
+            />
           )}
         </NavigationScope>
       </div>

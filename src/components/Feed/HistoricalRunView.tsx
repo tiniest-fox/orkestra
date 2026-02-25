@@ -1,9 +1,11 @@
 //! Historical run view — artifact and logs for a past stage run.
 
+import { FileText } from "lucide-react";
 import { useRef } from "react";
 import { useLogs } from "../../hooks/useLogs";
 import type { WorkflowTaskView } from "../../types/workflow";
 import type { StageRun } from "../../utils/stageRuns";
+import { EmptyState } from "../ui/EmptyState";
 import { useNavHandler } from "../ui/HotkeyScope";
 import { ArtifactView } from "./ArtifactView";
 import type { DrawerTab } from "./DrawerTabBar";
@@ -46,9 +48,7 @@ export function HistoricalRunView({ task, run, accent }: HistoricalRunViewProps)
           artifact ? (
             <ArtifactView artifact={artifact} />
           ) : (
-            <div className="p-6 font-mono text-[11px] text-text-quaternary">
-              No artifact for this stage.
-            </div>
+            <EmptyState icon={FileText} message="No artifact for this stage." />
           )
         ) : (
           <div className="p-4">

@@ -1,5 +1,6 @@
 //! Section showing a parent task's subtasks grouped by status with keyboard navigation.
 
+import { GitBranch } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
 import { useWorkflowConfig } from "../../../../providers";
 import type { WorkflowTaskView } from "../../../../types/workflow";
@@ -7,6 +8,7 @@ import type {
   FeedSection as FeedSectionData,
   FeedSectionName,
 } from "../../../../utils/feedGrouping";
+import { EmptyState } from "../../../ui/EmptyState";
 import { NavigationScope } from "../../../ui/NavigationScope";
 import { FeedSection } from "../../FeedSection";
 import { useFeedNavigation } from "../../useFeedNavigation";
@@ -131,7 +133,7 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
   return (
     <div ref={bodyRef} className="flex-1 overflow-y-auto">
       {isEmpty ? (
-        <div className="p-6 font-mono text-[11px] text-text-quaternary">No subtasks yet.</div>
+        <EmptyState icon={GitBranch} message="No subtasks yet." />
       ) : (
         <NavigationScope activeId={focusedId} containerRef={bodyRef} scrollSeq={scrollSeq}>
           {sectionsBefore.map((section) => (

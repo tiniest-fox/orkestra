@@ -1,5 +1,6 @@
 //! Activity log — iteration history rendered as a stage-grouped timeline.
 
+import { History } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -9,6 +10,7 @@ import type {
   WorkflowQuestionAnswer,
 } from "../../types/workflow";
 import { PROSE_CLASSES } from "../../utils/prose";
+import { EmptyState } from "../ui/EmptyState";
 
 // ============================================================================
 // Public component
@@ -20,11 +22,7 @@ interface ActivityLogProps {
 
 export function ActivityLog({ iterations }: ActivityLogProps) {
   if (iterations.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <span className="font-mono text-forge-mono-sm text-text-quaternary">No activity yet.</span>
-      </div>
-    );
+    return <EmptyState icon={History} message="No activity yet." className="h-full" />;
   }
 
   const runs = consecutiveRuns(iterations);

@@ -4,6 +4,7 @@ import type { WorkflowQuestion, WorkflowTaskView } from "../../../../types/workf
 import type { DrawerTabId } from "../drawerTabs";
 import type { TaskDrawerState } from "../useTaskDrawerState";
 import { DoneFooter } from "./DoneFooter";
+import { FailedFooter } from "./FailedFooter";
 import { InterruptedFooter } from "./InterruptedFooter";
 import { QuestionsFooter } from "./QuestionsFooter";
 import { RejectFooter } from "./RejectFooter";
@@ -38,6 +39,17 @@ export function DrawerFooter({
 }: DrawerFooterProps) {
   const progress = task.derived.subtask_progress;
 
+  if (task.derived.is_failed) {
+    return (
+      <FailedFooter
+        retryInstructions={state.retryInstructions}
+        onRetryInstructionsChange={state.setRetryInstructions}
+        retryTextareaRef={state.retryTextareaRef}
+        retrying={state.retrying}
+        onRetry={state.handleRetry}
+      />
+    );
+  }
   if (task.derived.has_questions && activeTab === "questions") {
     return (
       <QuestionsFooter

@@ -10,6 +10,7 @@ import { DrawerDiffTab } from "../DrawerDiffTab";
 import { DrawerPrTab } from "../DrawerPrTab";
 import { FeedLogList } from "../FeedLogList";
 import type { DrawerTabId } from "./drawerTabs";
+import { ErrorTab } from "./Sections/ErrorTab";
 import { QuestionsSection } from "./Sections/QuestionsSection";
 import { SubtasksSection } from "./Sections/SubtasksSection";
 import type { TaskDrawerState } from "./useTaskDrawerState";
@@ -98,6 +99,10 @@ export function DrawerTabContent({
 
   if (activeTab === "subtasks") {
     return <SubtasksSection task={task} allTasks={allTasks} active onOpenTask={onOpenTask} />;
+  }
+
+  if (activeTab === "error") {
+    return <ErrorTab task={task} bodyRef={bodyRef} />;
   }
 
   if (activeTab === "pr" && task.pr_url) {

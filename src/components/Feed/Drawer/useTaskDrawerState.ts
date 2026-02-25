@@ -28,6 +28,13 @@ export interface TaskDrawerState {
   setResumeMessage: (v: string) => void;
   resumeTextareaRef: React.RefObject<HTMLTextAreaElement>;
 
+  // -- Retry (failed) --
+  retryInstructions: string;
+  setRetryInstructions: (v: string) => void;
+  retryTextareaRef: React.RefObject<HTMLTextAreaElement>;
+  retrying: boolean;
+  handleRetry: () => Promise<void>;
+
   // -- Loading state --
   loading: boolean;
   interrupting: boolean;
@@ -106,6 +113,20 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   useEffect(() => {
     if (task.derived.is_interrupted) resumeTextareaRef.current?.focus();
   }, [task.derived.is_interrupted]);
+
+  // -- Retry instructions --
+  const [retryInstructions, setRetryInstructions] = useState("");
+  const retryTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [retrying, setRetrying] = useState(false);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
+  useEffect(() => {
+    setRetryInstructions("");
+  }, [task.id]);
+
+  useEffect(() => {
+    if (task.derived.is_failed) retryTextareaRef.current?.focus();
+  }, [task.derived.is_failed]);
 
   // -- Feedback input auto-focus --
   const feedbackRef = useRef<HTMLInputElement>(null);
@@ -241,6 +262,21 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     [task.id, answers, allAnswered, loading, onClose],
   );
 
+  const handleRetry = useCallback(async () => {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      await invoke("workflow_retry", {
+        taskId: task.id,
+        instructions: retryInstructions.trim() || null,
+      });
+      onClose();
+    } catch (err) {
+      console.error("Failed to retry:", err);
+      setRetrying(false);
+    }
+  }, [task.id, retryInstructions, retrying, onClose]);
+
   const handleToggleAutoMode = useCallback(async () => {
     await invoke("workflow_set_auto_mode", { taskId: task.id, autoMode: !task.auto_mode });
   }, [task.id, task.auto_mode]);
@@ -258,6 +294,11 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     resumeMessage,
     setResumeMessage,
     resumeTextareaRef,
+    retryInstructions,
+    setRetryInstructions,
+    retryTextareaRef,
+    retrying,
+    handleRetry,
     loading,
     interrupting,
     resuming,

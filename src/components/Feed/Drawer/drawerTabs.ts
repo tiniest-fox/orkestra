@@ -20,7 +20,8 @@ export type DrawerTabId =
   | "diff"
   | "artifact"
   | "history"
-  | "pr";
+  | "pr"
+  | "error";
 
 export type StageReviewType = "violet" | "teal";
 
@@ -50,6 +51,7 @@ export function stageReviewType(task: WorkflowTaskView, config: WorkflowConfig):
 }
 
 export function defaultTab(task: WorkflowTaskView): DrawerTabId {
+  if (task.derived.is_failed) return "error";
   if (task.derived.has_questions) return "questions";
   if (task.derived.needs_review) return "artifact";
   if (task.derived.is_working || task.derived.is_interrupted) return "logs";
@@ -59,6 +61,14 @@ export function defaultTab(task: WorkflowTaskView): DrawerTabId {
 }
 
 export function availableTabs(task: WorkflowTaskView): DrawerTab[] {
+  if (task.derived.is_failed) {
+    return [
+      { id: "error", label: "Error", hotkey: "e" },
+      { id: "logs", label: "Logs", hotkey: "l" },
+      { id: "diff", label: "Diff", hotkey: "d" },
+      { id: "history", label: "History", hotkey: "h" },
+    ];
+  }
   if (task.derived.has_questions) {
     return [
       { id: "questions", label: "Questions", hotkey: "q" },

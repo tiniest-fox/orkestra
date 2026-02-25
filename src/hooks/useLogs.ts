@@ -48,13 +48,12 @@ export function useLogs(
     [stagesWithLogs],
   );
 
-  // Derive active stage directly from the task — no state lag on task or stage changes
+  // Derive active stage directly from the task — no state lag on task or stage changes.
+  // Only show logs for the current active stage; no fallback for failed/done/archived tasks.
   const activeLogStage = useMemo((): string | null => {
     if (targetStage !== undefined) return targetStage;
-    const currentStage = task.derived.current_stage;
-    if (currentStage) return currentStage;
-    return stagesWithLogs.length > 0 ? stagesWithLogs[stagesWithLogs.length - 1].stage : null;
-  }, [targetStage, task.derived.current_stage, stagesWithLogs]);
+    return task.derived.current_stage;
+  }, [targetStage, task.derived.current_stage]);
 
   // Derive session from stage — also no state lag
   const activeSessionId = useMemo(

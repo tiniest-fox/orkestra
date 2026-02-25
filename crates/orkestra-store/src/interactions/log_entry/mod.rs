@@ -3,3 +3,4 @@
 pub mod append;
 pub mod delete_for_task;
 pub mod get;
+pub mod get_latest;

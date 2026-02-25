@@ -108,6 +108,14 @@ impl WorkflowApi {
         query::logs::get_stages_with_logs(&self.store, task_id)
     }
 
+    /// Get the most recent log entry for the task's current stage session.
+    ///
+    /// Returns `None` if the task has no current stage, no session for the
+    /// stage, or the session has no log entries.
+    pub fn get_latest_log(&self, task_id: &str) -> WorkflowResult<Option<LogEntry>> {
+        query::logs::get_latest_log_for_task(&self.store, task_id)
+    }
+
     /// Get log entries for a task's stage or a specific session.
     ///
     /// If `session_id` is provided, fetch logs for that specific session.

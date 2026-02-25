@@ -218,6 +218,21 @@ pub fn workflow_get_logs(
     })
 }
 
+/// Get the most recent log entry for a task's current stage session.
+///
+/// Returns `None` if the task has no active stage, no session for the stage,
+/// or the session has no log entries.
+#[tauri::command]
+pub fn workflow_get_latest_log(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Option<LogEntry>, TauriError> {
+    registry.with_project(window.label(), |state| {
+        state.api()?.get_latest_log(&task_id).map_err(Into::into)
+    })
+}
+
 // =============================================================================
 // PR Status
 // =============================================================================

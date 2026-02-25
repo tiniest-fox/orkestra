@@ -6,6 +6,7 @@ import { useWorkflowConfig } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { openExternal } from "../../utils/openExternal";
 import { Button } from "../ui/Button";
+import { LatestLogSummary } from "./LatestLogSummary";
 
 interface FeedRowActionsProps {
   task: WorkflowTaskView;
@@ -106,6 +107,10 @@ export function FeedRowActions({
         </Button>
       </div>
     );
+  }
+
+  if (derived.is_working || derived.is_preparing || derived.is_system_active) {
+    return <LatestLogSummary task={task} />;
   }
 
   return null;

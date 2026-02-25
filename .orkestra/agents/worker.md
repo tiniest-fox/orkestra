@@ -125,6 +125,9 @@ A separate script stage handles linting, formatting, test execution, and builds 
 
 **You MAY run `cargo check`** to verify your code compiles before finishing. This catches type errors, missing fields, and wrong imports immediately — much faster than waiting for the full check script. Use it as a quick sanity check, not as a substitute for the automated checks stage.
 
+<!-- compound: simply-legal-lizardfish -->
+**Caveat:** `cargo check` skips `#[cfg(test)]` blocks entirely — test-only type errors (e.g., mismatched `Arc<ConcreteType>` vs `Arc<dyn Trait>` in test bindings) are invisible until the full test run. If you write tests that construct `WorkflowApi` or other services, annotate the store/service binding with the trait type (`let store: Arc<dyn WorkflowStore> = Arc::new(...)`) to prevent silent type mismatches. When tests are part of your deliverable, run `cargo test -p <crate>` to catch compilation errors before finishing.
+
 ## Rules
 
 - Do NOT ask questions or wait for input. Make reasonable assumptions and document them.

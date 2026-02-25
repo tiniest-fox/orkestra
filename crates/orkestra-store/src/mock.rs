@@ -349,6 +349,15 @@ impl WorkflowStore for InMemoryWorkflowStore {
         Ok(result.into_iter().map(|(_, _, entry)| entry).collect())
     }
 
+    fn get_latest_log_entry(&self, stage_session_id: &str) -> WorkflowResult<Option<LogEntry>> {
+        let entries = self.log_entries.lock().map_err(|_| WorkflowError::Lock)?;
+        Ok(entries
+            .iter()
+            .filter(|(sid, _, _)| sid == stage_session_id)
+            .max_by_key(|(_, seq, _)| *seq)
+            .map(|(_, _, entry)| entry.clone()))
+    }
+
     fn delete_log_entries_for_task(&self, task_id: &str) -> WorkflowResult<()> {
         let sessions = self
             .stage_sessions

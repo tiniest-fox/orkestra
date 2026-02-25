@@ -181,6 +181,11 @@ pub trait WorkflowStore: Send + Sync {
     /// Get all log entries for a stage session, ordered by sequence number.
     fn get_log_entries(&self, stage_session_id: &str) -> WorkflowResult<Vec<LogEntry>>;
 
+    /// Get the most recent log entry for a stage session.
+    ///
+    /// Returns `None` if the session has no log entries.
+    fn get_latest_log_entry(&self, stage_session_id: &str) -> WorkflowResult<Option<LogEntry>>;
+
     /// Delete all log entries associated with a task (via its stage sessions).
     fn delete_log_entries_for_task(&self, task_id: &str) -> WorkflowResult<()>;
 

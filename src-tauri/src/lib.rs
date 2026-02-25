@@ -494,6 +494,7 @@ pub fn run() {
             commands::workflow_get_rejection_feedback,
             commands::workflow_list_branches,
             commands::workflow_get_logs,
+            commands::workflow_get_latest_log,
             commands::workflow_get_pr_status,
             commands::workflow_get_task_diff,
             commands::workflow_get_file_content,

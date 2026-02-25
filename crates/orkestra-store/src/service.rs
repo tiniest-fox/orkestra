@@ -197,6 +197,11 @@ impl WorkflowStore for SqliteWorkflowStore {
         interactions::log_entry::get::execute(&conn, stage_session_id)
     }
 
+    fn get_latest_log_entry(&self, stage_session_id: &str) -> WorkflowResult<Option<LogEntry>> {
+        let conn = self.lock_conn()?;
+        interactions::log_entry::get_latest::execute(&conn, stage_session_id)
+    }
+
     fn delete_log_entries_for_task(&self, task_id: &str) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
         interactions::log_entry::delete_for_task::execute(&conn, task_id)

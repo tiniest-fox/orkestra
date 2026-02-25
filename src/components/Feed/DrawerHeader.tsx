@@ -31,6 +31,7 @@ interface DrawerHeaderProps {
   onWaitingChipClick?: () => void;
   isWaitingChipSelected?: boolean;
   onToggleAutoMode?: () => void;
+  autoModeOverride?: boolean;
 }
 
 /** Compute the accent color for a drawer from the task's current state. */
@@ -58,7 +59,9 @@ export function DrawerHeader({
   onWaitingChipClick,
   isWaitingChipSelected,
   onToggleAutoMode,
+  autoModeOverride,
 }: DrawerHeaderProps) {
+  const effectiveAutoMode = autoModeOverride ?? task.auto_mode;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const segments = useMemo(() => computePipelineSegments(task, config), [task, config]);
   const runs = useMemo(
@@ -92,12 +95,12 @@ export function DrawerHeader({
             {!task.derived.is_done && !task.derived.is_archived && (
               <label
                 className="flex items-center gap-1.5 cursor-pointer select-none mr-1"
-                title={`${task.auto_mode ? "Disable" : "Enable"} auto mode (⇧A)`}
+                title={`${effectiveAutoMode ? "Disable" : "Enable"} auto mode (⇧A)`}
               >
                 <Kbd>⇧A</Kbd>
                 <span
                   className={`text-[11px] font-medium transition-colors ${
-                    task.auto_mode ? "text-purple-500" : "text-text-quaternary"
+                    effectiveAutoMode ? "text-purple-500" : "text-text-quaternary"
                   }`}
                 >
                   Auto
@@ -105,15 +108,15 @@ export function DrawerHeader({
                 <button
                   type="button"
                   role="switch"
-                  aria-checked={task.auto_mode}
+                  aria-checked={effectiveAutoMode}
                   onClick={onToggleAutoMode}
                   className={`relative inline-flex h-[18px] w-8 items-center rounded-full transition-colors ${
-                    task.auto_mode ? "bg-purple-500" : "bg-surface-3"
+                    effectiveAutoMode ? "bg-purple-500" : "bg-surface-3"
                   }`}
                 >
                   <span
                     className={`inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${
-                      task.auto_mode ? "translate-x-[17px]" : "translate-x-[3px]"
+                      effectiveAutoMode ? "translate-x-[17px]" : "translate-x-[3px]"
                     }`}
                   />
                 </button>

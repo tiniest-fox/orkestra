@@ -60,6 +60,7 @@ export interface TaskDrawerState {
   handleAddressComments: () => Promise<void>;
   handleSubmitAnswers: (questions: WorkflowQuestion[]) => Promise<void>;
   handleToggleAutoMode: () => Promise<void>;
+  optimisticAutoMode: boolean | null;
 }
 
 // ============================================================================
@@ -277,9 +278,25 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     }
   }, [task.id, retryInstructions, retrying, onClose]);
 
+  const [optimisticAutoMode, setOptimisticAutoMode] = useState<boolean | null>(null);
+
+  // Clear the optimistic override once the backend value catches up.
+  useEffect(() => {
+    if (optimisticAutoMode !== null && task.auto_mode === optimisticAutoMode) {
+      setOptimisticAutoMode(null);
+    }
+  }, [task.auto_mode, optimisticAutoMode]);
+
   const handleToggleAutoMode = useCallback(async () => {
-    await invoke("workflow_set_auto_mode", { taskId: task.id, autoMode: !task.auto_mode });
-  }, [task.id, task.auto_mode]);
+    const newValue = !(optimisticAutoMode ?? task.auto_mode);
+    setOptimisticAutoMode(newValue);
+    try {
+      await invoke("workflow_set_auto_mode", { taskId: task.id, autoMode: newValue });
+    } catch (err) {
+      console.error("Failed to set auto mode:", err);
+      setOptimisticAutoMode(null);
+    }
+  }, [task.id, task.auto_mode, optimisticAutoMode]);
 
   return {
     answers,
@@ -317,5 +334,6 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     handleAddressComments,
     handleSubmitAnswers,
     handleToggleAutoMode,
+    optimisticAutoMode,
   };
 }

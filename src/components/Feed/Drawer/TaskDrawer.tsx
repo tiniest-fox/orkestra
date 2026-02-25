@@ -141,6 +141,7 @@ function TaskDrawerBody({
           task.derived.is_waiting_on_children ? selectedRunIdx === null : undefined
         }
         onToggleAutoMode={state.handleToggleAutoMode}
+        autoModeOverride={state.optimisticAutoMode ?? undefined}
       />
 
       {selectedRun ? (

@@ -11,6 +11,7 @@ interface FeedSubtaskRowProps {
   onMouseEnter: () => void;
   onReview: () => void;
   onAnswer: () => void;
+  onApprove: () => void;
   onMerge?: () => void;
   onOpenPr?: () => void;
   onClick?: () => void;
@@ -23,6 +24,7 @@ export function FeedSubtaskRow({
   onMouseEnter,
   onReview,
   onAnswer,
+  onApprove,
   onMerge,
   onOpenPr,
   onClick,
@@ -38,6 +40,7 @@ export function FeedSubtaskRow({
       onMouseEnter={onMouseEnter}
       onReview={onReview}
       onAnswer={onAnswer}
+      onApprove={onApprove}
       onMerge={onMerge}
       onOpenPr={onOpenPr}
       onClick={onClick}

@@ -84,6 +84,7 @@ export function WaitingSection({
               onMouseEnter={() => onFocusRow(task.id)}
               onReview={() => onAction(task.id)}
               onAnswer={() => onAction(task.id)}
+              onApprove={() => onAction(task.id)}
               onMerge={() => onAction(task.id)}
               onOpenPr={() => onAction(task.id)}
               onClick={() => onAction(task.id)}

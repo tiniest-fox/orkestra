@@ -10,7 +10,6 @@ import { DrawerDiffTab } from "../DrawerDiffTab";
 import { DrawerPrTab } from "../DrawerPrTab";
 import { FeedLogList } from "../FeedLogList";
 import type { DrawerTabId } from "./drawerTabs";
-import { ErrorTab } from "./Sections/ErrorTab";
 import { QuestionsSection } from "./Sections/QuestionsSection";
 import { SubtasksSection } from "./Sections/SubtasksSection";
 import type { TaskDrawerState } from "./useTaskDrawerState";
@@ -51,10 +50,6 @@ export function DrawerTabContent({
   onOpenTask,
 }: DrawerTabContentProps) {
   const { submitRef } = state;
-
-  if (activeTab === "error") {
-    return <ErrorTab task={task} bodyRef={bodyRef} />;
-  }
 
   if (activeTab === "diff") {
     return <DrawerDiffTab active />;

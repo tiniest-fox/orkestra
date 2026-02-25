@@ -13,6 +13,7 @@ interface FeedSectionProps {
   onFocusRow: (id: string) => void;
   onReview: (taskId: string) => void;
   onAnswer: (taskId: string) => void;
+  onApprove: (taskId: string) => void;
   onMerge?: (taskId: string) => void;
   onOpenPr?: (taskId: string) => void;
   onRowClick?: (taskId: string) => void;
@@ -26,6 +27,7 @@ export function FeedSection({
   onFocusRow,
   onReview,
   onAnswer,
+  onApprove,
   onMerge,
   onOpenPr,
   onRowClick,
@@ -60,6 +62,7 @@ export function FeedSection({
                 onMouseEnter={() => onFocusRow(task.id)}
                 onReview={() => onReview(task.id)}
                 onAnswer={() => onAnswer(task.id)}
+                onApprove={() => onApprove(task.id)}
                 onMerge={onMerge ? () => onMerge(task.id) : undefined}
                 onOpenPr={onOpenPr ? () => onOpenPr(task.id) : undefined}
                 onClick={onRowClick ? () => onRowClick(task.id) : undefined}
@@ -73,6 +76,7 @@ export function FeedSection({
                   onMouseEnter={() => onFocusRow(subtask.id)}
                   onReview={() => onReview(subtask.id)}
                   onAnswer={() => onAnswer(subtask.id)}
+                  onApprove={() => onApprove(subtask.id)}
                   onMerge={onMerge ? () => onMerge(subtask.id) : undefined}
                   onOpenPr={onOpenPr ? () => onOpenPr(subtask.id) : undefined}
                   onClick={onRowClick ? () => onRowClick(subtask.id) : undefined}

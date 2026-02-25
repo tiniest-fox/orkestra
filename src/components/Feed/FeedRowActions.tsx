@@ -11,6 +11,7 @@ interface FeedRowActionsProps {
   task: WorkflowTaskView;
   onReview: () => void;
   onAnswer: () => void;
+  onApprove: () => void;
   onMerge: () => void;
   onOpenPr: () => void;
 }
@@ -19,6 +20,7 @@ export function FeedRowActions({
   task,
   onReview,
   onAnswer,
+  onApprove,
   onMerge,
   onOpenPr,
 }: FeedRowActionsProps) {
@@ -56,7 +58,15 @@ export function FeedRowActions({
         <Button hotkey="r" variant={approveVariant} size="sm" onClick={onReview}>
           Review
         </Button>
-        <Button hotkey="a" variant="secondary" size="sm">
+        <Button
+          hotkey="a"
+          variant="secondary"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onApprove();
+          }}
+        >
           Approve
         </Button>
       </div>

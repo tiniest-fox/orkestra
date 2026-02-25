@@ -153,6 +153,21 @@ When building a slide-in panel: wrap `Panel` inside `Slot`. For viewport overlay
 - **Implementation**: `components/ui/PanelContainer/` — `PanelLayout.tsx` and `Slot.tsx`
 - **Event-driven cleanup pattern**: `Slot` uses `onTransitionEnd` to detect when fade-out completes, then calls `setDisplayedContent(null)` to unmount the child tree. This is more reliable than `setTimeout` since it responds to actual transition completion, not hardcoded durations.
 
+## Feed Row Action Buttons
+
+<!-- compound: messily-dazzled-jellyfish -->
+
+When adding action buttons inside clickable rows (e.g., `FeedRow`, `FeedTaskRow`), **always call `e.stopPropagation()` before the action handler**. Without it, the click bubbles to the row's `onClick`, triggering both the action and the row navigation (e.g., opening the drawer).
+
+```tsx
+onClick={(e) => {
+  e.stopPropagation();
+  onApprove();
+}}
+```
+
+The `FeedRowActions.tsx` "View" button demonstrates this pattern. All new action buttons in row components must follow it.
+
 ## Types
 
 - Use `import type` for type-only imports.

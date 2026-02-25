@@ -21,6 +21,7 @@ interface FeedRowProps {
   onMouseEnter?: () => void;
   onReview?: () => void;
   onAnswer?: () => void;
+  onApprove?: () => void;
   onMerge?: () => void;
   onOpenPr?: () => void;
   onClick?: () => void;
@@ -39,6 +40,7 @@ export function FeedRow({
   onMouseEnter,
   onReview,
   onAnswer,
+  onApprove,
   onMerge,
   onOpenPr,
   onClick,
@@ -92,6 +94,7 @@ export function FeedRow({
               task={task}
               onReview={onReview ?? (() => {})}
               onAnswer={onAnswer ?? (() => {})}
+              onApprove={onApprove ?? (() => {})}
               onMerge={onMerge ?? (() => {})}
               onOpenPr={onOpenPr ?? (() => {})}
             />

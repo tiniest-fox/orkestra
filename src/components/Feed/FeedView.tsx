@@ -98,6 +98,9 @@ export function FeedView({ config, tasks }: FeedViewProps) {
               onFocusRow={setFocusedId}
               onReview={setActiveTaskId}
               onAnswer={setActiveTaskId}
+              onApprove={(taskId) => {
+                invoke("workflow_approve", { taskId }).catch(console.error);
+              }}
               onMerge={(taskId) => {
                 invoke("workflow_merge_task", { taskId });
               }}

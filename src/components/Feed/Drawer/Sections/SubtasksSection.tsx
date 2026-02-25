@@ -1,5 +1,6 @@
 //! Section showing a parent task's subtasks grouped by status with keyboard navigation.
 
+import { invoke } from "@tauri-apps/api/core";
 import { GitBranch } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
 import { useWorkflowConfig } from "../../../../providers";
@@ -145,6 +146,9 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
               onFocusRow={setFocusedId}
               onReview={handleOpenChild}
               onAnswer={handleOpenChild}
+              onApprove={(taskId) => {
+                invoke("workflow_approve", { taskId }).catch(console.error);
+              }}
               onMerge={handleOpenChild}
               onOpenPr={handleOpenChild}
               onRowClick={handleOpenChild}
@@ -167,6 +171,9 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
               onFocusRow={setFocusedId}
               onReview={handleOpenChild}
               onAnswer={handleOpenChild}
+              onApprove={(taskId) => {
+                invoke("workflow_approve", { taskId }).catch(console.error);
+              }}
               onMerge={handleOpenChild}
               onOpenPr={handleOpenChild}
               onRowClick={handleOpenChild}

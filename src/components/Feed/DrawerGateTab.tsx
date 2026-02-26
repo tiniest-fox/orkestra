@@ -2,8 +2,8 @@
 
 import { ShieldCheck } from "lucide-react";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
-import { findGateStage } from "./Drawer/drawerTabs";
 import { EmptyState } from "../ui/EmptyState";
+import { findGateStage } from "./Drawer/drawerTabs";
 
 // ============================================================================
 // Component

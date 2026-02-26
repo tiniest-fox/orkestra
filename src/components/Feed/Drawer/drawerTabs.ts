@@ -69,11 +69,8 @@ export function findGateStage(config: WorkflowConfig) {
 export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): DrawerTab[] {
   // Show gate tab when the current stage has a gate AND gate output is available or running.
   const gateStage = findGateStage(config);
-  const isGateState =
-    task.state.type === "awaiting_gate" || task.state.type === "gate_running";
-  const hasGateResult = task.iterations.some(
-    (i) => i.stage === gateStage?.name && i.gate_result,
-  );
+  const isGateState = task.state.type === "awaiting_gate" || task.state.type === "gate_running";
+  const hasGateResult = task.iterations.some((i) => i.stage === gateStage?.name && i.gate_result);
   const showGateTab = !!gateStage && (isGateState || hasGateResult);
   const gateTab: DrawerTab = { id: "gate" as const, label: "Gate", hotkey: "g" };
 

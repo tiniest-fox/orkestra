@@ -2,7 +2,12 @@
 
 import { FileText } from "lucide-react";
 import type { RefCallback } from "react";
-import type { LogEntry, WorkflowArtifact, WorkflowConfig, WorkflowTaskView } from "../../../types/workflow";
+import type {
+  LogEntry,
+  WorkflowArtifact,
+  WorkflowConfig,
+  WorkflowTaskView,
+} from "../../../types/workflow";
 import { EmptyState } from "../../ui/EmptyState";
 import { ActivityLog } from "../ActivityLog";
 import { ArtifactView } from "../ArtifactView";

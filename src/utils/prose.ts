@@ -24,7 +24,7 @@ export const PROSE_CLASSES = [
   "prose-ul:my-1.5 prose-ol:my-1.5",
   "prose-a:text-accent prose-a:no-underline hover:prose-a:underline",
   "prose-code:font-mono prose-code:bg-canvas prose-code:text-text-primary prose-code:px-1 prose-code:rounded",
-  "prose-pre:bg-canvas prose-pre:font-mono prose-pre:my-2",
+  "prose-pre:bg-canvas prose-pre:text-text-primary prose-pre:font-mono prose-pre:my-2",
   "prose-blockquote:text-text-tertiary prose-blockquote:border-border prose-blockquote:my-1.5",
   "prose-hr:border-border prose-hr:my-2",
   "artifact-prose",

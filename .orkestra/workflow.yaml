@@ -46,7 +46,7 @@ stages:
     prompt: worker.md
     model: sonnet
     gate:
-      command: "cargo fmt --all -- --check && cargo clippy --workspace && cargo test --workspace"
+      command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
       timeout_seconds: 600
     disallowed_tools:
       - pattern: "Bash(*cargo test*)"

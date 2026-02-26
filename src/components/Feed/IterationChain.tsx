@@ -27,7 +27,7 @@ function outcomeStyle(outcome: WorkflowOutcome | undefined): OutcomeStyle {
       return { abbrevColor: "text-status-error", glyph: "×" };
     case "agent_error":
     case "spawn_failed":
-    case "script_failed":
+    case "gate_failed":
     case "commit_failed":
     case "integration_failed":
       return { abbrevColor: "text-status-warning", glyph: "!" };

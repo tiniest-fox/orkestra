@@ -7,6 +7,6 @@ pub mod handle_approval;
 pub mod handle_artifact;
 pub mod handle_questions;
 pub mod handle_subtasks;
+pub mod process_gate_failure;
+pub mod process_gate_success;
 pub mod process_output;
-pub mod process_script_failure;
-pub mod process_script_success;

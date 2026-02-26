@@ -12,7 +12,7 @@ pub use orkestra_types::config::workflow;
 
 pub use orkestra_types::config::{
     ApprovalCapabilities, FlowConfig, FlowIntegrationOverride, FlowStageEntry, FlowStageOverride,
-    IntegrationConfig, ScriptStageConfig, StageCapabilities, StageConfig, SubtaskCapabilities,
+    GateConfig, IntegrationConfig, StageCapabilities, StageConfig, SubtaskCapabilities,
     ToolRestriction, WorkflowConfig,
 };
 

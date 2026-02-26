@@ -262,25 +262,6 @@ mod tests {
     }
 
     #[test]
-    fn test_collect_model_names_skips_script_stages() {
-        let mut planning = StageConfig::new("planning", "plan");
-        planning.model = Some("sonnet".to_string());
-
-        let checks = StageConfig::new_script("checks", "checks_result", "echo test");
-
-        let workflow = WorkflowConfig {
-            version: 1,
-            stages: vec![planning, checks],
-            integration: IntegrationConfig::new("work"),
-            flows: indexmap::IndexMap::default(),
-        };
-
-        let names = collect_model_names(&workflow, None);
-        assert_eq!(names.len(), 2); // "Claude Sonnet 4" + "Claude Haiku 4.5"
-        assert!(!names.contains(&"checks".to_string()));
-    }
-
-    #[test]
     fn test_fallback_commit_message_non_empty() {
         let msg = fallback_commit_message("Add feature", "task-123");
         assert_eq!(msg, "Add feature");

@@ -963,6 +963,8 @@ fn format_state(state: &TaskState) -> String {
         TaskState::SettingUp { stage } => format!("SettingUp({stage})"),
         TaskState::Queued { stage } => format!("Queued({stage})"),
         TaskState::AgentWorking { stage } => format!("Working({stage})"),
+        TaskState::AwaitingGate { stage } => format!("AwaitingGate({stage})"),
+        TaskState::GateRunning { stage } => format!("GateRunning({stage})"),
         TaskState::Finishing { stage } => format!("Finishing({stage})"),
         TaskState::Committing { stage } => format!("Committing({stage})"),
         TaskState::Committed { stage } => format!("Committed({stage})"),
@@ -1012,7 +1014,7 @@ fn format_outcome(outcome: &Outcome) -> String {
         } => {
             format!("awaiting rejection review (to {target})\n    Feedback: {feedback}")
         }
-        Outcome::ScriptFailed { error, .. } => format!("script failed\n    Error: {error}"),
+        Outcome::GateFailed { error, .. } => format!("gate failed\n    Error: {error}"),
         Outcome::Interrupted => "interrupted".to_string(),
         Outcome::CommitFailed { error } => format!("commit failed\n    Error: {error}"),
     }
@@ -1039,8 +1041,8 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
         }
         IterationTrigger::Answers { answers } => format!("{} answers provided", answers.len()),
         IterationTrigger::Interrupted => "interrupted (crash recovery)".to_string(),
-        IterationTrigger::ScriptFailure { from_stage, error } => {
-            format!("script failure from {from_stage}\n    {error}")
+        IterationTrigger::GateFailure { error } => {
+            format!("gate failure\n    {error}")
         }
         IterationTrigger::RetryFailed { instructions } => {
             let mut s = "retry failed".to_string();

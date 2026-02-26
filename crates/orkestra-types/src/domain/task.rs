@@ -343,6 +343,8 @@ pub struct TickSnapshot {
     pub waiting_parents: Vec<TaskHeader>,
     /// Tasks in `Queued` state (candidates for agent spawning).
     pub idle_active: Vec<TaskHeader>,
+    /// Tasks in `AwaitingGate` state (candidates for gate script spawning).
+    pub awaiting_gate: Vec<TaskHeader>,
     /// Tasks that are `Done` + have a worktree (candidates for integration).
     pub idle_done_with_worktree: Vec<TaskHeader>,
     /// Whether any task is currently in `Integrating` state.
@@ -359,6 +361,7 @@ impl TickSnapshot {
         let mut awaiting_setup = Vec::new();
         let mut waiting_parents = Vec::new();
         let mut idle_active = Vec::new();
+        let mut awaiting_gate = Vec::new();
         let mut idle_done_with_worktree = Vec::new();
         let mut has_integrating = false;
         let mut integrated_ids = HashSet::new();
@@ -381,6 +384,9 @@ impl TickSnapshot {
                 TaskState::Queued { .. } => {
                     idle_active.push(header.clone());
                 }
+                TaskState::AwaitingGate { .. } => {
+                    awaiting_gate.push(header.clone());
+                }
                 TaskState::WaitingOnChildren { .. } => {
                     waiting_parents.push(header.clone());
                 }
@@ -399,6 +405,7 @@ impl TickSnapshot {
             awaiting_setup,
             waiting_parents,
             idle_active,
+            awaiting_gate,
             idle_done_with_worktree,
             has_integrating,
             integrated_ids,
@@ -415,6 +422,7 @@ impl TickSnapshot {
         self.awaiting_setup.is_empty()
             && self.waiting_parents.is_empty()
             && self.idle_active.is_empty()
+            && self.awaiting_gate.is_empty()
             && self.idle_done_with_worktree.is_empty()
     }
 }
@@ -552,6 +560,76 @@ mod tests {
 
         let parsed: Task = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed, task);
+    }
+
+    #[test]
+    fn test_tick_snapshot_awaiting_gate() {
+        let make_header = |id: &str, state: TaskState| TaskHeader {
+            id: id.to_string(),
+            title: String::new(),
+            description: String::new(),
+            state,
+            parent_id: None,
+            short_id: None,
+            depends_on: Vec::new(),
+            branch_name: None,
+            worktree_path: None,
+            base_branch: String::new(),
+            base_commit: String::new(),
+            pr_url: None,
+            auto_mode: false,
+            flow: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            completed_at: None,
+        };
+
+        let headers = vec![
+            make_header("t1", TaskState::queued("work")),
+            make_header("t2", TaskState::awaiting_gate("work")),
+            make_header("t3", TaskState::gate_running("work")),
+            make_header("t4", TaskState::agent_working("work")),
+        ];
+
+        let snap = TickSnapshot::build(headers);
+        assert_eq!(snap.idle_active.len(), 1);
+        assert_eq!(snap.idle_active[0].id, "t1");
+        assert_eq!(snap.awaiting_gate.len(), 1);
+        assert_eq!(snap.awaiting_gate[0].id, "t2");
+        // gate_running falls into the catch-all (not in any named bucket)
+        assert!(!snap.is_idle());
+    }
+
+    #[test]
+    fn test_tick_snapshot_is_idle_excludes_awaiting_gate() {
+        let make_header = |id: &str, state: TaskState| TaskHeader {
+            id: id.to_string(),
+            title: String::new(),
+            description: String::new(),
+            state,
+            parent_id: None,
+            short_id: None,
+            depends_on: Vec::new(),
+            branch_name: None,
+            worktree_path: None,
+            base_branch: String::new(),
+            base_commit: String::new(),
+            pr_url: None,
+            auto_mode: false,
+            flow: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            completed_at: None,
+        };
+
+        // A task in AwaitingGate means there is pending work → not idle
+        let headers = vec![make_header("t1", TaskState::awaiting_gate("work"))];
+        let snap = TickSnapshot::build(headers);
+        assert!(!snap.is_idle());
+
+        // No actionable tasks → idle
+        let snap_empty = TickSnapshot::build(vec![]);
+        assert!(snap_empty.is_idle());
     }
 
     #[test]

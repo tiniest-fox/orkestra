@@ -62,31 +62,6 @@ stages:
 }
 
 #[test]
-fn test_startup_with_invalid_script_on_failure() {
-    let yaml = r#"
-version: 1
-stages:
-  - name: work
-    artifact: summary
-  - name: checks
-    artifact: results
-    script:
-      command: "./check.sh"
-      on_failure: nonexistent
-"#;
-    let config: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
-    let errors = config.validate();
-
-    assert!(!errors.is_empty(), "Should have validation errors");
-    assert!(
-        errors
-            .iter()
-            .any(|e| e.contains("on_failure") && e.contains("nonexistent")),
-        "Should mention invalid on_failure target: {errors:?}"
-    );
-}
-
-#[test]
 fn test_startup_with_invalid_approval_rejection_stage() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
 
@@ -131,43 +106,6 @@ fn test_startup_with_invalid_integration_on_failure() {
     );
 }
 
-#[test]
-fn test_startup_with_stage_having_both_prompt_and_script() {
-    use orkestra_core::workflow::config::{ScriptStageConfig, StageConfig};
-
-    let mut stage = StageConfig::new("checks", "check_results");
-    stage.prompt = Some("worker.md".to_string());
-    stage.script = Some(ScriptStageConfig::new("./run.sh"));
-
-    let workflow = WorkflowConfig::new(vec![stage]);
-    let errors = workflow.validate();
-
-    assert!(!errors.is_empty(), "Should have validation errors");
-    assert!(
-        errors.iter().any(|e| e.contains("both")),
-        "Should mention having both prompt and script: {errors:?}"
-    );
-}
-
-#[test]
-fn test_startup_with_script_stage_asking_questions() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
-
-    let stage = StageConfig::new_script("checks", "check_results", "./run.sh")
-        .with_capabilities(StageCapabilities::with_questions());
-
-    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage]);
-    let errors = workflow.validate();
-
-    assert!(!errors.is_empty(), "Should have validation errors");
-    assert!(
-        errors
-            .iter()
-            .any(|e| e.contains("Script stage") && e.contains("ask_questions")),
-        "Should mention script stage with ask_questions: {errors:?}"
-    );
-}
-
 // =============================================================================
 // Valid Configuration Tests
 // =============================================================================
@@ -191,33 +129,6 @@ integration:
         errors.is_empty(),
         "Valid config should have no errors: {errors:?}"
     );
-}
-
-#[test]
-fn test_startup_with_valid_script_stage() {
-    let yaml = r#"
-version: 1
-stages:
-  - name: work
-    artifact: summary
-  - name: checks
-    artifact: results
-    script:
-      command: "./run_checks.sh"
-      timeout_seconds: 300
-      on_failure: work
-  - name: review
-    artifact: verdict
-integration:
-  on_failure: work
-"#;
-    let temp = create_project_with_workflow(yaml);
-    let result = load_workflow(&temp.path().join(".orkestra/workflow.yaml"));
-
-    assert!(result.is_ok(), "Should load valid config: {result:?}");
-    let config = result.unwrap();
-    assert_eq!(config.stages.len(), 3);
-    assert!(config.stage("checks").unwrap().is_script_stage());
 }
 
 #[test]

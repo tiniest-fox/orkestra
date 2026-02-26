@@ -113,7 +113,7 @@ function dotColor(outcome: WorkflowOutcome): string {
       return "bg-status-warning";
     case "agent_error":
     case "spawn_failed":
-    case "script_failed":
+    case "gate_failed":
     case "commit_failed":
     case "integration_failed":
       return "bg-status-error";
@@ -156,8 +156,8 @@ function badgeLabel(outcome: WorkflowOutcome): { label: string; color: string } 
       return { label: "Error", color: "text-status-error" };
     case "spawn_failed":
       return { label: "Spawn Failed", color: "text-status-error" };
-    case "script_failed":
-      return { label: "Script Failed", color: "text-status-error" };
+    case "gate_failed":
+      return { label: "Gate Failed", color: "text-status-error" };
     case "commit_failed":
       return { label: "Commit Failed", color: "text-status-error" };
     case "integration_failed":
@@ -209,6 +209,8 @@ function calloutInfo(
         content: trigger.message,
         borderColor: "border-canvas",
       };
+    case "gate_failure":
+      return { label: "Gate Failed", content: trigger.error, borderColor: "border-status-error" };
     case "interrupted":
       return null;
     default:

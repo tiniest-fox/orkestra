@@ -50,7 +50,8 @@ export function computePipelineSegments(
     if (i === currentIndex) {
       if (derived.is_failed) return { stageName, state: "failed" };
       if (derived.needs_review || derived.has_questions) return { stageName, state: "review" };
-      if (derived.is_working) return { stageName, state: "active" };
+      if (derived.is_working || task.state.type === "awaiting_gate" || derived.is_system_active)
+        return { stageName, state: "active" };
       return { stageName, state: "review" };
     }
     // After current

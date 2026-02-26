@@ -1011,39 +1011,33 @@ fn test_integration_failure_uses_flow_on_failure_override() {
     );
 }
 
-/// Test script stage execution with failure recovery.
+/// Test gate script execution with failure recovery.
 ///
 /// Flow:
-/// 1. Task created → Work stage (mock agent)
-/// 2. Work approved → Checks stage (real script)
-/// 3. Script fails → Recovers to Work (`on_failure`)
-/// 4. Work produces fix → Checks stage again
-/// 5. Script passes → Review stage
-/// 6. Review approves → Done
+/// 1. Task created → Work stage (mock agent) → `AwaitingGate`
+/// 2. Gate fails (toggle script) → Work re-queued with `GateFailure` trigger
+/// 3. Work produces fix → `AwaitingGate`
+/// 4. Gate passes → commit pipeline → Review stage (automated)
+/// 5. Review approves → Done
 #[test]
-#[allow(clippy::too_many_lines)] // Comprehensive e2e test covering full script recovery flow
-fn test_script_stage_with_recovery() {
-    use orkestra_core::workflow::config::{ScriptStageConfig, StageConfig};
+#[allow(clippy::too_many_lines)] // Comprehensive e2e test covering full gate recovery flow
+fn test_gate_script_with_recovery() {
+    use orkestra_core::workflow::config::{GateConfig, StageConfig};
 
-    // Inline toggle script: fails first time (creates marker), passes second time.
+    // Toggle gate script: fails first time (creates marker), passes second time.
     // Uses $ORKESTRA_TASK_ID in the marker path for isolation between parallel tests.
-    let script_command = concat!(
-        "MARKER=/tmp/orkestra_script_test_${ORKESTRA_TASK_ID}; ",
+    let gate_command = concat!(
+        "MARKER=/tmp/orkestra_gate_test_${ORKESTRA_TASK_ID}; ",
         "if [ -z \"$ORKESTRA_TASK_ID\" ]; then echo 'ERROR: ORKESTRA_TASK_ID not set!'; exit 1; fi; ",
-        "echo \"Running checks for task: $ORKESTRA_TASK_ID\"; ",
-        "if [ -f \"$MARKER\" ]; then echo \"Checks passed for $ORKESTRA_TASK_ID!\"; exit 0; ",
-        "else touch \"$MARKER\"; echo \"Checks failed (task: $ORKESTRA_TASK_ID)\"; exit 1; fi",
+        "echo \"Running gate for task: $ORKESTRA_TASK_ID\"; ",
+        "if [ -f \"$MARKER\" ]; then echo \"Gate passed for $ORKESTRA_TASK_ID!\"; exit 0; ",
+        "else touch \"$MARKER\"; echo \"Gate failed (task: $ORKESTRA_TASK_ID)\"; exit 1; fi",
     );
 
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("checks", "check_results")
-            .with_display_name("Automated Checks")
-            .with_script(ScriptStageConfig {
-                command: script_command.to_string(),
-                timeout_seconds: 10,
-                on_failure: Some("work".into()),
-            }),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::new(gate_command).with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .automated(),
@@ -1054,14 +1048,14 @@ fn test_script_stage_with_recovery() {
     // =========================================================================
     // Step 1: Create task → Work stage
     // =========================================================================
-    let task = ctx.create_task("Test script recovery", "Test that script stages work", None);
+    let task = ctx.create_task("Test gate recovery", "Test that gate scripts work", None);
     let task_id = task.id.clone();
 
     assert_eq!(task.current_stage(), Some("work"));
     assert!(matches!(task.state, TaskState::Queued { .. }));
 
     // =========================================================================
-    // Step 2: Work stage produces artifact
+    // Step 2: Work stage produces artifact → AwaitingGate
     // =========================================================================
     ctx.set_output(
         &task_id,
@@ -1071,79 +1065,66 @@ fn test_script_stage_with_recovery() {
             activity_log: None,
         },
     );
-    ctx.advance(); // spawns worker (completion ready)
-    ctx.advance(); // processes work output
+    ctx.advance(); // spawns worker → drain_active → artifact processed → AwaitingGate
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert!(task.is_awaiting_review());
-
-    // Approve work → moves to checks (script stage)
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // commit pipeline: Finishing → Finished → advance to checks
-
-    let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.current_stage(), Some("checks"));
     assert!(
-        matches!(task.state, TaskState::Queued { .. }),
-        "Script stage should start in Queued"
+        matches!(task.state, TaskState::AwaitingGate { .. }),
+        "Task should be AwaitingGate after artifact output"
     );
 
     // =========================================================================
-    // Step 3: Script runs and fails → Recovers to Work
+    // Step 3: Gate runs and fails → Work re-queued with GateFailure
     // =========================================================================
 
-    // Queue work output BEFORE advancing - when script fails and recovers
-    // to work, the orchestrator will immediately spawn the work agent
+    // Pre-queue second work output for after gate failure recovery
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
             name: "summary".to_string(),
-            content: "Fixed implementation after script failure".to_string(),
+            content: "Fixed implementation after gate failure".to_string(),
             activity_log: None,
         },
     );
 
-    ctx.advance(); // spawns script (drains to completion: fails) → recovers to work → spawns work agent (completion ready)
-    ctx.advance(); // processes work output
+    ctx.advance(); // spawns gate → drain_active → gate fails → work re-queued with GateFailure
 
-    // Check iteration recorded script failure
+    // Check GateFailed iteration was recorded
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
-    let script_fail_iter = iterations
+    let gate_fail_iter = iterations
         .iter()
-        .find(|i| matches!(i.outcome.as_ref(), Some(Outcome::ScriptFailed { .. })));
-    assert!(
-        script_fail_iter.is_some(),
-        "Should have ScriptFailed iteration"
-    );
+        .find(|i| matches!(i.outcome.as_ref(), Some(Outcome::GateFailed { .. })));
+    assert!(gate_fail_iter.is_some(), "Should have GateFailed iteration");
 
-    // After tick: script failed → work stage → work agent produced artifact
+    // Work should be re-queued in same stage
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
         task.current_stage(),
         Some("work"),
-        "Should be in work stage after script failure recovery"
+        "Should be in work stage after gate failure"
     );
     assert!(
-        matches!(task.state, TaskState::AwaitingApproval { .. }),
-        "Work agent should have produced artifact"
+        matches!(task.state, TaskState::Queued { .. }),
+        "Work should be re-queued after gate failure"
     );
 
     // =========================================================================
-    // Step 4: Verify feedback prompt → Approve work → Checks again (script passes)
+    // Step 4: Second work iteration → AwaitingGate (verify feedback prompt)
     // =========================================================================
+    ctx.advance(); // spawns worker (second) → drain_active → artifact processed → AwaitingGate
 
-    // Verify worker got resume prompt with script failure context
-    ctx.assert_resume_prompt_contains("feedback", &["checks"]);
-
-    // Approve work → moves to checks again
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // commit pipeline: Finishing → Finished → advance to checks
+    // Verify worker got gate failure feedback in resume prompt
+    ctx.assert_resume_prompt_contains("feedback", &["gate checks failed"]);
 
     let task = ctx.api().get_task(&task_id).unwrap();
-    assert_eq!(task.current_stage(), Some("checks"));
+    assert!(
+        matches!(task.state, TaskState::AwaitingGate { .. }),
+        "Task should be AwaitingGate after second work output"
+    );
 
-    // Queue review output BEFORE advancing - when script passes, it auto-advances
-    // to review, and the automated review stage spawns the agent immediately
+    // =========================================================================
+    // Step 5: Gate passes → commit pipeline → Review (automated) → Done
+    // =========================================================================
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -1153,12 +1134,8 @@ fn test_script_stage_with_recovery() {
         },
     );
 
-    ctx.advance(); // spawns script (drains to completion: passes) → auto-advances to review → spawns reviewer (completion ready)
-    ctx.advance(); // processes review output → auto-approve → Done → integration (sync) → Archived
-
-    // =========================================================================
-    // Step 5 & 6: Script passes → Review (automated) → Task Done/Archived
-    // =========================================================================
+    ctx.advance(); // spawns gate → drain_active → gate passes → commit pipeline → review Queued
+    ctx.advance(); // spawns reviewer → drain_active → review output processed → Done/Archived
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
@@ -1169,37 +1146,22 @@ fn test_script_stage_with_recovery() {
     // Verify the complete iteration history
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
 
-    // Check that we have script failed iteration
-    let script_fail_iter = iterations
-        .iter()
-        .find(|i| matches!(i.outcome.as_ref(), Some(Outcome::ScriptFailed { .. })));
+    // Should have GateFailed iteration
     assert!(
-        script_fail_iter.is_some(),
-        "Should have ScriptFailed iteration"
+        iterations
+            .iter()
+            .any(|i| matches!(i.outcome.as_ref(), Some(Outcome::GateFailed { .. }))),
+        "Should have GateFailed iteration"
     );
 
-    // Check that checks stage passed (approved) at some point
-    let checks_passed = iterations
-        .iter()
-        .any(|i| i.stage == "checks" && matches!(i.outcome.as_ref(), Some(Outcome::Approved)));
-    assert!(checks_passed, "Checks stage should have passed (approved)");
-
-    // Check that review completed
+    // Review should have completed
     let review_approved = iterations
         .iter()
         .any(|i| i.stage == "review" && matches!(i.outcome.as_ref(), Some(Outcome::Approved)));
     assert!(review_approved, "Review stage should have completed");
 
-    // Verify ORKESTRA_TASK_ID was passed to the script by checking artifact output
-    let check_results = task.artifact("check_results");
-    assert!(
-        check_results.is_some(),
-        "Should have check_results artifact from script"
-    );
-    assert!(
-        check_results.unwrap().contains(&task_id),
-        "Script output should contain task ID (proves ORKESTRA_TASK_ID env var was passed)"
-    );
+    // Verify ORKESTRA_TASK_ID was passed to the gate script
+    // (toggle script uses $ORKESTRA_TASK_ID in the marker path for test isolation)
 }
 
 // =============================================================================
@@ -2703,27 +2665,22 @@ fn test_automated_review_rejection_skips_human_review() {
 /// 2. Agent artifact → artifact with content
 /// 3. Agent approval (reject) → artifact with rejection content
 /// 4. Agent approval (approve) → artifact with approval content
-/// 5. Script success → artifact with output (already covered in script recovery test)
-/// 6. Script failure → artifact with error text
-/// 7. Human rejection → artifact unchanged (still agent's content)
-/// 8. Human approval → artifact unchanged (still agent's content)
+/// 5. Human rejection → artifact unchanged (still agent's content)
+/// 6. Human approval → artifact unchanged (still agent's content)
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_artifact_generation_for_all_output_types() {
-    use orkestra_core::workflow::config::{ScriptStageConfig, StageCapabilities, StageConfig};
+    use orkestra_core::workflow::config::{GateConfig, StageCapabilities, StageConfig};
 
     // Multi-stage workflow covering all output types:
-    // planning (questions) → work → checks (script with on_failure) → review (approval, non-automated)
+    // planning (questions) → work (with gate) → review (approval, non-automated)
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("planning", "plan")
             .with_prompt("planner.md")
             .with_capabilities(StageCapabilities::with_questions()),
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("checks", "check_results").with_script(ScriptStageConfig {
-            command: "echo 'all checks passed'".to_string(),
-            timeout_seconds: 10,
-            on_failure: Some("work".into()),
-        }),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::new("echo 'all checks passed'").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
@@ -2871,7 +2828,7 @@ fn test_artifact_generation_for_all_output_types() {
     assert_eq!(task.current_stage(), Some("work"));
 
     // =========================================================================
-    // Step 4: Work stage → produce artifact → approve to script stage
+    // Step 4: Work stage → produce artifact → gate passes → review
     // =========================================================================
 
     ctx.set_output(
@@ -2882,8 +2839,7 @@ fn test_artifact_generation_for_all_output_types() {
             activity_log: None,
         },
     );
-    ctx.advance(); // spawns worker
-    ctx.advance(); // processes work output
+    ctx.advance(); // spawns worker → drain_active → artifact processed → AwaitingGate
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
@@ -2891,14 +2847,13 @@ fn test_artifact_generation_for_all_output_types() {
         Some("Implementation complete with tests")
     );
 
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // commit pipeline: Finishing → Finished → advance to checks
+    ctx.advance(); // spawns gate → drain_active → gate passes → commit pipeline → review Queued
 
     // =========================================================================
-    // Step 5: Script stage succeeds → artifact created with output
+    // Step 5: Gate passes → review stage → reviewer outputs rejection
     // =========================================================================
 
-    // Queue review output before advancing (script auto-advances to review)
+    // Queue review rejection before spawning reviewer
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
@@ -2907,22 +2862,9 @@ fn test_artifact_generation_for_all_output_types() {
             activity_log: None,
         },
     );
-    ctx.advance(); // spawns script → passes → auto-advances to review → spawns reviewer
-    ctx.advance(); // processes review output (rejection, pauses for human review)
+    ctx.advance(); // spawns reviewer → drain_active → rejection processed → AwaitingApproval
 
     let task = ctx.api().get_task(&task_id).unwrap();
-
-    // ASSERT: Script success creates artifact
-    assert!(
-        task.artifact("check_results").is_some(),
-        "Script success should create an artifact"
-    );
-    assert!(
-        task.artifact("check_results")
-            .unwrap()
-            .contains("all checks passed"),
-        "Script artifact should contain script output"
-    );
 
     // =========================================================================
     // Step 6: Agent rejection verdict → artifact created with rejection content
@@ -2963,8 +2905,7 @@ fn test_artifact_generation_for_all_output_types() {
             activity_log: None,
         },
     );
-    ctx.advance(); // spawns reviewer
-    ctx.advance(); // processes approval output → pauses at AwaitingReview
+    ctx.advance(); // spawns reviewer → drain_active → approval output processed → AwaitingApproval
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(
@@ -2987,77 +2928,6 @@ fn test_artifact_generation_for_all_output_types() {
     assert!(
         task.is_done() || task.is_archived(),
         "Task should be done/archived after final approval"
-    );
-}
-
-/// Test that script failure creates an artifact with the error text.
-///
-/// Separate test because script failure needs a different workflow setup
-/// (a script that actually fails).
-#[test]
-fn test_script_failure_creates_artifact() {
-    use orkestra_core::workflow::config::{ScriptStageConfig, StageConfig};
-
-    let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("checks", "check_results").with_script(ScriptStageConfig {
-            command: "echo 'Error: tests failed with 3 failures'; exit 1".to_string(),
-            timeout_seconds: 10,
-            on_failure: Some("work".into()),
-        }),
-        StageConfig::new("review", "verdict")
-            .with_prompt("reviewer.md")
-            .automated(),
-    ]);
-
-    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
-
-    let task = ctx.create_task(
-        "Script failure artifact test",
-        "Test that script failure creates an artifact",
-        None,
-    );
-    let task_id = task.id.clone();
-
-    // Work stage → produce artifact → approve to script stage
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "summary".to_string(),
-            content: "Initial work".to_string(),
-            activity_log: None,
-        },
-    );
-    ctx.advance(); // spawns worker
-    ctx.advance(); // processes work output
-    ctx.api().approve(&task_id).unwrap();
-
-    // Queue work output for after script failure recovery
-    ctx.set_output(
-        &task_id,
-        MockAgentOutput::Artifact {
-            name: "summary".to_string(),
-            content: "Fixed work".to_string(),
-            activity_log: None,
-        },
-    );
-
-    ctx.advance(); // spawns script → fails → recovers to work → spawns worker
-    ctx.advance(); // processes work output
-
-    // ASSERT: Script failure should have created an artifact
-    let task = ctx.api().get_task(&task_id).unwrap();
-    let check_results = task.artifact("check_results");
-    assert!(
-        check_results.is_some(),
-        "Script failure should create an artifact with error text"
-    );
-    assert!(
-        check_results
-            .unwrap()
-            .contains("tests failed with 3 failures"),
-        "Script failure artifact should contain the error output. Got: {}",
-        check_results.unwrap()
     );
 }
 
@@ -4142,11 +4012,13 @@ fn test_restart_on_reentry_spawns_fresh_session() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use orkestra_core::workflow::domain::SessionState;
 
-    // 3-stage workflow: work → checks (script) → review
+    // 2-stage workflow: work (with passing gate) → review
     // Review has approval rejecting back to work AND restart_on_reentry: true
+    use orkestra_core::workflow::config::GateConfig;
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new_script("checks", "check_results", "echo ok"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::new("echo ok").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
@@ -4176,14 +4048,13 @@ fn test_restart_on_reentry_spawns_fresh_session() {
         },
     );
 
-    ctx.advance(); // spawn work agent
-    ctx.advance(); // process work output
+    ctx.advance(); // spawn work agent → drain_active → AwaitingGate
 
     // =========================================================================
     // Step 2: Review rejects back to work (first review spawn)
     // =========================================================================
 
-    // Queue mock outputs BEFORE they're consumed
+    // Queue mock outputs BEFORE gate fires and reviewer is spawned
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
@@ -4203,11 +4074,8 @@ fn test_restart_on_reentry_spawns_fresh_session() {
         },
     );
 
-    // Approve work → moves to checks
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // task moves to checks Idle
-    ctx.advance(); // checks script runs (instant), completes, task moves to review Idle
-    ctx.advance(); // orchestrator spawns reviewer (first time)
+    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn reviewer (first time) → drain_active → rejection → work re-queued
 
     // Verify this is NOT a resume (first spawn)
     let first_review_config = ctx.last_run_config();
@@ -4224,14 +4092,13 @@ fn test_restart_on_reentry_spawns_fresh_session() {
         .expect("Should have review session");
     let first_review_session_id = first_review_session.claude_session_id.clone();
 
-    ctx.advance(); // process review rejection → moves to work → spawns work agent
-    ctx.advance(); // process work output
+    ctx.advance(); // spawn second worker → drain_active → AwaitingGate
 
     // =========================================================================
-    // Step 3: Approve work again → checks → review (re-entry with restart)
+    // Step 3: Gate fires → review (re-entry with restart)
     // =========================================================================
 
-    // Set final review approval BEFORE approve
+    // Set final review approval
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
@@ -4241,9 +4108,7 @@ fn test_restart_on_reentry_spawns_fresh_session() {
         },
     );
 
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // task moves to checks Idle
-    ctx.advance(); // checks script runs, completes, task moves to review Idle
+    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
     ctx.advance(); // spawn reviewer (second time - this is the re-entry with fresh session)
 
     // =========================================================================
@@ -4310,12 +4175,15 @@ fn test_restart_on_reentry_spawns_fresh_session() {
 #[test]
 #[allow(clippy::too_many_lines)]
 fn test_reentry_without_restart_flag_uses_recheck() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{
+        GateConfig, StageCapabilities, StageConfig, WorkflowConfig,
+    };
 
     // Same workflow as above, but WITHOUT restart_on_reentry
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new_script("checks", "check_results", "echo ok"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::new("echo ok").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
@@ -4344,14 +4212,13 @@ fn test_reentry_without_restart_flag_uses_recheck() {
         },
     );
 
-    ctx.advance(); // spawn work agent
-    ctx.advance(); // process work output
+    ctx.advance(); // spawn work agent → drain_active → AwaitingGate
 
     // =========================================================================
     // Step 2: Review rejects back to work (first review spawn)
     // =========================================================================
 
-    // Queue mock outputs BEFORE they're consumed
+    // Queue mock outputs BEFORE gate fires and reviewer is spawned
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
@@ -4371,11 +4238,8 @@ fn test_reentry_without_restart_flag_uses_recheck() {
         },
     );
 
-    // Approve work → moves to checks
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // task moves to checks Idle
-    ctx.advance(); // checks script runs, completes, task moves to review Idle
-    ctx.advance(); // orchestrator spawns reviewer (first time)
+    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn reviewer (first time) → drain_active → rejection → work re-queued
 
     // Record the first review session ID
     let first_review_session = ctx
@@ -4385,14 +4249,13 @@ fn test_reentry_without_restart_flag_uses_recheck() {
         .expect("Should have review session");
     let first_review_session_id = first_review_session.claude_session_id.clone();
 
-    ctx.advance(); // process review rejection → moves to work → spawns work agent
-    ctx.advance(); // process work output
+    ctx.advance(); // spawn second worker → drain_active → AwaitingGate
 
     // =========================================================================
-    // Step 3: Approve work again → checks → review (re-entry without restart)
+    // Step 3: Gate fires → review (re-entry without restart)
     // =========================================================================
 
-    // Set final review approval BEFORE approve
+    // Set final review approval
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
@@ -4402,9 +4265,7 @@ fn test_reentry_without_restart_flag_uses_recheck() {
         },
     );
 
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // task moves to checks Idle
-    ctx.advance(); // checks script runs, completes, task moves to review Idle
+    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
     ctx.advance(); // spawn reviewer (second time - this is the re-entry with recheck)
 
     // =========================================================================
@@ -5053,12 +4914,15 @@ fn test_activity_log_file_reference_in_prompt() {
 /// are preserved.
 #[test]
 fn test_activity_log_with_script_and_review_rejection() {
-    use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::config::{
+        GateConfig, StageCapabilities, StageConfig, WorkflowConfig,
+    };
 
-    // Build workflow: work → checks(script) → review (can reject back to work)
+    // Build workflow: work (with gate) → review (can reject back to work)
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new_script("checks", "check_results", "echo ok"),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::new("echo ok").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
@@ -5083,13 +4947,8 @@ fn test_activity_log_with_script_and_review_rejection() {
             activity_log: Some("- Log A: first work attempt".to_string()),
         },
     );
-    ctx.advance(); // spawns worker
-    ctx.advance(); // processes work output
-
-    // Human approves work → advances to checks (script stage)
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // commit pipeline, runs script
-    ctx.advance(); // processes script output, enters review
+    ctx.advance(); // spawn worker → drain_active → AwaitingGate
+    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
@@ -5103,8 +4962,7 @@ fn test_activity_log_with_script_and_review_rejection() {
             activity_log: Some("- Log R: review requested changes".to_string()),
         },
     );
-    ctx.advance(); // spawns reviewer
-    ctx.advance(); // processes rejection → AwaitingReview
+    ctx.advance(); // spawn reviewer → drain_active → rejection → AwaitingReview
 
     // Human confirms rejection
     ctx.api().approve(&task_id).unwrap();
@@ -5121,13 +4979,8 @@ fn test_activity_log_with_script_and_review_rejection() {
             activity_log: Some("- Log B: second work attempt".to_string()),
         },
     );
-    ctx.advance(); // spawns worker
-    ctx.advance(); // processes work output
-
-    // Human approves work → advances through checks to review
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // commit pipeline, runs script
-    ctx.advance(); // processes script output, enters review
+    ctx.advance(); // spawn worker → drain_active → AwaitingGate
+    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
 
     // === Second review: verify the prompt has only ONE work log ===
     ctx.set_output(
@@ -5138,7 +4991,7 @@ fn test_activity_log_with_script_and_review_rejection() {
             activity_log: None,
         },
     );
-    ctx.advance(); // spawns reviewer
+    ctx.advance(); // spawn reviewer
 
     let review_prompt = ctx.last_prompt();
 
@@ -6426,19 +6279,15 @@ fn test_multiple_artifacts_materialized() {
 #[test]
 fn test_recheck_resume_references_file_paths() {
     use orkestra_core::workflow::config::{
-        ScriptStageConfig, StageCapabilities, StageConfig, WorkflowConfig,
+        GateConfig, StageCapabilities, StageConfig, WorkflowConfig,
     };
     use std::path::Path;
 
-    // Workflow with work → checks (script) → review (with rejection back to work)
-    // The script stage ensures proper staging between work and review
+    // Workflow with work (gate) → review (with rejection back to work)
     let workflow = WorkflowConfig::new(vec![
-        StageConfig::new("work", "summary").with_prompt("worker.md"),
-        StageConfig::new("checks", "check_results").with_script(ScriptStageConfig {
-            command: "echo ok".to_string(),
-            timeout_seconds: 10,
-            on_failure: None,
-        }),
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::new("echo ok").with_timeout(10)),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
@@ -6465,11 +6314,10 @@ fn test_recheck_resume_references_file_paths() {
         },
     );
 
-    ctx.advance(); // spawn worker
-    ctx.advance(); // process worker output
+    ctx.advance(); // spawn worker → drain_active → AwaitingGate
 
     // =========================================================================
-    // Step 2: Queue outputs BEFORE approve for: review rejection → work → review recheck
+    // Step 2: Queue outputs BEFORE gate fires: review rejection → work → review recheck
     // =========================================================================
 
     // First: review will reject
@@ -6502,18 +6350,11 @@ fn test_recheck_resume_references_file_paths() {
         },
     );
 
-    // Approve work → checks → review (spawns reviewer, rejects) → work (spawns worker)
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // work → checks (Idle)
-    ctx.advance(); // checks script runs → review (Idle)
-    ctx.advance(); // spawn reviewer
-    ctx.advance(); // process rejection → work (spawns worker due to feedback)
-    ctx.advance(); // process work output
-
-    // Approve work again → checks → review (recheck)
-    ctx.api().approve(&task_id).unwrap();
-    ctx.advance(); // work → checks (Idle)
-    ctx.advance(); // checks script runs → review (Idle)
+    // Gate fires → review → reviewer rejects → work → gate fires → review (recheck)
+    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn reviewer → drain_active → rejection → work re-queued
+    ctx.advance(); // spawn second worker → drain_active → AwaitingGate
+    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
     ctx.advance(); // spawn reviewer (recheck)
 
     // =========================================================================
@@ -6679,5 +6520,491 @@ fn test_activity_only_persisted_on_agent_success() {
     assert!(
         !session.has_activity,
         "has_activity should be false after agent failure, even if streaming activity occurred"
+    );
+}
+
+// =============================================================================
+// Gate Script Tests
+// =============================================================================
+
+/// Gate pass: agent produces artifact → gate (exit 0) → enters commit pipeline.
+///
+/// Flow: work stage with gate configured.
+/// - Agent produces artifact.
+/// - Task transitions to `AwaitingGate`.
+/// - Next tick spawns gate (exit 0 command).
+/// - Gate completes successfully → task enters Finishing state.
+#[test]
+fn test_gate_pass_enters_commit_pipeline() {
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::new("exit 0").with_timeout(10))]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    let task = ctx.create_task("Gate pass test", "Test gate pass", None);
+    let task_id = task.id.clone();
+
+    // Set mock output: artifact
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+        },
+    );
+    // drain_active processes agent completion within the same tick
+    ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingGate { .. }),
+        "Task should be AwaitingGate after artifact output, got: {:?}",
+        task.state
+    );
+
+    // drain_active also processes gate completion within the same tick
+    ctx.advance(); // spawns gate → drain_active → gate passes (exit 0) → commit pipeline
+
+    // Gate passed → task should be in Finishing or Done/Archived (commit pipeline ran)
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(
+            task.state,
+            TaskState::Finishing { .. }
+                | TaskState::Committing { .. }
+                | TaskState::Committed { .. }
+                | TaskState::Done
+                | TaskState::Archived
+        ),
+        "Task should have entered commit pipeline after gate pass, got: {:?}",
+        task.state
+    );
+}
+
+/// Gate fail: agent produces artifact → gate (exit 1) → task re-queued with feedback.
+///
+/// Flow: work stage with gate configured.
+/// - Agent produces artifact.
+/// - Task transitions to `AwaitingGate`.
+/// - Gate fails (exit 1).
+/// - Task re-queued to work stage with `GateFailure` context.
+/// - Next agent spawn receives gate error as feedback.
+#[test]
+fn test_gate_fail_requeues_with_feedback() {
+    use orkestra_core::workflow::config::{
+        GateConfig, IntegrationConfig, StageConfig, WorkflowConfig,
+    };
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::new("exit 1").with_timeout(10))])
+    .with_integration(IntegrationConfig::new("work"));
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    let task = ctx.create_task("Gate fail test", "Test gate fail", None);
+    let task_id = task.id.clone();
+
+    // First iteration: agent produces artifact
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingGate { .. }),
+        "Expected AwaitingGate, got: {:?}",
+        task.state
+    );
+
+    ctx.advance(); // spawns gate → drain_active → gate fails (exit 1) → re-queued
+
+    // Gate failed → task should be re-queued in work stage
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be re-queued after gate failure, got: {:?}",
+        task.state
+    );
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Task should be re-queued in work stage"
+    );
+
+    // Verify GateFailure iteration trigger was created
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let gate_failure_iter = iterations.iter().find(|i| {
+        matches!(
+            &i.incoming_context,
+            Some(IterationTrigger::GateFailure { .. })
+        )
+    });
+    assert!(
+        gate_failure_iter.is_some(),
+        "Should have a GateFailure iteration trigger"
+    );
+
+    // The feedback should reference gate failure
+    if let Some(IterationTrigger::GateFailure { error }) =
+        &gate_failure_iter.unwrap().incoming_context
+    {
+        assert!(
+            error.contains("Gate failed") || error.contains("exit"),
+            "Error should describe gate failure, got: {error}"
+        );
+    }
+}
+
+/// Gate crash recovery: `GateRunning` on startup resets to `AwaitingGate`.
+///
+/// Simulates a crash while a gate was running. On startup recovery,
+/// the task should be reset to `AwaitingGate` so the gate re-spawns.
+#[test]
+fn test_gate_crash_recovery_resets_to_awaiting_gate() {
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::new("exit 0").with_timeout(10))]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    let task = ctx.create_task("Gate recovery test", "Test gate crash recovery", None);
+    let task_id = task.id.clone();
+
+    // Manually set task to GateRunning (simulating a crash mid-gate)
+    ctx.api().mark_gate_running(&task_id, "work").unwrap();
+
+    // Verify we're in GateRunning
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(matches!(task.state, TaskState::GateRunning { .. }));
+
+    // Run startup recovery
+    ctx.run_startup_recovery();
+
+    // Should be reset to AwaitingGate
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingGate { .. }),
+        "GateRunning task should be reset to AwaitingGate on startup recovery, got: {:?}",
+        task.state
+    );
+}
+
+/// Gate pass then next stage: ensures the gate doesn't block stage advancement.
+///
+/// Flow: work (with gate) → review (automated, no gate)
+/// - Agent produces artifact → gate passes → enters review → review auto-approves.
+#[test]
+fn test_gate_pass_then_advances_to_next_stage() {
+    use orkestra_core::workflow::config::{
+        GateConfig, IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
+    };
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary")
+            .with_prompt("worker.md")
+            .with_gate(GateConfig::new("exit 0").with_timeout(10)),
+        StageConfig::new("review", "verdict")
+            .with_prompt("reviewer.md")
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
+            .automated(),
+    ])
+    .with_integration(IntegrationConfig::new("work"));
+
+    let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
+    let task = ctx.create_task("Gate + next stage test", "Test gate advances", None);
+    let task_id = task.id.clone();
+
+    // Agent produces artifact → AwaitingGate
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work done".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(matches!(task.state, TaskState::AwaitingGate { .. }));
+
+    ctx.advance(); // spawns gate → drain_active → gate passes → commit pipeline → review Queued
+
+    // Set review output before spawning the reviewer
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "LGTM".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns review agent → drain_active → approval processed → Finishing/Done
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(
+            task.state,
+            TaskState::Finishing { .. }
+                | TaskState::Committing { .. }
+                | TaskState::Committed { .. }
+                | TaskState::Done
+        ),
+        "Task should have advanced past review after gate pass, got: {:?}",
+        task.state
+    );
+}
+
+/// Gate timeout: gate command takes longer than the configured timeout.
+///
+/// Flow: work stage with gate `sleep 10` and 1s timeout.
+/// - Agent produces artifact → `AwaitingGate`.
+/// - Gate spawns, times out after ~1s → treated as failure.
+/// - Task re-queued with `GateFailure` trigger containing "timed out" message.
+#[test]
+fn test_gate_timeout_treated_as_failure() {
+    use orkestra_core::workflow::config::{
+        GateConfig, IntegrationConfig, StageConfig, WorkflowConfig,
+    };
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::new("sleep 10").with_timeout(1))])
+    .with_integration(IntegrationConfig::new("work"));
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    let task = ctx.create_task("Gate timeout test", "Test gate timeout", None);
+    let task_id = task.id.clone();
+
+    // Agent produces artifact → AwaitingGate
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingGate { .. }),
+        "Expected AwaitingGate, got: {:?}",
+        task.state
+    );
+
+    // Gate spawns and runs; drain_active polls until timeout (~1s) then processes failure
+    ctx.advance(); // spawns gate → drain_active loops until timed out → gate failure → re-queued
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be re-queued after gate timeout, got: {:?}",
+        task.state
+    );
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Task should be re-queued in work stage"
+    );
+
+    // Verify GateFailure trigger mentions timeout
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let gate_iter = iterations.iter().find(|i| {
+        matches!(
+            &i.incoming_context,
+            Some(IterationTrigger::GateFailure { .. })
+        )
+    });
+    assert!(
+        gate_iter.is_some(),
+        "Should have a GateFailure iteration trigger"
+    );
+    if let Some(IterationTrigger::GateFailure { error }) = &gate_iter.unwrap().incoming_context {
+        assert!(
+            error.contains("timed out"),
+            "Error should mention timeout, got: {error}"
+        );
+    }
+}
+
+/// Interrupt during gate: task in `GateRunning` transitions to Interrupted.
+///
+/// Uses `mark_gate_running()` to simulate a gate already running (no real process),
+/// then interrupts to verify the `GateRunning` → Interrupted transition works.
+#[test]
+fn test_interrupt_during_gate() {
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
+    use orkestra_core::workflow::domain::IterationTrigger;
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::new("exit 0").with_timeout(10))]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    let task = ctx.create_task("Gate interrupt test", "Test interrupt during gate", None);
+    let task_id = task.id.clone();
+
+    // Set task to AgentWorking so we can produce an artifact to get an active iteration
+    ctx.api().agent_started(&task_id).unwrap();
+
+    // Manually set state to GateRunning (simulates agent completed + gate spawned)
+    ctx.api().mark_gate_running(&task_id, "work").unwrap();
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::GateRunning { .. }),
+        "Expected GateRunning, got: {:?}",
+        task.state
+    );
+
+    // Interrupt while gate is running
+    let task = ctx.api().interrupt(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Interrupted { .. }),
+        "Task should be Interrupted after interrupt during gate, got: {:?}",
+        task.state
+    );
+
+    // Verify iteration outcome is Interrupted
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let interrupted_iter = iterations
+        .iter()
+        .find(|i| matches!(i.outcome, Some(Outcome::Interrupted)));
+    assert!(
+        interrupted_iter.is_some(),
+        "Should have an iteration with Interrupted outcome"
+    );
+    assert_eq!(
+        interrupted_iter.unwrap().stage,
+        "work",
+        "Interrupted iteration should be in work stage"
+    );
+
+    // Resume to verify task can recover from gate interrupt
+    let task = ctx.api().resume(&task_id, None).unwrap();
+    assert!(
+        matches!(task.state, TaskState::Queued { .. }),
+        "Task should be Queued after resuming from gate interrupt, got: {:?}",
+        task.state
+    );
+    let iter_after_resume = ctx.api().get_iterations(&task_id).unwrap();
+    let resume_iter = iter_after_resume.iter().find(|i| {
+        matches!(
+            &i.incoming_context,
+            Some(IterationTrigger::ManualResume { .. })
+        )
+    });
+    assert!(
+        resume_iter.is_some(),
+        "Should have a ManualResume iteration after resuming"
+    );
+}
+
+/// Flow gate override disables gate: task with a flow that sets `gate: null` skips `AwaitingGate`.
+///
+/// Global `work` stage has a gate configured. The `no-gate` flow overrides it with
+/// `gate: null`, disabling the gate. A task running under this flow should go directly
+/// to the commit pipeline after the agent produces an artifact — never entering `AwaitingGate`.
+#[test]
+fn test_flow_gate_override_disables_gate() {
+    use indexmap::IndexMap;
+    use orkestra_core::workflow::config::{
+        FlowConfig, FlowStageEntry, FlowStageOverride, GateConfig, IntegrationConfig, StageConfig,
+        WorkflowConfig,
+    };
+
+    let mut flows = IndexMap::new();
+    flows.insert(
+        "no-gate".to_string(),
+        FlowConfig {
+            description: "Flow with gate disabled".to_string(),
+            icon: None,
+            stages: vec![FlowStageEntry {
+                stage_name: "work".to_string(),
+                overrides: Some(FlowStageOverride {
+                    gate: Some(None), // explicitly disable the gate
+                    ..Default::default()
+                }),
+            }],
+            integration: None,
+        },
+    );
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .automated() // skip approval so artifact goes directly to commit pipeline
+        .with_gate(GateConfig::new("exit 1").with_timeout(10))]) // gate would fail if reached
+    .with_integration(IntegrationConfig::new("work"))
+    .with_flows(flows);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+
+    // Create task with the no-gate flow
+    let task = ctx
+        .api()
+        .create_task_with_options(
+            "Flow no-gate test",
+            "Test flow disables gate",
+            None,
+            false,
+            Some("no-gate"),
+        )
+        .unwrap();
+    let task_id = task.id.clone();
+
+    // Run setup tick
+    ctx.advance();
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        !matches!(
+            task.state,
+            TaskState::AwaitingSetup { .. } | TaskState::SettingUp { .. }
+        ),
+        "Setup should have completed, got: {:?}",
+        task.state
+    );
+
+    // Agent produces artifact — gate is disabled for this flow, should skip AwaitingGate
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns agent → drain_active → artifact → no gate → commit pipeline
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        !matches!(task.state, TaskState::AwaitingGate { .. }),
+        "Task should NOT enter AwaitingGate when flow disables gate, got: {:?}",
+        task.state
+    );
+    assert!(
+        matches!(
+            task.state,
+            TaskState::Finishing { .. }
+                | TaskState::Committing { .. }
+                | TaskState::Committed { .. }
+                | TaskState::Done
+                | TaskState::Archived
+        ),
+        "Task should have entered commit pipeline directly, got: {:?}",
+        task.state
     );
 }

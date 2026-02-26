@@ -267,10 +267,11 @@ fn compute_phase_icon(task: &Task) -> Option<String> {
         | TaskState::SettingUp { .. }
         | TaskState::AwaitingSetup { .. }
         | TaskState::Finishing { .. }
-        | TaskState::Committed { .. } => Some("git".to_string()),
+        | TaskState::Committed { .. }
+        | TaskState::GateRunning { .. } => Some("git".to_string()),
 
-        // Queued tasks waiting for orchestrator
-        TaskState::Queued { .. } => Some("queued".to_string()),
+        // Queued tasks waiting for orchestrator (including awaiting gate)
+        TaskState::Queued { .. } | TaskState::AwaitingGate { .. } => Some("queued".to_string()),
 
         // Human-facing, agent-active, parent, and terminal states don't show phase icons
         TaskState::AgentWorking { .. }

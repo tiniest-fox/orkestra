@@ -41,7 +41,6 @@ pub(crate) fn execute(store: &dyn WorkflowStore, script: &mut ActiveScript) -> S
                 task_id: script.task_id.clone(),
                 stage: script.stage.clone(),
                 result,
-                recovery_stage: script.recovery_stage.clone(),
             })
         }
         Ok(ScriptPollState::Running { new_output }) => {
@@ -56,9 +55,10 @@ pub(crate) fn execute(store: &dyn WorkflowStore, script: &mut ActiveScript) -> S
             }
             ScriptPollResult::Running
         }
-        Err(e) => ScriptPollResult::Error(format!(
-            "Script execution error for {}: {e}",
-            script.task_id
-        )),
+        Err(e) => ScriptPollResult::Error {
+            task_id: script.task_id.clone(),
+            stage: script.stage.clone(),
+            message: format!("Failed to poll gate script: {e}"),
+        },
     }
 }

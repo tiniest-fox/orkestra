@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::workflow::config::{ScriptStageConfig, StageConfig, WorkflowConfig};
+use crate::workflow::config::GateConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::{ScriptHandle, ScriptResult};
 use crate::workflow::ports::WorkflowStore;
@@ -15,20 +15,14 @@ use crate::workflow::ports::WorkflowStore;
 // Types
 // ============================================================================
 
-/// Handle for tracking a running script execution.
+/// Handle for tracking a running gate script execution.
 pub struct ActiveScript {
     /// Task being executed.
-    #[allow(dead_code)]
     pub task_id: String,
     /// Stage being executed.
     pub stage: String,
-    /// Command being run.
-    #[allow(dead_code)]
-    pub command: String,
     /// The script handle (owns the process).
     pub handle: ScriptHandle,
-    /// Recovery stage to go to on failure (if configured).
-    pub recovery_stage: Option<String>,
     /// Stage session ID for persisting log entries to the database.
     pub stage_session_id: String,
 }
@@ -40,7 +34,14 @@ pub enum ScriptPollResult {
     /// Script completed.
     Completed(ScriptCompletion),
     /// Error checking script status.
-    Error(String),
+    Error {
+        /// Task ID of the affected task.
+        task_id: String,
+        /// Stage name of the affected stage.
+        stage: String,
+        /// Error message.
+        message: String,
+    },
 }
 
 /// Information about a completed script.
@@ -51,30 +52,22 @@ pub struct ScriptCompletion {
     pub stage: String,
     /// The script result.
     pub result: ScriptResult,
-    /// Recovery stage if configured.
-    pub recovery_stage: Option<String>,
 }
 
 /// Errors that can occur during script execution.
 #[derive(Debug)]
 pub enum ScriptError {
-    /// No script configuration for stage.
-    NoConfig(String),
     /// Failed to spawn script.
     SpawnFailed(String),
     /// Lock error.
     LockError,
-    /// Log persistence error.
-    LogError(String),
 }
 
 impl std::fmt::Display for ScriptError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoConfig(stage) => write!(f, "No script config for stage: {stage}"),
             Self::SpawnFailed(msg) => write!(f, "Failed to spawn script: {msg}"),
             Self::LockError => write!(f, "Lock error"),
-            Self::LogError(msg) => write!(f, "Log error: {msg}"),
         }
     }
 }
@@ -85,12 +78,10 @@ impl std::error::Error for ScriptError {}
 // Script Execution Service
 // ============================================================================
 
-/// Service for managing script stage execution.
+/// Service for managing gate script execution.
 ///
-/// Tracks active script handles and delegates spawn/poll to interactions.
+/// Tracks active gate script handles and delegates spawn/poll to interactions.
 pub struct ScriptExecutionService {
-    /// Workflow configuration.
-    workflow: WorkflowConfig,
     /// Project root for resolving paths.
     project_root: PathBuf,
     /// Store for persisting log entries.
@@ -101,37 +92,12 @@ pub struct ScriptExecutionService {
 
 impl ScriptExecutionService {
     /// Create a new script execution service.
-    pub fn new(
-        workflow: WorkflowConfig,
-        project_root: PathBuf,
-        store: Arc<dyn WorkflowStore>,
-    ) -> Self {
+    pub fn new(project_root: PathBuf, store: Arc<dyn WorkflowStore>) -> Self {
         Self {
-            workflow,
             project_root,
             store,
             active_scripts: Mutex::new(HashMap::new()),
         }
-    }
-
-    // -- Config Queries --
-
-    /// Check if a stage is a script stage.
-    pub fn is_script_stage(&self, stage: &str) -> bool {
-        self.workflow
-            .stages
-            .iter()
-            .find(|s| s.name == stage)
-            .is_some_and(StageConfig::is_script_stage)
-    }
-
-    /// Get the script configuration for a stage.
-    pub fn get_script_config(&self, stage: &str) -> Option<&ScriptStageConfig> {
-        self.workflow
-            .stages
-            .iter()
-            .find(|s| s.name == stage)
-            .and_then(|s| s.script.as_ref())
     }
 
     // -- Active Script Tracking --
@@ -159,22 +125,21 @@ impl ScriptExecutionService {
 
     // -- Spawn & Poll --
 
-    /// Spawn a script for a task.
+    /// Spawn a gate script for a task.
     ///
-    /// Returns the process ID of the spawned script.
-    pub fn spawn_script(
+    /// Returns the process ID of the spawned gate. The gate has no `recovery_stage` —
+    /// failure always re-queues the task in the same stage with `GateFailure` context.
+    pub fn spawn_gate(
         &self,
         task: &Task,
         stage: &str,
-        stage_session_id: Option<&str>,
+        gate_config: &GateConfig,
     ) -> Result<u32, ScriptError> {
-        let active_script = super::interactions::spawn_script::execute(
-            self.store.as_ref(),
-            &self.workflow,
+        let active_script = super::interactions::spawn_script::execute_gate(
             &self.project_root,
             task,
             stage,
-            stage_session_id,
+            gate_config,
         )?;
 
         let pid = active_script.handle.pid();
@@ -185,6 +150,31 @@ impl ScriptExecutionService {
             .insert(task.id.clone(), active_script);
 
         Ok(pid)
+    }
+
+    /// Kill the active gate script for a task.
+    ///
+    /// Returns the PID that was killed, or None if no active gate was found.
+    pub fn kill_gate(&self, task_id: &str) -> Option<u32> {
+        let pid = self
+            .active_scripts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(task_id)
+            .map(|s| s.handle.pid());
+
+        if let Some(pid) = pid {
+            if let Err(e) = orkestra_process::kill_process_tree(pid) {
+                crate::orkestra_debug!(
+                    "interrupt",
+                    "Failed to kill gate process tree {}: {}",
+                    pid,
+                    e
+                );
+            }
+        }
+
+        pid
     }
 
     /// Poll all active scripts for completion.
@@ -199,7 +189,7 @@ impl ScriptExecutionService {
             for (task_id, script) in scripts.iter_mut() {
                 let result = super::interactions::poll_script::execute(self.store.as_ref(), script);
                 match &result {
-                    ScriptPollResult::Completed(_) | ScriptPollResult::Error(_) => {
+                    ScriptPollResult::Completed(_) | ScriptPollResult::Error { .. } => {
                         completed_task_ids.push(task_id.clone());
                     }
                     ScriptPollResult::Running => {}
@@ -225,58 +215,17 @@ impl ScriptExecutionService {
 mod tests {
     use super::*;
     use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::config::{IntegrationConfig, ScriptStageConfig, StageConfig};
     use crate::workflow::domain::LogEntry;
     use tempfile::TempDir;
-
-    fn test_workflow_with_script() -> WorkflowConfig {
-        WorkflowConfig {
-            version: 1,
-            stages: vec![
-                StageConfig::new("work", "summary"),
-                StageConfig::new("checks", "check_results")
-                    .with_display_name("Automated Checks")
-                    .with_script(ScriptStageConfig {
-                        command: "echo 'hello'".into(),
-                        timeout_seconds: 10,
-                        on_failure: Some("work".into()),
-                    }),
-            ],
-            integration: IntegrationConfig::new("work"),
-            flows: indexmap::IndexMap::new(),
-        }
-    }
 
     fn create_service() -> (ScriptExecutionService, Arc<InMemoryWorkflowStore>) {
         let temp_dir = TempDir::new().unwrap();
         let store = Arc::new(InMemoryWorkflowStore::new());
         let service = ScriptExecutionService::new(
-            test_workflow_with_script(),
             temp_dir.path().to_path_buf(),
             Arc::clone(&store) as Arc<dyn WorkflowStore>,
         );
         (service, store)
-    }
-
-    #[test]
-    fn test_is_script_stage() {
-        let (service, _store) = create_service();
-
-        assert!(!service.is_script_stage("work"));
-        assert!(service.is_script_stage("checks"));
-        assert!(!service.is_script_stage("unknown"));
-    }
-
-    #[test]
-    fn test_get_script_config() {
-        let (service, _store) = create_service();
-
-        assert!(service.get_script_config("work").is_none());
-
-        let config = service.get_script_config("checks").unwrap();
-        assert_eq!(config.command, "echo 'hello'");
-        assert_eq!(config.timeout_seconds, 10);
-        assert_eq!(config.on_failure, Some("work".into()));
     }
 
     #[test]

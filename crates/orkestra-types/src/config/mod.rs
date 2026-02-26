@@ -8,7 +8,7 @@ pub mod stage;
 pub mod workflow;
 
 pub use stage::{
-    ApprovalCapabilities, ArtifactConfig, ScriptStageConfig, StageCapabilities, StageConfig,
+    ApprovalCapabilities, ArtifactConfig, GateConfig, StageCapabilities, StageConfig,
     SubtaskCapabilities, ToolRestriction,
 };
 pub use workflow::{

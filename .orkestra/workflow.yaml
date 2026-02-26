@@ -1,7 +1,8 @@
 # Custom workflow for Orkestra development
 #
-# Based on the default workflow, but adds an automated checks stage
-# between work and review to run linting, tests, and type checking.
+# 5-stage pipeline: plan → task → work (with gate) → review → compound
+# The gate on work runs linting, tests, and type checks automatically
+# after the agent completes, before sending the task to review.
 
 version: 1
 
@@ -32,7 +33,7 @@ stages:
     capabilities:
       subtasks:
         flow: hotfix
-        completion_stage: check
+        completion_stage: review
 
   # Work: Implements the breakdown
   - name: work
@@ -44,37 +45,24 @@ stages:
       description: Summary of changes made and implementation notes
     prompt: worker.md
     model: sonnet
+    gate:
+      command: "cargo fmt --all -- --check && cargo clippy --workspace && cargo test --workspace"
+      timeout_seconds: 600
     disallowed_tools:
       - pattern: "Bash(*cargo test*)"
-        message: "Testing runs automatically in the checks stage"
+        message: "Testing runs automatically in the gate after you complete your work"
       - pattern: "Bash(*cargo build*)"
-        message: "Building is handled by the automated checks stage"
+        message: "Building is handled by the gate that runs after you complete your work"
       - pattern: "Bash(*cargo clippy*)"
-        message: "Linting runs automatically in the checks stage"
+        message: "Linting runs automatically in the gate after you complete your work"
       - pattern: "Bash(*cargo fmt*)"
-        message: "Formatting runs automatically in the checks stage"
+        message: "Formatting runs automatically in the gate after you complete your work"
       - pattern: "Bash(pnpm tauri*)"
         message: "Never run the app — it spawns nested agent processes and causes errors"
       - pattern: "Bash(pnpm dev*)"
         message: "Never run the app dev server — it's not needed for implementation"
       - pattern: "Bash(*cargo run*)"
         message: "Never run the app binary — it spawns nested agent processes and causes errors"
-
-  # Checks: Automated quality gates (lint, test, type check)
-  # Runs in the task's worktree, detects what changed, runs relevant checks.
-  # Flows can override the script command (e.g. hotfix uses checks-lite.sh
-  # for scoped checks without reverse deps or workspace build).
-  - name: check
-    display_name: Check
-    icon: circle-check-big
-    description: Run automated code quality checks
-    artifact:
-      name: check_results
-      description: Automated check results (lint, tests, type checking)
-    script:
-      command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
-      timeout_seconds: 600 # 10 minutes for full test suite
-      on_failure: work # Return to work stage if checks fail
 
   # Review: Automated review that can send back to work if needed
   - name: review
@@ -117,7 +105,6 @@ flows:
       - plan:
           prompt: quick_planner.md
       - work
-      - check
       - review:
           capabilities:
             approval:
@@ -128,14 +115,15 @@ flows:
 
   # Hotfix flow: Straight to work, minimal overhead
   # Uses checks-lite.sh — scoped checks without reverse deps or workspace build.
-  # The parent task's full check stage handles integration verification.
+  # The parent task's full gate handles integration verification.
   hotfix:
     description: Emergency fix — skip straight to implementation
     icon: rocket
     stages:
-      - work
-      - check:
-          script_command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
+      - work:
+          gate:
+            command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
+            timeout_seconds: 300
       - review:
           prompt: subtask-reviewer.md
           capabilities:
@@ -151,8 +139,9 @@ flows:
     stages:
       - work:
           model: sonnet
-      - check:
-          script_command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
+          gate:
+            command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
+            timeout_seconds: 300
     integration:
       on_failure: work
 

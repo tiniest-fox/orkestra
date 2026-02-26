@@ -12,8 +12,8 @@ function outcomeDetail(outcome: WorkflowOutcome): string | null {
       return `Agent error: ${outcome.error}`;
     case "spawn_failed":
       return `Failed to start agent: ${outcome.error}`;
-    case "script_failed":
-      return `Script failed in ${outcome.stage}: ${outcome.error}`;
+    case "gate_failed":
+      return `Gate failed in ${outcome.stage}: ${outcome.error}`;
     case "integration_failed":
       return outcome.conflict_files.length > 0
         ? `Integration failed: ${outcome.error}\n\nConflicting files:\n${outcome.conflict_files.join("\n")}`

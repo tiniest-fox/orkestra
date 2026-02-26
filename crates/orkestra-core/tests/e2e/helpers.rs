@@ -98,6 +98,19 @@ impl TestEnv {
         let orkestra_dir = temp_dir.path().join(".orkestra");
         std::fs::create_dir_all(orkestra_dir.join(".database")).unwrap();
 
+        // Create stub agent definition files so execute_agent.rs can build prompts.
+        // MockAgentRunner ignores prompt content, but load_agent_definition reads the file
+        // before handing off to the runner. Without these files, spawn() fails with
+        // DefinitionNotFound and tasks never reach AwaitingGate.
+        let agents_dir = orkestra_dir.join("agents");
+        std::fs::create_dir_all(&agents_dir).unwrap();
+        for stage in &workflow.stages {
+            let filename = stage
+                .prompt_path()
+                .unwrap_or_else(|| format!("{}.md", stage.name));
+            std::fs::write(agents_dir.join(&filename), "You are a test agent.").unwrap();
+        }
+
         // Real SQLite database
         let db_path = orkestra_dir.join(".database/orkestra.db");
         let db_conn = DatabaseConnection::open(&db_path).expect("Should open database");
@@ -816,23 +829,19 @@ impl From<MockAgentOutput> for StageOutput {
 
 pub mod workflows {
     use orkestra_core::workflow::config::{
-        IntegrationConfig, ScriptStageConfig, StageConfig, WorkflowConfig,
+        GateConfig, IntegrationConfig, StageConfig, WorkflowConfig,
     };
 
-    /// Single `sleep 60` script stage. Never completes on its own.
+    /// Agent stage with a `sleep 60` gate. Gate never completes on its own.
     ///
-    /// Use for testing process killing — the script runs indefinitely,
-    /// giving tests time to verify kill behavior.
+    /// Use for testing process killing — the gate runs indefinitely once the
+    /// agent completes. Tests must pre-load mock output via `set_output()` and
+    /// advance three ticks before the gate PID is recorded in the session.
     pub fn sleep_script() -> WorkflowConfig {
         WorkflowConfig {
             version: 1,
-            stages: vec![
-                StageConfig::new("work", "output").with_script(ScriptStageConfig {
-                    command: "sleep 60".into(),
-                    timeout_seconds: 120,
-                    on_failure: None,
-                }),
-            ],
+            stages: vec![StageConfig::new("work", "output")
+                .with_gate(GateConfig::new("sleep 60").with_timeout(120))],
             integration: IntegrationConfig::new("work"),
             flows: indexmap::IndexMap::new(),
         }
@@ -904,20 +913,16 @@ pub mod workflows {
         }
     }
 
-    /// Single `echo hello` script stage. Exits immediately.
+    /// Agent stage with an `echo hello` gate. Gate exits immediately.
     ///
-    /// Use for stale-PID tests where the process needs to be dead but
+    /// Use for stale-PID tests where the gate process needs to be dead but
     /// the PID is still recorded in the session (simulating crash before completion).
+    /// Tests must pre-load mock output via `set_output()` before advancing.
     pub fn instant_script() -> WorkflowConfig {
         WorkflowConfig {
             version: 1,
-            stages: vec![
-                StageConfig::new("work", "output").with_script(ScriptStageConfig {
-                    command: "echo hello".into(),
-                    timeout_seconds: 10,
-                    on_failure: None,
-                }),
-            ],
+            stages: vec![StageConfig::new("work", "output")
+                .with_gate(GateConfig::new("echo hello").with_timeout(10))],
             integration: IntegrationConfig::new("work"),
             flows: indexmap::IndexMap::new(),
         }

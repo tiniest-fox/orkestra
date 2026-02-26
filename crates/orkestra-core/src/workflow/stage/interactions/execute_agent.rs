@@ -250,7 +250,7 @@ fn extract_feedback_text(trigger: Option<&IterationTrigger>) -> Option<&str> {
         IterationTrigger::Rejection { feedback, .. } | IterationTrigger::Feedback { feedback } => {
             Some(feedback.as_str())
         }
-        IterationTrigger::ScriptFailure { error, .. } => Some(error.as_str()),
+        IterationTrigger::GateFailure { error } => Some(error.as_str()),
         IterationTrigger::RetryFailed { instructions }
         | IterationTrigger::RetryBlocked { instructions } => instructions.as_deref(),
         IterationTrigger::ManualResume { message } => message.as_deref(),
@@ -284,11 +284,9 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
                 })
                 .collect(),
         },
-        // Script failure is treated like feedback - agent needs to fix the issues
-        Some(IterationTrigger::ScriptFailure { from_stage, error }) => ResumeType::Feedback {
-            feedback: format!(
-                "The automated checks in the '{from_stage}' stage failed:\n\n{error}"
-            ),
+        // Gate failure is treated like feedback - agent needs to fix the issues
+        Some(IterationTrigger::GateFailure { error }) => ResumeType::Feedback {
+            feedback: format!("The gate checks failed:\n\n{error}"),
         },
         Some(IterationTrigger::RetryFailed { instructions }) => ResumeType::RetryFailed {
             instructions: instructions.clone(),
@@ -326,13 +324,6 @@ fn get_stage_schema(
     let stage_config = workflow
         .stage(stage)
         .ok_or_else(|| ExecutionError::ConfigError(format!("Unknown stage: {stage}")))?;
-
-    // This method is for agent stages only - script stages are handled separately
-    if stage_config.is_script_stage() {
-        return Err(ExecutionError::ConfigError(format!(
-            "Stage '{stage}' is a script stage, not an agent stage"
-        )));
-    }
 
     // Use effective capabilities from flow override if applicable
     let effective_config = if task.flow.is_some() {

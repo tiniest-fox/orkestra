@@ -31,7 +31,7 @@ function runOutcomeStyle(run: StageRun): { glyph: string | null; color: string }
       return { glyph: "×", color: "text-status-error" };
     case "agent_error":
     case "spawn_failed":
-    case "script_failed":
+    case "gate_failed":
     case "commit_failed":
     case "integration_failed":
       return { glyph: "!", color: "text-status-warning" };

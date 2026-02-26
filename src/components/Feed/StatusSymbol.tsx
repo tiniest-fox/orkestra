@@ -84,6 +84,7 @@ function resolveColors(task: WorkflowTaskView): {
   }
   if (
     derived.is_working ||
+    state.type === "awaiting_gate" ||
     derived.is_preparing ||
     (derived.is_system_active && state.type !== "integrating")
   ) {

@@ -6,7 +6,7 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use super::stage::{StageCapabilities, StageConfig, ToolRestriction};
+use super::stage::{GateConfig, StageCapabilities, StageConfig, ToolRestriction};
 use crate::runtime::ACTIVITY_LOG_ARTIFACT_NAME;
 
 /// Complete workflow configuration.
@@ -84,30 +84,24 @@ pub struct FlowStageOverride {
     /// Override model identifier (agent stages only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// Override disallowed tools (full replace, not merge; agent stages only).
+    /// Override disallowed tools (full replace, not merge).
     /// `Some(vec![])` means "explicitly no restrictions" (overrides global config).
     /// `None` means "inherit from global stage config".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disallowed_tools: Option<Vec<ToolRestriction>>,
-    /// Override script command (script stages only).
-    /// Replaces the global stage's script command for this flow.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub script_command: Option<String>,
-}
 
-impl FlowStageOverride {
-    /// Returns true if this override contains only agent-stage fields.
-    pub fn has_agent_fields(&self) -> bool {
-        self.prompt.is_some()
-            || self.capabilities.is_some()
-            || self.model.is_some()
-            || self.disallowed_tools.is_some()
-    }
-
-    /// Returns true if this override contains only script-stage fields.
-    pub fn has_script_fields(&self) -> bool {
-        self.script_command.is_some()
-    }
+    /// Gate override for this stage in this flow.
+    /// `Some(Some(config))` overrides the global gate config.
+    /// `Some(None)` disables the gate for this flow.
+    /// `None` inherits from global stage config.
+    ///
+    /// Uses `serde_double_option` to distinguish `null` (disable) from absent (inherit).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_double_option"
+    )]
+    pub gate: Option<Option<GateConfig>>,
 }
 
 // Custom serde for FlowStageEntry to handle the YAML format:
@@ -396,16 +390,36 @@ impl WorkflowConfig {
             .unwrap_or_default()
     }
 
-    /// Get the effective script command for a script stage, checking flow overrides first.
+    /// Get the effective gate configuration for a stage, checking flow overrides first.
     ///
-    /// Returns the flow override if present, otherwise the global stage's command.
-    pub fn effective_script_command(&self, stage_name: &str, flow: Option<&str>) -> Option<String> {
-        self.flow_override(stage_name, flow, |o| o.script_command.clone())
-            .or_else(|| {
-                self.stage(stage_name)
-                    .and_then(|s| s.script.as_ref())
-                    .map(|sc| sc.command.clone())
-            })
+    /// - Flow `Some(Some(cfg))` → returns `Some(&cfg)` (override)
+    /// - Flow `Some(None)` → returns `None` (gate disabled for this flow)
+    /// - Flow `None` (no override) → falls through to global stage config
+    /// - No flow → uses global stage config
+    pub fn effective_gate_config(
+        &self,
+        stage_name: &str,
+        flow: Option<&str>,
+    ) -> Option<&GateConfig> {
+        // Check for a flow-level override
+        if let Some(flow_name) = flow {
+            if let Some(flow_config) = self.flows.get(flow_name) {
+                if let Some(entry) = flow_config
+                    .stages
+                    .iter()
+                    .find(|e| e.stage_name == stage_name)
+                {
+                    if let Some(overrides) = &entry.overrides {
+                        if let Some(gate_override) = &overrides.gate {
+                            // Some(Some(cfg)) → override; Some(None) → disabled
+                            return gate_override.as_ref();
+                        }
+                    }
+                }
+            }
+        }
+        // Fall through to global stage config
+        self.stage(stage_name).and_then(|s| s.gate_config())
     }
 
     /// Get ordered stage references for a given flow.
@@ -429,7 +443,7 @@ impl WorkflowConfig {
         }
     }
 
-    /// Get the effective model specs for all agent (non-script) stages in the given flow.
+    /// Get the effective model specs for all stages in the given flow.
     ///
     /// For default flow (None), iterates all global stages.
     /// For named flows, iterates only the stages listed in that flow.
@@ -437,7 +451,6 @@ impl WorkflowConfig {
     pub fn agent_model_specs(&self, flow: Option<&str>) -> Vec<Option<String>> {
         self.stages_in_flow(flow)
             .into_iter()
-            .filter(|s| s.script.is_none())
             .map(|s| {
                 // For flow stages, check for model override
                 match flow {
@@ -501,11 +514,11 @@ impl WorkflowConfig {
         self.validate_no_duplicate_artifact_names(&mut errors);
         self.validate_approval_targets(&stage_names, &stage_names_set, &mut errors);
         self.validate_integration_on_failure(&stage_names, &stage_names_set, &mut errors);
-        self.validate_script_stages(&stage_names, &stage_names_set, &mut errors);
         self.validate_flows(&stage_names_set, &mut errors);
         self.validate_subtask_flows(&mut errors);
         self.validate_model_fields(&mut errors);
         self.validate_disallowed_tools(&mut errors);
+        self.validate_gates(&mut errors);
 
         errors
     }
@@ -588,53 +601,6 @@ impl WorkflowConfig {
         }
     }
 
-    /// Validate script stage configurations.
-    fn validate_script_stages(
-        &self,
-        stage_names: &[&str],
-        stage_names_set: &std::collections::HashSet<&str>,
-        errors: &mut Vec<String>,
-    ) {
-        for stage in &self.stages {
-            // Check that stage doesn't have both prompt and script
-            if stage.prompt.is_some() && stage.script.is_some() {
-                errors.push(format!(
-                    "Stage \"{}\" has both prompt and script configuration. \
-                     Choose one: either run an agent OR a script, not both.",
-                    stage.name
-                ));
-            }
-
-            // Script-specific validations
-            if let Some(ref script) = stage.script {
-                if let Some(ref on_failure) = script.on_failure {
-                    if !stage_names_set.contains(on_failure.as_str()) {
-                        errors.push(format!(
-                            "Script stage \"{}\" has on_failure=\"{}\" but stage \"{}\" doesn't exist. \
-                             Valid stages: {:?}",
-                            stage.name, on_failure, on_failure, stage_names
-                        ));
-                    }
-                }
-
-                if stage.capabilities.ask_questions {
-                    errors.push(format!(
-                        "Script stage \"{}\" cannot have ask_questions capability. \
-                         Only agent stages can ask questions.",
-                        stage.name
-                    ));
-                }
-                if stage.capabilities.produces_subtasks() {
-                    errors.push(format!(
-                        "Script stage \"{}\" cannot have subtask capabilities. \
-                         Only agent stages can produce subtasks.",
-                        stage.name
-                    ));
-                }
-            }
-        }
-    }
-
     /// Validate flow configurations.
     fn validate_flows(
         &self,
@@ -666,24 +632,7 @@ impl WorkflowConfig {
                     continue;
                 }
 
-                // Script stages only allow script_command overrides
                 if let Some(ref overrides) = entry.overrides {
-                    let is_script = self
-                        .stage(&entry.stage_name)
-                        .is_some_and(super::stage::StageConfig::is_script_stage);
-                    if is_script && overrides.has_agent_fields() {
-                        errors.push(format!(
-                            "Flow \"{flow_name}\" cannot override agent fields on script stage \"{}\" — only script_command is allowed",
-                            entry.stage_name
-                        ));
-                    }
-                    if !is_script && overrides.has_script_fields() {
-                        errors.push(format!(
-                            "Flow \"{flow_name}\" cannot override script_command on agent stage \"{}\"",
-                            entry.stage_name
-                        ));
-                    }
-
                     // Validate that capability overrides with approval rejection_stage reference stages in the flow
                     if let Some(ref caps) = overrides.capabilities {
                         if let Some(ref approval) = caps.approval {
@@ -715,20 +664,6 @@ impl WorkflowConfig {
                                         entry.stage_name
                                     ));
                                 }
-                            }
-                        }
-                    }
-                }
-
-                // Validate script on_failure targets are in the flow
-                if let Some(global_stage) = self.stage(&entry.stage_name) {
-                    if let Some(ref script) = global_stage.script {
-                        if let Some(ref on_failure) = script.on_failure {
-                            if !flow_stage_names.contains(on_failure.as_str()) {
-                                errors.push(format!(
-                                    "Flow \"{flow_name}\" includes script stage \"{}\" with on_failure=\"{on_failure}\", but \"{on_failure}\" is not in flow \"{flow_name}\"",
-                                    entry.stage_name
-                                ));
                             }
                         }
                     }
@@ -828,22 +763,7 @@ impl WorkflowConfig {
 
     /// Validate model fields on stages and flow overrides.
     fn validate_model_fields(&self, errors: &mut Vec<String>) {
-        // Script stages should not have model or restart_on_reentry set
         for stage in &self.stages {
-            if stage.model.is_some() && stage.is_script_stage() {
-                errors.push(format!(
-                    "Script stage \"{}\" has a model field, but model is only used by agent stages.",
-                    stage.name
-                ));
-            }
-
-            if stage.restart_on_reentry && stage.is_script_stage() {
-                errors.push(format!(
-                    "Script stage \"{}\" has restart_on_reentry set, but restart_on_reentry is only meaningful for agent stages.",
-                    stage.name
-                ));
-            }
-
             // Validate model format: must be non-empty if present
             if let Some(ref model) = stage.model {
                 if model.trim().is_empty() {
@@ -860,17 +780,6 @@ impl WorkflowConfig {
             for entry in &flow.stages {
                 if let Some(ref overrides) = entry.overrides {
                     if let Some(ref model) = overrides.model {
-                        // Check that the overridden stage is not a script stage
-                        let is_script = self
-                            .stage(&entry.stage_name)
-                            .is_some_and(super::stage::StageConfig::is_script_stage);
-                        if is_script {
-                            errors.push(format!(
-                                "Flow \"{flow_name}\" overrides model on script stage \"{}\", but model is only used by agent stages.",
-                                entry.stage_name
-                            ));
-                        }
-
                         if model.trim().is_empty() {
                             errors.push(format!(
                                 "Flow \"{flow_name}\" stage \"{}\" has an empty model override. Remove the field or specify a model identifier.",
@@ -886,12 +795,6 @@ impl WorkflowConfig {
     /// Validate `disallowed_tools` fields on stages and flow overrides.
     fn validate_disallowed_tools(&self, errors: &mut Vec<String>) {
         for stage in &self.stages {
-            if !stage.disallowed_tools.is_empty() && stage.is_script_stage() {
-                errors.push(format!(
-                    "Script stage \"{}\" has disallowed_tools, but tool restrictions are only used by agent stages.",
-                    stage.name
-                ));
-            }
             // Validate entries have non-empty patterns
             for (i, entry) in stage.disallowed_tools.iter().enumerate() {
                 if entry.pattern.trim().is_empty() {
@@ -922,9 +825,95 @@ impl WorkflowConfig {
         }
     }
 
+    /// Validate `gate` configs on stages and flow overrides.
+    fn validate_gates(&self, errors: &mut Vec<String>) {
+        for stage in &self.stages {
+            if let Some(ref gate) = stage.gate {
+                if gate.command.trim().is_empty() {
+                    errors.push(format!(
+                        "Stage \"{}\" has a gate with an empty command.",
+                        stage.name
+                    ));
+                }
+                if gate.timeout_seconds == 0 {
+                    errors.push(format!(
+                        "Stage \"{}\" has a gate with timeout_seconds of 0. Timeout must be greater than 0.",
+                        stage.name
+                    ));
+                }
+            }
+        }
+
+        // Validate gate overrides in flows
+        for (flow_name, flow) in &self.flows {
+            for entry in &flow.stages {
+                if let Some(ref overrides) = entry.overrides {
+                    if let Some(Some(ref gate)) = overrides.gate {
+                        if gate.command.trim().is_empty() {
+                            errors.push(format!(
+                                "Flow \"{}\" stage \"{}\" has a gate override with an empty command.",
+                                flow_name, entry.stage_name
+                            ));
+                        }
+                        if gate.timeout_seconds == 0 {
+                            errors.push(format!(
+                                "Flow \"{}\" stage \"{}\" has a gate override with timeout_seconds of 0. Timeout must be greater than 0.",
+                                flow_name, entry.stage_name
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Check if the workflow is valid.
     pub fn is_valid(&self) -> bool {
         self.validate().is_empty()
+    }
+}
+
+// ============================================================================
+// Double-option serde helper
+// ============================================================================
+
+/// Custom serde for `Option<Option<T>>` to distinguish absent, null, and present.
+///
+/// Standard serde maps both absent and `null` to `Option::None`. This module
+/// fixes that for fields where the distinction matters:
+///
+/// - Absent (field missing) → `None`     — "inherit from global config"
+/// - `null` in YAML/JSON  → `Some(None)` — "explicitly disabled"
+/// - A value              → `Some(Some(v))` — "override with this value"
+///
+/// Pair with `#[serde(default, skip_serializing_if = "Option::is_none", with = "serde_double_option")]`.
+mod serde_double_option {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[allow(clippy::option_option, clippy::ref_option)]
+    pub fn serialize<T, S>(value: &Option<Option<T>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        T: Serialize,
+        S: Serializer,
+    {
+        match value {
+            // skip_serializing_if guards the None case — this branch is unreachable
+            None => serializer.serialize_none(),
+            Some(inner) => inner.serialize(serializer),
+        }
+    }
+
+    #[allow(clippy::option_option)]
+    pub fn deserialize<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+    where
+        T: Deserialize<'de>,
+        D: Deserializer<'de>,
+    {
+        // This function is only called when the field IS present in the input.
+        // Absent fields are handled by #[serde(default)] → None.
+        // Here: null → Some(None), value → Some(Some(v)).
+        let inner: Option<T> = Option::deserialize(deserializer)?;
+        Ok(Some(inner))
     }
 }
 
@@ -932,7 +921,7 @@ impl WorkflowConfig {
 mod tests {
     use super::*;
     use crate::config::stage::{
-        ScriptStageConfig, StageCapabilities, StageConfig, SubtaskCapabilities, ToolRestriction,
+        StageCapabilities, StageConfig, SubtaskCapabilities, ToolRestriction,
     };
 
     /// Standard 4-stage workflow used by most tests.
@@ -1202,26 +1191,6 @@ mod tests {
     }
 
     #[test]
-    fn test_workflow_validation_restart_on_reentry_on_script_stage() {
-        let mut script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
-        script_stage.restart_on_reentry = true; // Manually set (invalid)
-
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
-            script_stage,
-            StageConfig::new("work", "summary"),
-        ]);
-
-        let errors = workflow.validate();
-        assert!(
-            errors.iter().any(|e| e.contains("restart_on_reentry")
-                && e.contains("checks")
-                && e.contains("only meaningful for agent stages")),
-            "Expected validation error for restart_on_reentry on script stage. Got: {errors:?}"
-        );
-    }
-
-    #[test]
     fn test_workflow_validation_restart_on_reentry_on_agent_stage_valid() {
         let workflow = WorkflowConfig::new(vec![
             StageConfig::new("planning", "plan"),
@@ -1263,125 +1232,6 @@ integration:
 ";
         let workflow: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(workflow.integration.on_failure, "planning");
-        assert!(workflow.is_valid());
-    }
-
-    // ========================================================================
-    // Script stage validation tests
-    // ========================================================================
-
-    #[test]
-    fn test_workflow_with_script_stage() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary"),
-            StageConfig::new_script("checks", "check_results", "./run_checks.sh"),
-            StageConfig::new("review", "verdict"),
-        ])
-        .with_integration(IntegrationConfig::new("work"));
-
-        let errors = workflow.validate();
-        assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
-    }
-
-    #[test]
-    fn test_script_stage_with_valid_on_failure() {
-        let mut stage = StageConfig::new_script("checks", "check_results", "./run.sh");
-        stage.script = Some(ScriptStageConfig::new("./run.sh").with_on_failure("work"));
-
-        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage])
-            .with_integration(IntegrationConfig::new("work"));
-
-        let errors = workflow.validate();
-        assert!(errors.is_empty(), "Expected no errors, got: {errors:?}");
-    }
-
-    #[test]
-    fn test_script_stage_with_invalid_on_failure() {
-        let mut stage = StageConfig::new_script("checks", "check_results", "./run.sh");
-        stage.script = Some(ScriptStageConfig::new("./run.sh").with_on_failure("nonexistent"));
-
-        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage]);
-
-        let errors = workflow.validate();
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("on_failure") && e.contains("doesn't exist")));
-    }
-
-    #[test]
-    fn test_script_stage_cannot_have_ask_questions() {
-        let stage = StageConfig::new_script("checks", "check_results", "./run.sh")
-            .with_capabilities(StageCapabilities::with_questions());
-
-        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage]);
-
-        let errors = workflow.validate();
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("Script stage") && e.contains("ask_questions")));
-    }
-
-    #[test]
-    fn test_script_stage_cannot_have_subtask_capabilities() {
-        let stage = StageConfig::new_script("checks", "check_results", "./run.sh")
-            .with_capabilities(StageCapabilities::with_subtasks());
-
-        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary"), stage]);
-
-        let errors = workflow.validate();
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("Script stage") && e.contains("subtask")));
-    }
-
-    #[test]
-    fn test_stage_cannot_have_both_prompt_and_script() {
-        let mut stage = StageConfig::new("checks", "check_results");
-        stage.prompt = Some("worker.md".to_string());
-        stage.script = Some(ScriptStageConfig::new("./run.sh"));
-
-        let workflow = WorkflowConfig::new(vec![stage]);
-
-        let errors = workflow.validate();
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("has both prompt and script")));
-    }
-
-    #[test]
-    fn test_script_stage_yaml_parsing() {
-        let yaml = r#"
-version: 1
-stages:
-  - name: work
-    artifact: summary
-    prompt: worker.md
-  - name: checks
-    artifact: check_results
-    script:
-      command: "./scripts/run_checks.sh"
-      timeout_seconds: 300
-      on_failure: work
-  - name: review
-    artifact: verdict
-    prompt: reviewer.md
-integration:
-  on_failure: work
-"#;
-        let workflow: WorkflowConfig = serde_yaml::from_str(yaml).unwrap();
-
-        assert_eq!(workflow.stages.len(), 3);
-
-        let checks = workflow.stage("checks").unwrap();
-        assert!(checks.is_script_stage());
-        assert!(!checks.is_agent_stage());
-
-        let script = checks.script_config().unwrap();
-        assert_eq!(script.command, "./scripts/run_checks.sh");
-        assert_eq!(script.timeout_seconds, 300);
-        assert_eq!(script.on_failure, Some("work".to_string()));
-
         assert!(workflow.is_valid());
     }
 
@@ -1478,13 +1328,12 @@ integration:
     #[test]
     fn test_agent_model_specs_default_flow() {
         let planning = StageConfig::new("planning", "plan").with_model("sonnet");
-        let checks = StageConfig::new_script("checks", "check_results", "./run.sh");
         let work = StageConfig::new("work", "summary").with_model("opus");
 
-        let workflow = WorkflowConfig::new(vec![planning, checks, work]);
+        let workflow = WorkflowConfig::new(vec![planning, work]);
 
         let specs = workflow.agent_model_specs(None);
-        assert_eq!(specs.len(), 2); // script stage excluded
+        assert_eq!(specs.len(), 2);
         assert_eq!(specs[0], Some("sonnet".to_string()));
         assert_eq!(specs[1], Some("opus".to_string()));
     }
@@ -1492,7 +1341,6 @@ integration:
     #[test]
     fn test_agent_model_specs_named_flow() {
         let planning = StageConfig::new("planning", "plan").with_model("sonnet");
-        let checks = StageConfig::new_script("checks", "check_results", "./run.sh");
         let work = StageConfig::new("work", "summary").with_model("opus");
 
         let mut flows = IndexMap::new();
@@ -1515,10 +1363,10 @@ integration:
             },
         );
 
-        let workflow = WorkflowConfig::new(vec![planning, checks, work]).with_flows(flows);
+        let workflow = WorkflowConfig::new(vec![planning, work]).with_flows(flows);
 
         let specs = workflow.agent_model_specs(Some("quick"));
-        assert_eq!(specs.len(), 2); // only planning and work from flow
+        assert_eq!(specs.len(), 2);
         assert_eq!(specs[0], Some("sonnet".to_string()));
         assert_eq!(specs[1], Some("opus".to_string()));
     }
@@ -1693,25 +1541,6 @@ integration:
         let errors = config.validate();
         assert!(!errors.is_empty());
         assert!(errors[0].contains("reserved artifact name"));
-    }
-
-    #[test]
-    fn test_validate_disallowed_tools_on_script_stage() {
-        let mut script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
-        script_stage.disallowed_tools = vec![ToolRestriction {
-            pattern: "Edit".to_string(),
-            message: Some("Read-only".to_string()),
-        }];
-
-        let workflow = WorkflowConfig::new(vec![script_stage]);
-
-        let errors = workflow.validate();
-        assert!(
-            errors.iter().any(|e| e.contains("disallowed_tools")
-                && e.contains("checks")
-                && e.contains("only used by agent stages")),
-            "Expected validation error. Got: {errors:?}"
-        );
     }
 
     #[test]
@@ -2180,130 +2009,195 @@ flows:
         );
     }
 
-    // -- Script command flow overrides --
+    // -- Gate config tests --
 
     #[test]
-    fn test_flow_script_command_override_valid() {
-        let check = StageConfig::new_script("check", "check_results", "checks.sh");
-        let mut flows = IndexMap::new();
-        flows.insert(
-            "hotfix".to_string(),
-            FlowConfig {
-                description: String::new(),
-                icon: None,
-                stages: vec![FlowStageEntry {
-                    stage_name: "check".to_string(),
-                    overrides: Some(FlowStageOverride {
-                        script_command: Some("checks-lite.sh".to_string()),
-                        ..Default::default()
-                    }),
-                }],
-                integration: None,
-            },
-        );
-        let workflow = WorkflowConfig::new(vec![check])
-            .with_integration(IntegrationConfig::new("check"))
-            .with_flows(flows);
-        let errors = workflow.validate();
-        assert!(
-            errors.is_empty(),
-            "script_command override on script stage should be valid. Got: {errors:?}"
-        );
+    fn test_effective_gate_config_no_gate() {
+        let workflow = test_default_workflow();
+        // No gate configured on any stage
+        assert!(workflow.effective_gate_config("work", None).is_none());
+        assert!(workflow
+            .effective_gate_config("work", Some("subtask"))
+            .is_none());
     }
 
     #[test]
-    fn test_flow_agent_fields_on_script_stage_rejected() {
-        let check = StageConfig::new_script("check", "check_results", "checks.sh");
-        let mut flows = IndexMap::new();
-        flows.insert(
-            "hotfix".to_string(),
-            FlowConfig {
-                description: String::new(),
-                icon: None,
-                stages: vec![FlowStageEntry {
-                    stage_name: "check".to_string(),
-                    overrides: Some(FlowStageOverride {
-                        prompt: Some("custom.md".to_string()),
-                        ..Default::default()
-                    }),
-                }],
-                integration: None,
-            },
-        );
-        let workflow = WorkflowConfig::new(vec![check]).with_flows(flows);
-        let errors = workflow.validate();
-        assert!(
-            errors
-                .iter()
-                .any(|e| e.contains("cannot override agent fields on script stage")),
-            "Agent field overrides on script stage should be rejected. Got: {errors:?}"
-        );
+    fn test_effective_gate_config_global() {
+        let gate = GateConfig::new("./run_checks.sh").with_timeout(120);
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("work", "summary").with_gate(gate.clone()),
+            StageConfig::new("review", "verdict"),
+        ])
+        .with_integration(IntegrationConfig::new("work"));
+
+        // No flow → returns global gate
+        let cfg = workflow.effective_gate_config("work", None);
+        assert!(cfg.is_some());
+        assert_eq!(cfg.unwrap().command, "./run_checks.sh");
+        assert_eq!(cfg.unwrap().timeout_seconds, 120);
+
+        // Stage without gate → None
+        assert!(workflow.effective_gate_config("review", None).is_none());
     }
 
     #[test]
-    fn test_flow_script_command_on_agent_stage_rejected() {
-        let work = StageConfig::new("work", "summary");
+    fn test_effective_gate_config_flow_override() {
+        use indexmap::IndexMap;
+
+        let global_gate = GateConfig::new("./global_checks.sh");
+        let flow_gate = GateConfig::new("./quick_checks.sh");
+
         let mut flows = IndexMap::new();
         flows.insert(
             "quick".to_string(),
             FlowConfig {
-                description: String::new(),
+                description: "Quick flow".to_string(),
                 icon: None,
                 stages: vec![FlowStageEntry {
                     stage_name: "work".to_string(),
                     overrides: Some(FlowStageOverride {
-                        script_command: Some("checks-lite.sh".to_string()),
+                        gate: Some(Some(flow_gate.clone())),
                         ..Default::default()
                     }),
                 }],
                 integration: None,
             },
         );
-        let workflow = WorkflowConfig::new(vec![work]).with_flows(flows);
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("work", "summary").with_gate(global_gate)
+        ])
+        .with_integration(IntegrationConfig::new("work"))
+        .with_flows(flows);
+
+        // No flow → returns global gate
+        let global = workflow.effective_gate_config("work", None);
+        assert_eq!(global.unwrap().command, "./global_checks.sh");
+
+        // Flow override → returns flow gate
+        let overridden = workflow.effective_gate_config("work", Some("quick"));
+        assert_eq!(overridden.unwrap().command, "./quick_checks.sh");
+    }
+
+    #[test]
+    fn test_effective_gate_config_flow_disables_gate() {
+        use indexmap::IndexMap;
+
+        let global_gate = GateConfig::new("./global_checks.sh");
+
+        let mut flows = IndexMap::new();
+        flows.insert(
+            "no-gate".to_string(),
+            FlowConfig {
+                description: "Flow with gate disabled".to_string(),
+                icon: None,
+                stages: vec![FlowStageEntry {
+                    stage_name: "work".to_string(),
+                    overrides: Some(FlowStageOverride {
+                        gate: Some(None), // explicitly disable
+                        ..Default::default()
+                    }),
+                }],
+                integration: None,
+            },
+        );
+
+        let workflow = WorkflowConfig::new(vec![
+            StageConfig::new("work", "summary").with_gate(global_gate)
+        ])
+        .with_integration(IntegrationConfig::new("work"))
+        .with_flows(flows);
+
+        // Global still has a gate
+        assert!(workflow.effective_gate_config("work", None).is_some());
+        // Flow disables it
+        assert!(workflow
+            .effective_gate_config("work", Some("no-gate"))
+            .is_none());
+    }
+
+    #[test]
+    fn test_validate_gate_empty_command() {
+        let mut gate = GateConfig::new("./checks.sh");
+        gate.command = String::new();
+        let workflow =
+            WorkflowConfig::new(vec![StageConfig::new("work", "summary").with_gate(gate)])
+                .with_integration(IntegrationConfig::new("work"));
+
         let errors = workflow.validate();
         assert!(
             errors
                 .iter()
-                .any(|e| e.contains("cannot override script_command on agent stage")),
-            "script_command on agent stage should be rejected. Got: {errors:?}"
+                .any(|e| e.contains("work") && e.contains("empty command")),
+            "expected empty command error, got: {errors:?}"
         );
     }
 
     #[test]
-    fn test_effective_script_command_with_flow_override() {
-        let check = StageConfig::new_script("check", "check_results", "checks.sh");
+    fn test_validate_gate_zero_timeout() {
+        let mut gate = GateConfig::new("./checks.sh");
+        gate.timeout_seconds = 0;
+        let workflow =
+            WorkflowConfig::new(vec![StageConfig::new("work", "summary").with_gate(gate)])
+                .with_integration(IntegrationConfig::new("work"));
+
+        let errors = workflow.validate();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("work") && e.contains("timeout_seconds of 0")),
+            "expected zero timeout error, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_validate_gate_valid_config() {
+        let gate = GateConfig::new("./checks.sh");
+        let workflow =
+            WorkflowConfig::new(vec![StageConfig::new("work", "summary").with_gate(gate)])
+                .with_integration(IntegrationConfig::new("work"));
+
+        let errors = workflow.validate();
+        assert!(
+            !errors.iter().any(|e| e.contains("gate")),
+            "expected no gate errors, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_validate_flow_gate_override_empty_command() {
+        use indexmap::IndexMap;
+
+        let mut flow_gate = GateConfig::new("./checks.sh");
+        flow_gate.command = String::new();
+
         let mut flows = IndexMap::new();
         flows.insert(
-            "hotfix".to_string(),
+            "quick".to_string(),
             FlowConfig {
-                description: String::new(),
+                description: "Quick flow".to_string(),
                 icon: None,
                 stages: vec![FlowStageEntry {
-                    stage_name: "check".to_string(),
+                    stage_name: "work".to_string(),
                     overrides: Some(FlowStageOverride {
-                        script_command: Some("checks-lite.sh".to_string()),
+                        gate: Some(Some(flow_gate)),
                         ..Default::default()
                     }),
                 }],
                 integration: None,
             },
         );
-        let workflow = WorkflowConfig::new(vec![check]).with_flows(flows);
 
-        // Flow override returns the overridden command
-        assert_eq!(
-            workflow.effective_script_command("check", Some("hotfix")),
-            Some("checks-lite.sh".to_string())
-        );
-        // No flow returns the global command
-        assert_eq!(
-            workflow.effective_script_command("check", None),
-            Some("checks.sh".to_string())
-        );
-        // Non-existent flow falls back to global
-        assert_eq!(
-            workflow.effective_script_command("check", Some("nonexistent")),
-            Some("checks.sh".to_string())
+        let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")])
+            .with_integration(IntegrationConfig::new("work"))
+            .with_flows(flows);
+
+        let errors = workflow.validate();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("quick") && e.contains("work") && e.contains("empty command")),
+            "expected flow gate empty command error, got: {errors:?}"
         );
     }
 }

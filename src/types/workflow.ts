@@ -156,6 +156,8 @@ export type TaskState =
   | { type: "setting_up"; stage: string }
   | { type: "queued"; stage: string }
   | { type: "agent_working"; stage: string }
+  | { type: "awaiting_gate"; stage: string }
+  | { type: "gate_running"; stage: string }
   | { type: "finishing"; stage: string }
   | { type: "committing"; stage: string }
   | { type: "committed"; stage: string }
@@ -252,7 +254,7 @@ export type WorkflowOutcome =
   | { type: "skipped"; stage: string; reason: string }
   | { type: "rejection"; from_stage: string; target: string; feedback: string }
   | { type: "awaiting_rejection_review"; from_stage: string; target: string; feedback: string }
-  | { type: "script_failed"; stage: string; error: string; recovery_stage?: string }
+  | { type: "gate_failed"; stage: string; error: string }
   | { type: "commit_failed"; error: string }
   | { type: "interrupted" };
 
@@ -277,7 +279,7 @@ export type IterationTrigger =
   | { type: "integration"; message: string; conflict_files: string[] }
   | { type: "answers"; answers: WorkflowQuestionAnswer[] }
   | { type: "interrupted" }
-  | { type: "script_failure"; from_stage: string; error: string }
+  | { type: "gate_failure"; error: string }
   | { type: "retry_failed"; instructions?: string }
   | { type: "retry_blocked"; instructions?: string }
   | { type: "manual_resume"; message?: string }

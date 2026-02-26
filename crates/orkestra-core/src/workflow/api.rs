@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::commit_message::{ClaudeCommitMessageGenerator, CommitMessageGenerator};
 use crate::pr_description::{ClaudePrDescriptionGenerator, PrDescriptionGenerator};
 use crate::title::{ClaudeTitleGenerator, TitleGenerator};
-use crate::workflow::config::{StageConfig, WorkflowConfig};
+use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
@@ -21,6 +21,10 @@ pub trait AgentKiller: Send + Sync {
     /// Implementations should handle errors internally (log and continue)
     /// since the state transition should proceed regardless.
     fn kill_agent(&self, task_id: &str) -> Option<u32>;
+
+    /// Kill the active gate script for a task, removing it from tracking.
+    /// Returns the PID that was killed, or None if no active gate was found.
+    fn kill_gate(&self, task_id: &str) -> Option<u32>;
 }
 
 /// The main API for workflow operations.
@@ -183,13 +187,6 @@ impl WorkflowApi {
         self.workflow.stage(stage).is_some_and(|s| s.is_automated)
     }
 
-    /// Check if a stage is a script stage (vs an agent stage).
-    pub fn is_script_stage(&self, stage: &str) -> bool {
-        self.workflow
-            .stage(stage)
-            .is_some_and(StageConfig::is_script_stage)
-    }
-
     /// Get the next stage after approval from the given stage.
     ///
     /// Returns None if the stage is the last one or doesn't exist.
@@ -252,6 +249,20 @@ impl WorkflowApi {
             task_id,
             file_path,
         )
+    }
+
+    /// Force a task into `GateRunning` state without validation.
+    ///
+    /// Used by tests to simulate a crash while a gate was running.
+    pub fn mark_gate_running(&self, task_id: &str, stage: &str) -> WorkflowResult<Task> {
+        use crate::workflow::runtime::TaskState;
+        let mut task = self
+            .store
+            .get_task(task_id)?
+            .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
+        task.state = TaskState::gate_running(stage);
+        self.store.save_task(&task)?;
+        Ok(task)
     }
 
     /// Generate a commit message for task integration.

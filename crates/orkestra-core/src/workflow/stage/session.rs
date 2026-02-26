@@ -531,8 +531,7 @@ mod tests {
             .get_active_iteration("task-1", "work")
             .unwrap()
             .unwrap();
-        iter.incoming_context = Some(IterationTrigger::ScriptFailure {
-            from_stage: "checks".into(),
+        iter.incoming_context = Some(IterationTrigger::GateFailure {
             error: "test failed".into(),
         });
         store.save_iteration(&iter).unwrap();
@@ -552,7 +551,7 @@ mod tests {
         assert!(iter.trigger_delivered);
         assert!(matches!(
             iter.incoming_context,
-            Some(IterationTrigger::ScriptFailure { .. })
+            Some(IterationTrigger::GateFailure { .. })
         ));
     }
 

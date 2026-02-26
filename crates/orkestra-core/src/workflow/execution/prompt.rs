@@ -83,14 +83,7 @@ pub fn load_custom_schema(project_root: Option<&Path>, path: &str) -> std::io::R
 ///
 /// Generates schema dynamically based on stage configuration,
 /// or loads custom schema if specified.
-///
-/// Returns None for script stages (they don't use JSON schemas).
 pub fn get_agent_schema(stage_config: &StageConfig, project_root: Option<&Path>) -> Option<String> {
-    // Script stages don't have schemas
-    if stage_config.is_script_stage() {
-        return None;
-    }
-
     // Check for custom schema file first
     if let Some(schema_file) = &stage_config.schema_file {
         if let Ok(custom_schema) = load_custom_schema(project_root, schema_file) {
@@ -141,11 +134,6 @@ pub fn resolve_stage_agent_config_for(
     let stage = workflow
         .stage(stage_name)
         .ok_or_else(|| AgentConfigError::UnknownStage(stage_name.to_string()))?;
-
-    // Script stages don't use agent config
-    if stage.is_script_stage() {
-        return Err(AgentConfigError::NotInActiveStage);
-    }
 
     // Resolve effective stage for schema generation (apply flow overrides)
     // Only capabilities need overriding — artifact handling is now done at materialization time.
@@ -454,12 +442,6 @@ mod tests {
         let schema = get_agent_schema(&review, None).unwrap();
         assert!(schema.contains("\"approval\""));
         assert!(!schema.contains("\"verdict\""));
-    }
-
-    #[test]
-    fn test_get_agent_schema_returns_none_for_script_stage() {
-        let script_stage = StageConfig::new_script("checks", "check_results", "./run.sh");
-        assert!(get_agent_schema(&script_stage, None).is_none());
     }
 
     #[test]

@@ -220,7 +220,6 @@ impl StageExecutionService {
         ));
 
         let script_service = Arc::new(ScriptExecutionService::new(
-            workflow.clone(),
             project_root,
             Arc::clone(&store),
         ));
@@ -279,11 +278,6 @@ impl StageExecutionService {
             runner,
             registry,
         )
-    }
-
-    /// Check if a stage is a script stage (vs agent stage).
-    pub fn is_script_stage(&self, stage: &str) -> bool {
-        self.script_service.is_script_stage(stage)
     }
 
     /// Check if a task has an active execution (agent or script).
@@ -430,12 +424,8 @@ impl StageExecutionService {
             }
         }
 
-        // 3. Execute (dispatch by stage type)
-        let result = if self.is_script_stage(stage) {
-            self.spawn_script(task, stage, &spawn_context)
-        } else {
-            self.spawn_agent(task, stage, trigger, &spawn_context)
-        };
+        // 3. Execute (all stages are agent stages)
+        let result = self.spawn_agent(task, stage, trigger, &spawn_context);
 
         // 4. Record outcome
         match &result {
@@ -560,29 +550,42 @@ impl StageExecutionService {
         })
     }
 
-    /// Spawn a script execution (delegates to `ScriptExecutionService`).
-    fn spawn_script(
+    /// Spawn a gate script for a task (delegates to `ScriptExecutionService`).
+    ///
+    /// Gate scripts validate an agent stage's output before the commit pipeline proceeds.
+    /// Returns a `SpawnResult` the orchestrator uses to emit a `GateSpawned` event.
+    pub fn spawn_gate(
         &self,
         task: &Task,
         stage: &str,
-        spawn_context: &SessionSpawnContext,
+        gate_config: &crate::workflow::config::GateConfig,
     ) -> Result<SpawnResult, SpawnError> {
-        let command = self
-            .script_service
-            .get_script_config(stage)
-            .map(|c| c.command.clone());
-
         let pid = self
             .script_service
-            .spawn_script(task, stage, Some(&spawn_context.stage_session_id))
+            .spawn_gate(task, stage, gate_config)
             .map_err(|e| SpawnError::ScriptError(e.to_string()))?;
+
+        // Record gate PID in the session so cleanup functions (kill_running_agents,
+        // cleanup_orphaned_agents, delete_task_with_cleanup) can find and kill it.
+        if let Ok(Some(mut session)) = self.store.get_stage_session(&task.id, stage) {
+            session.agent_pid = Some(pid);
+            if let Err(e) = self.store.save_stage_session(&session) {
+                crate::orkestra_debug!(
+                    "stage_execution",
+                    "Failed to record gate PID for {}/{}: {}",
+                    task.id,
+                    stage,
+                    e
+                );
+            }
+        }
 
         Ok(SpawnResult {
             task_id: task.id.clone(),
             stage: stage.to_string(),
             pid,
             is_script: true,
-            command,
+            command: Some(gate_config.command.clone()),
         })
     }
 
@@ -667,7 +670,6 @@ impl StageExecutionService {
                             task_id: task_id.clone(),
                             stage: agent.stage().to_string(),
                             result: exec_result,
-                            recovery_stage: None, // Agents use workflow config for recovery
                         });
                     }
                     AgentPoll::Error(error) => {
@@ -676,7 +678,6 @@ impl StageExecutionService {
                             task_id: task_id.clone(),
                             stage: agent.stage().to_string(),
                             result: ExecutionResult::PollError { error },
-                            recovery_stage: None,
                         });
                     }
                 }
@@ -749,7 +750,7 @@ impl StageExecutionService {
         }
     }
 
-    /// Poll active script executions (via `ScriptExecutionService`).
+    /// Poll active gate script executions (via `ScriptExecutionService`).
     fn poll_scripts(&self) -> Vec<ExecutionComplete> {
         self.script_service
             .poll_active_scripts()
@@ -758,11 +759,9 @@ impl StageExecutionService {
                 ScriptPollResult::Running => None,
                 ScriptPollResult::Completed(completion) => {
                     let result = if completion.result.is_success() {
-                        ExecutionResult::ScriptSuccess {
-                            output: completion.result.output,
-                        }
+                        ExecutionResult::GateSuccess
                     } else {
-                        ExecutionResult::ScriptFailed {
+                        ExecutionResult::GateFailed {
                             output: completion.result.output,
                             timed_out: completion.result.timed_out,
                         }
@@ -771,14 +770,25 @@ impl StageExecutionService {
                         task_id: completion.task_id,
                         stage: completion.stage,
                         result,
-                        recovery_stage: completion.recovery_stage,
                     })
                 }
-                ScriptPollResult::Error(error) => {
-                    // Script poll errors don't have task context
-                    // Log and skip for now
-                    crate::orkestra_debug!("stage_execution", "Script poll error: {error}");
-                    None
+                ScriptPollResult::Error {
+                    task_id,
+                    stage,
+                    message,
+                } => {
+                    crate::orkestra_debug!("stage_execution", "Gate script poll error: {message}");
+                    // Map OS-level poll errors to GateFailed (recoverable re-queue) rather than
+                    // a terminal failure. This keeps the task in the normal gate failure path
+                    // so the agent can retry, rather than permanently failing the task.
+                    Some(ExecutionComplete {
+                        task_id,
+                        stage,
+                        result: ExecutionResult::GateFailed {
+                            output: message,
+                            timed_out: false,
+                        },
+                    })
                 }
             })
             .collect()
@@ -792,6 +802,10 @@ impl StageExecutionService {
 impl crate::workflow::api::AgentKiller for StageExecutionService {
     fn kill_agent(&self, task_id: &str) -> Option<u32> {
         self.kill_active_agent(task_id)
+    }
+
+    fn kill_gate(&self, task_id: &str) -> Option<u32> {
+        self.script_service.kill_gate(task_id)
     }
 }
 
@@ -821,8 +835,6 @@ pub enum SpawnError {
     NoActiveStage,
     /// Stage not found in workflow config.
     StageNotFound(String),
-    /// Stage is not a script stage.
-    NotAScriptStage(String),
     /// Error creating or managing session.
     SessionError(String),
     /// Error spawning agent.
@@ -838,7 +850,6 @@ impl std::fmt::Display for SpawnError {
         match self {
             Self::NoActiveStage => write!(f, "Task has no active stage"),
             Self::StageNotFound(s) => write!(f, "Stage not found: {s}"),
-            Self::NotAScriptStage(s) => write!(f, "Stage is not a script stage: {s}"),
             Self::SessionError(e) => write!(f, "Session error: {e}"),
             Self::AgentError(e) => write!(f, "Agent spawn error: {e}"),
             Self::ScriptError(e) => write!(f, "Script spawn error: {e}"),
@@ -857,8 +868,6 @@ pub struct ExecutionComplete {
     pub stage: String,
     /// The result.
     pub result: ExecutionResult,
-    /// Recovery stage (for scripts with `on_failure` configured).
-    pub recovery_stage: Option<String>,
 }
 
 /// Result of a completed execution.
@@ -867,14 +876,11 @@ pub enum ExecutionResult {
     AgentSuccess(StageOutput),
     /// Agent failed with error message.
     AgentFailed(String),
-    /// Script completed successfully.
-    ScriptSuccess {
-        /// Output text.
-        output: String,
-    },
-    /// Script failed.
-    ScriptFailed {
-        /// Output text (may contain error info).
+    /// Gate script passed.
+    GateSuccess,
+    /// Gate script failed.
+    GateFailed {
+        /// Output text from the gate (may contain error info).
         output: String,
         /// Whether this was a timeout.
         timed_out: bool,

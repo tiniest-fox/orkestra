@@ -3,7 +3,8 @@
 use crate::workflow::api::WorkflowApi;
 use crate::workflow::domain::Task;
 use crate::workflow::execution::StageOutput;
-use crate::workflow::ports::WorkflowResult;
+use crate::workflow::ports::{WorkflowError, WorkflowResult};
+use crate::workflow::runtime::TaskState;
 
 use super::interactions as agent;
 use crate::workflow::query::interactions as query;
@@ -23,6 +24,29 @@ impl WorkflowApi {
     /// Mark agent as started on a task. Transitions phase to `AgentWorking`.
     pub fn agent_started(&self, task_id: &str) -> WorkflowResult<Task> {
         agent::agent_started::execute(self.store.as_ref(), task_id)
+    }
+
+    /// Mark gate as started. Transitions `AwaitingGate` → `GateRunning`.
+    pub(crate) fn gate_started(&self, task_id: &str) -> WorkflowResult<Task> {
+        let mut task = self
+            .store
+            .get_task(task_id)?
+            .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
+
+        let stage = match &task.state {
+            TaskState::AwaitingGate { stage } => stage.clone(),
+            _ => {
+                return Err(WorkflowError::InvalidTransition(format!(
+                    "Gate cannot start in state {} (expected AwaitingGate)",
+                    task.state
+                )));
+            }
+        };
+
+        task.state = TaskState::gate_running(&stage);
+        task.updated_at = chrono::Utc::now().to_rfc3339();
+        self.store.save_task(&task)?;
+        Ok(task)
     }
 
     /// Process completed agent output. Handles artifacts, questions, approvals, failures.
@@ -66,35 +90,18 @@ impl WorkflowApi {
         )
     }
 
-    /// Handle successful script completion. Creates artifact and auto-advances.
-    pub(crate) fn process_script_success(
-        &self,
-        task_id: &str,
-        output: &str,
-    ) -> WorkflowResult<Task> {
-        agent::process_script_success::execute(
-            self.store.as_ref(),
-            &self.workflow,
-            &self.iteration_service,
-            task_id,
-            output,
-        )
+    /// Handle gate script success. Enters the commit pipeline.
+    pub(crate) fn process_gate_success(&self, task_id: &str) -> WorkflowResult<Task> {
+        agent::process_gate_success::execute(self.store.as_ref(), &self.iteration_service, task_id)
     }
 
-    /// Handle script failure. Transitions to recovery stage if configured.
-    pub(crate) fn process_script_failure(
-        &self,
-        task_id: &str,
-        error: &str,
-        recovery_stage: Option<&str>,
-    ) -> WorkflowResult<Task> {
-        agent::process_script_failure::execute(
+    /// Handle gate script failure. Re-queues the task with gate error as feedback.
+    pub(crate) fn process_gate_failure(&self, task_id: &str, error: &str) -> WorkflowResult<Task> {
+        agent::process_gate_failure::execute(
             self.store.as_ref(),
-            &self.workflow,
             &self.iteration_service,
             task_id,
             error,
-            recovery_stage,
         )
     }
 }
@@ -104,7 +111,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
-    use crate::workflow::domain::{IterationTrigger, Question};
+    use crate::workflow::domain::Question;
     use crate::workflow::ports::WorkflowError;
     use crate::workflow::runtime::{Outcome, TaskState};
     use crate::workflow::InMemoryWorkflowStore;
@@ -445,156 +452,6 @@ mod tests {
 
         assert_eq!(needing_agents.len(), 1);
         assert_eq!(needing_agents[0].id, task1.id);
-    }
-
-    // ========================================================================
-    // Script stage tests
-    // ========================================================================
-
-    fn test_workflow_with_script() -> WorkflowConfig {
-        use crate::workflow::config::ScriptStageConfig;
-
-        let mut checks_stage = StageConfig::new_script("checks", "check_results", "./run.sh");
-        checks_stage.script = Some(ScriptStageConfig::new("./run.sh").with_on_failure("work"));
-
-        WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary"),
-            checks_stage,
-            StageConfig::new("review", "verdict").automated(),
-        ])
-    }
-
-    #[test]
-    fn test_process_script_success() {
-        let workflow = test_workflow_with_script();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.state = TaskState::agent_working("checks");
-        api.store.save_task(&task).unwrap();
-
-        let task = api
-            .process_script_success(&task.id, "All tests passed!\nOK")
-            .unwrap();
-
-        assert_eq!(task.current_stage(), Some("checks"));
-        assert!(matches!(task.state, TaskState::Finishing { .. }));
-        assert!(task.artifacts.get("check_results").is_some());
-        assert!(task
-            .artifacts
-            .get("check_results")
-            .unwrap()
-            .content
-            .contains("All tests passed"));
-    }
-
-    #[test]
-    fn test_process_script_failure_with_recovery() {
-        let workflow = test_workflow_with_script();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.state = TaskState::agent_working("checks");
-        api.store.save_task(&task).unwrap();
-
-        let task = api
-            .process_script_failure(
-                &task.id,
-                "npm test failed\nError: test failed",
-                Some("work"),
-            )
-            .unwrap();
-
-        assert_eq!(task.current_stage(), Some("work"));
-        assert!(matches!(task.state, TaskState::Queued { .. }));
-        assert!(!task.is_failed());
-    }
-
-    #[test]
-    fn test_process_script_failure_no_recovery() {
-        let workflow = test_workflow_with_script();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.state = TaskState::agent_working("checks");
-        api.store.save_task(&task).unwrap();
-
-        let task = api
-            .process_script_failure(&task.id, "Critical error", None)
-            .unwrap();
-
-        assert!(task.is_failed());
-    }
-
-    #[test]
-    fn test_process_script_invalid_phase() {
-        let workflow = test_workflow_with_script();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.state = TaskState::queued("checks"); // Not AgentWorking
-        api.store.save_task(&task).unwrap();
-
-        let result = api.process_script_success(&task.id, "output");
-        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
-    }
-
-    #[test]
-    fn test_process_script_success_strips_ansi_codes() {
-        let workflow = test_workflow_with_script();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.state = TaskState::agent_working("checks");
-        api.store.save_task(&task).unwrap();
-
-        let colored_output =
-            "\x1b[32m✓ All tests passed!\x1b[0m\n\x1b[31mWarning: 1 skipped\x1b[0m";
-        let task = api
-            .process_script_success(&task.id, colored_output)
-            .unwrap();
-
-        let artifact = task.artifacts.get("check_results").unwrap();
-        assert!(!artifact.content.contains("\x1b["));
-        assert!(artifact.content.contains("✓ All tests passed!"));
-        assert!(artifact.content.contains("Warning: 1 skipped"));
-    }
-
-    #[test]
-    fn test_process_script_failure_strips_ansi_codes() {
-        let workflow = test_workflow_with_script();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let api = WorkflowApi::new(workflow, store);
-
-        let mut task = api.create_task("Test", "Description", None).unwrap();
-        task.state = TaskState::agent_working("checks");
-        api.store.save_task(&task).unwrap();
-
-        let colored_error =
-            "\x1b[31mError: test failed\x1b[0m\n\x1b[33mStack trace:\x1b[0m foo.rs:42";
-        let task = api
-            .process_script_failure(&task.id, colored_error, Some("work"))
-            .unwrap();
-
-        assert_eq!(task.current_stage(), Some("work"));
-
-        let iterations = api.store.get_iterations(&task.id).unwrap();
-        let recovery_iter = iterations.iter().find(|i| i.stage == "work").unwrap();
-
-        if let Some(IterationTrigger::ScriptFailure { error, .. }) = &recovery_iter.incoming_context
-        {
-            assert!(!error.contains("\x1b["));
-            assert!(error.contains("Error: test failed"));
-            assert!(error.contains("Stack trace:"));
-        } else {
-            panic!("Expected ScriptFailure trigger");
-        }
     }
 
     // ========================================================================

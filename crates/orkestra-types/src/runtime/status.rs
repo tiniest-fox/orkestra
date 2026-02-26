@@ -31,6 +31,12 @@ pub enum TaskState {
     /// Agent is currently working on this task.
     AgentWorking { stage: String },
 
+    /// Agent completed, waiting for gate script to start.
+    AwaitingGate { stage: String },
+
+    /// Gate script is executing.
+    GateRunning { stage: String },
+
     /// Agent completed, output stored. Checking if commit needed.
     Finishing { stage: String },
 
@@ -109,6 +115,18 @@ impl TaskState {
         }
     }
 
+    pub fn awaiting_gate(stage: impl Into<String>) -> Self {
+        Self::AwaitingGate {
+            stage: stage.into(),
+        }
+    }
+
+    pub fn gate_running(stage: impl Into<String>) -> Self {
+        Self::GateRunning {
+            stage: stage.into(),
+        }
+    }
+
     pub fn finishing(stage: impl Into<String>) -> Self {
         Self::Finishing {
             stage: stage.into(),
@@ -182,6 +200,8 @@ impl TaskState {
             | Self::SettingUp { stage }
             | Self::Queued { stage }
             | Self::AgentWorking { stage }
+            | Self::AwaitingGate { stage }
+            | Self::GateRunning { stage }
             | Self::Finishing { stage }
             | Self::Committing { stage }
             | Self::Committed { stage }
@@ -223,7 +243,7 @@ impl TaskState {
     }
 
     /// Returns true for states where the system is doing background work
-    /// (finishing, committing, committed, integrating) but no agent is running.
+    /// (finishing, committing, committed, integrating, gate running) but no agent is running.
     pub fn is_system_active(&self) -> bool {
         matches!(
             self,
@@ -231,6 +251,7 @@ impl TaskState {
                 | Self::Committing { .. }
                 | Self::Committed { .. }
                 | Self::Integrating
+                | Self::GateRunning { .. }
         )
     }
 
@@ -276,6 +297,8 @@ impl fmt::Display for TaskState {
             Self::SettingUp { stage } => write!(f, "setting_up ({stage})"),
             Self::Queued { stage } => write!(f, "queued ({stage})"),
             Self::AgentWorking { stage } => write!(f, "agent_working ({stage})"),
+            Self::AwaitingGate { stage } => write!(f, "awaiting_gate ({stage})"),
+            Self::GateRunning { stage } => write!(f, "gate_running ({stage})"),
             Self::Finishing { stage } => write!(f, "finishing ({stage})"),
             Self::Committing { stage } => write!(f, "committing ({stage})"),
             Self::Committed { stage } => write!(f, "committed ({stage})"),
@@ -433,5 +456,45 @@ mod tests {
         assert!(TaskState::agent_working("work").has_active_agent());
         assert!(!TaskState::queued("work").has_active_agent());
         assert!(!TaskState::finishing("work").has_active_agent());
+    }
+
+    #[test]
+    fn test_awaiting_gate_state() {
+        let state = TaskState::awaiting_gate("work");
+        assert_eq!(state.stage(), Some("work"));
+        assert!(state.is_active());
+        assert!(!state.is_terminal());
+        assert!(!state.needs_human_action());
+        assert!(!state.has_active_agent());
+        assert!(!state.is_system_active());
+        assert_eq!(state.to_string(), "awaiting_gate (work)");
+    }
+
+    #[test]
+    fn test_gate_running_state() {
+        let state = TaskState::gate_running("work");
+        assert_eq!(state.stage(), Some("work"));
+        assert!(state.is_active());
+        assert!(!state.is_terminal());
+        assert!(!state.needs_human_action());
+        assert!(!state.has_active_agent());
+        assert!(state.is_system_active());
+        assert_eq!(state.to_string(), "gate_running (work)");
+    }
+
+    #[test]
+    fn test_gate_states_serialization() {
+        let state = TaskState::awaiting_gate("checks");
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"type\":\"awaiting_gate\""));
+        assert!(json.contains("\"stage\":\"checks\""));
+        let parsed: TaskState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, state);
+
+        let state = TaskState::gate_running("checks");
+        let json = serde_json::to_string(&state).unwrap();
+        assert!(json.contains("\"type\":\"gate_running\""));
+        let parsed: TaskState = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, state);
     }
 }

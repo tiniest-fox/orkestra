@@ -47,11 +47,6 @@ pub fn execute(
         .stage(stage_name)
         .ok_or_else(|| AgentConfigError::UnknownStage(stage_name.to_string()))?;
 
-    // Script stages don't use agent config
-    if stage.is_script_stage() {
-        return Err(AgentConfigError::NotInActiveStage);
-    }
-
     // Build effective stage config (with capability overrides for flows)
     let overridden_stage = apply_overrides(stage, flow_overrides);
     let effective_stage = overridden_stage.as_ref().unwrap_or(stage);

@@ -1,4 +1,4 @@
-//! Interrupt a running agent execution.
+//! Interrupt a running agent or gate execution.
 
 use crate::orkestra_debug;
 use crate::workflow::api::AgentKiller;
@@ -18,29 +18,35 @@ pub fn execute(
         .get_task(task_id)?
         .ok_or_else(|| WorkflowError::TaskNotFound(task_id.into()))?;
 
-    let stage = match &task.state {
-        TaskState::AgentWorking { stage } => stage.clone(),
+    let (current_stage, is_gate) = match &task.state {
+        TaskState::AgentWorking { stage } => (stage.clone(), false),
+        TaskState::GateRunning { stage } => (stage.clone(), true),
         _ => {
             return Err(WorkflowError::InvalidTransition(format!(
-                "Cannot interrupt task in state {} (expected AgentWorking)",
+                "Cannot interrupt task in state {} (expected AgentWorking or GateRunning)",
                 task.state
             )));
         }
     };
 
-    // Kill agent if configured
+    // Kill agent or gate if killer is configured
     if let Some(killer) = agent_killer {
-        let pid = killer.kill_agent(task_id);
+        let pid = if is_gate {
+            killer.kill_gate(task_id)
+        } else {
+            killer.kill_agent(task_id)
+        };
         orkestra_debug!(
             "action",
-            "interrupt {}: killed agent (pid: {:?})",
+            "interrupt {}: killed {} (pid: {:?})",
             task_id,
+            if is_gate { "gate" } else { "agent" },
             pid
         );
     } else {
         orkestra_debug!(
             "action",
-            "interrupt {}: no agent killer configured, transitioning only",
+            "interrupt {}: no killer configured, transitioning only",
             task_id
         );
     }
@@ -50,7 +56,7 @@ pub fn execute(
 
     // Transition to Interrupted state
     let now = chrono::Utc::now().to_rfc3339();
-    task.state = TaskState::interrupted(stage);
+    task.state = TaskState::interrupted(current_stage);
     task.updated_at = now;
 
     store.save_task(&task)?;

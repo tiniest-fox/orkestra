@@ -572,51 +572,6 @@ fn handle_orchestrator_event(
                 notifier.merge_conflict(task_id, conflict_files.len());
             }
         }
-        OrchestratorEvent::ScriptSpawned {
-            task_id,
-            stage,
-            command,
-            pid,
-        } => {
-            orkestra_debug!(
-                "orchestrator",
-                "[{}] Spawned script for {}/{}: {} (pid: {})",
-                window_label,
-                task_id,
-                stage,
-                command,
-                pid
-            );
-            let _ = window.emit("task-updated", task_id);
-        }
-        OrchestratorEvent::ScriptCompleted { task_id, stage } => {
-            orkestra_debug!(
-                "orchestrator",
-                "[{}] Script completed for {}/{}",
-                window_label,
-                task_id,
-                stage
-            );
-            let _ = window.emit("task-updated", task_id);
-        }
-        OrchestratorEvent::ScriptFailed {
-            task_id,
-            stage,
-            error,
-            recovery_stage,
-        } => {
-            let recovery = recovery_stage.as_deref().unwrap_or("none");
-            orkestra_debug!(
-                "orchestrator",
-                "[{}] Script failed for {}/{}: {} (recovery: {})",
-                window_label,
-                task_id,
-                stage,
-                error,
-                recovery
-            );
-            let _ = window.emit("task-updated", task_id);
-        }
         OrchestratorEvent::ParentAdvanced {
             task_id,
             subtask_count,
@@ -660,6 +615,48 @@ fn handle_orchestrator_event(
             );
             let _ = window.emit("task-updated", task_id);
             TaskNotifier::new(app_handle, window_label).task_error(task_id, error);
+        }
+        OrchestratorEvent::GateSpawned {
+            task_id,
+            stage,
+            command,
+            pid,
+        } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Spawned gate for {}/{}: {} (pid: {})",
+                window_label,
+                task_id,
+                stage,
+                command,
+                pid
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::GatePassed { task_id, stage } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Gate passed for {}/{}",
+                window_label,
+                task_id,
+                stage
+            );
+            let _ = window.emit("task-updated", task_id);
+        }
+        OrchestratorEvent::GateFailed {
+            task_id,
+            stage,
+            error,
+        } => {
+            orkestra_debug!(
+                "orchestrator",
+                "[{}] Gate failed for {}/{}: {}",
+                window_label,
+                task_id,
+                stage,
+                error
+            );
+            let _ = window.emit("task-updated", task_id);
         }
     }
 }

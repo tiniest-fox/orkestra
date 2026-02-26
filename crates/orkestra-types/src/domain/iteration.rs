@@ -55,8 +55,10 @@ pub enum IterationTrigger {
     Answers { answers: Vec<QuestionAnswer> },
     /// Crash recovery (session interrupted).
     Interrupted,
-    /// Script stage failed and redirected to this stage.
-    ScriptFailure { from_stage: String, error: String },
+    /// Gate script failed. The task re-queues with this error as context.
+    /// Old DB records with `script_failure` type deserialize as this variant.
+    #[serde(alias = "script_failure")]
+    GateFailure { error: String },
     /// Human retried a failed task, optionally with instructions.
     RetryFailed { instructions: Option<String> },
     /// Human retried a blocked task, optionally with instructions.
@@ -379,37 +381,15 @@ mod tests {
     }
 
     #[test]
-    fn test_iteration_trigger_script_failure() {
-        let trigger = IterationTrigger::ScriptFailure {
-            from_stage: "checks".to_string(),
-            error: "npm test failed with exit code 1".to_string(),
-        };
-        let json = serde_json::to_string(&trigger).unwrap();
-        assert!(json.contains("\"type\":\"script_failure\""));
-        assert!(json.contains("\"from_stage\":\"checks\""));
-        assert!(json.contains("npm test failed"));
-
-        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, trigger);
-    }
-
-    #[test]
-    fn test_iteration_with_script_failure_context() {
-        let iter = Iteration::new("iter-1", "task-1", "work", 2, "now").with_context(
-            IterationTrigger::ScriptFailure {
-                from_stage: "lint".to_string(),
-                error: "eslint found 5 errors".to_string(),
-            },
+    fn test_iteration_trigger_script_failure_deserializes_as_gate_failure() {
+        // Old DB records with script_failure type should deserialize as GateFailure
+        let old_json =
+            r#"{"type":"script_failure","from_stage":"checks","error":"npm test failed"}"#;
+        let parsed: IterationTrigger = serde_json::from_str(old_json).unwrap();
+        assert!(
+            matches!(parsed, IterationTrigger::GateFailure { .. }),
+            "Expected GateFailure from script_failure alias, got: {parsed:?}"
         );
-
-        assert!(iter.incoming_context.is_some());
-        match &iter.incoming_context {
-            Some(IterationTrigger::ScriptFailure { from_stage, error }) => {
-                assert_eq!(from_stage, "lint");
-                assert!(error.contains("eslint"));
-            }
-            _ => panic!("Expected ScriptFailure trigger"),
-        }
     }
 
     #[test]
@@ -500,6 +480,19 @@ mod tests {
         assert!(json.contains("\"comments\""));
         // guidance should be null when None
         assert!(json.contains("\"guidance\":null") || !json.contains("\"guidance\""));
+
+        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, trigger);
+    }
+
+    #[test]
+    fn test_iteration_trigger_gate_failure() {
+        let trigger = IterationTrigger::GateFailure {
+            error: "cargo clippy found 3 errors".to_string(),
+        };
+        let json = serde_json::to_string(&trigger).unwrap();
+        assert!(json.contains("\"type\":\"gate_failure\""));
+        assert!(json.contains("cargo clippy found 3 errors"));
 
         let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed, trigger);

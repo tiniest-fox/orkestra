@@ -151,37 +151,33 @@ pub struct StageConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema_file: Option<String>,
 
-    /// Script configuration for this stage (mutually exclusive with `prompt`).
-    /// Script stages run shell commands instead of spawning agents.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub script: Option<ScriptStageConfig>,
-
     /// Whether this stage runs automatically without human approval.
-    /// Script stages always auto-advance on success regardless of this setting.
     #[serde(default)]
     pub is_automated: bool,
 
-    /// Model identifier for agent stages (e.g., "claudecode/sonnet", "opencode/kimi-k2").
+    /// Model identifier for this stage (e.g., "claudecode/sonnet", "opencode/kimi-k2").
     /// If not specified, uses the default provider and model.
-    /// Ignored for script stages.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 
     /// When true, re-entering this stage after a full pipeline cycle starts a
     /// completely new agent session instead of resuming the existing one.
-    /// Only meaningful for agent stages; ignored (and validated against) for script stages.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub restart_on_reentry: bool,
 
     /// Tools that this stage's agent is not allowed to use.
     /// Each entry has a pattern (e.g., `Bash(cargo *)`) and a message explaining why.
-    /// Only meaningful for agent stages; validated against script stages.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disallowed_tools: Vec<ToolRestriction>,
+
+    /// Gate script attached to this stage.
+    /// Runs after the agent completes. On failure, re-queues the task with error feedback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate: Option<GateConfig>,
 }
 
 impl StageConfig {
-    /// Create a new agent-based stage configuration.
+    /// Create a new stage configuration.
     pub fn new(name: impl Into<String>, artifact: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -192,34 +188,11 @@ impl StageConfig {
             capabilities: StageCapabilities::default(),
             prompt: None, // Defaults to {name}.md via prompt_path()
             schema_file: None,
-            script: None,
             is_automated: false,
             model: None,
             restart_on_reentry: false,
             disallowed_tools: Vec::new(),
-        }
-    }
-
-    /// Create a new script-based stage configuration.
-    pub fn new_script(
-        name: impl Into<String>,
-        artifact: impl Into<String>,
-        command: impl Into<String>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            display_name: None,
-            icon: None,
-            description: None,
-            artifact: ArtifactConfig::new(artifact),
-            capabilities: StageCapabilities::default(),
-            prompt: None,
-            schema_file: None,
-            script: Some(ScriptStageConfig::new(command)),
-            is_automated: false,
-            model: None,
-            restart_on_reentry: false,
-            disallowed_tools: Vec::new(),
+            gate: None,
         }
     }
 
@@ -293,10 +266,10 @@ impl StageConfig {
         self
     }
 
-    /// Builder: set script configuration.
+    /// Builder: set gate configuration.
     #[must_use]
-    pub fn with_script(mut self, script: ScriptStageConfig) -> Self {
-        self.script = Some(script);
+    pub fn with_gate(mut self, gate: GateConfig) -> Self {
+        self.gate = Some(gate);
         self
     }
 
@@ -312,30 +285,15 @@ impl StageConfig {
         &self.artifact.name
     }
 
-    /// Check if this is a script stage.
-    pub fn is_script_stage(&self) -> bool {
-        self.script.is_some()
-    }
-
-    /// Check if this is an agent stage.
-    pub fn is_agent_stage(&self) -> bool {
-        !self.is_script_stage()
-    }
-
-    /// Get the script configuration if this is a script stage.
-    pub fn script_config(&self) -> Option<&ScriptStageConfig> {
-        self.script.as_ref()
+    /// Get the gate configuration for this stage, if any.
+    pub fn gate_config(&self) -> Option<&GateConfig> {
+        self.gate.as_ref()
     }
 
     /// Get the effective prompt template path for this stage.
     ///
     /// Returns `prompt` if set, otherwise `{name}.md`.
-    /// Returns None for script stages.
     pub fn prompt_path(&self) -> Option<String> {
-        if self.script.is_some() {
-            return None;
-        }
-
         if let Some(ref prompt) = self.prompt {
             return Some(prompt.clone());
         }
@@ -474,53 +432,40 @@ impl SubtaskCapabilities {
 }
 
 // ============================================================================
-// Script Configuration
+// Gate Configuration
 // ============================================================================
 
-/// Configuration for a script-based stage.
+/// Configuration for a gate script attached to an agent stage.
 ///
-/// Script stages run shell commands instead of spawning Claude agents.
-/// Used for automated checks like linting, testing, and type checking.
+/// After the agent completes, the gate script runs. If it passes, the task
+/// enters the commit pipeline. If it fails, the task re-queues with error feedback.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ScriptStageConfig {
+pub struct GateConfig {
     /// Shell command to execute (runs via `sh -c`).
     pub command: String,
 
-    /// Timeout in seconds. Defaults to 120.
-    #[serde(default = "default_script_timeout")]
-    pub timeout_seconds: u32,
-
-    /// Stage to transition to on script failure.
-    /// If not specified, the task fails permanently.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub on_failure: Option<String>,
+    /// Timeout in seconds. Defaults to 300 (5 minutes).
+    #[serde(default = "default_gate_timeout")]
+    pub timeout_seconds: u64,
 }
 
-fn default_script_timeout() -> u32 {
-    120
+fn default_gate_timeout() -> u64 {
+    300
 }
 
-impl ScriptStageConfig {
-    /// Create a new script configuration.
+impl GateConfig {
+    /// Create a new gate configuration.
     pub fn new(command: impl Into<String>) -> Self {
         Self {
             command: command.into(),
-            timeout_seconds: default_script_timeout(),
-            on_failure: None,
+            timeout_seconds: default_gate_timeout(),
         }
     }
 
     /// Builder: set timeout in seconds.
     #[must_use]
-    pub fn with_timeout(mut self, seconds: u32) -> Self {
+    pub fn with_timeout(mut self, seconds: u64) -> Self {
         self.timeout_seconds = seconds;
-        self
-    }
-
-    /// Builder: set the stage to go to on failure.
-    #[must_use]
-    pub fn with_on_failure(mut self, stage: impl Into<String>) -> Self {
-        self.on_failure = Some(stage.into());
         self
     }
 }
@@ -544,8 +489,6 @@ mod tests {
         assert_eq!(stage.name, "planning");
         assert_eq!(stage.artifact_name(), "plan");
         assert!(!stage.is_automated);
-        assert!(stage.is_agent_stage());
-        assert!(!stage.is_script_stage());
     }
 
     #[test]
@@ -740,59 +683,10 @@ mod tests {
     }
 
     #[test]
-    fn test_prompt_path_script_stage() {
-        let stage = StageConfig::new_script("checks", "check_results", "./run.sh");
-        assert_eq!(stage.prompt_path(), None);
-    }
-
-    #[test]
     fn test_stage_with_prompt() {
         let stage = StageConfig::new("planning", "plan").with_prompt("planner.md");
 
-        assert!(stage.is_agent_stage());
-        assert!(!stage.is_script_stage());
         assert_eq!(stage.prompt, Some("planner.md".to_string()));
-    }
-
-    #[test]
-    fn test_stage_with_script() {
-        let stage = StageConfig::new_script("checks", "check_results", "./run_checks.sh");
-
-        assert!(stage.is_script_stage());
-        assert!(!stage.is_agent_stage());
-        assert_eq!(stage.script_config().unwrap().command, "./run_checks.sh");
-    }
-
-    #[test]
-    fn test_script_config() {
-        let script = ScriptStageConfig::new("npm test")
-            .with_timeout(300)
-            .with_on_failure("work");
-
-        assert_eq!(script.command, "npm test");
-        assert_eq!(script.timeout_seconds, 300);
-        assert_eq!(script.on_failure, Some("work".to_string()));
-    }
-
-    #[test]
-    fn test_script_config_defaults() {
-        let script = ScriptStageConfig::new("cargo test");
-        assert_eq!(script.timeout_seconds, 120);
-        assert!(script.on_failure.is_none());
-    }
-
-    #[test]
-    fn test_script_stage_serialization() {
-        let stage = StageConfig::new_script("lint", "lint_results", "npm run lint")
-            .with_display_name("Linting");
-
-        let yaml = serde_yaml::to_string(&stage).unwrap();
-        assert!(yaml.contains("name: lint"));
-        assert!(yaml.contains("command: npm run lint"));
-
-        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
-        assert!(parsed.is_script_stage());
-        assert_eq!(parsed.script_config().unwrap().command, "npm run lint");
     }
 
     #[test]
@@ -853,11 +747,8 @@ mod tests {
 
     #[test]
     fn test_restart_on_reentry_defaults_to_false() {
-        let agent_stage = StageConfig::new("work", "summary");
-        assert!(!agent_stage.restart_on_reentry);
-
-        let script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
-        assert!(!script_stage.restart_on_reentry);
+        let stage = StageConfig::new("work", "summary");
+        assert!(!stage.restart_on_reentry);
     }
 
     #[test]
@@ -887,9 +778,6 @@ mod tests {
     fn test_disallowed_tools_default_empty() {
         let stage = StageConfig::new("work", "summary");
         assert!(stage.disallowed_tools.is_empty());
-
-        let script_stage = StageConfig::new_script("checks", "check_results", "cargo test");
-        assert!(script_stage.disallowed_tools.is_empty());
     }
 
     #[test]
@@ -1033,6 +921,59 @@ artifact:
         let out = serde_yaml::to_string(&stage).unwrap();
         let reparsed: StageConfig = serde_yaml::from_str(&out).unwrap();
         assert_eq!(stage, reparsed);
+    }
+
+    // -- Gate config tests --
+
+    #[test]
+    fn test_gate_config_defaults() {
+        let gate = GateConfig::new("./run_checks.sh");
+        assert_eq!(gate.command, "./run_checks.sh");
+        assert_eq!(gate.timeout_seconds, 300);
+    }
+
+    #[test]
+    fn test_gate_config_builder() {
+        let gate = GateConfig::new("./run.sh").with_timeout(60);
+        assert_eq!(gate.timeout_seconds, 60);
+    }
+
+    #[test]
+    fn test_gate_config_serialization() {
+        let gate = GateConfig::new("./checks.sh").with_timeout(120);
+        let yaml = serde_yaml::to_string(&gate).unwrap();
+        assert!(yaml.contains("command: ./checks.sh"));
+        assert!(yaml.contains("timeout_seconds: 120"));
+
+        let parsed: GateConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.command, "./checks.sh");
+        assert_eq!(parsed.timeout_seconds, 120);
+    }
+
+    #[test]
+    fn test_stage_with_gate() {
+        let gate = GateConfig::new("./gate.sh");
+        let stage = StageConfig::new("work", "summary").with_gate(gate.clone());
+
+        assert_eq!(stage.gate_config().unwrap().command, "./gate.sh");
+    }
+
+    #[test]
+    fn test_gate_omitted_when_none() {
+        let stage = StageConfig::new("work", "summary");
+        let yaml = serde_yaml::to_string(&stage).unwrap();
+        assert!(!yaml.contains("gate:"));
+    }
+
+    #[test]
+    fn test_gate_serialized_when_present() {
+        let stage = StageConfig::new("work", "summary").with_gate(GateConfig::new("./checks.sh"));
+        let yaml = serde_yaml::to_string(&stage).unwrap();
+        assert!(yaml.contains("gate:"));
+        assert!(yaml.contains("command: ./checks.sh"));
+
+        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.gate_config().unwrap().command, "./checks.sh");
     }
 
     #[test]

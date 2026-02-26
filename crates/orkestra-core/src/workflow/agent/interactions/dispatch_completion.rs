@@ -109,35 +109,27 @@ pub fn execute(api: &WorkflowApi, exec: ExecutionComplete) -> WorkflowResult<Orc
                 error,
             })
         }
-        ExecutionResult::ScriptSuccess { output } => {
-            match api.process_script_success(&exec.task_id, &output) {
-                Ok(_) => Ok(OrchestratorEvent::ScriptCompleted {
-                    task_id: exec.task_id,
-                    stage: exec.stage,
-                }),
-                Err(e) => Ok(OrchestratorEvent::Error {
-                    task_id: Some(exec.task_id),
-                    error: e.to_string(),
-                }),
-            }
-        }
-        ExecutionResult::ScriptFailed { output, timed_out } => {
+        ExecutionResult::GateSuccess => match api.process_gate_success(&exec.task_id) {
+            Ok(_) => Ok(OrchestratorEvent::GatePassed {
+                task_id: exec.task_id,
+                stage: exec.stage,
+            }),
+            Err(e) => Ok(OrchestratorEvent::Error {
+                task_id: Some(exec.task_id),
+                error: e.to_string(),
+            }),
+        },
+        ExecutionResult::GateFailed { output, timed_out } => {
             let error_msg = if timed_out {
-                format!("Script timed out:\n{output}")
+                format!("Gate timed out:\n{output}")
             } else {
-                format!("Script failed:\n{output}")
+                format!("Gate failed:\n{output}")
             };
-
-            match api.process_script_failure(
-                &exec.task_id,
-                &error_msg,
-                exec.recovery_stage.as_deref(),
-            ) {
-                Ok(_) => Ok(OrchestratorEvent::ScriptFailed {
+            match api.process_gate_failure(&exec.task_id, &error_msg) {
+                Ok(_) => Ok(OrchestratorEvent::GateFailed {
                     task_id: exec.task_id,
                     stage: exec.stage,
                     error: error_msg,
-                    recovery_stage: exec.recovery_stage,
                 }),
                 Err(e) => Ok(OrchestratorEvent::Error {
                     task_id: Some(exec.task_id),

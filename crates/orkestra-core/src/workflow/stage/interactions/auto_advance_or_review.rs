@@ -1,5 +1,6 @@
 //! Auto-approve and advance if the stage/task allows it, otherwise pause for review.
 
+use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
@@ -25,5 +26,15 @@ pub fn execute(
 // -- Helpers --
 
 fn should_auto_advance(task: &Task, stage: &str, workflow: &WorkflowConfig) -> bool {
-    task.auto_mode || workflow.stage(stage).is_some_and(|s| s.is_automated)
+    let is_automated = if let Some(s) = workflow.stage(stage) {
+        s.is_automated
+    } else {
+        orkestra_debug!(
+            "action",
+            "should_auto_advance: stage {:?} not found in workflow config, defaulting to non-automated",
+            stage
+        );
+        false
+    };
+    task.auto_mode || is_automated
 }

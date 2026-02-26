@@ -90,9 +90,14 @@ impl WorkflowApi {
         )
     }
 
-    /// Handle gate script success. Enters the commit pipeline.
+    /// Handle gate script success. Auto-advances or pauses for review, respecting `auto_mode` and `is_automated`.
     pub(crate) fn process_gate_success(&self, task_id: &str) -> WorkflowResult<Task> {
-        agent::process_gate_success::execute(self.store.as_ref(), &self.iteration_service, task_id)
+        agent::process_gate_success::execute(
+            self.store.as_ref(),
+            &self.iteration_service,
+            &self.workflow,
+            task_id,
+        )
     }
 
     /// Handle gate script failure. Re-queues the task with gate error as feedback.
@@ -452,6 +457,49 @@ mod tests {
 
         assert_eq!(needing_agents.len(), 1);
         assert_eq!(needing_agents[0].id, task1.id);
+    }
+
+    // ========================================================================
+    // Gate success tests
+    // ========================================================================
+
+    #[test]
+    fn test_gate_success_pauses_for_review_on_non_automated_stage() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.state = TaskState::gate_running("work");
+        api.store.save_task(&task).unwrap();
+
+        let task = api.process_gate_success(&task.id).unwrap();
+
+        assert!(
+            matches!(task.state, TaskState::AwaitingApproval { .. }),
+            "Non-automated stage should pause at AwaitingApproval after gate pass, got: {:?}",
+            task.state
+        );
+    }
+
+    #[test]
+    fn test_gate_success_auto_advances_for_auto_mode_task() {
+        let workflow = test_workflow();
+        let store = Arc::new(InMemoryWorkflowStore::new());
+        let api = WorkflowApi::new(workflow, store);
+
+        let mut task = api.create_task("Test", "Description", None).unwrap();
+        task.auto_mode = true;
+        task.state = TaskState::gate_running("work");
+        api.store.save_task(&task).unwrap();
+
+        let task = api.process_gate_success(&task.id).unwrap();
+
+        assert!(
+            matches!(task.state, TaskState::Finishing { .. }),
+            "auto_mode task should enter commit pipeline (Finishing) after gate pass, got: {:?}",
+            task.state
+        );
     }
 
     // ========================================================================

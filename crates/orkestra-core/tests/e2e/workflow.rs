@@ -1134,7 +1134,9 @@ fn test_gate_script_with_recovery() {
         },
     );
 
-    ctx.advance(); // spawns gate → drain_active → gate passes → commit pipeline → review Queued
+    ctx.advance(); // spawns gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit pipeline → review Queued
     ctx.advance(); // spawns reviewer → drain_active → review output processed → Done/Archived
 
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -2847,7 +2849,9 @@ fn test_artifact_generation_for_all_output_types() {
         Some("Implementation complete with tests")
     );
 
-    ctx.advance(); // spawns gate → drain_active → gate passes → commit pipeline → review Queued
+    ctx.advance(); // spawns gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit pipeline → review Queued
 
     // =========================================================================
     // Step 5: Gate passes → review stage → reviewer outputs rejection
@@ -4074,7 +4078,9 @@ fn test_restart_on_reentry_spawns_fresh_session() {
         },
     );
 
-    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit → review Queued
     ctx.advance(); // spawn reviewer (first time) → drain_active → rejection → work re-queued
 
     // Verify this is NOT a resume (first spawn)
@@ -4108,7 +4114,9 @@ fn test_restart_on_reentry_spawns_fresh_session() {
         },
     );
 
-    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit → review Queued
     ctx.advance(); // spawn reviewer (second time - this is the re-entry with fresh session)
 
     // =========================================================================
@@ -4238,7 +4246,9 @@ fn test_reentry_without_restart_flag_uses_recheck() {
         },
     );
 
-    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit → review Queued
     ctx.advance(); // spawn reviewer (first time) → drain_active → rejection → work re-queued
 
     // Record the first review session ID
@@ -4265,7 +4275,9 @@ fn test_reentry_without_restart_flag_uses_recheck() {
         },
     );
 
-    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit → review Queued
     ctx.advance(); // spawn reviewer (second time - this is the re-entry with recheck)
 
     // =========================================================================
@@ -5043,7 +5055,9 @@ fn test_activity_log_with_script_and_review_rejection() {
         },
     );
     ctx.advance(); // spawn worker → drain_active → AwaitingGate
-    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit → review Queued
 
     let task = ctx.api().get_task(&task_id).unwrap();
     assert_eq!(task.current_stage(), Some("review"));
@@ -5075,7 +5089,9 @@ fn test_activity_log_with_script_and_review_rejection() {
         },
     );
     ctx.advance(); // spawn worker → drain_active → AwaitingGate
-    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit → review Queued
 
     // === Second review: verify the prompt has only ONE work log ===
     ctx.set_output(
@@ -6446,10 +6462,14 @@ fn test_recheck_resume_references_file_paths() {
     );
 
     // Gate fires → review → reviewer rejects → work → gate fires → review (recheck)
-    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit → review Queued
     ctx.advance(); // spawn reviewer → drain_active → rejection → work re-queued
     ctx.advance(); // spawn second worker → drain_active → AwaitingGate
-    ctx.advance(); // spawn gate → drain_active → gate passes → commit → review Queued
+    ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit → review Queued
     ctx.advance(); // spawn reviewer (recheck)
 
     // =========================================================================
@@ -6661,9 +6681,20 @@ fn test_gate_pass_enters_commit_pipeline() {
     );
 
     // drain_active also processes gate completion within the same tick
-    ctx.advance(); // spawns gate → drain_active → gate passes (exit 0) → commit pipeline
+    ctx.advance(); // spawns gate → drain_active → gate passes (exit 0) → AwaitingApproval
 
-    // Gate passed → task should be in Finishing or Done/Archived (commit pipeline ran)
+    // Gate passed → non-automated stage pauses for human review
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingApproval { .. }),
+        "Task should be AwaitingApproval after gate pass (non-automated stage), got: {:?}",
+        task.state
+    );
+
+    // Human approves → enters commit pipeline
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit pipeline runs
+
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(
         matches!(
@@ -6674,7 +6705,7 @@ fn test_gate_pass_enters_commit_pipeline() {
                 | TaskState::Done
                 | TaskState::Archived
         ),
-        "Task should have entered commit pipeline after gate pass, got: {:?}",
+        "Task should have entered commit pipeline after approval, got: {:?}",
         task.state
     );
 }
@@ -6705,7 +6736,7 @@ fn test_gate_result_persisted() {
         },
     );
     ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
-    ctx.advance(); // spawns gate → drain_active → gate passes → commit pipeline
+    ctx.advance(); // spawns gate → drain_active → gate passes → AwaitingApproval (non-automated stage)
 
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     let gate_iter = iterations
@@ -6884,7 +6915,9 @@ fn test_gate_pass_then_advances_to_next_stage() {
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(matches!(task.state, TaskState::AwaitingGate { .. }));
 
-    ctx.advance(); // spawns gate → drain_active → gate passes → commit pipeline → review Queued
+    ctx.advance(); // spawns gate → drain_active → gate passes → AwaitingApproval
+    ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
+    ctx.advance(); // commit pipeline → review Queued
 
     // Set review output before spawning the reviewer
     ctx.set_output(

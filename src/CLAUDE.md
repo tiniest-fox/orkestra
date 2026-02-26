@@ -168,6 +168,19 @@ onClick={(e) => {
 
 The `FeedRowActions.tsx` "View" button demonstrates this pattern. All new action buttons in row components must follow it.
 
+## Biome Lint Gotchas
+
+<!-- compound: tightly-prudent-motmot -->
+
+**`useKeyWithClickEvents` on non-semantic elements**: Biome requires a `onKeyDown` handler alongside every `onClick`, even on `tabIndex={-1}` divs/spans where keyboard nav is intentionally handled elsewhere (e.g., by a parent input). Use a no-op `onKeyDown={() => {}}` to satisfy the rule — do not use `biome-ignore` (it's invalid inside JSX prop position).
+
+```tsx
+// Keyboard nav handled by parent input; no-op satisfies biome rule
+<div onClick={handleSelect} onKeyDown={() => {}} tabIndex={-1}>
+  {label}
+</div>
+```
+
 ## Types
 
 - Use `import type` for type-only imports.

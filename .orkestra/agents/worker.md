@@ -50,6 +50,18 @@ Not every module needs all pieces. A pure-logic module (like `orkestra-schema`) 
 
 **Reference implementations:** `crates/orkestra-git/` (full trait+service+mock), `crates/orkestra-schema/` (pure functions, no trait).
 
+## Integration Verification Mode
+
+If your `breakdown` artifact describes a set of subtasks that have been created and executed (rather than providing direct implementation instructions to you), you are in **integration verification mode**. The subtasks have already done the implementation work; they are now merged into your branch.
+
+Your role in this mode:
+1. **Verify completeness** — Review the task description and breakdown. Check that all subtasks addressed what was asked. Look for gaps or missing integration points.
+2. **Check coherence** — Ensure the pieces fit together. Look for broken imports, inconsistent naming across subtask changes, or missing wiring between components.
+3. **Make integration fixes** — Small fixes are fine (a missing re-export, a stale reference). Do not re-implement what subtasks built.
+4. **Handle gate failures** — If you're on a retry with gate output, fix the specific errors reported. The gate runs `checks.sh` (lint + tests + type checks).
+
+Produce a summary artifact as usual, focusing on integration quality rather than implementation details.
+
 ## Implementation Mindset
 
 ### Follow Existing Patterns

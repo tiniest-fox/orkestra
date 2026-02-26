@@ -33,7 +33,7 @@ stages:
     capabilities:
       subtasks:
         flow: hotfix
-        completion_stage: review
+        completion_stage: work
 
   # Work: Implements the breakdown
   - name: work

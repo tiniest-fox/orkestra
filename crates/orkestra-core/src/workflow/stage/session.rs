@@ -17,7 +17,8 @@ pub struct SessionSpawnContext {
     /// The session ID, if available. `None` for providers that generate their own.
     pub session_id: Option<String>,
     /// Whether this is a resume (use `--resume`) or first spawn (use `--session-id`).
-    /// Based on `has_activity` — only resume if the agent produced output in a prior spawn.
+    /// True when the session has a stored ID AND either `has_activity` (agent produced output)
+    /// OR the active iteration has a `ManualResume` trigger (user resumed from interrupt).
     /// Forced to `false` when `session_id` is `None` (can't resume without a session ID).
     pub is_resume: bool,
     /// Whether this is an untriggered stage re-entry (e.g., review running again after
@@ -614,6 +615,62 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(!iter.trigger_delivered);
+    }
+
+    #[test]
+    fn test_resume_when_manual_resume_trigger_no_activity() {
+        // Interrupt→resume: agent exits without producing output (has_activity = false),
+        // then user resumes. Should resume the existing session, not start fresh.
+        use crate::workflow::domain::IterationTrigger;
+        let (store, iter_svc) = create_deps();
+
+        // First spawn
+        let first_ctx = session::on_spawn_starting::execute(
+            store.as_ref(),
+            &iter_svc,
+            "task-1",
+            "review",
+            Some("original-uuid".into()),
+        )
+        .unwrap();
+        session::on_agent_spawned::execute(store.as_ref(), "task-1", "review", 12345).unwrap();
+
+        // Agent exits without producing structured output (no has_activity)
+        simulate_agent_exit(&store, "task-1", "review");
+        let s = store
+            .get_stage_session("task-1", "review")
+            .unwrap()
+            .unwrap();
+        assert!(!s.has_activity, "precondition: no activity");
+
+        // User resumes from interrupt — creates new iteration with ManualResume trigger
+        iter_svc
+            .create_iteration(
+                "task-1",
+                "review",
+                Some(IterationTrigger::ManualResume { message: None }),
+            )
+            .unwrap();
+
+        // Next spawn: should resume the existing session (ManualResume overrides missing activity)
+        let ctx = session::on_spawn_starting::execute(
+            store.as_ref(),
+            &iter_svc,
+            "task-1",
+            "review",
+            Some("new-uuid".into()),
+        )
+        .unwrap();
+
+        assert!(ctx.is_resume, "ManualResume trigger should cause resume");
+        assert!(
+            !ctx.is_stage_reentry,
+            "interrupt→resume is not a stage re-entry"
+        );
+        assert_eq!(
+            ctx.session_id, first_ctx.session_id,
+            "original session ID must be preserved"
+        );
     }
 
     #[test]

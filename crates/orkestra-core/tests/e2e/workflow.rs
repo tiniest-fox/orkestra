@@ -4304,6 +4304,101 @@ fn test_reentry_without_restart_flag_uses_recheck() {
     );
 }
 
+/// Test that interrupt→resume on a `restart_on_reentry` stage does NOT start a
+/// fresh session. An interrupt→resume is NOT a stage re-entry — it's the same
+/// pass through the stage being continued after a pause.
+///
+/// Bug: Before the fix, if the agent was interrupted before producing structured
+/// output (`has_activity = false`), the next spawn would compute `is_resume = false`
+/// and replace the session ID with a fresh UUID, bypassing `--resume`.
+///
+/// Flow:
+/// 1. Review stage is simulated as started (`agent_started`) then interrupted
+/// 2. User resumes (creates `ManualResume` iteration)
+/// 3. Review spawns via orchestrator → must use `is_resume = true`
+/// 4. `restart_on_reentry` must NOT trigger (`is_stage_reentry = false`)
+#[test]
+fn test_interrupt_resume_on_restart_on_reentry_stage_preserves_session() {
+    use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
+
+    // Single-stage workflow: review with restart_on_reentry.
+    // Without work + commit pipeline, the task starts directly in Queued { "review" },
+    // letting us use agent_started() to simulate an interrupted spawn without the
+    // overhead of a full work→approve→advance cycle.
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("review", "verdict")
+        .with_prompt("reviewer.md")
+        .restart_on_reentry()]);
+    let ctx = TestEnv::with_git(&workflow, &["reviewer"]);
+
+    let task = ctx.create_task(
+        "Interrupt resume reentry test",
+        "Test interrupt→resume does not trigger restart_on_reentry",
+        None,
+    );
+    let task_id = task.id.clone();
+
+    // =========================================================================
+    // Step 1: Simulate reviewer starting without going through orchestrator spawn.
+    // agent_started() transitions to AgentWorking but does NOT create a session
+    // (on_spawn_starting never ran), so has_activity stays false.
+    // =========================================================================
+    ctx.api().agent_started(&task_id).unwrap();
+
+    // Interrupt before reviewer produces output (has_activity stays false)
+    ctx.api().interrupt(&task_id).unwrap();
+
+    // =========================================================================
+    // Step 2: User resumes → creates ManualResume iteration
+    // =========================================================================
+    ctx.api().resume(&task_id, None).unwrap();
+
+    // Set output for the resumed reviewer
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "verdict".to_string(),
+            content: "Looks good".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // =========================================================================
+    // Step 3: Orchestrator spawns resumed reviewer
+    // =========================================================================
+    ctx.advance(); // spawn reviewer with ManualResume trigger
+
+    // Key assertion: ManualResume trigger must produce is_resume=true.
+    // Before the fix: is_resume=false because has_activity=false and ManualResume
+    // wasn't checked. After the fix: is_resume=true.
+    let resume_config = ctx.last_run_config();
+    assert!(
+        resume_config.is_resume,
+        "Resume after interrupt should use is_resume=true (ManualResume trigger)"
+    );
+
+    // No session superseding — restart_on_reentry must NOT have triggered.
+    // If it had triggered, it would have superseded the session and spawned fresh.
+    let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
+    let review_sessions: Vec<_> = all_sessions
+        .iter()
+        .filter(|s| s.stage == "review")
+        .collect();
+    assert_eq!(
+        review_sessions.len(),
+        1,
+        "Should have exactly 1 review session (interrupt→resume is not a re-entry)"
+    );
+
+    // Session ID is assigned on spawn and must not be cleared by the ManualResume path.
+    // (Precise regression coverage for is_resume is in unit test
+    // `test_resume_when_manual_resume_trigger_no_activity` in session.rs.)
+    let session = review_sessions[0];
+    assert!(
+        session.claude_session_id.is_some(),
+        "Session ID must be assigned and not cleared after interrupt→resume"
+    );
+}
+
 // =============================================================================
 // Disallowed Tools E2E Tests
 // =============================================================================

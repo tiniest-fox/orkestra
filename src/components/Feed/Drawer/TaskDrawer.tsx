@@ -43,7 +43,7 @@ function TaskDrawerBody({
   const accent = drawerAccent(task, config);
 
   // -- Tab state --
-  const tabs = availableTabs(task);
+  const tabs = availableTabs(task, config);
   const [activeTab, setActiveTab] = useState<DrawerTabId>(() => defaultTab(task));
 
   // Reset tab when task state type or id changes.
@@ -161,6 +161,7 @@ function TaskDrawerBody({
             allTasks={allTasks}
             activeTab={activeTab}
             artifact={artifact}
+            config={config}
             logs={logs}
             logsError={logsError}
             logContainerRef={logContainerRef}

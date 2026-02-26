@@ -2,11 +2,12 @@
 
 import { FileText } from "lucide-react";
 import type { RefCallback } from "react";
-import type { LogEntry, WorkflowArtifact, WorkflowTaskView } from "../../../types/workflow";
+import type { LogEntry, WorkflowArtifact, WorkflowConfig, WorkflowTaskView } from "../../../types/workflow";
 import { EmptyState } from "../../ui/EmptyState";
 import { ActivityLog } from "../ActivityLog";
 import { ArtifactView } from "../ArtifactView";
 import { DrawerDiffTab } from "../DrawerDiffTab";
+import { DrawerGateTab } from "../DrawerGateTab";
 import { DrawerPrTab } from "../DrawerPrTab";
 import { FeedLogList } from "../FeedLogList";
 import type { DrawerTabId } from "./drawerTabs";
@@ -24,6 +25,7 @@ interface DrawerTabContentProps {
   allTasks: WorkflowTaskView[];
   activeTab: DrawerTabId;
   artifact: WorkflowArtifact | null;
+  config: WorkflowConfig;
   logs: LogEntry[];
   logsError: unknown;
   logContainerRef: RefCallback<HTMLDivElement>;
@@ -42,6 +44,7 @@ export function DrawerTabContent({
   allTasks,
   activeTab,
   artifact,
+  config,
   logs,
   logsError,
   logContainerRef,
@@ -114,6 +117,10 @@ export function DrawerTabContent({
         onPrStateChange={state.setPrTabState}
       />
     );
+  }
+
+  if (activeTab === "gate") {
+    return <DrawerGateTab task={task} config={config} />;
   }
 
   return null;

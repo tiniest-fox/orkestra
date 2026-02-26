@@ -1,4 +1,4 @@
-//! Script execution service for running script-based workflow stages.
+//! Script execution service for running gate scripts attached to agent stages.
 //!
 //! Tracks active script handles and delegates spawn + poll to interactions.
 
@@ -23,8 +23,12 @@ pub struct ActiveScript {
     pub stage: String,
     /// The script handle (owns the process).
     pub handle: ScriptHandle,
-    /// Stage session ID for persisting log entries to the database.
-    pub stage_session_id: String,
+    /// Iteration ID for gate result storage.
+    pub iteration_id: Option<String>,
+    /// Accumulated output lines (built up per poll tick).
+    pub lines: Vec<String>,
+    /// When the gate script was spawned (RFC3339).
+    pub started_at: String,
 }
 
 /// Result of polling an active script.
@@ -80,7 +84,7 @@ impl std::error::Error for ScriptError {}
 
 /// Service for managing gate script execution.
 ///
-/// Tracks active gate script handles and delegates spawn/poll to interactions.
+/// Tracks active script handles and delegates spawn/poll to interactions.
 pub struct ScriptExecutionService {
     /// Project root for resolving paths.
     project_root: PathBuf,
@@ -134,12 +138,14 @@ impl ScriptExecutionService {
         task: &Task,
         stage: &str,
         gate_config: &GateConfig,
+        iteration_id: Option<&str>,
     ) -> Result<u32, ScriptError> {
-        let active_script = super::interactions::spawn_script::execute_gate(
+        let active_script = super::interactions::spawn_script::execute(
             &self.project_root,
             task,
             stage,
             gate_config,
+            iteration_id,
         )?;
 
         let pid = active_script.handle.pid();
@@ -204,97 +210,5 @@ impl ScriptExecutionService {
         }
 
         results
-    }
-}
-
-// ============================================================================
-// Tests
-// ============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::workflow::adapters::InMemoryWorkflowStore;
-    use crate::workflow::domain::LogEntry;
-    use tempfile::TempDir;
-
-    fn create_service() -> (ScriptExecutionService, Arc<InMemoryWorkflowStore>) {
-        let temp_dir = TempDir::new().unwrap();
-        let store = Arc::new(InMemoryWorkflowStore::new());
-        let service = ScriptExecutionService::new(
-            temp_dir.path().to_path_buf(),
-            Arc::clone(&store) as Arc<dyn WorkflowStore>,
-        );
-        (service, store)
-    }
-
-    #[test]
-    fn test_append_and_read_logs() {
-        let (_service, store) = create_service();
-
-        let stage_session_id = "task-456-checks";
-
-        // Write entries directly via store (testing log persistence)
-        store
-            .append_log_entry(
-                stage_session_id,
-                &LogEntry::ScriptStart {
-                    command: "npm test".into(),
-                    stage: "checks".into(),
-                },
-            )
-            .unwrap();
-
-        store
-            .append_log_entry(
-                stage_session_id,
-                &LogEntry::ScriptOutput {
-                    content: "All tests passed".into(),
-                },
-            )
-            .unwrap();
-
-        store
-            .append_log_entry(
-                stage_session_id,
-                &LogEntry::ScriptExit {
-                    code: 0,
-                    success: true,
-                    timed_out: false,
-                },
-            )
-            .unwrap();
-
-        // Read them back from the store
-        let logs = store.get_log_entries(stage_session_id).unwrap();
-        assert_eq!(logs.len(), 3);
-
-        match &logs[0] {
-            LogEntry::ScriptStart { command, stage } => {
-                assert_eq!(command, "npm test");
-                assert_eq!(stage, "checks");
-            }
-            _ => panic!("Expected ScriptStart"),
-        }
-
-        match &logs[1] {
-            LogEntry::ScriptOutput { content } => {
-                assert_eq!(content, "All tests passed");
-            }
-            _ => panic!("Expected ScriptOutput"),
-        }
-
-        match &logs[2] {
-            LogEntry::ScriptExit {
-                code,
-                success,
-                timed_out,
-            } => {
-                assert_eq!(*code, 0);
-                assert!(*success);
-                assert!(!*timed_out);
-            }
-            _ => panic!("Expected ScriptExit"),
-        }
     }
 }

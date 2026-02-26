@@ -6679,6 +6679,56 @@ fn test_gate_pass_enters_commit_pipeline() {
     );
 }
 
+/// Gate result persisted: gate output and exit code are saved to the iteration.
+///
+/// Flow: work stage with gate configured.
+/// - Gate script emits output and exits 0.
+/// - After completion, the iteration's `gate_result` is populated.
+#[test]
+fn test_gate_result_persisted() {
+    use orkestra_core::workflow::config::{GateConfig, StageConfig, WorkflowConfig};
+
+    let workflow = WorkflowConfig::new(vec![StageConfig::new("work", "summary")
+        .with_prompt("worker.md")
+        .with_gate(GateConfig::new("echo 'gate check'").with_timeout(10))]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    let task = ctx.create_task("Gate result test", "Test gate_result is persisted", None);
+    let task_id = task.id.clone();
+
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns agent → drain_active → artifact processed → AwaitingGate
+    ctx.advance(); // spawns gate → drain_active → gate passes → commit pipeline
+
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let gate_iter = iterations
+        .iter()
+        .find(|i| i.stage == "work" && i.gate_result.is_some());
+    assert!(
+        gate_iter.is_some(),
+        "Expected an iteration with gate_result populated"
+    );
+
+    let gate_result = gate_iter.unwrap().gate_result.as_ref().unwrap();
+    assert!(
+        !gate_result.lines.is_empty(),
+        "gate output should be captured"
+    );
+    assert_eq!(gate_result.exit_code, Some(0), "gate should have exited 0");
+    assert!(gate_result.ended_at.is_some(), "ended_at should be set");
+    assert!(
+        !gate_result.started_at.is_empty(),
+        "started_at should be set"
+    );
+}
+
 /// Gate fail: agent produces artifact → gate (exit 1) → task re-queued with feedback.
 ///
 /// Flow: work stage with gate configured.

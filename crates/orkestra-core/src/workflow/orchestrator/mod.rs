@@ -551,8 +551,23 @@ impl OrchestratorLoop {
                 }
             }
 
+            // Look up the active iteration to track gate output on it
+            let iteration_id = {
+                let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+                api.store
+                    .get_latest_iteration(&task.id, &stage)
+                    .ok()
+                    .flatten()
+                    .map(|i| i.id)
+            };
+
             // Spawn gate
-            match self.stage_executor.spawn_gate(&task, &stage, &gate_config) {
+            match self.stage_executor.spawn_gate(
+                &task,
+                &stage,
+                &gate_config,
+                iteration_id.as_deref(),
+            ) {
                 Ok(result) => {
                     events.push(OrchestratorEvent::GateSpawned {
                         task_id: result.task_id,

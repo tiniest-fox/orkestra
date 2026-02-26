@@ -41,10 +41,12 @@ enum MergePreparation {
 ///
 /// Returns the task in `Done + Integrating` state. The actual squash/rebase/merge
 /// runs on a spawned thread so the caller (Tauri UI) is not blocked.
+/// `on_complete` is called after the background thread finishes (success or failure).
 #[allow(clippy::needless_pass_by_value)]
 pub fn spawn_merge_integration(
     api: Arc<Mutex<WorkflowApi>>,
     task_id: &str,
+    on_complete: impl FnOnce() + Send + 'static,
 ) -> WorkflowResult<Task> {
     let MergePreparation::NeedsGitWork {
         task,
@@ -63,6 +65,7 @@ pub fn spawn_merge_integration(
 
     std::thread::spawn(move || {
         run_integration(git, api_for_thread, commit_gen, *task, workflow);
+        on_complete();
     });
 
     Ok(result_task)

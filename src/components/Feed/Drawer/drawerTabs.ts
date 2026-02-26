@@ -21,7 +21,8 @@ export type DrawerTabId =
   | "artifact"
   | "history"
   | "pr"
-  | "error";
+  | "error"
+  | "gate";
 
 export type StageReviewType = "violet" | "teal";
 
@@ -54,19 +55,35 @@ export function defaultTab(task: WorkflowTaskView): DrawerTabId {
   if (task.derived.is_failed) return "error";
   if (task.derived.has_questions) return "questions";
   if (task.derived.needs_review) return "artifact";
+  if (task.state.type === "gate_running" || task.state.type === "awaiting_gate") return "gate";
   if (task.derived.is_working || task.derived.is_interrupted) return "logs";
   if (task.derived.is_done) return task.pr_url ? "pr" : "diff";
   if (task.derived.is_waiting_on_children) return "subtasks";
   return "logs";
 }
 
-export function availableTabs(task: WorkflowTaskView): DrawerTab[] {
+export function findGateStage(config: WorkflowConfig) {
+  return config.stages.find((s) => s.gate) ?? null;
+}
+
+export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): DrawerTab[] {
+  // Show gate tab when the current stage has a gate AND gate output is available or running.
+  const gateStage = findGateStage(config);
+  const isGateState =
+    task.state.type === "awaiting_gate" || task.state.type === "gate_running";
+  const hasGateResult = task.iterations.some(
+    (i) => i.stage === gateStage?.name && i.gate_result,
+  );
+  const showGateTab = !!gateStage && (isGateState || hasGateResult);
+  const gateTab: DrawerTab = { id: "gate" as const, label: "Gate", hotkey: "g" };
+
   if (task.derived.is_failed) {
     return [
       { id: "error", label: "Error", hotkey: "e" },
       { id: "logs", label: "Logs", hotkey: "l" },
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
+      ...(showGateTab ? [gateTab] : []),
     ];
   }
   if (task.derived.has_questions) {
@@ -75,6 +92,7 @@ export function availableTabs(task: WorkflowTaskView): DrawerTab[] {
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "logs", label: "Logs", hotkey: "l" },
       { id: "history", label: "History", hotkey: "h" },
+      ...(showGateTab ? [gateTab] : []),
     ];
   }
   if (task.derived.is_waiting_on_children) {
@@ -82,6 +100,7 @@ export function availableTabs(task: WorkflowTaskView): DrawerTab[] {
       { id: "subtasks", label: "Subtasks", hotkey: "t" },
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
+      ...(showGateTab ? [gateTab] : []),
     ];
   }
   if (task.derived.is_done) {
@@ -91,12 +110,14 @@ export function availableTabs(task: WorkflowTaskView): DrawerTab[] {
         { id: "diff", label: "Diff", hotkey: "d" },
         { id: "artifact", label: "Artifact", hotkey: "a" },
         { id: "history", label: "History", hotkey: "h" },
+        ...(showGateTab ? [gateTab] : []),
       ];
     }
     return [
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "artifact", label: "Artifact", hotkey: "a" },
       { id: "history", label: "History", hotkey: "h" },
+      ...(showGateTab ? [gateTab] : []),
     ];
   }
   if (task.derived.needs_review) {
@@ -105,6 +126,7 @@ export function availableTabs(task: WorkflowTaskView): DrawerTab[] {
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "logs", label: "Logs", hotkey: "l" },
       { id: "history", label: "History", hotkey: "h" },
+      ...(showGateTab ? [gateTab] : []),
     ];
   }
   return [
@@ -112,5 +134,6 @@ export function availableTabs(task: WorkflowTaskView): DrawerTab[] {
     { id: "diff", label: "Diff", hotkey: "d" },
     { id: "artifact", label: "Artifact", hotkey: "a" },
     { id: "history", label: "History", hotkey: "h" },
+    ...(showGateTab ? [gateTab] : []),
   ];
 }

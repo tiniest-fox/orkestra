@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use orkestra_types::domain::{
-    AssistantSession, Iteration, LogEntry, SessionState, StageSession, Task,
+    AssistantSession, GateResult, Iteration, LogEntry, SessionState, StageSession, Task,
 };
 
 use crate::interface::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -184,6 +184,16 @@ impl WorkflowStore for InMemoryWorkflowStore {
             iterations.push(iteration.clone());
         }
         Ok(())
+    }
+
+    fn save_gate_result(&self, iteration_id: &str, gate_result: &GateResult) -> WorkflowResult<()> {
+        let mut iterations = self.iterations.lock().map_err(|_| WorkflowError::Lock)?;
+        if let Some(existing) = iterations.iter_mut().find(|i| i.id == iteration_id) {
+            existing.gate_result = Some(gate_result.clone());
+            Ok(())
+        } else {
+            Err(WorkflowError::IterationNotFound(iteration_id.to_string()))
+        }
     }
 
     fn delete_iterations(&self, task_id: &str) -> WorkflowResult<()> {

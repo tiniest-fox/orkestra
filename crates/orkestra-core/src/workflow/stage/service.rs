@@ -559,10 +559,11 @@ impl StageExecutionService {
         task: &Task,
         stage: &str,
         gate_config: &crate::workflow::config::GateConfig,
+        iteration_id: Option<&str>,
     ) -> Result<SpawnResult, SpawnError> {
         let pid = self
             .script_service
-            .spawn_gate(task, stage, gate_config)
+            .spawn_gate(task, stage, gate_config, iteration_id)
             .map_err(|e| SpawnError::ScriptError(e.to_string()))?;
 
         // Record gate PID in the session so cleanup functions (kill_running_agents,

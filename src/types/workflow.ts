@@ -52,6 +52,16 @@ export function artifactName(artifact: ArtifactConfig): string {
 }
 
 /**
+ * Gate configuration for a workflow stage.
+ */
+export interface GateConfig {
+  /** Shell command to run as the gate. */
+  command: string;
+  /** Timeout in seconds for the gate process. */
+  timeout_seconds: number;
+}
+
+/**
  * Configuration for a single workflow stage.
  */
 export interface StageConfig {
@@ -71,6 +81,8 @@ export interface StageConfig {
   is_optional: boolean;
   /** Stage capabilities. */
   capabilities: StageCapabilities;
+  /** Gate script config — runs after agent completes, before advancing. */
+  gate?: GateConfig | null;
 }
 
 /**
@@ -286,6 +298,21 @@ export type IterationTrigger =
   | { type: "pr_comments"; comments: PrCommentData[]; guidance?: string };
 
 /**
+ * Output from a gate script run, stored on the iteration being validated.
+ * Updated incrementally while gate is running; complete when exit_code is set.
+ */
+export interface GateResult {
+  /** All output lines accumulated during the gate run. */
+  lines: string[];
+  /** Exit code — null while gate is running, set on completion. */
+  exit_code: number | null;
+  /** When the gate started (RFC3339). */
+  started_at: string;
+  /** When the gate ended (RFC3339) — null while running. */
+  ended_at: string | null;
+}
+
+/**
  * A single iteration within a stage (one agent run).
  */
 export interface WorkflowIteration {
@@ -309,6 +336,8 @@ export interface WorkflowIteration {
   activity_log?: string;
   /** Context explaining why this iteration was created (e.g., user message, feedback, rejection). */
   incoming_context?: IterationTrigger;
+  /** Gate script result for this iteration — present when a gate ran after this iteration. */
+  gate_result?: GateResult | null;
 }
 
 // =============================================================================

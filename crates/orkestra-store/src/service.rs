@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use orkestra_types::domain::{
-    AssistantSession, Iteration, LogEntry, StageSession, Task, TaskHeader,
+    AssistantSession, GateResult, Iteration, LogEntry, StageSession, Task, TaskHeader,
 };
 use rusqlite::Connection;
 
@@ -114,6 +114,11 @@ impl WorkflowStore for SqliteWorkflowStore {
     fn save_iteration(&self, iteration: &Iteration) -> WorkflowResult<()> {
         let conn = self.lock_conn()?;
         interactions::iteration::save::execute(&conn, iteration)
+    }
+
+    fn save_gate_result(&self, iteration_id: &str, gate_result: &GateResult) -> WorkflowResult<()> {
+        let conn = self.lock_conn()?;
+        interactions::iteration::save_gate_result::execute(&conn, iteration_id, gate_result)
     }
 
     fn delete_iterations(&self, task_id: &str) -> WorkflowResult<()> {

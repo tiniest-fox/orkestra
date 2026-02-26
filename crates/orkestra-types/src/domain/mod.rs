@@ -11,7 +11,7 @@ mod stage_session;
 pub(crate) mod task;
 
 pub use assistant_session::AssistantSession;
-pub use iteration::{Iteration, IterationTrigger, PrCommentData};
+pub use iteration::{GateResult, Iteration, IterationTrigger, PrCommentData};
 pub use log_entry::{LogEntry, OrkAction, TodoItem, ToolInput};
 pub use question::{Question, QuestionAnswer, QuestionOption};
 pub use stage_session::{SessionState, StageSession};

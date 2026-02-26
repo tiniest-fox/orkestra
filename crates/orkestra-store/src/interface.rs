@@ -4,7 +4,7 @@
 //! to work with `SQLite`, in-memory stores for testing, or other backends.
 
 use orkestra_types::domain::{
-    AssistantSession, Iteration, LogEntry, StageSession, Task, TaskHeader,
+    AssistantSession, GateResult, Iteration, LogEntry, StageSession, Task, TaskHeader,
 };
 
 // ============================================================================
@@ -149,6 +149,9 @@ pub trait WorkflowStore: Send + Sync {
 
     /// Save an iteration (insert or update by ID).
     fn save_iteration(&self, iteration: &Iteration) -> WorkflowResult<()>;
+
+    /// Update the `gate_result` field on an iteration incrementally as a gate script runs.
+    fn save_gate_result(&self, iteration_id: &str, gate_result: &GateResult) -> WorkflowResult<()>;
 
     /// Delete all iterations for a task.
     fn delete_iterations(&self, task_id: &str) -> WorkflowResult<()>;

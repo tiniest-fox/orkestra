@@ -1,10 +1,11 @@
 //! Human action commands: approve, reject, answer questions.
 
 use crate::{error::TauriError, project_registry::ProjectRegistry};
+use orkestra_core::orkestra_debug;
 use orkestra_core::workflow::{
     spawn_merge_integration, spawn_pr_creation, PrCommentData, QuestionAnswer, Task,
 };
-use tauri::{State, Window};
+use tauri::{Emitter, State, Window};
 
 /// Approve the current stage artifact.
 ///
@@ -15,6 +16,7 @@ pub fn workflow_approve(
     window: Window,
     task_id: String,
 ) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "approve {task_id}");
     registry.with_project(window.label(), |state| {
         state.api()?.approve(&task_id).map_err(Into::into)
     })
@@ -30,6 +32,7 @@ pub fn workflow_reject(
     task_id: String,
     feedback: String,
 ) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "reject {task_id}");
     registry.with_project(window.label(), |state| {
         state.api()?.reject(&task_id, &feedback).map_err(Into::into)
     })
@@ -45,6 +48,11 @@ pub fn workflow_answer_questions(
     task_id: String,
     answers: Vec<QuestionAnswer>,
 ) -> Result<Task, TauriError> {
+    orkestra_debug!(
+        "tauri",
+        "answer_questions {task_id}: {} answers",
+        answers.len()
+    );
     registry.with_project(window.label(), |state| {
         state
             .api()?
@@ -63,6 +71,7 @@ pub fn workflow_retry(
     task_id: String,
     instructions: Option<String>,
 ) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "retry {task_id}");
     registry.with_project(window.label(), |state| {
         state
             .api()?
@@ -82,6 +91,7 @@ pub fn workflow_set_auto_mode(
     task_id: String,
     auto_mode: bool,
 ) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "set_auto_mode {task_id}: {auto_mode}");
     registry.with_project(window.label(), |state| {
         state
             .api()?
@@ -99,6 +109,7 @@ pub fn workflow_interrupt(
     window: Window,
     task_id: String,
 ) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "interrupt {task_id}");
     registry.with_project(window.label(), |state| {
         state.api()?.interrupt(&task_id).map_err(Into::into)
     })
@@ -114,6 +125,7 @@ pub fn workflow_resume(
     task_id: String,
     message: Option<String>,
 ) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "resume {task_id}");
     registry.with_project(window.label(), |state| {
         state.api()?.resume(&task_id, message).map_err(Into::into)
     })
@@ -129,8 +141,14 @@ pub fn workflow_merge_task(
     window: Window,
     task_id: String,
 ) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "merge_task {task_id}");
+    let notify_window = window.clone();
+    let notify_task_id = task_id.clone();
+    let on_complete = move || {
+        let _ = notify_window.emit("task-updated", notify_task_id.clone());
+    };
     registry.with_project(window.label(), |state| {
-        spawn_merge_integration(state.api_arc(), &task_id).map_err(Into::into)
+        spawn_merge_integration(state.api_arc(), &task_id, on_complete).map_err(Into::into)
     })
 }
 
@@ -144,6 +162,7 @@ pub fn workflow_open_pr(
     window: Window,
     task_id: String,
 ) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "open_pr {task_id}");
     registry.with_project(window.label(), |state| {
         spawn_pr_creation(state.api_arc(), &task_id).map_err(Into::into)
     })
@@ -172,6 +191,7 @@ pub fn workflow_archive(
     window: Window,
     task_id: String,
 ) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "archive {task_id}");
     registry.with_project(window.label(), |state| {
         state.api()?.archive_task(&task_id).map_err(Into::into)
     })

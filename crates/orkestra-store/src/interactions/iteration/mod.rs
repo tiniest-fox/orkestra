@@ -9,3 +9,4 @@ pub mod get_latest;
 pub mod list_all;
 pub mod list_for_tasks;
 pub mod save;
+pub mod save_gate_result;

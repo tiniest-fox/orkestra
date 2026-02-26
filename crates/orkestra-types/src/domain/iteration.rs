@@ -9,6 +9,22 @@ use crate::runtime::Outcome;
 
 use super::question::QuestionAnswer;
 
+/// Output from a gate script run, attached to the iteration being validated.
+///
+/// Updated incrementally as output streams in during gate execution.
+/// `exit_code` is None while running, set when the gate process exits.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GateResult {
+    /// All output lines accumulated during the gate run.
+    pub lines: Vec<String>,
+    /// Exit code — None while gate is running, set on completion.
+    pub exit_code: Option<i32>,
+    /// When the gate started (RFC3339).
+    pub started_at: String,
+    /// When the gate ended (RFC3339) — None while running.
+    pub ended_at: Option<String>,
+}
+
 /// PR comment data stored in iteration trigger.
 ///
 /// Captured at action time and passed through to the prompt builder.
@@ -119,6 +135,11 @@ pub struct Iteration {
     /// Only present on work-completing outputs (artifact, approval, subtasks).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activity_log: Option<String>,
+
+    /// Gate script result for this iteration.
+    /// Populated incrementally as the gate streams output; complete when `exit_code` is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate_result: Option<GateResult>,
 }
 
 impl Iteration {
@@ -142,6 +163,7 @@ impl Iteration {
             incoming_context: None,
             trigger_delivered: false,
             activity_log: None,
+            gate_result: None,
         }
     }
 
@@ -163,6 +185,13 @@ impl Iteration {
     #[must_use]
     pub fn with_activity_log(mut self, log: impl Into<String>) -> Self {
         self.activity_log = Some(log.into());
+        self
+    }
+
+    /// Builder: set gate result.
+    #[must_use]
+    pub fn with_gate_result(mut self, gate_result: GateResult) -> Self {
+        self.gate_result = Some(gate_result);
         self
     }
 

@@ -18,11 +18,12 @@ use crate::workflow::stage::scripts::{ActiveScript, ScriptError};
 ///
 /// Gate scripts have no `recovery_stage` (failure always re-queues in the same stage).
 /// Returns an `ActiveScript` that the caller inserts into its tracking map.
-pub(crate) fn execute_gate(
+pub(crate) fn execute(
     project_root: &Path,
     task: &Task,
     stage: &str,
     gate_config: &GateConfig,
+    iteration_id: Option<&str>,
 ) -> Result<ActiveScript, ScriptError> {
     let command = gate_config.command.clone();
     let timeout = Duration::from_secs(gate_config.timeout_seconds);
@@ -41,7 +42,9 @@ pub(crate) fn execute_gate(
         task_id: task.id.clone(),
         stage: stage.to_string(),
         handle,
-        stage_session_id: String::new(), // Gates have no session
+        iteration_id: iteration_id.map(str::to_string),
+        lines: Vec::new(),
+        started_at: chrono::Utc::now().to_rfc3339(),
     })
 }
 

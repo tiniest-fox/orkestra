@@ -2,7 +2,8 @@
 //!
 //! Provides a unified logging system with two channels routed via the `orkestra_debug!` macro:
 //!
-//! - **debug** (default): Written to `.orkestra/.logs/debug.log` + stderr, gated by `ORKESTRA_DEBUG=1`.
+//! - **debug** (default): Always written to `.orkestra/.logs/debug.log`. Stderr in dev builds only.
+//!   Log lines are prefixed with `[dev]` or `[prod]` to distinguish build types.
 //!   Also dispatches to an optional hook (e.g., Tauri events).
 //! - **agents** (`target: agents`): Written to `.orkestra/.logs/agents.log`, always enabled, no stderr.
 //!   Contains structured `LogEntry` JSON from agent stdout for debugging agent behavior.
@@ -10,18 +11,19 @@
 //! # Usage
 //!
 //! ```bash
-//! # Enable debug file logging
-//! ORKESTRA_DEBUG=1 pnpm tauri dev
-//!
-//! # View logs
+//! # View logs (always-on)
 //! tail -f .orkestra/.logs/debug.log
 //! tail -f .orkestra/.logs/agents.log
+//!
+//! # Filter by build type:
+//! grep '\[prod\]' .orkestra/.logs/debug.log
+//! grep '\[dev\]'  .orkestra/.logs/debug.log
 //! ```
 //!
 //! ```ignore
 //! use orkestra_debug::orkestra_debug;
 //!
-//! // Default target (debug.log + stderr):
+//! // Default target (debug.log):
 //! orkestra_debug!("component", "Something happened: {}", value);
 //!
 //! // Agent target (agents.log only):
@@ -52,39 +54,31 @@ const TRUNCATE_TO: usize = 2 * 1024 * 1024; // Keep last 2MB
 /// Initialize the debug log channel.
 ///
 /// Must be called once at startup with the path to the `.orkestra` directory.
-/// If `ORKESTRA_DEBUG=1` or `ORKESTRA_DEBUG=true`, file logging is enabled.
-/// Logs are written to `.orkestra/.logs/debug.log` + stderr.
+/// Logging is always-on — writes to `.orkestra/.logs/debug.log`. Stderr only in dev builds.
 pub fn init(orkestra_dir: &Path) {
-    let enabled = std::env::var("ORKESTRA_DEBUG")
-        .map(|v| v == "1" || v.to_lowercase() == "true")
-        .unwrap_or(false);
+    let logs_dir = orkestra_dir.join(".logs");
+    let _ = std::fs::create_dir_all(&logs_dir);
+    let path = logs_dir.join("debug.log");
 
-    let file = if enabled {
-        let logs_dir = orkestra_dir.join(".logs");
-        let _ = std::fs::create_dir_all(&logs_dir);
-        let path = logs_dir.join("debug.log");
-        match OpenOptions::new().create(true).append(true).open(&path) {
-            Ok(f) => {
-                eprintln!("[orkestra] Debug logging enabled: {}", path.display());
-                Some(Mutex::new(f))
-            }
-            Err(e) => {
-                eprintln!(
-                    "[orkestra] WARNING: Failed to open debug log {}: {}",
-                    path.display(),
-                    e
-                );
-                None
-            }
+    let file = match OpenOptions::new().create(true).append(true).open(&path) {
+        Ok(f) => {
+            eprintln!("[orkestra] Debug logging enabled: {}", path.display());
+            Some(Mutex::new(f))
         }
-    } else {
-        None
+        Err(e) => {
+            eprintln!(
+                "[orkestra] WARNING: Failed to open debug log {}: {}",
+                path.display(),
+                e
+            );
+            None
+        }
     };
 
     let _ = DEBUG_CHANNEL.set(LogChannel {
-        enabled,
+        enabled: true,
         file,
-        stderr: true,
+        stderr: cfg!(debug_assertions),
     });
 }
 
@@ -149,8 +143,13 @@ pub fn is_agents_active() -> bool {
 pub fn log(component: &str, message: &str) {
     if let Some(channel) = DEBUG_CHANNEL.get() {
         if channel.enabled {
+            let env = if cfg!(debug_assertions) {
+                "dev"
+            } else {
+                "prod"
+            };
             let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
-            let line = format!("{timestamp} [{component}] {message}\n");
+            let line = format!("{timestamp} [{env}] [{component}] {message}\n");
             write_to_channel(channel, &line);
         }
     }
@@ -261,17 +260,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_init_disabled_by_default() {
-        // Note: This test assumes ORKESTRA_DEBUG is not set in the environment
-        // In a real test environment, we'd need to control the env var
-        assert!(!is_enabled() || std::env::var("ORKESTRA_DEBUG").is_ok());
+    fn test_log_includes_build_type() {
+        // Verify the format string includes a build-type prefix
+        let env = if cfg!(debug_assertions) {
+            "dev"
+        } else {
+            "prod"
+        };
+        let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
+        let line = format!("{timestamp} [{env}] [test] Hello world\n");
+        assert!(line.contains(&format!("[{env}]")));
+        assert!(line.contains("[test]"));
     }
 
     #[test]
     fn test_log_format() {
         // Just verify the format string works
+        let env = if cfg!(debug_assertions) {
+            "dev"
+        } else {
+            "prod"
+        };
         let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
-        let line = format!("{timestamp} [test] Hello world\n");
+        let line = format!("{timestamp} [{env}] [test] Hello world\n");
         assert!(line.contains("[test]"));
         assert!(line.contains("Hello world"));
     }

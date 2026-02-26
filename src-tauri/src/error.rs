@@ -28,6 +28,7 @@
 //! }
 //! ```
 
+use orkestra_core::orkestra_debug;
 use orkestra_core::workflow::WorkflowError;
 use serde::Serialize;
 
@@ -58,7 +59,7 @@ impl TauriError {
 
 impl From<WorkflowError> for TauriError {
     fn from(e: WorkflowError) -> Self {
-        match e {
+        let err = match e {
             WorkflowError::TaskNotFound(id) => TauriError {
                 code: "TASK_NOT_FOUND".into(),
                 message: format!("Task not found: {id}"),
@@ -95,7 +96,9 @@ impl From<WorkflowError> for TauriError {
                 code: "GIT_ERROR".into(),
                 message: msg,
             },
-        }
+        };
+        orkestra_debug!("tauri", "command error: [{}] {}", err.code, err.message);
+        err
     }
 }
 

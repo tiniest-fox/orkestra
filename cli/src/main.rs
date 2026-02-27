@@ -146,6 +146,11 @@ enum TaskAction {
         /// Task ID to retry
         id: String,
     },
+    /// Push updated changes to an existing open PR
+    PushPr {
+        /// Task ID to push PR changes for
+        id: String,
+    },
     /// Retry a failed or blocked task (recovers to Idle phase)
     Retry {
         /// Task ID
@@ -208,7 +213,8 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
     };
 
     // OpenPr needs Arc<Mutex<WorkflowApi>> for create_pr_sync — handle it before
-    // borrowing the api for the other branches.
+    // borrowing api for the other branches. PushPr and other PR commands take
+    // &WorkflowApi directly and stay in the match below.
     if let TaskAction::OpenPr { id } = &action {
         handle_open_pr_task(Arc::new(Mutex::new(api)), id, pretty);
         return;
@@ -244,6 +250,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         TaskAction::Merge { id } => handle_merge_task(&api, &id, pretty),
         TaskAction::OpenPr { .. } => unreachable!("handled above"),
         TaskAction::RetryPr { id } => handle_retry_pr_task(&api, &id, pretty),
+        TaskAction::PushPr { id } => handle_push_pr_task(&api, &id, pretty),
         TaskAction::Retry { id, instructions } => {
             handle_retry_task(&api, &id, instructions.as_deref(), pretty);
         }
@@ -878,6 +885,28 @@ fn handle_retry_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
         println!("Reset task {} to Done", task.id);
         println!("State: {}", format_state(&task.state));
         println!("You can now retry merge or PR creation");
+    } else {
+        output_json(&task);
+    }
+}
+
+fn handle_push_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
+    let task = match api.commit_and_push_pr_changes(id) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error pushing PR changes: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        if let Some(pr_url) = &task.pr_url {
+            println!("Pushed changes for task {}", task.id);
+            println!("PR: {pr_url}");
+        } else {
+            println!("Pushed changes for task {}", task.id);
+        }
+        println!("State: {}", format_state(&task.state));
     } else {
         output_json(&task);
     }

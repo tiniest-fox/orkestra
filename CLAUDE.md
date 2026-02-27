@@ -147,7 +147,7 @@ The `bin/ork` wrapper handles building and running the CLI automatically.
 
 The project uses two caching mechanisms for faster builds:
 
-- **sccache** - Caches Rust compilation artifacts. Configured in `.cargo/config.toml`. Clean builds with warm cache: ~24s (vs ~64s without).
+- **sccache** - Caches Rust compilation artifacts. Configured in `.cargo/config.toml`. Clean builds with warm cache: ~24s (vs ~64s without). If you get inexplicable type errors after changing a crate's public API, sccache may be serving stale artifacts — `touch crates/<crate>/src/lib.rs` forces recompilation.
 - **pnpm** - Uses a global content-addressable store with hard links. Fresh `node_modules` install with warm cache: ~1.2s.
 
 ## Testing

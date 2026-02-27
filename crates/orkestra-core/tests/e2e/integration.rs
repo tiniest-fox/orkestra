@@ -269,11 +269,6 @@ fn pr_creation_failed_transitions_to_failed() {
     assert_eq!(task.pr_url, None, "PR URL should not be set on failure");
 }
 
-// Note: Push failure test omitted because TestEnv::with_git uses Git2GitService (real git).
-// Testing push failures would require adding MockGitService support to TestEnv, which is
-// beyond the scope of this task. The production PrService implementation handles push
-// failures correctly, and this scenario is covered by unit tests in the integration module.
-
 // =============================================================================
 // retry_pr_creation() Tests
 // =============================================================================
@@ -766,5 +761,135 @@ fn integration_skips_sync_and_push_for_task_branches() {
     assert!(
         integration_push_calls.is_empty(),
         "push_branch should NOT be called for task/* branches, got: {integration_push_calls:?}"
+    );
+}
+
+// =============================================================================
+// commit_and_push_pr_changes() Tests
+// =============================================================================
+
+/// `commit_and_push_pr_changes` commits pending changes and pushes the task's branch to origin.
+#[test]
+fn commit_and_push_pr_changes_pushes_to_origin() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Read the task to get the generated branch name
+    let task_with_branch = ctx.api().get_task(&task_id).unwrap();
+    let expected_branch = task_with_branch.branch_name.unwrap();
+
+    // Give the task a PR URL (simulating a previous open_pr call)
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    ctx.api()
+        .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
+        .unwrap();
+
+    // Capture push calls before commit_and_push_pr_changes
+    let pre_push_calls = ctx.mock_git_service().get_push_branch_calls();
+
+    // Push PR changes
+    let task = ctx.api().commit_and_push_pr_changes(&task_id).unwrap();
+
+    // Task should still be Done with the same PR URL
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should still be Done"
+    );
+    assert_eq!(
+        task.pr_url,
+        Some("https://github.com/test/repo/pull/42".to_string()),
+        "PR URL should be unchanged"
+    );
+
+    // Verify push_branch was called exactly once with the task's branch
+    let post_push_calls = ctx.mock_git_service().get_push_branch_calls();
+    let new_push_calls: Vec<_> = post_push_calls.iter().skip(pre_push_calls.len()).collect();
+    assert_eq!(
+        new_push_calls.len(),
+        1,
+        "push_branch should have been called exactly once"
+    );
+    assert_eq!(
+        new_push_calls[0], &expected_branch,
+        "push_branch should push the task's branch"
+    );
+}
+
+/// `commit_and_push_pr_changes` fails when the git push fails.
+#[test]
+fn commit_and_push_pr_changes_propagates_git_error() {
+    use super::helpers::workflows;
+    use orkestra_core::workflow::ports::GitError;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Give the task a PR URL
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    ctx.api()
+        .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
+        .unwrap();
+
+    // Configure mock to fail on push_branch
+    ctx.mock_git_service()
+        .set_next_push_result(Err(GitError::Other("remote rejected".into())));
+
+    // commit_and_push_pr_changes should propagate the error
+    let result = ctx.api().commit_and_push_pr_changes(&task_id);
+    assert!(
+        matches!(result, Err(WorkflowError::GitError(_))),
+        "commit_and_push_pr_changes should return GitError when push fails, got: {result:?}"
+    );
+}
+
+/// `commit_and_push_pr_changes` fails if the task has no open PR.
+#[test]
+fn commit_and_push_pr_changes_rejects_task_without_pr() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Task is Done but has no PR
+    let result = ctx.api().commit_and_push_pr_changes(&task_id);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "commit_and_push_pr_changes should return InvalidTransition when task has no PR"
+    );
+}
+
+/// `commit_and_push_pr_changes` fails if the task is not Done.
+#[test]
+fn commit_and_push_pr_changes_rejects_non_done_task() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    // Task is still in Active (planning) state
+    let result = ctx.api().commit_and_push_pr_changes(&task_id);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "commit_and_push_pr_changes should return InvalidTransition for non-Done task"
     );
 }

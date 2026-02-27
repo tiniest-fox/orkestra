@@ -476,6 +476,7 @@ pub fn run() {
             commands::workflow_merge_task,
             commands::workflow_open_pr,
             commands::workflow_retry_pr,
+            commands::workflow_push_pr_changes,
             commands::workflow_archive,
             commands::workflow_address_pr_comments,
             commands::workflow_address_pr_conflicts,

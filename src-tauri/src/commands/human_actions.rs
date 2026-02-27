@@ -182,6 +182,25 @@ pub fn workflow_retry_pr(
     })
 }
 
+/// Push updated changes to the existing PR for a Done task.
+///
+/// Commits any pending worktree changes and pushes the task's branch to origin.
+/// Requires the task to be Done with an open PR.
+#[tauri::command]
+pub fn workflow_push_pr_changes(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "push_pr_changes {task_id}");
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .commit_and_push_pr_changes(&task_id)
+            .map_err(Into::into)
+    })
+}
+
 /// Archive a Done task (marks it as complete after PR merge).
 ///
 /// Validates the task is Done and Idle, then transitions to Archived.

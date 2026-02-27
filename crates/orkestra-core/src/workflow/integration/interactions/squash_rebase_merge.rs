@@ -39,7 +39,7 @@ pub(crate) fn execute(
 
     // Safety-net commit — should be a no-op after the Finishing pipeline,
     // but catches stragglers from manual recovery or direct API calls.
-    if let Err(e) = super::commit_worktree::execute(git, task, "integrating", None) {
+    if let Err(e) = super::commit_worktree::execute(git, task, "integrating", None, None) {
         let error_msg = format!("Failed to commit pending changes: {e}");
         orkestra_debug!(
             "integration",

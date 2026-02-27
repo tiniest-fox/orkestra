@@ -1,7 +1,7 @@
 //! E2E tests for the squash commit workflow.
 //!
 //! Tests verify:
-//! 1. Per-stage commits have the simple format (`{stage}: {task_id}`)
+//! 1. Per-stage commits use LLM-generated format (task title as subject, Orkestra footer)
 //! 2. Non-subtask integration squashes all commits into one
 //! 3. Subtask integration does NOT squash (individual commits preserved)
 //! 4. After conflict recovery, re-integration squashes all commits (including recovery)
@@ -123,12 +123,12 @@ fn create_file_in_worktree(worktree_path: &Path, filename: &str, content: &str) 
 }
 
 // =============================================================================
-// Test 1: Per-Stage Commits Use Simple Format
+// Test 1: Per-Stage Commits Use LLM-Generated Format
 // =============================================================================
 
-/// Per-stage commits should have the format `{stage}: {task_id}` with activity log in body.
+/// Per-stage commits should use LLM-generated messages (task title as subject, Orkestra footer).
 #[test]
-fn test_per_stage_commits_use_simple_format() {
+fn test_per_stage_commits_use_llm_format() {
     let ctx = TestEnv::with_git(
         &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
@@ -161,32 +161,25 @@ fn test_per_stage_commits_use_simple_format() {
     ctx.api().approve(&task_id).unwrap();
     ctx.advance(); // commit + advance to breakdown
 
-    // Verify the commit message format
+    // Verify the commit message uses LLM-generated format (task title as subject)
     // The commit happens during the Finishing -> Committing -> Finished pipeline
     let commit_message = get_head_commit_message(worktree_path);
     assert!(
-        commit_message.starts_with("planning: "),
-        "Commit should start with 'planning: ', got: {commit_message}"
-    );
-    assert!(
-        commit_message.contains(&task_id),
-        "Commit should contain task ID '{task_id}', got: {commit_message}"
+        commit_message.contains("Test task"),
+        "Commit subject should contain task title 'Test task', got: {commit_message}"
     );
 
-    // Check the commit body contains the activity log
+    // Check the commit body contains the Orkestra footer (LLM format marker)
     let commit_body = get_head_commit_body(worktree_path);
-    assert!(
-        commit_body.is_some(),
-        "Commit should have a body with activity log"
-    );
+    assert!(commit_body.is_some(), "Commit should have a body");
     let body = commit_body.unwrap();
     assert!(
-        body.contains("Analyzed requirements"),
-        "Body should contain activity log, got: {body}"
+        body.contains("Powered by Orkestra"),
+        "Body should contain Orkestra footer, got: {body}"
     );
 
     // =========================================================================
-    // Breakdown stage: verify same simple format applies
+    // Breakdown stage: verify LLM format also applies
     // =========================================================================
 
     // Create file change for breakdown stage
@@ -211,27 +204,23 @@ fn test_per_stage_commits_use_simple_format() {
     ctx.api().approve(&task_id).unwrap();
     ctx.advance(); // commit + advance to work
 
-    // Verify breakdown commit format
+    // Verify breakdown commit also uses LLM-generated format
     let breakdown_commit = get_head_commit_message(worktree_path);
     assert!(
-        breakdown_commit.starts_with("breakdown: "),
-        "Breakdown commit should start with 'breakdown: ', got: {breakdown_commit}"
-    );
-    assert!(
-        breakdown_commit.contains(&task_id),
-        "Breakdown commit should contain task ID '{task_id}', got: {breakdown_commit}"
+        breakdown_commit.contains("Test task"),
+        "Breakdown commit should contain task title 'Test task', got: {breakdown_commit}"
     );
 
-    // Check breakdown commit body
+    // Check breakdown commit body contains the Orkestra footer
     let breakdown_body = get_head_commit_body(worktree_path);
     assert!(
         breakdown_body.is_some(),
-        "Breakdown commit should have a body with activity log"
+        "Breakdown commit should have a body"
     );
     let body = breakdown_body.unwrap();
     assert!(
-        body.contains("Decomposed into subtasks"),
-        "Breakdown body should contain activity log, got: {body}"
+        body.contains("Powered by Orkestra"),
+        "Breakdown body should contain Orkestra footer, got: {body}"
     );
 }
 
@@ -506,8 +495,8 @@ fn test_subtask_integration_preserves_commits() {
         parent_commits
     );
 
-    // Then verify we have the expected work stage commit
-    let has_work_commit = parent_commits.iter().any(|c| c.starts_with("work:"));
+    // Then verify we have the expected work stage commit (LLM format uses subtask title as subject)
+    let has_work_commit = parent_commits.iter().any(|c| c.contains("First subtask"));
     assert!(
         has_work_commit,
         "Parent branch should have individual subtask commits (not squashed). Commits: {parent_commits:?}"

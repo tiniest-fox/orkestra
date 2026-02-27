@@ -40,7 +40,7 @@ pub(crate) fn execute(
     let base_branch = &task.base_branch;
 
     // 1. Safety-net commit
-    super::commit_worktree::execute(git, task, "integrating", None)
+    super::commit_worktree::execute(git, task, "integrating", None, None)
         .map_err(|e| PrPipelineError::CommitFailed(e.to_string()))?;
 
     // 2. Push branch

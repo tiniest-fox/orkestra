@@ -29,6 +29,7 @@ pub struct MockGitService {
     merged_branches: Mutex<HashMap<String, bool>>,
     sync_status: Mutex<Option<SyncStatus>>,
     pull_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
+    has_pending_changes: Mutex<bool>,
 }
 
 impl MockGitService {
@@ -51,7 +52,13 @@ impl MockGitService {
             merged_branches: Mutex::new(HashMap::new()),
             sync_status: Mutex::new(None),
             pull_results: Mutex::new(std::collections::VecDeque::new()),
+            has_pending_changes: Mutex::new(false),
         }
+    }
+
+    /// Configure whether `has_pending_changes` returns `true` or `false`.
+    pub fn set_has_pending_changes(&self, value: bool) {
+        *self.has_pending_changes.lock().unwrap() = value;
     }
 
     /// Set the result for the next merge operation.
@@ -237,7 +244,7 @@ impl GitService for MockGitService {
     // -- Commit --
 
     fn has_pending_changes(&self, _worktree_path: &Path) -> Result<bool, GitError> {
-        Ok(false)
+        Ok(*self.has_pending_changes.lock().unwrap())
     }
 
     fn commit_pending_changes(

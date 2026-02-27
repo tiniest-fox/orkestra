@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
+use crate::commit_message::CommitMessageGenerator;
 use crate::orkestra_debug;
+use crate::workflow::config::WorkflowConfig;
 use crate::workflow::ports::{GitService, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::TaskState;
 
@@ -12,6 +14,8 @@ pub struct CommitJob {
     pub stage: String,
     pub activity_log: Option<String>,
     pub git: Arc<dyn GitService>,
+    pub commit_message_generator: Arc<dyn CommitMessageGenerator>,
+    pub workflow: WorkflowConfig,
 }
 
 /// Find Finishing tasks, transition them to Committing (or Committed if no git),
@@ -19,6 +23,8 @@ pub struct CommitJob {
 pub fn execute(
     store: &dyn WorkflowStore,
     git_service: Option<&Arc<dyn GitService>>,
+    commit_message_generator: &Arc<dyn CommitMessageGenerator>,
+    workflow: &WorkflowConfig,
 ) -> WorkflowResult<Vec<CommitJob>> {
     let finishing: Vec<_> = store
         .list_task_headers()?
@@ -68,6 +74,8 @@ pub fn execute(
                 stage,
                 activity_log,
                 git: Arc::clone(g),
+                commit_message_generator: Arc::clone(commit_message_generator),
+                workflow: workflow.clone(),
             });
         } else {
             // No git service — skip commit, transition directly to Committed

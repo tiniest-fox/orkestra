@@ -5,8 +5,10 @@
 
 use std::sync::{Arc, Mutex};
 
+use crate::commit_message::CommitMessageGenerator;
 use crate::orkestra_debug;
 use crate::workflow::api::WorkflowApi;
+use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::ports::{GitService, WorkflowError, WorkflowResult};
 use crate::workflow::stage::interactions as stage_interactions;
@@ -22,9 +24,13 @@ impl OrchestratorLoop {
     pub(super) fn spawn_pending_commits(&self) -> WorkflowResult<()> {
         let jobs = {
             let api = self.api.lock().map_err(|_| WorkflowError::Lock)?;
+            let commit_message_generator = Arc::clone(&api.commit_message_generator);
+            let workflow = api.workflow.clone();
             stage_interactions::collect_commit_jobs::execute(
                 api.store.as_ref(),
                 self.git_service.as_ref(),
+                &commit_message_generator,
+                &workflow,
             )?
         };
 
@@ -37,6 +43,8 @@ impl OrchestratorLoop {
                     job.task,
                     job.stage,
                     job.activity_log,
+                    job.commit_message_generator,
+                    job.workflow,
                 );
             };
 
@@ -60,6 +68,8 @@ impl OrchestratorLoop {
         task: Task,
         stage: String,
         activity_log: Option<String>,
+        commit_message_generator: Arc<dyn CommitMessageGenerator>,
+        workflow: WorkflowConfig,
     ) {
         let task_id = task.id.clone();
 
@@ -68,6 +78,7 @@ impl OrchestratorLoop {
             &task,
             &stage,
             activity_log.as_deref(),
+            Some((commit_message_generator.as_ref(), &workflow)),
         );
 
         let Ok(api) = api.lock() else {

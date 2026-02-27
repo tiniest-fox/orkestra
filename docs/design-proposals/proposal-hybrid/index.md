@@ -463,3 +463,4 @@ Things that are never acceptable regardless of context:
 | `design-research.md` | AI orchestration UI patterns research, 2025 |
 | `TEAM-BRIEF.md` | Team coordination, status tracking, gap analysis |
 | `index.md` | This file — canonical decision registry |
+| `assistant.html` | Assistant panel: session log, compose, inline Q&A, session history |

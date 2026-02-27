@@ -185,6 +185,10 @@ pub async fn load_project_in_window(
     start_project_orchestrator(&app_handle, &window_label);
     add_to_recents(&app_handle, &path)?;
 
+    if let Some(webview_window) = app_handle.get_webview_window(&window_label) {
+        spawn_startup_prefetch(&registry, &window_label, webview_window);
+    }
+
     Ok(())
 }
 

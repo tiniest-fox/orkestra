@@ -106,6 +106,13 @@ export function DrawerFooter({
         activeTab={activeTab}
         loading={state.loading}
         prTabState={state.prTabState}
+        updateMode={state.updateMode}
+        updateNotes={state.updateNotes}
+        onUpdateNotesChange={state.setUpdateNotes}
+        updateNotesRef={state.updateNotesRef}
+        onRequestUpdate={state.handleRequestUpdate}
+        onEnterUpdateMode={state.enterUpdateMode}
+        onExitUpdateMode={state.exitUpdateMode}
         onMerge={state.handleMerge}
         onOpenPr={state.handleOpenPr}
         onArchive={state.handleArchive}

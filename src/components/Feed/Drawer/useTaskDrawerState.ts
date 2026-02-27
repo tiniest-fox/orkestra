@@ -23,6 +23,15 @@ export interface TaskDrawerState {
   feedback: string;
   setFeedback: (v: string) => void;
 
+  // -- Update mode (done tasks) --
+  updateMode: boolean;
+  enterUpdateMode: () => void;
+  exitUpdateMode: () => void;
+  updateNotes: string;
+  setUpdateNotes: (v: string) => void;
+  updateNotesRef: React.RefObject<HTMLTextAreaElement>;
+  handleRequestUpdate: () => Promise<void>;
+
   // -- Resume (interrupted) --
   resumeMessage: string;
   setResumeMessage: (v: string) => void;
@@ -106,6 +115,29 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     setRejectMode(false);
     setFeedback("");
   }, [task.id]);
+
+  // -- Update mode --
+  const [updateMode, setUpdateMode] = useState(false);
+  const [updateNotes, setUpdateNotes] = useState("");
+  const updateNotesRef = useRef<HTMLTextAreaElement>(null);
+
+  function enterUpdateMode() {
+    setUpdateMode(true);
+  }
+  function exitUpdateMode() {
+    setUpdateMode(false);
+    setUpdateNotes("");
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
+  useEffect(() => {
+    setUpdateMode(false);
+    setUpdateNotes("");
+  }, [task.id]);
+
+  useEffect(() => {
+    if (updateMode) updateNotesRef.current?.focus();
+  }, [updateMode]);
 
   // -- Resume message --
   const [resumeMessage, setResumeMessage] = useState("");
@@ -278,6 +310,18 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     }
   }, [task.id, retryInstructions, retrying, onClose]);
 
+  const handleRequestUpdate = useCallback(async () => {
+    if (loading || !updateNotes.trim()) return;
+    setLoading(true);
+    try {
+      await invoke("workflow_request_update", { taskId: task.id, feedback: updateNotes.trim() });
+      onClose();
+    } catch (err) {
+      console.error("Failed to request update:", err);
+      setLoading(false);
+    }
+  }, [task.id, updateNotes, loading, onClose]);
+
   const [optimisticAutoMode, setOptimisticAutoMode] = useState<boolean | null>(null);
 
   // Clear the optimistic override once the backend value catches up.
@@ -308,6 +352,13 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     exitRejectMode,
     feedback,
     setFeedback,
+    updateMode,
+    enterUpdateMode,
+    exitUpdateMode,
+    updateNotes,
+    setUpdateNotes,
+    updateNotesRef,
+    handleRequestUpdate,
     resumeMessage,
     setResumeMessage,
     resumeTextareaRef,

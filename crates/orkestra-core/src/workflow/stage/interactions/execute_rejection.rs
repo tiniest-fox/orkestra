@@ -1,16 +1,12 @@
 //! Execute a rejection: transition task to the target stage with rejection context.
 
-use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::iteration::IterationService;
-use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::TaskState;
 
-#[allow(clippy::too_many_arguments)]
 pub fn execute(
-    store: &dyn WorkflowStore,
-    workflow: &WorkflowConfig,
     iteration_service: &IterationService,
     task: &mut Task,
     from_stage: &str,
@@ -18,26 +14,6 @@ pub fn execute(
     feedback: &str,
     now: &str,
 ) -> WorkflowResult<()> {
-    let effective_caps = workflow
-        .effective_capabilities(from_stage, task.flow.as_deref())
-        .unwrap_or_default();
-
-    // Supersede target stage session if configured (forces fresh spawn)
-    if effective_caps.rejection_resets_session() {
-        if let Ok(Some(mut session)) = store.get_stage_session(&task.id, target) {
-            session.supersede(now);
-            if let Err(e) = store.save_stage_session(&session) {
-                orkestra_debug!(
-                    "action",
-                    "Failed to supersede session for {}/{}: {}",
-                    task.id,
-                    target,
-                    e
-                );
-            }
-        }
-    }
-
     task.state = TaskState::queued(target);
     task.updated_at = now.to_string();
 

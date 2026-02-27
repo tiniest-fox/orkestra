@@ -7,6 +7,7 @@ pub mod check_parent_completions;
 pub mod collect_commit_jobs;
 pub mod commit_failed;
 pub mod commit_succeeded;
+pub mod compute_sibling_contexts;
 pub mod create_subtasks;
 pub mod end_iteration;
 pub mod enter_commit_pipeline;

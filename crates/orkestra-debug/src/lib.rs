@@ -257,7 +257,6 @@ macro_rules! orkestra_debug {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_log_includes_build_type() {

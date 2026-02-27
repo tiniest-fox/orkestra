@@ -75,7 +75,6 @@ pub fn execute(
             decision, content, ..
         } => {
             super::handle_approval::execute(
-                store,
                 workflow,
                 iteration_service,
                 &mut task,

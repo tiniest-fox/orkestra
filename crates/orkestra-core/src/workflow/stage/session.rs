@@ -21,11 +21,6 @@ pub struct SessionSpawnContext {
     /// OR the active iteration has a `ManualResume` trigger (user resumed from interrupt).
     /// Forced to `false` when `session_id` is `None` (can't resume without a session ID).
     pub is_resume: bool,
-    /// Whether this is an untriggered stage re-entry (e.g., review running again after
-    /// work→checks→review cycle). Detected when resuming but the active iteration has
-    /// no `stage_session_id` (never linked to this session) and no `incoming_context`
-    /// (no trigger like rejection or script failure).
-    pub is_stage_reentry: bool,
     /// The `StageSession.id` for log correlation. Unlike the old `"{task_id}-{stage}"`
     /// format, this is a UUID that uniquely identifies this session record.
     pub stage_session_id: String,
@@ -233,7 +228,6 @@ mod tests {
         .unwrap();
         assert_eq!(ctx.session_id, Some("test-uuid".to_string()));
         assert!(!ctx.is_resume);
-        assert!(!ctx.is_stage_reentry);
 
         let s = store
             .get_stage_session("task-1", "planning")
@@ -372,142 +366,6 @@ mod tests {
             !ctx.is_resume,
             "Retry after failed spawn should not be a resume"
         );
-    }
-
-    // ========================================================================
-    // Stage Re-entry Detection Tests
-    // ========================================================================
-
-    #[test]
-    fn test_reentry_detected_on_untriggered_fresh_iteration() {
-        use crate::workflow::runtime::Outcome;
-        let (store, iter_svc) = create_deps();
-
-        session::on_spawn_starting::execute(
-            store.as_ref(),
-            &iter_svc,
-            "task-1",
-            "review",
-            Some("test-uuid".into()),
-        )
-        .unwrap();
-        session::on_agent_spawned::execute(store.as_ref(), "task-1", "review", 12345).unwrap();
-        simulate_agent_exit(&store, "task-1", "review");
-
-        let mut s = store
-            .get_stage_session("task-1", "review")
-            .unwrap()
-            .unwrap();
-        s.has_activity = true;
-        store.save_stage_session(&s).unwrap();
-
-        let mut iter = store
-            .get_active_iteration("task-1", "review")
-            .unwrap()
-            .unwrap();
-        iter.end("now", Outcome::Approved);
-        store.save_iteration(&iter).unwrap();
-
-        iter_svc.create_iteration("task-1", "review", None).unwrap();
-
-        let ctx = session::on_spawn_starting::execute(
-            store.as_ref(),
-            &iter_svc,
-            "task-1",
-            "review",
-            Some("test-uuid".into()),
-        )
-        .unwrap();
-        assert!(ctx.is_resume);
-        assert!(ctx.is_stage_reentry);
-    }
-
-    #[test]
-    fn test_reentry_not_detected_on_triggered_iteration() {
-        use crate::workflow::domain::IterationTrigger;
-        use crate::workflow::runtime::Outcome;
-        let (store, iter_svc) = create_deps();
-
-        session::on_spawn_starting::execute(
-            store.as_ref(),
-            &iter_svc,
-            "task-1",
-            "review",
-            Some("test-uuid".into()),
-        )
-        .unwrap();
-        session::on_agent_spawned::execute(store.as_ref(), "task-1", "review", 12345).unwrap();
-        simulate_agent_exit(&store, "task-1", "review");
-
-        let mut s = store
-            .get_stage_session("task-1", "review")
-            .unwrap()
-            .unwrap();
-        s.has_activity = true;
-        store.save_stage_session(&s).unwrap();
-
-        let mut iter = store
-            .get_active_iteration("task-1", "review")
-            .unwrap()
-            .unwrap();
-        iter.end("now", Outcome::Approved);
-        store.save_iteration(&iter).unwrap();
-
-        iter_svc
-            .create_iteration(
-                "task-1",
-                "review",
-                Some(IterationTrigger::Rejection {
-                    from_stage: "review".into(),
-                    feedback: "needs more work".into(),
-                }),
-            )
-            .unwrap();
-
-        let ctx = session::on_spawn_starting::execute(
-            store.as_ref(),
-            &iter_svc,
-            "task-1",
-            "review",
-            Some("test-uuid".into()),
-        )
-        .unwrap();
-        assert!(ctx.is_resume);
-        assert!(!ctx.is_stage_reentry);
-    }
-
-    #[test]
-    fn test_reentry_not_detected_on_crash_resume() {
-        let (store, iter_svc) = create_deps();
-
-        session::on_spawn_starting::execute(
-            store.as_ref(),
-            &iter_svc,
-            "task-1",
-            "review",
-            Some("test-uuid".into()),
-        )
-        .unwrap();
-        session::on_agent_spawned::execute(store.as_ref(), "task-1", "review", 12345).unwrap();
-        simulate_agent_exit(&store, "task-1", "review");
-
-        let mut s = store
-            .get_stage_session("task-1", "review")
-            .unwrap()
-            .unwrap();
-        s.has_activity = true;
-        store.save_stage_session(&s).unwrap();
-
-        let ctx = session::on_spawn_starting::execute(
-            store.as_ref(),
-            &iter_svc,
-            "task-1",
-            "review",
-            Some("test-uuid".into()),
-        )
-        .unwrap();
-        assert!(ctx.is_resume);
-        assert!(!ctx.is_stage_reentry);
     }
 
     // ========================================================================
@@ -663,10 +521,6 @@ mod tests {
         .unwrap();
 
         assert!(ctx.is_resume, "ManualResume trigger should cause resume");
-        assert!(
-            !ctx.is_stage_reentry,
-            "interrupt→resume is not a stage re-entry"
-        );
         assert_eq!(
             ctx.session_id, first_ctx.session_id,
             "original session ID must be preserved"

@@ -9,12 +9,7 @@ use super::interactions as human;
 impl WorkflowApi {
     /// Approve the current stage's artifact. Moves to next stage.
     pub fn approve(&self, task_id: &str) -> WorkflowResult<Task> {
-        human::approve::execute(
-            self.store.as_ref(),
-            &self.workflow,
-            &self.iteration_service,
-            task_id,
-        )
+        human::approve::execute(self.store.as_ref(), &self.iteration_service, task_id)
     }
 
     /// Reject the current stage's artifact with feedback. Retries current stage.
@@ -56,7 +51,6 @@ impl WorkflowApi {
     pub fn set_auto_mode(&self, task_id: &str, auto_mode: bool) -> WorkflowResult<Task> {
         human::set_auto_mode::execute(
             self.store.as_ref(),
-            &self.workflow,
             &self.iteration_service,
             task_id,
             auto_mode,

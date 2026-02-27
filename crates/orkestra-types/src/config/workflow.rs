@@ -1191,21 +1191,6 @@ mod tests {
     }
 
     #[test]
-    fn test_workflow_validation_restart_on_reentry_on_agent_stage_valid() {
-        let workflow = WorkflowConfig::new(vec![
-            StageConfig::new("planning", "plan"),
-            StageConfig::new("work", "summary").restart_on_reentry(),
-        ])
-        .with_integration(IntegrationConfig::new("work"));
-
-        let errors = workflow.validate();
-        assert!(
-            errors.is_empty(),
-            "restart_on_reentry should be valid on agent stages. Got errors: {errors:?}"
-        );
-    }
-
-    #[test]
     fn test_integration_config_serialization() {
         let workflow = test_default_workflow();
         let yaml = serde_yaml::to_string(&workflow).unwrap();

@@ -2,7 +2,6 @@
 
 use crate::orkestra_debug;
 use crate::workflow::agent::interactions::handle_questions::AUTO_ANSWER_TEXT;
-use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, QuestionAnswer, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -12,7 +11,6 @@ use crate::workflow::stage::interactions as stage;
 #[allow(clippy::too_many_lines)]
 pub fn execute(
     store: &dyn WorkflowStore,
-    workflow: &WorkflowConfig,
     iteration_service: &IterationService,
     task_id: &str,
     auto_mode: bool,
@@ -78,8 +76,6 @@ pub fn execute(
                 );
                 let now = chrono::Utc::now().to_rfc3339();
                 stage::execute_rejection::execute(
-                    store,
-                    workflow,
                     iteration_service,
                     &mut task,
                     &from_stage,

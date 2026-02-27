@@ -190,8 +190,6 @@ pub enum ResumeType {
     },
     /// Human provided answers to questions the agent asked.
     Answers { answers: Vec<ResumeQuestionAnswer> },
-    /// Stage is being re-run after the full cycle completed (untriggered re-entry).
-    Recheck,
     /// Human retried a failed task, optionally with instructions.
     RetryFailed { instructions: Option<String> },
     /// Human retried a blocked task, optionally with instructions.

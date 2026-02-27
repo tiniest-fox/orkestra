@@ -160,11 +160,6 @@ pub struct StageConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 
-    /// When true, re-entering this stage after a full pipeline cycle starts a
-    /// completely new agent session instead of resuming the existing one.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub restart_on_reentry: bool,
-
     /// Tools that this stage's agent is not allowed to use.
     /// Each entry has a pattern (e.g., `Bash(cargo *)`) and a message explaining why.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -190,7 +185,6 @@ impl StageConfig {
             schema_file: None,
             is_automated: false,
             model: None,
-            restart_on_reentry: false,
             disallowed_tools: Vec::new(),
             gate: None,
         }
@@ -249,13 +243,6 @@ impl StageConfig {
     #[must_use]
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
-        self
-    }
-
-    /// Builder: enable restart on stage re-entry.
-    #[must_use]
-    pub fn restart_on_reentry(mut self) -> Self {
-        self.restart_on_reentry = true;
         self
     }
 
@@ -327,10 +314,6 @@ pub struct ApprovalCapabilities {
     /// Stage to move to on rejection. If None, defaults to the previous stage in the flow.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rejection_stage: Option<String>,
-    /// When true, rejection supersedes the target stage's session so the next
-    /// spawn starts fresh (full initial prompt) instead of resuming.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub reset_session: bool,
 }
 
 /// Configuration for a stage that produces subtasks.
@@ -376,10 +359,7 @@ impl StageCapabilities {
     /// Create capabilities with approval (approve/reject decision).
     pub fn with_approval(rejection_stage: Option<String>) -> Self {
         Self {
-            approval: Some(ApprovalCapabilities {
-                rejection_stage,
-                reset_session: false,
-            }),
+            approval: Some(ApprovalCapabilities { rejection_stage }),
             ..Default::default()
         }
     }
@@ -407,11 +387,6 @@ impl StageCapabilities {
     /// The explicit rejection stage, if configured.
     pub fn rejection_stage(&self) -> Option<&str> {
         self.approval.as_ref()?.rejection_stage.as_deref()
-    }
-
-    /// Whether rejection should reset (supersede) the target stage's session.
-    pub fn rejection_resets_session(&self) -> bool {
-        self.approval.as_ref().is_some_and(|a| a.reset_session)
     }
 }
 
@@ -583,48 +558,6 @@ mod tests {
     }
 
     #[test]
-    fn test_reset_session_defaults_to_false() {
-        let caps = StageCapabilities::with_approval(Some("work".into()));
-        assert!(!caps.rejection_resets_session());
-    }
-
-    #[test]
-    fn test_reset_session_true() {
-        let caps = StageCapabilities {
-            approval: Some(ApprovalCapabilities {
-                rejection_stage: Some("work".into()),
-                reset_session: true,
-            }),
-            ..Default::default()
-        };
-        assert!(caps.rejection_resets_session());
-        assert_eq!(caps.rejection_stage(), Some("work"));
-    }
-
-    #[test]
-    fn test_reset_session_serialization() {
-        let caps = StageCapabilities {
-            approval: Some(ApprovalCapabilities {
-                rejection_stage: Some("work".into()),
-                reset_session: true,
-            }),
-            ..Default::default()
-        };
-        let yaml = serde_yaml::to_string(&caps).unwrap();
-        assert!(yaml.contains("reset_session: true"));
-
-        let parsed: StageCapabilities = serde_yaml::from_str(&yaml).unwrap();
-        assert!(parsed.rejection_resets_session());
-    }
-
-    #[test]
-    fn test_reset_session_skipped_when_false() {
-        let caps = StageCapabilities::with_approval(Some("work".into()));
-        let yaml = serde_yaml::to_string(&caps).unwrap();
-        assert!(!yaml.contains("reset_session"));
-    }
-
-    #[test]
     fn test_subtask_capabilities() {
         let caps = StageCapabilities {
             subtasks: Some(
@@ -743,35 +676,6 @@ mod tests {
             stage.description,
             Some("Implement the approved plan".to_string())
         );
-    }
-
-    #[test]
-    fn test_restart_on_reentry_defaults_to_false() {
-        let stage = StageConfig::new("work", "summary");
-        assert!(!stage.restart_on_reentry);
-    }
-
-    #[test]
-    fn test_restart_on_reentry_builder() {
-        let stage = StageConfig::new("work", "summary").restart_on_reentry();
-        assert!(stage.restart_on_reentry);
-    }
-
-    #[test]
-    fn test_restart_on_reentry_serialization() {
-        // False value should be omitted (skip_serializing_if)
-        let stage_false = StageConfig::new("work", "summary");
-        let yaml = serde_yaml::to_string(&stage_false).unwrap();
-        assert!(!yaml.contains("restart_on_reentry"));
-
-        // True value should be included
-        let stage_true = StageConfig::new("work", "summary").restart_on_reentry();
-        let yaml = serde_yaml::to_string(&stage_true).unwrap();
-        assert!(yaml.contains("restart_on_reentry: true"));
-
-        // Round-trip test
-        let parsed: StageConfig = serde_yaml::from_str(&yaml).unwrap();
-        assert!(parsed.restart_on_reentry);
     }
 
     #[test]

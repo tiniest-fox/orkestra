@@ -3,13 +3,11 @@
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
-use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
+use crate::workflow::ports::{WorkflowError, WorkflowResult};
 use crate::workflow::runtime::{Artifact, Outcome, TaskState};
 use crate::workflow::stage::interactions as stage;
 
-#[allow(clippy::too_many_arguments)]
 pub fn execute(
-    store: &dyn WorkflowStore,
     workflow: &WorkflowConfig,
     iteration_service: &IterationService,
     task: &mut Task,
@@ -72,8 +70,6 @@ pub fn execute(
                     Outcome::rejection(current_stage, &target, content),
                 )?;
                 stage::execute_rejection::execute(
-                    store,
-                    workflow,
                     iteration_service,
                     task,
                     current_stage,

@@ -234,10 +234,16 @@ fn test_exhaustive_workflow_flow() {
     ctx.advance(); // spawns planner agent (completion ready)
     ctx.advance(); // processes plan v2 output
 
-    // VERIFY: Planner retry after rejection → resume with feedback prompt containing the feedback
-    ctx.assert_resume_prompt_contains(
-        "feedback",
-        &["Need more detail on the implementation steps"],
+    // VERIFY: Planner retry after rejection → fresh spawn (Rejection is a returning trigger),
+    // full prompt with feedback embedded via Handlebars/system context.
+    let prompt = ctx.last_prompt();
+    assert!(
+        !prompt.starts_with("<!orkestra:resume:"),
+        "Rejection spawns fresh session — should be full prompt, not resume"
+    );
+    assert!(
+        prompt.contains("Need more detail on the implementation steps"),
+        "Full prompt should embed the rejection feedback"
     );
 
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -353,8 +359,17 @@ fn test_exhaustive_workflow_flow() {
     ctx.advance(); // spawns worker agent (completion ready)
     ctx.advance(); // processes work v2 output
 
-    // VERIFY: Work retry after rejection → resume with feedback prompt containing the feedback
-    ctx.assert_resume_prompt_contains("feedback", &["Tests are failing, please fix them"]);
+    // VERIFY: Work retry after rejection → fresh spawn (Rejection is a returning trigger).
+    // Full prompt with rejection feedback embedded.
+    let config = ctx.last_run_config();
+    assert!(
+        !config.is_resume,
+        "Rejection spawns fresh session — should not be resume"
+    );
+    assert!(
+        config.prompt.contains("Tests are failing, please fix them"),
+        "Full prompt should embed the rejection feedback"
+    );
 
     // =========================================================================
     // Step 7: Work approved → Reviewing
@@ -393,11 +408,16 @@ fn test_exhaustive_workflow_flow() {
     ctx.advance(); // processes reviewer rejection → moves to work stage → spawns work agent (completion ready)
     ctx.advance(); // processes work output
 
-    // VERIFY: Work agent after rejection → resume with feedback prompt containing reviewer's feedback
-    // (The reviewer ran first with full prompt, then work agent ran with resume prompt)
-    ctx.assert_resume_prompt_contains(
-        "feedback",
-        &["Code style issues found - please fix formatting"],
+    // VERIFY: Work agent after cross-stage rejection → fresh spawn (Rejection is a returning trigger).
+    // Full prompt with reviewer feedback embedded.
+    let prompt = ctx.last_prompt();
+    assert!(
+        !prompt.starts_with("<!orkestra:resume:"),
+        "Rejection spawns fresh session — should be full prompt, not resume"
+    );
+    assert!(
+        prompt.contains("Code style issues found - please fix formatting"),
+        "Full prompt should embed the rejection feedback"
     );
 
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -493,8 +513,9 @@ fn test_exhaustive_workflow_flow() {
     );
     ctx.advance(); // spawns reviewer (completion ready)
 
-    // VERIFY: Reviewer re-entering the same stage (session exists from step 8) → recheck prompt
-    ctx.assert_resume_prompt_contains("recheck", &[]);
+    // VERIFY: Reviewer re-entering the same stage (untriggered re-entry) → fresh spawn, full prompt.
+    // No trigger on the new review iteration — classified as untriggered re-entry → session superseded.
+    ctx.assert_full_prompt("verdict", false, true);
 
     ctx.advance(); // processes review → auto-approve → Done → integration fails (sync) → recovers to work → spawns work agent (completion ready)
     ctx.advance(); // processes work output
@@ -546,16 +567,22 @@ fn test_exhaustive_workflow_flow() {
     // The work agent already ran (output consumed in the previous advance cycle).
     // No additional advance needed — the work output was already processed.
 
-    // VERIFY: Work agent after integration failure → resume with integration marker
-    // containing error details and correct rebase target (same session as previous work iterations).
+    // VERIFY: Work agent after integration failure → fresh spawn (Integration is a returning trigger).
+    // Integration context is embedded directly in the full prompt.
     // The branch name is random, so this can only pass if base_branch flows through correctly.
     let expected_rebase = format!("git rebase {base_branch}");
-    ctx.assert_resume_prompt_contains(
-        "integration",
-        &[
-            "conflict",       // Should mention conflict
-            &expected_rebase, // Must use task's base_branch, not hardcoded "main"
-        ],
+    let config = ctx.last_run_config();
+    assert!(
+        !config.is_resume,
+        "Integration spawns fresh session — should not be resume"
+    );
+    assert!(
+        config.prompt.contains("MERGE CONFLICT") || config.prompt.contains("conflict"),
+        "Full prompt should mention the merge conflict"
+    );
+    assert!(
+        config.prompt.contains(&expected_rebase),
+        "Full prompt must use task's base_branch, not hardcoded 'main'. Expected: {expected_rebase}"
     );
 
     // Approve work
@@ -1500,15 +1527,15 @@ fn test_opencode_no_pregenerated_session_id() {
 // Session Reset on Cross-Stage Rejection Tests
 // =============================================================================
 
-/// Test that `reset_session: true` supersedes the target stage's session on
-/// cross-stage rejection, causing a fresh spawn with full prompt + feedback.
+/// Test that cross-stage rejection supersedes the target stage's session,
+/// causing a fresh spawn with full prompt + feedback.
 ///
 /// Also validates that Handlebars conditionals in agent definitions render
 /// correctly when feedback is present.
 ///
 /// Flow:
 /// 1. Task created → work stage → produce artifact → approve → review stage
-/// 2. Review REJECTS to work with `reset_session: true`
+/// 2. Review REJECTS to work (Rejection trigger → session always superseded)
 /// 3. Verify: old work session superseded, new session created (different UUID)
 /// 4. Verify: work agent gets a FULL prompt (not resume), with feedback included
 /// 5. Verify: Handlebars `{{#if feedback}}` conditional in agent definition renders
@@ -1519,16 +1546,12 @@ fn test_session_reset_on_cross_stage_rejection() {
     use orkestra_core::workflow::domain::SessionState;
     use orkestra_core::workflow::runtime::Outcome;
 
-    // Build capabilities with reset_session: true
-    // (ApprovalCapabilities isn't exported, but we can construct it through config)
-    let mut caps = StageCapabilities::with_approval(Some("work".into()));
-    caps.approval.as_mut().unwrap().reset_session = true;
-
+    // Rejection always supersedes the target stage session (no flag needed).
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(caps)
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .automated(),
     ]);
 
@@ -1600,7 +1623,7 @@ fn test_session_reset_on_cross_stage_rejection() {
     ctx.api().approve(&task_id).unwrap();
 
     // =========================================================================
-    // Step 2: Review rejects to work with reset_session: true
+    // Step 2: Review rejects to work (Rejection trigger always supersedes)
     // =========================================================================
 
     // Queue review rejection + work output (both consumed in sequence)
@@ -1772,19 +1795,18 @@ fn test_session_reset_on_cross_stage_rejection() {
     );
 }
 
-/// Test that rejection WITHOUT `reset_session` preserves existing resume behavior.
+/// Test that rejection ALWAYS supersedes the existing agent session.
 ///
-/// This is the regression test: same-stage rejection (review → work) without
-/// `reset_session: true` should resume the existing session, not create a new one.
+/// Previously, rejection from review → work only superseded if `reset_session: true`
+/// was set. Now, the trigger type (Rejection) determines supersession unconditionally.
 #[test]
 #[allow(clippy::too_many_lines)]
-fn test_session_not_reset_without_flag() {
+fn test_rejection_always_supersedes_session() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
     use orkestra_core::workflow::domain::SessionState;
     use orkestra_core::workflow::runtime::Outcome;
 
-    // Default workflow: review rejects to work WITHOUT reset_session
-    // (with_approval defaults to reset_session: false)
+    // Standard workflow: review rejects to work — supersession happens regardless of flags
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
@@ -1886,15 +1908,15 @@ fn test_session_not_reset_without_flag() {
     assert_eq!(iterations[2].stage, "work");
     assert_eq!(iterations[2].iteration_number, 2);
 
-    // Both work iterations should be linked to the SAME session (no superseding)
+    // Both work iterations should be linked to DIFFERENT sessions (rejection always supersedes)
     let work1_session = iterations[0].stage_session_id.as_ref();
     let work2_session = iterations[2].stage_session_id.as_ref();
-    assert_eq!(
+    assert_ne!(
         work1_session, work2_session,
-        "Both work iterations should share the same session (no reset)"
+        "Rejection should create a new work session (original superseded)"
     );
 
-    // Session should NOT be superseded — same session, resumed
+    // Session SHOULD be superseded — rejection always triggers supersession
     let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
     let work_sessions: Vec<_> = all_sessions.iter().filter(|s| s.stage == "work").collect();
     let review_sessions: Vec<_> = all_sessions
@@ -1904,17 +1926,18 @@ fn test_session_not_reset_without_flag() {
 
     assert_eq!(
         work_sessions.len(),
-        1,
-        "Should have exactly 1 work session (no reset). Got: {work_sessions:?}"
+        2,
+        "Should have exactly 2 work sessions (original superseded, new active). Got: {work_sessions:?}"
     );
+    // Original session should be superseded
+    let superseded = work_sessions
+        .iter()
+        .find(|s| s.id == original_id)
+        .expect("Original work session should still exist");
     assert_eq!(
-        work_sessions[0].id, original_id,
-        "Should be the same session (not superseded)"
-    );
-    assert_ne!(
-        work_sessions[0].session_state,
+        superseded.session_state,
         SessionState::Superseded,
-        "Work session should NOT be superseded without reset_session"
+        "Original work session should be superseded after rejection"
     );
     assert_eq!(
         review_sessions.len(),
@@ -1922,13 +1945,17 @@ fn test_session_not_reset_without_flag() {
         "Should have 1 review session. Got: {review_sessions:?}"
     );
 
-    // Should be a RESUME prompt (not full)
-    ctx.assert_resume_prompt_contains("feedback", &["Needs more tests"]);
+    // Should be a FULL prompt (not resume) — rejection spawns a fresh session
+    let prompt = ctx.last_prompt();
+    assert!(
+        !prompt.starts_with("<!orkestra:resume:"),
+        "Rejection spawns fresh session — should be full prompt, not resume"
+    );
 
     let last_config = ctx.last_run_config();
     assert!(
-        last_config.is_resume,
-        "Without reset_session, rejection should resume existing session"
+        !last_config.is_resume,
+        "Rejection should spawn a fresh session (not resume)"
     );
 }
 
@@ -2194,12 +2221,13 @@ fn test_kill_before_output_retries_without_resume() {
     assert!(task.is_awaiting_review());
 }
 
-/// Test that an agent with activity retries WITH resume.
+/// Test that rejection always spawns a fresh session, even when the agent had activity.
 ///
-/// When an agent produces output (triggering `has_activity=true`), and the
-/// stage is rejected, the next spawn should use resume to preserve context.
+/// Rejection is a "returning" trigger — the task is coming back from review to an
+/// earlier stage. This always supersedes the existing session, regardless of
+/// whether the agent previously produced output (`has_activity`).
 #[test]
-fn test_agent_with_activity_retries_with_resume() {
+fn test_rejection_always_supersedes_even_with_activity() {
     let ctx = TestEnv::with_git(
         &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
@@ -2226,7 +2254,7 @@ fn test_agent_with_activity_retries_with_resume() {
     // Reject to trigger another spawn on the same stage
     ctx.api().reject(&task_id, "Needs more detail").unwrap();
 
-    // Set output for the resume
+    // Set output for the retry
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -2235,13 +2263,13 @@ fn test_agent_with_activity_retries_with_resume() {
             activity_log: None,
         },
     );
-    ctx.advance(); // spawns agent for retry (should be resume)
+    ctx.advance(); // spawns agent for retry (rejection → fresh session, not resume)
 
-    // Verify resume was used (session had activity)
+    // Rejection is a returning trigger — always supersedes, even with prior activity
     let last_config = ctx.last_run_config();
     assert!(
-        last_config.is_resume,
-        "Retry after agent with activity should use resume"
+        !last_config.is_resume,
+        "Rejection always spawns a fresh session — is_resume must be false"
     );
 }
 
@@ -4007,17 +4035,18 @@ fn activity_log_on_rejection_retry() {
 }
 
 // =============================================================================
-// restart_on_reentry Tests
+// Untriggered Re-entry Tests
 // =============================================================================
 
 #[test]
 #[allow(clippy::too_many_lines)]
-fn test_restart_on_reentry_spawns_fresh_session() {
+fn test_reentry_spawns_fresh_session() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig, WorkflowConfig};
     use orkestra_core::workflow::domain::SessionState;
 
     // 2-stage workflow: work (with passing gate) → review
-    // Review has approval rejecting back to work AND restart_on_reentry: true
+    // Review has approval rejecting back to work. After work completes again,
+    // review re-enters without any trigger → should always spawn fresh session.
     use orkestra_core::workflow::config::GateConfig;
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary")
@@ -4026,7 +4055,6 @@ fn test_restart_on_reentry_spawns_fresh_session() {
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .restart_on_reentry()
             .automated(),
     ]);
 
@@ -4036,8 +4064,8 @@ fn test_restart_on_reentry_spawns_fresh_session() {
     // Step 1: Work stage → produce artifact → approve → checks → review
     // =========================================================================
     let task = ctx.create_task(
-        "Restart on reentry test",
-        "Test that restart_on_reentry spawns fresh session",
+        "Reentry fresh session test",
+        "Test that untriggered re-entry spawns fresh session",
         None,
     );
     let task_id = task.id.clone();
@@ -4117,26 +4145,22 @@ fn test_restart_on_reentry_spawns_fresh_session() {
     ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
     ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
     ctx.advance(); // commit → review Queued
-    ctx.advance(); // spawn reviewer (second time - this is the re-entry with fresh session)
+    ctx.advance(); // spawn reviewer (second time - this is the untriggered re-entry)
 
     // =========================================================================
-    // Assertions: Re-entry should spawn fresh session (not resume)
+    // Assertions: Untriggered re-entry should spawn fresh session (not resume)
     // =========================================================================
     let reentry_config = ctx.last_run_config();
     assert!(
         !reentry_config.is_resume,
-        "Re-entry with restart_on_reentry should NOT resume"
+        "Untriggered re-entry should NOT resume — spawns fresh session"
     );
 
     // Verify the prompt is a full prompt (not resume)
     let prompt = ctx.last_prompt();
     assert!(
-        prompt.contains("## Your Current Task"),
-        "Re-entry prompt should be a full prompt"
-    );
-    assert!(
         !prompt.starts_with("<!orkestra:resume:"),
-        "Re-entry prompt should NOT be a resume prompt"
+        "Untriggered re-entry prompt should NOT be a resume prompt"
     );
 
     // Verify session was superseded (should have 2 review sessions)
@@ -4182,12 +4206,12 @@ fn test_restart_on_reentry_spawns_fresh_session() {
 
 #[test]
 #[allow(clippy::too_many_lines)]
-fn test_reentry_without_restart_flag_uses_recheck() {
+fn test_untriggered_reentry_spawns_fresh_session() {
     use orkestra_core::workflow::config::{
         GateConfig, StageCapabilities, StageConfig, WorkflowConfig,
     };
 
-    // Same workflow as above, but WITHOUT restart_on_reentry
+    // Same workflow — untriggered re-entry always supersedes regardless of any flag
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary")
             .with_prompt("worker.md")
@@ -4195,7 +4219,7 @@ fn test_reentry_without_restart_flag_uses_recheck() {
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
             .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
-            .automated(), // No .restart_on_reentry()
+            .automated(),
     ]);
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
@@ -4204,8 +4228,8 @@ fn test_reentry_without_restart_flag_uses_recheck() {
     // Step 1: Work stage → produce artifact → approve → checks → review
     // =========================================================================
     let task = ctx.create_task(
-        "Recheck test",
-        "Test that default behavior uses recheck (not restart)",
+        "Untriggered reentry test",
+        "Test that untriggered re-entry spawns fresh session",
         None,
     );
     let task_id = task.id.clone();
@@ -4278,21 +4302,25 @@ fn test_reentry_without_restart_flag_uses_recheck() {
     ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
     ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
     ctx.advance(); // commit → review Queued
-    ctx.advance(); // spawn reviewer (second time - this is the re-entry with recheck)
+    ctx.advance(); // spawn reviewer (second time - untriggered re-entry → fresh session)
 
     // =========================================================================
-    // Assertions: Re-entry should RESUME existing session (recheck)
+    // Assertions: Untriggered re-entry should spawn fresh session (not resume)
     // =========================================================================
     let reentry_config = ctx.last_run_config();
     assert!(
-        reentry_config.is_resume,
-        "Re-entry WITHOUT restart_on_reentry should resume"
+        !reentry_config.is_resume,
+        "Untriggered re-entry should NOT resume — spawns fresh session"
     );
 
-    // Verify the prompt is a resume prompt with "recheck"
-    ctx.assert_resume_prompt_contains("recheck", &[]);
+    // Verify the prompt is a full prompt, not a resume
+    let prompt = ctx.last_prompt();
+    assert!(
+        !prompt.starts_with("<!orkestra:resume:"),
+        "Untriggered re-entry should produce a full prompt, not a resume marker"
+    );
 
-    // Verify session was NOT superseded (should have only 1 review session)
+    // Verify session WAS superseded (should have 2 review sessions)
     let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
     let review_sessions: Vec<_> = all_sessions
         .iter()
@@ -4300,25 +4328,27 @@ fn test_reentry_without_restart_flag_uses_recheck() {
         .collect();
     assert_eq!(
         review_sessions.len(),
-        1,
-        "Should have only 1 review session (no superseding)"
+        2,
+        "Should have 2 review sessions (original superseded, new active)"
     );
 
-    // Verify the session ID is the SAME as the original
+    // Verify the session ID is DIFFERENT from the original
     let current_review_session = ctx
         .api()
         .get_stage_session(&task_id, "review")
         .unwrap()
         .expect("Should have review session");
-    assert_eq!(
+    assert_ne!(
         current_review_session.claude_session_id, first_review_session_id,
-        "Re-entry should use the SAME session ID (recheck, not restart)"
+        "Untriggered re-entry should use a NEW session ID"
     );
 }
 
-/// Test that interrupt→resume on a `restart_on_reentry` stage does NOT start a
-/// fresh session. An interrupt→resume is NOT a stage re-entry — it's the same
-/// pass through the stage being continued after a pause.
+/// Test that interrupt→resume does NOT start a fresh session.
+///
+/// An interrupt→resume is NOT a stage re-entry — it's the same pass through the
+/// stage being continued after a pause. `ManualResume` is an iterating trigger,
+/// so the existing session is always resumed.
 ///
 /// Bug: Before the fix, if the agent was interrupted before producing structured
 /// output (`has_activity = false`), the next spawn would compute `is_resume = false`
@@ -4328,23 +4358,23 @@ fn test_reentry_without_restart_flag_uses_recheck() {
 /// 1. Review stage is simulated as started (`agent_started`) then interrupted
 /// 2. User resumes (creates `ManualResume` iteration)
 /// 3. Review spawns via orchestrator → must use `is_resume = true`
-/// 4. `restart_on_reentry` must NOT trigger (`is_stage_reentry = false`)
+/// 4. Untriggered re-entry logic must NOT fire (`trigger = Some(ManualResume)`)
 #[test]
-fn test_interrupt_resume_on_restart_on_reentry_stage_preserves_session() {
+fn test_interrupt_resume_preserves_session() {
     use orkestra_core::workflow::config::{StageConfig, WorkflowConfig};
 
-    // Single-stage workflow: review with restart_on_reentry.
+    // Single-stage workflow: review.
     // Without work + commit pipeline, the task starts directly in Queued { "review" },
     // letting us use agent_started() to simulate an interrupted spawn without the
     // overhead of a full work→approve→advance cycle.
-    let workflow = WorkflowConfig::new(vec![StageConfig::new("review", "verdict")
-        .with_prompt("reviewer.md")
-        .restart_on_reentry()]);
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("review", "verdict").with_prompt("reviewer.md")
+    ]);
     let ctx = TestEnv::with_git(&workflow, &["reviewer"]);
 
     let task = ctx.create_task(
-        "Interrupt resume reentry test",
-        "Test interrupt→resume does not trigger restart_on_reentry",
+        "Interrupt resume test",
+        "Test interrupt→resume preserves session (ManualResume is iterating trigger)",
         None,
     );
     let task_id = task.id.clone();
@@ -4388,8 +4418,8 @@ fn test_interrupt_resume_on_restart_on_reentry_stage_preserves_session() {
         "Resume after interrupt should use is_resume=true (ManualResume trigger)"
     );
 
-    // No session superseding — restart_on_reentry must NOT have triggered.
-    // If it had triggered, it would have superseded the session and spawned fresh.
+    // No session superseding — ManualResume is iterating, not returning.
+    // If untriggered re-entry logic had fired, it would have superseded the session.
     let all_sessions = ctx.api().get_stage_sessions(&task_id).unwrap();
     let review_sessions: Vec<_> = all_sessions
         .iter()
@@ -5685,13 +5715,14 @@ fn test_stages_with_logs_groups_sessions_correctly() {
     assert!(work_stage.sessions[0].is_current);
 }
 
-/// Test that human rejections don't create new sessions (they create new iterations).
+/// Test that human rejections supersede the existing session, creating a fresh one.
 ///
-/// When a human rejects an artifact, the agent resumes within the same session
-/// using the rejection feedback as context. This test verifies that the session
-/// count remains 1 after rejection.
+/// When a human rejects an artifact, the existing session is superseded and a
+/// new session is created for the retry. This ensures the agent starts fresh
+/// rather than resuming, which is correct for "redo this output" scenarios.
+/// The superseded session remains in the log history alongside the new session.
 #[test]
-fn test_rejection_does_not_create_new_session() {
+fn test_rejection_supersedes_session() {
     use orkestra_core::testutil::fixtures::test_default_workflow;
 
     use crate::helpers::enable_auto_merge;
@@ -5772,10 +5803,10 @@ fn test_rejection_does_not_create_new_session() {
     ctx.api()
         .reject(&task_id, "Please add error handling")
         .unwrap();
-    ctx.advance(); // spawns worker (resume)
+    ctx.advance(); // spawns worker (fresh session — rejection supersedes)
     ctx.advance(); // processes output
 
-    // Verify still one session (rejections don't create new sessions)
+    // Verify rejection created a new session (superseded old one)
     let task_views = ctx.api().list_task_views().unwrap();
     let task_view = task_views.iter().find(|v| v.task.id == task_id).unwrap();
 
@@ -5788,16 +5819,20 @@ fn test_rejection_does_not_create_new_session() {
 
     assert_eq!(
         work_stage.sessions.len(),
-        1,
-        "Rejection should not create new session"
+        2,
+        "Rejection should supersede old session and create a new one"
     );
     assert_eq!(
         work_stage.sessions[0].session_id, first_session_id,
-        "Session ID should remain unchanged after rejection"
+        "First session should still exist in log history (as superseded)"
     );
     assert!(
-        work_stage.sessions[0].is_current,
-        "Session should still be current"
+        !work_stage.sessions[0].is_current,
+        "First session should be superseded (not current)"
+    );
+    assert!(
+        work_stage.sessions[1].is_current,
+        "New session should be current"
     );
 }
 
@@ -5892,12 +5927,12 @@ fn test_stages_with_logs_ordered_chronologically() {
     );
 }
 
-/// Test that reviewer rejection with `reset_session: true` creates multiple sessions
-/// and that `stages_with_logs` correctly reports run numbers and `is_current` flags.
+/// Test that reviewer rejection creates multiple sessions and that `stages_with_logs`
+/// correctly reports run numbers and `is_current` flags.
 ///
 /// This test validates the complete flow:
 /// 1. Task goes through work → review
-/// 2. Reviewer rejects with `reset_session: true` → supersedes work session
+/// 2. Reviewer rejects → supersedes work session (rejection always supersedes)
 /// 3. New work session is created
 /// 4. `derived.stages_with_logs` shows: work has 2 sessions (run 1 superseded, run 2 current)
 #[test]
@@ -5905,15 +5940,11 @@ fn test_stages_with_logs_ordered_chronologically() {
 fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
     use orkestra_core::workflow::config::{StageCapabilities, StageConfig};
 
-    // Build capabilities with reset_session: true for reviewer
-    let mut caps = StageCapabilities::with_approval(Some("work".into()));
-    caps.approval.as_mut().unwrap().reset_session = true;
-
     let workflow = WorkflowConfig::new(vec![
         StageConfig::new("work", "summary").with_prompt("worker.md"),
         StageConfig::new("review", "verdict")
             .with_prompt("reviewer.md")
-            .with_capabilities(caps)
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into())))
             .automated(),
     ]);
 
@@ -5964,7 +5995,7 @@ fn test_multi_session_stages_with_logs_via_reviewer_rejection() {
     // Approve work → advances to review
     ctx.api().approve(&task_id).unwrap();
 
-    // Review rejects → supersedes work session → spawns new work
+    // Review rejects → rejection always supersedes work session → spawns new work
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
@@ -6383,12 +6414,12 @@ fn test_multiple_artifacts_materialized() {
     );
 }
 
-/// Test that recheck resume prompts reference artifact file paths.
+/// Test that untriggered re-entry prompts reference artifact file paths.
 ///
-/// When a review stage is re-entered (recheck), the resume prompt should
-/// reference artifact file paths for any updated artifacts, not inline content.
+/// When a review stage is re-entered without a trigger, a fresh spawn is used.
+/// The full prompt should reference artifact file paths, not inline content.
 #[test]
-fn test_recheck_resume_references_file_paths() {
+fn test_untriggered_reentry_prompt_references_file_paths() {
     use orkestra_core::workflow::config::{
         GateConfig, StageCapabilities, StageConfig, WorkflowConfig,
     };
@@ -6407,7 +6438,7 @@ fn test_recheck_resume_references_file_paths() {
 
     let ctx = TestEnv::with_git(&workflow, &["worker", "reviewer"]);
 
-    let task = ctx.create_task("Test recheck file paths", "Test description", None);
+    let task = ctx.create_task("Test reentry file paths", "Test description", None);
     let task_id = task.id.clone();
 
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -6428,7 +6459,7 @@ fn test_recheck_resume_references_file_paths() {
     ctx.advance(); // spawn worker → drain_active → AwaitingGate
 
     // =========================================================================
-    // Step 2: Queue outputs BEFORE gate fires: review rejection → work → review recheck
+    // Step 2: Queue outputs BEFORE gate fires: review rejection → work → review re-entry
     // =========================================================================
 
     // First: review will reject
@@ -6441,7 +6472,7 @@ fn test_recheck_resume_references_file_paths() {
         },
     );
 
-    // Second: re-entered work will produce updated artifact
+    // Second: work will produce updated artifact after rejection
     ctx.set_output(
         &task_id,
         MockAgentOutput::Artifact {
@@ -6451,7 +6482,7 @@ fn test_recheck_resume_references_file_paths() {
         },
     );
 
-    // Third: final review approval (for recheck)
+    // Third: final review approval (fresh re-entry spawn)
     ctx.set_output(
         &task_id,
         MockAgentOutput::Approval {
@@ -6461,7 +6492,7 @@ fn test_recheck_resume_references_file_paths() {
         },
     );
 
-    // Gate fires → review → reviewer rejects → work → gate fires → review (recheck)
+    // Gate fires → review → reviewer rejects → work → gate fires → review (fresh re-entry)
     ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
     ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
     ctx.advance(); // commit → review Queued
@@ -6470,33 +6501,34 @@ fn test_recheck_resume_references_file_paths() {
     ctx.advance(); // spawn gate → drain_active → gate passes → AwaitingApproval
     ctx.api().approve(&task_id).unwrap(); // human approves work after gate passes
     ctx.advance(); // commit → review Queued
-    ctx.advance(); // spawn reviewer (recheck)
+    ctx.advance(); // spawn reviewer (untriggered re-entry → fresh session)
 
     // =========================================================================
-    // Step 3: Verify recheck prompt references file paths
+    // Step 3: Verify re-entry prompt is a fresh spawn referencing artifact file paths
     // =========================================================================
 
-    // Verify the prompt is a recheck resume prompt
-    ctx.assert_resume_prompt_contains("recheck", &[]);
-
-    // Get full prompt including system prompt
+    // Verify the prompt is a full prompt (not a resume marker)
     let prompt = ctx.last_prompt();
+    assert!(
+        !prompt.starts_with("<!orkestra:resume:"),
+        "Untriggered re-entry should be a full prompt, not a resume marker"
+    );
 
-    // Recheck prompts should mention updated artifacts with absolute file paths
+    // Full prompts should mention artifacts with absolute file paths
     let expected_summary_path = format!(
         "{}/.orkestra/.artifacts/summary.md",
         worktree_path.to_str().unwrap()
     );
     assert!(
         prompt.contains(&expected_summary_path),
-        "Recheck prompt should reference absolute artifact file path '{expected_summary_path}'. Got:\n{}",
+        "Re-entry prompt should reference absolute artifact file path '{expected_summary_path}'. Got:\n{}",
         &prompt[..prompt.len().min(2000)]
     );
 
     // Should NOT contain inline content
     assert!(
         !prompt.contains("Work with tests added"),
-        "Recheck prompt should NOT contain inline artifact content"
+        "Re-entry prompt should NOT contain inline artifact content"
     );
 
     // Verify the artifact file was updated

@@ -74,14 +74,12 @@ stages:
       description: Review verdict and feedback
     prompt: reviewer.md
     model: opus
-    restart_on_reentry: true
     disallowed_tools:
       - pattern: "Bash(*cargo *)"
         message: "All automated checks have passed and all tests pass as-is — focus on code review, not re-running checks"
     capabilities:
       approval:
         rejection_stage: task
-        reset_session: true
 
   # Compound: Captures learnings and updates documentation
   # Reviews worker notes and reviewer observations, documents anything useful

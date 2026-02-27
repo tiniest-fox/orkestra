@@ -22,7 +22,6 @@ src/
 │       ├── feedback.md
 │       ├── integration.md
 │       ├── answers.md
-│       ├── recheck.md
 │       └── ...
 └── interactions/
     ├── build/          # Initial prompt construction
@@ -56,10 +55,9 @@ Enum determining which resume prompt template to use. Priority order when auto-d
 
 Variants:
 - `Continue` — interrupted, continue from last point
-- `Feedback { feedback }` — rejection with feedback
+- `Feedback { feedback }` — feedback delivered (from `request_update` or reviewer-override in `reject.rs`)
 - `Integration { message, conflict_files }` — merge conflict
 - `Answers { answers }` — human provided answers
-- `Recheck` — re-run after cycle completed (injects artifacts + activity logs)
 - `RetryFailed { instructions }` — retry failed task
 - `RetryBlocked { instructions }` — retry blocked task
 - `ManualResume { message }` — user-initiated resume
@@ -93,7 +91,6 @@ When resuming a session, the agent already has full context from the original se
 
 3. **Question history is NOT included in initial prompts** — Initial prompts start with empty question history. Questions and answers flow through resume prompts after the agent asks and human answers.
 
-4. **`Recheck` injects artifacts and activity logs** — Unlike other resume types, `Recheck` includes updated input artifacts and activity logs since the stage is being re-evaluated after a full cycle.
 
 ## Anti-patterns
 

@@ -12,11 +12,6 @@ use crate::workflow::stage::session::SessionSpawnContext;
 /// Creates or updates a session in `Spawning` state.
 /// Creates a new iteration only if there's no active one for this stage.
 ///
-/// Returns `SessionSpawnContext` containing the session ID, resume flag, and
-/// stage re-entry detection. Re-entry is computed **before** linking the
-/// iteration to the session, so the `stage_session_id.is_none()` check
-/// correctly detects fresh iterations that haven't been spawned yet.
-///
 /// # Arguments
 ///
 /// * `initial_session_id` — Pre-generated session ID for providers that accept caller-supplied
@@ -62,12 +57,19 @@ pub(crate) fn execute(
         iteration_service.create_iteration(task_id, stage, None)?
     };
 
-    // Compute resume/reentry BEFORE saving the session or linking the iteration.
+    // Compute is_resume BEFORE saving the session or linking the iteration.
     // is_resume: true if we have a session ID AND either:
     //   - the agent produced output (has_activity), OR
     //   - the user explicitly resumed from interrupt (ManualResume trigger).
+    //
     // The ManualResume case handles agents interrupted before producing structured output:
     // has_activity stays false, but we still want to resume the existing session.
+    //
+    // Crash-recovery note: when an agent crashes before producing any output,
+    // has_activity=false and trigger may be Feedback or another non-superseding type.
+    // In that case is_resume=false, so we spawn fresh. This is correct — resuming
+    // a dead provider session (no output) would fail; fresh spawn with the full
+    // initial prompt is the right recovery path.
     let is_manual_resume = matches!(
         iteration.incoming_context,
         Some(IterationTrigger::ManualResume { .. })
@@ -85,33 +87,18 @@ pub(crate) fn execute(
 
     orkestra_debug!(
         "session",
-        "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}, has_activity={}, is_manual_resume={}",
+        "on_spawn_starting {}/{}: claude_session_id={:?}, state={:?}, spawn_count={}, has_activity={}, is_manual_resume={}, is_resume={}",
         task_id,
         stage,
         session.claude_session_id,
         session.session_state,
         session.spawn_count,
         session.has_activity,
-        is_manual_resume
+        is_manual_resume,
+        is_resume
     );
 
     store.save_stage_session(&session)?;
-
-    // Detect untriggered re-entry BEFORE linking: resuming a session but with a
-    // fresh iteration that has no trigger and wasn't linked to this session yet.
-    // ManualResume iterations have incoming_context = Some(...), so is_stage_reentry
-    // is correctly false for interrupt→resume (not a re-entry).
-    let is_stage_reentry =
-        is_resume && iteration.stage_session_id.is_none() && iteration.incoming_context.is_none();
-
-    orkestra_debug!(
-        "session",
-        "on_spawn_starting {}/{}: is_resume={}, is_stage_reentry={}",
-        task_id,
-        stage,
-        is_resume,
-        is_stage_reentry
-    );
 
     // Link the session to the iteration for log recovery
     let iteration = iteration.with_stage_session_id(&stage_session_id);
@@ -120,7 +107,6 @@ pub(crate) fn execute(
     Ok(SessionSpawnContext {
         session_id: session.claude_session_id,
         is_resume,
-        is_stage_reentry,
         stage_session_id,
     })
 }

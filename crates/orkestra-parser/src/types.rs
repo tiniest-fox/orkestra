@@ -268,8 +268,6 @@ pub enum ResumeMarkerType {
     Integration,
     /// Human provided answers to questions.
     Answers,
-    /// Stage is being re-run after full cycle (untriggered re-entry).
-    Recheck,
     /// Human retried a failed task.
     RetryFailed,
     /// Human retried a blocked task.
@@ -288,7 +286,6 @@ impl ResumeMarkerType {
             Self::Feedback => "feedback",
             Self::Integration => "integration",
             Self::Answers => "answers",
-            Self::Recheck => "recheck",
             Self::RetryFailed => "retry_failed",
             Self::RetryBlocked => "retry_blocked",
             Self::Initial => "initial",

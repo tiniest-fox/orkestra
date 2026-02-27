@@ -15,7 +15,6 @@ const RESUME_CONTINUE: &str = include_str!("../../templates/resume/continue.md")
 const RESUME_FEEDBACK: &str = include_str!("../../templates/resume/feedback.md");
 const RESUME_INTEGRATION: &str = include_str!("../../templates/resume/integration.md");
 const RESUME_ANSWERS: &str = include_str!("../../templates/resume/answers.md");
-const RESUME_RECHECK: &str = include_str!("../../templates/resume/recheck.md");
 const RESUME_RETRY_FAILED: &str = include_str!("../../templates/resume/retry_failed.md");
 const RESUME_RETRY_BLOCKED: &str = include_str!("../../templates/resume/retry_blocked.md");
 const RESUME_MANUAL_RESUME: &str = include_str!("../../templates/resume/manual_resume.md");
@@ -55,7 +54,6 @@ pub fn execute(
         ResumeType::Answers { answers } => {
             (RESUME_ANSWERS, serde_json::json!({ "answers": answers }))
         }
-        ResumeType::Recheck => (RESUME_RECHECK, serde_json::json!({})),
         ResumeType::RetryFailed { instructions } => (
             RESUME_RETRY_FAILED,
             serde_json::json!({ "instructions": instructions }),
@@ -199,70 +197,6 @@ mod tests {
         assert!(prompt.contains("Add caching?"));
         assert!(prompt.contains("Yes, use Redis"));
         assert!(!prompt.contains("Updated Input Artifacts"));
-    }
-
-    #[test]
-    fn test_recheck() {
-        let artifact_names = vec!["summary".to_string(), "check_results".to_string()];
-        let prompt = execute(
-            "review",
-            &ResumeType::Recheck,
-            "main",
-            &artifact_names,
-            None,
-        )
-        .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
-        assert!(prompt.contains("re-run"));
-        assert!(prompt.contains("re-examine"));
-        assert!(prompt.contains("JSON"));
-        assert!(prompt.contains("Updated Input Artifacts"));
-        // New format: file paths instead of inline content
-        assert!(prompt.contains(".orkestra/.artifacts/summary.md"));
-        assert!(prompt.contains(".orkestra/.artifacts/check_results.md"));
-        // Should NOT contain inline content
-        assert!(!prompt.contains("### summary"));
-    }
-
-    #[test]
-    fn test_recheck_with_worktree_path() {
-        let artifact_names = vec!["summary".to_string(), "check_results".to_string()];
-        let worktree = "/path/to/worktree";
-        let prompt = execute(
-            "review",
-            &ResumeType::Recheck,
-            "main",
-            &artifact_names,
-            Some(worktree),
-        )
-        .unwrap();
-        assert!(prompt.contains("Updated Input Artifacts"));
-        // Should use absolute paths
-        assert!(prompt.contains("/path/to/worktree/.orkestra/.artifacts/summary.md"));
-        assert!(prompt.contains("/path/to/worktree/.orkestra/.artifacts/check_results.md"));
-        // Should NOT contain relative paths
-        assert!(!prompt.contains("\".orkestra/.artifacts/summary.md\""));
-    }
-
-    #[test]
-    fn test_recheck_with_activity_log_artifact() {
-        // Activity logs are now referenced by file path (via artifact list), not inline.
-        let artifact_names = vec!["summary".to_string(), "activity_log".to_string()];
-        let prompt = execute(
-            "review",
-            &ResumeType::Recheck,
-            "main",
-            &artifact_names,
-            None,
-        )
-        .unwrap();
-        assert!(prompt.starts_with("<!orkestra:resume:review:recheck>"));
-        assert!(prompt.contains("Updated Input Artifacts"));
-        // File paths are referenced, not inline content
-        assert!(prompt.contains(".orkestra/.artifacts/summary.md"));
-        assert!(prompt.contains(".orkestra/.artifacts/activity_log.md"));
-        // Should NOT contain old inline Activity Log section
-        assert!(!prompt.contains("Prior stages have recorded the following activity"));
     }
 
     #[test]

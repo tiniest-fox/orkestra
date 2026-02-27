@@ -16,55 +16,13 @@ use std::time::{Duration, Instant};
 use super::types::{deduplicate_activity_logs_by_stage, ActivityLogEntry};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::{IterationTrigger, LogEntry, Task};
-use crate::workflow::execution::{
-    sibling_status_display, AgentRunner, AgentRunnerTrait, ProviderRegistry, SiblingTaskContext,
-    StageOutput,
-};
+use crate::workflow::execution::{AgentRunner, AgentRunnerTrait, ProviderRegistry, StageOutput};
 use crate::workflow::ports::WorkflowStore;
 
 use super::agents::{AgentExecutionService, ExecutionHandle};
 use super::scripts::{ScriptExecutionService, ScriptPollResult};
 use super::session::SessionSpawnContext;
 use crate::workflow::iteration::IterationService;
-
-// ============================================================================
-// Sibling Context Computation
-// ============================================================================
-
-/// Transform sibling tasks into template context.
-///
-/// Filters out the current task and archived siblings.
-/// Computes dependency relationships relative to the current task.
-fn compute_sibling_contexts(
-    current_task: &Task,
-    all_siblings: Vec<Task>,
-) -> Vec<SiblingTaskContext> {
-    all_siblings
-        .into_iter()
-        .filter(|s| s.id != current_task.id) // Exclude self
-        .filter(|s| !s.is_archived()) // Exclude archived
-        .map(|sibling| {
-            let dependency_relationship = if sibling.depends_on.contains(&current_task.id) {
-                Some("depends on this task".to_string())
-            } else if current_task.depends_on.contains(&sibling.id) {
-                Some("this task depends on".to_string())
-            } else {
-                None
-            };
-
-            SiblingTaskContext {
-                short_id: sibling
-                    .short_id
-                    .clone()
-                    .unwrap_or_else(|| sibling.id.clone()),
-                title: sibling.title.clone(),
-                description: sibling.description.clone(),
-                dependency_relationship,
-                status_display: sibling_status_display(&sibling.state).to_string(),
-            }
-        })
-        .collect()
-}
 
 // ============================================================================
 // Execution Poll Result (internal)
@@ -381,8 +339,27 @@ impl StageExecutionService {
             }
         };
 
-        // 1. Create session + get spawn context (session ID, resume flag, reentry detection)
-        let mut spawn_context = super::interactions::session::on_spawn_starting::execute(
+        // 1. Pre-supersession: for "returning" triggers (Rejection, Integration) and untriggered
+        //    re-entries, supersede the existing session BEFORE on_spawn_starting so it creates
+        //    a new session automatically.
+        if super::interactions::session::should_supersede::execute(
+            self.store.as_ref(),
+            trigger,
+            &task.id,
+            stage,
+        )
+        .map_err(|e| SpawnError::SessionError(e.to_string()))?
+        {
+            super::interactions::session::supersede_session::execute(
+                self.store.as_ref(),
+                &task.id,
+                stage,
+            )
+            .map_err(|e| SpawnError::SessionError(e.to_string()))?;
+        }
+
+        // 2. Create session + get spawn context (session ID, resume flag)
+        let spawn_context = super::interactions::session::on_spawn_starting::execute(
             self.store.as_ref(),
             &self.iteration_service,
             &task.id,
@@ -390,39 +367,6 @@ impl StageExecutionService {
             generate_session_id(),
         )
         .map_err(|e| SpawnError::SessionError(e.to_string()))?;
-
-        // 2. If this stage has restart_on_reentry and we detected a re-entry,
-        //    supersede the existing session and create a fresh one.
-        if spawn_context.is_stage_reentry {
-            let restart = self
-                .workflow
-                .stage(stage)
-                .is_some_and(|s| s.restart_on_reentry);
-
-            if restart {
-                // Supersede the old session so the next on_spawn_starting creates a new one
-                super::interactions::session::supersede_session::execute(
-                    self.store.as_ref(),
-                    &task.id,
-                    stage,
-                )
-                .map_err(|e| SpawnError::SessionError(e.to_string()))?;
-
-                // Generate a FRESH UUID — reusing the old one would cause Claude Code
-                // to find the old JSONL session file and resume it
-                // Re-create session: on_spawn_starting will find no active session
-                // (Superseded is filtered) and create a new one. The iteration from
-                // the first call is reused via get_active_iteration.
-                spawn_context = super::interactions::session::on_spawn_starting::execute(
-                    self.store.as_ref(),
-                    &self.iteration_service,
-                    &task.id,
-                    stage,
-                    generate_session_id(),
-                )
-                .map_err(|e| SpawnError::SessionError(e.to_string()))?;
-            }
-        }
 
         // 3. Execute (all stages are agent stages)
         let result = self.spawn_agent(task, stage, trigger, &spawn_context);
@@ -448,7 +392,7 @@ impl StageExecutionService {
                 }
 
                 // Mark trigger as delivered so crash recovery doesn't replay it
-                if spawn_context.is_resume && trigger.is_some() {
+                if trigger.is_some() {
                     if let Err(e) = super::interactions::session::mark_trigger_delivered::execute(
                         self.store.as_ref(),
                         &task.id,
@@ -522,7 +466,7 @@ impl StageExecutionService {
                 .store
                 .list_subtasks(parent_id)
                 .map_err(|e| SpawnError::AgentError(format!("Failed to query siblings: {e}")))?;
-            compute_sibling_contexts(task, siblings)
+            super::interactions::compute_sibling_contexts::execute(task, siblings)
         } else {
             Vec::new()
         };

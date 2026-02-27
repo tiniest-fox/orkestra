@@ -1,7 +1,6 @@
 //! Approve the current stage's artifact or confirm a pending rejection.
 
 use crate::orkestra_debug;
-use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
@@ -9,7 +8,6 @@ use crate::workflow::stage::interactions as stage;
 
 pub fn execute(
     store: &dyn WorkflowStore,
-    workflow: &WorkflowConfig,
     iteration_service: &IterationService,
     task_id: &str,
 ) -> WorkflowResult<Task> {
@@ -42,8 +40,6 @@ pub fn execute(
         );
         let now = chrono::Utc::now().to_rfc3339();
         stage::execute_rejection::execute(
-            store,
-            workflow,
             iteration_service,
             &mut task,
             &from_stage,

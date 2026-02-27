@@ -29,7 +29,6 @@ pub fn execute(text: &str) -> Option<ResumeMarker> {
                 "feedback" => ResumeMarkerType::Feedback,
                 "integration" => ResumeMarkerType::Integration,
                 "answers" => ResumeMarkerType::Answers,
-                "recheck" => ResumeMarkerType::Recheck,
                 "retry_failed" => ResumeMarkerType::RetryFailed,
                 "retry_blocked" => ResumeMarkerType::RetryBlocked,
                 "manual_resume" => ResumeMarkerType::ManualResume,
@@ -97,7 +96,6 @@ mod tests {
         assert_eq!(ResumeMarkerType::Feedback.as_str(), "feedback");
         assert_eq!(ResumeMarkerType::Integration.as_str(), "integration");
         assert_eq!(ResumeMarkerType::Answers.as_str(), "answers");
-        assert_eq!(ResumeMarkerType::Recheck.as_str(), "recheck");
         assert_eq!(ResumeMarkerType::RetryFailed.as_str(), "retry_failed");
         assert_eq!(ResumeMarkerType::RetryBlocked.as_str(), "retry_blocked");
         assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
@@ -111,15 +109,6 @@ mod tests {
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::Initial);
         assert!(marker.content.starts_with("# Reviewer Agent"));
-    }
-
-    #[test]
-    fn test_parse_resume_marker_recheck() {
-        let marker = execute("<!orkestra:resume:review:recheck>\n\nThis stage is being re-run.");
-        assert!(marker.is_some());
-        let marker = marker.unwrap();
-        assert_eq!(marker.marker_type, ResumeMarkerType::Recheck);
-        assert!(marker.content.contains("re-run"));
     }
 
     #[test]

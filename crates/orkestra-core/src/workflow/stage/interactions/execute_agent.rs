@@ -10,8 +10,9 @@ use crate::orkestra_debug;
 use crate::workflow::config::{ToolRestriction, WorkflowConfig};
 use crate::workflow::domain::{IterationTrigger, Task};
 use crate::workflow::execution::{
-    build_resume_prompt, AgentRunnerTrait, PrComment, ProviderCapabilities, ProviderRegistry,
-    ResumeQuestionAnswer, ResumeType, RunConfig, SiblingTaskContext,
+    build_resume_prompt, AgentRunnerTrait, IntegrationErrorContext, PrComment,
+    ProviderCapabilities, ProviderRegistry, ResumeQuestionAnswer, ResumeType, RunConfig,
+    SiblingTaskContext,
 };
 use crate::workflow::prompt::PromptService;
 use crate::workflow::stage::agents::{ExecutionError, ExecutionHandle};
@@ -100,7 +101,6 @@ pub(crate) fn execute(
         &artifact_names,
         stage,
         spawn_context.is_resume,
-        spawn_context.is_stage_reentry,
         trigger,
         resolved.capabilities.requires_direct_structured_output,
         sibling_tasks,
@@ -198,7 +198,8 @@ fn build_system_prompt(
 /// Build the user message prompt for a stage execution.
 ///
 /// If resuming, returns a short resume prompt. Otherwise returns the full
-/// user message with task context.
+/// user message with task context, embedding any feedback or integration
+/// error from the trigger.
 #[allow(clippy::too_many_arguments)]
 fn build_user_prompt(
     prompt_service: &PromptService,
@@ -207,18 +208,12 @@ fn build_user_prompt(
     artifact_names: &[String],
     stage: &str,
     is_resume: bool,
-    is_stage_reentry: bool,
     trigger: Option<&IterationTrigger>,
     show_direct_structured_output_hint: bool,
     sibling_tasks: &[SiblingTaskContext],
 ) -> Result<String, ExecutionError> {
     if is_resume {
-        let resume_type = if is_stage_reentry {
-            ResumeType::Recheck
-        } else {
-            trigger_to_resume_type(trigger)
-        };
-
+        let resume_type = trigger_to_resume_type(trigger);
         build_resume_prompt(
             stage,
             &resume_type,
@@ -228,19 +223,42 @@ fn build_user_prompt(
         )
         .map_err(ExecutionError::from)
     } else {
-        // Extract feedback from trigger if present (fresh spawn after session reset)
+        // Fresh spawn: embed feedback and integration error context from trigger
         let feedback = extract_feedback_text(trigger);
+        let integration_error = extract_integration_context(trigger, &task.base_branch);
 
         let config = prompt_service.resolve_config(
             workflow,
             task,
             artifact_names,
             feedback,
-            None, // No integration error on first spawn
+            integration_error,
             show_direct_structured_output_hint,
             sibling_tasks,
         )?;
         Ok(config.prompt)
+    }
+}
+
+/// Extract integration error context from an iteration trigger for fresh spawns.
+///
+/// When a task returns from a failed integration (merge conflict), the full
+/// prompt should include the error message and conflicting files so the agent
+/// can resolve them immediately without needing a resume prompt.
+fn extract_integration_context<'a>(
+    trigger: Option<&'a IterationTrigger>,
+    base_branch: &'a str,
+) -> Option<IntegrationErrorContext<'a>> {
+    match trigger {
+        Some(IterationTrigger::Integration {
+            message,
+            conflict_files,
+        }) => Some(IntegrationErrorContext {
+            message,
+            conflict_files: conflict_files.iter().map(String::as_str).collect(),
+            base_branch,
+        }),
+        _ => None,
     }
 }
 
@@ -263,18 +281,18 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
     match trigger {
         // First iteration or no special context
         None | Some(IterationTrigger::Interrupted) => ResumeType::Continue,
-        Some(
-            IterationTrigger::Feedback { feedback } | IterationTrigger::Rejection { feedback, .. },
-        ) => ResumeType::Feedback {
+        Some(IterationTrigger::Feedback { feedback }) => ResumeType::Feedback {
             feedback: feedback.clone(),
         },
-        Some(IterationTrigger::Integration {
-            message,
-            conflict_files,
-        }) => ResumeType::Integration {
-            message: message.clone(),
-            conflict_files: conflict_files.clone(),
-        },
+        // Rejection and Integration always supersede the session via should_supersede_session(),
+        // so these arms are unreachable — trigger_to_resume_type is only called when
+        // is_resume=true, which requires an existing (non-superseded) session.
+        Some(IterationTrigger::Rejection { .. }) => unreachable!(
+            "Rejection triggers always supersede the session; is_resume cannot be true here"
+        ),
+        Some(IterationTrigger::Integration { .. }) => unreachable!(
+            "Integration triggers always supersede the session; is_resume cannot be true here"
+        ),
         Some(IterationTrigger::Answers { answers }) => ResumeType::Answers {
             answers: answers
                 .iter()
@@ -664,5 +682,33 @@ mod tests {
             }
             _ => panic!("Expected PrComments resume type"),
         }
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Rejection triggers always supersede the session; is_resume cannot be true here"
+    )]
+    fn test_trigger_to_resume_type_rejection_is_unreachable() {
+        // Documents the invariant: Rejection always supersedes the session, so
+        // trigger_to_resume_type can never be called with a Rejection trigger.
+        let trigger = IterationTrigger::Rejection {
+            from_stage: "review".to_string(),
+            feedback: "needs work".to_string(),
+        };
+        trigger_to_resume_type(Some(&trigger));
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Integration triggers always supersede the session; is_resume cannot be true here"
+    )]
+    fn test_trigger_to_resume_type_integration_is_unreachable() {
+        // Documents the invariant: Integration always supersedes the session, so
+        // trigger_to_resume_type can never be called with an Integration trigger.
+        let trigger = IterationTrigger::Integration {
+            message: "merge conflict".to_string(),
+            conflict_files: vec!["src/lib.rs".to_string()],
+        };
+        trigger_to_resume_type(Some(&trigger));
     }
 }

@@ -293,7 +293,7 @@ pub async fn open_project(
         &window_label,
         WebviewUrl::App(url.parse().unwrap()),
     )
-    .title("Orkestra")
+    .title("")
     .inner_size(1200.0, 800.0)
     .build()
     .map_err(|e| {

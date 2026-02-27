@@ -393,7 +393,7 @@ pub fn run() {
                                 &label,
                                 WebviewUrl::App("index.html".into()),
                             )
-                            .title("Orkestra")
+                            .title("")
                             .inner_size(1200.0, 800.0)
                             .build();
                         }
@@ -425,7 +425,7 @@ pub fn run() {
                     // On success the thread emits `startup-data`; on failure `startup-error`.
                     let url = format!("/?project={}", urlencoding::encode(&path_str));
                     WebviewWindowBuilder::new(app, "picker", WebviewUrl::App(url.parse().unwrap()))
-                        .title("Orkestra")
+                        .title("")
                         .inner_size(1200.0, 800.0)
                         .build()?;
                     commands::spawn_background_startup(app_handle, "picker", &path_str);
@@ -434,14 +434,14 @@ pub fn run() {
                     let error_msg = format!("Folder not found: {}", last_project.path);
                     let url = format!("/?error={}", urlencoding::encode(&error_msg));
                     WebviewWindowBuilder::new(app, "picker", WebviewUrl::App(url.parse().unwrap()))
-                        .title("Orkestra")
+                        .title("")
                         .inner_size(1200.0, 800.0)
                         .build()?;
                 }
             } else {
                 // No recents — show the project picker
                 WebviewWindowBuilder::new(app, "picker", WebviewUrl::App("index.html".into()))
-                    .title("Orkestra")
+                    .title("")
                     .inner_size(1200.0, 800.0)
                     .build()?;
             }

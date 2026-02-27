@@ -29,6 +29,10 @@ pub struct GateResult {
 ///
 /// Captured at action time and passed through to the prompt builder.
 /// This allows comments to be stored in the database and replayed on crash recovery.
+///
+/// Note: Despite the "PR" name, this type is used for both GitHub PR review comments
+/// and locally-authored line comments from the task diff view. Both share the same
+/// data shape and prompt rendering path — the naming reflects the original use case.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PrCommentData {
     /// The author of the comment.

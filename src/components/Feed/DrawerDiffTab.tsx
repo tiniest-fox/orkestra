@@ -3,21 +3,36 @@
 //! Registers c / ] / [ / j·k hotkeys when active.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
 import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
 import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
+import type { DraftComment } from "../Diff/types";
 import { useNavHandler } from "../ui/HotkeyScope";
 import { useDrawerDiff } from "./DrawerTaskProvider";
 
 interface DrawerDiffTabProps {
   /** Whether this tab is currently visible — controls data loading and hotkey registration. */
   active: boolean;
+  draftComments?: DraftComment[];
+  onAddDraftComment?: (
+    filePath: string,
+    lineNumber: number,
+    lineType: "add" | "delete" | "context",
+    body: string,
+  ) => void;
+  onRemoveDraftComment?: (id: string) => void;
 }
 
-export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
-  const { diff, diffLoading } = useDrawerDiff();
+export function DrawerDiffTab({
+  active,
+  draftComments,
+  onAddDraftComment,
+  onRemoveDraftComment,
+}: DrawerDiffTabProps) {
+  const { diff: liveDiff, diffLoading } = useDrawerDiff();
   const { css } = useSyntaxCss();
   const [activePath, setActivePath] = useState<string | null>(null);
   const [lineLimit, setLineLimit] = useState(150);
@@ -31,6 +46,23 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
     (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
     setScrollEl(el);
   }, []);
+
+  // -- Active comment line (local state) --
+  const [activeCommentLine, setActiveCommentLine] = useState<{
+    filePath: string;
+    lineNumber: number;
+  } | null>(null);
+
+  // -- Frozen diff: snapshot the diff when drafts exist so line numbers stay stable --
+  const hasDrafts = (draftComments?.length ?? 0) > 0;
+  const diffSnapshotRef = useRef<HighlightedTaskDiff | null>(null);
+
+  // Update snapshot only when there are no drafts
+  if (!hasDrafts) {
+    diffSnapshotRef.current = liveDiff;
+  }
+
+  const diff = hasDrafts ? diffSnapshotRef.current : liveDiff;
 
   // Expand from the initial 150-line stub to full diff after animation settles.
   // Timer lives in a ref so poll-driven effect re-runs don't cancel it mid-flight.
@@ -161,6 +193,29 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
     return () => cancelAnimationFrame(id);
   }, [pickActiveFile]);
 
+  // -- Draft comment handlers --
+  function handleLineClick(
+    filePath: string,
+    lineNumber: number,
+    _lineType: "add" | "delete" | "context",
+  ) {
+    setActiveCommentLine({ filePath, lineNumber });
+  }
+
+  function handleSaveDraft(
+    filePath: string,
+    lineNumber: number,
+    lineType: "add" | "delete" | "context",
+    body: string,
+  ) {
+    onAddDraftComment?.(filePath, lineNumber, lineType, body);
+    setActiveCommentLine(null);
+  }
+
+  function handleDismissCommentInput() {
+    setActiveCommentLine(null);
+  }
+
   // Keyboard navigation — only meaningful when this tab is active.
   useNavHandler("ArrowDown", () => {
     if (active) scrollRef.current?.scrollBy({ top: 120, behavior: "smooth" });
@@ -190,6 +245,8 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
     if (prev) handleJumpTo(prev);
   });
 
+  const isCommentingEnabled = !!onAddDraftComment;
+
   return (
     <div className="flex flex-1 overflow-hidden">
       {css && (
@@ -216,6 +273,12 @@ export function DrawerDiffTab({ active }: DrawerDiffTabProps) {
               lineLimit={lineLimit}
               onToggleCollapsed={handleToggleCollapsed}
               onFileSectionRef={handleFileSectionRef}
+              onLineClick={isCommentingEnabled ? handleLineClick : undefined}
+              draftComments={draftComments}
+              activeCommentLine={activeCommentLine}
+              onSaveDraft={isCommentingEnabled ? handleSaveDraft : undefined}
+              onCancelDraft={isCommentingEnabled ? handleDismissCommentInput : undefined}
+              onDeleteDraft={onRemoveDraftComment}
             />
           </div>
         </>

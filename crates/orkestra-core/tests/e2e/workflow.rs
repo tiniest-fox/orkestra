@@ -7218,3 +7218,325 @@ fn test_flow_gate_override_disables_gate() {
         task.state
     );
 }
+
+// =============================================================================
+// Reject With Comments E2E Tests
+// =============================================================================
+
+/// Build a minimal 2-stage workflow where the review stage pauses for human approval.
+///
+/// work (summary) → review (verdict, non-automated, `rejection_stage` = work)
+fn workflow_with_non_automated_review() -> WorkflowConfig {
+    use orkestra_core::workflow::config::{
+        IntegrationConfig, StageCapabilities, StageConfig, WorkflowConfig,
+    };
+
+    WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary"),
+        StageConfig::new("review", "verdict")
+            .with_capabilities(StageCapabilities::with_approval(Some("work".into()))),
+        // Note: no .automated() — task pauses at AwaitingApproval
+    ])
+    .with_integration(IntegrationConfig::new("work"))
+}
+
+/// Advance a task to `AwaitingApproval` in the review stage.
+///
+/// The mock reviewer produces an approve verdict. Since the stage is non-automated,
+/// the task pauses at `AwaitingApproval` for human input.
+fn advance_to_awaiting_approval(ctx: &TestEnv, task_id: &str) {
+    // Work stage — produce summary artifact
+    ctx.set_output(
+        task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process summary
+    ctx.api().approve(task_id).unwrap();
+    ctx.advance(); // commit + advance to review
+
+    // Review stage — reviewer produces "approve" verdict; non-automated stage pauses
+    ctx.set_output(
+        task_id,
+        MockAgentOutput::Approval {
+            decision: "approve".to_string(),
+            content: "LGTM".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn reviewer
+    ctx.advance(); // process approval → AwaitingApproval
+}
+
+/// Test normal rejection with line comments routes to the rejection target stage.
+#[test]
+fn test_reject_with_comments_normal() {
+    use crate::helpers::disable_auto_merge;
+    use orkestra_core::workflow::domain::{IterationTrigger, PrCommentData};
+
+    let workflow = disable_auto_merge(workflow_with_non_automated_review());
+    let ctx = TestEnv::with_git(&workflow, &["work", "review"]);
+
+    let task = ctx.create_task("Test reject with comments", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    // Verify task is AwaitingApproval in review stage
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        task.is_awaiting_review(),
+        "Task should be AwaitingApproval, got: {:?}",
+        task.state
+    );
+    assert_eq!(task.current_stage(), Some("review"));
+
+    // Submit line comments
+    let comments = vec![PrCommentData {
+        author: "You".to_string(),
+        body: "Fix this".to_string(),
+        path: Some("src/main.rs".to_string()),
+        line: Some(42),
+    }];
+    let task = ctx
+        .api()
+        .reject_with_comments(
+            &task_id,
+            comments.clone(),
+            Some("Please address".to_string()),
+        )
+        .unwrap();
+
+    // Task should move to "work" (the rejection target stage), Queued
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Task should route to work stage"
+    );
+    assert!(matches!(task.state, TaskState::Queued { .. }));
+
+    // New iteration in work stage should have PrComments trigger
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let work_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == "work").collect();
+    let last_work_iter = work_iterations.last().expect("Should have work iteration");
+    match &last_work_iter.incoming_context {
+        Some(IterationTrigger::PrComments {
+            comments: ctx_comments,
+            guidance,
+        }) => {
+            assert_eq!(ctx_comments.len(), 1);
+            assert_eq!(ctx_comments[0].author, "You");
+            assert_eq!(ctx_comments[0].body, "Fix this");
+            assert_eq!(ctx_comments[0].path.as_deref(), Some("src/main.rs"));
+            assert_eq!(ctx_comments[0].line, Some(42));
+            assert_eq!(guidance.as_deref(), Some("Please address"));
+        }
+        other => panic!("Expected PrComments trigger, got {other:?}"),
+    }
+
+    // Previous review iteration should be ended with rejection outcome
+    let review_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == "review").collect();
+    let review_iter = review_iterations
+        .last()
+        .expect("Should have review iteration");
+    assert!(
+        matches!(review_iter.outcome, Some(Outcome::Rejected { .. })),
+        "Review iteration should be ended with Rejected outcome, got: {:?}",
+        review_iter.outcome
+    );
+}
+
+/// Test that empty comments returns an error.
+#[test]
+fn test_reject_with_comments_empty_returns_error() {
+    use crate::helpers::disable_auto_merge;
+    use orkestra_core::workflow::ports::WorkflowError;
+
+    let workflow = disable_auto_merge(workflow_with_non_automated_review());
+    let ctx = TestEnv::with_git(&workflow, &["work", "review"]);
+
+    let task = ctx.create_task("Test empty comments", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    let result = ctx.api().reject_with_comments(&task_id, vec![], None);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "Empty comments should return InvalidTransition error, got: {result:?}"
+    );
+}
+
+/// Test that calling `reject_with_comments` on a non-awaiting-review task returns error.
+#[test]
+fn test_reject_with_comments_wrong_state_returns_error() {
+    use crate::helpers::disable_auto_merge;
+    use orkestra_core::workflow::domain::PrCommentData;
+    use orkestra_core::workflow::ports::WorkflowError;
+
+    let workflow = disable_auto_merge(workflow_with_non_automated_review());
+    let ctx = TestEnv::with_git(&workflow, &["work", "review"]);
+
+    let task = ctx.create_task("Test wrong state", "Description", None);
+    let task_id = task.id.clone();
+
+    // Task is in Queued/Idle state, not AwaitingApproval
+    let comments = vec![PrCommentData {
+        author: "You".to_string(),
+        body: "Fix this".to_string(),
+        path: None,
+        line: None,
+    }];
+
+    let result = ctx.api().reject_with_comments(&task_id, comments, None);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "Should return InvalidTransition for wrong state, got: {result:?}"
+    );
+}
+
+/// Test pending rejection review path: reviewer agent produced a "reject" verdict,
+/// then human submits line comments → routes to rejection target stage.
+#[test]
+fn test_reject_with_comments_pending_rejection_review() {
+    use crate::helpers::disable_auto_merge;
+    use orkestra_core::workflow::domain::{IterationTrigger, PrCommentData};
+    use orkestra_core::workflow::runtime::TaskState;
+
+    let workflow = disable_auto_merge(workflow_with_non_automated_review());
+    let ctx = TestEnv::with_git(&workflow, &["work", "review"]);
+
+    let task = ctx.create_task("Test pending rejection", "Description", None);
+    let task_id = task.id.clone();
+
+    // Advance work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Implementation complete".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn worker
+    ctx.advance(); // process summary
+    ctx.api().approve(&task_id).unwrap();
+    ctx.advance(); // commit + advance to review
+
+    // Reviewer produces a "reject" verdict — non-automated stage pauses at AwaitingRejectionConfirmation
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Approval {
+            decision: "reject".to_string(),
+            content: "Tests are failing, fix them".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawn reviewer
+    ctx.advance(); // process rejection → AwaitingRejectionConfirmation
+
+    let task = ctx.api().get_task(&task_id).unwrap();
+    assert!(
+        matches!(task.state, TaskState::AwaitingRejectionConfirmation { .. }),
+        "Task should be AwaitingRejectionConfirmation, got: {:?}",
+        task.state
+    );
+
+    // Human submits line comments — overrides the pending rejection review
+    let comments = vec![PrCommentData {
+        author: "You".to_string(),
+        body: "Fix this specific line".to_string(),
+        path: Some("src/lib.rs".to_string()),
+        line: Some(10),
+    }];
+    let task = ctx
+        .api()
+        .reject_with_comments(&task_id, comments.clone(), None)
+        .unwrap();
+
+    // Task should route to "work" (rejection target) with PrComments trigger
+    assert_eq!(
+        task.current_stage(),
+        Some("work"),
+        "Task should route to work stage"
+    );
+    assert!(matches!(task.state, TaskState::Queued { .. }));
+
+    // Verify PrComments trigger in the new work iteration
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let work_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == "work").collect();
+    let last_work_iter = work_iterations.last().expect("Should have work iteration");
+    match &last_work_iter.incoming_context {
+        Some(IterationTrigger::PrComments {
+            comments: ctx_comments,
+            guidance,
+        }) => {
+            assert_eq!(ctx_comments.len(), 1);
+            assert_eq!(ctx_comments[0].body, "Fix this specific line");
+            assert!(guidance.is_none());
+        }
+        other => panic!("Expected PrComments trigger, got {other:?}"),
+    }
+}
+
+/// Test that PR comment context reaches the agent prompt after `reject_with_comments`.
+///
+/// Verifies the orchestrator advances the task past Queued and that the work
+/// stage prompt contains the file path, line number, and comment body from the
+/// submitted PR comments.
+#[test]
+fn test_pr_comments_context_reaches_agent_prompt() {
+    use crate::helpers::disable_auto_merge;
+    use orkestra_core::workflow::domain::PrCommentData;
+
+    let workflow = disable_auto_merge(workflow_with_non_automated_review());
+    let ctx = TestEnv::with_git(&workflow, &["work", "review"]);
+
+    let task = ctx.create_task("Test PR comments in prompt", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_awaiting_approval(&ctx, &task_id);
+
+    // Submit line comments to route the task back to the work stage
+    let comments = vec![PrCommentData {
+        author: "reviewer".to_string(),
+        body: "Fix this implementation".to_string(),
+        path: Some("src/lib.rs".to_string()),
+        line: Some(10),
+    }];
+    ctx.api()
+        .reject_with_comments(
+            &task_id,
+            comments,
+            Some("Please address the comment".to_string()),
+        )
+        .unwrap();
+
+    // Set mock output so the orchestrator can process the work stage
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Fixed".to_string(),
+            activity_log: None,
+        },
+    );
+
+    // Advance once — orchestrator spawns the work agent with PrComments context
+    ctx.advance();
+
+    // The resume prompt should contain the PR comment data
+    ctx.assert_resume_prompt_contains(
+        "pr_comments",
+        &[
+            "Fix this implementation",
+            "src/lib.rs",
+            "line 10",
+            "Please address the comment",
+        ],
+    );
+}

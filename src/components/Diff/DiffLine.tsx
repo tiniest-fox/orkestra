@@ -4,9 +4,10 @@ import type { HighlightedLine } from "../../hooks/useDiff";
 
 interface DiffLineProps {
   line: HighlightedLine;
+  onOpenCommentInput?: () => void;
 }
 
-export function DiffLine({ line }: DiffLineProps) {
+export function DiffLine({ line, onOpenCommentInput }: DiffLineProps) {
   const bgColor =
     line.line_type === "add"
       ? "bg-status-success-bg"
@@ -39,10 +40,29 @@ export function DiffLine({ line }: DiffLineProps) {
   return (
     // min-w-max ensures the row expands to content width so the bg color fills behind long lines.
     // Wrapping rows (markdown) fill the container naturally and don't need this.
-    <div className={`flex font-mono text-forge-mono-md transition-colors ${bgColor} ${hoverColor}`}>
+    <div
+      className={`group relative flex font-mono text-forge-mono-md transition-colors ${bgColor} ${hoverColor}`}
+    >
       <div className={`flex flex-shrink-0 ${gutterBg}`}>
-        <div className="w-10 select-none text-right pr-2 text-text-quaternary">
+        <div className="relative w-10 select-none text-right pr-2 text-text-quaternary">
           {line.old_line_number ?? ""}
+          {onOpenCommentInput && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenCommentInput();
+              }}
+              // Satisfies Biome useKeyWithClickEvents — button is click-only
+              onKeyDown={() => {}}
+              aria-label="Add comment"
+              className="absolute inset-y-0 left-0 right-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              <span className="w-4 h-4 rounded-full bg-status-info text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                +
+              </span>
+            </button>
+          )}
         </div>
         <div className="w-10 select-none text-right pr-2 text-text-quaternary border-r border-border">
           {line.new_line_number ?? ""}

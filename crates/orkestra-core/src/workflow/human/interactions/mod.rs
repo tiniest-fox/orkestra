@@ -10,6 +10,7 @@ pub mod approve;
 pub mod archive;
 pub mod interrupt;
 pub mod reject;
+pub mod reject_with_comments;
 pub mod request_update;
 pub mod resume;
 pub mod retry;

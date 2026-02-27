@@ -3,7 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../types/workflow";
-import type { PrTabFooterState } from "./drawerTabs";
+import type { DraftComment, PrTabFooterState } from "./drawerTabs";
 
 // ============================================================================
 // Types
@@ -53,6 +53,21 @@ export interface TaskDrawerState {
   prTabState: PrTabFooterState;
   setPrTabState: (state: PrTabFooterState) => void;
 
+  // -- Draft line comments --
+  draftComments: DraftComment[];
+  lineCommentGuidance: string;
+  setLineCommentGuidance: (v: string) => void;
+  lineCommentError: string | null;
+  addDraftComment: (
+    filePath: string,
+    lineNumber: number,
+    lineType: "add" | "delete" | "context",
+    body: string,
+  ) => void;
+  removeDraftComment: (id: string) => void;
+  clearDraftComments: () => void;
+  submitLineComments: () => Promise<void>;
+
   // -- Refs --
   feedbackRef: React.RefObject<HTMLInputElement>;
   submitRef: React.RefObject<HTMLButtonElement>;
@@ -70,6 +85,19 @@ export interface TaskDrawerState {
   handleSubmitAnswers: (questions: WorkflowQuestion[]) => Promise<void>;
   handleToggleAutoMode: () => Promise<void>;
   optimisticAutoMode: boolean | null;
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function mapDraftsToPrComments(drafts: DraftComment[]) {
+  return drafts.map((d) => ({
+    author: "User" as const,
+    body: d.body,
+    path: d.filePath,
+    line: d.lineNumber,
+  }));
 }
 
 // ============================================================================
@@ -187,6 +215,80 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   useEffect(() => {
     setPrTabState({ type: "loading" });
   }, [task.id]);
+
+  // -- Draft line comments --
+  const [draftComments, setDraftComments] = useState<DraftComment[]>([]);
+  const [lineCommentGuidance, setLineCommentGuidance] = useState("");
+  const [lineCommentError, setLineCommentError] = useState<string | null>(null);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
+  useEffect(() => {
+    setDraftComments([]);
+    setLineCommentGuidance("");
+    setLineCommentError(null);
+  }, [task.id]);
+
+  const addDraftComment = useCallback(
+    (
+      filePath: string,
+      lineNumber: number,
+      lineType: "add" | "delete" | "context",
+      body: string,
+    ) => {
+      setDraftComments((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), filePath, lineNumber, lineType, body },
+      ]);
+    },
+    [],
+  );
+
+  const removeDraftComment = useCallback((id: string) => {
+    setDraftComments((prev) => prev.filter((d) => d.id !== id));
+  }, []);
+
+  const clearDraftComments = useCallback(() => {
+    setDraftComments([]);
+    setLineCommentGuidance("");
+  }, []);
+
+  const submitLineCommentsForDoneTask = useCallback(async () => {
+    if (loading || draftComments.length === 0) return;
+    setLineCommentError(null);
+    setLoading(true);
+    try {
+      const comments = mapDraftsToPrComments(draftComments);
+      const guidance = lineCommentGuidance.trim() || null;
+      await invoke("workflow_address_pr_comments", { taskId: task.id, comments, guidance });
+      clearDraftComments();
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setLineCommentError(message);
+      setLoading(false);
+    }
+  }, [task.id, loading, draftComments, lineCommentGuidance, clearDraftComments, onClose]);
+
+  const submitLineCommentsForReview = useCallback(async () => {
+    if (loading || draftComments.length === 0) return;
+    setLineCommentError(null);
+    setLoading(true);
+    try {
+      const comments = mapDraftsToPrComments(draftComments);
+      const guidance = lineCommentGuidance.trim() || null;
+      await invoke("workflow_reject_with_comments", { taskId: task.id, comments, guidance });
+      clearDraftComments();
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setLineCommentError(message);
+      setLoading(false);
+    }
+  }, [task.id, loading, draftComments, lineCommentGuidance, clearDraftComments, onClose]);
+
+  const submitLineComments = task.derived.is_done
+    ? submitLineCommentsForDoneTask
+    : submitLineCommentsForReview;
 
   // -- Action handlers --
 
@@ -372,6 +474,14 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     resuming,
     prTabState,
     setPrTabState,
+    draftComments,
+    lineCommentGuidance,
+    setLineCommentGuidance,
+    lineCommentError,
+    addDraftComment,
+    removeDraftComment,
+    clearDraftComments,
+    submitLineComments,
     feedbackRef,
     submitRef,
     handleApprove,

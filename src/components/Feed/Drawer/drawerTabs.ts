@@ -33,6 +33,8 @@ export type PrTabFooterState =
   | { type: "comments_selected"; count: number; comments: PrCommentData[]; guidance: string }
   | { type: "clean" };
 
+export type { DraftComment } from "../../Diff/types";
+
 // ============================================================================
 // Helpers
 // ============================================================================

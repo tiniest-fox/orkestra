@@ -216,6 +216,26 @@ pub fn workflow_archive(
     })
 }
 
+/// Reject an AwaitingApproval task with line-level comments.
+///
+/// Routes the task to the rejection target stage (typically "work") with
+/// the submitted comments as context for the agent.
+#[tauri::command]
+pub fn workflow_reject_with_comments(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+    comments: Vec<PrCommentData>,
+    guidance: Option<String>,
+) -> Result<Task, TauriError> {
+    registry.with_project(window.label(), |state| {
+        state
+            .api()?
+            .reject_with_comments(&task_id, comments, guidance)
+            .map_err(Into::into)
+    })
+}
+
 /// Address PR comments by returning the task to the work stage.
 ///
 /// This transitions a Done/Idle task back to the work stage,

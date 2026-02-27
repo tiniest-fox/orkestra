@@ -478,6 +478,7 @@ pub fn run() {
             commands::workflow_retry_pr,
             commands::workflow_push_pr_changes,
             commands::workflow_archive,
+            commands::workflow_reject_with_comments,
             commands::workflow_address_pr_comments,
             commands::workflow_address_pr_conflicts,
             commands::workflow_request_update,

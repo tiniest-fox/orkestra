@@ -142,6 +142,33 @@ onClick={(e) => {
 
 The `FeedRowActions.tsx` "View" button demonstrates this pattern. All new action buttons in row components must follow it.
 
+## Error Surfacing in Action Handlers
+
+<!-- compound: prodigally-forgiving-ibex -->
+
+`useTaskDrawerState.ts` contains a pre-existing `invokeAndClose` helper that silently swallows backend errors (logs to `console.error` but does not update any error state). **Do not use `invokeAndClose` for new action handlers that need to surface errors to the user.**
+
+For new handlers that users care about (e.g., submitting feedback, line comments), handle the error explicitly and store it in a `useState` error variable that the UI renders:
+
+```tsx
+const [error, setError] = useState<string | null>(null);
+
+const handleAction = useCallback(async () => {
+  if (loading) return;
+  setLoading(true);
+  setError(null);
+  try {
+    await invoke("workflow_action", { taskId: task.id });
+    onClose();
+  } catch (err) {
+    setError(String(err));
+    setLoading(false);
+  }
+}, [task.id, loading, onClose]);
+```
+
+See `submitLineCommentsForReview` / `submitLineCommentsForDoneTask` in `useTaskDrawerState.ts` for the reference pattern.
+
 ## Biome Lint Gotchas
 
 <!-- compound: tightly-prudent-motmot -->

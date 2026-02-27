@@ -6,6 +6,7 @@ import type { TaskDrawerState } from "../useTaskDrawerState";
 import { DoneFooter } from "./DoneFooter";
 import { FailedFooter } from "./FailedFooter";
 import { InterruptedFooter } from "./InterruptedFooter";
+import { LineCommentsFooter } from "./LineCommentsFooter";
 import { QuestionsFooter } from "./QuestionsFooter";
 import { RejectFooter } from "./RejectFooter";
 import { ReviewFooter } from "./ReviewFooter";
@@ -59,6 +60,23 @@ export function DrawerFooter({
         loading={state.loading}
         onSubmitAnswers={state.handleSubmitAnswers}
         submitRef={state.submitRef}
+      />
+    );
+  }
+  if (
+    (task.derived.needs_review || task.derived.is_done) &&
+    activeTab === "diff" &&
+    state.draftComments.length > 0
+  ) {
+    return (
+      <LineCommentsFooter
+        draftCount={state.draftComments.length}
+        guidance={state.lineCommentGuidance}
+        onGuidanceChange={state.setLineCommentGuidance}
+        loading={state.loading}
+        error={state.lineCommentError}
+        onSubmit={state.submitLineComments}
+        onClear={state.clearDraftComments}
       />
     );
   }

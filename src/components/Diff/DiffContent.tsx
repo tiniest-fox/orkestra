@@ -7,6 +7,9 @@ import type { PrComment } from "../../types/workflow";
 import { Kbd } from "../ui/Kbd";
 import { CollapsedSection } from "./CollapsedSection";
 import { DiffLine } from "./DiffLine";
+import { DraftCommentBubble } from "./DraftCommentBubble";
+import { LineCommentInput } from "./LineCommentInput";
+import type { DraftComment } from "./types";
 
 interface DiffContentProps {
   files: HighlightedFileDiff[];
@@ -18,6 +21,22 @@ interface DiffContentProps {
   onToggleCollapsed: (path: string) => void;
   /** Called with each file section's DOM node so the parent can build a jump map. */
   onFileSectionRef: (path: string, el: HTMLDivElement | null) => void;
+  // -- Draft comment props (all optional) --
+  onLineClick?: (
+    filePath: string,
+    lineNumber: number,
+    lineType: "add" | "delete" | "context",
+  ) => void;
+  draftComments?: DraftComment[];
+  activeCommentLine?: { filePath: string; lineNumber: number } | null;
+  onSaveDraft?: (
+    filePath: string,
+    lineNumber: number,
+    lineType: "add" | "delete" | "context",
+    body: string,
+  ) => void;
+  onCancelDraft?: () => void;
+  onDeleteDraft?: (id: string) => void;
 }
 
 const COLLAPSE_THRESHOLD = 8;
@@ -66,6 +85,12 @@ export function DiffContent({
   lineLimit = Infinity,
   onToggleCollapsed,
   onFileSectionRef,
+  onLineClick,
+  draftComments,
+  activeCommentLine,
+  onSaveDraft,
+  onCancelDraft,
+  onDeleteDraft,
 }: DiffContentProps) {
   const commentsByFile = useMemo(() => {
     const map = new Map<string, Map<number, PrComment[]>>();
@@ -80,6 +105,20 @@ export function DiffContent({
     }
     return map;
   }, [comments]);
+
+  const draftsByFile = useMemo(() => {
+    if (!draftComments) return new Map<string, Map<number, DraftComment[]>>();
+    const map = new Map<string, Map<number, DraftComment[]>>();
+    for (const draft of draftComments) {
+      if (!map.has(draft.filePath)) map.set(draft.filePath, new Map());
+      const byLine = map.get(draft.filePath);
+      if (!byLine) continue;
+      const existing = byLine.get(draft.lineNumber) ?? [];
+      existing.push(draft);
+      byLine.set(draft.lineNumber, existing);
+    }
+    return map;
+  }, [draftComments]);
 
   const { visibleFiles, truncated } = sliceFilesToLimit(files, lineLimit);
 
@@ -102,9 +141,17 @@ export function DiffContent({
           <FileSection
             file={file}
             commentsByLine={commentsByFile.get(file.path) ?? new Map()}
+            draftsByLine={draftsByFile.get(file.path) ?? new Map()}
             isActive={file.path === activePath}
             isCollapsed={collapsedPaths.has(file.path)}
             onToggleCollapsed={() => onToggleCollapsed(file.path)}
+            activeCommentLine={activeCommentLine?.filePath === file.path ? activeCommentLine : null}
+            onLineClick={onLineClick ? (ln, lt) => onLineClick(file.path, ln, lt) : undefined}
+            onSaveDraft={
+              onSaveDraft ? (ln, lt, body) => onSaveDraft(file.path, ln, lt, body) : undefined
+            }
+            onCancelDraft={onCancelDraft}
+            onDeleteDraft={onDeleteDraft}
           />
         </div>
       ))}
@@ -122,15 +169,27 @@ export function DiffContent({
 function FileSection({
   file,
   commentsByLine,
+  draftsByLine,
   isActive,
   isCollapsed,
   onToggleCollapsed,
+  activeCommentLine,
+  onLineClick,
+  onSaveDraft,
+  onCancelDraft,
+  onDeleteDraft,
 }: {
   file: HighlightedFileDiff;
   commentsByLine: Map<number, PrComment[]>;
+  draftsByLine: Map<number, DraftComment[]>;
   isActive: boolean;
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
+  activeCommentLine: { filePath: string; lineNumber: number } | null;
+  onLineClick?: (lineNumber: number, lineType: "add" | "delete" | "context") => void;
+  onSaveDraft?: (lineNumber: number, lineType: "add" | "delete" | "context", body: string) => void;
+  onCancelDraft?: () => void;
+  onDeleteDraft?: (id: string) => void;
 }) {
   if (file.is_binary) {
     return (
@@ -176,14 +235,32 @@ function FileSection({
             <div className="bg-canvas px-4 py-1 font-mono text-forge-mono-label text-text-quaternary">
               @@ -{hunk.old_start},{hunk.old_count} +{hunk.new_start},{hunk.new_count} @@
             </div>
-            {renderHunkLines(hunk.lines, commentsByLine)}
+            {renderHunkLines(
+              hunk.lines,
+              commentsByLine,
+              draftsByLine,
+              activeCommentLine,
+              onLineClick,
+              onSaveDraft,
+              onCancelDraft,
+              onDeleteDraft,
+            )}
           </div>
         ))}
     </>
   );
 }
 
-function renderHunkLines(lines: HighlightedLine[], commentsByLine: Map<number, PrComment[]>) {
+function renderHunkLines(
+  lines: HighlightedLine[],
+  commentsByLine: Map<number, PrComment[]>,
+  draftsByLine: Map<number, DraftComment[]>,
+  activeCommentLine: { filePath: string; lineNumber: number } | null,
+  onLineClick?: (lineNumber: number, lineType: "add" | "delete" | "context") => void,
+  onSaveDraft?: (lineNumber: number, lineType: "add" | "delete" | "context", body: string) => void,
+  onCancelDraft?: () => void,
+  onDeleteDraft?: (id: string) => void,
+) {
   const sections: { type: "render" | "collapse"; lines: HighlightedLine[] }[] = [];
   let currentContext: HighlightedLine[] = [];
 
@@ -221,12 +298,22 @@ function renderHunkLines(lines: HighlightedLine[], commentsByLine: Map<number, P
       <CollapsedSection key={i} lines={section.lines} />
     ) : (
       section.lines.map((line, j) => {
-        const lineComments =
-          line.new_line_number !== null ? commentsByLine.get(line.new_line_number) : undefined;
+        // Resolve to new_line_number, falling back to old_line_number for deleted lines
+        const lineNumber = line.new_line_number ?? line.old_line_number;
+        const lineComments = lineNumber !== null ? commentsByLine.get(lineNumber) : undefined;
+        const lineDrafts = lineNumber !== null ? draftsByLine.get(lineNumber) : undefined;
+        const isActiveInput = lineNumber !== null && activeCommentLine?.lineNumber === lineNumber;
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: line order is stable within section
           <Fragment key={`${i}-${j}`}>
-            <DiffLine line={line} />
+            <DiffLine
+              line={line}
+              onOpenCommentInput={
+                onLineClick && lineNumber !== null
+                  ? () => onLineClick(lineNumber, line.line_type)
+                  : undefined
+              }
+            />
             {lineComments && lineComments.length > 0 && (
               <div className="px-4 py-2 font-sans text-forge-body bg-surface-2 border-b border-border">
                 {lineComments.map((c) => (
@@ -236,6 +323,18 @@ function renderHunkLines(lines: HighlightedLine[], commentsByLine: Map<number, P
                 ))}
               </div>
             )}
+            {isActiveInput && onSaveDraft && onCancelDraft && lineNumber !== null && (
+              <LineCommentInput
+                onSave={(body) => onSaveDraft(lineNumber, line.line_type, body)}
+                onCancel={onCancelDraft}
+              />
+            )}
+            {lineDrafts &&
+              lineDrafts.length > 0 &&
+              onDeleteDraft &&
+              lineDrafts.map((draft) => (
+                <DraftCommentBubble key={draft.id} comment={draft} onDelete={onDeleteDraft} />
+              ))}
           </Fragment>
         );
       })

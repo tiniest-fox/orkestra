@@ -61,7 +61,16 @@ export function DrawerTabContent({
   const { submitRef } = state;
 
   if (activeTab === "diff") {
-    return <DrawerDiffTab active />;
+    return (
+      <DrawerDiffTab
+        active
+        draftComments={state.draftComments}
+        onAddDraftComment={
+          task.derived.needs_review || task.derived.is_done ? state.addDraftComment : undefined
+        }
+        onRemoveDraftComment={state.removeDraftComment}
+      />
+    );
   }
 
   if (activeTab === "logs") {

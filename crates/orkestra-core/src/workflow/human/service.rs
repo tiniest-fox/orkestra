@@ -77,6 +77,23 @@ impl WorkflowApi {
         )
     }
 
+    /// Reject an `AwaitingApproval` task with line-level comments, routing to the rejection target stage.
+    pub fn reject_with_comments(
+        &self,
+        task_id: &str,
+        comments: Vec<PrCommentData>,
+        guidance: Option<String>,
+    ) -> WorkflowResult<Task> {
+        human::reject_with_comments::execute(
+            self.store.as_ref(),
+            &self.workflow,
+            &self.iteration_service,
+            task_id,
+            comments,
+            guidance,
+        )
+    }
+
     /// Address PR comments by returning to the recovery stage.
     pub fn address_pr_comments(
         &self,

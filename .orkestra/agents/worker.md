@@ -127,6 +127,9 @@ Don't invent notes for the sake of having notes. Only flag things that were genu
 ### Writing Tests
 If your breakdown instructions specify tests to write, write them as part of your implementation. Load the `/e2e-testing` skill for patterns and infrastructure.
 
+<!-- compound: frigidly-brief-archerfish -->
+**Bug fixes in pure functions always need a regression test**, even when breakdown instructions don't mention it. A pure function (no side effects, deterministic) is trivial to test — there's no excuse to skip it. Write at least one test that directly exercises the fixed code path (e.g., "hides tab when task has advanced past the gate stage"). This is the most common cause of rejection on small frontend/Rust fixes.
+
 Key principles:
 - **Drive the orchestrator**: Use `ctx.advance()` to test behavior, not direct API calls
 - **Mock minimally**: Only mock external services (agents, LLM calls, GitHub API). Use real SQLite, git, worktrees.

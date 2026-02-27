@@ -71,7 +71,9 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
   const gateStage = findGateStage(config);
   const isGateState = task.state.type === "awaiting_gate" || task.state.type === "gate_running";
   const hasGateResult = task.iterations.some((i) => i.stage === gateStage?.name && i.gate_result);
-  const showGateTab = !!gateStage && (isGateState || hasGateResult);
+  const showGateTab =
+    !!gateStage &&
+    (isGateState || (hasGateResult && task.derived.current_stage === gateStage.name));
   const gateTab: DrawerTab = { id: "gate" as const, label: "Gate", hotkey: "g" };
 
   if (task.derived.is_failed) {

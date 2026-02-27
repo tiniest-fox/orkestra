@@ -97,6 +97,12 @@ describe("command matching", () => {
     expect(ids).not.toContain("push");
   });
 
+  it("returns assistant command for filterText 'as'", () => {
+    const { result } = makeHook("as");
+    const ids = result.current.items.map((i) => i.id);
+    expect(ids).toContain("assistant");
+  });
+
   it("returns only commands as type 'command' even when tasks are present", () => {
     const tasks = [makeTask("t1", "Push notification service")];
     const { result } = makeHook("pu", tasks);

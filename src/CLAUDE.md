@@ -83,10 +83,9 @@ useEffect(() => {
 
 ## State Management
 
-- Use the existing Context + hooks pattern (`TasksProvider`, `WorkflowConfigProvider`, `DisplayContextProvider`). No Redux, Zustand, or other state libraries.
-- Access shared state via the provider hooks (`useTasks()`, `useWorkflowConfig()`, `useDisplayContext()`). Don't prop-drill shared data.
-- **Navigation state** goes through `DisplayContextProvider` via a preset-based system. Each user action (clicking a task, opening git history, toggling assistant) maps to a named preset that defines which components occupy the three layout slots: `content` (main area), `panel` (primary sidebar), and `secondaryPanel` (nested sidebar). All presets are defined in `providers/presets.ts` as the single source of truth. All UI transitions route through the provider's methods (`showTask`, `showSubtask`, `toggleGitHistory`, `closeFocus`, etc.). Don't manage navigation with local state.
-- Local UI state (open/closed, selected tab, form inputs) stays in the component via `useState`.
+- Use the existing Context + hooks pattern (`TasksProvider`, `WorkflowConfigProvider`). No Redux, Zustand, or other state libraries.
+- Access shared state via the provider hooks (`useTasks()`, `useWorkflowConfig()`). Don't prop-drill shared data.
+- Local UI state (open/closed, selected tab, form inputs, drawer visibility) stays in the component via `useState`.
 
 ## Styling
 
@@ -112,46 +111,21 @@ Forge is the project's design language — it is not an alternate or scoped visu
 - For modal/overlay UI (dialogs, palettes, popovers anchored to the viewport), use `ModalPanel`. It renders via `createPortal` to `document.body` with backdrop, animations, and escape-to-close built in. Don't introduce competing portal or overlay patterns.
 - Icons come from `lucide-react`. Animations use `framer-motion`.
 
-## Panel Layout System
+## Slide-in Drawer Pattern
 
-**The canonical pattern for all slide-in panels**: `PanelLayout` + `Slot` components control layout and animation for every panel that slides in and out (task detail, create form, assistant, session history, diff viewer).
+<!-- compound: rustically-discrete-lion -->
 
-### What it is
+The current pattern for slide-in panels (git history, assistant) uses `Drawer` from `components/ui/Drawer/Drawer.tsx`. It uses absolute positioning to overlay the feed from the right while leaving a strip of the main content visible.
 
-- **`PanelLayout`** — Container that manages a CSS grid for all panels. Lives in `Orkestra.tsx`.
-- **`Slot`** — Animated grid slot that registers itself and handles transitions via grid template changes. Each panel content goes inside a `Slot`.
-- **Visibility state** — Controlled by `DisplayContext` focus state flowing to the `visible` prop on each `Slot`. The `Slot` manages opacity, pointer-events, and grid sizing. Content inside always renders; the `Slot` handles show/hide.
+**Pattern:**
+1. Add a boolean `useState` to `FeedView` (or the relevant parent) for open/closed: `const [assistantOpen, setAssistantOpen] = useState(false)`
+2. Render `<Drawer open={open} onClose={() => setOpen(false)}>` with the panel content inside
+3. Wire entry points (button, hotkey, command bar) to `setOpen(true)`, ensuring mutually exclusive drawers close each other: `setGitHistoryOpen(false); setAssistantOpen(true)`
+4. Update `FeedStatusLine` to show the correct hotkey hint for the open drawer
 
-### The rule
+**Canonical examples:** `GitHistoryDrawer.tsx` and `AssistantDrawer.tsx`
 
-Every panel that slides in/out MUST be a `Slot` inside the `PanelLayout` in `Orkestra.tsx`. No exceptions.
-
-### Anti-patterns (banned)
-
-- **No `absolute`/`fixed` positioning for slide-in panels** — this bypasses the layout system and breaks animation consistency.
-- **No `framer-motion` `AnimatePresence` or manual transitions** for panel visibility — `Slot` handles all animations.
-
-### How visibility works
-
-1. User action triggers `DisplayContext` method (e.g., `openAssistant`, `focusTask`, `toggleAssistantHistory`)
-2. Context updates focus state (e.g., `{ type: "assistant", showHistory: true }`)
-3. Parent derives boolean: `const historyVisible = focus.type === "assistant" && focus.showHistory === true`
-4. **Conditionally render children**: `<Slot visible={historyVisible}>{historyVisible && <Component />}</Slot>`
-5. `Slot` animates grid sizing and opacity. When closing, content stays visible during fade-out animation via `displayedContent`, then unmounts via `onTransitionEnd` callback. This ensures cleanup effects run and panels reset state on reopen.
-
-### The three panel primitives
-
-- **`Panel`** — Visual container (rounded corners, borders, padding). Use for content structure.
-- **`Slot`** — Animated layout slot in the grid. Use for positioning and show/hide animation.
-- **`ModalPanel`** — Viewport overlay (dialogs, command palette). Use for content that anchors to the viewport, not the grid.
-
-When building a slide-in panel: wrap `Panel` inside `Slot`. For viewport overlays: use `ModalPanel` directly.
-
-### Reference
-
-- **Canonical example**: `Orkestra.tsx` — shows all Slots (assistant-history, assistant, sidebar, subtask, diff, subtask-diff, board)
-- **Implementation**: `components/ui/PanelContainer/` — `PanelLayout.tsx` and `Slot.tsx`
-- **Event-driven cleanup pattern**: `Slot` uses `onTransitionEnd` to detect when fade-out completes, then calls `setDisplayedContent(null)` to unmount the child tree. This is more reliable than `setTimeout` since it responds to actual transition completion, not hardcoded durations.
+For viewport overlays (dialogs, command palette): use `ModalPanel` instead.
 
 ## Feed Row Action Buttons
 

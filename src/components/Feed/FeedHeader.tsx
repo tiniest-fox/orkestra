@@ -8,7 +8,9 @@ import { HotkeyScope } from "../ui/HotkeyScope";
 interface FeedHeaderProps {
   tasks: WorkflowTaskView[];
   onNewTask: () => void;
+  onAssistant: () => void;
   hotkeyActive: boolean;
+  assistantActive: boolean;
 }
 
 interface Metric {
@@ -17,7 +19,13 @@ interface Metric {
   colorClass: string;
 }
 
-export function FeedHeader({ tasks, onNewTask, hotkeyActive }: FeedHeaderProps) {
+export function FeedHeader({
+  tasks,
+  onNewTask,
+  onAssistant,
+  hotkeyActive,
+  assistantActive,
+}: FeedHeaderProps) {
   const metrics = useMemo<Metric[]>(() => {
     const topLevel = tasks.filter((t) => !t.parent_id);
     const working = topLevel.filter((t) => t.derived.is_working).length;
@@ -57,6 +65,20 @@ export function FeedHeader({ tasks, onNewTask, hotkeyActive }: FeedHeaderProps) 
             New task
           </Button>
         </HotkeyScope>
+        <button
+          type="button"
+          onClick={onAssistant}
+          className={`font-sans text-[12px] font-medium px-2.5 py-1 rounded-md border transition-colors ${
+            assistantActive
+              ? "bg-accent/8 border-accent/35 text-accent"
+              : "bg-transparent border-border text-text-secondary hover:bg-surface-hover hover:border-text-quaternary"
+          }`}
+        >
+          Assistant
+          <kbd className="ml-1.5 font-mono text-[10px] font-medium bg-black/[0.06] rounded px-1 opacity-55">
+            ⇧A
+          </kbd>
+        </button>
         <kbd className="font-mono text-[10px] font-medium text-text-tertiary bg-canvas border border-border rounded px-1.5 py-0.5 select-none">
           cmd+k
         </kbd>

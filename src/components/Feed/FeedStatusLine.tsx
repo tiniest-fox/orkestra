@@ -15,7 +15,8 @@ interface FeedStatusLineProps {
     | "focus"
     | "ship"
     | "git-history"
-    | "new-task";
+    | "new-task"
+    | "assistant";
   onToggleHistory?: () => void;
 }
 
@@ -44,7 +45,10 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
       // the task history tab shortcut inside the task drawer's HotkeyScope).
       if (
         e.key === "h" &&
-        (drawerMode === null || drawerMode === "git-history" || drawerMode === "new-task")
+        (drawerMode === null ||
+          drawerMode === "git-history" ||
+          drawerMode === "new-task" ||
+          drawerMode === "assistant")
       ) {
         e.preventDefault();
         onToggleHistory?.();
@@ -140,6 +144,18 @@ export function FeedStatusLine({ tasks, drawerMode, onToggleHistory }: FeedStatu
           <span className="flex items-center gap-1.5">
             <Kbd>esc</Kbd>
             <span>cancel</span>
+          </span>
+        </div>
+      ) : drawerMode === "assistant" ? (
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="flex items-center gap-1.5">
+            <Kbd>⌘⏎</Kbd>
+            <span>send</span>
+          </span>
+          <span className="text-text-quaternary">·</span>
+          <span className="flex items-center gap-1.5">
+            <Kbd>esc</Kbd>
+            <span>close</span>
           </span>
         </div>
       ) : drawerMode === "git-history" ? (

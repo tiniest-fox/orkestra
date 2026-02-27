@@ -9,6 +9,7 @@ import { groupTasksForFeed } from "../../utils/feedGrouping";
 import { EmptyState } from "../ui/EmptyState";
 import { ModalPanel } from "../ui/ModalPanel";
 import { NavigationScope } from "../ui/NavigationScope";
+import { AssistantDrawer } from "./AssistantDrawer";
 import { CommandBar } from "./CommandBar";
 import { TaskDrawer } from "./Drawer/TaskDrawer";
 import { FeedHeader } from "./FeedHeader";
@@ -26,6 +27,7 @@ import { useNewTask } from "./useNewTask";
 type DrawerMode =
   | "new-task"
   | "git-history"
+  | "assistant"
   | "review-reject"
   | "review"
   | "answer"
@@ -36,10 +38,12 @@ type DrawerMode =
 function deriveDrawerMode(
   isNewTaskOpen: boolean,
   gitHistoryOpen: boolean,
+  assistantOpen: boolean,
   activeTask: WorkflowTaskView | null,
   rejectMode: boolean,
 ): DrawerMode {
   if (isNewTaskOpen) return "new-task";
+  if (assistantOpen) return "assistant";
   if (gitHistoryOpen) return "git-history";
   if (!activeTask) return null;
   if (activeTask.derived.needs_review) return rejectMode ? "review-reject" : "review";
@@ -58,16 +62,23 @@ export function FeedView({ config, tasks }: FeedViewProps) {
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [rejectMode, setRejectMode] = useState(false);
   const [gitHistoryOpen, setGitHistoryOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const commandBarInputRef = useRef<HTMLInputElement>(null);
 
-  const panelOpen = activeTaskId !== null || gitHistoryOpen;
+  const panelOpen = activeTaskId !== null || gitHistoryOpen || assistantOpen;
   const { isNewTaskOpen, openNewTask, closeNewTask } = useNewTask();
   const { pushToOrigin, pullFromOrigin, fetchFromOrigin } = useGitHistory();
 
   const drawerOpen = panelOpen || isNewTaskOpen;
   const activeTask = activeTaskId ? (tasks.find((t) => t.id === activeTaskId) ?? null) : null;
 
-  const drawerMode = deriveDrawerMode(isNewTaskOpen, gitHistoryOpen, activeTask, rejectMode);
+  const drawerMode = deriveDrawerMode(
+    isNewTaskOpen,
+    gitHistoryOpen,
+    assistantOpen,
+    activeTask,
+    rejectMode,
+  );
 
   const { sections, subtaskRows } = useMemo(() => groupTasksForFeed(tasks), [tasks]);
 
@@ -86,8 +97,15 @@ export function FeedView({ config, tasks }: FeedViewProps) {
     return ids;
   }, [sections, subtaskRows]);
 
+  const openAssistant = useCallback(() => {
+    setAssistantOpen(true);
+    setActiveTaskId(null);
+    setGitHistoryOpen(false);
+  }, []);
+
   const onStripRowClick = useCallback((taskId: string) => {
     setGitHistoryOpen(false);
+    setAssistantOpen(false);
     setActiveTaskId(taskId);
   }, []);
 
@@ -135,13 +153,17 @@ export function FeedView({ config, tasks }: FeedViewProps) {
         case "push":
           pushToOrigin();
           break;
+        case "assistant":
+          openAssistant();
+          break;
         case "history":
           setGitHistoryOpen(true);
           setActiveTaskId(null);
+          setAssistantOpen(false);
           break;
       }
     },
-    [clearFilter, openNewTask, fetchFromOrigin, pullFromOrigin, pushToOrigin],
+    [clearFilter, openNewTask, fetchFromOrigin, pullFromOrigin, pushToOrigin, openAssistant],
   );
 
   const handleSelectTask = useCallback(
@@ -171,9 +193,34 @@ export function FeedView({ config, tasks }: FeedViewProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [clearFilter]);
 
+  // Shift+A toggles the assistant panel.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "A" && e.shiftKey && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        setAssistantOpen((prev) => {
+          if (!prev) {
+            setActiveTaskId(null);
+            setGitHistoryOpen(false);
+          }
+          return !prev;
+        });
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <div className="h-full flex flex-col rounded-panel overflow-hidden relative bg-canvas">
-      <FeedHeader tasks={tasks} onNewTask={openNewTask} hotkeyActive={!drawerOpen} />
+      <FeedHeader
+        tasks={tasks}
+        onNewTask={openNewTask}
+        onAssistant={openAssistant}
+        hotkeyActive={!drawerOpen}
+        assistantActive={assistantOpen}
+      />
       <CommandBar
         tasks={tasks}
         filterText={filterText}
@@ -228,6 +275,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
         onToggleHistory={() => {
           setGitHistoryOpen((o) => !o);
           setActiveTaskId(null);
+          setAssistantOpen(false);
         }}
       />
       <ModalPanel
@@ -251,6 +299,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
           />
         )}
       </ModalPanel>
+      {assistantOpen && <AssistantDrawer onClose={() => setAssistantOpen(false)} />}
       {gitHistoryOpen && <GitHistoryDrawer onClose={() => setGitHistoryOpen(false)} />}
       {activeTask && (
         <TaskDrawer

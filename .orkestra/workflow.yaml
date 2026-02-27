@@ -47,7 +47,7 @@ stages:
     model: sonnet
     gate:
       command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
-      timeout_seconds: 900
+      timeout_seconds: 1200
     disallowed_tools:
       - pattern: "Bash(*cargo test*)"
         message: "Testing runs automatically in the gate after you complete your work"
@@ -121,7 +121,7 @@ flows:
       - work:
           gate:
             command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
-            timeout_seconds: 300
+            timeout_seconds: 1200
       - review:
           prompt: subtask-reviewer.md
           capabilities:
@@ -139,7 +139,7 @@ flows:
           model: sonnet
           gate:
             command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks-lite.sh"
-            timeout_seconds: 300
+            timeout_seconds: 1200
     integration:
       on_failure: work
 

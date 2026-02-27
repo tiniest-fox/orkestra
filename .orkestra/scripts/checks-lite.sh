@@ -313,8 +313,7 @@ if $HAS_RUST; then
 
     # Per-crate clippy (not --workspace)
     for crate in "${CHANGED_CRATES[@]}"; do
-        run_check "$crate clippy fix" "cargo clippy --fix -p $crate --all-targets --allow-dirty --allow-staged"
-        run_check "$crate clippy verify" "cargo clippy -p $crate --all-targets -- -D warnings"
+        run_check "$crate clippy" "cargo clippy --fix --allow-dirty --allow-staged -p $crate --all-targets -- -D warnings"
     done
 
     # Per-crate tests (no reverse deps, no e2e)

@@ -493,10 +493,9 @@ if $HAS_RUST; then
         touch src-tauri/src/main.rs
     fi
 
-    # Run clippy with auto-fix, then verify no remaining warnings
-    # --fix applies automatic fixes, --allow-dirty/--allow-staged permit uncommitted changes
-    run_check "Cargo clippy fix" "cargo clippy --fix --workspace --all-targets --allow-dirty --allow-staged"
-    run_check "Cargo clippy verify" "cargo clippy --workspace --all-targets -- -D warnings"
+    # Run clippy: auto-fix what it can, then fail on any remaining warnings.
+    # Single pass: --fix applies fixes, -- -D warnings errors on non-auto-fixable warnings.
+    run_check "Cargo clippy" "cargo clippy --fix --allow-dirty --allow-staged --workspace --all-targets -- -D warnings"
 
     # Run tests for affected crates (changed crates + their reverse deps)
     for crate in "${AFFECTED_CRATES[@]}"; do

@@ -97,6 +97,7 @@ pub struct ScriptHandle {
     output_receiver: Receiver<String>,
     /// Join handles for reader threads.
     reader_handles: Vec<JoinHandle<()>>,
+    started_at: Instant,
     timeout_at: Instant,
     output_buffer: String,
     killed: bool,
@@ -169,11 +170,13 @@ impl ScriptHandle {
             reader_handles.push(handle);
         }
 
+        let now = Instant::now();
         Ok(Self {
             child,
             output_receiver: receiver,
             reader_handles,
-            timeout_at: Instant::now() + timeout,
+            started_at: now,
+            timeout_at: now + timeout,
             output_buffer: String::new(),
             killed: false,
         })
@@ -213,7 +216,7 @@ impl ScriptHandle {
                 exit_code: -1,
                 output: format!(
                     "Script timed out after {:?}\n\n{}",
-                    self.timeout_at.elapsed(),
+                    self.started_at.elapsed(),
                     self.output_buffer
                 ),
                 timed_out: true,

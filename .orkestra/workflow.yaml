@@ -47,7 +47,7 @@ stages:
     model: sonnet
     gate:
       command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
-      timeout_seconds: 600
+      timeout_seconds: 900
     disallowed_tools:
       - pattern: "Bash(*cargo test*)"
         message: "Testing runs automatically in the gate after you complete your work"

@@ -182,6 +182,16 @@ See `submitLineCommentsForReview` / `submitLineCommentsForDoneTask` in `useTaskD
 </div>
 ```
 
+## Gate Execution Data Model
+
+<!-- compound: veritably-soaring-kinkajou -->
+
+Gate output is **not** stored as log entries. Gates store their output in `iteration.gate_result` (a `{ lines: string[], exit_code: number }` object on the iteration) — not via the agent session log system. Consequently, `workflow_get_latest_log` returns nothing while a gate is running; you must read `task.iterations` directly.
+
+- **Find latest gate output**: reverse-search `task.iterations` for the most recent entry where `gate_result != null`
+- **Detect gate running**: check `task.state.type === "gate_running"` (already present on `WorkflowTaskView`)
+- **Reference pattern**: `DrawerGateTab.tsx` shows how to find the relevant gate iteration and render its output lines
+
 ## Types
 
 - Use `import type` for type-only imports.

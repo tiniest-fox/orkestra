@@ -2,7 +2,8 @@
  * Compact one-line log summary for the action column of working tasks.
  *
  * Polls the latest log entry every 3s and renders a truncated summary of
- * the most recent agent activity (tool call or text output).
+ * the most recent agent activity (tool call or text output). When a gate is
+ * running, shows the latest gate output line instead of polling logs.
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -18,7 +19,10 @@ interface LatestLogSummaryProps {
 export function LatestLogSummary({ task }: LatestLogSummaryProps) {
   const [entry, setEntry] = useState<LogEntry | null>(null);
 
+  const isGateRunning = task.state.type === "gate_running";
+
   const fetch = useCallback(async () => {
+    if (isGateRunning) return;
     try {
       const result = await invoke<LogEntry | null>("workflow_get_latest_log", {
         taskId: task.id,
@@ -27,9 +31,21 @@ export function LatestLogSummary({ task }: LatestLogSummaryProps) {
     } catch {
       // Silently ignore — the feed row doesn't need to show an error state
     }
-  }, [task.id]);
+  }, [task.id, isGateRunning]);
 
   usePolling(fetch, 3000);
+
+  if (isGateRunning) {
+    const latestGateIteration = [...task.iterations].reverse().find((i) => i.gate_result);
+    const lines = latestGateIteration?.gate_result?.lines ?? [];
+    const lastLine = [...lines].reverse().find((l) => l.trim());
+    const text = lastLine?.trim().slice(0, 100) ?? "Running gate check...";
+    return (
+      <span className="font-mono text-forge-mono-sm text-text-quaternary truncate min-w-0 max-w-full">
+        {text}
+      </span>
+    );
+  }
 
   if (!entry) return null;
 

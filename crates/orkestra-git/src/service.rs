@@ -166,6 +166,14 @@ impl GitService for Git2GitService {
         )
     }
 
+    fn merge_into_worktree(
+        &self,
+        worktree_path: &Path,
+        target_branch: &str,
+    ) -> Result<(), GitError> {
+        interactions::merge::merge_into_worktree::execute(worktree_path, target_branch)
+    }
+
     fn rebase_on_branch(&self, worktree_path: &Path, target_branch: &str) -> Result<(), GitError> {
         interactions::merge::rebase::execute(worktree_path, target_branch)
     }

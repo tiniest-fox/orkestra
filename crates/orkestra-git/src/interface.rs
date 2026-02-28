@@ -168,6 +168,17 @@ pub trait GitService: Send + Sync {
         target_branch: &str,
     ) -> Result<MergeResult, GitError>;
 
+    /// Merge a target branch into the current branch in a worktree.
+    ///
+    /// Uses `--no-ff` to always produce a merge commit. On conflict, returns
+    /// `GitError::MergeConflict` without aborting, so conflict markers remain
+    /// in the working tree for agent resolution.
+    fn merge_into_worktree(
+        &self,
+        worktree_path: &Path,
+        target_branch: &str,
+    ) -> Result<(), GitError>;
+
     /// Rebase the current branch in a worktree onto a specific target branch.
     ///
     /// Runs in the worktree directory so the main repo checkout is never touched.

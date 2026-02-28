@@ -507,7 +507,7 @@ mod tests {
         assert!(prompt.contains("Merge conflict detected"));
         assert!(prompt.contains("src/main.rs"));
         assert!(prompt.contains("src/lib.rs"));
-        assert!(prompt.contains("git rebase feature/parent-branch"));
+        assert!(prompt.contains("merge is in progress"));
         assert!(!prompt.contains("Updated Input Artifacts"));
     }
 

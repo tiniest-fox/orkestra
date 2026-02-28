@@ -9,4 +9,4 @@ Conflicting files:
 {{/each}}
 {{/if}}
 
-Please run `git rebase {{base_branch}}` to resolve conflicts, then continue and output your result.
+A merge is in progress in your worktree. Resolve the conflict markers in each file (`<<<<<<<` / `=======` / `>>>>>>>`), then `git add <resolved-files>` and `git commit`. Then continue and output your result.

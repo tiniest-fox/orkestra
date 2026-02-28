@@ -964,15 +964,11 @@ fn test_subtask_integration_conflict() {
         conflict_task.state
     );
 
-    // VERIFY: The recovery prompt must tell the agent to rebase on the parent's branch,
-    // not a hardcoded "main". The parent was created from our random base_branch, so
-    // subtasks get base_branch = parent's branch_name (e.g. "task/TASK-001").
-    // We check against the task's base_branch (which derives from the parent's branch_name).
-    let expected_rebase = format!("git rebase {}", conflict_task.base_branch);
+    // VERIFY: The recovery prompt must instruct the agent to resolve the in-progress merge.
     let recovery_prompt = env.last_prompt_for(conflict_id);
     assert!(
-        recovery_prompt.contains(&expected_rebase),
-        "Recovery prompt should contain '{expected_rebase}', got prompt:\n{}",
+        recovery_prompt.contains("merge is in progress"),
+        "Recovery prompt should instruct agent to resolve in-progress merge, got prompt:\n{}",
         &recovery_prompt[..recovery_prompt.len().min(300)]
     );
     // Sanity: base_branch must NOT be "main" — subtasks rebase onto parent's branch

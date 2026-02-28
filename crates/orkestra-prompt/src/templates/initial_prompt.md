@@ -68,7 +68,7 @@ A: {{this.answer}}
 {{/each}}
 {{/if}}
 
-Run `git rebase {{integration_error.base_branch}}` and resolve the conflicts, then continue your work.
+A merge is in progress in your worktree. Resolve the conflict markers in each file (`<<<<<<<` / `=======` / `>>>>>>>`), then `git add <resolved-files>` and `git commit`.
 
 {{/if}}
 {{#if worktree_path}}

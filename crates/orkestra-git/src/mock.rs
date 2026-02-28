@@ -18,6 +18,7 @@ pub struct MockGitService {
     current_branch: Mutex<String>,
     next_merge_result: Mutex<Option<Result<MergeResult, GitError>>>,
     next_rebase_result: Mutex<Option<Result<(), GitError>>>,
+    next_merge_into_worktree_result: Mutex<Option<Result<(), GitError>>>,
     next_squash_result: Mutex<Option<Result<bool, GitError>>>,
     push_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
     sync_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
@@ -43,6 +44,7 @@ impl MockGitService {
             current_branch: Mutex::new("main".to_string()),
             next_merge_result: Mutex::new(None),
             next_rebase_result: Mutex::new(None),
+            next_merge_into_worktree_result: Mutex::new(None),
             next_squash_result: Mutex::new(None),
             push_results: Mutex::new(std::collections::VecDeque::new()),
             sync_results: Mutex::new(std::collections::VecDeque::new()),
@@ -73,6 +75,11 @@ impl MockGitService {
     /// Set the result for the next rebase operation.
     pub fn set_next_rebase_result(&self, result: Result<(), GitError>) {
         *self.next_rebase_result.lock().unwrap() = Some(result);
+    }
+
+    /// Set the result for the next `merge_into_worktree` operation.
+    pub fn set_next_merge_into_worktree_result(&self, result: Result<(), GitError>) {
+        *self.next_merge_into_worktree_result.lock().unwrap() = Some(result);
     }
 
     /// Set the result for the next push operation.
@@ -323,6 +330,17 @@ impl GitService for MockGitService {
             target_branch: target_branch.to_string(),
             merged_at: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    fn merge_into_worktree(
+        &self,
+        _worktree_path: &Path,
+        _target_branch: &str,
+    ) -> Result<(), GitError> {
+        if let Some(result) = self.next_merge_into_worktree_result.lock().unwrap().take() {
+            return result;
+        }
+        Ok(())
     }
 
     fn rebase_on_branch(

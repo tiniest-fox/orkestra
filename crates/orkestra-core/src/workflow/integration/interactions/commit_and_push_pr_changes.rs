@@ -35,16 +35,17 @@ pub fn execute(
 
     // Safety-net commit: capture any uncommitted changes before pushing
     super::commit_worktree::execute(git, &task, "push-update", None, None)
-        .map_err(git_to_workflow_err)?;
+        .map_err(|e| git_to_workflow_err(&e))?;
 
     // Push the task's branch to origin
-    git.push_branch(branch).map_err(git_to_workflow_err)?;
+    git.push_branch(branch)
+        .map_err(|e| git_to_workflow_err(&e))?;
 
     Ok(task)
 }
 
 // -- Helpers --
 
-fn git_to_workflow_err(e: GitError) -> WorkflowError {
+fn git_to_workflow_err(e: &GitError) -> WorkflowError {
     WorkflowError::GitError(e.to_string())
 }

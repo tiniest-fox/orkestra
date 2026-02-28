@@ -570,7 +570,6 @@ fn test_exhaustive_workflow_flow() {
     // VERIFY: Work agent after integration failure → fresh spawn (Integration is a returning trigger).
     // Integration context is embedded directly in the full prompt.
     // The branch name is random, so this can only pass if base_branch flows through correctly.
-    let expected_rebase = format!("git rebase {base_branch}");
     let config = ctx.last_run_config();
     assert!(
         !config.is_resume,
@@ -581,8 +580,8 @@ fn test_exhaustive_workflow_flow() {
         "Full prompt should mention the merge conflict"
     );
     assert!(
-        config.prompt.contains(&expected_rebase),
-        "Full prompt must use task's base_branch, not hardcoded 'main'. Expected: {expected_rebase}"
+        config.prompt.contains("merge is in progress"),
+        "Full prompt must instruct the agent to resolve the in-progress merge"
     );
 
     // Approve work

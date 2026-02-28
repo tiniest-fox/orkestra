@@ -42,13 +42,13 @@ pub fn execute(
     })?;
 
     git.pull_branch_in(Path::new(worktree_path))
-        .map_err(git_to_workflow_err)?;
+        .map_err(|e| git_to_workflow_err(&e))?;
 
     Ok(task)
 }
 
 // -- Helpers --
 
-fn git_to_workflow_err(e: GitError) -> WorkflowError {
+fn git_to_workflow_err(e: &GitError) -> WorkflowError {
     WorkflowError::GitError(e.to_string())
 }

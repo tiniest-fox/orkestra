@@ -18,7 +18,7 @@ struct IntegrationParams {
     worktree_path: Option<PathBuf>,
 }
 
-/// Safety-net commit → squash (top-level only) → rebase → merge.
+/// Safety-net commit → squash (top-level only) → merge → fast-forward.
 ///
 /// Pure git work — no API lock needed. Returns an `IntegrationGitResult` that
 /// the caller records via `apply_integration_result` (sync) or `record_result` (background).
@@ -118,29 +118,28 @@ pub(crate) fn execute(
 
 // -- Helpers --
 
-/// Perform the git work for integration: rebase onto target branch, then merge.
+/// Perform the git work for integration: merge target into worktree, then fast-forward.
 fn perform_git_integration(
     git: &dyn GitService,
     params: &IntegrationParams,
 ) -> IntegrationGitResult {
-    // Rebase onto target branch
+    // Merge target branch into the task branch, leaving conflict markers in place on failure.
     if let Some(worktree_path) = &params.worktree_path {
         let worktree = Path::new(worktree_path);
         if worktree.exists() {
-            match git.rebase_on_branch(worktree, &params.target_branch) {
+            match git.merge_into_worktree(worktree, &params.target_branch) {
                 Ok(()) => {
                     orkestra_debug!(
                         "integration",
-                        "rebased {}: branch {} onto {}",
+                        "merged {}: {} into task branch",
                         params.task_id,
-                        params.branch_name,
                         params.target_branch
                     );
                 }
                 Err(GitError::MergeConflict { conflict_files, .. }) => {
                     orkestra_debug!(
                         "integration",
-                        "failed {}: rebase conflict, {} files",
+                        "failed {}: merge conflict, {} files",
                         params.task_id,
                         conflict_files.len()
                     );
@@ -149,12 +148,12 @@ fn perform_git_integration(
                 Err(e) => {
                     orkestra_debug!(
                         "integration",
-                        "failed {}: rebase error: {}",
+                        "failed {}: merge error: {}",
                         params.task_id,
                         e
                     );
                     return IntegrationGitResult::RebaseError(format!(
-                        "Failed to rebase branch on {}: {e}",
+                        "Failed to merge {} into task branch: {e}",
                         params.target_branch
                     ));
                 }
@@ -162,7 +161,7 @@ fn perform_git_integration(
         } else {
             orkestra_debug!(
                 "integration",
-                "worktree missing for {}, skipping rebase",
+                "worktree missing for {}, skipping merge",
                 params.task_id
             );
         }

@@ -1,8 +1,8 @@
-//! Address PR comments by returning to a recovery stage.
+//! Address PR feedback (comments and/or failed checks) by returning to a recovery stage.
 
 use crate::orkestra_debug;
 use crate::workflow::config::WorkflowConfig;
-use crate::workflow::domain::{IterationTrigger, PrCommentData, Task};
+use crate::workflow::domain::{IterationTrigger, PrCheckData, PrCommentData, Task};
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::runtime::TaskState;
@@ -13,12 +13,13 @@ pub fn execute(
     iteration_service: &IterationService,
     task_id: &str,
     comments: Vec<PrCommentData>,
+    checks: Vec<PrCheckData>,
     guidance: Option<String>,
 ) -> WorkflowResult<Task> {
-    // Validate at least one comment is provided
-    if comments.is_empty() {
+    // Validate at least one comment or check is provided
+    if comments.is_empty() && checks.is_empty() {
         return Err(WorkflowError::InvalidTransition(
-            "At least one comment must be selected".into(),
+            "At least one comment or check must be selected".into(),
         ));
     }
 
@@ -31,23 +32,28 @@ pub fn execute(
     // Validate task state
     if !task.is_done() {
         return Err(WorkflowError::InvalidTransition(format!(
-            "Task {task_id} is not done, cannot address PR comments"
+            "Task {task_id} is not done, cannot address PR feedback"
         )));
     }
 
     orkestra_debug!(
         "action",
-        "address_pr_comments {}: returning to {} stage with {} comments",
+        "address_pr_feedback {}: returning to {} stage with {} comments and {} checks",
         task_id,
         recovery_stage,
-        comments.len()
+        comments.len(),
+        checks.len()
     );
 
-    // Create new iteration with PR comments trigger
+    // Create new iteration with PR feedback trigger
     iteration_service.create_iteration(
         task_id,
         &recovery_stage,
-        Some(IterationTrigger::PrComments { comments, guidance }),
+        Some(IterationTrigger::PrFeedback {
+            comments,
+            checks,
+            guidance,
+        }),
     )?;
 
     // Update task to recovery stage in Queued state

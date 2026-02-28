@@ -13,6 +13,6 @@ pub use interactions::build::context::PromptBuilder;
 pub use service::PromptService;
 pub use types::{
     sibling_status_display, AgentConfigError, ArtifactContext, FlowOverrides,
-    IntegrationErrorContext, PrComment, QuestionAnswerContext, ResolvedAgentConfig,
+    IntegrationErrorContext, PrCheckContext, PrComment, QuestionAnswerContext, ResolvedAgentConfig,
     ResumeQuestionAnswer, ResumeType, SiblingTaskContext, StagePromptContext, WorkflowStageEntry,
 };

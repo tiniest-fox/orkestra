@@ -1,6 +1,7 @@
 //! Tab management helpers and shared types for the TaskDrawer.
 
 import type {
+  PrCheckData,
   PrCommentData,
   WorkflowArtifact,
   WorkflowConfig,
@@ -30,7 +31,14 @@ export type PrTabFooterState =
   | { type: "loading" }
   | { type: "no_pr" }
   | { type: "conflicts" }
-  | { type: "comments_selected"; count: number; comments: PrCommentData[]; guidance: string }
+  | {
+      type: "feedback_selected";
+      commentCount: number;
+      checkCount: number;
+      comments: PrCommentData[];
+      checks: PrCheckData[];
+      guidance: string;
+    }
   | { type: "clean" };
 
 export type { DraftComment } from "../../Diff/types";

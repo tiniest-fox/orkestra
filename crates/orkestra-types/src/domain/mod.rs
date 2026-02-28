@@ -4,6 +4,7 @@
 //! They use the stage-agnostic primitives from `runtime`.
 
 mod assistant_session;
+mod check_status;
 mod iteration;
 mod log_entry;
 mod question;
@@ -11,7 +12,8 @@ mod stage_session;
 pub(crate) mod task;
 
 pub use assistant_session::AssistantSession;
-pub use iteration::{GateResult, Iteration, IterationTrigger, PrCommentData};
+pub use check_status::{classify_check, CheckStatus};
+pub use iteration::{GateResult, Iteration, IterationTrigger, PrCheckData, PrCommentData};
 pub use log_entry::{LogEntry, OrkAction, TodoItem, ToolInput};
 pub use question::{Question, QuestionAnswer, QuestionOption};
 pub use stage_session::{SessionState, StageSession};

@@ -2932,6 +2932,7 @@ dependencies = [
  "dotenvy",
  "fix-path-env",
  "orkestra-core",
+ "orkestra-types",
  "serde",
  "serde_json",
  "signal-hook",
@@ -2943,6 +2944,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-plugin-store",
  "tokio",
+ "tracing",
  "urlencoding",
 ]
 
@@ -2968,6 +2970,7 @@ dependencies = [
  "clap",
  "indexmap 2.13.0",
  "orkestra-core",
+ "orkestra-types",
  "serde",
  "serde_json",
  "serde_yaml",

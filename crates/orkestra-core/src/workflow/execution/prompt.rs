@@ -14,9 +14,9 @@ use crate::workflow::domain::Task;
 // Re-export everything from orkestra-prompt for backward compatibility.
 pub use orkestra_prompt::{
     sibling_status_display, AgentConfigError, ArtifactContext, FlowOverrides,
-    IntegrationErrorContext, PrComment, PromptBuilder, PromptService as PromptRenderer,
-    QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
-    SiblingTaskContext, StagePromptContext,
+    IntegrationErrorContext, PrCheckContext, PrComment, PromptBuilder,
+    PromptService as PromptRenderer, QuestionAnswerContext, ResolvedAgentConfig,
+    ResumeQuestionAnswer, ResumeType, SiblingTaskContext, StagePromptContext,
 };
 /// Lazy-initialized prompt renderer (owns pre-compiled Handlebars templates).
 static RENDERER: LazyLock<PromptRenderer> = LazyLock::new(PromptRenderer::new);
@@ -607,6 +607,7 @@ mod tests {
             "work",
             &ResumeType::PrComments {
                 comments,
+                checks: vec![],
                 guidance: Some("Focus on the error handling first".to_string()),
             },
             "main",
@@ -637,6 +638,7 @@ mod tests {
             "work",
             &ResumeType::PrComments {
                 comments,
+                checks: vec![],
                 guidance: None,
             },
             "main",

@@ -315,7 +315,11 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
         Some(IterationTrigger::ManualResume { message }) => ResumeType::ManualResume {
             message: message.clone(),
         },
-        Some(IterationTrigger::PrComments { comments, guidance }) => ResumeType::PrComments {
+        Some(IterationTrigger::PrFeedback {
+            comments,
+            checks,
+            guidance,
+        }) => ResumeType::PrComments {
             comments: comments
                 .iter()
                 .map(|c| PrComment {
@@ -325,6 +329,7 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
                     line: c.line,
                 })
                 .collect(),
+            checks: checks.clone(),
             guidance: guidance.clone(),
         },
     }
@@ -647,7 +652,8 @@ mod tests {
 
     #[test]
     fn test_trigger_to_resume_type_pr_comments() {
-        let trigger = IterationTrigger::PrComments {
+        use crate::workflow::domain::PrCheckData;
+        let trigger = IterationTrigger::PrFeedback {
             comments: vec![
                 PrCommentData {
                     author: "reviewer1".to_string(),
@@ -662,13 +668,21 @@ mod tests {
                     line: None,
                 },
             ],
+            checks: vec![PrCheckData {
+                name: "CI / build".to_string(),
+                summary: Some("2 tests failed".to_string()),
+            }],
             guidance: Some("Focus on error handling".to_string()),
         };
 
         let resume = trigger_to_resume_type(Some(&trigger));
 
         match resume {
-            ResumeType::PrComments { comments, guidance } => {
+            ResumeType::PrComments {
+                comments,
+                checks,
+                guidance,
+            } => {
                 assert_eq!(comments.len(), 2);
                 assert_eq!(comments[0].author, "reviewer1");
                 assert_eq!(comments[0].body, "Fix this bug");
@@ -678,6 +692,9 @@ mod tests {
                 assert_eq!(comments[1].body, "PR-level comment");
                 assert_eq!(comments[1].path, ""); // None becomes empty string
                 assert_eq!(comments[1].line, None);
+                assert_eq!(checks.len(), 1);
+                assert_eq!(checks[0].name, "CI / build");
+                assert_eq!(checks[0].summary.as_deref(), Some("2 tests failed"));
                 assert_eq!(guidance, Some("Focus on error handling".to_string()));
             }
             _ => panic!("Expected PrComments resume type"),

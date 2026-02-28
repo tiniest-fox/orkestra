@@ -91,9 +91,9 @@ pub use config::{
     StageConfig, WorkflowConfig,
 };
 pub use domain::{
-    AssistantSession, DerivedTaskState, Iteration, LogEntry, OrkAction, PrCommentData, Question,
-    QuestionAnswer, QuestionOption, SessionLogInfo, SessionState, StageLogInfo, StageSession, Task,
-    TaskView, TodoItem, ToolInput,
+    AssistantSession, DerivedTaskState, Iteration, LogEntry, OrkAction, PrCheckData, PrCommentData,
+    Question, QuestionAnswer, QuestionOption, SessionLogInfo, SessionState, StageLogInfo,
+    StageSession, Task, TaskView, TodoItem, ToolInput,
 };
 pub use execution::{PromptBuilder, StageOutput, StageOutputError, StagePromptContext};
 pub use ports::{

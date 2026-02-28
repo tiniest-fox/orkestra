@@ -282,6 +282,15 @@ export interface PrCommentData {
 }
 
 /**
+ * Failed CI check data stored in iteration trigger.
+ * Captured at action time and used for prompt building.
+ */
+export interface PrCheckData {
+  name: string;
+  summary: string | null;
+}
+
+/**
  * Why an iteration was created - determines the resume prompt type.
  * Uses snake_case to match Rust's serde serialization.
  */
@@ -295,7 +304,14 @@ export type IterationTrigger =
   | { type: "retry_failed"; instructions?: string }
   | { type: "retry_blocked"; instructions?: string }
   | { type: "manual_resume"; message?: string }
-  | { type: "pr_comments"; comments: PrCommentData[]; guidance?: string };
+  | {
+      type: "pr_feedback";
+      comments: PrCommentData[];
+      checks: PrCheckData[];
+      guidance?: string;
+    }
+  /** Old DB records may use pr_comments as the type — treated the same as pr_feedback. */
+  | { type: "pr_comments"; comments: PrCommentData[]; checks?: PrCheckData[]; guidance?: string };
 
 /**
  * Output from a gate script run, stored on the iteration being validated.
@@ -655,6 +671,10 @@ export interface PrCheck {
   status: "pending" | "success" | "failure" | "skipped";
   /** Conclusion if completed (e.g., "SUCCESS", "FAILURE"). */
   conclusion?: string;
+  /** Internal check run ID, if available. */
+  id?: number;
+  /** Summary output from the check run, if available. */
+  summary?: string;
 }
 
 /**

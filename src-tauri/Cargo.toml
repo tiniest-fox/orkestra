@@ -21,6 +21,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 orkestra-core = { path = "../crates/orkestra-core" }
+orkestra-types = { path = "../crates/orkestra-types" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
@@ -33,6 +34,7 @@ syntect = "5.3"
 chrono = "0.4"
 urlencoding = "2"
 tokio = { version = "1", features = ["process"] }
+tracing = "0.1"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 
 [target.'cfg(unix)'.dependencies]

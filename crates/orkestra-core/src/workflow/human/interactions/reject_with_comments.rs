@@ -111,7 +111,11 @@ fn route_to_rejection_target(
     iteration_service.create_iteration(
         &task.id,
         &target_stage,
-        Some(IterationTrigger::PrComments { comments, guidance }),
+        Some(IterationTrigger::PrFeedback {
+            comments,
+            checks: vec![],
+            guidance,
+        }),
     )?;
     task.state = TaskState::queued(&target_stage);
     task.updated_at = chrono::Utc::now().to_rfc3339();

@@ -135,7 +135,7 @@ export function DrawerFooter({
         onOpenPr={state.handleOpenPr}
         onArchive={state.handleArchive}
         onFixConflicts={state.handleFixConflicts}
-        onAddressComments={state.handleAddressComments}
+        onAddressFeedback={state.handleAddressFeedback}
         onPushPr={state.handlePushPr}
         onPullPr={state.handlePullPr}
         pushPullError={state.pushPullError}

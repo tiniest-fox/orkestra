@@ -45,6 +45,18 @@ pub struct PrCommentData {
     pub line: Option<u32>,
 }
 
+/// Failed CI check data stored in iteration trigger.
+///
+/// Captured at action time and passed through to the prompt builder.
+/// This allows checks to be stored in the database and replayed on crash recovery.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PrCheckData {
+    /// Name of the check (e.g., "CI / build").
+    pub name: String,
+    /// Failure summary from GitHub check run output (e.g., "3 tests failed").
+    pub summary: Option<String>,
+}
+
 /// Why this iteration was created - determines the resume prompt type.
 ///
 /// This is stored as `incoming_context` on an iteration to track why it exists.
@@ -64,10 +76,15 @@ pub enum IterationTrigger {
         message: String,
         conflict_files: Vec<String>,
     },
-    /// User selected PR comments to address.
-    PrComments {
+    /// User selected PR comments and/or failed CI checks to address.
+    /// Old DB records with `pr_comments` type deserialize as this variant.
+    #[serde(alias = "pr_comments")]
+    PrFeedback {
         /// Selected comments to address (captured at action time).
         comments: Vec<PrCommentData>,
+        /// Selected failed CI checks to address.
+        #[serde(default)]
+        checks: Vec<PrCheckData>,
         /// Optional guidance from the user.
         guidance: Option<String>,
     },
@@ -468,8 +485,8 @@ mod tests {
     }
 
     #[test]
-    fn test_iteration_trigger_pr_comments() {
-        let trigger = IterationTrigger::PrComments {
+    fn test_iteration_trigger_pr_feedback() {
+        let trigger = IterationTrigger::PrFeedback {
             comments: vec![
                 PrCommentData {
                     author: "reviewer1".to_string(),
@@ -484,10 +501,11 @@ mod tests {
                     line: None,
                 },
             ],
+            checks: vec![],
             guidance: Some("Focus on the performance comments".to_string()),
         };
         let json = serde_json::to_string(&trigger).unwrap();
-        assert!(json.contains("\"type\":\"pr_comments\""));
+        assert!(json.contains("\"type\":\"pr_feedback\""));
         assert!(json.contains("\"comments\""));
         assert!(json.contains("reviewer1"));
         assert!(json.contains("Fix this bug"));
@@ -498,18 +516,19 @@ mod tests {
     }
 
     #[test]
-    fn test_iteration_trigger_pr_comments_no_guidance() {
-        let trigger = IterationTrigger::PrComments {
+    fn test_iteration_trigger_pr_feedback_no_guidance() {
+        let trigger = IterationTrigger::PrFeedback {
             comments: vec![PrCommentData {
                 author: "reviewer".to_string(),
                 body: "Please fix".to_string(),
                 path: Some("lib.rs".to_string()),
                 line: Some(10),
             }],
+            checks: vec![],
             guidance: None,
         };
         let json = serde_json::to_string(&trigger).unwrap();
-        assert!(json.contains("\"type\":\"pr_comments\""));
+        assert!(json.contains("\"type\":\"pr_feedback\""));
         assert!(json.contains("\"comments\""));
         // guidance should be null when None
         assert!(json.contains("\"guidance\":null") || !json.contains("\"guidance\""));
@@ -532,27 +551,85 @@ mod tests {
     }
 
     #[test]
-    fn test_iteration_with_pr_comments_context() {
+    fn test_iteration_with_pr_feedback_context() {
         let iter = Iteration::new("iter-1", "task-1", "work", 2, "now").with_context(
-            IterationTrigger::PrComments {
+            IterationTrigger::PrFeedback {
                 comments: vec![PrCommentData {
                     author: "lead".to_string(),
                     body: "Address all comments".to_string(),
                     path: None,
                     line: None,
                 }],
+                checks: vec![],
                 guidance: Some("Address all comments".to_string()),
             },
         );
 
         assert!(iter.incoming_context.is_some());
         match &iter.incoming_context {
-            Some(IterationTrigger::PrComments { comments, guidance }) => {
+            Some(IterationTrigger::PrFeedback {
+                comments,
+                checks,
+                guidance,
+            }) => {
                 assert_eq!(comments.len(), 1);
                 assert_eq!(comments[0].author, "lead");
+                assert_eq!(checks.len(), 0);
                 assert_eq!(guidance.as_deref(), Some("Address all comments"));
             }
-            _ => panic!("Expected PrComments trigger"),
+            _ => panic!("Expected PrFeedback trigger"),
         }
+    }
+
+    #[test]
+    fn test_iteration_trigger_pr_feedback_backward_compat() {
+        // Old DB records with `pr_comments` type should deserialize as PrFeedback
+        let old_json = r#"{"type":"pr_comments","comments":[{"author":"r","body":"fix","path":null,"line":null}],"guidance":null}"#;
+        let parsed: IterationTrigger = serde_json::from_str(old_json).unwrap();
+        match parsed {
+            IterationTrigger::PrFeedback {
+                comments,
+                checks,
+                guidance,
+            } => {
+                assert_eq!(comments.len(), 1);
+                assert_eq!(checks.len(), 0);
+                assert!(guidance.is_none());
+            }
+            _ => panic!("Expected PrFeedback trigger"),
+        }
+    }
+
+    #[test]
+    fn test_pr_check_data() {
+        let check = PrCheckData {
+            name: "CI / build".to_string(),
+            summary: Some("3 tests failed".to_string()),
+        };
+        let json = serde_json::to_string(&check).unwrap();
+        assert!(json.contains("CI / build"));
+        assert!(json.contains("3 tests failed"));
+
+        let parsed: PrCheckData = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, check);
+    }
+
+    #[test]
+    fn test_iteration_trigger_pr_feedback_with_checks() {
+        let trigger = IterationTrigger::PrFeedback {
+            comments: vec![],
+            checks: vec![PrCheckData {
+                name: "CI / lint".to_string(),
+                summary: Some("clippy: 2 warnings".to_string()),
+            }],
+            guidance: None,
+        };
+        let json = serde_json::to_string(&trigger).unwrap();
+        assert!(json.contains("\"type\":\"pr_feedback\""));
+        assert!(json.contains("CI / lint"));
+        assert!(json.contains("clippy: 2 warnings"));
+
+        let parsed: IterationTrigger = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, trigger);
     }
 }

@@ -3,15 +3,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePrStatus } from "../../../providers/PrStatusProvider";
-import type { PrCommentData, PrStatus } from "../../../types/workflow";
+import type { PrCheckData, PrCommentData, PrStatus } from "../../../types/workflow";
 import type { PrTabFooterState } from "../Drawer/drawerTabs";
 import { groupCommentsByReview } from "../groupCommentsByReview";
 import { ConflictPanel } from "./ConflictPanel";
 import { PrChecksSection } from "./PrChecksSection";
 import { PrReviewsSection } from "./PrReviewsSection";
 import { PrStatusBar } from "./PrStatusBar";
-
-export type { PrTabFooterState };
 
 // ============================================================================
 // Component
@@ -38,14 +36,28 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
 
   const conflicts = status ? hasConflicts(status) : false;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectedCheckNames, setSelectedCheckNames] = useState<Set<string>>(new Set());
   const [guidance, setGuidance] = useState("");
 
   // Reset selection when task changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: taskId is the intentional trigger; setters are stable
   useEffect(() => {
     setSelectedIds(new Set());
+    setSelectedCheckNames(new Set());
     setGuidance("");
   }, [taskId]);
+
+  // Clear stale check selections when PR status refreshes.
+  useEffect(() => {
+    if (!status) return;
+    const failingNames = new Set(
+      status.checks.filter((c) => c.status === "failure").map((c) => c.name),
+    );
+    setSelectedCheckNames((prev) => {
+      const next = new Set([...prev].filter((name) => failingNames.has(name)));
+      return next.size !== prev.size ? next : prev;
+    });
+  }, [status]);
 
   // Notify parent of footer state whenever relevant state changes.
   useEffect(() => {
@@ -61,7 +73,8 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
       onPrStateChange({ type: "conflicts" });
       return;
     }
-    if (selectedIds.size > 0) {
+    const hasSelection = selectedIds.size > 0 || selectedCheckNames.size > 0;
+    if (hasSelection) {
       const allComments = status.comments;
       const comments: PrCommentData[] = allComments
         .filter((c) => selectedIds.has(c.id))
@@ -71,16 +84,37 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
           path: c.path ?? null,
           line: c.line ?? null,
         }));
-      onPrStateChange({ type: "comments_selected", count: selectedIds.size, comments, guidance });
+      const checks: PrCheckData[] = status.checks
+        .filter((c) => selectedCheckNames.has(c.name))
+        .map((c) => ({
+          name: c.name,
+          summary: c.summary ?? null,
+        }));
+      onPrStateChange({
+        type: "feedback_selected",
+        commentCount: selectedIds.size,
+        checkCount: selectedCheckNames.size,
+        comments,
+        checks,
+        guidance,
+      });
       return;
     }
     onPrStateChange({ type: "clean" });
-  }, [status, loading, conflicts, selectedIds, guidance, onPrStateChange]);
+  }, [status, loading, conflicts, selectedIds, selectedCheckNames, guidance, onPrStateChange]);
 
   const toggleComment = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleCheck = useCallback((name: string) => {
+    setSelectedCheckNames((prev) => {
+      const next = new Set(prev);
+      next.has(name) ? next.delete(name) : next.add(name);
       return next;
     });
   }, []);
@@ -114,6 +148,7 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
   const allChecksPassing =
     status.checks.length > 0 && status.checks.every((c) => c.status === "success");
   const prNumber = extractPrNumber(prUrl);
+  const anySelected = selectedIds.size > 0 || selectedCheckNames.size > 0;
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -129,6 +164,9 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
           checks={status.checks}
           allPassing={allChecksPassing}
           compact={allChecksPassing && hasReviewContent}
+          selectedCheckNames={selectedCheckNames}
+          onToggleCheck={toggleCheck}
+          suppressed={conflicts}
         />
       )}
 
@@ -140,10 +178,21 @@ export function DrawerPrTab({ taskId, prUrl, baseBranch, onPrStateChange }: Draw
           allComments={allComments}
           selectedIds={selectedIds}
           onToggle={toggleComment}
-          guidance={guidance}
-          onGuidanceChange={setGuidance}
           suppressed={conflicts}
         />
+      )}
+
+      {/* Shared guidance textarea — visible when any selection exists */}
+      {anySelected && !conflicts && (
+        <div className="px-6 pb-6">
+          <textarea
+            value={guidance}
+            onChange={(e) => setGuidance(e.target.value)}
+            placeholder="Optional guidance for the agent…"
+            rows={2}
+            className="w-full font-sans text-[12px] text-text-primary placeholder:text-text-quaternary bg-canvas border border-border rounded px-3 py-2 resize-none focus:outline-none focus:border-text-tertiary transition-colors"
+          />
+        </div>
       )}
 
       {/* Empty state */}

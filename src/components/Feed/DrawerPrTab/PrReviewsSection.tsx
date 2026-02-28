@@ -16,14 +16,12 @@ const REVIEW_STATE_LABELS: Record<string, string> = {
   PENDING: "pending",
 };
 
-export interface PrReviewsSectionProps {
+interface PrReviewsSectionProps {
   reviewsWithComments: Array<{ review: PrReview; comments: PrComment[] }>;
   standaloneComments: PrComment[];
   allComments: PrComment[];
   selectedIds: Set<number>;
   onToggle: (id: number) => void;
-  guidance: string;
-  onGuidanceChange: (v: string) => void;
   suppressed: boolean;
 }
 
@@ -33,11 +31,8 @@ export function PrReviewsSection({
   allComments,
   selectedIds,
   onToggle,
-  guidance,
-  onGuidanceChange,
   suppressed,
 }: PrReviewsSectionProps) {
-  const hasComments = allComments.length > 0;
   const selectionCount = selectedIds.size;
 
   return (
@@ -88,18 +83,6 @@ export function PrReviewsSection({
           ))}
         </div>
       )}
-
-      {hasComments && !suppressed && (
-        <div className="px-6 pb-6">
-          <textarea
-            value={guidance}
-            onChange={(e) => onGuidanceChange(e.target.value)}
-            placeholder="Optional guidance for the agent…"
-            rows={2}
-            className="w-full font-sans text-[12px] text-text-primary placeholder:text-text-quaternary bg-canvas border border-border rounded px-3 py-2 resize-none focus:outline-none focus:border-text-tertiary transition-colors"
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -134,8 +117,7 @@ function CommentRow({
     <label
       className={`flex gap-3 py-2.5 px-3 rounded-lg mb-1.5 border cursor-pointer transition-all ${
         selected ? "bg-canvas border-border" : "border-transparent"
-      }`}
-      style={{ opacity: dimmed ? 0.45 : 1 }}
+      } ${dimmed ? "opacity-45" : "opacity-100"}`}
     >
       <input
         type="checkbox"

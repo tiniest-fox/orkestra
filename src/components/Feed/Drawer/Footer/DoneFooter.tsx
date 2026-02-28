@@ -23,7 +23,7 @@ interface DoneFooterProps {
   onOpenPr: () => void;
   onArchive: () => void;
   onFixConflicts: () => void;
-  onAddressComments: () => void;
+  onAddressFeedback: () => void;
   onPushPr: () => void;
   onPullPr: () => void;
   pushPullError: string | null;
@@ -45,7 +45,7 @@ export function DoneFooter({
   onOpenPr,
   onArchive,
   onFixConflicts,
-  onAddressComments,
+  onAddressFeedback,
   onPushPr,
   onPullPr,
   pushPullError,
@@ -116,13 +116,17 @@ export function DoneFooter({
       );
     }
 
-    if (activeTab === "pr" && prTabState.type === "comments_selected") {
+    if (activeTab === "pr" && prTabState.type === "feedback_selected") {
+      const { commentCount, checkCount } = prTabState;
+      const parts: string[] = [];
+      if (commentCount > 0) parts.push(`${commentCount} comment${commentCount !== 1 ? "s" : ""}`);
+      if (checkCount > 0) parts.push(`${checkCount} check${checkCount !== 1 ? "s" : ""}`);
+      const label = `Address ${parts.join(" & ")}`;
+
       return (
         <FooterBar>
-          <Button variant="merge" onClick={onAddressComments} disabled={loading}>
-            {loading
-              ? "Sending…"
-              : `Address ${prTabState.count} comment${prTabState.count !== 1 ? "s" : ""}`}
+          <Button variant="merge" onClick={onAddressFeedback} disabled={loading}>
+            {loading ? "Sending…" : label}
           </Button>
           {viewPrButton}
           <Button variant="secondary" onClick={onEnterUpdateMode} disabled={loading}>

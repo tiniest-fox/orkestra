@@ -15,7 +15,7 @@ use orkestra_core::{
     workflow::{
         adapters::GhPrService,
         create_pr_sync,
-        domain::{IterationTrigger, LogEntry},
+        domain::{IterationTrigger, LogEntry, PrCheckData},
         load_workflow_for_project,
         runtime::Outcome,
         Git2GitService, GitService, Iteration, SqliteWorkflowStore, StageSession, Task, TaskState,
@@ -164,6 +164,14 @@ enum TaskAction {
         #[arg(short, long)]
         instructions: Option<String>,
     },
+    /// Address failing CI checks and/or request changes
+    AddressFeedback {
+        /// Task ID
+        id: String,
+        /// Optional guidance for the agent
+        #[arg(long)]
+        guidance: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -259,6 +267,9 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         TaskAction::PullPr { id } => handle_pull_pr_task(&api, &id, pretty),
         TaskAction::Retry { id, instructions } => {
             handle_retry_task(&api, &id, instructions.as_deref(), pretty);
+        }
+        TaskAction::AddressFeedback { id, guidance } => {
+            handle_address_feedback(&api, &id, guidance.as_deref(), pretty);
         }
     }
 }
@@ -961,6 +972,107 @@ fn handle_retry_task(api: &WorkflowApi, id: &str, instructions: Option<&str>, pr
     }
 }
 
+fn handle_address_feedback(api: &WorkflowApi, id: &str, guidance: Option<&str>, pretty: bool) {
+    // Verify the task exists and has a PR URL.
+    let task = match api.get_task(id) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error getting task: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    let pr_url = if let Some(url) = &task.pr_url {
+        url.clone()
+    } else {
+        eprintln!("Error: task {id} has no PR URL");
+        std::process::exit(1);
+    };
+
+    // Fetch failing checks from GitHub (synchronous, no enrichment needed for CLI).
+    let checks = match fetch_failing_checks(&pr_url) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error fetching PR checks: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if checks.is_empty() {
+        eprintln!("No failing checks found for task {id}");
+        std::process::exit(1);
+    }
+
+    let task = match api.address_pr_feedback(id, vec![], checks, guidance.map(str::to_owned)) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error addressing PR feedback: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        println!("Addressing PR feedback for task {}", task.id);
+        println!("Stage: {}", task.current_stage().unwrap_or("-"));
+        println!("State: {}", format_state(&task.state));
+    } else {
+        output_json(&task);
+    }
+}
+
+/// Run `gh pr view` and return all failing checks as `PrCheckData`.
+///
+/// Uses `std::process::Command` (sync) since the CLI is synchronous.
+/// Does not fetch check-run summaries — check names are sufficient for agent context.
+fn fetch_failing_checks(pr_url: &str) -> Result<Vec<PrCheckData>, String> {
+    let output = std::process::Command::new("gh")
+        .args(["pr", "view", pr_url, "--json", "statusCheckRollup"])
+        .output();
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            return Err(format!("gh pr view failed: {stderr}"));
+        }
+        Err(e) => {
+            return Err(format!("failed to run gh: {e}"));
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct CheckRollup {
+        #[serde(default)]
+        status_check_rollup: Vec<CheckEntry>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct CheckEntry {
+        name: String,
+        status: Option<String>,
+        conclusion: Option<String>,
+    }
+
+    let rollup: CheckRollup =
+        serde_json::from_str(&stdout).map_err(|e| format!("failed to parse gh output: {e}"))?;
+
+    Ok(rollup
+        .status_check_rollup
+        .into_iter()
+        .filter(|c| {
+            orkestra_types::domain::classify_check(c.status.as_deref(), c.conclusion.as_deref())
+                .is_failing()
+        })
+        .map(|c| PrCheckData {
+            name: c.name,
+            summary: None,
+        })
+        .collect())
+}
+
 /// Initialize the workflow API.
 fn init_workflow_api() -> Result<WorkflowApi, String> {
     let project_root =
@@ -1122,8 +1234,16 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
             }
             s
         }
-        IterationTrigger::PrComments { comments, guidance } => {
-            let mut s = format!("PR comments ({} comments)", comments.len());
+        IterationTrigger::PrFeedback {
+            comments,
+            checks,
+            guidance,
+        } => {
+            let mut s = format!(
+                "PR feedback ({} comments, {} checks)",
+                comments.len(),
+                checks.len()
+            );
             for c in comments {
                 let location = match (&c.path, c.line) {
                     (Some(p), Some(l)) => format!(" ({p}:{l})"),
@@ -1131,6 +1251,10 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
                     _ => String::new(),
                 };
                 write!(s, "\n    - @{}{}: {}", c.author, location, c.body).unwrap();
+            }
+            for c in checks {
+                let summary = c.summary.as_deref().unwrap_or("no details");
+                write!(s, "\n    - [check] {}: {}", c.name, summary).unwrap();
             }
             if let Some(g) = guidance {
                 write!(s, "\n    Guidance: {g}").unwrap();

@@ -66,9 +66,13 @@ pub fn execute(
             RESUME_MANUAL_RESUME,
             serde_json::json!({ "message": message }),
         ),
-        ResumeType::PrComments { comments, guidance } => (
+        ResumeType::PrComments {
+            comments,
+            checks,
+            guidance,
+        } => (
             RESUME_PR_COMMENTS,
-            serde_json::json!({ "comments": comments, "guidance": guidance }),
+            serde_json::json!({ "comments": comments, "checks": checks, "guidance": guidance }),
         ),
     };
 
@@ -116,7 +120,7 @@ fn render_template(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{PrComment, ResumeQuestionAnswer};
+    use crate::types::{PrCheckContext, PrComment, ResumeQuestionAnswer};
 
     #[test]
     fn test_continue() {
@@ -264,6 +268,7 @@ mod tests {
             "work",
             &ResumeType::PrComments {
                 comments,
+                checks: vec![],
                 guidance: Some("Focus on the error handling first".to_string()),
             },
             "main",
@@ -294,6 +299,7 @@ mod tests {
             "work",
             &ResumeType::PrComments {
                 comments,
+                checks: vec![],
                 guidance: None,
             },
             "main",
@@ -306,6 +312,70 @@ mod tests {
         assert!(prompt.contains("README.md"));
         assert!(prompt.contains("Typo in documentation"));
         assert!(!prompt.contains("User guidance"));
+    }
+
+    #[test]
+    fn test_pr_checks_only() {
+        let checks = vec![
+            PrCheckContext {
+                name: "CI / build".to_string(),
+                summary: Some("3 tests failed".to_string()),
+            },
+            PrCheckContext {
+                name: "CI / lint".to_string(),
+                summary: None,
+            },
+        ];
+        let prompt = execute(
+            "work",
+            &ResumeType::PrComments {
+                comments: vec![],
+                checks,
+                guidance: None,
+            },
+            "main",
+            &[],
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:pr_comments>"));
+        assert!(prompt.contains("CI / build"));
+        assert!(prompt.contains("3 tests failed"));
+        assert!(prompt.contains("CI / lint"));
+        assert!(prompt.contains("No failure details available."));
+        assert!(!prompt.contains("PR Comments"));
+    }
+
+    #[test]
+    fn test_pr_comments_and_checks() {
+        let comments = vec![PrComment {
+            author: "reviewer".to_string(),
+            path: "src/main.rs".to_string(),
+            line: Some(10),
+            body: "Fix this".to_string(),
+        }];
+        let checks = vec![PrCheckContext {
+            name: "CI / build".to_string(),
+            summary: Some("Build failed".to_string()),
+        }];
+        let prompt = execute(
+            "work",
+            &ResumeType::PrComments {
+                comments,
+                checks,
+                guidance: Some("Address both".to_string()),
+            },
+            "main",
+            &[],
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:work:pr_comments>"));
+        assert!(prompt.contains("PR Comments"));
+        assert!(prompt.contains("Failed CI Checks"));
+        assert!(prompt.contains("Fix this"));
+        assert!(prompt.contains("Build failed"));
+        assert!(prompt.contains("Address both"));
     }
 
     #[test]

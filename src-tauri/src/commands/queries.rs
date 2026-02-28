@@ -269,6 +269,10 @@ pub struct PrCheck {
     pub status: String,
     /// Conclusion if completed (e.g., "SUCCESS", "FAILURE").
     pub conclusion: Option<String>,
+    /// GitHub check run ID (if available from check-runs API).
+    pub id: Option<i64>,
+    /// Failure summary from check run output (e.g., "3 tests failed").
+    pub summary: Option<String>,
 }
 
 /// A single review status.
@@ -319,6 +323,9 @@ struct GhPrResponse {
     /// Merge state: "BEHIND", "BLOCKED", "CLEAN", "DIRTY", "DRAFT", "`HAS_HOOKS`", "UNKNOWN", "UNSTABLE".
     #[serde(default)]
     merge_state_status: Option<String>,
+    /// HEAD commit SHA for fetching check-runs via the REST API.
+    #[serde(default)]
+    head_ref_oid: Option<String>,
 }
 
 /// Raw JSON response from `gh api` for review comments.
@@ -356,6 +363,24 @@ struct GhAuthor {
     login: String,
 }
 
+/// Raw JSON response from the GitHub check-runs API.
+#[derive(Deserialize, Default)]
+struct GhCheckRunsResponse {
+    check_runs: Vec<GhCheckRun>,
+}
+
+#[derive(Deserialize)]
+struct GhCheckRun {
+    id: i64,
+    name: String,
+    output: Option<GhCheckRunOutput>,
+}
+
+#[derive(Deserialize)]
+struct GhCheckRunOutput {
+    summary: Option<String>,
+}
+
 /// Parse a GitHub PR URL into `(owner, repo, number)`.
 ///
 /// Accepts URLs like `https://github.com/owner/repo/pull/123`.
@@ -375,20 +400,6 @@ fn normalize_pr_state(state: &str) -> &'static str {
         "MERGED" => "merged",
         "CLOSED" => "closed",
         _ => "open", // OPEN or unknown states default to open
-    }
-}
-
-/// Convert GitHub's check status to our normalized format.
-fn normalize_check_status(status: Option<&str>, conclusion: Option<&str>) -> &'static str {
-    match status.map(str::to_uppercase).as_deref() {
-        Some("COMPLETED") => match conclusion.map(str::to_uppercase).as_deref() {
-            Some("SUCCESS") => "success",
-            Some("FAILURE" | "TIMED_OUT" | "CANCELLED" | "ACTION_REQUIRED") => "failure",
-            Some("SKIPPED" | "NEUTRAL") => "skipped",
-            _ => "pending",
-        },
-        Some("SKIPPED") => "skipped",
-        _ => "pending", // QUEUED, IN_PROGRESS, WAITING, PENDING, REQUESTED, None, or unknown
     }
 }
 
@@ -456,7 +467,7 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
         )
     })?;
 
-    // Run all gh calls concurrently.
+    // Fetch PR view first — the HEAD SHA it returns is needed for the check-runs call.
     let reviews_path = format!("repos/{owner}/{repo}/pulls/{number}/reviews");
     let comments_path = format!("repos/{owner}/{repo}/pulls/{number}/comments");
     let pr_view_args = [
@@ -464,19 +475,10 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
         "view",
         &pr_url,
         "--json",
-        "state,statusCheckRollup,url,number,mergeable,mergeStateStatus",
+        "state,statusCheckRollup,url,number,mergeable,mergeStateStatus,headRefOid",
     ];
-    let reviews_args: [&str; 2] = ["api", &reviews_path];
-    let comments_args: [&str; 2] = ["api", &comments_path];
 
-    let (pr_view_result, reviews_result, comments_result) = tokio::join!(
-        run_gh(&pr_view_args),
-        run_gh(&reviews_args),
-        run_gh(&comments_args)
-    );
-
-    // PR view is required.
-    let stdout = pr_view_result?;
+    let stdout = run_gh(&pr_view_args).await?;
     let response: GhPrResponse = serde_json::from_str(&stdout).map_err(|e| {
         TauriError::new(
             "GH_PARSE_ERROR",
@@ -484,14 +486,65 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
         )
     })?;
 
+    // Build check-runs path from the HEAD SHA (now available after pr view).
+    let check_runs_path = response
+        .head_ref_oid
+        .as_deref()
+        .map(|sha| format!("repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100"));
+
+    // Run reviews, comments, and check-runs concurrently.
+    let reviews_args: [&str; 2] = ["api", &reviews_path];
+    let comments_args: [&str; 2] = ["api", &comments_path];
+
+    let (reviews_result, comments_result, check_runs_result) =
+        tokio::join!(run_gh(&reviews_args), run_gh(&comments_args), async {
+            match &check_runs_path {
+                Some(path) => run_gh(&["api", path]).await,
+                None => Err(TauriError::new("NO_HEAD_SHA", "No head SHA available")),
+            }
+        });
+
+    // Build enrichment lookup from check-runs API (non-fatal).
+    let check_enrichments: std::collections::HashMap<String, (i64, Option<String>)> =
+        match check_runs_result {
+            Ok(api_stdout) => {
+                let parsed: GhCheckRunsResponse =
+                    serde_json::from_str(&api_stdout).unwrap_or_else(|e| {
+                        tracing::warn!("[pr] Failed to parse check-runs response: {e}");
+                        GhCheckRunsResponse::default()
+                    });
+                parsed
+                    .check_runs
+                    .into_iter()
+                    .map(|cr| {
+                        let summary = cr.output.and_then(|o| o.summary);
+                        (cr.name, (cr.id, summary))
+                    })
+                    .collect()
+            }
+            Err(e) => {
+                tracing::warn!("[pr] Failed to fetch check-runs: {e}");
+                std::collections::HashMap::new()
+            }
+        };
+
     let checks: Vec<PrCheck> = response
         .status_check_rollup
         .iter()
-        .map(|check| PrCheck {
-            name: check.name.clone(),
-            status: normalize_check_status(check.status.as_deref(), check.conclusion.as_deref())
+        .map(|check| {
+            let enrichment = check_enrichments.get(&check.name);
+            PrCheck {
+                name: check.name.clone(),
+                status: orkestra_types::domain::classify_check(
+                    check.status.as_deref(),
+                    check.conclusion.as_deref(),
+                )
+                .as_str()
                 .to_string(),
-            conclusion: check.conclusion.clone(),
+                conclusion: check.conclusion.clone(),
+                id: enrichment.map(|(id, _)| *id),
+                summary: enrichment.and_then(|(_, s)| s.clone()),
+            }
         })
         .collect();
 
@@ -513,7 +566,10 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
                 })
                 .collect()
         }
-        Err(_) => Vec::new(),
+        Err(e) => {
+            tracing::warn!("[pr] Failed to fetch PR reviews: {e}");
+            Vec::new()
+        }
     };
 
     // Comments are non-fatal: PR status is still useful without them.
@@ -536,7 +592,10 @@ pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriErr
                 })
                 .collect()
         }
-        Err(_) => Vec::new(),
+        Err(e) => {
+            tracing::warn!("[pr] Failed to fetch PR comments: {e}");
+            Vec::new()
+        }
     };
 
     // Convert mergeable enum to boolean: "MERGEABLE" -> true, "CONFLICTING" -> false, "UNKNOWN" -> None
@@ -585,70 +644,6 @@ mod tests {
     }
 
     #[test]
-    fn normalize_check_status_handles_completed_success() {
-        assert_eq!(
-            normalize_check_status(Some("COMPLETED"), Some("SUCCESS")),
-            "success"
-        );
-        assert_eq!(
-            normalize_check_status(Some("completed"), Some("success")),
-            "success"
-        );
-    }
-
-    #[test]
-    fn normalize_check_status_handles_completed_failure() {
-        assert_eq!(
-            normalize_check_status(Some("COMPLETED"), Some("FAILURE")),
-            "failure"
-        );
-        assert_eq!(
-            normalize_check_status(Some("COMPLETED"), Some("TIMED_OUT")),
-            "failure"
-        );
-        assert_eq!(
-            normalize_check_status(Some("COMPLETED"), Some("CANCELLED")),
-            "failure"
-        );
-        assert_eq!(
-            normalize_check_status(Some("COMPLETED"), Some("ACTION_REQUIRED")),
-            "failure"
-        );
-    }
-
-    #[test]
-    fn normalize_check_status_handles_skipped() {
-        assert_eq!(
-            normalize_check_status(Some("COMPLETED"), Some("SKIPPED")),
-            "skipped"
-        );
-        assert_eq!(
-            normalize_check_status(Some("COMPLETED"), Some("NEUTRAL")),
-            "skipped"
-        );
-        assert_eq!(normalize_check_status(Some("SKIPPED"), None), "skipped");
-    }
-
-    #[test]
-    fn normalize_check_status_handles_pending_states() {
-        assert_eq!(normalize_check_status(Some("QUEUED"), None), "pending");
-        assert_eq!(normalize_check_status(Some("IN_PROGRESS"), None), "pending");
-        assert_eq!(normalize_check_status(Some("WAITING"), None), "pending");
-        assert_eq!(normalize_check_status(Some("PENDING"), None), "pending");
-        assert_eq!(normalize_check_status(Some("REQUESTED"), None), "pending");
-        assert_eq!(normalize_check_status(None, None), "pending");
-    }
-
-    #[test]
-    fn normalize_check_status_handles_completed_with_unknown_conclusion() {
-        assert_eq!(
-            normalize_check_status(Some("COMPLETED"), Some("UNKNOWN")),
-            "pending"
-        );
-        assert_eq!(normalize_check_status(Some("COMPLETED"), None), "pending");
-    }
-
-    #[test]
     fn deserialize_gh_pr_response() {
         let json = r#"{
             "url": "https://github.com/owner/repo/pull/123",
@@ -662,6 +657,7 @@ mod tests {
         assert!(response.status_check_rollup.is_empty());
         assert!(response.mergeable.is_none());
         assert!(response.merge_state_status.is_none());
+        assert!(response.head_ref_oid.is_none());
     }
 
     #[test]
@@ -677,6 +673,101 @@ mod tests {
         let response: GhPrResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.mergeable, Some("CONFLICTING".to_string()));
         assert_eq!(response.merge_state_status, Some("DIRTY".to_string()));
+    }
+
+    #[test]
+    fn deserialize_gh_pr_response_with_head_ref_oid() {
+        let json = r#"{
+            "url": "https://github.com/owner/repo/pull/123",
+            "state": "OPEN",
+            "statusCheckRollup": [],
+            "headRefOid": "abc123def456"
+        }"#;
+
+        let response: GhPrResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.head_ref_oid, Some("abc123def456".to_string()));
+    }
+
+    #[test]
+    fn deserialize_gh_check_runs_response() {
+        let json = r#"{
+            "check_runs": [
+                {
+                    "id": 12345,
+                    "name": "CI / tests",
+                    "output": {"summary": "3 tests failed"}
+                },
+                {
+                    "id": 12346,
+                    "name": "CI / lint",
+                    "output": null
+                },
+                {
+                    "id": 12347,
+                    "name": "CI / build",
+                    "output": {"summary": null}
+                }
+            ]
+        }"#;
+
+        let response: GhCheckRunsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.check_runs.len(), 3);
+
+        assert_eq!(response.check_runs[0].id, 12345);
+        assert_eq!(response.check_runs[0].name, "CI / tests");
+        assert_eq!(
+            response.check_runs[0].output.as_ref().unwrap().summary,
+            Some("3 tests failed".to_string())
+        );
+
+        assert_eq!(response.check_runs[1].id, 12346);
+        assert!(response.check_runs[1].output.is_none());
+
+        assert_eq!(response.check_runs[2].id, 12347);
+        assert_eq!(
+            response.check_runs[2].output.as_ref().unwrap().summary,
+            None
+        );
+    }
+
+    #[test]
+    fn check_enrichment_matches_by_name() {
+        let check_runs = GhCheckRunsResponse {
+            check_runs: vec![
+                GhCheckRun {
+                    id: 100,
+                    name: "CI / tests".to_string(),
+                    output: Some(GhCheckRunOutput {
+                        summary: Some("2 tests failed".to_string()),
+                    }),
+                },
+                GhCheckRun {
+                    id: 101,
+                    name: "CI / lint".to_string(),
+                    output: None,
+                },
+            ],
+        };
+
+        let enrichments: std::collections::HashMap<String, (i64, Option<String>)> = check_runs
+            .check_runs
+            .into_iter()
+            .map(|cr| {
+                let summary = cr.output.and_then(|o| o.summary);
+                (cr.name, (cr.id, summary))
+            })
+            .collect();
+
+        let (id, summary) = enrichments.get("CI / tests").unwrap();
+        assert_eq!(*id, 100);
+        assert_eq!(summary.as_deref(), Some("2 tests failed"));
+
+        let (id, summary) = enrichments.get("CI / lint").unwrap();
+        assert_eq!(*id, 101);
+        assert!(summary.is_none());
+
+        // Unmatched name returns None
+        assert!(enrichments.get("CI / missing").is_none());
     }
 
     #[test]

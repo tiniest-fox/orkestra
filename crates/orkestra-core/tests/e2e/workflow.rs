@@ -5288,15 +5288,15 @@ fn test_archive_task_rejects_non_idle_phase() {
 }
 
 // =============================================================================
-// Address PR Comments E2E Tests
+// Address PR Feedback E2E Tests
 // =============================================================================
 
-/// Test that a Done task can address PR comments.
+/// Test that a Done task can address PR feedback (comments).
 ///
-/// This exercises the `address_pr_comments` API method for cases where a user
+/// This exercises the `address_pr_feedback` API method for cases where a user
 /// wants to return to the work stage to address feedback from a PR review.
 #[test]
-fn test_address_pr_comments_returns_to_work_stage() {
+fn test_address_pr_feedback_returns_to_work_stage() {
     use orkestra_core::testutil::fixtures::test_default_workflow;
     use orkestra_core::workflow::domain::{IterationTrigger, PrCommentData};
 
@@ -5334,15 +5334,16 @@ fn test_address_pr_comments_returns_to_work_stage() {
         },
     ];
 
-    // Address PR comments
+    // Address PR feedback (comments only)
     let result = ctx
         .api()
-        .address_pr_comments(
+        .address_pr_feedback(
             &task_id,
             comments,
+            vec![],
             Some("Please fix the formatting".to_string()),
         )
-        .expect("address_pr_comments should succeed");
+        .expect("address_pr_feedback should succeed");
 
     // Verify task is back in work stage
     assert_eq!(
@@ -5352,7 +5353,7 @@ fn test_address_pr_comments_returns_to_work_stage() {
     );
     assert!(
         !result.is_done(),
-        "Task should no longer be Done after addressing PR comments"
+        "Task should no longer be Done after addressing PR feedback"
     );
     assert!(
         result.completed_at.is_none(),
@@ -5364,7 +5365,11 @@ fn test_address_pr_comments_returns_to_work_stage() {
     let last = iterations.last().expect("Should have iterations");
 
     match &last.incoming_context {
-        Some(IterationTrigger::PrComments { comments, guidance }) => {
+        Some(IterationTrigger::PrFeedback {
+            comments,
+            checks,
+            guidance,
+        }) => {
             assert_eq!(comments.len(), 2);
             // First comment with path and line
             assert_eq!(comments[0].author, "reviewer1");
@@ -5386,10 +5391,12 @@ fn test_address_pr_comments_returns_to_work_stage() {
                 comments[1].line, None,
                 "line should be None for PR-level comment"
             );
+            // No checks
+            assert_eq!(checks.len(), 0, "no checks expected");
             // Guidance
             assert_eq!(guidance.as_deref(), Some("Please fix the formatting"));
         }
-        other => panic!("Expected PrComments trigger, got {other:?}"),
+        other => panic!("Expected PrFeedback trigger, got {other:?}"),
     }
 
     // Set mock output for work stage agent - it needs to complete
@@ -5419,12 +5426,14 @@ fn test_address_pr_comments_returns_to_work_stage() {
     );
 }
 
-/// Test that `address_pr_comments` rejects empty comments.
+/// Test that `address_pr_feedback` rejects empty comments AND empty checks, but
+/// accepts checks-only input.
 ///
-/// At least one comment must be provided to address PR feedback.
+/// At least one comment or check must be provided to address PR feedback.
 #[test]
-fn test_address_pr_comments_rejects_empty_comments() {
+fn test_address_pr_feedback_rejects_empty_comments_and_empty_checks() {
     use orkestra_core::testutil::fixtures::test_default_workflow;
+    use orkestra_core::workflow::domain::PrCheckData;
     use orkestra_core::workflow::WorkflowError;
 
     use crate::helpers::disable_auto_merge;
@@ -5434,23 +5443,142 @@ fn test_address_pr_comments_rejects_empty_comments() {
     let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
 
     // Create a task
-    let task = ctx.create_task("Test no comments", "Description", None);
+    let task = ctx.create_task("Test no feedback", "Description", None);
     let task_id = task.id.clone();
 
     // Advance through all stages to Done
     advance_to_done_no_integration(&ctx, &task_id);
 
-    // Verify task is Done and Idle
+    // Verify task is Done
     let task = ctx.api().get_task(&task_id).unwrap();
     assert!(task.is_done(), "Task should be Done");
-    assert!(task.is_done(), "Task should be Done");
 
-    // Attempt with empty comments should fail
-    let result = ctx.api().address_pr_comments(&task_id, vec![], None);
+    // Attempt with empty comments AND empty checks should fail
+    let result = ctx
+        .api()
+        .address_pr_feedback(&task_id, vec![], vec![], None);
 
     assert!(
         matches!(result, Err(WorkflowError::InvalidTransition(_))),
-        "Expected InvalidTransition error for empty comments, got: {result:?}"
+        "Expected InvalidTransition error for empty feedback, got: {result:?}"
+    );
+
+    // Checks-only (empty comments + non-empty checks) should succeed
+    let checks = vec![PrCheckData {
+        name: "CI / build".to_string(),
+        summary: Some("3 tests failed".to_string()),
+    }];
+    let result = ctx
+        .api()
+        .address_pr_feedback(&task_id, vec![], checks, None);
+    assert!(
+        result.is_ok(),
+        "Expected success for checks-only feedback, got: {result:?}"
+    );
+}
+
+/// Test that `address_pr_feedback` accepts checks alone (no comments).
+#[test]
+fn test_address_pr_feedback_with_checks() {
+    use orkestra_core::testutil::fixtures::test_default_workflow;
+    use orkestra_core::workflow::domain::{IterationTrigger, PrCheckData, PrCommentData};
+
+    use crate::helpers::disable_auto_merge;
+
+    let workflow = disable_auto_merge(test_default_workflow());
+    let ctx = TestEnv::with_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test PR feedback with checks", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done_no_integration(&ctx, &task_id);
+
+    let comments = vec![PrCommentData {
+        author: "reviewer1".to_string(),
+        body: "Fix this method".to_string(),
+        path: Some("src/lib.rs".to_string()),
+        line: Some(10),
+    }];
+
+    let checks = vec![
+        PrCheckData {
+            name: "CI / build".to_string(),
+            summary: Some("3 tests failed".to_string()),
+        },
+        PrCheckData {
+            name: "CI / lint".to_string(),
+            summary: None,
+        },
+    ];
+
+    // Address PR feedback with both comments and checks
+    let result = ctx
+        .api()
+        .address_pr_feedback(
+            &task_id,
+            comments,
+            checks,
+            Some("Fix all issues".to_string()),
+        )
+        .expect("address_pr_feedback should succeed");
+
+    // Verify task returns to work stage
+    assert_eq!(
+        result.current_stage(),
+        Some("work"),
+        "Task should return to work stage"
+    );
+    assert!(!result.is_done(), "Task should no longer be Done");
+    assert!(
+        result.completed_at.is_none(),
+        "completed_at should be cleared"
+    );
+
+    // Verify iteration trigger has both comments and checks
+    let iterations = ctx.api().get_iterations(&task_id).unwrap();
+    let last = iterations.last().expect("Should have iterations");
+
+    match &last.incoming_context {
+        Some(IterationTrigger::PrFeedback {
+            comments,
+            checks,
+            guidance,
+        }) => {
+            assert_eq!(comments.len(), 1);
+            assert_eq!(comments[0].author, "reviewer1");
+            assert_eq!(checks.len(), 2);
+            assert_eq!(checks[0].name, "CI / build");
+            assert_eq!(checks[0].summary.as_deref(), Some("3 tests failed"));
+            assert_eq!(checks[1].name, "CI / lint");
+            assert!(checks[1].summary.is_none());
+            assert_eq!(guidance.as_deref(), Some("Fix all issues"));
+        }
+        other => panic!("Expected PrFeedback trigger, got {other:?}"),
+    }
+
+    // Set mock output for work agent
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Addressed PR feedback and fixed CI checks".to_string(),
+            activity_log: None,
+        },
+    );
+
+    ctx.advance(); // spawns work agent with PR feedback resume prompt
+
+    // Verify the resume prompt contains both comment and check content
+    ctx.assert_resume_prompt_contains(
+        "pr_comments",
+        &[
+            "Fix this method",
+            "src/lib.rs",
+            "CI / build",
+            "3 tests failed",
+            "CI / lint",
+            "Fix all issues",
+        ],
     );
 }
 
@@ -7318,13 +7446,14 @@ fn test_reject_with_comments_normal() {
     );
     assert!(matches!(task.state, TaskState::Queued { .. }));
 
-    // New iteration in work stage should have PrComments trigger
+    // New iteration in work stage should have PrFeedback trigger
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     let work_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == "work").collect();
     let last_work_iter = work_iterations.last().expect("Should have work iteration");
     match &last_work_iter.incoming_context {
-        Some(IterationTrigger::PrComments {
+        Some(IterationTrigger::PrFeedback {
             comments: ctx_comments,
+            checks: _,
             guidance,
         }) => {
             assert_eq!(ctx_comments.len(), 1);
@@ -7334,7 +7463,7 @@ fn test_reject_with_comments_normal() {
             assert_eq!(ctx_comments[0].line, Some(42));
             assert_eq!(guidance.as_deref(), Some("Please address"));
         }
-        other => panic!("Expected PrComments trigger, got {other:?}"),
+        other => panic!("Expected PrFeedback trigger, got {other:?}"),
     }
 
     // Previous review iteration should be ended with rejection outcome
@@ -7465,20 +7594,21 @@ fn test_reject_with_comments_pending_rejection_review() {
     );
     assert!(matches!(task.state, TaskState::Queued { .. }));
 
-    // Verify PrComments trigger in the new work iteration
+    // Verify PrFeedback trigger in the new work iteration
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     let work_iterations: Vec<_> = iterations.iter().filter(|i| i.stage == "work").collect();
     let last_work_iter = work_iterations.last().expect("Should have work iteration");
     match &last_work_iter.incoming_context {
-        Some(IterationTrigger::PrComments {
+        Some(IterationTrigger::PrFeedback {
             comments: ctx_comments,
+            checks: _,
             guidance,
         }) => {
             assert_eq!(ctx_comments.len(), 1);
             assert_eq!(ctx_comments[0].body, "Fix this specific line");
             assert!(guidance.is_none());
         }
-        other => panic!("Expected PrComments trigger, got {other:?}"),
+        other => panic!("Expected PrFeedback trigger, got {other:?}"),
     }
 }
 

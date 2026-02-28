@@ -196,12 +196,19 @@ pub enum ResumeType {
     RetryBlocked { instructions: Option<String> },
     /// User interrupted and resumed with optional guidance.
     ManualResume { message: Option<String> },
-    /// User selected PR comments to address.
+    /// User selected PR comments and/or failed CI checks to address.
     PrComments {
         comments: Vec<PrComment>,
+        checks: Vec<PrCheckContext>,
         guidance: Option<String>,
     },
 }
+
+/// A failed CI check to address in the resume prompt.
+///
+/// Type alias for `PrCheckData` — the fields are identical and there is no
+/// normalization difference between the domain type and the prompt-layer type.
+pub type PrCheckContext = orkestra_types::domain::PrCheckData;
 
 /// A PR comment to address in the resume prompt.
 #[derive(Debug, Clone, serde::Serialize)]

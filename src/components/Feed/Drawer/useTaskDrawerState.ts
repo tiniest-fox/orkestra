@@ -84,7 +84,7 @@ export interface TaskDrawerState {
   handleOpenPr: () => Promise<void>;
   handleArchive: () => Promise<void>;
   handleFixConflicts: () => Promise<void>;
-  handleAddressComments: () => Promise<void>;
+  handleAddressFeedback: () => Promise<void>;
   handlePushPr: () => Promise<void>;
   handlePullPr: () => Promise<void>;
   handleSubmitAnswers: (questions: WorkflowQuestion[]) => Promise<void>;
@@ -272,7 +272,12 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     try {
       const comments = mapDraftsToPrComments(draftComments);
       const guidance = lineCommentGuidance.trim() || null;
-      await invoke("workflow_address_pr_comments", { taskId: task.id, comments, guidance });
+      await invoke("workflow_address_pr_feedback", {
+        taskId: task.id,
+        comments,
+        checks: [],
+        guidance,
+      });
       clearDraftComments();
       onClose();
     } catch (err) {
@@ -399,18 +404,19 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     }
   }, [task.id, loading, onClose]);
 
-  const handleAddressComments = useCallback(async () => {
-    if (loading || prTabState.type !== "comments_selected") return;
+  const handleAddressFeedback = useCallback(async () => {
+    if (loading || prTabState.type !== "feedback_selected") return;
     setLoading(true);
     try {
-      await invoke("workflow_address_pr_comments", {
+      await invoke("workflow_address_pr_feedback", {
         taskId: task.id,
         comments: prTabState.comments,
+        checks: prTabState.checks,
         guidance: prTabState.guidance || null,
       });
       onClose();
     } catch (err) {
-      console.error("Failed to address comments:", err);
+      console.error("Failed to address PR feedback:", err);
       setLoading(false);
     }
   }, [task.id, loading, prTabState, onClose]);
@@ -534,7 +540,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     handleOpenPr,
     handleArchive,
     handleFixConflicts,
-    handleAddressComments,
+    handleAddressFeedback,
     handlePushPr,
     handlePullPr,
     handleSubmitAnswers,

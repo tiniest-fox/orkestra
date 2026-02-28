@@ -20,6 +20,8 @@ use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 ///   feedback as new context.
 /// - `GateFailure`: gate script failed — agent re-runs in the existing session with
 ///   the gate error as feedback context.
+/// - `PrFeedback`: PR comments, failing checks, or guidance submitted for a Done task
+///   — agent re-runs in the existing session with the PR feedback as new context.
 /// - All other triggers (`RetryFailed`, `RetryBlocked`, `Answers`, etc.) also fall
 ///   through to `Ok(false)`.
 pub fn execute(

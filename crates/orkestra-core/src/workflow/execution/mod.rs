@@ -19,9 +19,9 @@ pub use orkestra_parser::{
 pub use prompt::{
     build_resume_prompt, build_user_message, determine_resume_type, get_agent_schema,
     load_agent_definition, resolve_stage_agent_config_for, sibling_status_display,
-    AgentConfigError, ArtifactContext, FlowOverrides, IntegrationErrorContext, PrComment,
-    PromptBuilder, QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer, ResumeType,
-    SiblingTaskContext, StagePromptContext,
+    AgentConfigError, ArtifactContext, FlowOverrides, IntegrationErrorContext, PrCheckContext,
+    PrComment, PromptBuilder, QuestionAnswerContext, ResolvedAgentConfig, ResumeQuestionAnswer,
+    ResumeType, SiblingTaskContext, StagePromptContext,
 };
 
 // Re-exports from orkestra-agent (backward-compatible aliases)

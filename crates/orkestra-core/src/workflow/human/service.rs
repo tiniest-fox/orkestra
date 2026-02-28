@@ -1,7 +1,7 @@
 //! Human/UI actions: approve, reject, answer questions, toggle auto mode.
 
 use crate::workflow::api::WorkflowApi;
-use crate::workflow::domain::{PrCommentData, QuestionAnswer, Task};
+use crate::workflow::domain::{PrCheckData, PrCommentData, QuestionAnswer, Task};
 use crate::workflow::ports::WorkflowResult;
 
 use super::interactions as human;
@@ -94,19 +94,21 @@ impl WorkflowApi {
         )
     }
 
-    /// Address PR comments by returning to the recovery stage.
-    pub fn address_pr_comments(
+    /// Address PR feedback (comments and/or failed checks) by returning to the recovery stage.
+    pub fn address_pr_feedback(
         &self,
         task_id: &str,
         comments: Vec<PrCommentData>,
+        checks: Vec<PrCheckData>,
         guidance: Option<String>,
     ) -> WorkflowResult<Task> {
-        human::address_pr_comments::execute(
+        human::address_pr_feedback::execute(
             self.store.as_ref(),
             &self.workflow,
             &self.iteration_service,
             task_id,
             comments,
+            checks,
             guidance,
         )
     }
@@ -796,7 +798,7 @@ mod tests {
     }
 
     // ========================================================================
-    // Address PR comments tests
+    // Address PR feedback tests
     // ========================================================================
 
     /// Create an API with a task in Done status with a PR URL.
@@ -833,13 +835,14 @@ mod tests {
     }
 
     #[test]
-    fn test_address_pr_comments_success() {
+    fn test_address_pr_feedback_success() {
         let (api, task) = api_with_done_task_and_pr();
 
         let result = api
-            .address_pr_comments(
+            .address_pr_feedback(
                 &task.id,
                 test_comments(),
+                vec![],
                 Some("Fix the formatting issues".to_string()),
             )
             .unwrap();
@@ -851,13 +854,14 @@ mod tests {
     }
 
     #[test]
-    fn test_address_pr_comments_creates_iteration_with_trigger() {
+    fn test_address_pr_feedback_creates_iteration_with_comments_only() {
         let (api, task) = api_with_done_task_and_pr();
 
         let _ = api
-            .address_pr_comments(
+            .address_pr_feedback(
                 &task.id,
                 test_comments(),
+                vec![],
                 Some("Address code review feedback".to_string()),
             )
             .unwrap();
@@ -866,38 +870,48 @@ mod tests {
         let last = iterations.last().unwrap();
 
         match &last.incoming_context {
-            Some(IterationTrigger::PrComments { comments, guidance }) => {
+            Some(IterationTrigger::PrFeedback {
+                comments,
+                checks,
+                guidance,
+            }) => {
                 assert_eq!(comments.len(), 2);
                 assert_eq!(comments[0].author, "reviewer1");
                 assert_eq!(comments[0].body, "Fix this formatting");
+                assert_eq!(checks.len(), 0);
                 assert_eq!(guidance.as_deref(), Some("Address code review feedback"));
             }
-            other => panic!("Expected PrComments trigger, got {other:?}"),
+            other => panic!("Expected PrFeedback trigger, got {other:?}"),
         }
     }
 
     #[test]
-    fn test_address_pr_comments_without_guidance() {
+    fn test_address_pr_feedback_without_guidance() {
         let (api, task) = api_with_done_task_and_pr();
 
         let _ = api
-            .address_pr_comments(&task.id, test_comments(), None)
+            .address_pr_feedback(&task.id, test_comments(), vec![], None)
             .unwrap();
 
         let iterations = api.get_iterations(&task.id).unwrap();
         let last = iterations.last().unwrap();
 
         match &last.incoming_context {
-            Some(IterationTrigger::PrComments { comments, guidance }) => {
+            Some(IterationTrigger::PrFeedback {
+                comments,
+                checks,
+                guidance,
+            }) => {
                 assert_eq!(comments.len(), 2);
+                assert_eq!(checks.len(), 0);
                 assert!(guidance.is_none());
             }
-            other => panic!("Expected PrComments trigger, got {other:?}"),
+            other => panic!("Expected PrFeedback trigger, got {other:?}"),
         }
     }
 
     #[test]
-    fn test_address_pr_comments_not_done() {
+    fn test_address_pr_feedback_not_done() {
         let workflow = test_workflow();
         let store = Arc::new(InMemoryWorkflowStore::new());
         let api = WorkflowApi::new(workflow, store);
@@ -905,28 +919,128 @@ mod tests {
         let task = api.create_task("Test", "Description", None).unwrap();
         // Task is in Active status, not Done
 
-        let result = api.address_pr_comments(&task.id, test_comments(), None);
+        let result = api.address_pr_feedback(&task.id, test_comments(), vec![], None);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 
     #[test]
-    fn test_address_pr_comments_wrong_state() {
+    fn test_address_pr_feedback_wrong_state() {
         let (api, mut task) = api_with_done_task_and_pr();
 
         // Simulate task being in integrating state
         task.state = TaskState::Integrating;
         api.store.save_task(&task).unwrap();
 
-        let result = api.address_pr_comments(&task.id, test_comments(), None);
+        let result = api.address_pr_feedback(&task.id, test_comments(), vec![], None);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
     }
 
     #[test]
-    fn test_address_pr_comments_empty_comments() {
+    fn test_address_pr_feedback_empty_comments() {
         let (api, task) = api_with_done_task_and_pr();
 
-        // Empty comments should be rejected
-        let result = api.address_pr_comments(&task.id, vec![], None);
+        // Empty comments should be rejected (checks also empty)
+        let result = api.address_pr_feedback(&task.id, vec![], vec![], None);
         assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    // ========================================================================
+    // Address PR feedback tests with checks
+    // ========================================================================
+
+    fn test_checks() -> Vec<PrCheckData> {
+        vec![
+            PrCheckData {
+                name: "CI / build".to_string(),
+                summary: Some("3 tests failed".to_string()),
+            },
+            PrCheckData {
+                name: "CI / lint".to_string(),
+                summary: None,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_address_pr_feedback_comments_only() {
+        let (api, task) = api_with_done_task_and_pr();
+
+        let result = api
+            .address_pr_feedback(&task.id, test_comments(), vec![], None)
+            .unwrap();
+
+        assert_eq!(result.current_stage(), Some("work"));
+        assert!(matches!(result.state, TaskState::Queued { .. }));
+    }
+
+    #[test]
+    fn test_address_pr_feedback_checks_only() {
+        let (api, task) = api_with_done_task_and_pr();
+
+        let result = api
+            .address_pr_feedback(&task.id, vec![], test_checks(), None)
+            .unwrap();
+
+        assert_eq!(result.current_stage(), Some("work"));
+        assert!(matches!(result.state, TaskState::Queued { .. }));
+    }
+
+    #[test]
+    fn test_address_pr_feedback_both() {
+        let (api, task) = api_with_done_task_and_pr();
+
+        let result = api
+            .address_pr_feedback(
+                &task.id,
+                test_comments(),
+                test_checks(),
+                Some("Fix everything".to_string()),
+            )
+            .unwrap();
+
+        assert_eq!(result.current_stage(), Some("work"));
+        assert!(matches!(result.state, TaskState::Queued { .. }));
+    }
+
+    #[test]
+    fn test_address_pr_feedback_empty_both() {
+        let (api, task) = api_with_done_task_and_pr();
+
+        // Empty comments AND empty checks should be rejected
+        let result = api.address_pr_feedback(&task.id, vec![], vec![], None);
+        assert!(matches!(result, Err(WorkflowError::InvalidTransition(_))));
+    }
+
+    #[test]
+    fn test_address_pr_feedback_creates_iteration_with_trigger() {
+        let (api, task) = api_with_done_task_and_pr();
+
+        let _ = api
+            .address_pr_feedback(
+                &task.id,
+                test_comments(),
+                test_checks(),
+                Some("Fix all issues".to_string()),
+            )
+            .unwrap();
+
+        let iterations = api.get_iterations(&task.id).unwrap();
+        let last = iterations.last().unwrap();
+
+        match &last.incoming_context {
+            Some(IterationTrigger::PrFeedback {
+                comments,
+                checks,
+                guidance,
+            }) => {
+                assert_eq!(comments.len(), 2);
+                assert_eq!(comments[0].author, "reviewer1");
+                assert_eq!(checks.len(), 2);
+                assert_eq!(checks[0].name, "CI / build");
+                assert_eq!(checks[0].summary.as_deref(), Some("3 tests failed"));
+                assert_eq!(guidance.as_deref(), Some("Fix all issues"));
+            }
+            other => panic!("Expected PrFeedback trigger, got {other:?}"),
+        }
     }
 }

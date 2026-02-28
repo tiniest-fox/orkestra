@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::Path;
 
 const DEFAULT_WORKTREE_SETUP: &str = include_str!("defaults/worktree_setup.sh");
+const DEFAULT_CHECKS: &str = include_str!("defaults/checks.sh");
 const DEFAULT_WORKFLOW: &str = include_str!("defaults/workflow.yaml");
 
 const DEFAULT_PROMPTS: &[(&str, &str)] = &[
@@ -26,9 +27,9 @@ const REQUIRED_GITIGNORE_ENTRIES: &[&str] = &[
 
 /// Ensures `.orkestra/` has its full directory structure and default files.
 ///
-/// Creates subdirs, writes default `workflow.yaml`, agent prompts, and
-/// `worktree_setup.sh` — all skip if the file already exists. Also ensures
-/// the project's `.gitignore` contains entries for Orkestra runtime data.
+/// Creates subdirs, writes default `workflow.yaml`, agent prompts,
+/// `worktree_setup.sh`, and `checks.sh` — all skip if the file already exists.
+/// Also ensures the project's `.gitignore` contains entries for Orkestra runtime data.
 pub fn ensure_orkestra_project(orkestra_dir: &Path) -> std::io::Result<()> {
     let first_init = !orkestra_dir.exists();
 
@@ -37,11 +38,12 @@ pub fn ensure_orkestra_project(orkestra_dir: &Path) -> std::io::Result<()> {
         fs::create_dir_all(orkestra_dir.join(subdir))?;
     }
 
-    write_default(
+    write_default_executable(
         orkestra_dir,
         "scripts/worktree_setup.sh",
         DEFAULT_WORKTREE_SETUP,
     )?;
+    write_default_executable(orkestra_dir, "scripts/checks.sh", DEFAULT_CHECKS)?;
     write_default(orkestra_dir, "workflow.yaml", DEFAULT_WORKFLOW)?;
 
     for (filename, content) in DEFAULT_PROMPTS {
@@ -60,6 +62,28 @@ fn write_default(orkestra_dir: &Path, relative_path: &str, content: &str) -> std
     let path = orkestra_dir.join(relative_path);
     if !path.exists() {
         fs::write(&path, content)?;
+    }
+    Ok(())
+}
+
+/// Write a default file only if it doesn't already exist, with executable permission.
+///
+/// Delegates content writing to [`write_default`], then unconditionally applies
+/// executable permissions so partial writes (content written, permissions failed)
+/// self-heal on the next call.
+fn write_default_executable(
+    orkestra_dir: &Path,
+    relative_path: &str,
+    content: &str,
+) -> std::io::Result<()> {
+    let path = orkestra_dir.join(relative_path);
+    write_default(orkestra_dir, relative_path, content)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&path, perms)?;
     }
     Ok(())
 }
@@ -194,5 +218,105 @@ mod tests {
             content.contains("node_modules/\n"),
             "Missing newline after existing content"
         );
+    }
+
+    #[test]
+    fn test_default_workflow_parses_with_gate() {
+        let config: crate::workflow::config::WorkflowConfig =
+            serde_yaml::from_str(DEFAULT_WORKFLOW).expect("Default workflow.yaml should parse");
+
+        // Verify gate on work stage
+        let work_stage = config
+            .stages
+            .iter()
+            .find(|s| s.name == "work")
+            .expect("Should have work stage");
+        assert!(work_stage.gate.is_some(), "Work stage should have a gate");
+        let gate = work_stage.gate.as_ref().unwrap();
+        assert!(
+            gate.command.contains("checks.sh"),
+            "Gate should reference checks.sh"
+        );
+
+        // Verify descriptions on all stages
+        for stage in &config.stages {
+            assert!(
+                stage.description.is_some(),
+                "Stage '{}' should have a description",
+                stage.name
+            );
+        }
+
+        // Verify rich artifact configs
+        for stage in &config.stages {
+            assert!(
+                stage.artifact.description.is_some(),
+                "Stage '{}' artifact should have a description",
+                stage.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_checks_script_is_executable() {
+        let temp_dir = TempDir::new().unwrap();
+        let orkestra_dir = temp_dir.path().join(".orkestra");
+
+        ensure_orkestra_project(&orkestra_dir).unwrap();
+
+        let checks_path = orkestra_dir.join("scripts/checks.sh");
+        assert!(checks_path.exists(), "checks.sh should be created");
+
+        let worktree_setup_path = orkestra_dir.join("scripts/worktree_setup.sh");
+        assert!(
+            worktree_setup_path.exists(),
+            "worktree_setup.sh should be created"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&checks_path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o111, 0o111, "checks.sh should be executable");
+
+            let mode = fs::metadata(&worktree_setup_path)
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(
+                mode & 0o111,
+                0o111,
+                "worktree_setup.sh should be executable"
+            );
+        }
+    }
+
+    #[test]
+    fn test_init_does_not_overwrite_existing_checks() {
+        let temp_dir = TempDir::new().unwrap();
+        let orkestra_dir = temp_dir.path().join(".orkestra");
+        fs::create_dir_all(orkestra_dir.join("scripts")).unwrap();
+
+        let checks_path = orkestra_dir.join("scripts/checks.sh");
+        fs::write(&checks_path, "#!/bin/bash\nmy custom checks").unwrap();
+
+        ensure_orkestra_project(&orkestra_dir).unwrap();
+
+        let content = fs::read_to_string(&checks_path).unwrap();
+        assert!(
+            content.contains("my custom checks"),
+            "Should not overwrite existing checks.sh"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&checks_path).unwrap().permissions().mode();
+            assert_eq!(
+                mode & 0o111,
+                0o111,
+                "write_default_executable should apply executable bit to pre-existing files"
+            );
+        }
     }
 }

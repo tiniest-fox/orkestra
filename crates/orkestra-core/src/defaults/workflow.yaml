@@ -5,6 +5,9 @@
 #
 # Stages execute in order. Each stage produces a named artifact.
 # Artifacts from earlier stages are automatically available to later stages.
+#
+# Stages can have a gate: a shell script that runs after the agent completes.
+# If the gate exits non-zero, the agent retries with the error output as feedback.
 
 version: 1
 
@@ -13,7 +16,10 @@ stages:
   # Produces a requirements-level plan (not implementation details).
   - name: planning
     display_name: Planning
-    artifact: plan
+    description: Understand what to build, ask clarifying questions
+    artifact:
+      name: plan
+      description: Implementation plan and approach for this task
     prompt: planner.md
     capabilities:
       ask_questions: true
@@ -22,24 +28,36 @@ stages:
   # Subtasks are assigned to the "subtask" flow (work → review only).
   - name: breakdown
     display_name: Breaking Down
-    artifact: breakdown
+    description: Research the codebase and split the plan into subtasks
+    artifact:
+      name: breakdown
+      description: Subtask breakdown with dependencies
     prompt: breakdown.md
     capabilities:
       subtasks:
         flow: subtask
 
   # Work: implement the code changes described by the plan.
+  # The gate runs checks.sh after the agent completes. On failure, the agent retries.
   - name: work
     display_name: Working
-    artifact: summary
+    description: Implement the code changes described by the plan
+    artifact:
+      name: summary
+      description: Summary of changes made and implementation notes
     prompt: worker.md
+    gate:
+      command: "$ORKESTRA_PROJECT_ROOT/.orkestra/scripts/checks.sh"
+      timeout_seconds: 600
 
   # Review: check completed work, approve or reject with feedback.
-  # Automated — runs without waiting for human approval to start.
   # On rejection, sends the task back to the work stage.
   - name: review
     display_name: Reviewing
-    artifact: verdict
+    description: Check completed work, approve or reject with feedback
+    artifact:
+      name: verdict
+      description: Review verdict and feedback
     prompt: reviewer.md
     capabilities:
       approval:

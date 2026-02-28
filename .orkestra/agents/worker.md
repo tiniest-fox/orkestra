@@ -82,6 +82,16 @@ If your instructions reference specific skills (e.g., `/panel-slot`, `/e2e-testi
 
 These contain conventions that reviewers enforce. Reading them first prevents unnecessary rejections.
 
+<!-- compound: absolutely-jesting-partridge -->
+### Frontend State Scope Rules
+
+When adding conditional UI elements, associated state must follow the same conditional scope:
+
+- **Separate loading state per async operation** — Never share a single `loading` boolean across two independent operations (e.g., push and pull). Each operation needs its own boolean. Shared loading produces wrong button labels (both buttons disable/enable together, labels lie).
+- **Error display scope matches button scope** — If buttons render inside `{condition && (...)}`, the error display for those buttons must be inside the same condition. An error shown outside its triggering buttons is orphaned: buttons vanish but error persists, confusing users.
+
+Apply this check before submitting: for every error/loading state you add, verify its render site is within the same conditional branch as the buttons that generate it.
+
 ### Start Quickly, Stay Focused
 Don't over-analyze. Once you understand the task:
 1. Find similar code to reference

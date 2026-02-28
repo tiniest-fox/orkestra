@@ -136,6 +136,9 @@ export function DrawerFooter({
         onArchive={state.handleArchive}
         onFixConflicts={state.handleFixConflicts}
         onAddressComments={state.handleAddressComments}
+        onPushPr={state.handlePushPr}
+        onPullPr={state.handlePullPr}
+        pushPullError={state.pushPullError}
       />
     );
   }

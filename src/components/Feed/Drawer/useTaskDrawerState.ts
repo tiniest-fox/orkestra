@@ -53,6 +53,9 @@ export interface TaskDrawerState {
   prTabState: PrTabFooterState;
   setPrTabState: (state: PrTabFooterState) => void;
 
+  // -- Push/pull error --
+  pushPullError: string | null;
+
   // -- Draft line comments --
   draftComments: DraftComment[];
   lineCommentGuidance: string;
@@ -82,6 +85,8 @@ export interface TaskDrawerState {
   handleArchive: () => Promise<void>;
   handleFixConflicts: () => Promise<void>;
   handleAddressComments: () => Promise<void>;
+  handlePushPr: () => Promise<void>;
+  handlePullPr: () => Promise<void>;
   handleSubmitAnswers: (questions: WorkflowQuestion[]) => Promise<void>;
   handleToggleAutoMode: () => Promise<void>;
   optimisticAutoMode: boolean | null;
@@ -214,6 +219,14 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
   useEffect(() => {
     setPrTabState({ type: "loading" });
+  }, [task.id]);
+
+  // -- Push/pull error --
+  const [pushPullError, setPushPullError] = useState<string | null>(null);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
+  useEffect(() => {
+    setPushPullError(null);
   }, [task.id]);
 
   // -- Draft line comments --
@@ -358,6 +371,34 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     [invokeAndClose, task.base_branch],
   );
 
+  const handlePushPr = useCallback(async () => {
+    if (loading) return;
+    setPushPullError(null);
+    setLoading(true);
+    try {
+      await invoke("workflow_push_pr_changes", { taskId: task.id });
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setPushPullError(message);
+      setLoading(false);
+    }
+  }, [task.id, loading, onClose]);
+
+  const handlePullPr = useCallback(async () => {
+    if (loading) return;
+    setPushPullError(null);
+    setLoading(true);
+    try {
+      await invoke("workflow_pull_pr_changes", { taskId: task.id });
+      onClose();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setPushPullError(message);
+      setLoading(false);
+    }
+  }, [task.id, loading, onClose]);
+
   const handleAddressComments = useCallback(async () => {
     if (loading || prTabState.type !== "comments_selected") return;
     setLoading(true);
@@ -474,6 +515,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     resuming,
     prTabState,
     setPrTabState,
+    pushPullError,
     draftComments,
     lineCommentGuidance,
     setLineCommentGuidance,
@@ -493,6 +535,8 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     handleArchive,
     handleFixConflicts,
     handleAddressComments,
+    handlePushPr,
+    handlePullPr,
     handleSubmitAnswers,
     handleToggleAutoMode,
     optimisticAutoMode,

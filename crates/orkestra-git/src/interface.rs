@@ -220,6 +220,12 @@ pub trait GitService: Send + Sync {
     /// Fails if local branch has diverged from origin (not fast-forwardable).
     fn pull_branch(&self) -> Result<(), GitError>;
 
+    /// Pull changes from origin into the branch checked out in a specific worktree.
+    ///
+    /// Like `pull_branch` but targets a worktree directory rather than the main repo.
+    /// Use this when pulling a task branch that lives in `.orkestra/.worktrees/{task-id}`.
+    fn pull_branch_in(&self, worktree_path: &Path) -> Result<(), GitError>;
+
     /// Fetch from origin to update remote-tracking refs without merging.
     fn fetch_origin(&self) -> Result<(), GitError>;
 }

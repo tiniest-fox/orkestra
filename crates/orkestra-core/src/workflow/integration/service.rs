@@ -65,6 +65,21 @@ impl WorkflowApi {
         )
     }
 
+    /// Fetch and fast-forward the task's branch from origin.
+    ///
+    /// Requires the task to be Done with an open PR. Pulls remote changes so
+    /// the local worktree reflects any updates made via the GitHub UI or by collaborators.
+    pub fn pull_pr_changes(&self, task_id: &str) -> WorkflowResult<Task> {
+        let git = self
+            .git_service()
+            .ok_or_else(|| WorkflowError::GitError("No git service configured".into()))?;
+        integration_interactions::pull_pr_changes::execute(
+            self.store.as_ref(),
+            git.as_ref(),
+            task_id,
+        )
+    }
+
     /// Record successful PR creation.
     pub fn pr_creation_succeeded(&self, task_id: &str, pr_url: &str) -> WorkflowResult<Task> {
         integration_interactions::pr_creation_succeeded::execute(

@@ -13,6 +13,7 @@ pub mod mark_integrating;
 pub mod merge_task;
 pub mod pr_creation_failed;
 pub mod pr_creation_succeeded;
+pub mod pull_pr_changes;
 pub mod recover_stale;
 pub mod retry_pr_creation;
 pub mod squash_rebase_merge;

@@ -197,6 +197,10 @@ impl GitService for Git2GitService {
         interactions::remote::pull::execute(&self.repo_path)
     }
 
+    fn pull_branch_in(&self, worktree_path: &Path) -> Result<(), GitError> {
+        interactions::remote::pull::execute(worktree_path)
+    }
+
     fn fetch_origin(&self) -> Result<(), GitError> {
         interactions::remote::fetch::execute(&self.repo_path)
     }

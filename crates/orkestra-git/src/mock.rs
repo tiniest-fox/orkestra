@@ -29,6 +29,8 @@ pub struct MockGitService {
     merged_branches: Mutex<HashMap<String, bool>>,
     sync_status: Mutex<Option<SyncStatus>>,
     pull_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
+    pull_branch_in_calls: Mutex<Vec<PathBuf>>,
+    pull_branch_in_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
     has_pending_changes: Mutex<bool>,
 }
 
@@ -52,6 +54,8 @@ impl MockGitService {
             merged_branches: Mutex::new(HashMap::new()),
             sync_status: Mutex::new(None),
             pull_results: Mutex::new(std::collections::VecDeque::new()),
+            pull_branch_in_calls: Mutex::new(Vec::new()),
+            pull_branch_in_results: Mutex::new(std::collections::VecDeque::new()),
             has_pending_changes: Mutex::new(false),
         }
     }
@@ -137,6 +141,19 @@ impl MockGitService {
     /// Set the result for the next `pull_branch` operation.
     pub fn set_next_pull_result(&self, result: Result<(), GitError>) {
         self.pull_results.lock().unwrap().push_back(result);
+    }
+
+    /// Set the result for the next `pull_branch_in` operation.
+    pub fn set_next_pull_branch_in_result(&self, result: Result<(), GitError>) {
+        self.pull_branch_in_results
+            .lock()
+            .unwrap()
+            .push_back(result);
+    }
+
+    /// Get the list of `pull_branch_in` calls for verification.
+    pub fn get_pull_branch_in_calls(&self) -> Vec<PathBuf> {
+        self.pull_branch_in_calls.lock().unwrap().clone()
     }
 }
 
@@ -370,6 +387,18 @@ impl GitService for MockGitService {
 
     fn pull_branch(&self) -> Result<(), GitError> {
         self.pull_results
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or(Ok(()))
+    }
+
+    fn pull_branch_in(&self, worktree_path: &Path) -> Result<(), GitError> {
+        self.pull_branch_in_calls
+            .lock()
+            .unwrap()
+            .push(worktree_path.to_path_buf());
+        self.pull_branch_in_results
             .lock()
             .unwrap()
             .pop_front()

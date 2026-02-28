@@ -893,3 +893,126 @@ fn commit_and_push_pr_changes_rejects_non_done_task() {
         "commit_and_push_pr_changes should return InvalidTransition for non-Done task"
     );
 }
+
+// =============================================================================
+// pull_pr_changes() Tests
+// =============================================================================
+
+/// `pull_pr_changes` fetches and fast-forwards the task's branch from origin.
+#[test]
+fn pull_pr_changes_pulls_from_origin() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Give the task a PR URL (simulating a previous open_pr call)
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    ctx.api()
+        .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
+        .unwrap();
+
+    // Pull PR changes
+    let task = ctx.api().pull_pr_changes(&task_id).unwrap();
+
+    // Task should still be Done with the same PR URL
+    assert!(
+        matches!(task.state, TaskState::Done),
+        "Task should still be Done"
+    );
+    assert_eq!(
+        task.pr_url,
+        Some("https://github.com/test/repo/pull/42".to_string()),
+        "PR URL should be unchanged"
+    );
+
+    // Verify pull_branch_in was called with the task's worktree path
+    let pull_calls = ctx.mock_git_service().get_pull_branch_in_calls();
+    assert_eq!(
+        pull_calls.len(),
+        1,
+        "pull_branch_in should be called exactly once"
+    );
+    assert!(
+        pull_calls[0].to_string_lossy().contains(&task_id),
+        "pull_branch_in should target the task's worktree, got: {:?}",
+        pull_calls[0]
+    );
+}
+
+/// `pull_pr_changes` fails when the git pull fails.
+#[test]
+fn pull_pr_changes_propagates_git_error() {
+    use super::helpers::workflows;
+    use orkestra_core::workflow::ports::GitError;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Give the task a PR URL
+    ctx.api().begin_pr_creation(&task_id).unwrap();
+    ctx.api()
+        .pr_creation_succeeded(&task_id, "https://github.com/test/repo/pull/42")
+        .unwrap();
+
+    // Configure mock to fail on pull_branch_in
+    ctx.mock_git_service()
+        .set_next_pull_branch_in_result(Err(GitError::Other("diverged branches".into())));
+
+    // pull_pr_changes should propagate the error
+    let result = ctx.api().pull_pr_changes(&task_id);
+    assert!(
+        matches!(result, Err(WorkflowError::GitError(_))),
+        "pull_pr_changes should return GitError when pull fails, got: {result:?}"
+    );
+}
+
+/// `pull_pr_changes` fails if the task has no open PR.
+#[test]
+fn pull_pr_changes_rejects_task_without_pr() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    advance_to_done(&ctx, &task_id);
+
+    // Task is Done but has no PR
+    let result = ctx.api().pull_pr_changes(&task_id);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "pull_pr_changes should return InvalidTransition when task has no PR"
+    );
+}
+
+/// `pull_pr_changes` fails if the task is not Done.
+#[test]
+fn pull_pr_changes_rejects_non_done_task() {
+    use super::helpers::workflows;
+
+    let workflow = disable_auto_merge(workflows::with_subtasks());
+    let ctx = TestEnv::with_mock_git(&workflow, &["planner", "breakdown", "worker", "reviewer"]);
+
+    let task = ctx.create_task("Test task", "Description", None);
+    let task_id = task.id.clone();
+
+    // Task is still in Active (planning) state
+    let result = ctx.api().pull_pr_changes(&task_id);
+    assert!(
+        matches!(result, Err(WorkflowError::InvalidTransition(_))),
+        "pull_pr_changes should return InvalidTransition for non-Done task"
+    );
+}

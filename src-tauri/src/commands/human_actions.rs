@@ -201,6 +201,23 @@ pub fn workflow_push_pr_changes(
     })
 }
 
+/// Pull remote changes into the local worktree for a Done task with an open PR.
+///
+/// Fetches and fast-forwards the task's branch from origin so the local
+/// worktree reflects updates made via the GitHub UI or by collaborators.
+/// Requires the task to be Done with an open PR.
+#[tauri::command]
+pub fn workflow_pull_pr_changes(
+    registry: State<ProjectRegistry>,
+    window: Window,
+    task_id: String,
+) -> Result<Task, TauriError> {
+    orkestra_debug!("tauri", "pull_pr_changes {task_id}");
+    registry.with_project(window.label(), |state| {
+        state.api()?.pull_pr_changes(&task_id).map_err(Into::into)
+    })
+}
+
 /// Archive a Done task (marks it as complete after PR merge).
 ///
 /// Validates the task is Done and Idle, then transitions to Archived.

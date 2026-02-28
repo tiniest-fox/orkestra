@@ -151,6 +151,11 @@ enum TaskAction {
         /// Task ID to push PR changes for
         id: String,
     },
+    /// Pull remote changes into the local worktree for an existing open PR
+    PullPr {
+        /// Task ID to pull PR changes for
+        id: String,
+    },
     /// Retry a failed or blocked task (recovers to Idle phase)
     Retry {
         /// Task ID
@@ -251,6 +256,7 @@ fn handle_task_action(action: TaskAction, pretty: bool) {
         TaskAction::OpenPr { .. } => unreachable!("handled above"),
         TaskAction::RetryPr { id } => handle_retry_pr_task(&api, &id, pretty),
         TaskAction::PushPr { id } => handle_push_pr_task(&api, &id, pretty),
+        TaskAction::PullPr { id } => handle_pull_pr_task(&api, &id, pretty),
         TaskAction::Retry { id, instructions } => {
             handle_retry_task(&api, &id, instructions.as_deref(), pretty);
         }
@@ -905,6 +911,28 @@ fn handle_push_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
             println!("PR: {pr_url}");
         } else {
             println!("Pushed changes for task {}", task.id);
+        }
+        println!("State: {}", format_state(&task.state));
+    } else {
+        output_json(&task);
+    }
+}
+
+fn handle_pull_pr_task(api: &WorkflowApi, id: &str, pretty: bool) {
+    let task = match api.pull_pr_changes(id) {
+        Ok(task) => task,
+        Err(e) => {
+            eprintln!("Error pulling PR changes: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if pretty {
+        if let Some(pr_url) = &task.pr_url {
+            println!("Pulled changes for task {}", task.id);
+            println!("PR: {pr_url}");
+        } else {
+            println!("Pulled changes for task {}", task.id);
         }
         println!("State: {}", format_state(&task.state));
     } else {

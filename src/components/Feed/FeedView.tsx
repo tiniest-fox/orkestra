@@ -229,7 +229,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
         onSelectTask={handleSelectTask}
         inputRef={commandBarInputRef}
       />
-      <div ref={feedBodyRef} className="flex-1 overflow-y-auto">
+      <div ref={feedBodyRef} className="flex-1 overflow-y-auto flex flex-col">
         <NavigationScope activeId={focusedId} containerRef={feedBodyRef} scrollSeq={scrollSeq}>
           {filteredSections.map((section) => (
             <FeedSection
@@ -255,6 +255,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
           ))}
           {hasNoTasks && !filterText && (
             <EmptyState
+              className="flex-1"
               icon={Inbox}
               message="No tasks yet."
               description="Create a task to get started."
@@ -262,6 +263,7 @@ export function FeedView({ config, tasks }: FeedViewProps) {
           )}
           {hasNoFilterMatches && (
             <EmptyState
+              className="flex-1"
               icon={Inbox}
               message="No matching tasks."
               description="Try a different search term."

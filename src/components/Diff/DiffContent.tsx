@@ -1,9 +1,10 @@
 //! Diff content — all files stacked for continuous scrolling.
 
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, GitCompare } from "lucide-react";
 import { Fragment, useMemo } from "react";
 import type { HighlightedFileDiff, HighlightedLine } from "../../hooks/useDiff";
 import type { PrComment } from "../../types/workflow";
+import { EmptyState } from "../ui/EmptyState";
 import { Kbd } from "../ui/Kbd";
 import { CollapsedSection } from "./CollapsedSection";
 import { DiffLine } from "./DiffLine";
@@ -124,8 +125,8 @@ export function DiffContent({
 
   if (files.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center font-sans text-forge-body text-text-quaternary">
-        No changes.
+      <div className="flex-1 flex items-center justify-center">
+        <EmptyState icon={GitCompare} message="No changes." />
       </div>
     );
   }

@@ -194,6 +194,21 @@ Gate output is **not** stored as log entries. Gates store their output in `itera
 - **Detect gate running**: check `task.state.type === "gate_running"` (already present on `WorkflowTaskView`)
 - **Reference pattern**: `DrawerGateTab.tsx` shows how to find the relevant gate iteration and render its output lines
 
+## Task Status Predicates
+
+<!-- compound: dully-maximum-sunbeam -->
+
+`isActivelyProgressing` in `utils/taskStatus.ts` is a **header-metric-scoped** predicate — it excludes `integrating` because the header displays integrating tasks in a separate count. It is NOT a universal "is this task doing something" check.
+
+**Callers that need `integrating` included** (e.g., showing UI for any in-flight task) must add an explicit guard:
+
+```tsx
+// Correct pattern when you need both
+task.state.type === "integrating" || isActivelyProgressing(task)
+```
+
+Using `isActivelyProgressing` alone in contexts that previously handled `integrating` will silently drop those tasks. See `FeedRowActions.tsx` for the reference pattern.
+
 ## Types
 
 - Use `import type` for type-only imports.

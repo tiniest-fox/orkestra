@@ -1,6 +1,7 @@
 //! Text symbol indicating task status with signal color, background chip, and optional pulse.
 
 import type { WorkflowTaskView } from "../../types/workflow";
+import { isActivelyProgressing } from "../../utils/taskStatus";
 
 interface StatusSymbolProps {
   task: WorkflowTaskView;
@@ -82,12 +83,7 @@ function resolveColors(task: WorkflowTaskView): {
   if (derived.is_interrupted) {
     return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "\u2016", extraClass };
   }
-  if (
-    derived.is_working ||
-    state.type === "awaiting_gate" ||
-    derived.is_preparing ||
-    (derived.is_system_active && state.type !== "integrating")
-  ) {
+  if (isActivelyProgressing(task)) {
     extraClass = "animate-spin-bounce";
     if (task.auto_mode) {
       return {

@@ -52,8 +52,7 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
   // ⌘Enter is handled by the Button's HotkeyScope below.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      const cmd = e.metaKey || e.ctrlKey;
-      if (!cmd) return;
+      if (!e.altKey) return;
 
       if (e.key === "a") {
         e.preventDefault();
@@ -128,7 +127,7 @@ export function NewTaskModal({ config, onClose, onCreate }: NewTaskModalProps) {
             />
             <span className="font-sans text-[12px] text-text-secondary">Run automatically</span>
             <kbd className="font-mono text-[10px] text-text-quaternary bg-canvas border border-border rounded px-1 leading-none select-none">
-              ⌘A
+              ⌥A
             </kbd>
           </label>
         </div>

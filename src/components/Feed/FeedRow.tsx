@@ -18,6 +18,8 @@ interface FeedRowProps {
   faded?: boolean;
   isSubtask?: boolean;
   isFocused?: boolean;
+  /** When true, shows a waiting indicator instead of the task's derived status symbol. */
+  waiting?: boolean;
   onMouseEnter?: () => void;
   onReview?: () => void;
   onAnswer?: () => void;
@@ -37,6 +39,7 @@ export function FeedRow({
   faded,
   isSubtask,
   isFocused,
+  waiting,
   onMouseEnter,
   onReview,
   onAnswer,
@@ -69,7 +72,7 @@ export function FeedRow({
           <span className="text-center font-mono text-sm text-text-quaternary self-start">↳</span>
         </>
       ) : (
-        <StatusSymbol task={task} />
+        <StatusSymbol task={task} waiting={waiting} />
       )}
       <div className={`min-w-0 ${!isSubtask ? "col-span-2" : ""}`}>
         <div className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary">

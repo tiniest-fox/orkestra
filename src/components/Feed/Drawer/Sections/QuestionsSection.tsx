@@ -2,6 +2,7 @@
 
 import { HelpCircle } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { isOptionKey, optionKey } from "../../../../lib/optionKey";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
 import { EmptyState } from "../../../ui/EmptyState";
 import { useNavHandler } from "../../../ui/HotkeyScope";
@@ -92,12 +93,12 @@ export function QuestionsSection({
   const handleSetAnswer = useCallback(
     (index: number, value: string) => {
       setAnswer(index, value);
-      const isOptionSelected = questions[index]?.options?.some((o) => o.label === value);
-      if (isOptionSelected && value.trim().length > 0) {
+      const isOptionSelected = isOptionKey(value);
+      if (isOptionSelected) {
         setTimeout(() => advanceFromQuestion(index), 320);
       }
     },
-    [setAnswer, questions, advanceFromQuestion],
+    [setAnswer, advanceFromQuestion],
   );
 
   useLayoutEffect(() => {
@@ -130,8 +131,8 @@ export function QuestionsSection({
     const item = flatItems[flatIdx];
     if (!item) return;
     if (item.type === "option") {
-      const optLabel = questions[item.qIdx].options?.[item.optIdx]?.label ?? "";
-      handleSetAnswer(item.qIdx, answers[item.qIdx] === optLabel ? "" : optLabel);
+      const key = optionKey(item.optIdx);
+      handleSetAnswer(item.qIdx, answers[item.qIdx] === key ? "" : key);
     }
   }
   useNavHandler("Enter", selectFocused);
@@ -148,7 +149,7 @@ export function QuestionsSection({
       e.preventDefault();
       const qi = item.qIdx;
       const prev = answers[qi] ?? "";
-      const currentVal = questions[qi]?.options?.some((o) => o.label === prev) ? "" : prev;
+      const currentVal = isOptionKey(prev) ? "" : prev;
       handleSetAnswer(qi, currentVal + e.key);
       setCursorTarget({ qIdx: qi, char: e.key });
     }

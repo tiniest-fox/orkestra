@@ -120,7 +120,7 @@ No polling. No daemon. No event callbacks. Just a sequential function that reuse
 
 Features from the old Kanban UI not yet in the new Feed UI, in priority order.
 
-- [ ] **PR details view + inline comment workflow** — PR tab in TaskDrawer showing CI checks, review status, description. Workflow for triggering an agent to address PR review comments. Conflict handling. Design-ux mockup in progress: `docs/design-proposals/proposal-hybrid/task-detail-pr-feed.html`.
+- [ ] **PR details view + inline comment workflow** — PR tab in TaskDrawer showing CI checks, review status, description. Workflow for triggering an agent to address PR review comments. Conflict handling.
 - [ ] **Archive/unarchive** — Archive action in task drawer, archived task list view. Currently absent from Feed.
 - [ ] **Open worktree in terminal/editor** — Surface existing external tool commands from the task drawer.
 - [ ] **Commit history browsing** — Navigate commit history in the diff/history tab. Old UI had interactive CommitHistoryPanel.

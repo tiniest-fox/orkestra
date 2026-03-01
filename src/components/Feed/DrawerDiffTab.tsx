@@ -2,6 +2,7 @@
 //! Handles all scroll tracking, file jumping, and collapse state internally.
 //! Registers c / ] / [ / j·k hotkeys when active.
 
+import { GitCompare } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
@@ -10,6 +11,7 @@ import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
 import type { DraftComment } from "../Diff/types";
+import { EmptyState } from "../ui/EmptyState";
 import { useNavHandler } from "../ui/HotkeyScope";
 import { useDrawerDiff } from "./DrawerTaskProvider";
 
@@ -283,7 +285,9 @@ export function DrawerDiffTab({
           </div>
         </>
       ) : (
-        <div className="flex-1 p-6 font-mono text-[11px] text-text-quaternary">No changes.</div>
+        <div className="flex-1 flex items-center justify-center">
+          <EmptyState icon={GitCompare} message="No changes." />
+        </div>
       )}
     </div>
   );

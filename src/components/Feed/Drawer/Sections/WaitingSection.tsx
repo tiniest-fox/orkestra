@@ -81,6 +81,7 @@ export function WaitingSection({
               task={task}
               config={config}
               isFocused={focusedId === task.id}
+              waiting
               onMouseEnter={() => onFocusRow(task.id)}
               onReview={() => onAction(task.id)}
               onAnswer={() => onAction(task.id)}

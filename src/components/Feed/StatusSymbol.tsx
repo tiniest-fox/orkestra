@@ -4,6 +4,8 @@ import type { WorkflowTaskView } from "../../types/workflow";
 
 interface StatusSymbolProps {
   task: WorkflowTaskView;
+  /** When true, renders a dotted-circle waiting indicator instead of the task's derived status. */
+  waiting?: boolean;
 }
 
 interface StatusColors {
@@ -115,8 +117,14 @@ function resolveColors(task: WorkflowTaskView): {
   return { colors: { bg: TRANSPARENT, icon: "text-text-quaternary" }, symbol: "~", extraClass };
 }
 
-export function StatusSymbol({ task }: StatusSymbolProps) {
-  const { colors, symbol, extraClass } = resolveColors(task);
+export function StatusSymbol({ task, waiting }: StatusSymbolProps) {
+  const { colors, symbol, extraClass } = waiting
+    ? {
+        colors: { bg: "bg-transparent", icon: "text-text-tertiary" },
+        symbol: "\u25CC",
+        extraClass: "",
+      }
+    : resolveColors(task);
 
   return (
     <span

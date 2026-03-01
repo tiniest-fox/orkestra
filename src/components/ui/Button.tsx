@@ -51,18 +51,18 @@ const base =
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary: `${base} bg-accent border-accent text-white hover:bg-accent-hover`,
-  secondary: `${base} bg-white border-border text-text-secondary hover:bg-surface-hover hover:border-text-quaternary`,
+  secondary: `${base} bg-surface border-border text-text-secondary hover:bg-surface-hover hover:border-text-quaternary`,
   ghost: `${base} bg-transparent border-transparent text-text-secondary hover:bg-surface-hover`,
   submit: `${base} bg-status-info hover:bg-status-info-hover text-white border-transparent`,
-  "outline-submit": `${base} bg-white border-status-info/40 text-status-info hover:bg-surface-hover`,
+  "outline-submit": `${base} bg-surface border-status-info/40 text-status-info hover:bg-surface-hover`,
   destructive: `${base} bg-status-error hover:bg-status-error-hover text-white border-transparent`,
-  "outline-destructive": `${base} bg-white border-status-error/40 text-status-error hover:bg-surface-hover`,
+  "outline-destructive": `${base} bg-surface border-status-error/40 text-status-error hover:bg-surface-hover`,
   violet: `${base} bg-violet hover:bg-violet-hover text-white border-transparent`,
-  "outline-violet": `${base} bg-white border-violet/40 text-violet hover:bg-surface-hover`,
+  "outline-violet": `${base} bg-surface border-violet/40 text-violet hover:bg-surface-hover`,
   teal: `${base} bg-teal hover:bg-teal-hover text-white border-transparent`,
-  "outline-teal": `${base} bg-white border-teal/40 text-teal hover:bg-surface-hover`,
+  "outline-teal": `${base} bg-surface border-teal/40 text-teal hover:bg-surface-hover`,
   merge: `${base} bg-merge hover:bg-merge-hover text-white border-transparent`,
-  "merge-outline": `${base} bg-white border-merge/30 text-merge hover:bg-surface-hover`,
+  "merge-outline": `${base} bg-surface border-merge/30 text-merge hover:bg-surface-hover`,
   warning: `${base} bg-status-warning hover:opacity-90 text-white border-transparent`,
 };
 
@@ -160,7 +160,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       <AnimatePresence>
         {hotkey && active && (
           <motion.span
-            className={`font-mono text-[10px] rounded leading-none overflow-hidden inline-flex items-center ${onAccent ? "bg-white/20" : "bg-black/5"}`}
+            className={`font-mono text-[10px] rounded leading-none overflow-hidden inline-flex items-center ${onAccent ? "bg-white/20" : "bg-surface-3"}`}
             initial={{ opacity: 0, maxWidth: 0, paddingLeft: 0, paddingRight: 0, marginRight: 0 }}
             animate={{
               opacity: onAccent ? 0.75 : 0.55,

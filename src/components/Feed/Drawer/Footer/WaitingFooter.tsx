@@ -22,7 +22,7 @@ export function WaitingFooter({ progress, completionStage }: WaitingFooterProps)
         </>
       )}
       {progress.failed > 0 && (
-        <span className="ml-auto font-mono text-[11px] text-[#DC2626]">
+        <span className="ml-auto font-mono text-[11px] text-status-error">
           {progress.failed} failed
         </span>
       )}

@@ -75,7 +75,7 @@ export function FeedHeader({
           }`}
         >
           Assistant
-          <kbd className="ml-1.5 font-mono text-[10px] font-medium bg-black/[0.06] rounded px-1 opacity-55">
+          <kbd className="ml-1.5 font-mono text-[10px] font-medium bg-surface-3 rounded px-1 opacity-55">
             ⇧A
           </kbd>
         </button>

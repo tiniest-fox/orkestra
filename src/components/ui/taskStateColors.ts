@@ -16,18 +16,19 @@ export interface StateColorSet {
   icon: string;
 }
 
-/** Raw hex values for contexts requiring inline styles (e.g., accent gradients).
- *  Must stay in sync with `status.*` tokens in tailwind.config.js. */
+/** Color references for contexts requiring inline styles (e.g., accent gradients).
+ *  Uses CSS variable references so values automatically adapt to dark mode.
+ *  Tokens stored as space-separated RGB channels use rgb(var(--x)) notation. */
 export const STATUS_HEX = {
-  error: "#DC2626",
-  info: "#2563EB",
-  success: "#16A34A",
-  warning: "#D97706",
-  cyan: "#0891b2",
-  purple: "#9333ea",
-  accent: "#E83558",
-  muted: "#9E96AC",
-  merge: "#C85A4C",
+  error: "rgb(var(--forge-status-error))",
+  info: "rgb(var(--forge-status-info))",
+  success: "rgb(var(--forge-status-success))",
+  warning: "rgb(var(--forge-status-warning))",
+  cyan: "var(--forge-status-cyan)",
+  purple: "var(--forge-status-purple)",
+  accent: "rgb(var(--forge-accent))",
+  muted: "var(--forge-text-quaternary)",
+  merge: "rgb(var(--forge-merge))",
 } as const;
 
 export const taskStateColors = {
@@ -62,25 +63,25 @@ export const taskStateColors = {
     icon: "bg-status-error-bg text-status-error",
   },
   waiting: {
-    bg: "bg-stone-300",
-    badge: "bg-stone-100 text-stone-600",
-    icon: "bg-stone-100 text-stone-500",
+    bg: "bg-stone-300 dark:bg-stone-600",
+    badge: "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300",
+    icon: "bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400",
   },
   interrupted: {
-    bg: "bg-amber-500",
-    badge: "bg-amber-100 text-amber-700",
-    icon: "bg-amber-100 text-amber-600",
+    bg: "bg-amber-500 dark:bg-amber-600",
+    badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
+    icon: "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400",
   },
   auto: {
-    bg: "bg-purple-500",
-    badge: "bg-purple-100 text-purple-700",
-    icon: "text-purple-500",
+    bg: "bg-purple-500 dark:bg-purple-600",
+    badge: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400",
+    icon: "text-purple-500 dark:text-purple-400",
   },
   // PR states
   pr_open: {
-    bg: "bg-purple-500",
-    badge: "bg-purple-100 text-purple-700",
-    icon: "bg-purple-100 text-purple-600",
+    bg: "bg-purple-500 dark:bg-purple-600",
+    badge: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400",
+    icon: "bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-400",
   },
   pr_merged: {
     bg: "bg-status-success",
@@ -93,9 +94,9 @@ export const taskStateColors = {
     icon: "bg-status-error-bg text-status-error",
   },
   pr_unknown: {
-    bg: "bg-stone-400",
-    badge: "bg-stone-100 text-stone-600",
-    icon: "bg-stone-100 text-stone-500",
+    bg: "bg-stone-400 dark:bg-stone-600",
+    badge: "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300",
+    icon: "bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-400",
   },
 } as const;
 

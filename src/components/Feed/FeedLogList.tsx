@@ -68,9 +68,9 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
     return (
       <>
         <ToolLine
-          label="Task"
+          label="Agent"
           summary={
-            entry.taskEntry.input.tool === "task"
+            entry.taskEntry.input.tool === "agent"
               ? ((entry.taskEntry.input as { description?: string }).description ?? "")
               : ""
           }

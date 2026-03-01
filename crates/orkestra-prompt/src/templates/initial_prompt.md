@@ -85,5 +85,5 @@ git diff --merge-base {{base_branch}}
 ```
 {{/if}}
 
-If you spawn any subagents (via the Task tool), you MUST explicitly tell them this worktree path. Subagents do not automatically inherit your working directory and may otherwise operate on the wrong codebase.
+If you spawn any subagents (via the Agent tool), you MUST explicitly tell them this worktree path. Subagents do not automatically inherit your working directory and may otherwise operate on the wrong codebase.
 {{/if}}

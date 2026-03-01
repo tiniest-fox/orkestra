@@ -206,6 +206,25 @@ Gate output is **not** stored as log entries. Gates store their output in `itera
 - Test files sit alongside the component: `Component.test.tsx`.
 - **jsdom limitations**: The test environment doesn't implement all DOM APIs. If a component uses `scrollIntoView()`, `IntersectionObserver`, or other browser-specific APIs, mock the component in parent component tests to prevent runtime errors. See `Orkestra.test.tsx` for the pattern.
 
+### Pure Utility Module Tests
+
+<!-- compound: enormously-solid-whippet -->
+
+Pure utility modules (functions with no React/DOM dependencies) must have a unit test file alongside them (`utility.test.ts`). These modules carry the correctness burden for their callers and are easy to exercise in isolation with Vitest.
+
+```ts
+import { describe, expect, it } from "vitest";
+import { myUtil } from "./myUtil";
+
+describe("myUtil", () => {
+  it("handles normal case", () => {
+    expect(myUtil("input")).toBe("expected");
+  });
+});
+```
+
+**Example:** `optionKey.ts` / `optionKey.test.ts`.
+
 ### Default Expansion State Tests
 
 <!-- compound: modishly-courageous-beagle -->

@@ -2,6 +2,7 @@
 //! visual states and keyboard navigation focus ring.
 
 import { useRef } from "react";
+import { isOptionKey, optionKey } from "../../lib/optionKey";
 import type { WorkflowQuestion } from "../../types/workflow";
 import { useNavItem } from "../ui/NavigationScope";
 
@@ -90,14 +91,14 @@ export function QuestionCard({
         {question.options ? (
           <div className="flex flex-col gap-1.5">
             {question.options.map((opt, oi) => {
-              const selected = value === opt.label;
+              const selected = value === optionKey(oi);
               const kbdFocused = flatStartIndex + oi === keyboardFlatIdx;
               return (
                 <button
                   type="button"
-                  key={opt.label}
+                  key={optionKey(oi)}
                   onClick={() => {
-                    onChange(selected ? "" : opt.label);
+                    onChange(selected ? "" : optionKey(oi));
                     onOptionClick?.(oi);
                   }}
                   onMouseEnter={() => onOptionHover?.(oi)}
@@ -122,7 +123,7 @@ export function QuestionCard({
             })}
             {/* Write-in textarea — value only when no option is selected */}
             {(() => {
-              const writeInValue = question.options.some((o) => o.label === value) ? "" : value;
+              const writeInValue = isOptionKey(value) ? "" : value;
               const kbdFocused = flatStartIndex + question.options.length === keyboardFlatIdx;
               return (
                 <textarea

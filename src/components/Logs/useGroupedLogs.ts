@@ -1,5 +1,5 @@
 /**
- * Hook for grouping subagent log entries under their parent Task tool invocations.
+ * Hook for grouping subagent log entries under their parent Agent tool invocations.
  */
 
 import { useMemo } from "react";
@@ -28,8 +28,8 @@ interface TaskGroup {
 }
 
 /**
- * Groups subagent tool calls under their parent Task tool_use entries.
- * Returns a memoized array where Task tool_use entries are replaced with groups containing their subagent children.
+ * Groups subagent tool calls under their parent Agent tool_use entries.
+ * Returns a memoized array where Agent tool_use entries are replaced with groups containing their subagent children.
  */
 export function useGroupedLogs(logs: LogEntry[]): GroupedLogEntry[] {
   return useMemo(() => {
@@ -37,16 +37,16 @@ export function useGroupedLogs(logs: LogEntry[]): GroupedLogEntry[] {
     const taskGroups = new Map<string, TaskGroup>();
     const taskToolResultIds = new Set<string>();
 
-    // First pass: identify Task tool_use entries and their results
+    // First pass: identify Agent tool_use entries and their results
     for (const entry of logs) {
-      if (entry.type === "tool_use" && entry.input.tool === "task") {
+      if (entry.type === "tool_use" && entry.input.tool === "agent") {
         taskGroups.set(entry.id, {
           taskEntry: entry as TaskToolUseEntry,
           subagentEntries: [],
           hasResult: false,
         });
       }
-      if (entry.type === "tool_result" && entry.tool === "Task") {
+      if (entry.type === "tool_result" && entry.tool === "Agent") {
         taskToolResultIds.add(entry.tool_use_id);
       }
     }
@@ -72,8 +72,8 @@ export function useGroupedLogs(logs: LogEntry[]): GroupedLogEntry[] {
     const result: GroupedLogEntry[] = [];
 
     for (const entry of logs) {
-      // Skip Task tool_result entries (no longer rendered)
-      if (entry.type === "tool_result" && entry.tool === "Task") {
+      // Skip Agent tool_result entries (no longer rendered)
+      if (entry.type === "tool_result" && entry.tool === "Agent") {
         continue;
       }
 
@@ -87,8 +87,8 @@ export function useGroupedLogs(logs: LogEntry[]): GroupedLogEntry[] {
         continue;
       }
 
-      // Replace Task tool_use with subagent group
-      if (entry.type === "tool_use" && entry.input.tool === "task") {
+      // Replace Agent tool_use with subagent group
+      if (entry.type === "tool_use" && entry.input.tool === "agent") {
         const group = taskGroups.get(entry.id);
         if (group) {
           result.push({

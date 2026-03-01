@@ -2,6 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { parseOptionIndex } from "../../../lib/optionKey";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../types/workflow";
 import type { DraftComment, PrTabFooterState } from "./drawerTabs";
 
@@ -429,11 +430,20 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
         const now = new Date().toISOString();
         await invoke("workflow_answer_questions", {
           taskId: task.id,
-          answers: qs.map((q, i) => ({
-            question: q.question,
-            answer: answers[i].trim(),
-            answered_at: now,
-          })),
+          answers: qs.map((q, i) => {
+            const raw = answers[i];
+            const optIdx = parseOptionIndex(raw);
+            let answer: string;
+            if (optIdx !== null) {
+              // Sentinel key — resolve to the option label. If the label is
+              // missing (stale state mismatch), send an empty string rather
+              // than propagating the internal sentinel string to the backend.
+              answer = q.options?.[optIdx]?.label ?? "";
+            } else {
+              answer = raw.trim();
+            }
+            return { question: q.question, answer, answered_at: now };
+          }),
         });
         onClose();
       } catch (err) {

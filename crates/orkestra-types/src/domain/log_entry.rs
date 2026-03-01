@@ -86,7 +86,7 @@ pub enum ToolInput {
     Grep {
         pattern: String,
     },
-    Task {
+    Agent {
         description: String,
     },
     TodoWrite {
@@ -139,17 +139,18 @@ pub enum LogEntry {
         id: String,
         input: ToolInput,
     },
-    /// Tool result, especially useful for Task subagent output.
+    /// Tool result, especially useful for Agent subagent output.
     ToolResult {
         tool: String,
         tool_use_id: String,
         content: String,
     },
-    /// Subagent activity (tool use within a Task subagent).
+    /// Subagent activity (tool use within an Agent subagent).
     SubagentToolUse {
         tool: String,
         id: String,
         input: ToolInput,
+        /// The `tool_use_id` of the parent Agent tool invocation (not an Orkestra task ID).
         parent_task_id: String,
     },
     /// Subagent tool result.

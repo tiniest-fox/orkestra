@@ -192,7 +192,7 @@ fn test_return_to_work_transitions_to_queued_with_trigger() {
     // Return to work
     let task = ctx
         .api()
-        .return_to_work(&task_id)
+        .return_to_work(&task_id, None)
         .expect("return_to_work should succeed");
 
     // Verify: task is now Queued
@@ -225,7 +225,11 @@ fn test_return_to_work_transitions_to_queued_with_trigger() {
     // Verify: new iteration created with ReturnToWork trigger
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     let return_iteration = iterations.iter().find(|i| {
-        i.stage == "work" && matches!(i.incoming_context, Some(IterationTrigger::ReturnToWork))
+        i.stage == "work"
+            && matches!(
+                i.incoming_context,
+                Some(IterationTrigger::ReturnToWork { .. })
+            )
     });
     assert!(
         return_iteration.is_some(),
@@ -250,7 +254,7 @@ fn test_orchestrator_picks_up_after_return_to_work() {
     // Return to work without entering chat (simpler path)
     let _task = ctx
         .api()
-        .return_to_work(&task_id)
+        .return_to_work(&task_id, None)
         .expect("return_to_work should succeed");
 
     // Orchestrator should pick up the Queued task and spawn the agent again
@@ -473,7 +477,7 @@ fn test_return_to_work_from_interrupted() {
     // Return to work
     let task = ctx
         .api()
-        .return_to_work(&task_id)
+        .return_to_work(&task_id, None)
         .expect("return_to_work should succeed from Interrupted");
 
     // Verify task is Queued
@@ -497,7 +501,11 @@ fn test_return_to_work_from_interrupted() {
     // Verify ReturnToWork iteration was created
     let iterations = ctx.api().get_iterations(&task_id).unwrap();
     let return_iteration = iterations.iter().find(|i| {
-        i.stage == "work" && matches!(i.incoming_context, Some(IterationTrigger::ReturnToWork))
+        i.stage == "work"
+            && matches!(
+                i.incoming_context,
+                Some(IterationTrigger::ReturnToWork { .. })
+            )
     });
     assert!(
         return_iteration.is_some(),

@@ -365,8 +365,9 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
   const handleReturnToWork = useCallback(async () => {
     setLoading(true);
     setChatError(null);
+    const pendingMessage = chatMessage.trim() || null;
     try {
-      await invoke("workflow_return_to_work", { taskId: task.id });
+      await invoke("workflow_return_to_work", { taskId: task.id, message: pendingMessage });
       setShowChatInput(false);
       setChatMessage("");
     } catch (err) {
@@ -374,7 +375,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       setChatError(message);
       setLoading(false);
     }
-  }, [task.id]);
+  }, [task.id, chatMessage]);
 
   // -- Action handlers --
 

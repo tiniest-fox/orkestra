@@ -10,6 +10,7 @@ pub fn execute(
     store: &dyn WorkflowStore,
     iteration_service: &IterationService,
     task_id: &str,
+    message: Option<String>,
 ) -> WorkflowResult<Task> {
     let mut task = store
         .get_task(task_id)?
@@ -50,7 +51,11 @@ pub fn execute(
     }
 
     // Create new iteration with ReturnToWork trigger
-    iteration_service.create_iteration(task_id, &stage, Some(IterationTrigger::ReturnToWork))?;
+    iteration_service.create_iteration(
+        task_id,
+        &stage,
+        Some(IterationTrigger::ReturnToWork { message }),
+    )?;
 
     // Transition to Queued so orchestrator picks it up
     task.state = TaskState::queued(&stage);

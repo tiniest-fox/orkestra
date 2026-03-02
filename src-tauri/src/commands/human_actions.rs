@@ -315,6 +315,8 @@ pub fn workflow_request_update(
 ///
 /// Clears chat state on the session and creates a new iteration with
 /// `ReturnToWork` trigger so the agent resumes with the return-to-work prompt.
+/// An optional `message` is attached to the iteration so the agent sees it as
+/// a closing instruction before returning to structured output.
 /// Valid from `AwaitingApproval` or `Interrupted`. Process killing is handled
 /// by the domain interaction.
 #[tauri::command]
@@ -322,9 +324,13 @@ pub fn workflow_return_to_work(
     registry: State<ProjectRegistry>,
     window: Window,
     task_id: String,
+    message: Option<String>,
 ) -> Result<Task, TauriError> {
     orkestra_debug!("tauri", "return_to_work {task_id}");
     registry.with_project(window.label(), |state| {
-        state.api()?.return_to_work(&task_id).map_err(Into::into)
+        state
+            .api()?
+            .return_to_work(&task_id, message)
+            .map_err(Into::into)
     })
 }

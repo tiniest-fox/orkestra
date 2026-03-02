@@ -103,7 +103,11 @@ pub enum IterationTrigger {
     /// User interrupted and then resumed, optionally with a message.
     ManualResume { message: Option<String> },
     /// The user chatted with the agent and is now returning to structured work.
-    ReturnToWork,
+    ///
+    /// Carries the optional final message the user typed before clicking
+    /// "Return to Work", which is injected into the resume prompt so the
+    /// agent sees it as a closing instruction.
+    ReturnToWork { message: Option<String> },
 }
 
 /// A single iteration (attempt) within a stage.

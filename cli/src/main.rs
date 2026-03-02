@@ -1261,7 +1261,7 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
             }
             s
         }
-        IterationTrigger::ReturnToWork => "return to work (exited chat mode)".to_string(),
+        IterationTrigger::ReturnToWork { .. } => "return to work (exited chat mode)".to_string(),
     }
 }
 

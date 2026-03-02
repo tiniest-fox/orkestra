@@ -332,7 +332,9 @@ fn trigger_to_resume_type(trigger: Option<&IterationTrigger>) -> ResumeType {
             checks: checks.clone(),
             guidance: guidance.clone(),
         },
-        Some(IterationTrigger::ReturnToWork) => ResumeType::ReturnToWork,
+        Some(IterationTrigger::ReturnToWork { message }) => ResumeType::ReturnToWork {
+            message: message.clone(),
+        },
     }
 }
 

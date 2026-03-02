@@ -1,15 +1,15 @@
 //! FileSection — one file's header + hunks, used by DiffContent virtualizer.
 
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { Fragment } from "react";
 import type { HighlightedFileDiff, HighlightedLine } from "../../hooks/useDiff";
 import type { PrComment } from "../../types/workflow";
-import { Kbd } from "../ui/Kbd";
 import { CollapsedSection } from "./CollapsedSection";
 import { DiffLine } from "./DiffLine";
 import { DraftCommentBubble } from "./DraftCommentBubble";
+import { FileHeaderContent } from "./FileHeaderContent";
 import { LineCommentInput } from "./LineCommentInput";
 import type { DraftComment } from "./types";
+import { FILE_HEADER_BUTTON_BASE } from "./types";
 
 const COLLAPSE_THRESHOLD = 8;
 
@@ -55,26 +55,14 @@ export function FileSection({
 
   return (
     <>
-      {/* File path header — clickable to collapse/expand. sticky top-0 keeps it pinned. */}
-      <button
-        type="button"
-        onClick={onToggleCollapsed}
-        className="sticky top-0 z-10 w-full text-left bg-surface-2 border-b border-border px-4 py-2 font-sans text-forge-body font-medium text-text-primary flex items-center gap-2 hover:bg-surface-3 transition-colors"
-      >
-        <span className="flex-1 truncate">
-          {file.path}
-          {file.old_path && (
-            <span className="text-text-quaternary ml-2">(renamed from {file.old_path})</span>
-          )}
-        </span>
-        <span className="flex items-center gap-1.5 shrink-0">
-          {isActive && <Kbd>C</Kbd>}
-          {isCollapsed ? (
-            <ChevronRight size={13} className="text-text-quaternary" />
-          ) : (
-            <ChevronDown size={13} className="text-text-quaternary" />
-          )}
-        </span>
+      {/* File path header — clickable to collapse/expand. */}
+      <button type="button" onClick={onToggleCollapsed} className={FILE_HEADER_BUTTON_BASE}>
+        <FileHeaderContent
+          path={file.path}
+          oldPath={file.old_path}
+          isCollapsed={isCollapsed}
+          showKbd={isActive}
+        />
       </button>
 
       {!isCollapsed &&

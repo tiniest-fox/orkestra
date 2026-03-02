@@ -6,7 +6,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { usePolling } from "./usePolling";
 
 export interface HighlightedLine {
@@ -45,19 +45,47 @@ interface UseDiffResult {
   error: unknown;
 }
 
+/**
+ * Compute a fingerprint for change detection.
+ *
+ * Includes hunk boundary content so that edits that preserve line counts
+ * (e.g. typo fixes) are still detected as changes.
+ */
+export function buildDiffFingerprint(files: HighlightedFileDiff[]): string {
+  return JSON.stringify(
+    files.map((f) => [
+      f.path,
+      f.additions,
+      f.deletions,
+      f.hunks.map((h) => [h.lines[0]?.content ?? "", h.lines[h.lines.length - 1]?.content ?? ""]),
+    ]),
+  );
+}
+
 export function useDiff(taskId: string | null): UseDiffResult {
   const [diff, setDiff] = useState<HighlightedTaskDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const fingerprintRef = useRef<string>("");
+  // Tracks whether the first fetch has completed to guard the loading state.
+  // Using a ref (not state) avoids adding it as a useCallback dependency.
+  const hasFetchedOnceRef = useRef(false);
 
   const fetchDiff = useCallback(async () => {
     if (!taskId) return;
 
     try {
-      setLoading(true);
+      // Only show loading spinner on the initial fetch, not on polls.
+      if (!hasFetchedOnceRef.current) setLoading(true);
+      hasFetchedOnceRef.current = true;
       setError(null);
       const result = await invoke<HighlightedTaskDiff>("workflow_get_task_diff", { taskId });
-      setDiff(result);
+      // Skip state update when content hasn't changed, preventing re-renders and flash.
+      const fingerprint = buildDiffFingerprint(result.files);
+      if (fingerprint !== fingerprintRef.current) {
+        fingerprintRef.current = fingerprint;
+        setDiff(result);
+      }
     } catch (err) {
       console.error("Failed to fetch diff:", err);
       setError(err);

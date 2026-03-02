@@ -12,6 +12,10 @@ function makeLog(type: string, content: string): LogEntry {
   return { type, content } as LogEntry;
 }
 
+function makeToolUse(tool: string, id: string): LogEntry {
+  return { type: "tool_use", tool, id, input: { tool: "other", summary: "" } } as LogEntry;
+}
+
 // ============================================================================
 // buildDisplayMessages
 // ============================================================================
@@ -28,11 +32,16 @@ describe("buildDisplayMessages", () => {
     expect(messages[0]).toEqual({ kind: "user", content: "Hello!" });
   });
 
-  it("merges consecutive text logs into one AgentMessage", () => {
+  it("keeps consecutive text entries as separate entries in the agent block", () => {
     const logs = [makeLog("text", "Hello, "), makeLog("text", "world!")];
     const messages = buildDisplayMessages(logs);
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toEqual({ kind: "agent", content: "Hello, world!" });
+    expect(messages[0].kind).toBe("agent");
+    if (messages[0].kind === "agent") {
+      expect(messages[0].entries).toHaveLength(2);
+      expect(messages[0].entries[0]).toEqual({ type: "text", content: "Hello, " });
+      expect(messages[0].entries[1]).toEqual({ type: "text", content: "world!" });
+    }
   });
 
   it("produces alternating User/Agent messages for interleaved logs", () => {
@@ -45,33 +54,51 @@ describe("buildDisplayMessages", () => {
     const messages = buildDisplayMessages(logs);
     expect(messages).toHaveLength(4);
     expect(messages[0]).toEqual({ kind: "user", content: "Question?" });
-    expect(messages[1]).toEqual({ kind: "agent", content: "Answer." });
+    expect(messages[1].kind).toBe("agent");
     expect(messages[2]).toEqual({ kind: "user", content: "Follow up?" });
-    expect(messages[3]).toEqual({ kind: "agent", content: "More detail." });
+    expect(messages[3].kind).toBe("agent");
   });
 
-  it("skips non-text log types (tool_use, tool_result, error)", () => {
-    const logs = [
-      makeLog("tool_use", "{}"),
-      makeLog("tool_result", "result"),
-      makeLog("error", "something went wrong"),
-    ];
-    expect(buildDisplayMessages(logs)).toEqual([]);
+  it("preserves tool_use entries in agent blocks", () => {
+    const toolEntry = makeToolUse("Read", "id-1");
+    const logs = [makeLog("text", "Thinking…"), toolEntry, makeLog("text", "Done.")];
+    const messages = buildDisplayMessages(logs);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].kind).toBe("agent");
+    if (messages[0].kind === "agent") {
+      expect(messages[0].entries).toHaveLength(3);
+      expect(messages[0].entries[1]).toEqual(toolEntry);
+    }
   });
 
-  it("includes trailing text logs as a final AgentMessage", () => {
+  it("preserves error entries in agent blocks", () => {
+    const errorEntry = { type: "error", message: "something went wrong" } as LogEntry;
+    const logs = [makeLog("text", "Working…"), errorEntry];
+    const messages = buildDisplayMessages(logs);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].kind).toBe("agent");
+    if (messages[0].kind === "agent") {
+      expect(messages[0].entries).toHaveLength(2);
+      expect(messages[0].entries[1]).toEqual(errorEntry);
+    }
+  });
+
+  it("includes trailing entries as a final AgentMessage", () => {
     const logs = [
       makeLog("user_message", "Hi"),
-      makeLog("text", "Chunk 1 "),
+      makeLog("text", "Chunk 1"),
       makeLog("text", "Chunk 2"),
     ];
     const messages = buildDisplayMessages(logs);
     expect(messages).toHaveLength(2);
     expect(messages[0]).toEqual({ kind: "user", content: "Hi" });
-    expect(messages[1]).toEqual({ kind: "agent", content: "Chunk 1 Chunk 2" });
+    expect(messages[1].kind).toBe("agent");
+    if (messages[1].kind === "agent") {
+      expect(messages[1].entries).toHaveLength(2);
+    }
   });
 
-  it("flushes accumulated text chunks when a user_message is encountered", () => {
+  it("flushes accumulated entries when a user_message is encountered", () => {
     const logs = [
       makeLog("text", "Part A"),
       makeLog("user_message", "Interrupt"),
@@ -79,8 +106,39 @@ describe("buildDisplayMessages", () => {
     ];
     const messages = buildDisplayMessages(logs);
     expect(messages).toHaveLength(3);
-    expect(messages[0]).toEqual({ kind: "agent", content: "Part A" });
+    expect(messages[0].kind).toBe("agent");
     expect(messages[1]).toEqual({ kind: "user", content: "Interrupt" });
-    expect(messages[2]).toEqual({ kind: "agent", content: "Part B" });
+    expect(messages[2].kind).toBe("agent");
+  });
+
+  it("produces an AgentMessage block for tool-only entries (no text entries)", () => {
+    const logs = [makeToolUse("Read", "id-x")];
+    const messages = buildDisplayMessages(logs);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].kind).toBe("agent");
+    if (messages[0].kind === "agent") {
+      expect(messages[0].entries).toHaveLength(1);
+      expect(messages[0].entries[0]).toEqual(makeToolUse("Read", "id-x"));
+    }
+  });
+
+  it("splits agent blocks on user_message boundaries", () => {
+    const logs = [
+      makeLog("text", "Before"),
+      makeToolUse("Edit", "id-2"),
+      makeLog("user_message", "Continue"),
+      makeLog("text", "After"),
+    ];
+    const messages = buildDisplayMessages(logs);
+    expect(messages).toHaveLength(3);
+    expect(messages[0].kind).toBe("agent");
+    if (messages[0].kind === "agent") {
+      expect(messages[0].entries).toHaveLength(2);
+    }
+    expect(messages[1]).toEqual({ kind: "user", content: "Continue" });
+    expect(messages[2].kind).toBe("agent");
+    if (messages[2].kind === "agent") {
+      expect(messages[2].entries).toHaveLength(1);
+    }
   });
 });

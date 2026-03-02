@@ -9,11 +9,16 @@ import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
 import type { AssistantSession, LogEntry, WorkflowQuestion } from "../../types/workflow";
 import { parseAssistantQuestions, stripQuestionBlocks } from "../../utils/assistantQuestions";
+import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
 import { relativeTime } from "../../utils/relativeTime";
+import { toolSummary } from "../../utils/toolSummary";
+import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
+import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { Button } from "../ui/Button";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { HotkeyScope } from "../ui/HotkeyScope";
+import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
 import { QuestionCard } from "./QuestionCard";
 
 // ============================================================================
@@ -27,33 +32,130 @@ export interface UserMessage {
 
 export interface AgentMessage {
   kind: "agent";
-  content: string;
+  entries: LogEntry[];
 }
 
 export type DisplayMessage = UserMessage | AgentMessage;
 
 export function buildDisplayMessages(logs: LogEntry[]): DisplayMessage[] {
   const messages: DisplayMessage[] = [];
-  let agentChunks: string[] = [];
+  let agentEntries: LogEntry[] = [];
 
   for (const entry of logs) {
     if (entry.type === "user_message") {
-      if (agentChunks.length > 0) {
-        messages.push({ kind: "agent", content: agentChunks.join("") });
-        agentChunks = [];
+      if (agentEntries.length > 0) {
+        messages.push({ kind: "agent", entries: agentEntries });
+        agentEntries = [];
       }
       messages.push({ kind: "user", content: entry.content });
-    } else if (entry.type === "text") {
-      agentChunks.push(entry.content);
+    } else {
+      agentEntries.push(entry);
     }
-    // tool_use, tool_result, process_exit, error, etc. are skipped
   }
 
-  if (agentChunks.length > 0) {
-    messages.push({ kind: "agent", content: agentChunks.join("") });
+  if (agentEntries.length > 0) {
+    messages.push({ kind: "agent", entries: agentEntries });
   }
 
   return messages;
+}
+
+// ============================================================================
+// Entry components
+// ============================================================================
+
+function AssistantTextLine({ content }: { content: string }) {
+  const cleaned = stripQuestionBlocks(stripParameterBlocks(content));
+  if (!cleaned) return null;
+  return (
+    <div className={`text-forge-body py-3 ${PROSE_CLASSES}`}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleaned}</ReactMarkdown>
+    </div>
+  );
+}
+
+export function AgentEntry({ entry }: { entry: GroupedLogEntry }) {
+  if (entry.type === "subagent_group") {
+    const toolCalls = entry.subagentEntries.filter((s) => s.type === "subagent_tool_use");
+    const shown = toolCalls.slice(-2);
+    const hidden = toolCalls.length - shown.length;
+    return (
+      <>
+        <ToolLine
+          label="Agent"
+          summary={
+            entry.taskEntry.input.tool === "agent"
+              ? ((entry.taskEntry.input as { description?: string }).description ?? "")
+              : ""
+          }
+          variant="task"
+        />
+        <div className="ml-[2px] pl-4 border-l border-border">
+          {hidden > 0 && (
+            <div className="font-mono text-forge-mono-sm text-text-quaternary py-[3px]">
+              +{hidden} tool call{hidden !== 1 ? "s" : ""}
+            </div>
+          )}
+          {shown.map((sub, i) =>
+            sub.type === "subagent_tool_use" ? (
+              // biome-ignore lint/suspicious/noArrayIndexKey: no stable ID
+              <ToolLine key={i} label={sub.tool} summary={toolSummary(sub.input)} variant="tool" />
+            ) : null,
+          )}
+        </div>
+      </>
+    );
+  }
+
+  switch (entry.type) {
+    case "text":
+      return <AssistantTextLine content={entry.content} />;
+
+    case "tool_use":
+      return <ToolLine label={entry.tool} summary={toolSummary(entry.input)} variant="tool" />;
+
+    case "error":
+      return <ErrorLine message={entry.message} />;
+
+    case "script_start":
+      return <ToolLine label={`sh · ${entry.stage}`} summary={entry.command} variant="script" />;
+
+    case "script_output":
+      return <ScriptOutputLine content={entry.content} />;
+
+    case "script_exit":
+      return (
+        <div
+          className={`font-mono text-forge-mono-sm py-0.5 ${entry.success ? "text-text-quaternary" : "text-status-error"}`}
+        >
+          {entry.success
+            ? "✓ done"
+            : `✗ exit ${entry.code}${entry.timed_out ? " (timed out)" : ""}`}
+        </div>
+      );
+
+    case "user_message":
+    case "tool_result":
+    case "subagent_tool_use":
+    case "subagent_tool_result":
+    case "process_exit":
+      return null;
+
+    default:
+      return null;
+  }
+}
+
+function AgentEntries({ entries }: { entries: LogEntry[] }) {
+  const grouped = useGroupedLogs(entries);
+  return (
+    <>
+      {grouped.map((entry, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: no stable IDs on log entries
+        <AgentEntry key={i} entry={entry} />
+      ))}
+    </>
+  );
 }
 
 // ============================================================================
@@ -307,10 +409,8 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
                     {msg.kind === "user" ? "You" : "Assistant"}
                   </div>
                   {msg.kind === "agent" ? (
-                    <div className={`text-forge-body text-text-secondary ${PROSE_CLASSES}`}>
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {stripQuestionBlocks(msg.content)}
-                      </ReactMarkdown>
+                    <div className="text-text-secondary">
+                      <AgentEntries entries={msg.entries} />
                     </div>
                   ) : (
                     <div className="font-sans text-[13px] text-text-secondary leading-relaxed whitespace-pre-wrap">

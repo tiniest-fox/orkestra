@@ -157,12 +157,14 @@ impl GitService for Git2GitService {
         &self,
         branch_name: &str,
         target_branch: &str,
+        message: Option<&str>,
     ) -> Result<MergeResult, GitError> {
         interactions::merge::fast_forward::execute(
             &self.repo_path,
             &self.worktrees_dir,
             branch_name,
             target_branch,
+            message,
         )
     }
 
@@ -329,12 +331,64 @@ mod tests {
             .expect("Failed to commit");
 
         let result = git
-            .merge_to_branch("task/TASK-005", "main")
+            .merge_to_branch("task/TASK-005", "main", None)
             .expect("Failed to merge");
 
         assert_eq!(result.target_branch, "main");
         assert!(!result.commit_sha.is_empty());
         assert!(repo_path.join("new_file.txt").exists());
+    }
+
+    #[test]
+    fn test_merge_to_branch_with_message() {
+        let (_temp_dir, repo_path) = create_test_repo();
+        let git = Git2GitService::new(&repo_path).expect("Failed to create git service");
+
+        let worktree = git
+            .create_worktree("TASK-MSG", None)
+            .expect("Failed to create worktree");
+
+        std::fs::write(worktree.worktree_path.join("msg_file.txt"), "Hello")
+            .expect("Failed to write file");
+
+        git.commit_pending_changes(&worktree.worktree_path, "Add msg file")
+            .expect("Failed to commit");
+
+        let result = git
+            .merge_to_branch("task/TASK-MSG", "main", Some("Custom merge message"))
+            .expect("Failed to merge");
+
+        assert_eq!(result.target_branch, "main");
+        assert!(!result.commit_sha.is_empty());
+
+        // Verify the custom message was used as the merge commit subject
+        let subject_output = Command::new("git")
+            .args(["log", "-1", "--format=%s"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to get log");
+        let subject = String::from_utf8_lossy(&subject_output.stdout)
+            .trim()
+            .to_string();
+        assert_eq!(
+            subject, "Custom merge message",
+            "Merge commit subject should match the provided message"
+        );
+
+        // Verify it's an explicit merge commit (has 2 parents)
+        let parents_output = Command::new("git")
+            .args(["log", "-1", "--format=%P"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("Failed to get parent SHAs");
+        let parents = String::from_utf8_lossy(&parents_output.stdout)
+            .trim()
+            .to_string();
+        let parent_count = parents.split_whitespace().count();
+        assert_eq!(
+            parent_count, 2,
+            "--no-ff merge should produce a commit with 2 parents, got: {parents}"
+        );
     }
 
     #[test]
@@ -386,7 +440,7 @@ mod tests {
             .expect("Failed to write");
         git.commit_pending_changes(&worktree.worktree_path, "Add file")
             .expect("Failed to commit");
-        git.merge_to_branch("task/TASK-MERGED", "main")
+        git.merge_to_branch("task/TASK-MERGED", "main", None)
             .expect("Failed to merge");
 
         assert!(git

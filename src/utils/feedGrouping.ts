@@ -89,14 +89,14 @@ export function groupTasksForFeed(tasks: WorkflowTaskView[]): FeedGroupResult {
         tasks: needsReview.sort(byUpdatedAt),
       },
       {
-        name: "ready_to_ship",
-        label: "READY TO SHIP",
-        tasks: readyToShip.sort(byUpdatedAt),
-      },
-      {
         name: "in_progress",
         label: "IN PROGRESS",
         tasks: inProgress.sort(byUpdatedAt),
+      },
+      {
+        name: "ready_to_ship",
+        label: "READY TO SHIP",
+        tasks: readyToShip.sort(byUpdatedAt),
       },
       {
         name: "completed",

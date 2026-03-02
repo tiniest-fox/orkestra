@@ -8,16 +8,16 @@ use crate::workflow::ports::{WorkflowResult, WorkflowStore};
 /// Returns `true` for "returning" scenarios — triggers that indicate the task
 /// is *returning* to this stage for a fresh attempt, not *iterating* within
 /// an existing session:
-/// - `Rejection`: stage output was rejected (by human or reviewer agent) — start fresh.
+/// - `Rejection`: cross-stage rejection (reviewer or agent rejects to an earlier
+///   stage) — start fresh in the target stage.
 /// - `Integration`: merge conflict recovery returned the task here.
 /// - Untriggered re-entry: no trigger AND the active iteration has not been
 ///   linked to a session yet, meaning this is a clean re-entry (not a
 ///   crash-recovery or `ManualResume`).
 ///
 /// Triggers that do NOT supersede (agent resumes in the existing session):
-/// - `Feedback`: human or reviewer sent a follow-up request (e.g., `request_update`
-///   or the reviewer-override path in `reject.rs`) — resume the session with the
-///   feedback as new context.
+/// - `Feedback`: resume with new context. Sources: human same-stage rejection
+///   (`reject.rs`), `request_update`, or the reviewer-override path in `reject.rs`.
 /// - `GateFailure`: gate script failed — agent re-runs in the existing session with
 ///   the gate error as feedback context.
 /// - `PrFeedback`: PR comments, failing checks, or guidance submitted for a Done task

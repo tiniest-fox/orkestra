@@ -7,10 +7,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { HighlightedTaskDiff } from "../../hooks/useDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
 import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
+import type { DiffContentHandle } from "../Diff/DiffContent";
 import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
 import type { DraftComment } from "../Diff/types";
+import { useAutoCollapsePaths } from "../Diff/useAutoCollapsePaths";
 import { EmptyState } from "../ui/EmptyState";
 import { useNavHandler } from "../ui/HotkeyScope";
 import { useDrawerDiff } from "./DrawerTaskProvider";
@@ -37,15 +39,9 @@ export function DrawerDiffTab({
   const { diff: liveDiff, diffLoading } = useDrawerDiff();
   const { css } = useSyntaxCss();
   const [activePath, setActivePath] = useState<string | null>(null);
-  const [lineLimit, setLineLimit] = useState(150);
-  const diffExpandedRef = useRef(false);
-  const expandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
-  const fileSectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const diffContentRef = useRef<DiffContentHandle>(null);
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const setScrollRef = useCallback((el: HTMLDivElement | null) => {
-    (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
     setScrollEl(el);
   }, []);
 
@@ -54,48 +50,23 @@ export function DrawerDiffTab({
     filePath: string;
     lineNumber: number;
   } | null>(null);
+  const [draftBody, setDraftBody] = useState("");
 
   // -- Frozen diff: snapshot the diff when drafts exist so line numbers stay stable --
   const hasDrafts = (draftComments?.length ?? 0) > 0;
   const diffSnapshotRef = useRef<HighlightedTaskDiff | null>(null);
 
-  // Update snapshot only when there are no drafts
-  if (!hasDrafts) {
-    diffSnapshotRef.current = liveDiff;
-  }
+  // Update snapshot only when there are no drafts. Must be a useEffect — mutating a ref
+  // during render is unsafe in concurrent mode (discarded renders leave the mutation behind).
+  useEffect(() => {
+    if (!hasDrafts) {
+      diffSnapshotRef.current = liveDiff;
+    }
+  }, [hasDrafts, liveDiff]);
 
   const diff = hasDrafts ? diffSnapshotRef.current : liveDiff;
 
-  // Expand from the initial 150-line stub to full diff after animation settles.
-  // Timer lives in a ref so poll-driven effect re-runs don't cancel it mid-flight.
-  useEffect(() => {
-    if (!diff) {
-      // Task switched or drawer closed — reset for next load.
-      diffExpandedRef.current = false;
-      if (expandTimerRef.current) {
-        clearTimeout(expandTimerRef.current);
-        expandTimerRef.current = null;
-      }
-      setLineLimit(150);
-      return;
-    }
-    if (diffExpandedRef.current) return;
-    diffExpandedRef.current = true;
-    setLineLimit(150);
-    expandTimerRef.current = setTimeout(() => {
-      expandTimerRef.current = null;
-      setLineLimit(Infinity);
-    }, 300);
-  }, [diff]);
-
-  // Cancel any pending expansion on unmount (real or Strict Mode simulated).
-  // Also reset diffExpandedRef so a Strict Mode remount can start a fresh timer.
-  useEffect(() => {
-    return () => {
-      if (expandTimerRef.current) clearTimeout(expandTimerRef.current);
-      diffExpandedRef.current = false;
-    };
-  }, []);
+  const { collapsedPaths, toggleCollapsed } = useAutoCollapsePaths(diff?.files);
 
   // Pre-select the first file when the diff loads.
   useEffect(() => {
@@ -104,96 +75,18 @@ export function DrawerDiffTab({
     }
   }, [diff, activePath]);
 
-  function handleFileSectionRef(path: string, el: HTMLDivElement | null) {
-    if (el) fileSectionRefs.current.set(path, el);
-    else fileSectionRefs.current.delete(path);
-  }
-
   function handleToggleCollapsed(path: string) {
-    const isCollapsed = collapsedPaths.has(path);
-    if (!isCollapsed) {
-      const el = fileSectionRefs.current.get(path);
-      const container = scrollRef.current;
-      if (el && container) {
-        const elTop = el.getBoundingClientRect().top;
-        const containerTop = container.getBoundingClientRect().top;
-        const targetScrollTop = container.scrollTop + (elTop - containerTop);
-        setCollapsedPaths((prev) => {
-          const next = new Set(prev);
-          next.add(path);
-          return next;
-        });
-        requestAnimationFrame(() => {
-          container.scrollTop = targetScrollTop;
-        });
-        return;
-      }
-    }
-    setCollapsedPaths((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
+    toggleCollapsed(path);
+    // Anchor scroll at the toggled file to prevent viewport jump.
+    requestAnimationFrame(() => {
+      diffContentRef.current?.scrollToFile(path);
     });
   }
 
-  const jumpingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   function handleJumpTo(path: string) {
     setActivePath(path);
-    if (jumpingRef.current) clearTimeout(jumpingRef.current);
-    jumpingRef.current = setTimeout(() => {
-      jumpingRef.current = null;
-    }, 600);
-    const el = fileSectionRefs.current.get(path);
-    if (el && scrollRef.current) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    diffContentRef.current?.scrollToFile(path);
   }
-
-  const ACTIVE_FILE_BUFFER = 24;
-  const pickActiveFile = useCallback(() => {
-    if (jumpingRef.current) return;
-    const container = scrollRef.current;
-    if (!container) return;
-    const containerTop = container.getBoundingClientRect().top;
-
-    let active: string | null = null;
-    let bestTop = -Infinity;
-    let nextPath: string | null = null;
-    let nextTop = Infinity;
-
-    for (const [path, el] of fileSectionRefs.current) {
-      const rect = el.getBoundingClientRect();
-      if (rect.top <= containerTop) {
-        if (rect.bottom > containerTop + ACTIVE_FILE_BUFFER && rect.top > bestTop) {
-          bestTop = rect.top;
-          active = path;
-        }
-      } else {
-        if (rect.top < nextTop) {
-          nextTop = rect.top;
-          nextPath = path;
-        }
-      }
-    }
-
-    if (active === null && bestTop === -Infinity && nextPath !== null) {
-      active = nextPath;
-    }
-    if (active !== null) setActivePath(active);
-  }, []);
-
-  useEffect(() => {
-    if (!scrollEl) return;
-    scrollEl.addEventListener("scroll", pickActiveFile, { passive: true });
-    return () => scrollEl.removeEventListener("scroll", pickActiveFile);
-  }, [scrollEl, pickActiveFile]);
-
-  useEffect(() => {
-    const id = requestAnimationFrame(pickActiveFile);
-    return () => cancelAnimationFrame(id);
-  }, [pickActiveFile]);
 
   // -- Draft comment handlers --
   function handleLineClick(
@@ -202,6 +95,7 @@ export function DrawerDiffTab({
     _lineType: "add" | "delete" | "context",
   ) {
     setActiveCommentLine({ filePath, lineNumber });
+    setDraftBody("");
   }
 
   function handleSaveDraft(
@@ -212,24 +106,26 @@ export function DrawerDiffTab({
   ) {
     onAddDraftComment?.(filePath, lineNumber, lineType, body);
     setActiveCommentLine(null);
+    setDraftBody("");
   }
 
   function handleDismissCommentInput() {
     setActiveCommentLine(null);
+    setDraftBody("");
   }
 
   // Keyboard navigation — only meaningful when this tab is active.
   useNavHandler("ArrowDown", () => {
-    if (active) scrollRef.current?.scrollBy({ top: 120, behavior: "smooth" });
+    if (active) scrollEl?.scrollBy({ top: 120, behavior: "smooth" });
   });
   useNavHandler("j", () => {
-    if (active) scrollRef.current?.scrollBy({ top: 120, behavior: "smooth" });
+    if (active) scrollEl?.scrollBy({ top: 120, behavior: "smooth" });
   });
   useNavHandler("ArrowUp", () => {
-    if (active) scrollRef.current?.scrollBy({ top: -120, behavior: "smooth" });
+    if (active) scrollEl?.scrollBy({ top: -120, behavior: "smooth" });
   });
   useNavHandler("k", () => {
-    if (active) scrollRef.current?.scrollBy({ top: -120, behavior: "smooth" });
+    if (active) scrollEl?.scrollBy({ top: -120, behavior: "smooth" });
   });
   useNavHandler("c", () => {
     if (active && activePath) handleToggleCollapsed(activePath);
@@ -268,19 +164,22 @@ export function DrawerDiffTab({
           </div>
           <div ref={setScrollRef} className="flex-1 overflow-y-auto">
             <DiffContent
+              ref={diffContentRef}
               files={diff.files}
               comments={[]}
               activePath={activePath}
               collapsedPaths={collapsedPaths}
-              lineLimit={lineLimit}
+              scrollElement={scrollEl}
+              onActivePathChange={setActivePath}
               onToggleCollapsed={handleToggleCollapsed}
-              onFileSectionRef={handleFileSectionRef}
               onLineClick={isCommentingEnabled ? handleLineClick : undefined}
               draftComments={draftComments}
               activeCommentLine={activeCommentLine}
               onSaveDraft={isCommentingEnabled ? handleSaveDraft : undefined}
               onCancelDraft={isCommentingEnabled ? handleDismissCommentInput : undefined}
               onDeleteDraft={onRemoveDraftComment}
+              draftBody={draftBody}
+              onDraftBodyChange={setDraftBody}
             />
           </div>
         </>

@@ -228,6 +228,28 @@ Using `isActivelyProgressing` alone in contexts that previously handled `integra
 - Tests use Vitest + React Testing Library.
 - Test files sit alongside the component: `Component.test.tsx`.
 - **jsdom limitations**: The test environment doesn't implement all DOM APIs. If a component uses `scrollIntoView()`, `IntersectionObserver`, or other browser-specific APIs, mock the component in parent component tests to prevent runtime errors. See `Orkestra.test.tsx` for the pattern.
+- **`@tanstack/react-virtual` renders 0 items in jsdom**: The virtualizer measures DOM element heights to determine which items to render. In jsdom there are no layout measurements, so `virtualItems` is always empty. Tests that exercise virtualizer-dependent behavior (`scrollToFile`, active-path tracking, `onActivePathChange` callbacks) are impractical in unit tests — document them as requiring manual verification and focus test coverage on the hook or logic layer instead (e.g., `useAutoCollapsePaths.test.ts` tests the collapse logic without touching the virtualizer).
+
+## Keyboard Navigation
+
+<!-- compound: beauteously-liberal-pollock -->
+
+Use `useNavHandler` from `HotkeyScope` for keyboard shortcuts instead of raw `window.addEventListener`. Raw listeners bypass scope isolation — they fire regardless of which drawer or panel is focused, and they won't benefit from future hotkey system updates.
+
+```tsx
+// Avoid
+useEffect(() => {
+  const handler = (e: KeyboardEvent) => {
+    if (e.key === "j") selectNext();
+    if (e.key === "k") selectPrev();
+  };
+  window.addEventListener("keydown", handler);
+  return () => window.removeEventListener("keydown", handler);
+}, []);
+
+// Prefer — respects HotkeyScope isolation
+useNavHandler({ onNext: selectNext, onPrev: selectPrev });
+```
 
 ### Pure Utility Module Tests
 

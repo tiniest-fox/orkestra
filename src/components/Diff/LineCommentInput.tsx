@@ -5,11 +5,19 @@ import { useEffect, useRef, useState } from "react";
 interface LineCommentInputProps {
   onSave: (body: string) => void;
   onCancel: () => void;
+  /** Controlled value — when provided with onChange, uses controlled mode. */
+  value?: string;
+  /** Controlled onChange — when provided with value, uses controlled mode. */
+  onChange?: (body: string) => void;
 }
 
-export function LineCommentInput({ onSave, onCancel }: LineCommentInputProps) {
-  const [body, setBody] = useState("");
+export function LineCommentInput({ onSave, onCancel, value, onChange }: LineCommentInputProps) {
+  const [localBody, setLocalBody] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const isControlled = value !== undefined && onChange !== undefined;
+  const body = isControlled ? value : localBody;
+  const setBody = isControlled ? onChange : setLocalBody;
 
   useEffect(() => {
     textareaRef.current?.focus();

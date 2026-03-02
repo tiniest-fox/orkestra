@@ -1,9 +1,13 @@
-//! Tests for the `availableTabs` gate tab visibility logic.
+//! Tests for `availableTabs`, `currentArtifact`, and related drawer helpers.
 
 import { describe, expect, it } from "vitest";
-import { createMockWorkflowConfig, createMockWorkflowTaskView } from "../../../test/mocks/fixtures";
+import {
+  createMockArtifact,
+  createMockWorkflowConfig,
+  createMockWorkflowTaskView,
+} from "../../../test/mocks/fixtures";
 import type { WorkflowIteration } from "../../../types/workflow";
-import { availableTabs } from "./drawerTabs";
+import { availableTabs, currentArtifact } from "./drawerTabs";
 
 // Config with a gate on the "work" stage.
 function configWithGate() {
@@ -124,5 +128,65 @@ describe("availableTabs — gate tab visibility", () => {
       iterations: [workGateIteration()],
     };
     expect(hasGateTab(availableTabs(task, config))).toBe(false);
+  });
+});
+
+describe("availableTabs — done task tabs", () => {
+  it("includes Logs tab when task is done and has no PR", () => {
+    const config = createMockWorkflowConfig();
+    const task = createMockWorkflowTaskView({ state: { type: "done" } });
+    const tabs = availableTabs(task, config);
+    expect(tabs.some((t) => t.id === "logs")).toBe(true);
+  });
+
+  it("includes Logs tab when task is done and has a PR", () => {
+    const config = createMockWorkflowConfig();
+    const task = {
+      ...createMockWorkflowTaskView({ state: { type: "done" } }),
+      pr_url: "https://github.com/org/repo/pull/1",
+    };
+    const tabs = availableTabs(task, config);
+    expect(tabs.some((t) => t.id === "logs")).toBe(true);
+  });
+});
+
+describe("currentArtifact — terminal task fallback", () => {
+  it("returns artifact for active task via current_stage", () => {
+    const config = createMockWorkflowConfig();
+    const artifact = createMockArtifact("summary", "work done");
+    const task = {
+      ...createMockWorkflowTaskView({
+        state: { type: "awaiting_approval", stage: "work" },
+        derived: { current_stage: "work", needs_review: true },
+        artifacts: { summary: artifact },
+      }),
+    };
+    expect(currentArtifact(task, config)).toEqual(artifact);
+  });
+
+  it("returns artifact for done task via last iteration stage", () => {
+    const config = createMockWorkflowConfig();
+    const artifact = createMockArtifact("summary", "work done");
+    const iteration: WorkflowIteration = {
+      id: "iter-1",
+      task_id: "test-task-123",
+      stage: "work",
+      iteration_number: 1,
+      started_at: "2025-01-01T00:00:00Z",
+    };
+    const task = {
+      ...createMockWorkflowTaskView({
+        state: { type: "done" },
+        artifacts: { summary: artifact },
+      }),
+      iterations: [iteration],
+    };
+    expect(currentArtifact(task, config)).toEqual(artifact);
+  });
+
+  it("returns null for done task with no iterations", () => {
+    const config = createMockWorkflowConfig();
+    const task = createMockWorkflowTaskView({ state: { type: "done" } });
+    expect(currentArtifact(task, config)).toBeNull();
   });
 });

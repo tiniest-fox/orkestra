@@ -89,7 +89,7 @@ function resolveColors(task: WorkflowTaskView): {
     extraClass = "animate-spin-bounce";
     if (task.auto_mode) {
       return {
-        colors: { bg: "bg-purple-100", icon: "text-purple-500" },
+        colors: { bg: "bg-status-purple-bg", icon: "text-status-purple" },
         symbol: "ϟ",
         extraClass,
       };

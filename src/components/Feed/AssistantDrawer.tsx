@@ -3,9 +3,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
 import type { AssistantSession, LogEntry, WorkflowQuestion } from "../../types/workflow";
 import { parseAssistantQuestions, stripQuestionBlocks } from "../../utils/assistantQuestions";
+import { PROSE_CLASSES } from "../../utils/prose";
 import { relativeTime } from "../../utils/relativeTime";
 import { Drawer } from "../ui/Drawer/Drawer";
 import { QuestionCard } from "./QuestionCard";
@@ -67,7 +71,7 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
   const [sending, setSending] = useState(false);
   const [answers, setAnswers] = useState<string[]>([]);
 
-  const messageListRef = useRef<HTMLDivElement>(null);
+  const { containerRef: messageListRef, handleScroll } = useAutoScroll<HTMLDivElement>(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null;
@@ -82,10 +86,15 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
     setAnswers(questions.map(() => ""));
   }, [questions.length]);
 
-  // -- Fetch sessions on mount --
+  // -- Fetch sessions on mount and auto-select the most recent --
   useEffect(() => {
     invoke<AssistantSession[]>("assistant_list_sessions", {})
-      .then(setSessions)
+      .then((fetched) => {
+        setSessions(fetched);
+        if (fetched.length > 0) {
+          setActiveSessionId(fetched[0].id);
+        }
+      })
       .catch(console.error);
   }, []);
 
@@ -112,14 +121,6 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
   }, [activeSessionId]);
 
   usePolling(isAgentRunning ? fetchLogs : null, 1000);
-
-  // -- Auto-scroll to bottom on new messages --
-  // biome-ignore lint/correctness/useExhaustiveDependencies: logs is the intentional scroll trigger
-  useEffect(() => {
-    if (messageListRef.current) {
-      messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
-    }
-  }, [logs]);
 
   // -- Textarea auto-resize --
   // biome-ignore lint/correctness/useExhaustiveDependencies: inputValue is the intentional resize trigger
@@ -257,8 +258,12 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
         </div>
 
         {/* Message List */}
-        <div ref={messageListRef} className="flex-1 overflow-y-auto bg-canvas">
-          {displayMessages.length === 0 && (
+        <div
+          ref={messageListRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto bg-canvas"
+        >
+          {displayMessages.length === 0 && !isAgentRunning && (
             <div className="flex items-center justify-center h-full">
               <p className="font-mono text-[11px] text-text-quaternary">
                 Start a conversation with the assistant.
@@ -289,9 +294,17 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
                 >
                   {msg.kind === "user" ? "You" : "Assistant"}
                 </div>
-                <div className="font-sans text-[13px] text-text-secondary leading-relaxed whitespace-pre-wrap">
-                  {msg.kind === "agent" ? stripQuestionBlocks(msg.content) : msg.content}
-                </div>
+                {msg.kind === "agent" ? (
+                  <div className={`text-forge-body text-text-secondary ${PROSE_CLASSES}`}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {stripQuestionBlocks(msg.content)}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  <div className="font-sans text-[13px] text-text-secondary leading-relaxed whitespace-pre-wrap">
+                    {msg.content}
+                  </div>
+                )}
 
                 {/* Question cards on the last agent message */}
                 {isLastAgent && questions.length > 0 && (
@@ -329,6 +342,14 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
               </div>
             );
           })}
+
+          {/* Spinner shown while agent is working */}
+          {isAgentRunning && (
+            <div className="flex items-center gap-2 px-6 py-3.5 text-text-quaternary">
+              <span className="w-3.5 h-3.5 border-2 border-border border-t-transparent rounded-full animate-spin shrink-0" />
+              <span className="font-mono text-[11px]">Working…</span>
+            </div>
+          )}
         </div>
 
         {/* Compose Area */}
@@ -341,7 +362,7 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
             disabled={sending}
             placeholder={sending ? "Sending…" : "Ask the assistant…"}
             rows={1}
-            className="w-full font-mono text-[12px] bg-surface-2 border border-border rounded-md px-2.5 py-2 outline-none resize-none text-text-primary placeholder:text-text-quaternary focus:border-accent/40 transition-colors leading-relaxed disabled:opacity-50 min-h-[36px] max-h-[120px]"
+            className="w-full font-mono text-[12px] bg-surface-2 border border-border rounded-md px-2.5 py-2 outline-none resize-none overflow-hidden text-text-primary placeholder:text-text-quaternary focus:border-accent/40 transition-colors leading-relaxed disabled:opacity-50 min-h-[36px] max-h-[120px]"
           />
           <div className="flex items-center justify-between mt-2">
             <span className="font-mono text-[11px] text-accent select-none">&gt;_</span>

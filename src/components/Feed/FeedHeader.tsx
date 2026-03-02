@@ -62,24 +62,22 @@ export function FeedHeader({
       </div>
       <div className="flex items-center gap-2">
         <HotkeyScope active={hotkeyActive}>
-          <Button hotkey="n" variant="primary" size="sm" onClick={onNewTask}>
+          <Button hotkey="n" variant="primary" size="sm" onClick={onNewTask} onAccent>
             New task
           </Button>
+          <Button
+            hotkey="shift+a"
+            variant="secondary"
+            size="sm"
+            onClick={onAssistant}
+            onAccent={assistantActive}
+            className={
+              assistantActive ? "bg-accent/8 border-accent/35 text-accent hover:bg-accent/12" : ""
+            }
+          >
+            Assistant
+          </Button>
         </HotkeyScope>
-        <button
-          type="button"
-          onClick={onAssistant}
-          className={`font-sans text-[12px] font-medium px-2.5 py-1 rounded-md border transition-colors ${
-            assistantActive
-              ? "bg-accent/8 border-accent/35 text-accent"
-              : "bg-transparent border-border text-text-secondary hover:bg-surface-hover hover:border-text-quaternary"
-          }`}
-        >
-          Assistant
-          <kbd className="ml-1.5 font-mono text-[10px] font-medium bg-surface-3 rounded px-1 opacity-55">
-            ⇧A
-          </kbd>
-        </button>
         <kbd className="font-mono text-[10px] font-medium text-text-tertiary bg-canvas border border-border rounded px-1.5 py-0.5 select-none">
           cmd+k
         </kbd>

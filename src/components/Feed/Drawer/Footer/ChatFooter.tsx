@@ -51,7 +51,7 @@ export function ChatFooter({
         }}
         placeholder="Message the agent…"
         rows={2}
-        className="w-full font-sans text-[13px] text-text-primary placeholder:text-text-quaternary bg-[#F4F0F8] border border-border rounded px-3 py-2 resize-none focus:outline-none focus:border-text-tertiary transition-colors"
+        className="w-full font-sans text-[13px] text-text-primary placeholder:text-text-quaternary bg-surface-2 border border-border rounded px-3 py-2 resize-none focus:outline-none focus:border-text-tertiary transition-colors"
       />
       {chatError && <p className="text-xs text-status-error px-1">{chatError}</p>}
       <div className="flex gap-2 w-full">

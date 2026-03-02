@@ -31,7 +31,7 @@ export function ChatFooter({
   canApprove,
   chatError,
 }: ChatFooterProps) {
-  const sendDisabled = chatSending || !chatMessage.trim() || chatAgentActive;
+  const sendDisabled = chatSending || !chatMessage.trim();
 
   return (
     <FooterBar className="flex-col h-auto py-3 px-4 gap-2">
@@ -56,10 +56,10 @@ export function ChatFooter({
       {chatError && <p className="text-xs text-status-error px-1">{chatError}</p>}
       <div className="flex gap-2 w-full">
         <Button variant="primary" onClick={onSendChat} disabled={sendDisabled}>
-          {chatAgentActive ? (
-            "Agent responding…"
-          ) : chatSending ? (
+          {chatSending ? (
             "Sending…"
+          ) : chatAgentActive ? (
+            "Interrupt"
           ) : (
             <>
               Send <span className="font-mono text-[10px] font-medium opacity-60 ml-3">⌘↵</span>

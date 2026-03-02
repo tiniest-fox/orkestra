@@ -214,6 +214,20 @@ To derive the last active stage for terminal tasks, use:
 
 The polling guard in `useLogs.ts` relies on this: `activeLogStage === task.derived.current_stage` evaluates to `"stage-name" === null` → `false`, so terminal tasks are fetched once (via `useEffect`) and not polled.
 
+## Assistant Session Active State
+
+<!-- compound: modestly-saintly-mynah -->
+
+Use `agent_pid != null` to determine whether an assistant session is actively running. Do **not** use `session_state === "active" || "spawning"` — `session_state` is never updated to `"completed"` on the backend, so it reads stale forever and will keep the loading spinner indefinitely.
+
+```tsx
+// Correct
+const isAgentRunning = session?.agent_pid != null;
+
+// Wrong — session_state is never cleared
+const isAgentRunning = session?.session_state === "active" || session?.session_state === "spawning";
+```
+
 ## Task Status Predicates
 
 <!-- compound: dully-maximum-sunbeam -->

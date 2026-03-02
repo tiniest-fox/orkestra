@@ -75,13 +75,13 @@ pub fn execute(
     )?;
 
     // Resolve worktree path for the task
-    let worktree_path = resolve_worktree_path(&task.worktree_path, project_root, task_id);
+    let worktree_path = resolve_worktree_path(task.worktree_path.as_deref(), project_root, task_id);
 
     spawn_chat_agent(
         store,
         registry,
         workflow,
-        &task.flow,
+        task.flow.as_deref(),
         &mut session,
         &stage,
         &worktree_path,
@@ -99,22 +99,23 @@ pub fn execute(
 /// Uses `task.worktree_path` if set; falls back to the conventional path
 /// under the project root for tasks that haven't completed setup yet.
 fn resolve_worktree_path(
-    worktree_path: &Option<String>,
+    worktree_path: Option<&str>,
     project_root: &Path,
     task_id: &str,
 ) -> PathBuf {
-    worktree_path.as_deref().map_or_else(
+    worktree_path.map_or_else(
         || project_root.join(".orkestra/.worktrees").join(task_id),
         PathBuf::from,
     )
 }
 
 /// Kill any running chat agent, spawn a new one, and start reading its output in background.
+#[allow(clippy::too_many_arguments)]
 fn spawn_chat_agent(
     store: Arc<dyn WorkflowStore>,
     registry: &ProviderRegistry,
     workflow: &WorkflowConfig,
-    task_flow: &Option<String>,
+    task_flow: Option<&str>,
     session: &mut crate::workflow::domain::StageSession,
     stage: &str,
     worktree_path: &Path,
@@ -137,7 +138,7 @@ fn spawn_chat_agent(
     }
 
     // Resolve the provider for this stage
-    let model_spec = workflow.effective_model(stage, task_flow.as_deref());
+    let model_spec = workflow.effective_model(stage, task_flow);
     let resolved = registry
         .resolve(model_spec.as_deref())
         .map_err(|e| WorkflowError::Storage(format!("Provider resolution failed: {e}")))?;
@@ -202,6 +203,7 @@ fn spawn_chat_agent(
 ///
 /// Runs in a background thread. Reads stdout, parses each line, writes log entries,
 /// appends `ProcessExit` when done, and clears the PID on the session.
+#[allow(clippy::too_many_arguments)]
 fn read_chat_output(
     pid: u32,
     store: &Arc<dyn WorkflowStore>,

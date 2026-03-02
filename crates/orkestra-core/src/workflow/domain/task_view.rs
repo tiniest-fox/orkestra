@@ -344,9 +344,8 @@ fn extract_rejection_feedback(task: &Task, iterations: &[Iteration]) -> Option<S
 /// - `is_chatting` is true when the active session has `chat_active = true`
 /// - `chat_agent_active` is true when chatting and the agent process is running
 fn compute_chat_state(task: &Task, sessions: &[StageSession]) -> (bool, bool) {
-    let current_stage = match task.current_stage() {
-        Some(s) => s,
-        None => return (false, false),
+    let Some(current_stage) = task.current_stage() else {
+        return (false, false);
     };
 
     // Find the current (non-superseded) session for the active stage

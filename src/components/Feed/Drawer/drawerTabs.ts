@@ -131,7 +131,7 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
   }
   if (task.derived.needs_review) {
     return [
-      { id: "artifact", label: "Artifact", hotkey: "a" },
+      { id: "artifact", label: "Artifact" },
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "logs", label: "Logs", hotkey: "l" },
       { id: "history", label: "History", hotkey: "h" },

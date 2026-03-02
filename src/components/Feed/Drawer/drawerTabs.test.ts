@@ -36,6 +36,30 @@ function hasGateTab(tabs: ReturnType<typeof availableTabs>) {
   return tabs.some((t) => t.id === "gate");
 }
 
+describe("availableTabs — artifact tab hotkey", () => {
+  it("omits hotkey from artifact tab during review state to avoid conflict with Approve", () => {
+    const config = createMockWorkflowConfig();
+    const task = createMockWorkflowTaskView({
+      state: { type: "awaiting_approval", stage: "review" },
+      derived: { current_stage: "review", needs_review: true },
+    });
+    const artifactTab = availableTabs(task, config).find((t) => t.id === "artifact");
+    expect(artifactTab).toBeDefined();
+    expect(artifactTab?.hotkey).toBeUndefined();
+  });
+
+  it("includes hotkey 'a' on artifact tab in non-review state", () => {
+    const config = createMockWorkflowConfig();
+    const task = createMockWorkflowTaskView({
+      state: { type: "agent_working", stage: "work" },
+      derived: { current_stage: "work", needs_review: false },
+    });
+    const artifactTab = availableTabs(task, config).find((t) => t.id === "artifact");
+    expect(artifactTab).toBeDefined();
+    expect(artifactTab?.hotkey).toBe("a");
+  });
+});
+
 describe("availableTabs — gate tab visibility", () => {
   it("shows gate tab when task is on gate stage and has a gate result", () => {
     const config = configWithGate();

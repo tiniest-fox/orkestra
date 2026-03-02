@@ -276,6 +276,8 @@ pub enum ResumeMarkerType {
     Initial,
     /// User interrupted and resumed with optional guidance.
     ManualResume,
+    /// Agent returned to structured work after a chat session.
+    ReturnToWork,
 }
 
 impl ResumeMarkerType {
@@ -290,6 +292,7 @@ impl ResumeMarkerType {
             Self::RetryBlocked => "retry_blocked",
             Self::Initial => "initial",
             Self::ManualResume => "manual_resume",
+            Self::ReturnToWork => "return_to_work",
         }
     }
 }

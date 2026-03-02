@@ -32,6 +32,7 @@ pub fn execute(text: &str) -> Option<ResumeMarker> {
                 "retry_failed" => ResumeMarkerType::RetryFailed,
                 "retry_blocked" => ResumeMarkerType::RetryBlocked,
                 "manual_resume" => ResumeMarkerType::ManualResume,
+                "return_to_work" => ResumeMarkerType::ReturnToWork,
                 _ => return None,
             };
             Some(ResumeMarker {
@@ -100,6 +101,7 @@ mod tests {
         assert_eq!(ResumeMarkerType::RetryBlocked.as_str(), "retry_blocked");
         assert_eq!(ResumeMarkerType::Initial.as_str(), "initial");
         assert_eq!(ResumeMarkerType::ManualResume.as_str(), "manual_resume");
+        assert_eq!(ResumeMarkerType::ReturnToWork.as_str(), "return_to_work");
     }
 
     #[test]
@@ -140,5 +142,16 @@ mod tests {
         let marker = marker.unwrap();
         assert_eq!(marker.marker_type, ResumeMarkerType::ManualResume);
         assert!(marker.content.contains("Message from the user"));
+    }
+
+    #[test]
+    fn test_parse_resume_marker_return_to_work() {
+        let marker = execute(
+            "<!orkestra:resume:work:return_to_work>\n\n# Worker Agent\n\nReturn to work prompt",
+        );
+        assert!(marker.is_some());
+        let marker = marker.unwrap();
+        assert_eq!(marker.marker_type, ResumeMarkerType::ReturnToWork);
+        assert!(marker.content.contains("Return to work prompt"));
     }
 }

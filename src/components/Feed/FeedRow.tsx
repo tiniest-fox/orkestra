@@ -64,7 +64,7 @@ export function FeedRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onClick?.();
       }}
-      className={`grid grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_auto_minmax(0,1fr)] gap-4 ${paddingClass} py-2 min-h-[40px] items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out ${isFocused ? "bg-accent-soft border-l-accent" : "border-l-transparent hover:bg-canvas"}${faded && !isFocused ? " opacity-50" : ""}`}
+      className={`grid grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_80px_minmax(0,1fr)] gap-4 ${paddingClass} py-2 min-h-[40px] items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out ${isFocused ? "bg-accent-soft border-l-accent" : "border-l-transparent hover:bg-canvas"}${faded && !isFocused ? " opacity-50" : ""}`}
     >
       {isSubtask ? (
         <>

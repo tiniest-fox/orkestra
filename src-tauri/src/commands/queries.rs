@@ -458,6 +458,7 @@ async fn run_gh(args: &[&str]) -> Result<String, TauriError> {
 /// # Errors
 /// Returns error if `gh` CLI is not installed or the PR URL is invalid.
 #[tauri::command]
+#[allow(clippy::too_many_lines)]
 pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
     // Parse URL upfront so we fail fast instead of silently returning empty comments.
     let (owner, repo, number) = parse_pr_url(&pr_url).ok_or_else(|| {

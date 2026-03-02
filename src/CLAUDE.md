@@ -202,6 +202,32 @@ Gate output is **not** stored as log entries. Gates store their output in `itera
 - **Detect gate running**: check `task.state.type === "gate_running"` (already present on `WorkflowTaskView`)
 - **Reference pattern**: `DrawerGateTab.tsx` shows how to find the relevant gate iteration and render its output lines
 
+## Terminal Task State: current_stage is Null
+
+<!-- compound: obligingly-dear-porgy -->
+
+For terminal `TaskState` variants (`done`, `failed`, `blocked`, `archived`), `task.derived.current_stage` is intentionally `null` (set in `status.rs`). **Never assume `current_stage` is non-null when writing frontend code for logs, artifacts, or any stage-dependent UI.**
+
+To derive the last active stage for terminal tasks, use:
+- `task.derived.stages_with_logs[last].stage` — ordered chronologically by session creation; last entry = most recently active stage
+- `task.iterations[last].stage` — last iteration's stage field
+
+The polling guard in `useLogs.ts` relies on this: `activeLogStage === task.derived.current_stage` evaluates to `"stage-name" === null` → `false`, so terminal tasks are fetched once (via `useEffect`) and not polled.
+
+## Assistant Session Active State
+
+<!-- compound: modestly-saintly-mynah -->
+
+Use `agent_pid != null` to determine whether an assistant session is actively running. Do **not** use `session_state === "active" || "spawning"` — `session_state` is never updated to `"completed"` on the backend, so it reads stale forever and will keep the loading spinner indefinitely.
+
+```tsx
+// Correct
+const isAgentRunning = session?.agent_pid != null;
+
+// Wrong — session_state is never cleared
+const isAgentRunning = session?.session_state === "active" || session?.session_state === "spawning";
+```
+
 ## Task Status Predicates
 
 <!-- compound: dully-maximum-sunbeam -->

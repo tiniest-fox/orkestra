@@ -51,7 +51,13 @@ export function currentArtifact(
   task: WorkflowTaskView,
   config: WorkflowConfig,
 ): WorkflowArtifact | null {
-  const stageEntry = config.stages.find((s) => s.name === task.derived.current_stage);
+  // For active tasks, resolve the artifact from the current stage.
+  // For terminal tasks (done, failed, blocked), current_stage is null — fall back
+  // to the last iteration's stage so the artifact remains visible.
+  const stageName =
+    task.derived.current_stage ??
+    (task.iterations.length > 0 ? task.iterations[task.iterations.length - 1].stage : null);
+  const stageEntry = config.stages.find((s) => s.name === stageName);
   if (!stageEntry) return null;
   return task.artifacts[artifactName(stageEntry.artifact)] ?? null;
 }
@@ -118,6 +124,7 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
         { id: "pr", label: "PR", hotkey: "p" },
         { id: "diff", label: "Diff", hotkey: "d" },
         { id: "artifact", label: "Artifact", hotkey: "a" },
+        { id: "logs", label: "Logs", hotkey: "l" },
         { id: "history", label: "History", hotkey: "h" },
         ...(showGateTab ? [gateTab] : []),
       ];
@@ -125,6 +132,7 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
     return [
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "artifact", label: "Artifact", hotkey: "a" },
+      { id: "logs", label: "Logs", hotkey: "l" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
     ];

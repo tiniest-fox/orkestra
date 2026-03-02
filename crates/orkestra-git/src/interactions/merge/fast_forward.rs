@@ -8,7 +8,10 @@ use crate::types::{GitError, MergeResult};
 /// Merge a branch into the target branch using fast-forward only.
 ///
 /// Operates in the given working directory. Stashes uncommitted changes,
-/// performs the merge, then restores the stash.
+/// performs the merge, then restores the stash. Stash pop failure is
+/// non-fatal: the merge result is returned successfully and the caller is
+/// responsible for informing the user that `git stash pop` may need to be
+/// run manually.
 pub fn execute(
     repo_path: &Path,
     worktrees_dir: &Path,
@@ -24,9 +27,29 @@ pub fn execute(
 
     let merge_result = fast_forward_merge(&working_dir, branch_name, target_branch);
 
-    crate::interactions::stash::pop::execute(&working_dir, was_stashed)?;
+    // Always attempt to pop the stash for cleanup, but treat failure as
+    // non-fatal: if the merge itself succeeded the integration is complete.
+    // Failure here most often means the stashed changes conflict with the
+    // newly merged state; the stash entry remains and can be restored with
+    // `git stash pop` in the working directory.
+    let pop_result = crate::interactions::stash::pop::execute(&working_dir, was_stashed);
 
-    merge_result
+    match merge_result {
+        Ok(result) => {
+            if let Err(e) = pop_result {
+                eprintln!(
+                    "[orkestra-git] Warning: stash pop failed after successful merge in {} — \
+                     run `git stash pop` manually to restore uncommitted changes. Error: {e}",
+                    working_dir.display()
+                );
+            }
+            Ok(result)
+        }
+        Err(merge_err) => {
+            // Merge failed; stash pop was best-effort cleanup, ignore its result.
+            Err(merge_err)
+        }
+    }
 }
 
 /// Perform fast-forward merge in a specific working directory.

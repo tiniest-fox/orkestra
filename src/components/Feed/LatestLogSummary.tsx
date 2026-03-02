@@ -71,6 +71,8 @@ function entrySummary(entry: LogEntry): string | null {
   switch (entry.type) {
     case "tool_use":
       return `${entry.tool} ${toolSummary(entry.input)}`.trimEnd();
+    case "subagent_tool_use":
+      return `↳ ${entry.tool} ${toolSummary(entry.input)}`.trimEnd();
     case "text": {
       const trimmed = entry.content.trim();
       return trimmed ? trimmed.slice(0, 100) : null;

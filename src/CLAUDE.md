@@ -277,6 +277,23 @@ useEffect(() => {
 useNavHandler({ onNext: selectNext, onPrev: selectPrev });
 ```
 
+### antml-Namespaced Tag Literals in Test Strings
+
+<!-- compound: hungrily-avid-turkey -->
+
+When writing test strings that contain Claude's `<...>` XML tags (e.g., `<parameter>`, `<function_calls>`), construct the closing tags via string concatenation to avoid the literal string being treated as a real XML element:
+
+```ts
+// Avoid — the literal closing tag is stripped by XML-aware tools
+const input = "content inside param tags";
+
+// Prefer — construct closing tags via concatenation
+const CLOSE_PARAM = "</" + "antml:parameter>";
+const input = `<parameter>content${CLOSE_PARAM}`;
+```
+
+This matters when testing regexes that strip Claude's structured output blocks from text (e.g., `stripParameterBlocks`). The same applies to `<function_calls>` and similar antml-namespaced tags.
+
 ### Pure Utility Module Tests
 
 <!-- compound: enormously-solid-whippet -->

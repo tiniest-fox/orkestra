@@ -28,7 +28,9 @@ export function LatestLogSummary({ task }: LatestLogSummaryProps) {
       const result = await invoke<LogEntry | null>("workflow_get_latest_log", {
         taskId: task.id,
       });
-      setEntry(result);
+      if (result === null || entrySummary(result) !== null) {
+        setEntry(result);
+      }
     } catch {
       // Silently ignore — the feed row doesn't need to show an error state
     }

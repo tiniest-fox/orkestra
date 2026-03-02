@@ -249,6 +249,30 @@ Using `isActivelyProgressing` alone in contexts that previously handled `integra
 - Workflow domain types live in `types/workflow.ts`.
 - Don't duplicate backend types — the Tauri bindings generate TypeScript types from Rust.
 
+## TanStack Virtual Patterns
+
+<!-- compound: dourly-topical-pratincole -->
+
+**Sticky file headers inside a virtualizer**: Standard `position:sticky` doesn't work for items inside a virtualizer — each header sticks independently, causing all headers to float over each other. The correct pattern:
+
+1. Place a **single sticky overlay element before the virtualizer container** (`position:sticky; top:0; z-index`) in the DOM
+2. Track the topmost visible item by inspecting `virtualItems` on each scroll
+3. Render that item's header in the overlay — not inside the virtualizer list
+
+**`firstVisible` predicate — direction matters**: To find the topmost visible file, iterate in *reverse* and find the last item whose top is at or above `scrollTop`:
+
+```ts
+const firstVisible = [...virtualItems]
+  .reverse()
+  .find(item => item.start <= scrollElement.scrollTop);
+```
+
+**Never use `find(item => item.start >= scrollTop)`** — that finds the first item *below* the viewport, skipping the file the user is currently reading. The inversion is subtle and easy to get backwards.
+
+Note: `Array.prototype.findLast` is ES2023 — use `[...arr].reverse().find()` for ES2020 targets.
+
+**`virtualItems` sort order**: TanStack Virtual guarantees `virtualItems` is sorted ascending by `start`. The reverse-find pattern relies on this guarantee — a `reduce`-based approach would make the intent explicit if the sort assumption ever feels fragile.
+
 ## Testing
 
 - Tests use Vitest + React Testing Library.
@@ -276,6 +300,23 @@ useEffect(() => {
 // Prefer — respects HotkeyScope isolation
 useNavHandler({ onNext: selectNext, onPrev: selectPrev });
 ```
+
+### antml-Namespaced Tag Literals in Test Strings
+
+<!-- compound: hungrily-avid-turkey -->
+
+When writing test strings that contain Claude's `<...>` XML tags (e.g., `<parameter>`, `<function_calls>`), construct the closing tags via string concatenation to avoid the literal string being treated as a real XML element:
+
+```ts
+// Avoid — the literal closing tag is stripped by XML-aware tools
+const input = "content inside param tags";
+
+// Prefer — construct closing tags via concatenation
+const CLOSE_PARAM = "</" + "antml:parameter>";
+const input = `<parameter>content${CLOSE_PARAM}`;
+```
+
+This matters when testing regexes that strip Claude's structured output blocks from text (e.g., `stripParameterBlocks`). The same applies to `<function_calls>` and similar antml-namespaced tags.
 
 ### Pure Utility Module Tests
 

@@ -6,8 +6,12 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "rea
 import type { HighlightedFileDiff } from "../../hooks/useDiff";
 import type { PrComment } from "../../types/workflow";
 import { EmptyState } from "../ui/EmptyState";
+import { FileHeaderContent } from "./FileHeaderContent";
 import { FileSection } from "./FileSection";
 import type { DraftComment } from "./types";
+import { FILE_HEADER_BUTTON_BASE } from "./types";
+
+const HEADER_HEIGHT = 36;
 
 export interface DiffContentHandle {
   scrollToFile(path: string): void;
@@ -44,7 +48,6 @@ interface DiffContentProps {
 }
 
 function estimateFileHeight(file: HighlightedFileDiff, collapsed: Set<string>): number {
-  const HEADER_HEIGHT = 36;
   const HUNK_HEADER_HEIGHT = 28;
   const LINE_HEIGHT = 20;
 
@@ -122,13 +125,17 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
 
   // Track the topmost visible file as the active path.
   // Suppressed during programmatic scrolls to prevent sidebar flickering.
+  // virtualItems[0] may be an overscan item above the viewport, so filter
+  // to items whose start position is at or below the current scroll offset.
   useEffect(() => {
     if (isScrollingRef.current) return;
     if (virtualItems.length === 0) return;
-    const firstVisible = virtualItems[0];
+    const scrollTop = scrollElement?.scrollTop ?? 0;
+    const firstVisible =
+      [...virtualItems].reverse().find((item) => item.start <= scrollTop) ?? virtualItems[0];
     const activePth = files[firstVisible.index]?.path ?? null;
     onActivePathChange(activePth);
-  }, [virtualItems, files, onActivePathChange]);
+  }, [virtualItems, files, scrollElement, onActivePathChange]);
 
   useImperativeHandle(
     ref,
@@ -147,6 +154,8 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
     [files, virtualizer],
   );
 
+  const activeFile = files.find((f) => f.path === activePath) ?? null;
+
   if (files.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -156,45 +165,63 @@ export const DiffContent = forwardRef<DiffContentHandle, DiffContentProps>(funct
   }
 
   return (
-    <div style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
-      {virtualItems.map((virtualItem) => {
-        const file = files[virtualItem.index];
-        return (
-          <div
-            key={file.path}
-            ref={virtualizer.measureElement}
-            data-index={virtualItem.index}
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              transform: `translateY(${virtualItem.start}px)`,
-            }}
-            className="border-b border-border"
-          >
-            <FileSection
-              file={file}
-              commentsByLine={commentsByFile.get(file.path) ?? new Map()}
-              draftsByLine={draftsByFile.get(file.path) ?? new Map()}
-              isActive={file.path === activePath}
-              isCollapsed={collapsedPaths.has(file.path)}
-              onToggleCollapsed={() => onToggleCollapsed(file.path)}
-              activeCommentLine={
-                activeCommentLine?.filePath === file.path ? activeCommentLine : null
-              }
-              onLineClick={onLineClick ? (ln, lt) => onLineClick(file.path, ln, lt) : undefined}
-              onSaveDraft={
-                onSaveDraft ? (ln, lt, body) => onSaveDraft(file.path, ln, lt, body) : undefined
-              }
-              onCancelDraft={onCancelDraft}
-              onDeleteDraft={onDeleteDraft}
-              draftBody={draftBody}
-              onDraftBodyChange={onDraftBodyChange}
-            />
-          </div>
-        );
-      })}
-    </div>
+    <>
+      {activeFile && (
+        <button
+          type="button"
+          onClick={() => onToggleCollapsed(activeFile.path)}
+          className={`sticky top-0 z-20 ${FILE_HEADER_BUTTON_BASE}`}
+        >
+          <FileHeaderContent
+            path={activeFile.path}
+            oldPath={activeFile.old_path}
+            isCollapsed={collapsedPaths.has(activeFile.path)}
+            showKbd
+          />
+        </button>
+      )}
+      <div
+        style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}
+      >
+        {virtualItems.map((virtualItem) => {
+          const file = files[virtualItem.index];
+          return (
+            <div
+              key={file.path}
+              ref={virtualizer.measureElement}
+              data-index={virtualItem.index}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+              className="border-b border-border"
+            >
+              <FileSection
+                file={file}
+                commentsByLine={commentsByFile.get(file.path) ?? new Map()}
+                draftsByLine={draftsByFile.get(file.path) ?? new Map()}
+                isActive={file.path === activePath}
+                isCollapsed={collapsedPaths.has(file.path)}
+                onToggleCollapsed={() => onToggleCollapsed(file.path)}
+                activeCommentLine={
+                  activeCommentLine?.filePath === file.path ? activeCommentLine : null
+                }
+                onLineClick={onLineClick ? (ln, lt) => onLineClick(file.path, ln, lt) : undefined}
+                onSaveDraft={
+                  onSaveDraft ? (ln, lt, body) => onSaveDraft(file.path, ln, lt, body) : undefined
+                }
+                onCancelDraft={onCancelDraft}
+                onDeleteDraft={onDeleteDraft}
+                draftBody={draftBody}
+                onDraftBodyChange={onDraftBodyChange}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 });

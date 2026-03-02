@@ -98,8 +98,11 @@ export function DrawerHeader({
     <div className="shrink-0 px-6 pt-4 pb-3 border-b border-border">
       {/* Row 1: Title + external tool links + close */}
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1 font-sans text-[14px] font-semibold tracking-[-0.01em] text-text-primary leading-snug truncate">
-          {task.title || task.description}
+        <div className="min-w-0 flex-1">
+          <div className="font-sans text-[14px] font-semibold tracking-[-0.01em] text-text-primary leading-snug truncate">
+            {task.title || task.description}
+          </div>
+          <div className="text-[12px] font-mono text-text-quaternary mt-0.5">{task.id}</div>
         </div>
         {task.worktree_path && (
           <div className="shrink-0 flex items-center gap-2 mt-0.5">

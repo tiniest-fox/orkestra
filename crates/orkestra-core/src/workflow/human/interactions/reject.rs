@@ -78,15 +78,14 @@ pub fn execute(
     task.state = TaskState::queued(&current_stage);
     task.updated_at.clone_from(&now);
 
-    // Create new iteration in same stage with rejection context.
-    // Using Rejection (not Feedback) so the spawner supersedes the session,
-    // starting fresh rather than resuming. Human rejection means "this output
-    // is not acceptable — redo it", which warrants a clean slate.
+    // Create new iteration in same stage with feedback context.
+    // Using Feedback (not Rejection) so the agent resumes in its existing
+    // session with the feedback. Human rejection means "address this feedback" —
+    // the agent keeps its context and conversation history.
     iteration_service.create_iteration(
         &task.id,
         &current_stage,
-        Some(IterationTrigger::Rejection {
-            from_stage: current_stage.clone(),
+        Some(IterationTrigger::Feedback {
             feedback: feedback.to_string(),
         }),
     )?;

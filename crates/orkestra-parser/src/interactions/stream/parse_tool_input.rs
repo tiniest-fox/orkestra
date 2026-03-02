@@ -31,7 +31,7 @@ pub fn execute(tool_name: &str, input: &serde_json::Value) -> ToolInput {
         "grep" => ToolInput::Grep {
             pattern: get_str_field(input, "pattern"),
         },
-        "task" => ToolInput::Task {
+        "agent" => ToolInput::Agent {
             description: get_str_field(input, "description"),
         },
         "todowrite" => ToolInput::TodoWrite {
@@ -352,6 +352,16 @@ mod tests {
                 "{tool_name} should parse to WebFetch"
             );
         }
+    }
+
+    #[test]
+    fn test_parse_tool_input_agent() {
+        let input = serde_json::json!({"description": "spawn subagent"});
+        let result = execute("Agent", &input);
+        assert!(
+            matches!(result, ToolInput::Agent { ref description } if description == "spawn subagent"),
+            "Expected Agent variant with description"
+        );
     }
 
     #[test]

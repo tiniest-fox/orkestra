@@ -17,11 +17,11 @@ use crate::types::ParsedUpdate;
 ///
 /// Stream parsing state:
 /// - `tool_use_map`: maps `tool_use_id` → `tool_name` for result correlation
-/// - `task_tool_ids`: tracks Task tool invocations for subagent detection
-/// - `task_agent_map`: maps Task `tool_use_id` → agentId
+/// - `agent_tool_ids`: tracks Agent tool invocations for subagent detection
+/// - `task_agent_map`: maps Agent `tool_use_id` → agentId
 pub struct ClaudeParserService {
     tool_use_map: HashMap<String, String>,
-    task_tool_ids: HashSet<String>,
+    agent_tool_ids: HashSet<String>,
     task_agent_map: HashMap<String, String>,
 }
 
@@ -35,17 +35,21 @@ impl ClaudeParserService {
     pub fn new() -> Self {
         Self {
             tool_use_map: HashMap::new(),
-            task_tool_ids: HashSet::new(),
+            agent_tool_ids: HashSet::new(),
             task_agent_map: HashMap::new(),
         }
     }
 
     fn is_subagent_event(&self, parent_id: Option<&String>) -> bool {
-        parent_id.is_some_and(|id| self.task_tool_ids.contains(id))
+        parent_id.is_some_and(|id| self.agent_tool_ids.contains(id))
     }
 
-    /// Track Task tool completion for subagent association.
-    fn track_task_agent(&mut self, tool_use_result: &serde_json::Value, entry: &serde_json::Value) {
+    /// Track Agent tool completion for subagent association.
+    fn track_agent_completion(
+        &mut self,
+        tool_use_result: &serde_json::Value,
+        entry: &serde_json::Value,
+    ) {
         let Some(agent_id) = tool_use_result.get("agentId").and_then(|a| a.as_str()) else {
             return;
         };
@@ -89,9 +93,9 @@ impl ClaudeParserService {
             .map(String::from);
         let is_subagent = self.is_subagent_event(parent_id.as_ref());
 
-        // Track Task tool completions for subagent association
+        // Track Agent tool completions for subagent association
         if let Some(tool_use_result) = v.get("toolUseResult") {
-            self.track_task_agent(tool_use_result, &v);
+            self.track_agent_completion(tool_use_result, &v);
         }
 
         if msg_type == "assistant" {
@@ -105,7 +109,7 @@ impl ClaudeParserService {
                     is_subagent,
                     parent_id.as_deref(),
                     &mut self.tool_use_map,
-                    &mut self.task_tool_ids,
+                    &mut self.agent_tool_ids,
                 );
             }
         } else if msg_type == "user" {
@@ -307,17 +311,17 @@ mod tests {
     }
 
     #[test]
-    fn parses_tool_result_for_task() {
+    fn parses_tool_result_for_agent() {
         let mut parser = ClaudeParserService::new();
 
         let tool_line = assistant_tool_use(
-            "Task",
+            "Agent",
             "tu_task_1",
             &serde_json::json!({"description": "do something"}),
         );
         parser.parse_line(&tool_line);
 
-        let result_line = user_tool_result("tu_task_1", "Task completed successfully");
+        let result_line = user_tool_result("tu_task_1", "Agent completed successfully");
         let update = parser.parse_line(&result_line);
         assert_eq!(update.log_entries.len(), 1);
         match &update.log_entries[0] {
@@ -326,16 +330,16 @@ mod tests {
                 tool_use_id,
                 content,
             } => {
-                assert_eq!(tool, "Task");
+                assert_eq!(tool, "Agent");
                 assert_eq!(tool_use_id, "tu_task_1");
-                assert_eq!(content, "Task completed successfully");
+                assert_eq!(content, "Agent completed successfully");
             }
             other => panic!("Expected ToolResult, got {other:?}"),
         }
     }
 
     #[test]
-    fn skips_non_task_tool_results() {
+    fn skips_non_agent_tool_results() {
         let mut parser = ClaudeParserService::new();
 
         let tool_line = assistant_tool_use(
@@ -354,12 +358,12 @@ mod tests {
     fn detects_subagent_events() {
         let mut parser = ClaudeParserService::new();
 
-        let task_line = assistant_tool_use(
-            "Task",
+        let agent_line = assistant_tool_use(
+            "Agent",
             "tu_task_1",
             &serde_json::json!({"description": "do work"}),
         );
-        parser.parse_line(&task_line);
+        parser.parse_line(&agent_line);
 
         let subagent_line = subagent_tool_use(
             "Edit",
@@ -394,12 +398,12 @@ mod tests {
     fn subagent_text_is_skipped() {
         let mut parser = ClaudeParserService::new();
 
-        let task_line = assistant_tool_use(
-            "Task",
+        let agent_line = assistant_tool_use(
+            "Agent",
             "tu_task_1",
             &serde_json::json!({"description": "do work"}),
         );
-        parser.parse_line(&task_line);
+        parser.parse_line(&agent_line);
 
         let subagent_text = serde_json::json!({
             "type": "assistant",
@@ -416,15 +420,15 @@ mod tests {
     }
 
     #[test]
-    fn tracks_task_agent_mapping() {
+    fn tracks_agent_subagent_mapping() {
         let mut parser = ClaudeParserService::new();
 
-        let task_line = assistant_tool_use(
-            "Task",
+        let agent_line = assistant_tool_use(
+            "Agent",
             "tu_task_1",
             &serde_json::json!({"description": "do work"}),
         );
-        parser.parse_line(&task_line);
+        parser.parse_line(&agent_line);
 
         let result_event = serde_json::json!({
             "type": "user",

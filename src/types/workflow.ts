@@ -572,7 +572,7 @@ export type ToolInput =
   | { tool: "edit"; file_path: string }
   | { tool: "glob"; pattern: string }
   | { tool: "grep"; pattern: string }
-  | { tool: "task"; description: string }
+  | { tool: "agent"; description: string }
   | { tool: "todo_write"; todos: TodoItem[] }
   | { tool: "ork"; ork_action: OrkAction }
   | { tool: "structured_output"; output_type: string }

@@ -37,7 +37,7 @@ export function RejectFooter({
           }
         }}
         placeholder="What needs to change?"
-        className="flex-1 font-sans text-[12px] text-text-primary placeholder:text-text-quaternary bg-[#F4F0F8] border border-border rounded-md px-3 py-1.5 outline-none focus:border-text-quaternary transition-colors"
+        className="flex-1 font-sans text-[12px] text-text-primary placeholder:text-text-quaternary bg-surface-2 border border-border rounded-md px-3 py-1.5 outline-none focus:border-text-quaternary transition-colors"
       />
       <Button
         variant={reviewVariant === "violet" ? "violet" : "teal"}

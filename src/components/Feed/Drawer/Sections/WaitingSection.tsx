@@ -61,7 +61,7 @@ export function WaitingSection({
                 {blockingDeps.map((dep, i) => (
                   <span key={dep.id} className="flex items-center gap-1">
                     {i > 0 && <span className="font-mono text-[10px] text-text-quaternary">·</span>}
-                    <span className="font-mono text-[10px] text-text-tertiary bg-[#F4F0F8] px-1.5 py-0.5 rounded">
+                    <span className="font-mono text-[10px] text-text-tertiary bg-surface-2 px-1.5 py-0.5 rounded">
                       {dep.short_id ?? dep.id.split("-").pop()}
                     </span>
                   </span>
@@ -81,6 +81,7 @@ export function WaitingSection({
               task={task}
               config={config}
               isFocused={focusedId === task.id}
+              waiting
               onMouseEnter={() => onFocusRow(task.id)}
               onReview={() => onAction(task.id)}
               onAnswer={() => onAction(task.id)}

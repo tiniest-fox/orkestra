@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import type { WorkflowTaskView } from "../../types/workflow";
+import { isActivelyProgressing } from "../../utils/taskStatus";
 import { Button } from "../ui/Button";
 import { HotkeyScope } from "../ui/HotkeyScope";
 
@@ -28,7 +29,7 @@ export function FeedHeader({
 }: FeedHeaderProps) {
   const metrics = useMemo<Metric[]>(() => {
     const topLevel = tasks.filter((t) => !t.parent_id);
-    const working = topLevel.filter((t) => t.derived.is_working).length;
+    const working = topLevel.filter((t) => isActivelyProgressing(t)).length;
     const review = topLevel.filter((t) => t.derived.needs_review).length;
     const questions = topLevel.filter((t) => t.derived.has_questions).length;
     const integrating = topLevel.filter((t) => t.state.type === "integrating").length;
@@ -75,7 +76,7 @@ export function FeedHeader({
           }`}
         >
           Assistant
-          <kbd className="ml-1.5 font-mono text-[10px] font-medium bg-black/[0.06] rounded px-1 opacity-55">
+          <kbd className="ml-1.5 font-mono text-[10px] font-medium bg-surface-3 rounded px-1 opacity-55">
             ⇧A
           </kbd>
         </button>

@@ -16,7 +16,7 @@ export function Link({ children, external, className = "", ...props }: LinkProps
 
   return (
     <a
-      className={`text-purple-600 hover:text-purple-700 underline underline-offset-2 decoration-purple-300 hover:decoration-purple-500 transition-colors ${className}`}
+      className={`text-violet hover:text-violet-hover underline underline-offset-2 decoration-violet/40 hover:decoration-violet/70 transition-colors ${className}`}
       {...externalProps}
       {...props}
     >

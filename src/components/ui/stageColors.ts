@@ -26,31 +26,31 @@ export const STAGE_PALETTE: StageColorSet[] = [
   },
   {
     dot: "bg-accent",
-    badge: "bg-amber-100 text-amber-700",
+    badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
   },
   {
-    dot: "bg-purple-400",
-    badge: "bg-violet-100 text-violet-600",
+    dot: "bg-purple-400 dark:bg-purple-500",
+    badge: "bg-violet-100 text-violet-600 dark:bg-violet-900/40 dark:text-violet-400",
   },
   {
-    dot: "bg-purple-500",
-    badge: "bg-purple-100 text-purple-700",
+    dot: "bg-purple-500 dark:bg-purple-600",
+    badge: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400",
   },
   {
-    dot: "bg-purple-600",
-    badge: "bg-purple-100 text-purple-700",
+    dot: "bg-purple-600 dark:bg-purple-700",
+    badge: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400",
   },
   {
-    dot: "bg-purple-700",
-    badge: "bg-purple-100 text-purple-800",
+    dot: "bg-purple-700 dark:bg-purple-800",
+    badge: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300",
   },
   {
-    dot: "bg-purple-800",
-    badge: "bg-purple-100 text-purple-900",
+    dot: "bg-purple-800 dark:bg-purple-900",
+    badge: "bg-purple-100 text-purple-900 dark:bg-purple-900/40 dark:text-purple-200",
   },
   {
-    dot: "bg-stone-500",
-    badge: "bg-stone-100 text-stone-600",
+    dot: "bg-stone-500 dark:bg-stone-600",
+    badge: "bg-stone-100 text-stone-600 dark:bg-stone-800 dark:text-stone-300",
   },
 ];
 

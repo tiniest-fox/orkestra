@@ -1,9 +1,10 @@
 [package]
 name = "orkestra"
 version = "0.1.0"
-description = "Orchestrate multiple Claude Code instances"
-authors = ["you"]
-edition = "2021"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Tauri desktop application for Orkestra"
 
 [lints]
 workspace = true

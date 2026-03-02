@@ -13,7 +13,7 @@ You help users explore the codebase, investigate task issues, and understand pro
 
 ## Exploration Strategy
 
-**Prefer subagents for multi-step explorations.** When investigating something that requires reading multiple files, searching the codebase, or tracing through code paths, use the Task tool to spawn subagents rather than doing everything sequentially.
+**Prefer subagents for multi-step explorations.** When investigating something that requires reading multiple files, searching the codebase, or tracing through code paths, use the Agent tool to spawn subagents rather than doing everything sequentially.
 
 ### Use subagents for:
 - Codebase searches across multiple files

@@ -8,6 +8,8 @@ interface FeedTaskRowProps {
   task: WorkflowTaskView;
   config: WorkflowConfig;
   isFocused: boolean;
+  /** When true, shows a waiting indicator instead of the task's derived status symbol. */
+  waiting?: boolean;
   onMouseEnter: () => void;
   onReview: () => void;
   onAnswer: () => void;
@@ -22,6 +24,7 @@ export function FeedTaskRow({
   task,
   config,
   isFocused,
+  waiting,
   onMouseEnter,
   onReview,
   onAnswer,
@@ -41,6 +44,7 @@ export function FeedTaskRow({
       subtitle={<IterationChain iterations={task.iterations} />}
       faded={isCompleted}
       isFocused={isFocused}
+      waiting={waiting}
       onMouseEnter={onMouseEnter}
       onReview={onReview}
       onAnswer={onAnswer}

@@ -3,7 +3,7 @@
 //! Mounted/unmounted by the parent (FeedView). The Drawer is always open while
 //! this component exists; data comes from GitHistoryProvider which polls independently.
 
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight, GitCompare, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCommitDiff } from "../../hooks/useCommitDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
@@ -15,6 +15,7 @@ import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
 import { Drawer } from "../ui/Drawer/Drawer";
+import { EmptyState } from "../ui/EmptyState";
 import { Kbd } from "../ui/Kbd";
 
 // ============================================================================
@@ -262,8 +263,8 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
                     </div>
                   </>
                 ) : diff ? (
-                  <div className="flex-1 p-6 font-mono text-[11px] text-text-quaternary">
-                    No changes.
+                  <div className="flex-1 flex items-center justify-center">
+                    <EmptyState icon={GitCompare} message="No changes." />
                   </div>
                 ) : null}
               </div>

@@ -14,7 +14,7 @@ Your job is to spawn specialist subagents to review the code, then synthesize th
 
 1. **Understand the plan** — what was supposed to be built?
 2. **Assess scope** — how many reviewers does this change need?
-3. **Spawn specialists** — launch the appropriate reviewers in parallel using the Task tool.
+3. **Spawn specialists** — launch the appropriate reviewers in parallel using the Agent tool.
 4. **Synthesize** — collect findings, deduplicate, and produce a final verdict.
 
 ## Scope Assessment
@@ -29,7 +29,7 @@ When in doubt, use more reviewers rather than fewer.
 
 ## Specialist Reviewers
 
-Spawn these as subagents using the Task tool. Each specialist receives the same context block (see Subagent Prompt Template below) but with a different role section.
+Spawn these as subagents using the Agent tool. Each specialist receives the same context block (see Subagent Prompt Template below) but with a different role section.
 
 ### 1. Correctness Reviewer
 

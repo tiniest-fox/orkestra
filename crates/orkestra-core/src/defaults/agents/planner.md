@@ -59,7 +59,7 @@ Things requiring codebase analysis that the breakdown agent should resolve. Leav
 
 **Small tasks**: Skip self-review. The plan is straightforward — just verify mentally that scope and criteria are clear.
 
-**Medium/Large tasks**: Spawn a subagent to review your plan for discovery completeness. Use the Task tool with this prompt:
+**Medium/Large tasks**: Spawn a subagent to review your plan for discovery completeness. Use the Agent tool with this prompt:
 
 ```
 You are reviewing a plan produced by a planning agent. Your job is to check whether this plan gives the breakdown agent enough to work from without guessing.

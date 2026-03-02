@@ -8,7 +8,7 @@ use crate::interactions::stream::extract_tool_result_content;
 
 /// Parse `tool_result` items from a user message content array into log entries.
 ///
-/// Only captures results for the `Task` tool (via `tool_use_map` lookup).
+/// Only captures results for the `Agent` tool (via `tool_use_map` lookup).
 /// Subagent results are tagged with their parent task ID.
 #[allow(clippy::implicit_hasher)]
 pub fn execute(
@@ -62,7 +62,7 @@ fn parse_single_result(
             content: content_str,
             parent_task_id: parent_id.unwrap_or_default().to_string(),
         })
-    } else if tool_name == "Task" {
+    } else if tool_name == "Agent" {
         Some(LogEntry::ToolResult {
             tool: tool_name,
             tool_use_id,

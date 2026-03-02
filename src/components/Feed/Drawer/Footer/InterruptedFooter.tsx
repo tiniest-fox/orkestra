@@ -39,7 +39,7 @@ export function InterruptedFooter({
         }}
         placeholder="Optional guidance for the agent…"
         rows={2}
-        className="w-full font-sans text-[13px] text-text-primary placeholder:text-text-quaternary bg-[#F4F0F8] border border-border rounded px-3 py-2 resize-none focus:outline-none focus:border-text-tertiary transition-colors"
+        className="w-full font-sans text-[13px] text-text-primary placeholder:text-text-quaternary bg-surface-2 border border-border rounded px-3 py-2 resize-none focus:outline-none focus:border-text-tertiary transition-colors"
       />
       <div className="flex gap-2 w-full">
         <Button variant="primary" onClick={onResume} disabled={resuming}>

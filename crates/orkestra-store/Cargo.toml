@@ -1,7 +1,10 @@
 [package]
 name = "orkestra-store"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Storage layer for Orkestra"
 
 [lints]
 workspace = true

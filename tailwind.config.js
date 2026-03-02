@@ -6,51 +6,59 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  // Use media query strategy so dark: variants respond to the OS color scheme.
+  // Forge design tokens use CSS variables for automatic dark mode; dark: variants
+  // are used only for standard Tailwind palette colors (stone, amber, purple) in
+  // taskStateColors.ts and stageColors.ts.
+  darkMode: 'media',
   theme: {
     extend: {
       colors: {
-        // Backgrounds
-        canvas: '#FAF8FC',            // page background (was --canvas)
-        surface: '#FFFFFF',            // card/panel bg
-        'surface-raised': '#FEFCFA',  // elevated surface
-        'surface-2': '#F4F0F8',       // elevated panel bg (was --surface-2)
-        'surface-3': '#DDD7E4',       // pressed/active surface (was --surface-3)
-        'surface-hover': '#F5F2F8',   // hover surface (was --surface-hover)
+        // Backgrounds — reference CSS variables so light/dark values flip automatically
+        canvas: 'var(--forge-canvas)',
+        surface: 'var(--forge-surface)',
+        'surface-raised': 'var(--forge-surface-raised)',
+        'surface-2': 'var(--forge-surface-2)',
+        'surface-3': 'var(--forge-surface-3)',
+        'surface-hover': 'var(--forge-surface-hover)',
 
         // Text
         text: {
-          primary: '#1C1820',          // was --text-0
-          secondary: '#5A5068',        // was --text-1
-          tertiary: '#7A7288',         // was --text-2
-          quaternary: '#9E96AC',       // was --text-3
+          primary: 'var(--forge-text-primary)',
+          secondary: 'var(--forge-text-secondary)',
+          tertiary: 'var(--forge-text-tertiary)',
+          quaternary: 'var(--forge-text-quaternary)',
         },
 
         // Border
-        border: '#E4DFE9',             // was --border
+        border: 'var(--forge-border)',
 
-        // Accent (pink-red, was --accent)
+        // Accent (pink-red) — RGB channels for opacity modifier support (bg-accent/8, border-accent/30, etc.)
         accent: {
-          DEFAULT: '#E83558',
-          soft: 'rgba(232, 53, 88, 0.08)',
-          hover: '#D42B4C',
+          DEFAULT: 'rgb(var(--forge-accent) / <alpha-value>)',
+          soft: 'var(--forge-accent-soft)',
+          hover: 'var(--forge-accent-hover)',
         },
 
         // Status colors
+        // error, info, warning, success use RGB channel format to support opacity modifiers
         status: {
-          success: { DEFAULT: '#16A34A', bg: 'rgba(22, 163, 74, 0.07)' },
-          error:   { DEFAULT: '#DC2626', hover: '#B91C1C', bg: 'rgba(220, 38, 38, 0.06)' },
-          warning: { DEFAULT: '#D97706', bg: '#fef3c7' },
-          info:    { DEFAULT: '#2563EB', hover: '#1D4FD8', bg: 'rgba(37, 99, 235, 0.06)' },
-          purple:  { DEFAULT: '#9333ea', bg: '#f3e8ff' },
-          pink:    { DEFAULT: '#db2777', bg: '#fce7f3' },
-          cyan:    { DEFAULT: '#0891b2', bg: '#cffafe' },
-          orange:  { DEFAULT: '#ea580c', bg: '#ffedd5' },
+          success: { DEFAULT: 'rgb(var(--forge-status-success) / <alpha-value>)', bg: 'var(--forge-status-success-bg)' },
+          error:   { DEFAULT: 'rgb(var(--forge-status-error) / <alpha-value>)', hover: 'var(--forge-status-error-hover)', bg: 'var(--forge-status-error-bg)' },
+          warning: { DEFAULT: 'rgb(var(--forge-status-warning) / <alpha-value>)', bg: 'var(--forge-status-warning-bg)' },
+          info:    { DEFAULT: 'rgb(var(--forge-status-info) / <alpha-value>)', hover: 'var(--forge-status-info-hover)', bg: 'var(--forge-status-info-bg)' },
+          purple:  { DEFAULT: 'var(--forge-status-purple)', bg: 'var(--forge-status-purple-bg)' },
+          pink:    { DEFAULT: 'var(--forge-status-pink)', bg: 'var(--forge-status-pink-bg)' },
+          cyan:    { DEFAULT: 'var(--forge-status-cyan)', bg: 'var(--forge-status-cyan-bg)' },
+          orange:  { DEFAULT: 'var(--forge-status-orange)', bg: 'var(--forge-status-orange-bg)' },
         },
 
         // Workflow action colors
-        violet: { DEFAULT: '#7C3AED', hover: '#6D28D9' }, // approval — standard stage
-        teal:   { DEFAULT: '#0D9488', hover: '#0B7D74' }, // approval — subtask stage
-        merge:  { DEFAULT: '#C85A4C', hover: '#B85040' }, // merge / address comments
+        // RGB channel format enables opacity modifier syntax (border-violet/40, border-teal/40, border-merge/30)
+        // `extend` semantics preserve the default Tailwind violet/teal palette (violet-100, teal-200, etc.)
+        violet: { DEFAULT: 'rgb(var(--forge-violet) / <alpha-value>)', hover: 'var(--forge-violet-hover)' },
+        teal:   { DEFAULT: 'rgb(var(--forge-teal) / <alpha-value>)', hover: 'var(--forge-teal-hover)' },
+        merge:  { DEFAULT: 'rgb(var(--forge-merge) / <alpha-value>)', hover: 'var(--forge-merge-hover)' },
 
         // Keep standard Tailwind stone palette for one-off use
         stone: colors.stone,
@@ -83,12 +91,10 @@ export default {
         },
       },
       boxShadow: {
-        // Soft, diffuse shadows with multiple layers for a "growing out of background" effect
-        'panel': '0px 0px 16px 4px rgb(0 0 0 / 0.1), 0px 0px 2px 1px rgb(0 0 0 / 0.02)',
-        // Elevated: more prominent lift for hover states
-        'panel-hover': '0px 2px 24px 6px rgb(0 0 0 / 0.14), 0px 0px 4px 1px rgb(0 0 0 / 0.04)',
-        // Pressed: flattened, minimal shadow
-        'panel-press': '0px 0px 4px 1px rgb(0 0 0 / 0.06), 0px 0px 1px 0px rgb(0 0 0 / 0.02)',
+        // CSS variables flip between light (diffuse drop shadows) and dark (edge-light ring)
+        'panel': 'var(--forge-shadow-panel)',
+        'panel-hover': 'var(--forge-shadow-panel-hover)',
+        'panel-press': 'var(--forge-shadow-panel-press)',
       },
     },
   },

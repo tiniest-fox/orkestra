@@ -58,7 +58,7 @@ for file in diff.files {
 }
 
 // Merge to target branch
-let result = git.merge_to_branch("task/TASK-001", "main")?;
+let result = git.merge_to_branch("task/TASK-001", "main", None)?;
 println!("Merged at {}", result.commit_sha);
 
 // Clean up worktree (keep branch since it's merged)

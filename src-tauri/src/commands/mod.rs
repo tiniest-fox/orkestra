@@ -17,6 +17,7 @@ mod git_actions;
 mod human_actions;
 mod project;
 mod queries;
+mod run_script;
 mod stage_chat;
 mod task_crud;
 
@@ -28,5 +29,6 @@ pub use git_actions::*;
 pub use human_actions::*;
 pub use project::*;
 pub use queries::*;
+pub use run_script::*;
 pub use stage_chat::*;
 pub use task_crud::*;

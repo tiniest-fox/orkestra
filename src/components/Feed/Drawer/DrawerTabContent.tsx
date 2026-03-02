@@ -2,6 +2,7 @@
 
 import { FileText } from "lucide-react";
 import type { RefCallback } from "react";
+import type { UseRunScriptResult } from "../../../hooks/useRunScript";
 import type {
   LogEntry,
   WorkflowArtifact,
@@ -18,6 +19,7 @@ import { FeedLogList } from "../FeedLogList";
 import type { DrawerTabId } from "./drawerTabs";
 import { ErrorTab } from "./Sections/ErrorTab";
 import { QuestionsSection } from "./Sections/QuestionsSection";
+import { RunTab } from "./Sections/RunTab";
 import { SubtasksSection } from "./Sections/SubtasksSection";
 import type { TaskDrawerState } from "./useTaskDrawerState";
 
@@ -38,6 +40,7 @@ interface DrawerTabContentProps {
   bodyRef: React.RefObject<HTMLDivElement>;
   state: TaskDrawerState;
   onOpenTask: (id: string) => void;
+  runScript: UseRunScriptResult;
 }
 
 // ============================================================================
@@ -57,6 +60,7 @@ export function DrawerTabContent({
   bodyRef,
   state,
   onOpenTask,
+  runScript,
 }: DrawerTabContentProps) {
   const { submitRef } = state;
 
@@ -135,6 +139,19 @@ export function DrawerTabContent({
 
   if (activeTab === "gate") {
     return <DrawerGateTab task={task} config={config} />;
+  }
+
+  if (activeTab === "run") {
+    return (
+      <RunTab
+        status={runScript.status}
+        lines={runScript.lines}
+        loading={runScript.loading}
+        error={runScript.error}
+        start={runScript.start}
+        stop={runScript.stop}
+      />
+    );
   }
 
   return null;

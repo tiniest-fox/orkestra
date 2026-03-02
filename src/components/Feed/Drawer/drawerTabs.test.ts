@@ -7,7 +7,7 @@ import {
   createMockWorkflowTaskView,
 } from "../../../test/mocks/fixtures";
 import type { WorkflowIteration } from "../../../types/workflow";
-import { availableTabs, currentArtifact } from "./drawerTabs";
+import { availableTabs, canUseRunScript, currentArtifact } from "./drawerTabs";
 
 // Config with a gate on the "work" stage.
 function configWithGate() {
@@ -147,6 +147,55 @@ describe("availableTabs — done task tabs", () => {
     };
     const tabs = availableTabs(task, config);
     expect(tabs.some((t) => t.id === "logs")).toBe(true);
+  });
+});
+
+describe("canUseRunScript", () => {
+  it("returns true when all conditions are met", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "agent_working", stage: "work" },
+      worktree_path: "/some/worktree",
+    });
+    expect(canUseRunScript(task, true)).toBe(true);
+  });
+
+  it("returns false when hasRunScript is false", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "agent_working", stage: "work" },
+      worktree_path: "/some/worktree",
+    });
+    expect(canUseRunScript(task, false)).toBe(false);
+  });
+
+  it("returns false when hasRunScript is undefined", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "agent_working", stage: "work" },
+      worktree_path: "/some/worktree",
+    });
+    expect(canUseRunScript(task, undefined)).toBe(false);
+  });
+
+  it("returns false when worktree_path is missing", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "agent_working", stage: "work" },
+    });
+    expect(canUseRunScript(task, true)).toBe(false);
+  });
+
+  it("returns false when task is done", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "done" },
+      worktree_path: "/some/worktree",
+    });
+    expect(canUseRunScript(task, true)).toBe(false);
+  });
+
+  it("returns false when task is archived", () => {
+    const task = createMockWorkflowTaskView({
+      state: { type: "archived" },
+      worktree_path: "/some/worktree",
+    });
+    expect(canUseRunScript(task, true)).toBe(false);
   });
 });
 

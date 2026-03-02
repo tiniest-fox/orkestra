@@ -4,7 +4,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoScroll } from "../../../hooks/useAutoScroll";
 import { useLogs } from "../../../hooks/useLogs";
-import { useWorkflowConfig } from "../../../providers";
+import { useProjectInfo } from "../../../hooks/useProjectInfo";
+import { useRunScript } from "../../../hooks/useRunScript";
+import { ProjectInfoProvider, useWorkflowConfig } from "../../../providers";
 import type { WorkflowTaskView } from "../../../types/workflow";
 import { groupIterationsIntoRuns } from "../../../utils/stageRuns";
 import { Drawer } from "../../ui/Drawer/Drawer";
@@ -15,7 +17,13 @@ import { DrawerTaskProvider } from "../DrawerTaskProvider";
 import { HistoricalRunView } from "../HistoricalRunView";
 import { DrawerTabContent } from "./DrawerTabContent";
 import type { DrawerTabId } from "./drawerTabs";
-import { availableTabs, currentArtifact, defaultTab, stageReviewType } from "./drawerTabs";
+import {
+  availableTabs,
+  canUseRunScript,
+  currentArtifact,
+  defaultTab,
+  stageReviewType,
+} from "./drawerTabs";
 import { DrawerFooter } from "./Footer/DrawerFooter";
 import { useDrawerHotkeys } from "./useDrawerHotkeys";
 import { useTaskDrawerState } from "./useTaskDrawerState";
@@ -41,10 +49,15 @@ function TaskDrawerBody({
 }: TaskDrawerBodyProps) {
   const config = useWorkflowConfig();
   const accent = drawerAccent(task, config);
+  const projectInfo = useProjectInfo();
 
   // -- Tab state --
-  const tabs = availableTabs(task, config);
+  const tabs = availableTabs(task, config, { hasRunScript: projectInfo?.has_run_script });
   const [activeTab, setActiveTab] = useState<DrawerTabId>(() => defaultTab(task));
+
+  // -- Run script (single instance, shared with header and tab) --
+  const showRunButton = canUseRunScript(task, projectInfo?.has_run_script);
+  const runScript = useRunScript(task.id, showRunButton || activeTab === "run");
 
   // Reset tab when task state type or id changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task state type change
@@ -143,6 +156,11 @@ function TaskDrawerBody({
         }
         onToggleAutoMode={state.handleToggleAutoMode}
         autoModeOverride={state.optimisticAutoMode ?? undefined}
+        showRunButton={showRunButton}
+        runStatus={runScript.status}
+        runLoading={runScript.loading}
+        onRunStart={runScript.start}
+        onRunStop={runScript.stop}
       />
 
       {selectedRun ? (
@@ -170,6 +188,7 @@ function TaskDrawerBody({
             bodyRef={bodyRef}
             state={state}
             onOpenTask={onOpenTask}
+            runScript={runScript}
           />
 
           {/* Footer */}
@@ -216,17 +235,19 @@ export function TaskDrawer({
   return (
     <Drawer onClose={onClose} disableEscape={rejectModeActive}>
       {task && (
-        <DrawerTaskProvider taskId={task.id}>
-          <HotkeyScope active>
-            <TaskDrawerBody
-              task={task}
-              allTasks={allTasks}
-              onClose={onClose}
-              onOpenTask={onOpenTask}
-              onRejectModeChange={handleRejectModeChange}
-            />
-          </HotkeyScope>
-        </DrawerTaskProvider>
+        <ProjectInfoProvider>
+          <DrawerTaskProvider taskId={task.id}>
+            <HotkeyScope active>
+              <TaskDrawerBody
+                task={task}
+                allTasks={allTasks}
+                onClose={onClose}
+                onOpenTask={onOpenTask}
+                onRejectModeChange={handleRejectModeChange}
+              />
+            </HotkeyScope>
+          </DrawerTaskProvider>
+        </ProjectInfoProvider>
       )}
     </Drawer>
   );

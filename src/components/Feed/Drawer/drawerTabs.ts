@@ -23,7 +23,8 @@ export type DrawerTabId =
   | "history"
   | "pr"
   | "error"
-  | "gate";
+  | "gate"
+  | "run";
 
 export type StageReviewType = "violet" | "teal";
 
@@ -46,6 +47,16 @@ export type { DraftComment } from "../../Diff/types";
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/** Unified predicate for whether the run script feature is available for a task. */
+export function canUseRunScript(
+  task: WorkflowTaskView,
+  hasRunScript: boolean | undefined,
+): boolean {
+  return (
+    !!hasRunScript && !!task.worktree_path && !task.derived.is_done && !task.derived.is_archived
+  );
+}
 
 export function currentArtifact(
   task: WorkflowTaskView,
@@ -82,7 +93,11 @@ export function findGateStage(config: WorkflowConfig) {
   return config.stages.find((s) => s.gate) ?? null;
 }
 
-export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): DrawerTab[] {
+export function availableTabs(
+  task: WorkflowTaskView,
+  config: WorkflowConfig,
+  options?: { hasRunScript?: boolean },
+): DrawerTab[] {
   // Show gate tab when the current stage has a gate AND gate output is available or running.
   const gateStage = findGateStage(config);
   const isGateState = task.state.type === "awaiting_gate" || task.state.type === "gate_running";
@@ -91,6 +106,8 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
     !!gateStage &&
     (isGateState || (hasGateResult && task.derived.current_stage === gateStage.name));
   const gateTab: DrawerTab = { id: "gate" as const, label: "Gate", hotkey: "g" };
+  const runTab: DrawerTab = { id: "run" as const, label: "Run", hotkey: "r" };
+  const showRunTab = canUseRunScript(task, options?.hasRunScript);
 
   if (task.derived.is_failed) {
     return [
@@ -99,6 +116,7 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
+      ...(showRunTab ? [runTab] : []),
     ];
   }
   if (task.derived.has_questions) {
@@ -108,6 +126,7 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
       { id: "logs", label: "Logs", hotkey: "l" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
+      ...(showRunTab ? [runTab] : []),
     ];
   }
   if (task.derived.is_waiting_on_children) {
@@ -116,6 +135,7 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
       { id: "diff", label: "Diff", hotkey: "d" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
+      ...(showRunTab ? [runTab] : []),
     ];
   }
   if (task.derived.is_done) {
@@ -127,6 +147,7 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
         { id: "logs", label: "Logs", hotkey: "l" },
         { id: "history", label: "History", hotkey: "h" },
         ...(showGateTab ? [gateTab] : []),
+        ...(showRunTab ? [runTab] : []),
       ];
     }
     return [
@@ -135,6 +156,7 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
       { id: "logs", label: "Logs", hotkey: "l" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
+      ...(showRunTab ? [runTab] : []),
     ];
   }
   if (task.derived.needs_review) {
@@ -144,6 +166,7 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
       { id: "logs", label: "Logs", hotkey: "l" },
       { id: "history", label: "History", hotkey: "h" },
       ...(showGateTab ? [gateTab] : []),
+      ...(showRunTab ? [runTab] : []),
     ];
   }
   return [
@@ -152,5 +175,6 @@ export function availableTabs(task: WorkflowTaskView, config: WorkflowConfig): D
     { id: "artifact", label: "Artifact", hotkey: "a" },
     { id: "history", label: "History", hotkey: "h" },
     ...(showGateTab ? [gateTab] : []),
+    ...(showRunTab ? [runTab] : []),
   ];
 }

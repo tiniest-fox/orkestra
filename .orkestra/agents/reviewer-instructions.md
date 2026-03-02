@@ -147,6 +147,9 @@ For every file you review, ask:
 - Is pure logic separated from I/O?
 - If this creates or extends a module, does it use the appropriate building blocks (interactions for logic, types for domain models, traits where polymorphism is needed)?
 
+<!-- compound: debonairly-scholarly-colt -->
+**Rust atomic ordering:** When reviewing `AtomicBool`/`AtomicUsize` fields used across threads, verify the ordering is correct. `Ordering::Relaxed` on both sides provides no happens-before guarantee — a waiter thread storing `true` with `Relaxed` and a Drop/kill path reading with `Relaxed` can race on weakly-ordered architectures. Use `Release` on the write side and `Acquire` on the read side when branching on the value (e.g., "is this process already exited?"). Flag this as HIGH when the wrong ordering could cause SIGTERM to a recycled PID.
+
 **The holistic check:** After reviewing all changed files, step back and ask: "Would I be confident maintaining this code in 6 months? Would I be comfortable if this became the template that future code is modeled after?" If the answer to either is no, something needs to be flagged — even if you can't point to a specific principle violation. Trust your instinct and classify what feels wrong.
 
 ## Output Your Findings

@@ -93,6 +93,26 @@ impl WorkflowApi {
         Ok(())
     }
 
+    /// Set the `claude_session_id` for a stage session (test-only).
+    ///
+    /// Mock agents don't emit `SessionId` events so `claude_session_id` is always `None`
+    /// after agent execution in tests. Use this to inject a fake session ID when the
+    /// test needs `send_message` to succeed (chat requires `--resume` with a session ID).
+    #[cfg(feature = "testutil")]
+    pub fn set_session_id(
+        &self,
+        task_id: &str,
+        stage: &str,
+        session_id: &str,
+    ) -> WorkflowResult<()> {
+        if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {
+            session.claude_session_id = Some(session_id.to_string());
+            session.updated_at = chrono::Utc::now().to_rfc3339();
+            self.store.save_stage_session(&session)?;
+        }
+        Ok(())
+    }
+
     /// Clear the agent PID for a stage session after an orphaned agent is killed.
     pub fn clear_session_agent_pid(&self, task_id: &str, stage: &str) -> WorkflowResult<()> {
         if let Some(mut session) = self.store.get_stage_session(task_id, stage)? {

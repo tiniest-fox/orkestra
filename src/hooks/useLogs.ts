@@ -29,6 +29,7 @@ export function useLogs(
   task: WorkflowTaskView,
   isActive: boolean,
   targetStage?: string,
+  isChatting?: boolean,
 ): UseLogsResult {
   // Stages with logs come from the task view — no async fetch needed
   const stagesWithLogs = task.derived.stages_with_logs;
@@ -120,11 +121,11 @@ export function useLogs(
     fetchLogs();
   }, [isActive, activeLogStage, fetchLogs]);
 
-  // Poll while agent is running on the current stage
+  // Poll while agent is running on the current stage, or during chat mode
   const shouldPoll =
     isActive &&
     !!activeLogStage &&
-    task.derived.is_working &&
+    (task.derived.is_working || !!isChatting) &&
     activeLogStage === task.derived.current_stage &&
     !error;
 

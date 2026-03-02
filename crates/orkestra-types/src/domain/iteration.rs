@@ -102,6 +102,8 @@ pub enum IterationTrigger {
     RetryBlocked { instructions: Option<String> },
     /// User interrupted and then resumed, optionally with a message.
     ManualResume { message: Option<String> },
+    /// The user chatted with the agent and is now returning to structured work.
+    ReturnToWork,
 }
 
 /// A single iteration (attempt) within a stage.

@@ -74,7 +74,8 @@ function TaskDrawerBody({
 
   // -- Logs (logs tab) --
   const showLogs = activeTab === "logs" && selectedRunIdx === null;
-  const { logs, error: logsError } = useLogs(task, showLogs);
+  const isChatting = task.derived.is_chatting || state.showChatInput;
+  const { logs, error: logsError } = useLogs(task, showLogs, undefined, isChatting);
   const logScrollRef = useRef<HTMLDivElement>(null);
   const { containerRef: logAutoScrollRef, handleScroll: handleLogScroll } =
     useAutoScroll<HTMLDivElement>(showLogs);

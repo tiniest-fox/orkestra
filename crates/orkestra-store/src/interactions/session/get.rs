@@ -12,7 +12,7 @@ pub fn execute(
 ) -> WorkflowResult<Option<StageSession>> {
     conn.query_row(
         "SELECT id, task_id, stage, claude_session_id, agent_pid, spawn_count,
-                session_state, created_at, updated_at, has_activity
+                session_state, created_at, updated_at, has_activity, chat_active
          FROM workflow_stage_sessions
          WHERE task_id = ? AND stage = ? AND session_state != 'superseded'
          ORDER BY created_at DESC LIMIT 1",

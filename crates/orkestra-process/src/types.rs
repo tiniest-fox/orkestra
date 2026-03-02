@@ -57,8 +57,8 @@ pub struct ProcessConfig {
     pub session_id: Option<String>,
     /// Whether this is a resume (use `--resume`) or first spawn (use `--session-id`).
     pub is_resume: bool,
-    /// JSON schema for structured output (required).
-    pub json_schema: String,
+    /// JSON schema for structured output. None for free-form chat.
+    pub json_schema: Option<String>,
     /// Model identifier to pass via `--model` flag.
     /// If None, uses the provider's default model.
     pub model: Option<String>,
@@ -77,7 +77,19 @@ impl ProcessConfig {
         Self {
             session_id: None,
             is_resume: false,
-            json_schema: json_schema.into(),
+            json_schema: Some(json_schema.into()),
+            model: None,
+            system_prompt: None,
+            disallowed_tools: Vec::new(),
+        }
+    }
+
+    /// Create a process config for free-form chat (no JSON schema).
+    pub fn for_chat() -> Self {
+        Self {
+            session_id: None,
+            is_resume: false,
+            json_schema: None,
             model: None,
             system_prompt: None,
             disallowed_tools: Vec::new(),
@@ -243,7 +255,7 @@ mod tests {
 
         assert_eq!(config.session_id, Some("session-123".to_string()));
         assert!(config.is_resume);
-        assert_eq!(config.json_schema, r#"{"type":"object"}"#);
+        assert_eq!(config.json_schema, Some(r#"{"type":"object"}"#.to_string()));
     }
 
     #[test]

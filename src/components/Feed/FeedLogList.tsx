@@ -192,6 +192,8 @@ const RESUME_GROUP: Record<ResumeType, BubbleGroup> = {
   feedback: "human",
   answers: "human",
   manual_resume: "human",
+  chat: "human",
+  return_to_work: "human",
   continue: "system",
   recheck: "system",
   retry_failed: "system",

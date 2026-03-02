@@ -94,15 +94,7 @@ impl ProjectState {
                 }
             };
 
-        // Create workflow API with or without git service
-        let api = if let Some(git) = git_service {
-            WorkflowApi::with_git(workflow.clone(), store, git)
-                .with_pr_service(Arc::new(GhPrService::new()))
-        } else {
-            WorkflowApi::new(workflow.clone(), store)
-        };
-
-        // Construct shared provider registry
+        // Construct shared provider registry (built before the API so it can be wired in)
         let mut provider_registry = ProviderRegistry::new("claudecode");
         provider_registry.register(
             "claudecode",
@@ -116,6 +108,19 @@ impl ProjectState {
             opencode_capabilities(),
             opencode_aliases(),
         );
+        let provider_registry = Arc::new(provider_registry);
+
+        // Create workflow API with or without git service, wiring in the registry and project root
+        let api = if let Some(git) = git_service {
+            WorkflowApi::with_git(workflow.clone(), store, git)
+                .with_pr_service(Arc::new(GhPrService::new()))
+                .with_provider_registry(Arc::clone(&provider_registry))
+                .with_project_root(project_root.clone())
+        } else {
+            WorkflowApi::new(workflow.clone(), store)
+                .with_provider_registry(Arc::clone(&provider_registry))
+                .with_project_root(project_root.clone())
+        };
 
         let has_gh_cli = std::process::Command::new("gh")
             .arg("--version")
@@ -134,7 +139,7 @@ impl ProjectState {
             db_conn: conn,
             has_git,
             has_gh_cli,
-            provider_registry: Arc::new(provider_registry),
+            provider_registry,
             stop_flag,
             startup_tasks: Arc::new(Mutex::new(None)),
         })

@@ -49,6 +49,7 @@ pub mod human;
 pub mod integration;
 pub mod query;
 pub mod stage;
+pub mod stage_chat;
 pub mod task;
 
 // ============================================================================
@@ -116,6 +117,7 @@ pub use stage::service::{
     ExecutionComplete, ExecutionResult, SpawnError, SpawnResult, StageExecutionService,
 };
 pub use stage::session::SessionSpawnContext;
+pub use stage_chat::CHAT_RESUME_TYPE;
 
 // Parser re-exports
 pub use orkestra_parser::{ResumeMarker, ResumeMarkerType};

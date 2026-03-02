@@ -49,6 +49,10 @@ pub struct DerivedTaskState {
     pub pending_rejection: Option<PendingRejection>,
     pub stages_with_logs: Vec<StageLogInfo>,
     pub subtask_progress: Option<SubtaskProgress>,
+    /// Whether chat mode is active for this task's current stage session.
+    pub is_chatting: bool,
+    /// Whether a chat agent is currently responding (`chat_active` + agent running).
+    pub chat_agent_active: bool,
 }
 
 /// A pending rejection from a reviewer agent awaiting human confirmation.
@@ -122,6 +126,7 @@ impl DerivedTaskState {
         let pending_rejection = extract_pending_rejection(task, iterations);
         let stages_with_logs = build_stages_with_logs(sessions);
         let subtask_progress = compute_subtask_progress(subtask_states);
+        let (is_chatting, chat_agent_active) = compute_chat_state(task, sessions);
 
         Self {
             current_stage: task.current_stage().map(str::to_string),
@@ -148,6 +153,8 @@ impl DerivedTaskState {
             pending_rejection,
             stages_with_logs,
             subtask_progress,
+            is_chatting,
+            chat_agent_active,
         }
     }
 }
@@ -329,6 +336,31 @@ fn extract_rejection_feedback(task: &Task, iterations: &[Iteration]) -> Option<S
     }
 
     None
+}
+
+/// Compute chat state from the current stage's active session.
+///
+/// Returns `(is_chatting, chat_agent_active)`:
+/// - `is_chatting` is true when the active session has `chat_active = true`
+/// - `chat_agent_active` is true when chatting and the agent process is running
+fn compute_chat_state(task: &Task, sessions: &[StageSession]) -> (bool, bool) {
+    let current_stage = match task.current_stage() {
+        Some(s) => s,
+        None => return (false, false),
+    };
+
+    // Find the current (non-superseded) session for the active stage
+    let active_session = sessions
+        .iter()
+        .find(|s| s.stage == current_stage && s.session_state.is_current());
+
+    match active_session {
+        Some(session) => (
+            session.chat_active,
+            session.chat_active && session.agent_pid.is_some(),
+        ),
+        None => (false, false),
+    }
 }
 
 /// Extract a pending rejection from the latest iteration of the current stage.
@@ -1037,6 +1069,56 @@ mod tests {
         let derived = DerivedTaskState::build(&task, &[], &[], &[]);
 
         assert_eq!(derived.phase_icon, None);
+    }
+
+    #[test]
+    fn test_chat_state_no_sessions() {
+        let task = make_task("review");
+        let derived = DerivedTaskState::build(&task, &[], &[], &[]);
+        assert!(!derived.is_chatting);
+        assert!(!derived.chat_agent_active);
+    }
+
+    #[test]
+    fn test_chat_state_active_session_not_chatting() {
+        let task = make_task("review");
+        let session = StageSession::new("ss-1", "task-1", "review", "now");
+        let derived = DerivedTaskState::build(&task, &[], &[session], &[]);
+        assert!(!derived.is_chatting);
+        assert!(!derived.chat_agent_active);
+    }
+
+    #[test]
+    fn test_chat_state_chatting_no_agent() {
+        let task = make_task("review");
+        let mut session = StageSession::new("ss-1", "task-1", "review", "now");
+        session.chat_active = true;
+        let derived = DerivedTaskState::build(&task, &[], &[session], &[]);
+        assert!(derived.is_chatting);
+        assert!(!derived.chat_agent_active);
+    }
+
+    #[test]
+    fn test_chat_state_chatting_with_agent() {
+        let task = make_task("review");
+        let mut session = StageSession::new("ss-1", "task-1", "review", "now");
+        session.chat_active = true;
+        session.agent_pid = Some(123);
+        let derived = DerivedTaskState::build(&task, &[], &[session], &[]);
+        assert!(derived.is_chatting);
+        assert!(derived.chat_agent_active);
+    }
+
+    #[test]
+    fn test_chat_state_superseded_session_ignored() {
+        let task = make_task("review");
+        // Only a superseded session with chat_active — should NOT count
+        let mut session = StageSession::new("ss-1", "task-1", "review", "now");
+        session.chat_active = true;
+        session.session_state = SessionState::Superseded;
+        let derived = DerivedTaskState::build(&task, &[], &[session], &[]);
+        assert!(!derived.is_chatting);
+        assert!(!derived.chat_agent_active);
     }
 
     #[test]

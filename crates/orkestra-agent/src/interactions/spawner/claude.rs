@@ -38,13 +38,12 @@ fn spawn_claude_process(
 
     cmd.args(["--print", "--verbose", "--effort", "medium"]);
 
-    // Always use structured JSON output with schema
-    cmd.args([
-        "--output-format",
-        "stream-json",
-        "--json-schema",
-        &config.json_schema,
-    ]);
+    cmd.args(["--output-format", "stream-json"]);
+
+    // Only pass --json-schema for structured output (not for chat)
+    if let Some(ref schema) = config.json_schema {
+        cmd.args(["--json-schema", schema]);
+    }
 
     // Append system prompt if provided (appends to Claude Code's built-in system prompt)
     if let Some(ref sp) = config.system_prompt {

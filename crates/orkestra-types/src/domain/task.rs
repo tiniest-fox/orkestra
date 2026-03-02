@@ -250,6 +250,11 @@ impl Task {
     pub fn has_open_pr(&self) -> bool {
         self.pr_url.is_some()
     }
+
+    /// Check if the task is in a state that allows chat (`AwaitingApproval`, `AwaitingQuestionAnswer`, `AwaitingRejectionConfirmation`, or `Interrupted`).
+    pub fn can_chat(&self) -> bool {
+        self.is_awaiting_review() || matches!(self.state, TaskState::Interrupted { .. })
+    }
 }
 
 /// Lightweight task metadata for orchestrator routing decisions.
@@ -512,6 +517,26 @@ mod tests {
         task.artifacts
             .set(Artifact::new("plan", "The plan content", "planning", "now"));
         assert_eq!(task.artifact("plan"), Some("The plan content"));
+    }
+
+    #[test]
+    fn test_task_can_chat() {
+        let mut task = Task::new("task-1", "Task", "desc", "planning", "now");
+
+        // Queued → cannot chat
+        assert!(!task.can_chat());
+
+        // AgentWorking → cannot chat
+        task.state = TaskState::agent_working("planning");
+        assert!(!task.can_chat());
+
+        // AwaitingApproval → can chat
+        task.state = TaskState::awaiting_approval("planning");
+        assert!(task.can_chat());
+
+        // Interrupted → can chat
+        task.state = TaskState::interrupted("planning");
+        assert!(task.can_chat());
     }
 
     #[test]

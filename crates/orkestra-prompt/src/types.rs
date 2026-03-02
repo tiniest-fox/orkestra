@@ -202,6 +202,8 @@ pub enum ResumeType {
         checks: Vec<PrCheckContext>,
         guidance: Option<String>,
     },
+    /// User chatted with the agent and is returning to structured output.
+    ReturnToWork,
 }
 
 /// A failed CI check to address in the resume prompt.

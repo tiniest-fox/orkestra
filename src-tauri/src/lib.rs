@@ -518,6 +518,10 @@ pub fn run() {
             commands::assistant_stop,
             commands::assistant_list_sessions,
             commands::assistant_get_logs,
+            // Stage chat commands
+            commands::stage_chat_send,
+            commands::stage_chat_stop,
+            commands::workflow_return_to_work,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

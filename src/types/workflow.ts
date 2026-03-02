@@ -493,6 +493,8 @@ export interface DerivedTaskState {
   pending_rejection: PendingRejection | null;
   stages_with_logs: StageLogInfo[];
   subtask_progress: SubtaskProgress | null;
+  is_chatting: boolean;
+  chat_agent_active: boolean;
 }
 
 /**
@@ -598,7 +600,9 @@ export type ResumeType =
   | "retry_failed"
   | "retry_blocked"
   | "manual_resume"
-  | "initial";
+  | "initial"
+  | "chat"
+  | "return_to_work";
 
 /**
  * Structured log entry for task execution (loaded from Claude's session files).

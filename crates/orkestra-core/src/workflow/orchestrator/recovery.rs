@@ -40,6 +40,7 @@ impl OrchestratorLoop {
         // Recover tasks stuck in transient phases
         task_interactions::recover_stale_setup::execute(api.store.as_ref(), git_service, &headers);
         task_interactions::recover_stale_agents::execute(api.store.as_ref(), &headers);
+        task_interactions::recover_stale_chat::execute(api.store.as_ref());
         stage_interactions::recover_stale_commits::execute(api.store.as_ref(), &headers);
 
         // Recover stale integrations (returns events)

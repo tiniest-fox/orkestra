@@ -2,6 +2,7 @@
 
 import { ShieldCheck } from "lucide-react";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
+import { AnsiText } from "../../utils/ansi";
 import { EmptyState } from "../ui/EmptyState";
 import { findGateStage } from "./Drawer/drawerTabs";
 
@@ -51,7 +52,7 @@ export function DrawerGateTab({ task, config }: DrawerGateTabProps) {
         </div>
       )}
       <pre className="flex-1 overflow-y-auto p-4 text-xs font-mono whitespace-pre-wrap text-text-secondary">
-        {(gateResult?.lines ?? []).join("\n")}
+        <AnsiText text={(gateResult?.lines ?? []).join("\n")} />
       </pre>
     </div>
   );

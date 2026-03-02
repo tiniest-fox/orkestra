@@ -10,6 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useState } from "react";
 import { usePolling } from "../../hooks/usePolling";
 import type { LogEntry, WorkflowTaskView } from "../../types/workflow";
+import { stripAnsi } from "../../utils/ansi";
 import { toolSummary } from "../../utils/toolSummary";
 
 interface LatestLogSummaryProps {
@@ -39,7 +40,10 @@ export function LatestLogSummary({ task }: LatestLogSummaryProps) {
     const latestGateIteration = [...task.iterations].reverse().find((i) => i.gate_result);
     const lines = latestGateIteration?.gate_result?.lines ?? [];
     const lastLine = [...lines].reverse().find((l) => l.trim());
-    const text = lastLine?.trim().slice(0, 100) ?? "Running gate check...";
+    const text =
+      stripAnsi(lastLine ?? "")
+        .trim()
+        .slice(0, 100) || "Running gate check...";
     return (
       <span className="font-mono text-forge-mono-sm text-text-quaternary truncate min-w-0 max-w-full">
         {text}
@@ -72,7 +76,7 @@ function entrySummary(entry: LogEntry): string | null {
       return trimmed ? trimmed.slice(0, 100) : null;
     }
     case "script_output":
-      return entry.content.trim().slice(0, 100) || null;
+      return stripAnsi(entry.content).trim().slice(0, 100) || null;
     default:
       return null;
   }

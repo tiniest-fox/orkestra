@@ -16,6 +16,7 @@ interface FeedSectionProps {
   onApprove: (taskId: string) => void;
   onMerge?: (taskId: string) => void;
   onOpenPr?: (taskId: string) => void;
+  onArchive?: (taskId: string) => void;
   onRowClick?: (taskId: string) => void;
 }
 
@@ -30,6 +31,7 @@ export function FeedSection({
   onApprove,
   onMerge,
   onOpenPr,
+  onArchive,
   onRowClick,
 }: FeedSectionProps) {
   const subtasks = surfacedSubtasks ?? [];
@@ -65,6 +67,7 @@ export function FeedSection({
                 onApprove={() => onApprove(task.id)}
                 onMerge={onMerge ? () => onMerge(task.id) : undefined}
                 onOpenPr={onOpenPr ? () => onOpenPr(task.id) : undefined}
+                onArchive={onArchive ? () => onArchive(task.id) : undefined}
                 onClick={onRowClick ? () => onRowClick(task.id) : undefined}
               />
               {taskSubtasks.map((subtask) => (
@@ -79,6 +82,7 @@ export function FeedSection({
                   onApprove={() => onApprove(subtask.id)}
                   onMerge={onMerge ? () => onMerge(subtask.id) : undefined}
                   onOpenPr={onOpenPr ? () => onOpenPr(subtask.id) : undefined}
+                  onArchive={onArchive ? () => onArchive(subtask.id) : undefined}
                   onClick={onRowClick ? () => onRowClick(subtask.id) : undefined}
                 />
               ))}

@@ -3,6 +3,7 @@
 //! the enclosing HotkeyScope (on the focused row) dispatches matching keypresses.
 
 import { useWorkflowConfig } from "../../providers";
+import { usePrStatus } from "../../providers/PrStatusProvider";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { openExternal } from "../../utils/openExternal";
 import { isActivelyProgressing } from "../../utils/taskStatus";
@@ -16,6 +17,7 @@ interface FeedRowActionsProps {
   onApprove: () => void;
   onMerge: () => void;
   onOpenPr: () => void;
+  onArchive: () => void;
 }
 
 export function FeedRowActions({
@@ -25,8 +27,10 @@ export function FeedRowActions({
   onApprove,
   onMerge,
   onOpenPr,
+  onArchive,
 }: FeedRowActionsProps) {
   const config = useWorkflowConfig();
+  const { getPrStatus } = usePrStatus();
   const { derived } = task;
 
   const approveVariant = (() => {
@@ -90,6 +94,37 @@ export function FeedRowActions({
 
   if (derived.is_done && task.pr_url) {
     const prUrl = task.pr_url;
+    const prStatus = getPrStatus(task.id);
+
+    if (prStatus?.state === "merged") {
+      return (
+        <div className="flex items-center gap-1.5">
+          <Button
+            hotkey="x"
+            variant="secondary"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              onArchive();
+            }}
+          >
+            Archive
+          </Button>
+          <Button
+            hotkey="v"
+            variant="secondary"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              openExternal(prUrl);
+            }}
+          >
+            View ↗
+          </Button>
+        </div>
+      );
+    }
+
     return (
       <div className="flex items-center gap-1.5">
         <Button hotkey="p" variant="merge-outline" size="sm" onClick={onReview}>

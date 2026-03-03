@@ -97,6 +97,16 @@ function resolveColors(task: WorkflowTaskView): {
     return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "*", extraClass };
   }
   if (derived.is_done) {
+    // "⬇" means "done with a PR associated" — not necessarily merged.
+    // The Archive action in FeedRowActions further gates on merged state, but
+    // this symbol simply signals that the task has an associated PR.
+    if (task.pr_url) {
+      return {
+        colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
+        symbol: "⬇",
+        extraClass,
+      };
+    }
     return {
       colors: { bg: "bg-status-success-bg", icon: "text-status-success" },
       symbol: "✓",

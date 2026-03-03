@@ -9,8 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-/// Relative path from project root to the run script.
-pub const RUN_SCRIPT_RELATIVE_PATH: &str = ".orkestra/scripts/run.sh";
+pub use orkestra_types::config::RUN_SCRIPT_RELATIVE_PATH;
 
 const MAX_LOG_LINES: usize = 5000;
 

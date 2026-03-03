@@ -5,8 +5,8 @@
  * Log content is fetched asynchronously on-demand.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTransport } from "../transport";
 import type { LogEntry, StageLogInfo, WorkflowTaskView } from "../types/workflow";
 import { usePolling } from "./usePolling";
 
@@ -31,6 +31,7 @@ export function useLogs(
   targetStage?: string,
   isChatting?: boolean,
 ): UseLogsResult {
+  const transport = useTransport();
   // Stages with logs come from the task view — no async fetch needed
   const stagesWithLogs = task.derived.stages_with_logs;
 
@@ -92,10 +93,10 @@ export function useLogs(
     setIsLoading(true);
     setError(null);
     try {
-      const result = await invoke<LogEntry[]>("workflow_get_logs", {
-        taskId: task.id,
+      const result = await transport.call<LogEntry[]>("get_logs", {
+        task_id: task.id,
         stage: stageToFetch,
-        sessionId: sessionToFetch,
+        session_id: sessionToFetch,
       });
       // Only update state if the stage/session hasn't changed during the fetch
       if (
@@ -116,7 +117,7 @@ export function useLogs(
     } finally {
       setIsLoading(false);
     }
-  }, [task.id, activeLogStage, activeSessionId]);
+  }, [transport, task.id, activeLogStage, activeSessionId]);
 
   // Fetch logs when stage/session changes (handles non-polling cases and initial load)
   useEffect(() => {

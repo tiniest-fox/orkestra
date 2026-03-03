@@ -5,8 +5,8 @@
  * Fetches when the task ID changes and polls every 2 seconds while active.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useRef, useState } from "react";
+import { useTransport } from "../transport";
 import { usePolling } from "./usePolling";
 
 export interface HighlightedLine {
@@ -63,6 +63,7 @@ export function buildDiffFingerprint(files: HighlightedFileDiff[]): string {
 }
 
 export function useDiff(taskId: string | null): UseDiffResult {
+  const transport = useTransport();
   const [diff, setDiff] = useState<HighlightedTaskDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -79,7 +80,9 @@ export function useDiff(taskId: string | null): UseDiffResult {
       if (!hasFetchedOnceRef.current) setLoading(true);
       hasFetchedOnceRef.current = true;
       setError(null);
-      const result = await invoke<HighlightedTaskDiff>("workflow_get_task_diff", { taskId });
+      const result = await transport.call<HighlightedTaskDiff>("get_task_diff", {
+        task_id: taskId,
+      });
       // Skip state update when content hasn't changed, preventing re-renders and flash.
       const fingerprint = buildDiffFingerprint(result.files);
       if (fingerprint !== fingerprintRef.current) {
@@ -92,7 +95,7 @@ export function useDiff(taskId: string | null): UseDiffResult {
     } finally {
       setLoading(false);
     }
-  }, [taskId]);
+  }, [transport, taskId]);
 
   usePolling(taskId ? fetchDiff : null, 2000);
 

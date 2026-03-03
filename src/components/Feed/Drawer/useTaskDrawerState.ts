@@ -1,8 +1,8 @@
 //! State management and action handlers for the TaskDrawer component.
 
-import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseOptionIndex } from "../../../lib/optionKey";
+import { useTransport } from "../../../transport";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../types/workflow";
 import type { DraftComment, PrTabFooterState } from "./drawerTabs";
 
@@ -122,6 +122,7 @@ function mapDraftsToPrComments(drafts: DraftComment[]) {
 // ============================================================================
 
 export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void): TaskDrawerState {
+  const transport = useTransport();
   const questions = task.derived.pending_questions;
 
   // -- Answers --
@@ -284,8 +285,8 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     try {
       const comments = mapDraftsToPrComments(draftComments);
       const guidance = lineCommentGuidance.trim() || null;
-      await invoke("workflow_address_pr_feedback", {
-        taskId: task.id,
+      await transport.call("address_pr_feedback", {
+        task_id: task.id,
         comments,
         checks: [],
         guidance,
@@ -297,7 +298,15 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       setLineCommentError(message);
       setLoading(false);
     }
-  }, [task.id, loading, draftComments, lineCommentGuidance, clearDraftComments, onClose]);
+  }, [
+    transport,
+    task.id,
+    loading,
+    draftComments,
+    lineCommentGuidance,
+    clearDraftComments,
+    onClose,
+  ]);
 
   const submitLineCommentsForReview = useCallback(async () => {
     if (loading || draftComments.length === 0) return;
@@ -306,7 +315,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     try {
       const comments = mapDraftsToPrComments(draftComments);
       const guidance = lineCommentGuidance.trim() || null;
-      await invoke("workflow_reject_with_comments", { taskId: task.id, comments, guidance });
+      await transport.call("reject_with_comments", { task_id: task.id, comments, guidance });
       clearDraftComments();
       onClose();
     } catch (err) {
@@ -314,7 +323,15 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       setLineCommentError(message);
       setLoading(false);
     }
-  }, [task.id, loading, draftComments, lineCommentGuidance, clearDraftComments, onClose]);
+  }, [
+    transport,
+    task.id,
+    loading,
+    draftComments,
+    lineCommentGuidance,
+    clearDraftComments,
+    onClose,
+  ]);
 
   const submitLineComments = task.derived.is_done
     ? submitLineCommentsForDoneTask
@@ -352,7 +369,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     setChatSending(true);
     setChatError(null);
     try {
-      await invoke("stage_chat_send", { taskId: task.id, message: chatMessage.trim() });
+      await transport.call("stage_chat_send", { task_id: task.id, message: chatMessage.trim() });
       setChatMessage("");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -360,14 +377,14 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     } finally {
       setChatSending(false);
     }
-  }, [task.id, chatMessage, chatSending]);
+  }, [transport, task.id, chatMessage, chatSending]);
 
   const handleReturnToWork = useCallback(async () => {
     setLoading(true);
     setChatError(null);
     const pendingMessage = chatMessage.trim() || null;
     try {
-      await invoke("workflow_return_to_work", { taskId: task.id, message: pendingMessage });
+      await transport.call("return_to_work", { task_id: task.id, message: pendingMessage });
       setShowChatInput(false);
       setChatMessage("");
     } catch (err) {
@@ -375,74 +392,79 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       setChatError(message);
       setLoading(false);
     }
-  }, [task.id, chatMessage]);
+  }, [transport, task.id, chatMessage]);
 
   // -- Action handlers --
 
-  const invokeAndClose = useCallback(
-    async (command: string, args: Record<string, unknown> = {}) => {
+  const callAndClose = useCallback(
+    async (method: string, args: Record<string, unknown> = {}) => {
       if (loading) return;
       setLoading(true);
       try {
-        await invoke(command, { taskId: task.id, ...args });
+        await transport.call(method, { task_id: task.id, ...args });
         onClose();
       } catch (err) {
-        console.error(`Failed to ${command}:`, err);
+        console.error(`Failed to ${method}:`, err);
         setLoading(false);
       }
     },
-    [task.id, loading, onClose],
+    [transport, task.id, loading, onClose],
   );
 
-  const handleApprove = useCallback(() => invokeAndClose("workflow_approve"), [invokeAndClose]);
+  const handleApprove = useCallback(() => callAndClose("approve"), [callAndClose]);
 
   const handleReject = useCallback(async () => {
     if (loading || !feedback.trim()) return;
     setLoading(true);
     try {
-      await invoke("workflow_reject", { taskId: task.id, feedback: feedback.trim() });
+      await transport.call("reject", { task_id: task.id, feedback: feedback.trim() });
       onClose();
     } catch (err) {
-      console.error("Failed to workflow_reject:", err);
+      console.error("Failed to reject:", err);
       setLoading(false);
     }
-  }, [task.id, feedback, loading, onClose]);
+  }, [transport, task.id, feedback, loading, onClose]);
 
   const handleInterrupt = useCallback(async () => {
     if (interrupting) return;
     setInterrupting(true);
     try {
-      await invoke("workflow_interrupt", { taskId: task.id });
+      await transport.call("interrupt", { task_id: task.id });
     } catch (err) {
       console.error("Failed to interrupt:", err);
     } finally {
       setInterrupting(false);
     }
-  }, [task.id, interrupting]);
+  }, [transport, task.id, interrupting]);
 
   const handleResume = useCallback(async () => {
     if (resuming) return;
     setResuming(true);
     try {
-      await invoke("workflow_resume", { taskId: task.id, message: resumeMessage.trim() || null });
+      await transport.call("resume", {
+        task_id: task.id,
+        message: resumeMessage.trim() || null,
+      });
       setResumeMessage("");
       onClose();
     } catch (err) {
       console.error("Failed to resume:", err);
       setResuming(false);
     }
-  }, [task.id, resumeMessage, resuming, onClose]);
+  }, [transport, task.id, resumeMessage, resuming, onClose]);
 
-  const handleMerge = useCallback(() => invokeAndClose("workflow_merge_task"), [invokeAndClose]);
+  const handleMerge = useCallback(() => callAndClose("merge_task"), [callAndClose]);
 
-  const handleOpenPr = useCallback(() => invokeAndClose("workflow_open_pr"), [invokeAndClose]);
+  const handleOpenPr = useCallback(() => callAndClose("open_pr"), [callAndClose]);
 
-  const handleArchive = useCallback(() => invokeAndClose("workflow_archive"), [invokeAndClose]);
+  const handleArchive = useCallback(() => callAndClose("archive"), [callAndClose]);
 
   const handleFixConflicts = useCallback(
     () =>
-      invokeAndClose("workflow_address_pr_conflicts", { baseBranch: `origin/${task.base_branch}` }),
-    [invokeAndClose, task.base_branch],
+      callAndClose("address_pr_conflicts", {
+        base_branch: `origin/${task.base_branch}`,
+      }),
+    [callAndClose, task.base_branch],
   );
 
   const handlePushPr = useCallback(async () => {
@@ -450,35 +472,35 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     setPushPullError(null);
     setLoading(true);
     try {
-      await invoke("workflow_push_pr_changes", { taskId: task.id });
+      await transport.call("push_pr_changes", { task_id: task.id });
       onClose();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setPushPullError(message);
       setLoading(false);
     }
-  }, [task.id, loading, onClose]);
+  }, [transport, task.id, loading, onClose]);
 
   const handlePullPr = useCallback(async () => {
     if (loading) return;
     setPushPullError(null);
     setLoading(true);
     try {
-      await invoke("workflow_pull_pr_changes", { taskId: task.id });
+      await transport.call("pull_pr_changes", { task_id: task.id });
       onClose();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setPushPullError(message);
       setLoading(false);
     }
-  }, [task.id, loading, onClose]);
+  }, [transport, task.id, loading, onClose]);
 
   const handleAddressFeedback = useCallback(async () => {
     if (loading || prTabState.type !== "feedback_selected") return;
     setLoading(true);
     try {
-      await invoke("workflow_address_pr_feedback", {
-        taskId: task.id,
+      await transport.call("address_pr_feedback", {
+        task_id: task.id,
         comments: prTabState.comments,
         checks: prTabState.checks,
         guidance: prTabState.guidance || null,
@@ -488,7 +510,7 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       console.error("Failed to address PR feedback:", err);
       setLoading(false);
     }
-  }, [task.id, loading, prTabState, onClose]);
+  }, [transport, task.id, loading, prTabState, onClose]);
 
   const handleSubmitAnswers = useCallback(
     async (qs: WorkflowQuestion[]) => {
@@ -496,8 +518,8 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       setLoading(true);
       try {
         const now = new Date().toISOString();
-        await invoke("workflow_answer_questions", {
-          taskId: task.id,
+        await transport.call("answer_questions", {
+          task_id: task.id,
           answers: qs.map((q, i) => {
             const raw = answers[i];
             const optIdx = parseOptionIndex(raw);
@@ -519,15 +541,15 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
         setLoading(false);
       }
     },
-    [task.id, answers, allAnswered, loading, onClose],
+    [transport, task.id, answers, allAnswered, loading, onClose],
   );
 
   const handleRetry = useCallback(async () => {
     if (retrying) return;
     setRetrying(true);
     try {
-      await invoke("workflow_retry", {
-        taskId: task.id,
+      await transport.call("retry", {
+        task_id: task.id,
         instructions: retryInstructions.trim() || null,
       });
       onClose();
@@ -535,19 +557,22 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
       console.error("Failed to retry:", err);
       setRetrying(false);
     }
-  }, [task.id, retryInstructions, retrying, onClose]);
+  }, [transport, task.id, retryInstructions, retrying, onClose]);
 
   const handleRequestUpdate = useCallback(async () => {
     if (loading || !updateNotes.trim()) return;
     setLoading(true);
     try {
-      await invoke("workflow_request_update", { taskId: task.id, feedback: updateNotes.trim() });
+      await transport.call("request_update", {
+        task_id: task.id,
+        feedback: updateNotes.trim(),
+      });
       onClose();
     } catch (err) {
       console.error("Failed to request update:", err);
       setLoading(false);
     }
-  }, [task.id, updateNotes, loading, onClose]);
+  }, [transport, task.id, updateNotes, loading, onClose]);
 
   const [optimisticAutoMode, setOptimisticAutoMode] = useState<boolean | null>(null);
 
@@ -562,12 +587,12 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     const newValue = !(optimisticAutoMode ?? task.auto_mode);
     setOptimisticAutoMode(newValue);
     try {
-      await invoke("workflow_set_auto_mode", { taskId: task.id, autoMode: newValue });
+      await transport.call("set_auto_mode", { task_id: task.id, auto_mode: newValue });
     } catch (err) {
       console.error("Failed to set auto mode:", err);
       setOptimisticAutoMode(null);
     }
-  }, [task.id, task.auto_mode, optimisticAutoMode]);
+  }, [transport, task.id, task.auto_mode, optimisticAutoMode]);
 
   return {
     answers,

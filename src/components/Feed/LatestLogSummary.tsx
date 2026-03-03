@@ -6,9 +6,9 @@
  * running, shows the latest gate output line instead of polling logs.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useState } from "react";
 import { usePolling } from "../../hooks/usePolling";
+import { useTransport } from "../../transport";
 import type { LogEntry, WorkflowTaskView } from "../../types/workflow";
 import { stripAnsi } from "../../utils/ansi";
 import { toolSummary } from "../../utils/toolSummary";
@@ -18,6 +18,7 @@ interface LatestLogSummaryProps {
 }
 
 export function LatestLogSummary({ task }: LatestLogSummaryProps) {
+  const transport = useTransport();
   const [entry, setEntry] = useState<LogEntry | null>(null);
 
   const isGateRunning = task.state.type === "gate_running";
@@ -25,8 +26,8 @@ export function LatestLogSummary({ task }: LatestLogSummaryProps) {
   const fetch = useCallback(async () => {
     if (isGateRunning) return;
     try {
-      const result = await invoke<LogEntry | null>("workflow_get_latest_log", {
-        taskId: task.id,
+      const result = await transport.call<LogEntry | null>("get_latest_log", {
+        task_id: task.id,
       });
       if (result === null || entrySummary(result) !== null) {
         setEntry(result);
@@ -34,7 +35,7 @@ export function LatestLogSummary({ task }: LatestLogSummaryProps) {
     } catch {
       // Silently ignore — the feed row doesn't need to show an error state
     }
-  }, [task.id, isGateRunning]);
+  }, [transport, task.id, isGateRunning]);
 
   usePolling(fetch, 3000);
 

@@ -7,6 +7,7 @@ import { useLogs } from "../../../hooks/useLogs";
 import { useProjectInfo } from "../../../hooks/useProjectInfo";
 import { useRunScript } from "../../../hooks/useRunScript";
 import { ProjectInfoProvider, useWorkflowConfig } from "../../../providers";
+import { useTransport } from "../../../transport";
 import type { WorkflowTaskView } from "../../../types/workflow";
 import { groupIterationsIntoRuns } from "../../../utils/stageRuns";
 import { Drawer } from "../../ui/Drawer/Drawer";
@@ -47,16 +48,19 @@ function TaskDrawerBody({
   onOpenTask,
   onRejectModeChange,
 }: TaskDrawerBodyProps) {
+  const transport = useTransport();
   const config = useWorkflowConfig();
   const accent = drawerAccent(task, config);
   const projectInfo = useProjectInfo();
 
   // -- Tab state --
-  const tabs = availableTabs(task, config, { hasRunScript: projectInfo?.has_run_script });
+  // Run script is Tauri-only — never show the tab or button in PWA context.
+  const hasRunScript = transport.supportsLocalOperations ? projectInfo?.has_run_script : false;
+  const tabs = availableTabs(task, config, { hasRunScript });
   const [activeTab, setActiveTab] = useState<DrawerTabId>(() => defaultTab(task));
 
   // -- Run script (single instance, shared with header and tab) --
-  const showRunButton = canUseRunScript(task, projectInfo?.has_run_script);
+  const showRunButton = canUseRunScript(task, hasRunScript);
   const runScript = useRunScript(task.id, showRunButton || activeTab === "run");
 
   // Reset tab when task state type or id changes.

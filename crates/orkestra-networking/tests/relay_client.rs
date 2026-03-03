@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
     config::{StageConfig, WorkflowConfig},
+    execution::ProviderRegistry,
     SqliteWorkflowStore, WorkflowApi, WorkflowStore,
 };
 
@@ -131,8 +132,14 @@ fn test_device_id_persistence() {
 #[tokio::test]
 async fn test_register_on_connect() {
     let (listener, addr) = ephemeral_addr().await;
-    let (api, _, conn) = test_env();
-    let ctx = Arc::new(CommandContext::new(api, conn, PathBuf::new()));
+    let (api, store, conn) = test_env();
+    let ctx = Arc::new(CommandContext::new(
+        api,
+        conn,
+        PathBuf::new(),
+        Arc::new(ProviderRegistry::new("claudecode")),
+        store,
+    ));
     let (event_tx, _) = broadcast::channel::<Event>(16);
     let stop = CancellationToken::new();
 
@@ -165,8 +172,14 @@ async fn test_register_on_connect() {
 #[tokio::test]
 async fn test_event_forwarding() {
     let (listener, addr) = ephemeral_addr().await;
-    let (api, _, conn) = test_env();
-    let ctx = Arc::new(CommandContext::new(api, conn, PathBuf::new()));
+    let (api, store, conn) = test_env();
+    let ctx = Arc::new(CommandContext::new(
+        api,
+        conn,
+        PathBuf::new(),
+        Arc::new(ProviderRegistry::new("claudecode")),
+        store,
+    ));
     let (event_tx, _) = broadcast::channel::<Event>(16);
     let stop = CancellationToken::new();
 
@@ -209,8 +222,14 @@ async fn test_event_forwarding() {
 #[tokio::test]
 async fn test_clean_shutdown() {
     let (listener, addr) = ephemeral_addr().await;
-    let (api, _, conn) = test_env();
-    let ctx = Arc::new(CommandContext::new(api, conn, PathBuf::new()));
+    let (api, store, conn) = test_env();
+    let ctx = Arc::new(CommandContext::new(
+        api,
+        conn,
+        PathBuf::new(),
+        Arc::new(ProviderRegistry::new("claudecode")),
+        store,
+    ));
     let (event_tx, _) = broadcast::channel::<Event>(16);
     let stop = CancellationToken::new();
 
@@ -243,8 +262,14 @@ async fn test_clean_shutdown() {
 #[tokio::test]
 async fn test_reconnection_after_disconnect() {
     let (listener, addr) = ephemeral_addr().await;
-    let (api, _, conn) = test_env();
-    let ctx = Arc::new(CommandContext::new(api, conn, PathBuf::new()));
+    let (api, store, conn) = test_env();
+    let ctx = Arc::new(CommandContext::new(
+        api,
+        conn,
+        PathBuf::new(),
+        Arc::new(ProviderRegistry::new("claudecode")),
+        store,
+    ));
     let (event_tx, _) = broadcast::channel::<Event>(16);
     let stop = CancellationToken::new();
 
@@ -281,21 +306,22 @@ async fn test_reconnection_after_disconnect() {
 /// Forward request: send a Forward message, expect the response to echo client_id.
 #[tokio::test]
 async fn test_request_forwarding_echoes_client_id() {
-    use orkestra_networking::interactions::auth::pair_device;
+    use orkestra_networking::{generate_pairing_code, pair_device};
 
     let (listener, addr) = ephemeral_addr().await;
-    let (api, _, conn) = test_env();
+    let (api, store, conn) = test_env();
     let ctx = Arc::new(CommandContext::new(
         Arc::clone(&api),
         Arc::clone(&conn),
         PathBuf::new(),
+        Arc::new(ProviderRegistry::new("claudecode")),
+        store,
     ));
     let (event_tx, _) = broadcast::channel::<Event>(16);
     let stop = CancellationToken::new();
 
     // Create a valid device token for authentication.
-    let code =
-        orkestra_networking::interactions::auth::generate_pairing_code::execute(&conn).unwrap();
+    let code = generate_pairing_code::execute(&conn).unwrap();
     let token = pair_device::execute(&conn, &code, "test-client").unwrap();
 
     let stop_clone = stop.clone();
@@ -352,8 +378,14 @@ async fn test_request_forwarding_echoes_client_id() {
 #[tokio::test]
 async fn test_forward_without_token_is_unauthorized() {
     let (listener, addr) = ephemeral_addr().await;
-    let (api, _, conn) = test_env();
-    let ctx = Arc::new(CommandContext::new(api, conn, PathBuf::new()));
+    let (api, store, conn) = test_env();
+    let ctx = Arc::new(CommandContext::new(
+        api,
+        conn,
+        PathBuf::new(),
+        Arc::new(ProviderRegistry::new("claudecode")),
+        store,
+    ));
     let (event_tx, _) = broadcast::channel::<Event>(16);
     let stop = CancellationToken::new();
 

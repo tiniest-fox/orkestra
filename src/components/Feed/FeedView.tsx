@@ -1,9 +1,9 @@
 //! Feed view displaying tasks grouped by intent with pipeline bars and status symbols.
 
-import { invoke } from "@tauri-apps/api/core";
 import { Inbox } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGitHistory } from "../../providers/GitHistoryProvider";
+import { useTransport } from "../../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { groupTasksForFeed } from "../../utils/feedGrouping";
 import { EmptyState } from "../ui/EmptyState";
@@ -58,6 +58,7 @@ interface FeedViewProps {
 }
 
 export function FeedView({ config, tasks }: FeedViewProps) {
+  const transport = useTransport();
   const feedBodyRef = useRef<HTMLDivElement>(null);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [rejectMode, setRejectMode] = useState(false);
@@ -242,13 +243,13 @@ export function FeedView({ config, tasks }: FeedViewProps) {
               onReview={setActiveTaskId}
               onAnswer={setActiveTaskId}
               onApprove={(taskId) => {
-                invoke("workflow_approve", { taskId }).catch(console.error);
+                transport.call("approve", { task_id: taskId }).catch(console.error);
               }}
               onMerge={(taskId) => {
-                invoke("workflow_merge_task", { taskId });
+                transport.call("merge_task", { task_id: taskId }).catch(console.error);
               }}
               onOpenPr={(taskId) => {
-                invoke("workflow_open_pr", { taskId });
+                transport.call("open_pr", { task_id: taskId }).catch(console.error);
               }}
               onRowClick={onStripRowClick}
             />
@@ -290,11 +291,11 @@ export function FeedView({ config, tasks }: FeedViewProps) {
             config={config}
             onClose={closeNewTask}
             onCreate={async (description, autoMode, baseBranch, flow) => {
-              await invoke("workflow_create_task", {
+              await transport.call("create_task", {
                 title: "",
                 description,
-                baseBranch: baseBranch || null,
-                autoMode,
+                base_branch: baseBranch || null,
+                auto_mode: autoMode,
                 flow: flow ?? null,
               });
             }}

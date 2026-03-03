@@ -7,8 +7,8 @@
  * Use prefetchCommitDiff() to warm the cache before the drawer opens.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { type Transport, useTransport } from "../transport";
 import type { HighlightedTaskDiff } from "./useDiff";
 
 // Module-level cache — commit hashes are immutable, safe to cache indefinitely.
@@ -16,9 +16,9 @@ const diffCache = new Map<string, HighlightedTaskDiff>();
 const pendingFetches = new Map<string, Promise<HighlightedTaskDiff>>();
 
 /** Pre-warm the diff cache for a commit. No-op if already cached or in-flight. */
-export function prefetchCommitDiff(commitHash: string): void {
+export function prefetchCommitDiff(commitHash: string, transport: Transport): void {
   if (diffCache.has(commitHash) || pendingFetches.has(commitHash)) return;
-  const p = invoke<HighlightedTaskDiff>("workflow_get_commit_diff", { commitHash });
+  const p = transport.call<HighlightedTaskDiff>("get_commit_diff", { commit_hash: commitHash });
   pendingFetches.set(commitHash, p);
   p.then((result) => {
     diffCache.set(commitHash, result);
@@ -35,6 +35,7 @@ interface UseCommitDiffResult {
 }
 
 export function useCommitDiff(commitHash: string | null): UseCommitDiffResult {
+  const transport = useTransport();
   const [diff, setDiff] = useState<HighlightedTaskDiff | null>(() =>
     commitHash ? (diffCache.get(commitHash) ?? null) : null,
   );
@@ -67,7 +68,9 @@ export function useCommitDiff(commitHash: string | null): UseCommitDiffResult {
     // start a new one.
     let promise = pendingFetches.get(commitHash);
     if (!promise) {
-      promise = invoke<HighlightedTaskDiff>("workflow_get_commit_diff", { commitHash });
+      promise = transport.call<HighlightedTaskDiff>("get_commit_diff", {
+        commit_hash: commitHash,
+      });
       pendingFetches.set(commitHash, promise);
     }
 
@@ -91,7 +94,7 @@ export function useCommitDiff(commitHash: string | null): UseCommitDiffResult {
     return () => {
       cancelled = true;
     };
-  }, [commitHash]);
+  }, [transport, commitHash]);
 
   return { diff, loading, error };
 }

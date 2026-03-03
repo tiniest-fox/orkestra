@@ -7,12 +7,16 @@
 pub(crate) mod diff_cache;
 pub(crate) mod diff_types;
 pub(crate) mod highlight;
-pub mod interactions;
+pub(crate) mod interactions;
 pub mod relay_client;
 pub mod server;
 pub mod types;
 
+pub use interactions::auth::{generate_pairing_code, list_devices, pair_device, revoke_device};
 pub use interactions::command::dispatch::CommandContext;
+pub use interactions::event::broadcast::execute as convert_orchestrator_event;
+// NOTE: Re-exported for src-tauri, which reuses the same GitHub CLI integration
+// rather than duplicating the ~160-line fetch + parse logic.
 pub use interactions::command::query::fetch_pr_status;
 pub use relay_client::{RelayClientConfig, RelayClientError};
 pub use server::start;

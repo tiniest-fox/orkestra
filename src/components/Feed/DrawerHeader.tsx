@@ -1,9 +1,9 @@
 //! Shared header for Feed drawers — title row + pipeline + session strip.
 
-import { invoke } from "@tauri-apps/api/core";
 import { Play, Square, SquarePen, SquareTerminal, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { RunStatus } from "../../hooks/useRunScript";
+import { useTransport } from "../../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { computePipelineSegments } from "../../utils/pipelineSegments";
 import { groupIterationsIntoRuns } from "../../utils/stageRuns";
@@ -72,6 +72,7 @@ export function DrawerHeader({
   onRunStart,
   onRunStop,
 }: DrawerHeaderProps) {
+  const transport = useTransport();
   const effectiveAutoMode = autoModeOverride ?? task.auto_mode;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const segments = useMemo(() => computePipelineSegments(task, config), [task, config]);
@@ -82,10 +83,12 @@ export function DrawerHeader({
 
   const worktreePath = task.worktree_path;
   useNavHandler("T", () => {
-    if (worktreePath) invoke("open_in_terminal", { path: worktreePath });
+    if (transport.supportsLocalOperations && worktreePath)
+      transport.call("open_in_terminal", { path: worktreePath });
   });
   useNavHandler("E", () => {
-    if (worktreePath) invoke("open_in_editor", { path: worktreePath });
+    if (transport.supportsLocalOperations && worktreePath)
+      transport.call("open_in_editor", { path: worktreePath });
   });
   useNavHandler("D", () => {
     setShowDeleteConfirm(true);
@@ -156,24 +159,28 @@ export function DrawerHeader({
                 {runStatus.running ? "Stop" : "Run"}
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => invoke("open_in_terminal", { path: task.worktree_path })}
-              className="flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
-              title="Open in terminal (⇧T)"
-            >
-              <Kbd>⇧T</Kbd>
-              <SquareTerminal size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => invoke("open_in_editor", { path: task.worktree_path })}
-              className="flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
-              title="Open in editor (⇧E)"
-            >
-              <Kbd>⇧E</Kbd>
-              <SquarePen size={14} />
-            </button>
+            {transport.supportsLocalOperations && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => transport.call("open_in_terminal", { path: task.worktree_path })}
+                  className="flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
+                  title="Open in terminal (⇧T)"
+                >
+                  <Kbd>⇧T</Kbd>
+                  <SquareTerminal size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => transport.call("open_in_editor", { path: task.worktree_path })}
+                  className="flex items-center gap-1.5 text-text-quaternary hover:text-text-secondary transition-colors"
+                  title="Open in editor (⇧E)"
+                >
+                  <Kbd>⇧E</Kbd>
+                  <SquarePen size={14} />
+                </button>
+              </>
+            )}
           </div>
         )}
         <button
@@ -242,7 +249,7 @@ export function DrawerHeader({
             <Button
               variant="destructive"
               size="sm"
-              onClick={() => invoke("workflow_delete_task", { taskId: task.id }).then(onClose)}
+              onClick={() => transport.call("delete_task", { task_id: task.id }).then(onClose)}
             >
               Delete
             </Button>

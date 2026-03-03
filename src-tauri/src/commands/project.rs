@@ -12,6 +12,8 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_store::StoreExt;
 
+pub use orkestra_types::config::ProjectInfo;
+
 /// Response from opening a project.
 #[derive(Debug, Serialize)]
 pub struct OpenProjectResponse {
@@ -19,19 +21,6 @@ pub struct OpenProjectResponse {
     pub window_label: String,
     /// Project root path.
     pub project_root: String,
-}
-
-/// Information about a project.
-#[derive(Debug, Serialize)]
-pub struct ProjectInfo {
-    /// Project root path.
-    pub project_root: String,
-    /// Whether git service is available.
-    pub has_git: bool,
-    /// Whether the `gh` CLI is available for PR creation.
-    pub has_gh_cli: bool,
-    /// Whether `.orkestra/scripts/run.sh` exists for this project.
-    pub has_run_script: bool,
 }
 
 /// Payload for the `startup-error` event.

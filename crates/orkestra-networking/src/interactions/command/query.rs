@@ -10,6 +10,7 @@ use serde_json::Value;
 use tokio::process::Command;
 
 use crate::types::{ErrorPayload, PrCheck, PrComment, PrReview, PrStatus};
+use orkestra_types::config::ProjectInfo;
 
 use super::dispatch::CommandContext;
 
@@ -18,7 +19,7 @@ use super::dispatch::CommandContext;
 // ============================================================================
 
 /// Handle the `get_config` method — returns the workflow configuration.
-pub async fn handle_get_config(
+pub(super) async fn handle_get_config(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -35,7 +36,7 @@ pub async fn handle_get_config(
 /// Handle the `get_startup_data` method — returns config and full task list together.
 ///
 /// Combines `get_config` and `list_tasks` in one round trip.
-pub async fn handle_get_startup_data(
+pub(super) async fn handle_get_startup_data(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -51,7 +52,7 @@ pub async fn handle_get_startup_data(
 }
 
 /// Handle the `get_auto_task_templates` method — loads predefined task templates.
-pub async fn handle_get_auto_task_templates(
+pub(super) async fn handle_get_auto_task_templates(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -71,7 +72,7 @@ pub async fn handle_get_auto_task_templates(
 /// Handle the `get_iterations` method.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_get_iterations(
+pub(super) async fn handle_get_iterations(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -89,7 +90,7 @@ pub async fn handle_get_iterations(
 /// Handle the `get_artifact` method.
 ///
 /// Expected params: `{ "task_id": "<id>", "name": "<artifact_name>" }`
-pub async fn handle_get_artifact(
+pub(super) async fn handle_get_artifact(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -115,7 +116,7 @@ pub async fn handle_get_artifact(
 /// Handle the `get_pending_questions` method.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_get_pending_questions(
+pub(super) async fn handle_get_pending_questions(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -135,7 +136,7 @@ pub async fn handle_get_pending_questions(
 /// Handle the `get_current_stage` method.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_get_current_stage(
+pub(super) async fn handle_get_current_stage(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -155,7 +156,7 @@ pub async fn handle_get_current_stage(
 /// Handle the `get_rejection_feedback` method.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_get_rejection_feedback(
+pub(super) async fn handle_get_rejection_feedback(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -173,21 +174,58 @@ pub async fn handle_get_rejection_feedback(
 }
 
 // ============================================================================
+// Project info
+// ============================================================================
+
+/// Handle the `get_project_info` method — returns basic project environment metadata.
+pub(super) async fn handle_get_project_info(
+    ctx: Arc<CommandContext>,
+    _params: Value,
+) -> Result<Value, ErrorPayload> {
+    let api = Arc::clone(&ctx.api);
+    let project_root = Arc::clone(&ctx.project_root);
+    tokio::task::spawn_blocking(move || {
+        let has_git = {
+            let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+            api.git_service().is_some()
+        };
+        let has_gh_cli = std::process::Command::new("gh")
+            .arg("--version")
+            .stdin(std::process::Stdio::null())
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        let has_run_script = project_root
+            .join(orkestra_types::config::RUN_SCRIPT_RELATIVE_PATH)
+            .exists();
+        let info = ProjectInfo {
+            project_root: project_root.display().to_string(),
+            has_git,
+            has_gh_cli,
+            has_run_script,
+        };
+        Ok(serde_json::to_value(info).unwrap_or(Value::Null))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+// ============================================================================
 // Branch queries
 // ============================================================================
 
 /// Branch information returned by `list_branches`.
 #[derive(Serialize)]
-pub struct BranchList {
-    pub branches: Vec<String>,
-    pub current: Option<String>,
-    pub latest_commit_message: Option<String>,
+pub(crate) struct BranchList {
+    pub(crate) branches: Vec<String>,
+    pub(crate) current: Option<String>,
+    pub(crate) latest_commit_message: Option<String>,
 }
 
 /// Handle the `list_branches` method — returns available git branches.
 ///
 /// Returns empty lists if no git service is configured.
-pub async fn handle_list_branches(
+pub(super) async fn handle_list_branches(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -229,7 +267,7 @@ pub async fn handle_list_branches(
 /// Handle the `get_logs` method — returns log entries for a task's stage/session.
 ///
 /// Expected params: `{ "task_id": "<id>", "stage": "<stage>" (opt), "session_id": "<id>" (opt) }`
-pub async fn handle_get_logs(
+pub(super) async fn handle_get_logs(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -258,7 +296,7 @@ pub async fn handle_get_logs(
 /// Handle the `get_latest_log` method — returns the most recent log entry for a task.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_get_latest_log(
+pub(super) async fn handle_get_latest_log(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -349,7 +387,7 @@ const GH_TIMEOUT: Duration = Duration::from_secs(10);
 /// Handle the `get_pr_status` method — fetches PR state, checks, reviews, and comments.
 ///
 /// Expected params: `{ "pr_url": "<url>" }`
-pub async fn handle_get_pr_status(
+pub(super) async fn handle_get_pr_status(
     _ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -413,7 +451,10 @@ pub async fn fetch_pr_status(pr_url: &str) -> Result<PrStatus, ErrorPayload> {
         match check_runs_result {
             Ok(api_stdout) => {
                 let parsed: GhCheckRunsResponse =
-                    serde_json::from_str(&api_stdout).unwrap_or_default();
+                    serde_json::from_str(&api_stdout).unwrap_or_else(|e| {
+                        tracing::warn!("Failed to parse check-runs JSON: {e}");
+                        GhCheckRunsResponse::default()
+                    });
                 parsed
                     .check_runs
                     .into_iter()
@@ -490,7 +531,13 @@ fn map_checks<'a>(
 }
 
 fn map_reviews(api_stdout: &str) -> Vec<PrReview> {
-    let api_reviews: Vec<GhApiReview> = serde_json::from_str(api_stdout).unwrap_or_default();
+    let api_reviews: Vec<GhApiReview> = match serde_json::from_str(api_stdout) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("Failed to parse PR reviews JSON: {e}");
+            Vec::new()
+        }
+    };
     api_reviews
         .into_iter()
         .filter_map(|r| {
@@ -506,8 +553,13 @@ fn map_reviews(api_stdout: &str) -> Vec<PrReview> {
 }
 
 fn map_comments(api_stdout: &str) -> Vec<PrComment> {
-    let api_comments: Vec<GhApiReviewComment> =
-        serde_json::from_str(api_stdout).unwrap_or_default();
+    let api_comments: Vec<GhApiReviewComment> = match serde_json::from_str(api_stdout) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("Failed to parse PR comments JSON: {e}");
+            Vec::new()
+        }
+    };
     api_comments
         .into_iter()
         .filter_map(|c| {
@@ -535,10 +587,12 @@ fn parse_pr_url(url: &str) -> Option<(&str, &str, &str)> {
 }
 
 fn normalize_pr_state(state: &str) -> &'static str {
-    match state.to_uppercase().as_str() {
-        "MERGED" => "merged",
-        "CLOSED" => "closed",
-        _ => "open",
+    if state.eq_ignore_ascii_case("merged") {
+        "merged"
+    } else if state.eq_ignore_ascii_case("closed") {
+        "closed"
+    } else {
+        "open"
     }
 }
 

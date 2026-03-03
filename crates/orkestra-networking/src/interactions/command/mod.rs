@@ -1,10 +1,12 @@
 //! Command dispatch and shared helpers.
 
 pub mod action;
+pub mod assistant;
 pub mod diff;
 pub mod dispatch;
 pub mod git;
 pub mod query;
+pub mod stage_chat;
 pub mod task;
 
 use crate::types::ErrorPayload;

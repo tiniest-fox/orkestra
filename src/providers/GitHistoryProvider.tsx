@@ -4,7 +4,6 @@
  * Fetches commit log and branch data with 2-second polling. File counts are lazy-loaded separately via batch endpoint.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import {
   createContext,
   type ReactNode,
@@ -17,6 +16,7 @@ import {
 } from "react";
 import { prefetchCommitDiff } from "../hooks/useCommitDiff";
 import { usePolling } from "../hooks/usePolling";
+import { useTransport } from "../transport";
 import type { BranchList, CommitInfo, SyncStatus } from "../types/workflow";
 import { extractErrorMessage } from "../utils/errors";
 
@@ -67,6 +67,7 @@ interface GitHistoryProviderProps {
 }
 
 export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
+  const transport = useTransport();
   const [commits, setCommits] = useState<CommitInfo[]>([]);
   const [fileCounts, setFileCounts] = useState<Map<string, number>>(new Map());
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
@@ -83,9 +84,9 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
   const fetchCommits = useCallback(async () => {
     try {
       const [commitResult, branchResult, syncResult] = await Promise.all([
-        invoke<CommitInfo[]>("workflow_get_commit_log"),
-        invoke<BranchList>("workflow_list_branches"),
-        invoke<SyncStatus | null>("workflow_git_sync_status"),
+        transport.call<CommitInfo[]>("get_commit_log"),
+        transport.call<BranchList>("list_branches"),
+        transport.call<SyncStatus | null>("git_sync_status"),
       ]);
       setCommits(commitResult);
       setCurrentBranch(branchResult.current);
@@ -97,14 +98,14 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [transport]);
 
   const pushToOrigin = useCallback(async () => {
     setPushLoading(true);
     setOperationError(null);
     try {
-      await invoke("workflow_git_push");
-      const status = await invoke<SyncStatus | null>("workflow_git_sync_status");
+      await transport.call("git_push");
+      const status = await transport.call<SyncStatus | null>("git_sync_status");
       setSyncStatus(status);
     } catch (err) {
       console.error("Push failed:", err);
@@ -112,14 +113,14 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     } finally {
       setPushLoading(false);
     }
-  }, []);
+  }, [transport]);
 
   const fetchFromOrigin = useCallback(async () => {
     setFetchLoading(true);
     setOperationError(null);
     try {
-      await invoke("workflow_git_fetch");
-      const status = await invoke<SyncStatus | null>("workflow_git_sync_status");
+      await transport.call("git_fetch");
+      const status = await transport.call<SyncStatus | null>("git_sync_status");
       setSyncStatus(status);
     } catch (err) {
       console.error("Fetch failed:", err);
@@ -127,16 +128,16 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     } finally {
       setFetchLoading(false);
     }
-  }, []);
+  }, [transport]);
 
   const pullFromOrigin = useCallback(async () => {
     setPullLoading(true);
     setOperationError(null);
     try {
-      await invoke("workflow_git_pull");
+      await transport.call("git_pull");
       const [commitResult, status] = await Promise.all([
-        invoke<CommitInfo[]>("workflow_get_commit_log"),
-        invoke<SyncStatus | null>("workflow_git_sync_status"),
+        transport.call<CommitInfo[]>("get_commit_log"),
+        transport.call<SyncStatus | null>("git_sync_status"),
       ]);
       setCommits(commitResult);
       setSyncStatus(status);
@@ -146,16 +147,16 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     } finally {
       setPullLoading(false);
     }
-  }, []);
+  }, [transport]);
 
   usePolling(fetchCommits, 2000);
 
   // Pre-warm the diff cache for the most recent commit so the first open is instant.
   useEffect(() => {
     if (commits.length > 0) {
-      prefetchCommitDiff(commits[0].hash);
+      prefetchCommitDiff(commits[0].hash, transport);
     }
-  }, [commits]);
+  }, [commits, transport]);
 
   useEffect(() => {
     if (commits.length === 0) return;
@@ -169,7 +170,8 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
     // Mark as in-flight before async call
     for (const h of missing) requestedHashesRef.current.add(h);
 
-    invoke<Record<string, number>>("workflow_get_batch_file_counts", { hashes: missing })
+    transport
+      .call<Record<string, number>>("get_batch_file_counts", { hashes: missing })
       .then((result) => {
         setFileCounts((prev) => {
           const next = new Map(prev);
@@ -184,7 +186,7 @@ export function GitHistoryProvider({ children }: GitHistoryProviderProps) {
         // Remove failed hashes so they can be retried on next poll
         for (const h of missing) requestedHashesRef.current.delete(h);
       });
-  }, [commits]);
+  }, [commits, transport]);
 
   const syncControls = useMemo((): SyncControls => {
     const isDetachedHead = currentBranch === "HEAD";

@@ -1,6 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mockTransport, mockTransportCallResponses } from "../test/mocks/transport";
 import type { WorkflowTaskView } from "../types/workflow";
 import { PrStatusProvider, usePrStatus } from "./PrStatusProvider";
 import { useTasks } from "./TasksProvider";
@@ -11,7 +11,6 @@ vi.mock("./TasksProvider", () => ({
 }));
 
 const mockUseTasks = vi.mocked(useTasks);
-const mockInvoke = vi.mocked(invoke);
 
 function createMockTask(id: string, prUrl?: string): WorkflowTaskView {
   return {
@@ -82,7 +81,9 @@ function TestConsumer({ taskId = "task-1" }: { taskId?: string }) {
 
 describe("PrStatusProvider", () => {
   beforeEach(() => {
-    mockInvoke.mockReset();
+    // Don't replace mockTransport.call — global beforeEach in setup.ts already calls
+    // resetTransportMocks() which sets the default rejection implementation on mockTransportCall.
+    // Replacing it here would sever the shared reference that mockTransportCallResponses updates.
     mockUseTasks.mockReturnValue(createMockTasksValue([]));
     // Mock visibility API - always visible for tests
     Object.defineProperty(document, "visibilityState", {
@@ -95,12 +96,14 @@ describe("PrStatusProvider", () => {
     const task = createMockTask("task-1", "https://github.com/test/repo/pull/1");
     mockUseTasks.mockReturnValue(createMockTasksValue([task]));
 
-    mockInvoke.mockResolvedValue({
-      url: "https://github.com/test/repo/pull/1",
-      state: "open",
-      checks: [],
-      reviews: [],
-      fetched_at: new Date().toISOString(),
+    mockTransportCallResponses({
+      get_pr_status: {
+        url: "https://github.com/test/repo/pull/1",
+        state: "open",
+        checks: [],
+        reviews: [],
+        fetched_at: new Date().toISOString(),
+      },
     });
 
     render(
@@ -110,8 +113,8 @@ describe("PrStatusProvider", () => {
     );
 
     await waitFor(() => {
-      expect(mockInvoke).toHaveBeenCalledWith("workflow_get_pr_status", {
-        prUrl: "https://github.com/test/repo/pull/1",
+      expect(mockTransport.call).toHaveBeenCalledWith("get_pr_status", {
+        pr_url: "https://github.com/test/repo/pull/1",
       });
     });
   });
@@ -120,12 +123,14 @@ describe("PrStatusProvider", () => {
     const task = createMockTask("task-1", "https://github.com/test/repo/pull/1");
     mockUseTasks.mockReturnValue(createMockTasksValue([task]));
 
-    mockInvoke.mockResolvedValue({
-      url: "https://github.com/test/repo/pull/1",
-      state: "merged",
-      checks: [],
-      reviews: [],
-      fetched_at: new Date().toISOString(),
+    mockTransportCallResponses({
+      get_pr_status: {
+        url: "https://github.com/test/repo/pull/1",
+        state: "merged",
+        checks: [],
+        reviews: [],
+        fetched_at: new Date().toISOString(),
+      },
     });
 
     render(
@@ -156,8 +161,8 @@ describe("PrStatusProvider", () => {
     // Give it time to potentially make a call
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    // Should not have called invoke since task has no pr_url
-    expect(mockInvoke).not.toHaveBeenCalled();
+    // Should not have called transport.call since task has no pr_url
+    expect(mockTransport.call).not.toHaveBeenCalled();
   });
 
   it("handles fetch errors gracefully", async () => {
@@ -165,7 +170,9 @@ describe("PrStatusProvider", () => {
     mockUseTasks.mockReturnValue(createMockTasksValue([task]));
 
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    mockInvoke.mockRejectedValue(new Error("Network error"));
+    mockTransport.call = vi
+      .fn()
+      .mockRejectedValue(new Error("Network error")) as typeof mockTransport.call;
 
     render(
       <PrStatusProvider>

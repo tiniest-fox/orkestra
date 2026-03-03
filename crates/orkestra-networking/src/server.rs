@@ -10,7 +10,6 @@
 //! exchange a pairing code for a bearer token.
 
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -45,19 +44,25 @@ struct ServerState {
 // Public API
 // ============================================================================
 
-/// Start the WebSocket server on `bind_addr`.
+/// Start the WebSocket server using a pre-bound `listener`.
 ///
 /// Requires a bearer token on the WebSocket upgrade path. The `static_token`
 /// parameter enables a fixed development token that bypasses device pairing.
 /// Pass `None` in production to require the full pairing flow.
+///
+/// The caller is responsible for binding the listener — this eliminates the
+/// TOCTOU race that occurs when binding an ephemeral port and passing the
+/// address separately.
 ///
 /// This is an async future — `await` it to run the server until it stops.
 pub async fn start(
     ctx: Arc<CommandContext>,
     event_tx: broadcast::Sender<Event>,
     static_token: Option<String>,
-    bind_addr: SocketAddr,
+    listener: tokio::net::TcpListener,
 ) -> Result<(), std::io::Error> {
+    let local_addr = listener.local_addr()?;
+
     let state = ServerState {
         ctx,
         event_tx,
@@ -69,9 +74,7 @@ pub async fn start(
         .route("/pair", post(pair_handler))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(bind_addr).await?;
-
-    tracing::info!("WebSocket server listening on {bind_addr}");
+    tracing::info!("WebSocket server listening on {local_addr}");
 
     axum::serve(listener, router).await
 }
@@ -160,6 +163,18 @@ async fn pair_handler(
 /// - Lagged broadcast → send `state_reset` with full task snapshot
 async fn handle_connection(mut socket: WebSocket, state: ServerState) {
     let mut event_rx = state.event_tx.subscribe();
+
+    // Send initial state snapshot so the client has coherent state immediately,
+    // even if it missed events while disconnected.
+    if let Some(reset_event) =
+        crate::interactions::event::build_state_reset::execute(&state.ctx).await
+    {
+        let serialized = serde_json::to_string(&reset_event)
+            .unwrap_or_else(|_| r#"{"event":"state_reset","data":{}}"#.into());
+        if socket.send(Message::Text(serialized.into())).await.is_err() {
+            return;
+        }
+    }
 
     loop {
         tokio::select! {

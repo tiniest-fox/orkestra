@@ -1,13 +1,11 @@
 //! Tests for the useRunScript hook: initial state, taskId reset, and error handling.
 
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mockInvoke, resetMocks } from "../test/mocks/tauri";
+import { afterEach, describe, expect, it, type vi } from "vitest";
+import { mockTransportCall } from "../test/mocks/transport";
 import { useRunScript } from "./useRunScript";
 
-beforeEach(() => {
-  resetMocks();
-});
+// Global setup (setup.ts) already calls resetTransportMocks() in beforeEach.
 
 afterEach(() => {});
 
@@ -26,11 +24,11 @@ describe("useRunScript", () => {
     });
 
     // Trigger state accumulation by starting
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "start_run_script") return Promise.reject("spawn failed");
-      if (cmd === "get_run_status")
+    (mockTransportCall as ReturnType<typeof vi.fn>).mockImplementation((method: string) => {
+      if (method === "start_run_script") return Promise.reject("spawn failed");
+      if (method === "get_run_status")
         return Promise.resolve({ running: false, pid: null, exit_code: null });
-      return Promise.reject(new Error(`Unmocked: ${cmd}`));
+      return Promise.reject(new Error(`Unmocked: ${method}`));
     });
 
     await act(async () => {
@@ -51,11 +49,11 @@ describe("useRunScript", () => {
   });
 
   it("sets error state when start fails", async () => {
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "start_run_script") return Promise.reject("spawn failed");
-      if (cmd === "get_run_status")
+    (mockTransportCall as ReturnType<typeof vi.fn>).mockImplementation((method: string) => {
+      if (method === "start_run_script") return Promise.reject("spawn failed");
+      if (method === "get_run_status")
         return Promise.resolve({ running: false, pid: null, exit_code: null });
-      return Promise.reject(new Error(`Unmocked: ${cmd}`));
+      return Promise.reject(new Error(`Unmocked: ${method}`));
     });
 
     const { result } = renderHook(() => useRunScript("task-1", true));
@@ -69,11 +67,11 @@ describe("useRunScript", () => {
   });
 
   it("sets error state when stop fails", async () => {
-    mockInvoke.mockImplementation((cmd: string) => {
-      if (cmd === "stop_run_script") return Promise.reject("stop failed");
-      if (cmd === "get_run_status")
+    (mockTransportCall as ReturnType<typeof vi.fn>).mockImplementation((method: string) => {
+      if (method === "stop_run_script") return Promise.reject("stop failed");
+      if (method === "get_run_status")
         return Promise.resolve({ running: true, pid: 123, exit_code: null });
-      return Promise.reject(new Error(`Unmocked: ${cmd}`));
+      return Promise.reject(new Error(`Unmocked: ${method}`));
     });
 
     const { result } = renderHook(() => useRunScript("task-1", true));

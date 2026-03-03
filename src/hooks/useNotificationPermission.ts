@@ -1,4 +1,3 @@
-import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { useEffect, useRef } from "react";
 
 /**
@@ -20,12 +19,18 @@ export function useNotificationPermission() {
     if (requested.current) return;
     requested.current = true;
 
+    // Notification plugin is Tauri-only; skip in PWA context.
+    if (typeof window === "undefined" || !("__TAURI__" in window)) return;
+
     requestNotificationPermission();
   }, []);
 }
 
 async function requestNotificationPermission() {
   try {
+    const { isPermissionGranted, requestPermission } = await import(
+      "@tauri-apps/plugin-notification"
+    );
     const granted = await isPermissionGranted();
     if (granted) {
       console.log("[notifications] Permission already granted");

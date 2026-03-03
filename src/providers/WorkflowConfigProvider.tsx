@@ -5,12 +5,18 @@
  * and TasksProvider loading state.
  */
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { startupData, startupError } from "../main";
+import { useTransport } from "../transport";
 import type { WorkflowConfig, WorkflowTaskView } from "../types/workflow";
-import { safeUnlisten } from "../utils/safeUnlisten";
 
 interface WorkflowConfigState {
   config: WorkflowConfig | null;
@@ -54,68 +60,88 @@ interface StartupData {
 }
 
 export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps) {
+  const transport = useTransport();
   const [config, setConfig] = useState<WorkflowConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
+  // Incrementing retryKey re-triggers the fetch effect after a retry call.
+  const [retryKey, setRetryKey] = useState(0);
+  const retriesRef = useRef(0);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retryKey triggers effect re-run on retry
   useEffect(() => {
+    retriesRef.current = 0;
     console.timeEnd("[startup] config:react");
 
-    // Fast path: module-level slots already populated before React mounted.
+    // Fast path: module-level slots already populated before React mounted (Tauri only).
     if (startupError.value) {
       setError(startupError.value);
       setLoading(false);
       return;
     }
-    if (startupData.value) {
+    if (transport.supportsLocalOperations && startupData.value) {
       console.timeEnd("[startup] config");
       setConfig(startupData.value.config);
       setLoading(false);
       return;
     }
 
-    // Slow path: startup data wasn't captured before React mounted.
-    // Poll the IPC slot until it's populated (idempotent — no take semantics).
+    // Transport path: fetch via RPC.
+    // For Tauri slow path: startup event not yet received, poll until ready.
+    // For PWA: primary path, no module-level slots.
     let cancelled = false;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
-    function poll() {
-      invoke<StartupData | null>("workflow_get_startup_data")
-        .then((data) => {
-          if (cancelled) return;
-          if (data) {
-            startupData.value = data;
-            console.timeEnd("[startup] config");
-            setConfig(data.config);
-            setLoading(false);
+    async function fetchStartupData() {
+      try {
+        const data = await transport.call<StartupData | null>("get_startup_data");
+        if (cancelled) return;
+        if (data) {
+          startupData.value = data;
+          console.timeEnd("[startup] config");
+          setConfig(data.config);
+          setLoading(false);
+        } else if (transport.supportsLocalOperations) {
+          // Tauri slow path: startup data not ready yet, retry (max 30 × 100ms = 3s).
+          if (retriesRef.current < 30) {
+            retriesRef.current++;
+            pollTimer = setTimeout(fetchStartupData, 100);
           } else {
-            pollTimer = setTimeout(poll, 100);
+            setError("Startup timed out — project may not be registered");
+            setLoading(false);
           }
-        })
-        .catch(() => {
-          // Project not registered yet — retry.
-          if (!cancelled) pollTimer = setTimeout(poll, 100);
-        });
+        } else {
+          // PWA path: null response is unexpected.
+          setError("Unable to load project data — check daemon connection");
+          setLoading(false);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        if (transport.supportsLocalOperations) {
+          // Tauri: project may not be registered yet, retry (max 30 × 100ms = 3s).
+          if (retriesRef.current < 30) {
+            retriesRef.current++;
+            pollTimer = setTimeout(fetchStartupData, 100);
+          } else {
+            setError("Startup timed out — project may not be registered");
+            setLoading(false);
+          }
+        } else {
+          setError(err);
+          setLoading(false);
+        }
+      }
     }
 
-    poll();
-
-    // Listen for startup-error in case init fails.
-    const errorPromise = listen<{ message: string }>("startup-error", ({ payload }) => {
-      if (cancelled) return;
-      startupError.value = payload.message;
-      setError(payload.message);
-      setLoading(false);
-    });
+    fetchStartupData();
 
     return () => {
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
-      safeUnlisten(errorPromise);
     };
-  }, []);
+  }, [transport, retryKey]);
 
-  function retry() {
+  const retry = useCallback(async () => {
     const path = getProjectPath();
     startupError.value = null;
     startupData.value = null;
@@ -123,38 +149,22 @@ export function WorkflowConfigProvider({ children }: WorkflowConfigProviderProps
     setConfig(null);
     setLoading(true);
 
-    // One-shot listeners for the retry response.
-    let settled = false;
+    // Tauri: tell the backend to re-initialize the project, then re-fetch.
+    // Await so that a failed retry_startup is surfaced before the fetch effect runs.
+    // PWA: no backend re-init needed — just re-fetch startup data.
+    if (transport.supportsLocalOperations) {
+      try {
+        await transport.call("retry_startup", { path });
+      } catch (e) {
+        setError(e);
+        setLoading(false);
+        return;
+      }
+    }
 
-    const dataPromise = listen<StartupData>("startup-data", ({ payload }) => {
-      if (settled) return;
-      settled = true;
-      startupData.value = payload;
-      setConfig(payload.config);
-      setLoading(false);
-      safeUnlisten(dataPromise);
-      safeUnlisten(errorPromise);
-    });
-
-    const errorPromise = listen<{ message: string }>("startup-error", ({ payload }) => {
-      if (settled) return;
-      settled = true;
-      startupError.value = payload.message;
-      setError(payload.message);
-      setLoading(false);
-      safeUnlisten(dataPromise);
-      safeUnlisten(errorPromise);
-    });
-
-    invoke("workflow_retry_startup", { path }).catch((e: unknown) => {
-      if (settled) return;
-      settled = true;
-      setError(e);
-      setLoading(false);
-      safeUnlisten(dataPromise);
-      safeUnlisten(errorPromise);
-    });
-  }
+    // Increment to re-run the fetch effect.
+    setRetryKey((k) => k + 1);
+  }, [transport]);
 
   return (
     <WorkflowConfigContext.Provider value={{ config, loading, error, retry }}>

@@ -203,6 +203,17 @@ Omit anything obvious from the diff. The reviewer can see the code — your summ
 <!-- compound: vainly-innocent-guan -->
 **`ok_or_else()` not `unwrap_or_default()` on required Optional fields**: Domain model fields like `branch_name: Option<String>` that represent required state at a given phase must fail fast with an actionable error when `None`. Use `ok_or_else(|| WorkflowError::Internal("branch_name missing".into()))?` rather than `.unwrap_or_default()`. `unwrap_or_default()` silently converts `None` to empty string, masking bugs and violating Fail Fast. This is a HIGH-severity pattern violation that reviewers always catch.
 
+<!-- compound: painfully-utmost-thrasher -->
+## WebSocket Transport Conventions
+
+When implementing or extending the `transport.call()` / WebSocket dispatch layer:
+
+**Param key casing** — Params passed to `transport.call()` are serialized over the WebSocket and deserialized into Rust structs by `serde`. Rust structs use snake_case field names. **Always use snake_case keys** in the TypeScript params object (e.g., `task_id`, not `taskId`). Using camelCase will silently fail to deserialize on the Rust side — the field arrives as `None` or triggers an error with no obvious signal. This is the most common cause of WebSocket handler breakage on the frontend side.
+
+**Dispatch table parity** — Every new WebSocket handler added to `dispatch.rs` needs a corresponding wiring test asserting `!= METHOD_NOT_FOUND`. Search `websocket.rs` tests for existing examples; they use a `build_test_handler()` helper. Missing wiring tests are flagged by reviewers.
+
+**Parallel structures** — `METHOD_MAP` in `TauriTransport.ts` and the Rust dispatch table are maintained in parallel. When adding a new command, update both and add a cross-reference comment to make the link explicit.
+
 ## If You Have Feedback to Address
 
 If your previous implementation was rejected, you'll receive specific feedback from the reviewer. Address the feedback directly:

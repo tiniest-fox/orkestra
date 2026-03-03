@@ -23,10 +23,11 @@ use tokio_util::sync::CancellationToken;
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::{
     config::{StageConfig, WorkflowConfig},
+    execution::ProviderRegistry,
     SqliteWorkflowStore, WorkflowApi, WorkflowStore,
 };
 use orkestra_networking::{
-    interactions::auth::{generate_pairing_code, pair_device},
+    generate_pairing_code, pair_device,
     relay_client::{self, RelayClientConfig},
     CommandContext, Event,
 };
@@ -79,11 +80,13 @@ impl RelayTestEnv {
         let db_conn = DatabaseConnection::in_memory().expect("in-memory DB");
         let raw_conn = db_conn.shared();
         let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
-        let api = WorkflowApi::new(minimal_workflow(), store);
+        let api = WorkflowApi::new(minimal_workflow(), Arc::clone(&store));
         let ctx = Arc::new(CommandContext::new(
             Arc::new(Mutex::new(api)),
             Arc::clone(&raw_conn),
             PathBuf::new(),
+            Arc::new(ProviderRegistry::new("claudecode")),
+            store,
         ));
 
         // 3. Pre-generate a valid bearer token for test clients.
@@ -172,7 +175,7 @@ async fn recv_text(ws: &mut WsStream) -> Value {
             Message::Ping(data) => {
                 let _ = ws.send(Message::Pong(data)).await;
             }
-            _ => continue,
+            _ => {}
         }
     }
 }
@@ -492,11 +495,13 @@ async fn test_daemon_reconnection() {
     let db_conn = DatabaseConnection::in_memory().expect("in-memory DB");
     let raw_conn = db_conn.shared();
     let store: Arc<dyn WorkflowStore> = Arc::new(SqliteWorkflowStore::new(db_conn.shared()));
-    let api = WorkflowApi::new(minimal_workflow(), store);
+    let api = WorkflowApi::new(minimal_workflow(), Arc::clone(&store));
     let ctx = Arc::new(CommandContext::new(
         Arc::new(Mutex::new(api)),
         Arc::clone(&raw_conn),
         PathBuf::new(),
+        Arc::new(ProviderRegistry::new("claudecode")),
+        store,
     ));
     let code = generate_pairing_code::execute(&raw_conn).expect("pairing code");
     let valid_token =

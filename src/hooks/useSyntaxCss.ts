@@ -6,8 +6,8 @@
  * with no IPC overhead.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { useTransport } from "../transport";
 
 export interface SyntaxCss {
   light: string;
@@ -25,6 +25,7 @@ interface UseSyntaxCssResult {
 }
 
 export function useSyntaxCss(): UseSyntaxCssResult {
+  const transport = useTransport();
   const [css, setCss] = useState<SyntaxCss | null>(cachedCss);
   const [error, setError] = useState<unknown>(null);
 
@@ -35,7 +36,7 @@ export function useSyntaxCss(): UseSyntaxCssResult {
     }
 
     if (!fetchPromise) {
-      fetchPromise = invoke<SyntaxCss>("workflow_get_syntax_css");
+      fetchPromise = transport.call<SyntaxCss>("get_syntax_css");
     }
 
     let cancelled = false;
@@ -56,7 +57,7 @@ export function useSyntaxCss(): UseSyntaxCssResult {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [transport]);
 
   return { css, loading: css === null, error };
 }

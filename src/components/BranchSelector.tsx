@@ -4,8 +4,8 @@
  * Keyboard navigable when open: ↑/↓ move focus, Enter selects, Escape closes.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
+import { useTransport } from "../transport";
 import type { BranchList } from "../types/workflow";
 
 interface BranchSelectorProps {
@@ -14,6 +14,7 @@ interface BranchSelectorProps {
 }
 
 export function BranchSelector({ value, onChange }: BranchSelectorProps) {
+  const transport = useTransport();
   const [branches, setBranches] = useState<string[]>([]);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -27,7 +28,7 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
     let cancelled = false;
     (async () => {
       try {
-        const result = await invoke<BranchList>("workflow_list_branches");
+        const result = await transport.call<BranchList>("list_branches");
         if (cancelled) return;
         setBranches(result.branches);
         setCurrentBranch(result.current);
@@ -44,7 +45,7 @@ export function BranchSelector({ value, onChange }: BranchSelectorProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [transport]);
 
   // Initialise focused index when dropdown opens.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional initialization only when open changes

@@ -9,7 +9,7 @@ use crate::types::ErrorPayload;
 use super::dispatch::CommandContext;
 
 /// Handle the `list_tasks` method — returns all active top-level tasks as views.
-pub async fn handle_list_tasks(
+pub(super) async fn handle_list_tasks(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -26,7 +26,7 @@ pub async fn handle_list_tasks(
 /// Handle the `get_task` method — returns a single task by ID.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_get_task(
+pub(super) async fn handle_get_task(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -44,7 +44,7 @@ pub async fn handle_get_task(
 /// Handle the `create_task` method — creates a new task.
 ///
 /// Expected params: `{ "title": "<title>", "description": "<desc>", "base_branch": "<branch>" }`
-pub async fn handle_create_task(
+pub(super) async fn handle_create_task(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -65,11 +65,27 @@ pub async fn handle_create_task(
         .and_then(|v| v.as_str())
         .map(ToString::to_string);
 
+    let auto_mode = params
+        .get("auto_mode")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+    let flow = params
+        .get("flow")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+
     let api = Arc::clone(&ctx.api);
     tokio::task::spawn_blocking(move || {
         let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
         let task = api
-            .create_task(&title, &description, base_branch.as_deref())
+            .create_task_with_options(
+                &title,
+                &description,
+                base_branch.as_deref(),
+                auto_mode,
+                flow.as_deref(),
+            )
             .map_err(ErrorPayload::from)?;
         Ok(serde_json::to_value(task).unwrap_or(Value::Null))
     })
@@ -80,7 +96,7 @@ pub async fn handle_create_task(
 /// Handle the `create_subtask` method — creates a subtask under a parent task.
 ///
 /// Expected params: `{ "parent_id": "<id>", "title": "<title>", "description": "<desc>" }`
-pub async fn handle_create_subtask(
+pub(super) async fn handle_create_subtask(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -117,7 +133,7 @@ pub async fn handle_create_subtask(
 /// Handle the `delete_task` method — deletes a task and all associated data.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_delete_task(
+pub(super) async fn handle_delete_task(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -136,7 +152,7 @@ pub async fn handle_delete_task(
 /// Handle the `list_subtasks` method — returns subtasks of a parent task.
 ///
 /// Expected params: `{ "parent_id": "<id>" }`
-pub async fn handle_list_subtasks(
+pub(super) async fn handle_list_subtasks(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -159,7 +175,7 @@ pub async fn handle_list_subtasks(
 }
 
 /// Handle the `get_archived_tasks` method — returns all archived top-level tasks.
-pub async fn handle_get_archived_tasks(
+pub(super) async fn handle_get_archived_tasks(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {

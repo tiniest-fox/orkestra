@@ -1,12 +1,12 @@
 //! Assistant chat drawer — project-level AI chat with session management.
 
-import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { usePolling } from "../../hooks/usePolling";
+import { useTransport } from "../../transport";
 import type { AssistantSession, LogEntry, WorkflowQuestion } from "../../types/workflow";
 import { parseAssistantQuestions, stripQuestionBlocks } from "../../utils/assistantQuestions";
 import { stripParameterBlocks } from "../../utils/feedContent";
@@ -167,6 +167,7 @@ interface AssistantDrawerProps {
 }
 
 export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
+  const transport = useTransport();
   const [sessions, setSessions] = useState<AssistantSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -191,7 +192,8 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
 
   // -- Fetch sessions on mount and auto-select the most recent --
   useEffect(() => {
-    invoke<AssistantSession[]>("assistant_list_sessions", {})
+    transport
+      .call<AssistantSession[]>("assistant_list_sessions", {})
       .then((fetched) => {
         setSessions(fetched);
         if (fetched.length > 0) {
@@ -199,7 +201,7 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
         }
       })
       .catch(console.error);
-  }, []);
+  }, [transport]);
 
   // -- Fetch logs when session changes --
   useEffect(() => {
@@ -207,21 +209,22 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
       setLogs([]);
       return;
     }
-    invoke<LogEntry[]>("assistant_get_logs", { sessionId: activeSessionId })
+    transport
+      .call<LogEntry[]>("assistant_get_logs", { session_id: activeSessionId })
       .then(setLogs)
       .catch(console.error);
-  }, [activeSessionId]);
+  }, [transport, activeSessionId]);
 
   // -- Poll logs while agent is running --
   const fetchLogs = useCallback(async () => {
     if (!activeSessionId) return;
     const [newLogs, updatedSessions] = await Promise.all([
-      invoke<LogEntry[]>("assistant_get_logs", { sessionId: activeSessionId }),
-      invoke<AssistantSession[]>("assistant_list_sessions", {}),
+      transport.call<LogEntry[]>("assistant_get_logs", { session_id: activeSessionId }),
+      transport.call<AssistantSession[]>("assistant_list_sessions", {}),
     ]);
     setLogs(newLogs);
     setSessions(updatedSessions);
-  }, [activeSessionId]);
+  }, [transport, activeSessionId]);
 
   usePolling(isAgentRunning ? fetchLogs : null, 1000);
 
@@ -257,19 +260,19 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
   // -- Shared send + refresh helper --
   const sendAndRefresh = useCallback(
     async (message: string) => {
-      const session = await invoke<AssistantSession>("assistant_send_message", {
-        sessionId: activeSessionId,
+      const session = await transport.call<AssistantSession>("assistant_send_message", {
+        session_id: activeSessionId,
         message,
       });
       setActiveSessionId(session.id);
       const [updatedSessions, newLogs] = await Promise.all([
-        invoke<AssistantSession[]>("assistant_list_sessions", {}),
-        invoke<LogEntry[]>("assistant_get_logs", { sessionId: session.id }),
+        transport.call<AssistantSession[]>("assistant_list_sessions", {}),
+        transport.call<LogEntry[]>("assistant_get_logs", { session_id: session.id }),
       ]);
       setSessions(updatedSessions);
       setLogs(newLogs);
     },
-    [activeSessionId],
+    [transport, activeSessionId],
   );
 
   // -- Send message --
@@ -306,10 +309,10 @@ export function AssistantDrawer({ onClose }: AssistantDrawerProps) {
   // -- Stop agent --
   const handleStop = useCallback(async () => {
     if (!activeSessionId) return;
-    await invoke("assistant_stop", { sessionId: activeSessionId }).catch(console.error);
-    const updatedSessions = await invoke<AssistantSession[]>("assistant_list_sessions", {});
+    await transport.call("assistant_stop", { session_id: activeSessionId }).catch(console.error);
+    const updatedSessions = await transport.call<AssistantSession[]>("assistant_list_sessions", {});
     setSessions(updatedSessions);
-  }, [activeSessionId]);
+  }, [transport, activeSessionId]);
 
   // -- New session --
   const handleNewSession = useCallback(() => {

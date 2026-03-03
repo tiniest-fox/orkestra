@@ -7,7 +7,6 @@
  * Polling pauses when app loses focus (document.visibilityState === "hidden").
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import {
   createContext,
   type ReactNode,
@@ -18,6 +17,7 @@ import {
   useState,
 } from "react";
 import { usePolling } from "../hooks/usePolling";
+import { useTransport } from "../transport";
 import type { PrStatus } from "../types/workflow";
 import { useTasks } from "./TasksProvider";
 
@@ -55,6 +55,7 @@ interface PrStatusProviderProps {
 }
 
 export function PrStatusProvider({ children }: PrStatusProviderProps) {
+  const transport = useTransport();
   const { tasks } = useTasks();
   const [statuses, setStatuses] = useState<Map<string, PrStatus>>(new Map());
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
@@ -82,37 +83,38 @@ export function PrStatusProvider({ children }: PrStatusProviderProps) {
     return () => document.removeEventListener("visibilitychange", handler);
   }, []);
 
-  const fetchPrStatus = useCallback(async (taskId: string, prUrl: string) => {
-    // Skip if already in flight
-    if (inFlightRef.current.has(taskId)) return;
+  const fetchPrStatus = useCallback(
+    async (taskId: string, prUrl: string) => {
+      // Skip if already in flight
+      if (inFlightRef.current.has(taskId)) return;
 
-    inFlightRef.current.add(taskId);
-    setLoadingIds((prev) => new Set(prev).add(taskId));
+      inFlightRef.current.add(taskId);
+      setLoadingIds((prev) => new Set(prev).add(taskId));
 
-    try {
-      const status = await invoke<PrStatus>("workflow_get_pr_status", {
-        prUrl,
-      });
-      setStatuses((prev) => {
-        const next = new Map(prev);
-        next.set(taskId, status);
-        return next;
-      });
-      // Track terminal states so polling can skip them
-      if (isTerminalPrState(status.state)) {
-        terminalTasksRef.current.add(taskId);
+      try {
+        const status = await transport.call<PrStatus>("get_pr_status", { pr_url: prUrl });
+        setStatuses((prev) => {
+          const next = new Map(prev);
+          next.set(taskId, status);
+          return next;
+        });
+        // Track terminal states so polling can skip them
+        if (isTerminalPrState(status.state)) {
+          terminalTasksRef.current.add(taskId);
+        }
+      } catch (err) {
+        console.error(`[PrStatusProvider] Failed to fetch PR status for ${taskId}:`, err);
+      } finally {
+        inFlightRef.current.delete(taskId);
+        setLoadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(taskId);
+          return next;
+        });
       }
-    } catch (err) {
-      console.error(`[PrStatusProvider] Failed to fetch PR status for ${taskId}:`, err);
-    } finally {
-      inFlightRef.current.delete(taskId);
-      setLoadingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(taskId);
-        return next;
-      });
-    }
-  }, []);
+    },
+    [transport],
+  );
 
   // Background polling (10s) — reads tasks via ref to avoid restarting on every task update
   const backgroundPoll = useCallback(async () => {

@@ -14,12 +14,14 @@ interface StartupData {
 /**
  * Module-level slot for startup data pushed from Tauri before React mounts.
  * Providers consume this on first render to skip IPC calls.
+ * Only populated in the Tauri fast path.
  */
 export const startupData: { value: StartupData | null } = { value: null };
 
 /**
  * Module-level slot for a startup error emitted before React's provider mounts.
  * WorkflowConfigProvider checks this on mount and surfaces it as a retryable error.
+ * Only populated in the Tauri fast path.
  */
 export const startupError: { value: string | null } = { value: null };
 
@@ -56,36 +58,55 @@ function mountApp() {
 }
 
 /**
- * Main entry point: check for project query parameter and route accordingly.
+ * Main entry point: bifurcate Tauri and PWA startup paths.
+ *
+ * Tauri: uses the ?project= query param to decide between the picker and the
+ * main app. Registers Tauri event listeners before React mounts to capture
+ * startup data that arrives during bundle evaluation.
+ *
+ * PWA: skips the project param check and always mounts the app. The connection
+ * gate inside AppContent handles the no-credentials and connecting states.
  */
 function main() {
-  const projectPath = getProjectPath();
+  const hasTauri = typeof window !== "undefined" && "__TAURI__" in window;
 
-  if (projectPath) {
-    // Project window: mount the main app
-    const bundleMs = Math.round(
-      performance.now() - ((window as { __htmlLoadTime?: number }).__htmlLoadTime ?? 0),
-    );
-    console.log(`[startup] bundle parse+eval: ${bundleMs}ms`);
-    console.time("[startup] config");
-    console.time("[startup] config:react");
-    console.time("[startup] tasks");
-    console.time("[startup] ready");
+  if (hasTauri) {
+    const projectPath = getProjectPath();
 
-    // Register startup event listeners before React mounts so we catch events
-    // that arrive during bundle evaluation.
-    listen<StartupData>("startup-data", ({ payload }) => {
-      startupData.value = payload;
-    });
-    listen<{ message: string }>("startup-error", ({ payload }) => {
-      startupError.value = payload.message;
-    });
+    if (projectPath) {
+      // Project window: register startup listeners before React mounts so we
+      // catch events that arrive during bundle evaluation.
+      const bundleMs = Math.round(
+        performance.now() - ((window as { __htmlLoadTime?: number }).__htmlLoadTime ?? 0),
+      );
+      console.log(`[startup] bundle parse+eval: ${bundleMs}ms`);
+      console.time("[startup] config");
+      console.time("[startup] config:react");
+      console.time("[startup] tasks");
+      console.time("[startup] ready");
 
-    mountApp();
+      // DELIBERATE BYPASS: These listen() calls use raw Tauri APIs instead of
+      // the transport layer. Transport initialization happens inside React
+      // (TransportProvider), but these listeners must be registered before
+      // React mounts to capture events emitted during bundle evaluation.
+      // The module-level slots (startupData, startupError) bridge the gap.
+      listen<StartupData>("startup-data", ({ payload }) => {
+        startupData.value = payload;
+      });
+      listen<{ message: string }>("startup-error", ({ payload }) => {
+        startupError.value = payload.message;
+      });
+
+      mountApp();
+    } else {
+      // Picker window: mount the project picker.
+      console.log("[routing] Mounting project picker");
+      mountPicker();
+    }
   } else {
-    // Picker window: mount the project picker
-    console.log("[routing] Mounting project picker");
-    mountPicker();
+    // PWA: always mount the app. The connection gate inside AppContent handles
+    // the no-credentials and connecting states.
+    mountApp();
   }
 }
 

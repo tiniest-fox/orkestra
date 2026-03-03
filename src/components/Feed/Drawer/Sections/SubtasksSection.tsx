@@ -1,9 +1,9 @@
 //! Section showing a parent task's subtasks grouped by status with keyboard navigation.
 
-import { invoke } from "@tauri-apps/api/core";
 import { GitBranch } from "lucide-react";
 import { useCallback, useMemo, useRef } from "react";
 import { useWorkflowConfig } from "../../../../providers";
+import { useTransport } from "../../../../transport";
 import type { WorkflowTaskView } from "../../../../types/workflow";
 import type {
   FeedSection as FeedSectionData,
@@ -85,6 +85,7 @@ interface SubtasksSectionProps {
 // ============================================================================
 
 export function SubtasksSection({ task, allTasks, active, onOpenTask }: SubtasksSectionProps) {
+  const transport = useTransport();
   const config = useWorkflowConfig();
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -147,7 +148,7 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
               onReview={handleOpenChild}
               onAnswer={handleOpenChild}
               onApprove={(taskId) => {
-                invoke("workflow_approve", { taskId }).catch(console.error);
+                transport.call("approve", { task_id: taskId }).catch(console.error);
               }}
               onMerge={handleOpenChild}
               onOpenPr={handleOpenChild}
@@ -172,7 +173,7 @@ export function SubtasksSection({ task, allTasks, active, onOpenTask }: Subtasks
               onReview={handleOpenChild}
               onAnswer={handleOpenChild}
               onApprove={(taskId) => {
-                invoke("workflow_approve", { taskId }).catch(console.error);
+                transport.call("approve", { task_id: taskId }).catch(console.error);
               }}
               onMerge={handleOpenChild}
               onOpenPr={handleOpenChild}

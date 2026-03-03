@@ -5,8 +5,8 @@
  * for status when it's stopped (to detect external stops).
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTransport } from "../transport";
 import { usePolling } from "./usePolling";
 
 // ============================================================================
@@ -38,6 +38,7 @@ export interface UseRunScriptResult {
 // ============================================================================
 
 export function useRunScript(taskId: string, active: boolean): UseRunScriptResult {
+  const transport = useTransport();
   const [status, setStatus] = useState<RunStatus>({
     running: false,
     pid: null,
@@ -66,23 +67,25 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
 
   // Fetch initial status on mount or when active becomes true
   useEffect(() => {
-    if (!active) return;
+    if (!active || !transport.supportsLocalOperations) return;
     const gen = generationRef.current;
-    invoke<RunStatus>("get_run_status", { taskId })
+    transport
+      .call<RunStatus>("get_run_status", { task_id: taskId })
       .then((s) => {
         if (gen !== generationRef.current) return;
         setStatus(s);
       })
       .catch(() => {});
-  }, [active, taskId]);
+  }, [active, taskId, transport]);
 
   // Poll for new log lines when running
   const fetchLogs = useCallback(async () => {
+    if (!transport.supportsLocalOperations) return;
     try {
       const gen = generationRef.current;
-      const result = await invoke<RunLogs>("get_run_logs", {
-        taskId,
-        sinceLine: sinceLineRef.current,
+      const result = await transport.call<RunLogs>("get_run_logs", {
+        task_id: taskId,
+        since_line: sinceLineRef.current,
       });
       if (gen !== generationRef.current) return;
       if (result.lines.length > 0) {
@@ -90,25 +93,26 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
       }
       sinceLineRef.current = result.total_lines;
       // Refresh status along with log poll to detect process exit
-      const newStatus = await invoke<RunStatus>("get_run_status", { taskId });
+      const newStatus = await transport.call<RunStatus>("get_run_status", { task_id: taskId });
       if (gen !== generationRef.current) return;
       setStatus(newStatus);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [taskId]);
+  }, [taskId, transport]);
 
   // Poll for status when stopped (to detect external process starts/stops)
   const fetchStatus = useCallback(async () => {
+    if (!transport.supportsLocalOperations) return;
     try {
       const gen = generationRef.current;
-      const newStatus = await invoke<RunStatus>("get_run_status", { taskId });
+      const newStatus = await transport.call<RunStatus>("get_run_status", { task_id: taskId });
       if (gen !== generationRef.current) return;
       setStatus(newStatus);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [taskId]);
+  }, [taskId, transport]);
 
   const shouldPollLogs = active && status.running;
   const shouldPollStatus = active && !status.running;
@@ -117,17 +121,17 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
   usePolling(shouldPollStatus ? fetchStatus : null, 2000);
 
   const start = useCallback(async () => {
-    if (loading) return;
+    if (!transport.supportsLocalOperations || loading) return;
     const gen = generationRef.current;
     setLoading(true);
     setError(null);
     try {
-      await invoke("start_run_script", { taskId });
+      await transport.call("start_run_script", { task_id: taskId });
       if (gen !== generationRef.current) return;
       // Clear previous output and reset line offset
       setLines([]);
       sinceLineRef.current = 0;
-      const newStatus = await invoke<RunStatus>("get_run_status", { taskId });
+      const newStatus = await transport.call<RunStatus>("get_run_status", { task_id: taskId });
       if (gen !== generationRef.current) return;
       setStatus(newStatus);
     } catch (e) {
@@ -136,27 +140,27 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
     } finally {
       if (gen === generationRef.current) setLoading(false);
     }
-  }, [taskId, loading]);
+  }, [taskId, loading, transport]);
 
   const stop = useCallback(async () => {
-    if (loading) return;
+    if (!transport.supportsLocalOperations || loading) return;
     const gen = generationRef.current;
     setLoading(true);
     setError(null);
     try {
-      await invoke("stop_run_script", { taskId });
+      await transport.call("stop_run_script", { task_id: taskId });
       if (gen !== generationRef.current) return;
       // Fetch any remaining output after stop
-      const result = await invoke<RunLogs>("get_run_logs", {
-        taskId,
-        sinceLine: sinceLineRef.current,
+      const result = await transport.call<RunLogs>("get_run_logs", {
+        task_id: taskId,
+        since_line: sinceLineRef.current,
       });
       if (gen !== generationRef.current) return;
       if (result.lines.length > 0) {
         setLines((prev) => [...prev, ...result.lines]);
       }
       sinceLineRef.current = result.total_lines;
-      const newStatus = await invoke<RunStatus>("get_run_status", { taskId });
+      const newStatus = await transport.call<RunStatus>("get_run_status", { task_id: taskId });
       if (gen !== generationRef.current) return;
       setStatus(newStatus);
     } catch (e) {
@@ -165,7 +169,7 @@ export function useRunScript(taskId: string, active: boolean): UseRunScriptResul
     } finally {
       if (gen === generationRef.current) setLoading(false);
     }
-  }, [taskId, loading]);
+  }, [taskId, loading, transport]);
 
   return { status, lines, loading, error, start, stop };
 }

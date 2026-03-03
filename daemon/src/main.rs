@@ -14,14 +14,21 @@ use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
-use orkestra_core::workflow::adapters::{GhPrService, Git2GitService, SqliteWorkflowStore};
+use orkestra_core::workflow::adapters::{
+    ClaudeProcessSpawner, GhPrService, Git2GitService, OpenCodeProcessSpawner, SqliteWorkflowStore,
+};
+use orkestra_core::workflow::execution::{
+    claudecode_aliases, claudecode_capabilities, opencode_aliases, opencode_capabilities,
+    ProviderRegistry,
+};
+use orkestra_core::workflow::ports::ProcessSpawner;
 use orkestra_core::workflow::{
     AgentKiller, OrchestratorLoop, StageExecutionService, WorkflowApi, WorkflowStore,
 };
 use orkestra_core::{ensure_orkestra_project, orkestra_debug};
-use orkestra_networking::interactions::auth::generate_pairing_code;
-use orkestra_networking::interactions::event::broadcast::execute as convert_orchestrator_event;
-use orkestra_networking::{CommandContext, Event, RelayClientConfig};
+use orkestra_networking::{
+    convert_orchestrator_event, generate_pairing_code, CommandContext, Event, RelayClientConfig,
+};
 
 // ============================================================================
 // CLI
@@ -109,6 +116,7 @@ fn main() {
 // Core Run Logic
 // ============================================================================
 
+#[allow(clippy::too_many_lines)]
 async fn run(
     project_root: PathBuf,
     bind_addr: SocketAddr,
@@ -190,7 +198,7 @@ async fn run(
 
     // -- Stage execution service --
     let iteration_service = {
-        let api_lock = api.lock().unwrap();
+        let api_lock = api.lock().expect("API mutex poisoned during init");
         Arc::clone(api_lock.iteration_service())
     };
 
@@ -203,18 +211,41 @@ async fn run(
 
     // Inject AgentKiller so that interrupt() can kill the agent process.
     {
-        let mut api_lock = api.lock().unwrap();
+        let mut api_lock = api.lock().expect("API mutex poisoned during init");
         api_lock.set_agent_killer(Arc::clone(&stage_executor) as Arc<dyn AgentKiller>);
     }
 
     // -- Event channel --
     let (event_tx, _event_rx) = broadcast::channel::<Event>(256);
 
+    // -- Provider registry for assistant commands --
+    // A standalone registry separate from the one used by StageExecutionService
+    // (which creates its own internally). The registry is stateless, so having
+    // two instances is fine.
+    let provider_registry = {
+        let mut registry = ProviderRegistry::new("claudecode");
+        registry.register(
+            "claudecode",
+            Arc::new(ClaudeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+            claudecode_capabilities(),
+            claudecode_aliases(),
+        );
+        registry.register(
+            "opencode",
+            Arc::new(OpenCodeProcessSpawner::new()) as Arc<dyn ProcessSpawner>,
+            opencode_capabilities(),
+            opencode_aliases(),
+        );
+        Arc::new(registry)
+    };
+
     // -- Shared CommandContext (used by both server and relay client) --
     let ctx = Arc::new(CommandContext::new(
         Arc::clone(&api),
         Arc::clone(&raw_conn),
         project_root.clone(),
+        provider_registry,
+        Arc::clone(&store),
     ));
 
     // -- Orchestrator thread --
@@ -252,10 +283,9 @@ async fn run(
         use signal_hook::consts::{SIGINT, SIGTERM};
         use signal_hook::iterator::Signals;
         let mut signals = Signals::new([SIGINT, SIGTERM]).expect("Failed to register signals");
-        for _ in signals.forever() {
+        if signals.forever().next().is_some() {
             tracing::info!("Shutdown signal received");
             stop_flag_for_signal.store(true, Ordering::Release);
-            break;
         }
     });
 
@@ -316,8 +346,12 @@ async fn run(
 
     // The server future needs to be cancellable. We poll it alongside a stop
     // watcher so we can exit when the stop flag is set.
+    let listener = tokio::net::TcpListener::bind(bind_addr)
+        .await
+        .map_err(|e| format!("Failed to bind {bind_addr}: {e}"))?;
+    tracing::info!("Daemon listening on {bind_addr}");
     let server_future =
-        orkestra_networking::start(ctx, event_tx_for_server, static_token, bind_addr);
+        orkestra_networking::start(ctx, event_tx_for_server, static_token, listener);
 
     // Watch for stop flag and abort server once set.
     let stop_watcher = {

@@ -15,7 +15,7 @@ use super::dispatch::CommandContext;
 /// Handle the `approve` method — approves the current stage artifact.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_approve(
+pub(super) async fn handle_approve(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -33,7 +33,10 @@ pub async fn handle_approve(
 /// Handle the `reject` method — rejects the current stage artifact with feedback.
 ///
 /// Expected params: `{ "task_id": "<id>", "feedback": "<feedback>" }`
-pub async fn handle_reject(ctx: Arc<CommandContext>, params: Value) -> Result<Value, ErrorPayload> {
+pub(super) async fn handle_reject(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
     let task_id = super::extract_task_id(&params)?;
     let feedback = params
         .get("feedback")
@@ -56,7 +59,7 @@ pub async fn handle_reject(ctx: Arc<CommandContext>, params: Value) -> Result<Va
 /// Handle the `answer_questions` method — answers pending questions from the agent.
 ///
 /// Expected params: `{ "task_id": "<id>", "answers": [...] }`
-pub async fn handle_answer_questions(
+pub(super) async fn handle_answer_questions(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -78,7 +81,10 @@ pub async fn handle_answer_questions(
 /// Handle the `retry` method — retries a failed or blocked task.
 ///
 /// Expected params: `{ "task_id": "<id>", "instructions": "<instructions>" }` (instructions optional)
-pub async fn handle_retry(ctx: Arc<CommandContext>, params: Value) -> Result<Value, ErrorPayload> {
+pub(super) async fn handle_retry(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
     let task_id = super::extract_task_id(&params)?;
     let instructions = params
         .get("instructions")
@@ -100,7 +106,7 @@ pub async fn handle_retry(ctx: Arc<CommandContext>, params: Value) -> Result<Val
 /// Handle the `set_auto_mode` method — enables or disables auto mode on a task.
 ///
 /// Expected params: `{ "task_id": "<id>", "auto_mode": true|false }`
-pub async fn handle_set_auto_mode(
+pub(super) async fn handle_set_auto_mode(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -122,7 +128,7 @@ pub async fn handle_set_auto_mode(
 /// Handle the `interrupt` method — interrupts a running agent execution.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_interrupt(
+pub(super) async fn handle_interrupt(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -140,7 +146,10 @@ pub async fn handle_interrupt(
 /// Handle the `resume` method — resumes an interrupted task.
 ///
 /// Expected params: `{ "task_id": "<id>", "message": "<message>" }` (message optional)
-pub async fn handle_resume(ctx: Arc<CommandContext>, params: Value) -> Result<Value, ErrorPayload> {
+pub(super) async fn handle_resume(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
     let task_id = super::extract_task_id(&params)?;
     let message = params
         .get("message")
@@ -160,7 +169,7 @@ pub async fn handle_resume(ctx: Arc<CommandContext>, params: Value) -> Result<Va
 /// Handle the `archive` method — archives a Done task.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_archive(
+pub(super) async fn handle_archive(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -178,7 +187,7 @@ pub async fn handle_archive(
 /// Handle the `reject_with_comments` method — rejects with line-level PR comments.
 ///
 /// Expected params: `{ "task_id": "<id>", "comments": [...], "guidance": "<guidance>" }`
-pub async fn handle_reject_with_comments(
+pub(super) async fn handle_reject_with_comments(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -204,7 +213,7 @@ pub async fn handle_reject_with_comments(
 /// Handle the `address_pr_feedback` method — routes task back to work with PR feedback.
 ///
 /// Expected params: `{ "task_id": "<id>", "comments": [...], "checks": [...], "guidance": "<guidance>" }`
-pub async fn handle_address_pr_feedback(
+pub(super) async fn handle_address_pr_feedback(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -231,7 +240,7 @@ pub async fn handle_address_pr_feedback(
 /// Handle the `address_pr_conflicts` method — routes task back to work to resolve conflicts.
 ///
 /// Expected params: `{ "task_id": "<id>", "base_branch": "<branch>" }`
-pub async fn handle_address_pr_conflicts(
+pub(super) async fn handle_address_pr_conflicts(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -257,7 +266,7 @@ pub async fn handle_address_pr_conflicts(
 /// Handle the `request_update` method — routes a Done task back to the recovery stage.
 ///
 /// Expected params: `{ "task_id": "<id>", "feedback": "<feedback>" }`
-pub async fn handle_request_update(
+pub(super) async fn handle_request_update(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -283,7 +292,7 @@ pub async fn handle_request_update(
 /// Handle the `push_pr_changes` method — commits and pushes pending changes to an open PR.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_push_pr_changes(
+pub(super) async fn handle_push_pr_changes(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -303,7 +312,7 @@ pub async fn handle_push_pr_changes(
 /// Handle the `pull_pr_changes` method — pulls remote changes into the local worktree.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_pull_pr_changes(
+pub(super) async fn handle_pull_pr_changes(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -324,7 +333,7 @@ pub async fn handle_pull_pr_changes(
 /// Clients receive the completion notification via a `task_updated` broadcast event.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_merge_task(
+pub(super) async fn handle_merge_task(
     ctx: Arc<CommandContext>,
     event_tx: broadcast::Sender<Event>,
     params: Value,
@@ -357,7 +366,7 @@ pub async fn handle_merge_task(
 /// Clients receive the completion notification via a `task_updated` broadcast event.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_open_pr(
+pub(super) async fn handle_open_pr(
     ctx: Arc<CommandContext>,
     event_tx: broadcast::Sender<Event>,
     params: Value,
@@ -376,10 +385,35 @@ pub async fn handle_open_pr(
     .map_err(|e| ErrorPayload::internal(e.to_string()))?
 }
 
+/// Handle the `return_to_work` method — resumes an interrupted task with an optional message.
+///
+/// Expected params: `{ "task_id": "<id>", "message": "<message>" }` (message optional)
+pub(super) async fn handle_return_to_work(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let message = params
+        .get("message")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let task = api
+            .return_to_work(&task_id, message)
+            .map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(task).unwrap_or(Value::Null))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
 /// Handle the `retry_pr` method — recovers a PR creation from Failed back to Done+Idle.
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_retry_pr(
+pub(super) async fn handle_retry_pr(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {

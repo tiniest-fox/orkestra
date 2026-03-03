@@ -7,9 +7,9 @@
  * - Human review actions (approve, reject, answer, retry)
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useState } from "react";
 import { useTasks, useWorkflowConfig } from "../providers";
+import { useTransport } from "../transport";
 import type { WorkflowQuestionAnswer, WorkflowTask, WorkflowTaskView } from "../types/workflow";
 
 interface UseTaskDetailResult {
@@ -45,6 +45,7 @@ interface UseTaskDetailResult {
 }
 
 export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
+  const transport = useTransport();
   const config = useWorkflowConfig();
   const { refetch } = useTasks();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,20 +60,20 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
   const approve = useCallback(async () => {
     setIsSubmitting(true);
     try {
-      await invoke<WorkflowTask>("workflow_approve", { taskId: task.id });
+      await transport.call<WorkflowTask>("approve", { task_id: task.id });
       refetch();
     } catch (err) {
       console.error("Failed to approve:", err);
     } finally {
       setIsSubmitting(false);
     }
-  }, [task.id, refetch]);
+  }, [transport, task.id, refetch]);
 
   const reject = useCallback(
     async (feedback: string) => {
       setIsSubmitting(true);
       try {
-        await invoke<WorkflowTask>("workflow_reject", { taskId: task.id, feedback });
+        await transport.call<WorkflowTask>("reject", { task_id: task.id, feedback });
         refetch();
       } catch (err) {
         console.error("Failed to reject:", err);
@@ -80,14 +81,14 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
         setIsSubmitting(false);
       }
     },
-    [task.id, refetch],
+    [transport, task.id, refetch],
   );
 
   const answerQuestions = useCallback(
     async (answers: WorkflowQuestionAnswer[]) => {
       setIsSubmitting(true);
       try {
-        await invoke<WorkflowTask>("workflow_answer_questions", { taskId: task.id, answers });
+        await transport.call<WorkflowTask>("answer_questions", { task_id: task.id, answers });
         refetch();
       } catch (err) {
         console.error("Failed to submit answers:", err);
@@ -95,14 +96,14 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
         setIsSubmitting(false);
       }
     },
-    [task.id, refetch],
+    [transport, task.id, refetch],
   );
 
   const retry = useCallback(
     async (instructions?: string) => {
       setIsSubmitting(true);
       try {
-        await invoke<WorkflowTask>("workflow_retry", { taskId: task.id, instructions });
+        await transport.call<WorkflowTask>("retry", { task_id: task.id, instructions });
         refetch();
       } catch (err) {
         console.error("Failed to retry task:", err);
@@ -110,35 +111,35 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
         setIsSubmitting(false);
       }
     },
-    [task.id, refetch],
+    [transport, task.id, refetch],
   );
 
   const setAutoMode = useCallback(
     async (taskId: string, autoMode: boolean) => {
-      await invoke<WorkflowTask>("workflow_set_auto_mode", { taskId, autoMode });
+      await transport.call<WorkflowTask>("set_auto_mode", { task_id: taskId, auto_mode: autoMode });
       refetch();
     },
-    [refetch],
+    [transport, refetch],
   );
 
   const interrupt = useCallback(async () => {
     setIsSubmitting(true);
     try {
-      await invoke<WorkflowTask>("workflow_interrupt", { taskId: task.id });
+      await transport.call<WorkflowTask>("interrupt", { task_id: task.id });
       refetch();
     } catch (err) {
       console.error("Failed to interrupt:", err);
     } finally {
       setIsSubmitting(false);
     }
-  }, [task.id, refetch]);
+  }, [transport, task.id, refetch]);
 
   const resume = useCallback(
     async (message?: string) => {
       setIsSubmitting(true);
       try {
-        await invoke<WorkflowTask>("workflow_resume", {
-          taskId: task.id,
+        await transport.call<WorkflowTask>("resume", {
+          task_id: task.id,
           message: message || null,
         });
         refetch();
@@ -148,63 +149,63 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
         setIsSubmitting(false);
       }
     },
-    [task.id, refetch],
+    [transport, task.id, refetch],
   );
 
   const mergeTask = useCallback(async () => {
     setIsSubmitting(true);
     try {
-      await invoke<WorkflowTask>("workflow_merge_task", { taskId: task.id });
+      await transport.call<WorkflowTask>("merge_task", { task_id: task.id });
       refetch();
     } catch (err) {
       console.error("Failed to merge task:", err);
     } finally {
       setIsSubmitting(false);
     }
-  }, [task.id, refetch]);
+  }, [transport, task.id, refetch]);
 
   const openPr = useCallback(async () => {
     setIsSubmitting(true);
     try {
-      await invoke<WorkflowTask>("workflow_open_pr", { taskId: task.id });
+      await transport.call<WorkflowTask>("open_pr", { task_id: task.id });
       refetch();
     } catch (err) {
       console.error("Failed to open PR:", err);
     } finally {
       setIsSubmitting(false);
     }
-  }, [task.id, refetch]);
+  }, [transport, task.id, refetch]);
 
   const retryPr = useCallback(async () => {
     setIsSubmitting(true);
     try {
-      await invoke<WorkflowTask>("workflow_retry_pr", { taskId: task.id });
+      await transport.call<WorkflowTask>("retry_pr", { task_id: task.id });
       refetch();
     } catch (err) {
       console.error("Failed to retry PR:", err);
     } finally {
       setIsSubmitting(false);
     }
-  }, [task.id, refetch]);
+  }, [transport, task.id, refetch]);
 
   const archiveTask = useCallback(async () => {
     setIsSubmitting(true);
     try {
-      await invoke<WorkflowTask>("workflow_archive", { taskId: task.id });
+      await transport.call<WorkflowTask>("archive", { task_id: task.id });
       refetch();
     } catch (err) {
       console.error("Failed to archive task:", err);
     } finally {
       setIsSubmitting(false);
     }
-  }, [task.id, refetch]);
+  }, [transport, task.id, refetch]);
 
   const requestUpdate = useCallback(
     async (feedback: string) => {
       setIsSubmitting(true);
       try {
-        await invoke<WorkflowTask>("workflow_request_update", {
-          taskId: task.id,
+        await transport.call<WorkflowTask>("request_update", {
+          task_id: task.id,
           feedback,
         });
         refetch();
@@ -214,7 +215,7 @@ export function useTaskDetail(task: WorkflowTaskView): UseTaskDetailResult {
         setIsSubmitting(false);
       }
     },
-    [task.id, refetch],
+    [transport, task.id, refetch],
   );
 
   return {

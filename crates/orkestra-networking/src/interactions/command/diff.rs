@@ -22,7 +22,7 @@ use super::dispatch::CommandContext;
 /// Uses two-tier caching: SHA check (Tier 1) and per-file content hash (Tier 2).
 ///
 /// Expected params: `{ "task_id": "<id>" }`
-pub async fn handle_get_task_diff(
+pub(super) async fn handle_get_task_diff(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -119,7 +119,7 @@ pub async fn handle_get_task_diff(
 /// Handle the `get_file_content` method — returns file content with syntax highlighting.
 ///
 /// Expected params: `{ "task_id": "<id>", "file_path": "<path>" }`
-pub async fn handle_get_file_content(
+pub(super) async fn handle_get_file_content(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -193,7 +193,7 @@ pub fn handle_get_syntax_css(
 // ============================================================================
 
 /// Handle the `get_commit_log` method — returns the 20 most recent commits.
-pub async fn handle_get_commit_log(
+pub(super) async fn handle_get_commit_log(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -218,7 +218,7 @@ pub async fn handle_get_commit_log(
 /// Handle the `get_batch_file_counts` method — returns file-change counts per commit hash.
 ///
 /// Expected params: `{ "hashes": ["<hash1>", "<hash2>", ...] }`
-pub async fn handle_get_batch_file_counts(
+pub(super) async fn handle_get_batch_file_counts(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -253,7 +253,7 @@ pub async fn handle_get_batch_file_counts(
 /// Handle the `get_commit_diff` method — returns the highlighted diff for a commit.
 ///
 /// Expected params: `{ "commit_hash": "<hash>" }`
-pub async fn handle_get_commit_diff(
+pub(super) async fn handle_get_commit_diff(
     ctx: Arc<CommandContext>,
     params: Value,
 ) -> Result<Value, ErrorPayload> {

@@ -2,10 +2,9 @@
  * Provider for workflow tasks (rich views with iterations and derived state).
  *
  * Replaces the useWorkflowTasks() hook with a context-based approach.
- * Polls workflow_get_tasks every 2s and listens for "task-updated" events.
+ * Polls list_tasks every 2s and listens for "task_updated" events.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import {
   createContext,
   type ReactNode,
@@ -16,8 +15,9 @@ import {
   useState,
 } from "react";
 import { usePolling } from "../hooks/usePolling";
-import { useTauriListener } from "../hooks/useTauriListener";
 import { startupData } from "../main";
+import { useTransport } from "../transport";
+import { useTransportListener } from "../transport/useTransportListener";
 import type { WorkflowTask, WorkflowTaskView } from "../types/workflow";
 
 interface TasksContextValue {
@@ -55,6 +55,7 @@ interface TasksProviderProps {
 }
 
 export function TasksProvider({ children }: TasksProviderProps) {
+  const transport = useTransport();
   const [tasks, setTasks] = useState<WorkflowTaskView[]>([]);
   const [archivedTasks, setArchivedTasks] = useState<WorkflowTaskView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,7 +76,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
         firstFetchRef.current = false;
         console.timeEnd("[startup] tasks");
       } else {
-        result = await invoke<WorkflowTaskView[]>("workflow_get_tasks");
+        result = await transport.call<WorkflowTaskView[]>("list_tasks");
         if (firstFetchRef.current) {
           firstFetchRef.current = false;
           console.timeEnd("[startup] tasks");
@@ -100,16 +101,16 @@ export function TasksProvider({ children }: TasksProviderProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [transport]);
 
   const fetchArchivedTasks = useCallback(async () => {
     try {
-      const result = await invoke<WorkflowTaskView[]>("workflow_get_archived_tasks");
+      const result = await transport.call<WorkflowTaskView[]>("get_archived_tasks");
       setArchivedTasks(result);
     } catch (err) {
       console.error("[fetchArchivedTasks] Error:", err);
     }
-  }, []);
+  }, [transport]);
 
   const { reset: resetPolling } = usePolling(fetchTasks, 2000);
 
@@ -117,7 +118,7 @@ export function TasksProvider({ children }: TasksProviderProps) {
     fetchArchivedTasks();
   }, [fetchArchivedTasks]);
 
-  useTauriListener("task-updated", () => {
+  useTransportListener("task_updated", () => {
     fetchTasks();
     fetchArchivedTasks();
     resetPolling();
@@ -131,44 +132,47 @@ export function TasksProvider({ children }: TasksProviderProps) {
       baseBranch?: string | null,
       flow?: string,
     ) => {
-      const newTask = await invoke<WorkflowTask>("workflow_create_task", {
+      const newTask = await transport.call<WorkflowTask>("create_task", {
         title,
         description,
-        baseBranch: baseBranch ?? undefined,
-        autoMode: autoMode ?? false,
+        base_branch: baseBranch ?? undefined,
+        auto_mode: autoMode ?? false,
         flow: flow ?? null,
       });
       // Refetch to get the full TaskView
       fetchTasks();
       return newTask;
     },
-    [fetchTasks],
+    [transport, fetchTasks],
   );
 
   const createSubtask = useCallback(
     async (parentId: string, title: string, description: string) => {
-      const newTask = await invoke<WorkflowTask>("workflow_create_subtask", {
-        parentId,
+      const newTask = await transport.call<WorkflowTask>("create_subtask", {
+        parent_id: parentId,
         title,
         description,
       });
       fetchTasks();
       return newTask;
     },
-    [fetchTasks],
+    [transport, fetchTasks],
   );
 
-  const deleteTask = useCallback(async (taskId: string) => {
-    deletingIdsRef.current.add(taskId);
-    setTasks((prev) => prev.filter((t) => t.id !== taskId));
-    try {
-      await invoke<void>("workflow_delete_task", { taskId });
-    } catch (err) {
-      console.error(`[deleteTask] Failed to delete ${taskId}:`, err);
-      deletingIdsRef.current.delete(taskId);
-      throw err;
-    }
-  }, []);
+  const deleteTask = useCallback(
+    async (taskId: string) => {
+      deletingIdsRef.current.add(taskId);
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      try {
+        await transport.call<void>("delete_task", { task_id: taskId });
+      } catch (err) {
+        console.error(`[deleteTask] Failed to delete ${taskId}:`, err);
+        deletingIdsRef.current.delete(taskId);
+        throw err;
+      }
+    },
+    [transport],
+  );
 
   const value: TasksContextValue = {
     tasks,

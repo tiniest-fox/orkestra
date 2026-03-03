@@ -15,7 +15,7 @@ use super::dispatch::CommandContext;
 /// Handle the `git_sync_status` method — returns sync status relative to origin.
 ///
 /// Returns `null` if no git service is configured or the branch has no remote tracking ref.
-pub async fn handle_git_sync_status(
+pub(super) async fn handle_git_sync_status(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -39,7 +39,7 @@ pub async fn handle_git_sync_status(
 }
 
 /// Handle the `git_push` method — pushes the current branch to origin.
-pub async fn handle_git_push(
+pub(super) async fn handle_git_push(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -65,7 +65,7 @@ pub async fn handle_git_push(
 }
 
 /// Handle the `git_pull` method — pulls from origin into the current branch.
-pub async fn handle_git_pull(
+pub(super) async fn handle_git_pull(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {
@@ -88,7 +88,7 @@ pub async fn handle_git_pull(
 }
 
 /// Handle the `git_fetch` method — fetches from origin to update remote-tracking refs.
-pub async fn handle_git_fetch(
+pub(super) async fn handle_git_fetch(
     ctx: Arc<CommandContext>,
     _params: Value,
 ) -> Result<Value, ErrorPayload> {

@@ -6,8 +6,8 @@
  * independent fetches.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { useTransport } from "../transport";
 import type { ProjectInfo } from "../types/project";
 
 const ProjectInfoContext = createContext<ProjectInfo | null>(null);
@@ -25,13 +25,15 @@ interface ProjectInfoProviderProps {
 }
 
 export function ProjectInfoProvider({ children }: ProjectInfoProviderProps) {
+  const transport = useTransport();
   const [info, setInfo] = useState<ProjectInfo | null>(null);
 
   useEffect(() => {
-    invoke<ProjectInfo>("get_project_info")
+    transport
+      .call<ProjectInfo>("get_project_info")
       .then(setInfo)
       .catch(() => {}); // Silent — features that need run script just won't show
-  }, []);
+  }, [transport]);
 
   return <ProjectInfoContext.Provider value={info}>{children}</ProjectInfoContext.Provider>;
 }

@@ -1,5 +1,8 @@
+//! Tests for useDiff: fingerprinting, loading state, polling behaviour.
+
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mockTransportCall } from "../test/mocks/transport";
 
 // Mock usePolling to capture the polling callback for manual invocation in tests.
 let capturedPollCallback: (() => Promise<void>) | null = null;
@@ -9,15 +12,10 @@ vi.mock("./usePolling", () => ({
   },
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
-}));
-
-import { invoke } from "@tauri-apps/api/core";
 import type { HighlightedFileDiff } from "./useDiff";
 import { buildDiffFingerprint, useDiff } from "./useDiff";
 
-const mockInvoke = invoke as ReturnType<typeof vi.fn>;
+const mockCall = mockTransportCall as ReturnType<typeof vi.fn>;
 
 function makeFile(overrides: Partial<HighlightedFileDiff> = {}): HighlightedFileDiff {
   return {
@@ -141,7 +139,7 @@ describe("buildDiffFingerprint", () => {
 describe("useDiff", () => {
   beforeEach(() => {
     capturedPollCallback = null;
-    mockInvoke.mockReset();
+    mockCall.mockReset();
   });
 
   afterEach(() => {
@@ -150,7 +148,7 @@ describe("useDiff", () => {
 
   it("sets loading to true only on the first fetch, not on subsequent polls", async () => {
     const diffResult = makeDiffResult();
-    mockInvoke.mockResolvedValue(diffResult);
+    mockCall.mockResolvedValue(diffResult);
 
     const { result } = renderHook(() => useDiff("task-1"));
 
@@ -167,7 +165,7 @@ describe("useDiff", () => {
     // Second poll: loading must NOT flip back to true mid-fetch
     // We track that it never becomes true by verifying the final state
     const anotherResult = makeDiffResult([makeFile({ additions: 99 })]);
-    mockInvoke.mockResolvedValue(anotherResult);
+    mockCall.mockResolvedValue(anotherResult);
     await act(async () => {
       await capturedPollCallback?.();
     });
@@ -176,7 +174,7 @@ describe("useDiff", () => {
 
   it("does not update diff state when fingerprint is unchanged between polls", async () => {
     const diffResult = makeDiffResult();
-    mockInvoke.mockResolvedValue(diffResult);
+    mockCall.mockResolvedValue(diffResult);
 
     const { result } = renderHook(() => useDiff("task-1"));
 
@@ -188,7 +186,7 @@ describe("useDiff", () => {
     expect(diffAfterFirst).not.toBeNull();
 
     // Second fetch with identical content — diff reference must not change
-    mockInvoke.mockResolvedValue(makeDiffResult());
+    mockCall.mockResolvedValue(makeDiffResult());
     await act(async () => {
       await capturedPollCallback?.();
     });

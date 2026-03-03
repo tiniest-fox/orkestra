@@ -3,7 +3,9 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use orkestra_core::workflow::WorkflowApi;
+use orkestra_core::workflow::execution::ProviderRegistry;
+use orkestra_core::workflow::ports::WorkflowStore;
+use orkestra_core::workflow::{AssistantService, WorkflowApi};
 use rusqlite::Connection;
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -13,7 +15,7 @@ use crate::highlight::SyntaxHighlighter;
 use crate::interactions::auth::{generate_pairing_code, list_devices, revoke_device};
 use crate::types::{ErrorPayload, Event};
 
-use super::{action, diff, git, query, task};
+use super::{action, assistant, diff, git, query, stage_chat, task};
 
 // ============================================================================
 // Command Context
@@ -30,6 +32,8 @@ pub struct CommandContext {
     pub(crate) highlighter: Arc<SyntaxHighlighter>,
     pub(crate) diff_cache: Arc<DiffCacheState>,
     pub(crate) conn: Arc<Mutex<Connection>>,
+    pub(crate) provider_registry: Arc<ProviderRegistry>,
+    pub(crate) store: Arc<dyn WorkflowStore>,
 }
 
 impl CommandContext {
@@ -38,6 +42,8 @@ impl CommandContext {
         api: Arc<Mutex<WorkflowApi>>,
         conn: Arc<Mutex<Connection>>,
         project_root: PathBuf,
+        provider_registry: Arc<ProviderRegistry>,
+        store: Arc<dyn WorkflowStore>,
     ) -> Self {
         Self {
             api,
@@ -45,7 +51,18 @@ impl CommandContext {
             project_root: Arc::new(project_root),
             highlighter: Arc::new(SyntaxHighlighter::new()),
             diff_cache: Arc::new(DiffCacheState::new()),
+            provider_registry,
+            store,
         }
+    }
+
+    /// Construct an `AssistantService` bound to this context's store, registry, and project root.
+    pub(crate) fn create_assistant_service(&self) -> AssistantService {
+        AssistantService::new(
+            Arc::clone(&self.store),
+            Arc::clone(&self.provider_registry),
+            (*self.project_root).clone(),
+        )
     }
 }
 
@@ -88,10 +105,21 @@ pub async fn execute(
         "push_pr_changes" => action::handle_push_pr_changes(ctx, params).await,
         "pull_pr_changes" => action::handle_pull_pr_changes(ctx, params).await,
         "retry_pr" => action::handle_retry_pr(ctx, params).await,
+        "return_to_work" => action::handle_return_to_work(ctx, params).await,
 
         // -- Human actions (spawn background work) --
         "merge_task" => action::handle_merge_task(ctx, event_tx, params).await,
         "open_pr" => action::handle_open_pr(ctx, event_tx, params).await,
+
+        // -- Stage chat --
+        "stage_chat_send" => stage_chat::handle_stage_chat_send(ctx, params).await,
+        "stage_chat_stop" => stage_chat::handle_stage_chat_stop(ctx, params).await,
+
+        // -- Assistant --
+        "assistant_send_message" => assistant::handle_assistant_send_message(ctx, params).await,
+        "assistant_stop" => assistant::handle_assistant_stop(ctx, params).await,
+        "assistant_list_sessions" => assistant::handle_assistant_list_sessions(ctx, params).await,
+        "assistant_get_logs" => assistant::handle_assistant_get_logs(ctx, params).await,
 
         // -- Queries --
         "get_config" => query::handle_get_config(ctx, params).await,
@@ -106,6 +134,7 @@ pub async fn execute(
         "get_logs" => query::handle_get_logs(ctx, params).await,
         "get_latest_log" => query::handle_get_latest_log(ctx, params).await,
         "get_pr_status" => query::handle_get_pr_status(ctx, params).await,
+        "get_project_info" => query::handle_get_project_info(ctx, params).await,
 
         // -- Diffs --
         "get_task_diff" => diff::handle_get_task_diff(ctx, params).await,

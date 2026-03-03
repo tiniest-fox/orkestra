@@ -4,6 +4,7 @@
 //! Each file contains one `execute()` entry point.
 
 pub mod assistant;
+pub mod daemon_config;
 pub mod iteration;
 pub mod log_entry;
 pub mod session;

@@ -11,8 +11,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -21,15 +20,10 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
 
-use orkestra_core::workflow::WorkflowApi;
-
-use crate::diff_cache::DiffCacheState;
-use crate::highlight::SyntaxHighlighter;
 use crate::interactions::auth::{pair_device, verify_token};
 use crate::interactions::command::dispatch::{self, CommandContext};
 use crate::types::{AuthError, ErrorResponse, Event, Request, Response as WsResponse};
@@ -59,21 +53,11 @@ struct ServerState {
 ///
 /// This is an async future — `await` it to run the server until it stops.
 pub async fn start(
-    api: Arc<Mutex<WorkflowApi>>,
+    ctx: Arc<CommandContext>,
     event_tx: broadcast::Sender<Event>,
-    conn: Arc<Mutex<Connection>>,
     static_token: Option<String>,
     bind_addr: SocketAddr,
-    project_root: PathBuf,
 ) -> Result<(), std::io::Error> {
-    let ctx = Arc::new(CommandContext {
-        api,
-        project_root: Arc::new(project_root),
-        highlighter: Arc::new(SyntaxHighlighter::new()),
-        diff_cache: Arc::new(DiffCacheState::new()),
-        conn,
-    });
-
     let state = ServerState {
         ctx,
         event_tx,
@@ -212,7 +196,7 @@ async fn handle_connection(mut socket: WebSocket, state: ServerState) {
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => {
                         // Client missed messages — send a full state reset.
-                        if let Some(reset_event) = build_state_reset(&state.ctx).await {
+                        if let Some(reset_event) = crate::interactions::event::build_state_reset::execute(&state.ctx).await {
                             let serialized = serde_json::to_string(&reset_event)
                                 .unwrap_or_else(|_| r#"{"event":"state_reset","data":{}}"#.into());
                             if socket.send(Message::Text(serialized.into())).await.is_err() {
@@ -291,33 +275,6 @@ async fn handle_text_message(
         }
         Err(error) => {
             serde_json::to_value(ErrorResponse { id, error }).unwrap_or(serde_json::Value::Null)
-        }
-    }
-}
-
-/// Build a `state_reset` event containing all active task views.
-async fn build_state_reset(ctx: &Arc<CommandContext>) -> Option<Event> {
-    let api = Arc::clone(&ctx.api);
-    match tokio::task::spawn_blocking(move || {
-        let api = api.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
-        let tasks = api
-            .list_task_views()
-            .map_err(|e| format!("DB query failed: {e}"))?;
-        Ok::<_, String>(Event::new(
-            "state_reset",
-            serde_json::to_value(tasks).unwrap_or(serde_json::Value::Array(vec![])),
-        ))
-    })
-    .await
-    {
-        Ok(Ok(event)) => Some(event),
-        Ok(Err(reason)) => {
-            tracing::error!("Failed to build state reset: {reason}");
-            None
-        }
-        Err(e) => {
-            tracing::error!("State reset task panicked: {e}");
-            None
         }
     }
 }

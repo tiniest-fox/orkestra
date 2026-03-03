@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use clap::Parser;
 use tokio::sync::broadcast;
+use tokio_util::sync::CancellationToken;
 
 use orkestra_core::adapters::sqlite::DatabaseConnection;
 use orkestra_core::workflow::adapters::{GhPrService, Git2GitService, SqliteWorkflowStore};
@@ -20,7 +21,7 @@ use orkestra_core::workflow::{
 use orkestra_core::{ensure_orkestra_project, orkestra_debug};
 use orkestra_networking::interactions::auth::generate_pairing_code;
 use orkestra_networking::interactions::event::broadcast::execute as convert_orchestrator_event;
-use orkestra_networking::Event;
+use orkestra_networking::{CommandContext, Event, RelayClientConfig};
 
 // ============================================================================
 // CLI
@@ -54,6 +55,14 @@ struct Args {
     /// Clients can use this code with `POST /pair` to obtain a bearer token.
     #[arg(long)]
     generate_pairing_code: bool,
+
+    /// Relay server URL (e.g., <wss://relay.orkestra.dev>). Enables relay connection.
+    #[arg(long, env = "ORKD_RELAY_URL")]
+    relay_url: Option<String>,
+
+    /// API key for relay server authentication.
+    #[arg(long, env = "ORKD_RELAY_API_KEY")]
+    relay_api_key: Option<String>,
 }
 
 // ============================================================================
@@ -88,6 +97,8 @@ fn main() {
         bind_addr,
         args.token,
         args.generate_pairing_code,
+        args.relay_url,
+        args.relay_api_key,
     )) {
         tracing::error!("Daemon error: {e}");
         std::process::exit(1);
@@ -103,6 +114,8 @@ async fn run(
     bind_addr: SocketAddr,
     static_token: Option<String>,
     generate_pairing_code_flag: bool,
+    relay_url: Option<String>,
+    relay_api_key: Option<String>,
 ) -> Result<(), String> {
     // -- Project init --
     let orkestra_dir = project_root.join(".orkestra");
@@ -197,6 +210,13 @@ async fn run(
     // -- Event channel --
     let (event_tx, _event_rx) = broadcast::channel::<Event>(256);
 
+    // -- Shared CommandContext (used by both server and relay client) --
+    let ctx = Arc::new(CommandContext::new(
+        Arc::clone(&api),
+        Arc::clone(&raw_conn),
+        project_root.clone(),
+    ));
+
     // -- Orchestrator thread --
     let stop_flag = Arc::new(AtomicBool::new(false));
     let orch_stop_flag = Arc::clone(&stop_flag);
@@ -210,10 +230,10 @@ async fn run(
     let stop_flag_forwarding = Arc::clone(&stop_flag);
     let orch_loop_stop_clone = Arc::clone(&orch_loop_stop);
     std::thread::spawn(move || {
-        while !stop_flag_forwarding.load(Ordering::Relaxed) {
+        while !stop_flag_forwarding.load(Ordering::Acquire) {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        orch_loop_stop_clone.store(true, Ordering::Relaxed);
+        orch_loop_stop_clone.store(true, Ordering::Release);
     });
 
     let orch_handle = std::thread::spawn(move || {
@@ -234,7 +254,7 @@ async fn run(
         let mut signals = Signals::new([SIGINT, SIGTERM]).expect("Failed to register signals");
         for _ in signals.forever() {
             tracing::info!("Shutdown signal received");
-            stop_flag_for_signal.store(true, Ordering::Relaxed);
+            stop_flag_for_signal.store(true, Ordering::Release);
             break;
         }
     });
@@ -253,27 +273,58 @@ async fn run(
         }
     }
 
+    // -- Relay client (optional) --
+    let relay_stop = CancellationToken::new();
+    if let Some(url) = relay_url {
+        let api_key = relay_api_key
+            .ok_or_else(|| "--relay-api-key is required when --relay-url is set".to_string())?;
+
+        let device_id = {
+            let conn = raw_conn
+                .lock()
+                .map_err(|_| "Failed to acquire DB lock".to_string())?;
+            orkestra_store::interactions::daemon_config::load_or_generate_device_id::execute(&conn)
+                .map_err(|e| format!("Failed to load device ID: {e}"))?
+        };
+        tracing::info!("Relay device ID: {device_id}");
+
+        let relay_config = RelayClientConfig {
+            relay_url: url,
+            api_key,
+            device_id,
+        };
+        let relay_stop_clone = relay_stop.clone();
+        let ctx_for_relay = Arc::clone(&ctx);
+        let event_tx_for_relay = event_tx.clone();
+
+        tokio::spawn(async move {
+            if let Err(e) = orkestra_networking::relay_client::connect(
+                relay_config,
+                ctx_for_relay,
+                event_tx_for_relay,
+                relay_stop_clone,
+            )
+            .await
+            {
+                tracing::error!("Relay client error: {e}");
+            }
+        });
+    }
+
     // -- WebSocket server (runs until stop_flag is set externally) --
-    let api_for_server = Arc::clone(&api);
     let event_tx_for_server = event_tx.clone();
 
     // The server future needs to be cancellable. We poll it alongside a stop
     // watcher so we can exit when the stop flag is set.
-    let server_future = orkestra_networking::start(
-        api_for_server,
-        event_tx_for_server,
-        raw_conn,
-        static_token,
-        bind_addr,
-        project_root.clone(),
-    );
+    let server_future =
+        orkestra_networking::start(ctx, event_tx_for_server, static_token, bind_addr);
 
     // Watch for stop flag and abort server once set.
     let stop_watcher = {
         let stop_flag = Arc::clone(&stop_flag);
         async move {
             loop {
-                if stop_flag.load(Ordering::Relaxed) {
+                if stop_flag.load(Ordering::Acquire) {
                     break;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -291,10 +342,13 @@ async fn run(
         () = stop_watcher => {}
     }
 
+    // Cancel relay client.
+    relay_stop.cancel();
+
     tracing::info!("Shutting down — waiting for orchestrator thread…");
 
     // Give the orchestrator up to 5 seconds to finish its current tick.
-    orch_stop_flag.store(true, Ordering::Relaxed);
+    orch_stop_flag.store(true, Ordering::Release);
     let join_deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
     while !orch_handle.is_finished() {
         if std::time::Instant::now() >= join_deadline {

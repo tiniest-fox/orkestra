@@ -32,6 +32,23 @@ pub struct CommandContext {
     pub(crate) conn: Arc<Mutex<Connection>>,
 }
 
+impl CommandContext {
+    /// Construct a new `CommandContext` with a fresh syntax highlighter and diff cache.
+    pub fn new(
+        api: Arc<Mutex<WorkflowApi>>,
+        conn: Arc<Mutex<Connection>>,
+        project_root: PathBuf,
+    ) -> Self {
+        Self {
+            api,
+            conn,
+            project_root: Arc::new(project_root),
+            highlighter: Arc::new(SyntaxHighlighter::new()),
+            diff_cache: Arc::new(DiffCacheState::new()),
+        }
+    }
+}
+
 // ============================================================================
 // Dispatch
 // ============================================================================

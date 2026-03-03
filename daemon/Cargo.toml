@@ -13,8 +13,10 @@ workspace = true
 [dependencies]
 orkestra-core = { path = "../crates/orkestra-core" }
 orkestra-networking = { path = "../crates/orkestra-networking" }
+orkestra-store = { path = "../crates/orkestra-store" }
 clap = { version = "4", features = ["derive", "env"] }
 tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
 signal-hook = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

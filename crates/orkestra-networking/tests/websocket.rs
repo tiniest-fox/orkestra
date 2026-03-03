@@ -17,7 +17,7 @@ use orkestra_core::workflow::{
     SqliteWorkflowStore, WorkflowApi, WorkflowStore,
 };
 
-use orkestra_networking::{server, Event};
+use orkestra_networking::{server, CommandContext, Event};
 
 /// Static token used in tests to bypass device pairing.
 const TEST_TOKEN: &str = "test-static-token";
@@ -64,16 +64,9 @@ async fn start_test_server(
 
     let (event_tx, _rx) = broadcast::channel::<Event>(256);
     let event_tx_clone = event_tx.clone();
+    let ctx = Arc::new(CommandContext::new(api, conn, PathBuf::new()));
     tokio::spawn(async move {
-        server::start(
-            api,
-            event_tx_clone,
-            conn,
-            Some(TEST_TOKEN.to_string()),
-            addr,
-            PathBuf::new(),
-        )
-        .await;
+        let _ = server::start(ctx, event_tx_clone, Some(TEST_TOKEN.to_string()), addr).await;
     });
     // Give the server a moment to bind.
     tokio::time::sleep(std::time::Duration::from_millis(80)).await;
@@ -537,16 +530,9 @@ async fn test_full_pairing_flow() {
     let (event_tx, _rx) = broadcast::channel::<Event>(256);
     let event_tx_clone = event_tx.clone();
     let conn_for_server = Arc::clone(&conn);
+    let ctx = Arc::new(CommandContext::new(api, conn_for_server, PathBuf::new()));
     tokio::spawn(async move {
-        server::start(
-            api,
-            event_tx_clone,
-            conn_for_server,
-            None,
-            addr,
-            PathBuf::new(),
-        )
-        .await;
+        let _ = server::start(ctx, event_tx_clone, None, addr).await;
     });
     tokio::time::sleep(std::time::Duration::from_millis(80)).await;
 
@@ -633,16 +619,9 @@ async fn test_revoked_device_cannot_connect() {
     let (event_tx, _rx) = broadcast::channel::<Event>(256);
     let event_tx_clone = event_tx.clone();
     let conn_for_server = Arc::clone(&conn);
+    let ctx = Arc::new(CommandContext::new(api, conn_for_server, PathBuf::new()));
     tokio::spawn(async move {
-        server::start(
-            api,
-            event_tx_clone,
-            conn_for_server,
-            None,
-            addr,
-            PathBuf::new(),
-        )
-        .await;
+        let _ = server::start(ctx, event_tx_clone, None, addr).await;
     });
     tokio::time::sleep(std::time::Duration::from_millis(80)).await;
 

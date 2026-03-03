@@ -221,9 +221,10 @@ Inline unit tests where appropriate. TODO: e2e tests.
 
 **When adding or modifying database migrations:**
 
-1. Create the migration file in `crates/orkestra-store/src/migrations/` (follow Refinery naming: `VN__description.sql`)
-2. Update `SCHEMA.md` to reflect the schema changes
-3. Update the Database Schema section in this file if the changes are architecturally significant
+1. **Check the highest existing version first** — list `crates/orkestra-store/src/migrations/` and use the next number. Concurrent task branches may have claimed intermediate versions, causing a collision that breaks Refinery's sequential migration requirement.
+2. Create the migration file in `crates/orkestra-store/src/migrations/` (follow Refinery naming: `VN__description.sql`)
+3. Update `SCHEMA.md` to reflect the schema changes
+4. Update the Database Schema section in this file if the changes are architecturally significant
 
 This ensures schema documentation stays synchronized with the actual database structure.
 

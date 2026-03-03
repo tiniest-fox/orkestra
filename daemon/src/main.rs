@@ -86,6 +86,19 @@ fn main() {
         )
         .init();
 
+    // Fix PATH so the daemon inherits the user's shell PATH (mise shims, cargo,
+    // node, etc.). Without this, tools invoked by spawned agents aren't found.
+    match fix_path_env::fix() {
+        Ok(()) => {
+            let path = std::env::var("PATH").unwrap_or_else(|_| "(not set)".to_string());
+            tracing::info!(path, "fix_path_env succeeded");
+        }
+        Err(e) => {
+            let path = std::env::var("PATH").unwrap_or_else(|_| "(not set)".to_string());
+            tracing::warn!(error = %e, path, "fix_path_env failed — tool shims may not be found");
+        }
+    }
+
     let bind_addr = SocketAddr::new(args.bind, args.port);
 
     tracing::info!(

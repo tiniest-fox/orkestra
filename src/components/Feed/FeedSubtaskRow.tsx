@@ -14,6 +14,7 @@ interface FeedSubtaskRowProps {
   onApprove: () => void;
   onMerge?: () => void;
   onOpenPr?: () => void;
+  onArchive?: () => void;
   onClick?: () => void;
 }
 
@@ -27,6 +28,7 @@ export function FeedSubtaskRow({
   onApprove,
   onMerge,
   onOpenPr,
+  onArchive,
   onClick,
 }: FeedSubtaskRowProps) {
   return (
@@ -43,6 +45,7 @@ export function FeedSubtaskRow({
       onApprove={onApprove}
       onMerge={onMerge}
       onOpenPr={onOpenPr}
+      onArchive={onArchive}
       onClick={onClick}
     />
   );

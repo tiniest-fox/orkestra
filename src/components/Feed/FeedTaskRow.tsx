@@ -16,6 +16,7 @@ interface FeedTaskRowProps {
   onApprove: () => void;
   onMerge?: () => void;
   onOpenPr?: () => void;
+  onArchive?: () => void;
   onClick?: () => void;
   actionsSlot?: React.ReactNode;
 }
@@ -31,6 +32,7 @@ export function FeedTaskRow({
   onApprove,
   onMerge,
   onOpenPr,
+  onArchive,
   onClick,
   actionsSlot,
 }: FeedTaskRowProps) {
@@ -51,6 +53,7 @@ export function FeedTaskRow({
       onApprove={onApprove}
       onMerge={onMerge}
       onOpenPr={onOpenPr}
+      onArchive={onArchive}
       onClick={onClick}
       actionsSlot={actionsSlot}
     />

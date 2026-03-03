@@ -15,7 +15,7 @@ use orkestra_core::workflow::ports::WorkflowStore;
 use project_registry::{ProjectRegistry, RecentProject};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
@@ -30,6 +30,14 @@ use tauri_plugin_store::StoreExt;
 /// Updated when projects open/close.
 pub static PROJECT_ROOTS: std::sync::LazyLock<std::sync::Mutex<Vec<PathBuf>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
+
+/// Result of the early `fix_path_env::fix()` call. Stored here because
+/// `orkestra_debug!` isn't initialized until the first project opens — this
+/// lets `project_init` replay the message into `debug.log` after init.
+///
+/// `Ok(path)` — fix succeeded; `path` is the resulting PATH value.
+/// `Err(msg)` — fix failed; `msg` includes the error and current PATH.
+pub static PATH_FIX_RESULT: OnceLock<Result<String, String>> = OnceLock::new();
 
 /// Cleanup function to kill all tracked agents for all open projects.
 fn cleanup_all_agents(app_handle: &AppHandle) {
@@ -292,7 +300,21 @@ pub fn run() {
     // Fix PATH for macOS .app bundles. GUI apps don't inherit the user's shell
     // PATH, so tools like cargo, node, mise shims etc. aren't found. This runs
     // the user's login shell to resolve their real PATH and sets it on this process.
-    let _ = fix_path_env::fix();
+    // orkestra_debug! isn't initialized until the first project opens, so we store
+    // the result in PATH_FIX_RESULT and project_init replays it into debug.log.
+    {
+        let path = std::env::var("PATH").unwrap_or_else(|_| "(not set)".to_string());
+        match fix_path_env::fix() {
+            Ok(()) => {
+                let new_path =
+                    std::env::var("PATH").unwrap_or_else(|_| "(not set)".to_string());
+                let _ = PATH_FIX_RESULT.set(Ok(new_path));
+            }
+            Err(e) => {
+                let _ = PATH_FIX_RESULT.set(Err(format!("{e} (PATH before fix: {path})")));
+            }
+        }
+    }
 
     // Create the project registry early so run_pids can be shared with the signal handler.
     let registry = ProjectRegistry::new();

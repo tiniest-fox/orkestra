@@ -45,6 +45,14 @@ All commands are re-exported from `commands/mod.rs` and registered in `lib.rs`'s
 - Error codes: `TASK_NOT_FOUND`, `INVALID_TRANSITION`, `STORAGE_ERROR`, `LOCK_ERROR`, etc.
 - Frontend receives these as JS objects in catch blocks (Tauri 2 delivers them pre-parsed)
 
+## Startup Logging Constraint
+
+`orkestra_debug!` is **not available** during Tauri's early startup (before the first project is opened). The debug logger is initialized lazily in `project_init.rs` when a project first opens. Code that runs at app startup — such as `fix_path_env::fix()` in `lib.rs::run()` — must use `eprintln!` for logging instead.
+
+The pattern for deferring early startup messages to the debug log: store the result in a `OnceLock`, then replay it in `project_init.rs` once logging is initialized. Only the first project open replays the message (subsequent `OnceLock::get()` calls return the already-set value but the replay guard skips them). This is intentional — the message is only relevant once.
+
+This asymmetry with the daemon (which has `tracing` available immediately from startup) is by design — Tauri's lifecycle requires a project to be open before the logger is initialized.
+
 ## Key Files
 
 | File | Role |

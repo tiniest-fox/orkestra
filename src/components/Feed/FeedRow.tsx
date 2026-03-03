@@ -26,6 +26,7 @@ interface FeedRowProps {
   onApprove?: () => void;
   onMerge?: () => void;
   onOpenPr?: () => void;
+  onArchive?: () => void;
   onClick?: () => void;
   /** Replaces the default HotkeyScope+FeedRowActions last column when provided. */
   actionsSlot?: React.ReactNode;
@@ -46,6 +47,7 @@ export function FeedRow({
   onApprove,
   onMerge,
   onOpenPr,
+  onArchive,
   onClick,
   actionsSlot,
 }: FeedRowProps) {
@@ -100,6 +102,7 @@ export function FeedRow({
               onApprove={onApprove ?? (() => {})}
               onMerge={onMerge ?? (() => {})}
               onOpenPr={onOpenPr ?? (() => {})}
+              onArchive={onArchive ?? (() => {})}
             />
           </div>
         </HotkeyScope>

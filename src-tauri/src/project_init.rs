@@ -40,6 +40,24 @@ pub fn initialize_project(
     // Initialize debug logging for this project
     orkestra_core::debug_log::init(&orkestra_dir);
 
+    // Replay the fix_path_env result captured at startup (before the logger
+    // was available). Only logged on first project open; subsequent projects
+    // see nothing (OnceLock), which is fine — PATH is set process-wide.
+    match crate::PATH_FIX_RESULT.get() {
+        Some(Ok(path)) => {
+            orkestra_debug!("startup", "fix_path_env succeeded. PATH={path}");
+        }
+        Some(Err(msg)) => {
+            orkestra_debug!(
+                "startup",
+                "fix_path_env failed — tool shims may not be found. {msg}"
+            );
+        }
+        None => {
+            orkestra_debug!("startup", "fix_path_env was not called before project init");
+        }
+    }
+
     // Initialize agent output logging (separate from debug logs)
     orkestra_core::debug_log::init_agent_log(&orkestra_dir);
 

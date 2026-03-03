@@ -3202,6 +3202,7 @@ name = "orkd"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "fix-path-env",
  "orkestra-core",
  "orkestra-networking",
  "orkestra-store",

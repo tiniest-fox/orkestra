@@ -77,11 +77,17 @@ fn get_commits_since_merge_base(worktree_path: &Path, base_branch: &str) -> Vec<
         .collect()
 }
 
-/// Get commit count on main branch since test start.
+/// Get first-parent commit count on main branch since test start.
+///
+/// Uses `--first-parent` to count only the direct commits on main, not commits
+/// reachable through merge commit parents. This correctly reports "1 new merge
+/// commit" for a squash+no-ff merge workflow (where the squash commit lives
+/// inside the merge commit as a non-first parent).
 fn count_commits_on_main(repo_path: &Path, initial_main_commit: &str) -> usize {
     let output = Command::new("git")
         .args([
             "rev-list",
+            "--first-parent",
             "--count",
             &format!("{initial_main_commit}..main"),
         ])
@@ -323,24 +329,24 @@ fn test_integration_squashes_commits_for_non_subtask() {
         task.state
     );
 
-    // Main should have exactly 1 new commit (the squashed commit)
+    // Main should have exactly 1 new first-parent commit (the merge commit wrapping the squash)
     let commits_on_main = count_commits_on_main(ctx.repo_path(), &initial_main_commit);
     assert_eq!(
         commits_on_main, 1,
-        "Main should have exactly 1 squashed commit, got: {commits_on_main}"
+        "Main should have exactly 1 new first-parent commit, got: {commits_on_main}"
     );
 
-    // The squashed commit should have an LLM-generated message (from MockCommitMessageGenerator)
+    // The merge commit on main should have an LLM-generated message (from MockCommitMessageGenerator)
     // MockCommitMessageGenerator returns "{task_title}\n\nAutomated changes.\n..."
     let main_commit_sha = get_main_commit_sha(ctx.repo_path());
-    let squashed_message = get_full_commit_message(ctx.repo_path(), &main_commit_sha);
+    let merge_commit_message = get_full_commit_message(ctx.repo_path(), &main_commit_sha);
     assert!(
-        squashed_message.contains("Test squash task"),
-        "Squashed commit should contain task title, got: {squashed_message}"
+        merge_commit_message.contains("Test squash task"),
+        "Merge commit should contain task title, got: {merge_commit_message}"
     );
     assert!(
-        squashed_message.contains("Automated changes"),
-        "Squashed commit should have LLM-generated body from mock, got: {squashed_message}"
+        merge_commit_message.contains("Automated changes"),
+        "Merge commit should have LLM-generated body from mock, got: {merge_commit_message}"
     );
 }
 
@@ -476,7 +482,7 @@ fn test_subtask_integration_preserves_commits() {
     let parent = ctx.api().get_task(&parent_id).unwrap();
     let parent_worktree = Path::new(parent.worktree_path.as_ref().unwrap());
 
-    // Pull latest changes to parent worktree to see merged commits
+    // Reset parent worktree HEAD to match the branch ref (which was updated by subtask merge)
     Command::new("git")
         .args(["reset", "--hard", &parent_branch])
         .current_dir(parent_worktree)
@@ -500,6 +506,39 @@ fn test_subtask_integration_preserves_commits() {
     assert!(
         has_work_commit,
         "Parent branch should have individual subtask commits (not squashed). Commits: {parent_commits:?}"
+    );
+
+    // Verify the merge commit (HEAD on parent branch) has an AI-generated message,
+    // not git's default "Merge branch '...'" format.
+    // MockCommitMessageGenerator::succeeding() produces: "{subtask_title}\n\n{body}\n\n⚡ Powered by Orkestra"
+    let merge_commit_subject = get_head_commit_message(parent_worktree);
+    assert!(
+        merge_commit_subject.contains("First subtask"),
+        "Merge commit subject should contain subtask title (AI-generated), got: {merge_commit_subject}"
+    );
+
+    let merge_commit_body = get_head_commit_body(parent_worktree);
+    assert!(
+        merge_commit_body
+            .as_deref()
+            .unwrap_or("")
+            .contains("⚡ Powered by Orkestra"),
+        "Merge commit body should have Orkestra footer, got: {merge_commit_body:?}"
+    );
+
+    // Verify it's an explicit merge commit (--no-ff produces 2 parents)
+    let parents_output = Command::new("git")
+        .args(["log", "-1", "--format=%P"])
+        .current_dir(parent_worktree)
+        .output()
+        .expect("Failed to get parent SHAs");
+    let parents = String::from_utf8_lossy(&parents_output.stdout)
+        .trim()
+        .to_string();
+    let parent_count = parents.split_whitespace().count();
+    assert_eq!(
+        parent_count, 2,
+        "HEAD on parent branch should be an explicit merge commit (2 parents), got: {parents}"
     );
 }
 
@@ -683,11 +722,11 @@ fn test_conflict_recovery_squashes_all_commits() {
         task.state
     );
 
-    // Main should have exactly 1 new commit (all commits squashed into one)
+    // Main should have exactly 1 new first-parent commit (the merge commit wrapping the squash)
     let commits_on_main = count_commits_on_main(ctx.repo_path(), &initial_main_commit);
     assert_eq!(
         commits_on_main, 1,
-        "Main should have exactly 1 squashed commit (including recovery commits), got: {commits_on_main}"
+        "Main should have exactly 1 new first-parent commit (squash + merge), got: {commits_on_main}"
     );
 }
 
@@ -894,22 +933,22 @@ fn test_merge_task_squashes_commits() {
         task.state
     );
 
-    // Main should have exactly 1 new commit (the squashed commit)
+    // Main should have exactly 1 new first-parent commit (the merge commit wrapping the squash)
     let commits_on_main = count_commits_on_main(ctx.repo_path(), &initial_main_commit);
     assert_eq!(
         commits_on_main, 1,
-        "Main should have exactly 1 squashed commit, got: {commits_on_main}"
+        "Main should have exactly 1 new first-parent commit, got: {commits_on_main}"
     );
 
-    // The squashed commit should have an LLM-generated message (from MockCommitMessageGenerator)
+    // The merge commit on main should have an LLM-generated message (from MockCommitMessageGenerator)
     let main_commit_sha = get_main_commit_sha(ctx.repo_path());
-    let squashed_message = get_full_commit_message(ctx.repo_path(), &main_commit_sha);
+    let merge_commit_message = get_full_commit_message(ctx.repo_path(), &main_commit_sha);
     assert!(
-        squashed_message.contains("User merge squash test"),
-        "Squashed commit should contain task title, got: {squashed_message}"
+        merge_commit_message.contains("User merge squash test"),
+        "Merge commit should contain task title, got: {merge_commit_message}"
     );
     assert!(
-        squashed_message.contains("Automated changes"),
-        "Squashed commit should have LLM-generated body from mock, got: {squashed_message}"
+        merge_commit_message.contains("Automated changes"),
+        "Merge commit should have LLM-generated body from mock, got: {merge_commit_message}"
     );
 }

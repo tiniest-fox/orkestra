@@ -2,6 +2,12 @@
 members = ["src-tauri", "cli", "daemon", "crates/orkestra-agent", "crates/orkestra-core", "crates/orkestra-debug", "crates/orkestra-git", "crates/orkestra-networking", "crates/orkestra-parser", "crates/orkestra-process", "crates/orkestra-prompt", "crates/orkestra-schema", "crates/orkestra-store", "crates/orkestra-types", "crates/orkestra-utility"]
 resolver = "2"
 
+[workspace.package]
+description = "AI-powered task orchestration for software development"
+license = "MIT"
+repository = "https://github.com/tiniest-fox/orkestra"
+edition = "2021"
+
 [workspace.lints.clippy]
 # Enable all and pedantic lints
 all = { level = "warn", priority = -1 }

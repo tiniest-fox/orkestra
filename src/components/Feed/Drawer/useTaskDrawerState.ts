@@ -2,6 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { parseOptionIndex } from "../../../lib/optionKey";
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../types/workflow";
 import type { DraftComment, PrTabFooterState } from "./drawerTabs";
 
@@ -70,6 +71,17 @@ export interface TaskDrawerState {
   removeDraftComment: (id: string) => void;
   clearDraftComments: () => void;
   submitLineComments: () => Promise<void>;
+
+  // -- Chat mode --
+  chatMessage: string;
+  setChatMessage: (v: string) => void;
+  chatTextareaRef: React.RefObject<HTMLTextAreaElement>;
+  chatSending: boolean;
+  showChatInput: boolean;
+  chatError: string | null;
+  handleSendChat: () => Promise<void>;
+  handleReturnToWork: () => Promise<void>;
+  handleEnterChatMode: () => void;
 
   // -- Refs --
   feedbackRef: React.RefObject<HTMLInputElement>;
@@ -308,6 +320,63 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     ? submitLineCommentsForDoneTask
     : submitLineCommentsForReview;
 
+  // -- Chat mode --
+  const [chatMessage, setChatMessage] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [showChatInput, setShowChatInput] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const chatTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleEnterChatMode = useCallback(() => {
+    setShowChatInput(true);
+  }, []);
+
+  // Reset chat state when task changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on task id change
+  useEffect(() => {
+    setChatMessage("");
+    setChatSending(false);
+    setShowChatInput(false);
+    setChatError(null);
+  }, [task.id]);
+
+  // Reset local chat input flag when task is no longer in review/interrupted
+  useEffect(() => {
+    if (!task.derived.needs_review && !task.derived.is_interrupted) {
+      setShowChatInput(false);
+    }
+  }, [task.derived.needs_review, task.derived.is_interrupted]);
+
+  const handleSendChat = useCallback(async () => {
+    if (!chatMessage.trim() || chatSending) return;
+    setChatSending(true);
+    setChatError(null);
+    try {
+      await invoke("stage_chat_send", { taskId: task.id, message: chatMessage.trim() });
+      setChatMessage("");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setChatError(message);
+    } finally {
+      setChatSending(false);
+    }
+  }, [task.id, chatMessage, chatSending]);
+
+  const handleReturnToWork = useCallback(async () => {
+    setLoading(true);
+    setChatError(null);
+    const pendingMessage = chatMessage.trim() || null;
+    try {
+      await invoke("workflow_return_to_work", { taskId: task.id, message: pendingMessage });
+      setShowChatInput(false);
+      setChatMessage("");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setChatError(message);
+      setLoading(false);
+    }
+  }, [task.id, chatMessage]);
+
   // -- Action handlers --
 
   const invokeAndClose = useCallback(
@@ -429,11 +498,20 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
         const now = new Date().toISOString();
         await invoke("workflow_answer_questions", {
           taskId: task.id,
-          answers: qs.map((q, i) => ({
-            question: q.question,
-            answer: answers[i].trim(),
-            answered_at: now,
-          })),
+          answers: qs.map((q, i) => {
+            const raw = answers[i];
+            const optIdx = parseOptionIndex(raw);
+            let answer: string;
+            if (optIdx !== null) {
+              // Sentinel key — resolve to the option label. If the label is
+              // missing (stale state mismatch), send an empty string rather
+              // than propagating the internal sentinel string to the backend.
+              answer = q.options?.[optIdx]?.label ?? "";
+            } else {
+              answer = raw.trim();
+            }
+            return { question: q.question, answer, answered_at: now };
+          }),
         });
         onClose();
       } catch (err) {
@@ -530,6 +608,15 @@ export function useTaskDrawerState(task: WorkflowTaskView, onClose: () => void):
     removeDraftComment,
     clearDraftComments,
     submitLineComments,
+    chatMessage,
+    setChatMessage,
+    chatTextareaRef,
+    chatSending,
+    showChatInput,
+    chatError,
+    handleSendChat,
+    handleReturnToWork,
+    handleEnterChatMode,
     feedbackRef,
     submitRef,
     handleApprove,

@@ -14,4 +14,5 @@ pub mod reject_with_comments;
 pub mod request_update;
 pub mod resume;
 pub mod retry;
+pub mod return_to_work;
 pub mod set_auto_mode;

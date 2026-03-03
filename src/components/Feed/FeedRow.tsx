@@ -1,4 +1,4 @@
-//! Shared 4-column grid row used by FeedTaskRow and FeedSubtaskRow.
+//! Shared 7-column grid row used by FeedTaskRow and FeedSubtaskRow.
 
 import { useMemo, useRef } from "react";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
@@ -18,6 +18,8 @@ interface FeedRowProps {
   faded?: boolean;
   isSubtask?: boolean;
   isFocused?: boolean;
+  /** When true, shows a waiting indicator instead of the task's derived status symbol. */
+  waiting?: boolean;
   onMouseEnter?: () => void;
   onReview?: () => void;
   onAnswer?: () => void;
@@ -37,6 +39,7 @@ export function FeedRow({
   faded,
   isSubtask,
   isFocused,
+  waiting,
   onMouseEnter,
   onReview,
   onAnswer,
@@ -61,7 +64,7 @@ export function FeedRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onClick?.();
       }}
-      className={`grid grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_minmax(0,1fr)_160px] gap-4 ${paddingClass} py-2 min-h-[40px] items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out ${isFocused ? "bg-accent-soft border-l-accent" : "border-l-transparent hover:bg-canvas"}${faded && !isFocused ? " opacity-50" : ""}`}
+      className={`grid grid-cols-[24px_18px_minmax(0,1fr)_80px_120px_80px_minmax(0,1fr)] gap-4 ${paddingClass} py-2 min-h-[40px] items-center border-l-2 transition-[background-color,border-color] duration-100 ease-out ${isFocused ? "bg-accent-soft border-l-accent" : "border-l-transparent hover:bg-canvas"}${faded && !isFocused ? " opacity-50" : ""}`}
     >
       {isSubtask ? (
         <>
@@ -69,7 +72,7 @@ export function FeedRow({
           <span className="text-center font-mono text-sm text-text-quaternary self-start">↳</span>
         </>
       ) : (
-        <StatusSymbol task={task} />
+        <StatusSymbol task={task} waiting={waiting} />
       )}
       <div className={`min-w-0 ${!isSubtask ? "col-span-2" : ""}`}>
         <div className="font-sans text-[13px] font-medium tracking-[-0.01em] truncate text-text-primary">
@@ -89,7 +92,7 @@ export function FeedRow({
       </div>
       {actionsSlot ?? (
         <HotkeyScope active={isFocused ?? false}>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 justify-end">
             <FeedRowActions
               task={task}
               onReview={onReview ?? (() => {})}

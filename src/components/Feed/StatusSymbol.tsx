@@ -1,9 +1,12 @@
 //! Text symbol indicating task status with signal color, background chip, and optional pulse.
 
 import type { WorkflowTaskView } from "../../types/workflow";
+import { isActivelyProgressing } from "../../utils/taskStatus";
 
 interface StatusSymbolProps {
   task: WorkflowTaskView;
+  /** When true, renders a dotted-circle waiting indicator instead of the task's derived status. */
+  waiting?: boolean;
 }
 
 interface StatusColors {
@@ -82,16 +85,11 @@ function resolveColors(task: WorkflowTaskView): {
   if (derived.is_interrupted) {
     return { colors: { bg: "bg-accent-soft", icon: "text-accent" }, symbol: "\u2016", extraClass };
   }
-  if (
-    derived.is_working ||
-    state.type === "awaiting_gate" ||
-    derived.is_preparing ||
-    (derived.is_system_active && state.type !== "integrating")
-  ) {
+  if (isActivelyProgressing(task)) {
     extraClass = "animate-spin-bounce";
     if (task.auto_mode) {
       return {
-        colors: { bg: "bg-purple-100", icon: "text-purple-500" },
+        colors: { bg: "bg-status-purple-bg", icon: "text-status-purple" },
         symbol: "ϟ",
         extraClass,
       };
@@ -115,8 +113,14 @@ function resolveColors(task: WorkflowTaskView): {
   return { colors: { bg: TRANSPARENT, icon: "text-text-quaternary" }, symbol: "~", extraClass };
 }
 
-export function StatusSymbol({ task }: StatusSymbolProps) {
-  const { colors, symbol, extraClass } = resolveColors(task);
+export function StatusSymbol({ task, waiting }: StatusSymbolProps) {
+  const { colors, symbol, extraClass } = waiting
+    ? {
+        colors: { bg: "bg-transparent", icon: "text-text-tertiary" },
+        symbol: "\u25CC",
+        extraClass: "",
+      }
+    : resolveColors(task);
 
   return (
     <span

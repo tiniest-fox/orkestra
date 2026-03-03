@@ -234,16 +234,11 @@ fn test_exhaustive_workflow_flow() {
     ctx.advance(); // spawns planner agent (completion ready)
     ctx.advance(); // processes plan v2 output
 
-    // VERIFY: Planner retry after rejection → fresh spawn (Rejection is a returning trigger),
-    // full prompt with feedback embedded via Handlebars/system context.
-    let prompt = ctx.last_prompt();
-    assert!(
-        !prompt.starts_with("<!orkestra:resume:"),
-        "Rejection spawns fresh session — should be full prompt, not resume"
-    );
-    assert!(
-        prompt.contains("Need more detail on the implementation steps"),
-        "Full prompt should embed the rejection feedback"
+    // VERIFY: Planner retry after rejection → resume with feedback (Feedback trigger).
+    // Use assert_resume_prompt_contains which checks only the user message (not combined prompt).
+    ctx.assert_resume_prompt_contains(
+        "feedback",
+        &["Need more detail on the implementation steps"],
     );
 
     let task = ctx.api().get_task(&task_id).unwrap();
@@ -359,17 +354,13 @@ fn test_exhaustive_workflow_flow() {
     ctx.advance(); // spawns worker agent (completion ready)
     ctx.advance(); // processes work v2 output
 
-    // VERIFY: Work retry after rejection → fresh spawn (Rejection is a returning trigger).
-    // Full prompt with rejection feedback embedded.
+    // VERIFY: Work retry after rejection → resume with feedback (Feedback trigger).
     let config = ctx.last_run_config();
     assert!(
-        !config.is_resume,
-        "Rejection spawns fresh session — should not be resume"
+        config.is_resume,
+        "Human rejection resumes existing session — is_resume must be true"
     );
-    assert!(
-        config.prompt.contains("Tests are failing, please fix them"),
-        "Full prompt should embed the rejection feedback"
-    );
+    ctx.assert_resume_prompt_contains("feedback", &["Tests are failing, please fix them"]);
 
     // =========================================================================
     // Step 7: Work approved → Reviewing
@@ -2220,13 +2211,13 @@ fn test_kill_before_output_retries_without_resume() {
     assert!(task.is_awaiting_review());
 }
 
-/// Test that rejection always spawns a fresh session, even when the agent had activity.
+/// Test that human rejection resumes the existing agent session, even when the agent had activity.
 ///
-/// Rejection is a "returning" trigger — the task is coming back from review to an
-/// earlier stage. This always supersedes the existing session, regardless of
-/// whether the agent previously produced output (`has_activity`).
+/// Human rejection is a `Feedback` trigger — the agent resumes in its existing
+/// session with the feedback, preserving context regardless of whether the
+/// agent previously produced output (`has_activity`).
 #[test]
-fn test_rejection_always_supersedes_even_with_activity() {
+fn test_human_rejection_resumes_session_even_with_activity() {
     let ctx = TestEnv::with_git(
         &test_default_workflow(),
         &["planner", "breakdown", "worker", "reviewer"],
@@ -2262,14 +2253,89 @@ fn test_rejection_always_supersedes_even_with_activity() {
             activity_log: None,
         },
     );
-    ctx.advance(); // spawns agent for retry (rejection → fresh session, not resume)
+    ctx.advance(); // spawns agent for retry (rejection → resume, Feedback trigger)
 
-    // Rejection is a returning trigger — always supersedes, even with prior activity
+    // Human rejection is a Feedback trigger — resumes existing session, even with prior activity
     let last_config = ctx.last_run_config();
     assert!(
-        !last_config.is_resume,
-        "Rejection always spawns a fresh session — is_resume must be false"
+        last_config.is_resume,
+        "Human rejection resumes existing session — is_resume must be true"
     );
+}
+
+/// Test that human rejection resumes the existing agent session (not fresh spawn).
+///
+/// When a human rejects a same-stage artifact, the Feedback trigger is used,
+/// preserving the session so the agent can resume with context.
+#[test]
+fn test_human_rejection_resumes_session() {
+    use orkestra_core::workflow::config::StageConfig;
+    use orkestra_core::workflow::domain::SessionState;
+
+    let workflow = WorkflowConfig::new(vec![
+        StageConfig::new("work", "summary").with_prompt("worker.md")
+    ]);
+
+    let ctx = TestEnv::with_git(&workflow, &["worker"]);
+    let task = ctx.create_task("Resume test", "Test human rejection resumes", None);
+    let task_id = task.id.clone();
+
+    // Work agent produces artifact
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Initial work".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns worker
+    ctx.advance(); // processes output
+
+    let session_before = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .unwrap()
+        .expect("Session should exist");
+    let session_id_before = session_before.id.clone();
+
+    // Human rejects
+    ctx.api().reject(&task_id, "Add error handling").unwrap();
+
+    // Set output for resume
+    ctx.set_output(
+        &task_id,
+        MockAgentOutput::Artifact {
+            name: "summary".to_string(),
+            content: "Work with error handling".to_string(),
+            activity_log: None,
+        },
+    );
+    ctx.advance(); // spawns worker (resume)
+    ctx.advance(); // processes output
+
+    // Session should be the SAME (not superseded)
+    let session_after = ctx
+        .api()
+        .get_stage_session(&task_id, "work")
+        .unwrap()
+        .expect("Session should exist");
+    assert_eq!(
+        session_after.id, session_id_before,
+        "Same session should be reused"
+    );
+    assert_eq!(session_after.session_state, SessionState::Active);
+
+    // Should be resume, not fresh
+    let last_config = ctx.last_run_config();
+    assert!(
+        last_config.is_resume,
+        "Human rejection should resume existing session"
+    );
+
+    // Resume prompt should contain the feedback.
+    // Use assert_resume_prompt_contains which checks only the user message (not combined prompt).
+    ctx.assert_resume_prompt_contains("feedback", &["Add error handling"]);
 }
 
 // =============================================================================
@@ -5842,14 +5908,13 @@ fn test_stages_with_logs_groups_sessions_correctly() {
     assert!(work_stage.sessions[0].is_current);
 }
 
-/// Test that human rejections supersede the existing session, creating a fresh one.
+/// Test that human rejections preserve the existing session (no supersession).
 ///
-/// When a human rejects an artifact, the existing session is superseded and a
-/// new session is created for the retry. This ensures the agent starts fresh
-/// rather than resuming, which is correct for "redo this output" scenarios.
-/// The superseded session remains in the log history alongside the new session.
+/// When a human rejects an artifact, the Feedback trigger resumes the existing
+/// session rather than creating a new one. This ensures the agent continues with
+/// full context from its previous work, rather than starting fresh.
 #[test]
-fn test_rejection_supersedes_session() {
+fn test_human_rejection_preserves_session() {
     use orkestra_core::testutil::fixtures::test_default_workflow;
 
     use crate::helpers::enable_auto_merge;
@@ -5930,10 +5995,10 @@ fn test_rejection_supersedes_session() {
     ctx.api()
         .reject(&task_id, "Please add error handling")
         .unwrap();
-    ctx.advance(); // spawns worker (fresh session — rejection supersedes)
+    ctx.advance(); // spawns worker (resume — feedback trigger)
     ctx.advance(); // processes output
 
-    // Verify rejection created a new session (superseded old one)
+    // Verify rejection preserved the existing session (no supersession)
     let task_views = ctx.api().list_task_views().unwrap();
     let task_view = task_views.iter().find(|v| v.task.id == task_id).unwrap();
 
@@ -5946,20 +6011,16 @@ fn test_rejection_supersedes_session() {
 
     assert_eq!(
         work_stage.sessions.len(),
-        2,
-        "Rejection should supersede old session and create a new one"
+        1,
+        "Feedback trigger should preserve existing session (no supersession)"
     );
     assert_eq!(
         work_stage.sessions[0].session_id, first_session_id,
-        "First session should still exist in log history (as superseded)"
+        "Same session should be reused after human rejection"
     );
     assert!(
-        !work_stage.sessions[0].is_current,
-        "First session should be superseded (not current)"
-    );
-    assert!(
-        work_stage.sessions[1].is_current,
-        "New session should be current"
+        work_stage.sessions[0].is_current,
+        "Session should still be current (not superseded)"
     );
 }
 

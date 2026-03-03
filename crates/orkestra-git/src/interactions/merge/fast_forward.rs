@@ -5,15 +5,23 @@ use std::process::Command;
 
 use crate::types::{GitError, MergeResult};
 
-/// Merge a branch into the target branch using fast-forward only.
+/// Merge a branch into the target branch.
 ///
 /// Operates in the given working directory. Stashes uncommitted changes,
-/// performs the merge, then restores the stash.
+/// performs the merge, then restores the stash. Stash pop failure is
+/// non-fatal: the merge result is returned successfully and the caller is
+/// responsible for informing the user that `git stash pop` may need to be
+/// run manually.
+///
+/// When `message` is `Some`, uses `--no-ff -m <message>` to create an
+/// explicit merge commit with the given message. When `None`, uses
+/// `--ff-only` (fast-forward only, no new commit if possible).
 pub fn execute(
     repo_path: &Path,
     worktrees_dir: &Path,
     branch_name: &str,
     target_branch: &str,
+    message: Option<&str>,
 ) -> Result<MergeResult, GitError> {
     let working_dir = crate::interactions::branch::resolve_working_dir::execute(
         repo_path,
@@ -22,18 +30,41 @@ pub fn execute(
     )?;
     let was_stashed = crate::interactions::stash::push::execute(&working_dir)?;
 
-    let merge_result = fast_forward_merge(&working_dir, branch_name, target_branch);
+    let merge_result = do_merge(&working_dir, branch_name, target_branch, message);
 
-    crate::interactions::stash::pop::execute(&working_dir, was_stashed)?;
+    // Always attempt to pop the stash for cleanup, but treat failure as
+    // non-fatal: if the merge itself succeeded the integration is complete.
+    // Failure here most often means the stashed changes conflict with the
+    // newly merged state; the stash entry remains and can be restored with
+    // `git stash pop` in the working directory.
+    let pop_result = crate::interactions::stash::pop::execute(&working_dir, was_stashed);
 
-    merge_result
+    match merge_result {
+        Ok(result) => {
+            if let Err(e) = pop_result {
+                eprintln!(
+                    "[orkestra-git] Warning: stash pop failed after successful merge in {} — \
+                     run `git stash pop` manually to restore uncommitted changes. Error: {e}",
+                    working_dir.display()
+                );
+            }
+            Ok(result)
+        }
+        Err(merge_err) => {
+            // Merge failed; stash pop was best-effort cleanup, ignore its result.
+            Err(merge_err)
+        }
+    }
 }
 
-/// Perform fast-forward merge in a specific working directory.
-fn fast_forward_merge(
+/// Perform the merge in a specific working directory.
+///
+/// Uses `--no-ff -m <message>` when a message is provided, otherwise `--ff-only`.
+fn do_merge(
     working_dir: &Path,
     source: &str,
     target: &str,
+    message: Option<&str>,
 ) -> Result<MergeResult, GitError> {
     // Detect if this is a worktree by checking if .git is a file (not a directory)
     let is_worktree = working_dir.join(".git").is_file();
@@ -60,17 +91,22 @@ fn fast_forward_merge(
         }
     }
 
-    // Fast-forward merge
-    let merge_output = Command::new("git")
-        .args(["merge", "--ff-only", source])
-        .current_dir(working_dir)
-        .output()
-        .map_err(|e| {
-            GitError::MergeError(format!(
-                "Failed to merge {source} into {target} in {}: {e}",
-                working_dir.display()
-            ))
-        })?;
+    // Merge: --no-ff with custom message, or --ff-only
+    let mut cmd = Command::new("git");
+    cmd.current_dir(working_dir);
+
+    if let Some(msg) = message {
+        cmd.args(["merge", "--no-ff", "-m", msg, source]);
+    } else {
+        cmd.args(["merge", "--ff-only", source]);
+    }
+
+    let merge_output = cmd.output().map_err(|e| {
+        GitError::MergeError(format!(
+            "Failed to merge {source} into {target} in {}: {e}",
+            working_dir.display()
+        ))
+    })?;
 
     if !merge_output.status.success() {
         let stderr = String::from_utf8_lossy(&merge_output.stderr);

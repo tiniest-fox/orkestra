@@ -12,7 +12,11 @@ type InvokeCommand =
   | "workflow_reject"
   | "workflow_answer_questions"
   | "workflow_get_config"
-  | "get_project_info";
+  | "get_project_info"
+  | "start_run_script"
+  | "stop_run_script"
+  | "get_run_status"
+  | "get_run_logs";
 
 interface MockResponseMap {
   workflow_get_tasks: WorkflowTaskView[];
@@ -22,6 +26,10 @@ interface MockResponseMap {
   workflow_answer_questions: WorkflowTask;
   workflow_get_config: WorkflowConfig;
   get_project_info: ProjectInfo;
+  start_run_script: undefined;
+  stop_run_script: undefined;
+  get_run_status: { running: boolean; pid: number | null; exit_code: number | null };
+  get_run_logs: { lines: string[]; total_lines: number };
 }
 
 export function mockInvokeResponses(
@@ -47,7 +55,17 @@ export function resetMocks(): void {
         project_root: "/mock/project",
         has_git: true,
         has_gh_cli: true,
+        has_run_script: false,
       } satisfies ProjectInfo);
+    }
+    if (cmd === "get_run_status") {
+      return Promise.resolve({ running: false, pid: null, exit_code: null });
+    }
+    if (cmd === "get_run_logs") {
+      return Promise.resolve({ lines: [], total_lines: 0 });
+    }
+    if (cmd === "start_run_script" || cmd === "stop_run_script") {
+      return Promise.resolve();
     }
     return Promise.reject(new Error(`Unmocked command: ${cmd}`));
   });

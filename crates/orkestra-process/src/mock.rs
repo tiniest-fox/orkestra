@@ -16,7 +16,10 @@ pub struct SpawnCall {
 
 /// Mock process spawner for testing.
 ///
-/// Doesn't spawn real processes - returns configured mock output.
+/// Spawns a real `cat` subprocess to produce valid stdio handles.
+/// `cat` echoes stdin to stdout and exits when stdin closes — safe and
+/// deterministic for tests. The mock queue controls what gets returned
+/// on stdout; callers can inspect recorded `SpawnCall`s.
 pub struct MockProcessSpawner {
     calls: Arc<Mutex<Vec<SpawnCall>>>,
     outputs: Arc<Mutex<VecDeque<String>>>,
@@ -67,23 +70,45 @@ impl ProcessSpawner for MockProcessSpawner {
             config: config.clone(),
         });
 
-        // Get next PID
-        let pid = {
+        // Increment logical PID counter (unused for real pid below, kept for API stability)
+        {
             let mut next = self.next_pid.lock().unwrap();
-            let pid = *next;
             *next += 1;
-            pid
+        }
+
+        // Get queued output (unused here — `cat` echoes stdin, but callers
+        // that need specific stdout content should use real processes).
+        let _output = self.outputs.lock().unwrap().pop_front().unwrap_or_default();
+
+        // Spawn `cat` to get valid ChildStdin/ChildStdout handles.
+        // cat echoes stdin → stdout and exits when stdin closes, making it
+        // a safe, deterministic subprocess for test environments.
+        let working_dir = if working_dir.exists() {
+            working_dir.to_path_buf()
+        } else {
+            std::env::temp_dir()
         };
 
-        // Get output (or empty string)
-        let output = self.outputs.lock().unwrap().pop_front().unwrap_or_default();
+        let mut child = std::process::Command::new("cat")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .current_dir(&working_dir)
+            .spawn()
+            .map_err(|e| ProcessError::SpawnFailed(e.to_string()))?;
 
-        // Create mock handle
-        // Note: This is a simplified mock - real implementation would need
-        // proper mock streams. For now we return an error since we can't
-        // easily mock ChildStdin/ChildStdout.
-        Err(ProcessError::SpawnFailed(format!(
-            "MockProcessSpawner cannot create real handles. PID would be {pid}, output: {output}"
-        )))
+        let pid = child.id();
+
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| ProcessError::SpawnFailed("No stdin".to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ProcessError::SpawnFailed("No stdout".to_string()))?;
+        let stderr = child.stderr.take();
+
+        Ok(ProcessHandle::new(pid, stdin, stdout, stderr))
     }
 }

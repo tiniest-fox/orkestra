@@ -94,8 +94,9 @@ useEffect(() => {
   - **Border radius tokens**: `rounded-panel` (12px) for structural panels, `rounded-panel-sm` (8px) for smaller containers. For chat-like UI elements (messages, bubbles), `rounded-2xl` (16px) is acceptable to differentiate conversational UI from structural panels.
   - **Verify token names before using them.** Only classes defined in `tailwind.config.js` generate CSS. For example, status colors use `status-*` tokens (e.g., `bg-status-success`, `text-status-error`) — there are no `success-*`, `error-*`, `info-*`, or `warning-*` tokens. When in doubt, check `tailwind.config.js` first.
   - **Arbitrary opacity values are valid** (Tailwind v3.4+ JIT): `opacity-45`, `opacity-30`, etc. are all valid — JIT generates them on demand. They are NOT limited to the standard scale (0, 25, 50, 75, 100). Don't flag arbitrary opacity values in review.
-- **Light mode only**: The project is light-mode only. Do not add `dark:` variant classes.
-- Use `PROSE_CLASSES` from `utils/prose.ts` for markdown rendering.
+- **Dark mode uses system preference**: The project uses `prefers-color-scheme: dark` for automatic dark mode. All Forge design tokens are CSS variables that flip automatically — no extra work needed when using token classes like `bg-canvas`, `text-primary`, `bg-surface-2`, etc. For standard Tailwind palette colors that don't map to a Forge token (stone, amber, purple in `taskStateColors.ts` / `stageColors.ts`), pair with an explicit `dark:` variant class (e.g. `bg-stone-300 dark:bg-stone-600`). Tailwind's `darkMode: 'media'` is configured so `dark:` variants respond to `prefers-color-scheme`.
+- **Forge tokens used with opacity modifiers must be defined as RGB channels**: Tailwind's `/N` opacity modifier syntax (e.g. `bg-accent/40`, `text-status-error/60`) requires the CSS variable to be defined as space-separated RGB channels (`"R G B"`) rather than a hex string. Hex values silently break opacity — the class is applied but opacity has no effect. Affected tokens (accent, status-success, status-error, status-warning, status-info, violet, teal, merge) are already defined in the correct format in `tailwind.config.js`. When adding a new Forge token, check whether it will ever be used with `/N` and define it accordingly: `"--forge-my-token": "120 80 200"` not `"#7850C8"`.
+- Use `PROSE_CLASSES` from `utils/prose.ts` for markdown rendering. Always pair with `text-forge-body` for font size — never use arbitrary values like `text-[13px]` alongside `PROSE_CLASSES`.
 
 ## Forge Design System
 
@@ -106,6 +107,10 @@ Forge is the project's design language — it is not an alternate or scoped visu
 **Animation coupling:** Keyframe names (`pipe-active-pulse`, `forge-pulse-opacity`) are coupled by string between `index.css` and TSX files with no compile-time check. Be careful when renaming them.
 
 ## UI Components
+
+<!-- compound: freely-exquisite-chicken -->
+
+**Button `className` overrides and CSS specificity**: The `Button` component concatenates classes with a plain string join (not `twMerge`). When you pass a `className` prop to override variant styles (e.g. hover colors), CSS specificity is determined by Tailwind's CSS generation order — not the order of classes in the HTML attribute. If your override and the variant's class have equal specificity, the result is unpredictable. Options when you need reliable overrides: (1) add `onAccent` prop if the button sits on an accent-colored background (it switches the hotkey badge and other internal styles), (2) create a dedicated variant in `Button.tsx` rather than overriding via `className`, or (3) wait for a `twMerge` migration.
 
 - Use the existing design system in `components/ui/` — `Panel`, `Button`, `Badge`, `IconButton`, `TabbedPanel`, `ModalPanel`, etc.
 - The `Panel` component uses compound subcomponents: `Panel.Header`, `Panel.Body`, `Panel.Footer`, etc.
@@ -174,6 +179,10 @@ See `submitLineCommentsForReview` / `submitLineCommentsForDoneTask` in `useTaskD
 
 <!-- compound: tightly-prudent-motmot -->
 
+**`useRegexLiterals` auto-converts `new RegExp()` to literal form**: Biome's `useRegexLiterals` rule automatically rewrites `new RegExp("pattern")` to `/pattern/` literal syntax. If constructor form is required (e.g., to avoid escape conflicts with another lint rule), use `// biome-ignore lint/nursery/useRegexLiterals: <reason>` on the preceding line. Without the suppression, the automated formatter reverts the constructor form on every gate run, making the fix unstable.
+
+<!-- compound: finally-idealistic-linnet -->
+
 **`useKeyWithClickEvents` on non-semantic elements**: Biome requires a `onKeyDown` handler alongside every `onClick`, even on `tabIndex={-1}` divs/spans where keyboard nav is intentionally handled elsewhere (e.g., by a parent input). Use a no-op `onKeyDown={() => {}}` to satisfy the rule — do not use `biome-ignore` (it's invalid inside JSX prop position).
 
 ```tsx
@@ -193,17 +202,140 @@ Gate output is **not** stored as log entries. Gates store their output in `itera
 - **Detect gate running**: check `task.state.type === "gate_running"` (already present on `WorkflowTaskView`)
 - **Reference pattern**: `DrawerGateTab.tsx` shows how to find the relevant gate iteration and render its output lines
 
+## Terminal Task State: current_stage is Null
+
+<!-- compound: obligingly-dear-porgy -->
+
+For terminal `TaskState` variants (`done`, `failed`, `blocked`, `archived`), `task.derived.current_stage` is intentionally `null` (set in `status.rs`). **Never assume `current_stage` is non-null when writing frontend code for logs, artifacts, or any stage-dependent UI.**
+
+To derive the last active stage for terminal tasks, use:
+- `task.derived.stages_with_logs[last].stage` — ordered chronologically by session creation; last entry = most recently active stage
+- `task.iterations[last].stage` — last iteration's stage field
+
+The polling guard in `useLogs.ts` relies on this: `activeLogStage === task.derived.current_stage` evaluates to `"stage-name" === null` → `false`, so terminal tasks are fetched once (via `useEffect`) and not polled.
+
+## Assistant Session Active State
+
+<!-- compound: modestly-saintly-mynah -->
+
+Use `agent_pid != null` to determine whether an assistant session is actively running. Do **not** use `session_state === "active" || "spawning"` — `session_state` is never updated to `"completed"` on the backend, so it reads stale forever and will keep the loading spinner indefinitely.
+
+```tsx
+// Correct
+const isAgentRunning = session?.agent_pid != null;
+
+// Wrong — session_state is never cleared
+const isAgentRunning = session?.session_state === "active" || session?.session_state === "spawning";
+```
+
+## Task Status Predicates
+
+<!-- compound: dully-maximum-sunbeam -->
+
+`isActivelyProgressing` in `utils/taskStatus.ts` is a **header-metric-scoped** predicate — it excludes `integrating` because the header displays integrating tasks in a separate count. It is NOT a universal "is this task doing something" check.
+
+**Callers that need `integrating` included** (e.g., showing UI for any in-flight task) must add an explicit guard:
+
+```tsx
+// Correct pattern when you need both
+task.state.type === "integrating" || isActivelyProgressing(task)
+```
+
+Using `isActivelyProgressing` alone in contexts that previously handled `integrating` will silently drop those tasks. See `FeedRowActions.tsx` for the reference pattern.
+
 ## Types
 
 - Use `import type` for type-only imports.
 - Workflow domain types live in `types/workflow.ts`.
 - Don't duplicate backend types — the Tauri bindings generate TypeScript types from Rust.
 
+## TanStack Virtual Patterns
+
+<!-- compound: dourly-topical-pratincole -->
+
+**Sticky file headers inside a virtualizer**: Standard `position:sticky` doesn't work for items inside a virtualizer — each header sticks independently, causing all headers to float over each other. The correct pattern:
+
+1. Place a **single sticky overlay element before the virtualizer container** (`position:sticky; top:0; z-index`) in the DOM
+2. Track the topmost visible item by inspecting `virtualItems` on each scroll
+3. Render that item's header in the overlay — not inside the virtualizer list
+
+**`firstVisible` predicate — direction matters**: To find the topmost visible file, iterate in *reverse* and find the last item whose top is at or above `scrollTop`:
+
+```ts
+const firstVisible = [...virtualItems]
+  .reverse()
+  .find(item => item.start <= scrollElement.scrollTop);
+```
+
+**Never use `find(item => item.start >= scrollTop)`** — that finds the first item *below* the viewport, skipping the file the user is currently reading. The inversion is subtle and easy to get backwards.
+
+Note: `Array.prototype.findLast` is ES2023 — use `[...arr].reverse().find()` for ES2020 targets.
+
+**`virtualItems` sort order**: TanStack Virtual guarantees `virtualItems` is sorted ascending by `start`. The reverse-find pattern relies on this guarantee — a `reduce`-based approach would make the intent explicit if the sort assumption ever feels fragile.
+
 ## Testing
 
 - Tests use Vitest + React Testing Library.
 - Test files sit alongside the component: `Component.test.tsx`.
 - **jsdom limitations**: The test environment doesn't implement all DOM APIs. If a component uses `scrollIntoView()`, `IntersectionObserver`, or other browser-specific APIs, mock the component in parent component tests to prevent runtime errors. See `Orkestra.test.tsx` for the pattern.
+- **`@tanstack/react-virtual` renders 0 items in jsdom**: The virtualizer measures DOM element heights to determine which items to render. In jsdom there are no layout measurements, so `virtualItems` is always empty. Tests that exercise virtualizer-dependent behavior (`scrollToFile`, active-path tracking, `onActivePathChange` callbacks) are impractical in unit tests — document them as requiring manual verification and focus test coverage on the hook or logic layer instead (e.g., `useAutoCollapsePaths.test.ts` tests the collapse logic without touching the virtualizer).
+
+## Keyboard Navigation
+
+<!-- compound: beauteously-liberal-pollock -->
+
+Use `useNavHandler` from `HotkeyScope` for keyboard shortcuts instead of raw `window.addEventListener`. Raw listeners bypass scope isolation — they fire regardless of which drawer or panel is focused, and they won't benefit from future hotkey system updates.
+
+```tsx
+// Avoid
+useEffect(() => {
+  const handler = (e: KeyboardEvent) => {
+    if (e.key === "j") selectNext();
+    if (e.key === "k") selectPrev();
+  };
+  window.addEventListener("keydown", handler);
+  return () => window.removeEventListener("keydown", handler);
+}, []);
+
+// Prefer — respects HotkeyScope isolation
+useNavHandler({ onNext: selectNext, onPrev: selectPrev });
+```
+
+### antml-Namespaced Tag Literals in Test Strings
+
+<!-- compound: hungrily-avid-turkey -->
+
+When writing test strings that contain Claude's `<...>` XML tags (e.g., `<parameter>`, `<function_calls>`), construct the closing tags via string concatenation to avoid the literal string being treated as a real XML element:
+
+```ts
+// Avoid — the literal closing tag is stripped by XML-aware tools
+const input = "content inside param tags";
+
+// Prefer — construct closing tags via concatenation
+const CLOSE_PARAM = "</" + "antml:parameter>";
+const input = `<parameter>content${CLOSE_PARAM}`;
+```
+
+This matters when testing regexes that strip Claude's structured output blocks from text (e.g., `stripParameterBlocks`). The same applies to `<function_calls>` and similar antml-namespaced tags.
+
+### Pure Utility Module Tests
+
+<!-- compound: enormously-solid-whippet -->
+
+Pure utility modules (functions with no React/DOM dependencies) must have a unit test file alongside them (`utility.test.ts`). These modules carry the correctness burden for their callers and are easy to exercise in isolation with Vitest.
+
+```ts
+import { describe, expect, it } from "vitest";
+import { myUtil } from "./myUtil";
+
+describe("myUtil", () => {
+  it("handles normal case", () => {
+    expect(myUtil("input")).toBe("expected");
+  });
+});
+```
+
+**Example:** `optionKey.ts` / `optionKey.test.ts`.
 
 ### Default Expansion State Tests
 

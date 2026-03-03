@@ -1,5 +1,6 @@
 //! Core `WorkflowApi` struct and workflow configuration queries.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::commit_message::{ClaudeCommitMessageGenerator, CommitMessageGenerator};
@@ -7,6 +8,7 @@ use crate::pr_description::{ClaudePrDescriptionGenerator, PrDescriptionGenerator
 use crate::title::{ClaudeTitleGenerator, TitleGenerator};
 use crate::workflow::config::WorkflowConfig;
 use crate::workflow::domain::Task;
+use crate::workflow::execution::ProviderRegistry;
 use crate::workflow::iteration::IterationService;
 use crate::workflow::ports::{GitService, PrService, WorkflowError, WorkflowResult, WorkflowStore};
 use crate::workflow::task::setup::TaskSetupService;
@@ -49,6 +51,8 @@ pub struct WorkflowApi {
     pub(crate) pr_service: Option<Arc<dyn PrService>>,
     pub(crate) setup_service: Arc<TaskSetupService>,
     pub(crate) agent_killer: Option<Arc<dyn AgentKiller>>,
+    pub(crate) provider_registry: Option<Arc<ProviderRegistry>>,
+    pub(crate) project_root: Option<PathBuf>,
 }
 
 impl WorkflowApi {
@@ -78,6 +82,8 @@ impl WorkflowApi {
             pr_service: None,
             setup_service,
             agent_killer: None,
+            provider_registry: None,
+            project_root: None,
         }
     }
 
@@ -112,6 +118,8 @@ impl WorkflowApi {
             pr_service: None,
             setup_service,
             agent_killer: None,
+            provider_registry: None,
+            project_root: None,
         }
     }
 
@@ -160,6 +168,20 @@ impl WorkflowApi {
     /// Set the agent killer (used by interrupt to kill active agents).
     pub fn set_agent_killer(&mut self, killer: Arc<dyn AgentKiller>) {
         self.agent_killer = Some(killer);
+    }
+
+    /// Set the provider registry (required for stage chat).
+    #[must_use]
+    pub fn with_provider_registry(mut self, registry: Arc<ProviderRegistry>) -> Self {
+        self.provider_registry = Some(registry);
+        self
+    }
+
+    /// Set the project root (required for stage chat worktree resolution).
+    #[must_use]
+    pub fn with_project_root(mut self, project_root: PathBuf) -> Self {
+        self.project_root = Some(project_root);
+        self
     }
 
     /// Get the git service, if configured.

@@ -246,6 +246,7 @@ pub fn workflow_get_latest_log(
 /// # Errors
 /// Returns error if `gh` CLI is not installed or the PR URL is invalid.
 #[tauri::command]
+#[allow(clippy::too_many_lines)]
 pub async fn workflow_get_pr_status(pr_url: String) -> Result<PrStatus, TauriError> {
     fetch_pr_status(&pr_url)
         .await

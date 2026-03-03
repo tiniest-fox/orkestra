@@ -3,7 +3,7 @@
 //! Mounted/unmounted by the parent (FeedView). The Drawer is always open while
 //! this component exists; data comes from GitHistoryProvider which polls independently.
 
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight, GitCompare, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useCommitDiff } from "../../hooks/useCommitDiff";
 import { useSyntaxCss } from "../../hooks/useSyntaxCss";
@@ -11,10 +11,13 @@ import { useGitHistory } from "../../providers/GitHistoryProvider";
 import { FORGE_SYNTAX_OVERRIDES } from "../../styles/syntaxHighlighting";
 import type { CommitInfo } from "../../types/workflow";
 import { relativeTime } from "../../utils/relativeTime";
+import type { DiffContentHandle } from "../Diff/DiffContent";
 import { DiffContent } from "../Diff/DiffContent";
 import { DiffFileList } from "../Diff/DiffFileList";
 import { DiffSkeleton } from "../Diff/DiffSkeleton";
+import { useAutoCollapsePaths } from "../Diff/useAutoCollapsePaths";
 import { Drawer } from "../ui/Drawer/Drawer";
+import { EmptyState } from "../ui/EmptyState";
 import { Kbd } from "../ui/Kbd";
 
 // ============================================================================
@@ -81,17 +84,23 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
   const [activePath, setActivePath] = useState<string | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
-  const diffScrollRef = useRef<HTMLDivElement>(null);
-  const fileSectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const diffContentRef = useRef<DiffContentHandle>(null);
+  const [diffScrollEl, setDiffScrollEl] = useState<HTMLDivElement | null>(null);
+  const setDiffScrollRef = useCallback((el: HTMLDivElement | null) => {
+    setDiffScrollEl(el);
+  }, []);
+
+  const { diff, loading: diffLoading } = useCommitDiff(selectedHash);
+
+  const { collapsedPaths, toggleCollapsed, resetInteraction } = useAutoCollapsePaths(diff?.files);
 
   // Reset per-commit state when selection changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: selectedHash is the intentional trigger; setters are stable
   useEffect(() => {
     setActivePath(null);
     setBodyExpanded(true);
+    resetInteraction();
   }, [selectedHash]);
-
-  const { diff, loading: diffLoading } = useCommitDiff(selectedHash);
 
   // Auto-select first file when diff loads.
   useEffect(() => {
@@ -129,17 +138,16 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [commits]);
 
-  const handleFileSectionRef = useCallback((path: string, el: HTMLDivElement | null) => {
-    if (el) fileSectionRefs.current.set(path, el);
-    else fileSectionRefs.current.delete(path);
-  }, []);
+  function handleToggleCollapsed(path: string) {
+    toggleCollapsed(path);
+    requestAnimationFrame(() => {
+      diffContentRef.current?.scrollToFile(path);
+    });
+  }
 
   function handleJumpTo(path: string) {
     setActivePath(path);
-    const el = fileSectionRefs.current.get(path);
-    if (el && diffScrollRef.current) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    diffContentRef.current?.scrollToFile(path);
   }
 
   const selectedCommit = selectedHash
@@ -250,20 +258,22 @@ export function GitHistoryDrawer({ onClose }: GitHistoryDrawerProps) {
                         onJumpTo={handleJumpTo}
                       />
                     </div>
-                    <div ref={diffScrollRef} className="flex-1 overflow-y-auto">
+                    <div ref={setDiffScrollRef} className="flex-1 overflow-y-auto">
                       <DiffContent
+                        ref={diffContentRef}
                         files={diff.files}
                         comments={[]}
                         activePath={activePath}
-                        collapsedPaths={new Set()}
-                        onToggleCollapsed={() => {}}
-                        onFileSectionRef={handleFileSectionRef}
+                        collapsedPaths={collapsedPaths}
+                        scrollElement={diffScrollEl}
+                        onActivePathChange={setActivePath}
+                        onToggleCollapsed={handleToggleCollapsed}
                       />
                     </div>
                   </>
                 ) : diff ? (
-                  <div className="flex-1 p-6 font-mono text-[11px] text-text-quaternary">
-                    No changes.
+                  <div className="flex-1 flex items-center justify-center">
+                    <EmptyState icon={GitCompare} message="No changes." />
                   </div>
                 ) : null}
               </div>

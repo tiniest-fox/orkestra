@@ -1,8 +1,9 @@
 //! Shared header for Feed drawers — title row + pipeline + session strip.
 
 import { invoke } from "@tauri-apps/api/core";
-import { SquarePen, SquareTerminal, Trash2, X } from "lucide-react";
+import { Play, Square, SquarePen, SquareTerminal, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import type { RunStatus } from "../../hooks/useRunScript";
 import type { WorkflowConfig, WorkflowTaskView } from "../../types/workflow";
 import { computePipelineSegments } from "../../utils/pipelineSegments";
 import { groupIterationsIntoRuns } from "../../utils/stageRuns";
@@ -32,6 +33,11 @@ interface DrawerHeaderProps {
   isWaitingChipSelected?: boolean;
   onToggleAutoMode?: () => void;
   autoModeOverride?: boolean;
+  showRunButton?: boolean;
+  runStatus?: RunStatus;
+  runLoading?: boolean;
+  onRunStart?: () => Promise<void>;
+  onRunStop?: () => Promise<void>;
 }
 
 /** Compute the accent color for a drawer from the task's current state. */
@@ -60,6 +66,11 @@ export function DrawerHeader({
   isWaitingChipSelected,
   onToggleAutoMode,
   autoModeOverride,
+  showRunButton,
+  runStatus,
+  runLoading,
+  onRunStart,
+  onRunStop,
 }: DrawerHeaderProps) {
   const effectiveAutoMode = autoModeOverride ?? task.auto_mode;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -87,8 +98,11 @@ export function DrawerHeader({
     <div className="shrink-0 px-6 pt-4 pb-3 border-b border-border">
       {/* Row 1: Title + external tool links + close */}
       <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1 font-sans text-[14px] font-semibold tracking-[-0.01em] text-text-primary leading-snug truncate">
-          {task.title || task.description}
+        <div className="min-w-0 flex-1">
+          <div className="font-sans text-[14px] font-semibold tracking-[-0.01em] text-text-primary leading-snug truncate">
+            {task.title || task.description}
+          </div>
+          <div className="text-[12px] font-mono text-text-quaternary mt-0.5">{task.id}</div>
         </div>
         {task.worktree_path && (
           <div className="shrink-0 flex items-center gap-2 mt-0.5">
@@ -121,6 +135,26 @@ export function DrawerHeader({
                   />
                 </button>
               </label>
+            )}
+            {showRunButton && runStatus && (
+              <button
+                type="button"
+                onClick={runStatus.running ? onRunStop : onRunStart}
+                disabled={runLoading}
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                  runStatus.running
+                    ? "text-status-success bg-status-success/10 hover:bg-status-success/20"
+                    : "text-text-quaternary hover:text-text-secondary"
+                }`}
+                title={runStatus.running ? "Stop run script" : "Run project script"}
+              >
+                {runStatus.running ? (
+                  <Square size={10} fill="currentColor" />
+                ) : (
+                  <Play size={10} fill="currentColor" />
+                )}
+                {runStatus.running ? "Stop" : "Run"}
+              </button>
             )}
             <button
               type="button"

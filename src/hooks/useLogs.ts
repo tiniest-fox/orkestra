@@ -29,6 +29,7 @@ export function useLogs(
   task: WorkflowTaskView,
   isActive: boolean,
   targetStage?: string,
+  isChatting?: boolean,
 ): UseLogsResult {
   // Stages with logs come from the task view — no async fetch needed
   const stagesWithLogs = task.derived.stages_with_logs;
@@ -49,11 +50,14 @@ export function useLogs(
   );
 
   // Derive active stage directly from the task — no state lag on task or stage changes.
-  // Only show logs for the current active stage; no fallback for failed/done/archived tasks.
+  // For terminal tasks (done, failed, blocked), current_stage is null; fall back to the
+  // last stage that has logs so users can still inspect completed work.
   const activeLogStage = useMemo((): string | null => {
     if (targetStage !== undefined) return targetStage;
-    return task.derived.current_stage;
-  }, [targetStage, task.derived.current_stage]);
+    if (task.derived.current_stage !== null) return task.derived.current_stage;
+    if (stagesWithLogs.length > 0) return stagesWithLogs[stagesWithLogs.length - 1].stage;
+    return null;
+  }, [targetStage, task.derived.current_stage, stagesWithLogs]);
 
   // Derive session from stage — also no state lag
   const activeSessionId = useMemo(
@@ -120,11 +124,11 @@ export function useLogs(
     fetchLogs();
   }, [isActive, activeLogStage, fetchLogs]);
 
-  // Poll while agent is running on the current stage
+  // Poll while agent is running on the current stage, or during chat mode
   const shouldPoll =
     isActive &&
     !!activeLogStage &&
-    task.derived.is_working &&
+    (task.derived.is_working || !!isChatting) &&
     activeLogStage === task.derived.current_stage &&
     !error;
 

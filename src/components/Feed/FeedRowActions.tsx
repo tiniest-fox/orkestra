@@ -5,6 +5,7 @@
 import { useWorkflowConfig } from "../../providers";
 import type { WorkflowTaskView } from "../../types/workflow";
 import { openExternal } from "../../utils/openExternal";
+import { isActivelyProgressing } from "../../utils/taskStatus";
 import { Button } from "../ui/Button";
 import { LatestLogSummary } from "./LatestLogSummary";
 
@@ -109,7 +110,7 @@ export function FeedRowActions({
     );
   }
 
-  if (derived.is_working || derived.is_preparing || derived.is_system_active) {
+  if (task.state.type === "integrating" || isActivelyProgressing(task)) {
     return <LatestLogSummary task={task} />;
   }
 

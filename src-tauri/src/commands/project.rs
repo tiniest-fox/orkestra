@@ -30,6 +30,8 @@ pub struct ProjectInfo {
     pub has_git: bool,
     /// Whether the `gh` CLI is available for PR creation.
     pub has_gh_cli: bool,
+    /// Whether `.orkestra/scripts/run.sh` exists for this project.
+    pub has_run_script: bool,
 }
 
 /// Payload for the `startup-error` event.
@@ -140,7 +142,7 @@ pub async fn load_project_in_window(
         TauriError::new("INVALID_PROJECT_PATH", format!("Invalid project path: {e}"))
     })?;
 
-    let project_state = initialize_project(&project_path).map_err(|e| {
+    let project_state = initialize_project(&project_path, registry.run_pids()).map_err(|e| {
         TauriError::new(
             "PROJECT_INIT_FAILED",
             format!("Failed to initialize project: {e}"),
@@ -204,7 +206,12 @@ pub fn startup_register_project(
 ) -> Result<(), TauriError> {
     let project_path = PathBuf::from(path);
 
-    let project_state = initialize_project(&project_path).map_err(|e| {
+    let run_pids = {
+        let registry: tauri::State<'_, ProjectRegistry> = app_handle.state();
+        registry.run_pids()
+    };
+
+    let project_state = initialize_project(&project_path, run_pids).map_err(|e| {
         TauriError::new(
             "PROJECT_INIT_FAILED",
             format!("Failed to initialize project: {e}"),
@@ -330,10 +337,15 @@ pub fn get_project_info(
     window: tauri::Window,
 ) -> Result<ProjectInfo, TauriError> {
     registry.with_project(window.label(), |state| {
+        let has_run_script = state
+            .project_root()
+            .join(crate::run_process::RUN_SCRIPT_RELATIVE_PATH)
+            .exists();
         Ok(ProjectInfo {
             project_root: state.project_root().display().to_string(),
             has_git: state.has_git_service(),
             has_gh_cli: state.has_gh_cli(),
+            has_run_script,
         })
     })
 }
@@ -555,6 +567,16 @@ fn handle_orchestrator_event(
                 task_id
             );
             let _ = window.emit("task-updated", task_id);
+
+            // Best-effort: stop any run script still active for this task.
+            let registry: tauri::State<ProjectRegistry> = app_handle.state();
+            let task_id_clone = task_id.clone();
+            registry
+                .with_project(window_label, |state| {
+                    state.run_processes().stop(&task_id_clone);
+                    Ok(())
+                })
+                .ok();
         }
         OrchestratorEvent::IntegrationFailed {
             task_id,

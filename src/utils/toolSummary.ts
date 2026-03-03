@@ -20,7 +20,7 @@ export function toolSummary(input: ToolInput): string {
       return input.pattern;
     case "grep":
       return input.pattern;
-    case "task":
+    case "agent":
       return input.description ?? "";
     case "web_search":
       return input.query;

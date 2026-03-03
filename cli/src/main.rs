@@ -1025,6 +1025,20 @@ fn handle_address_feedback(api: &WorkflowApi, id: &str, guidance: Option<&str>, 
 /// Uses `std::process::Command` (sync) since the CLI is synchronous.
 /// Does not fetch check-run summaries — check names are sufficient for agent context.
 fn fetch_failing_checks(pr_url: &str) -> Result<Vec<PrCheckData>, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct CheckRollup {
+        #[serde(default)]
+        status_check_rollup: Vec<CheckEntry>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct CheckEntry {
+        name: String,
+        status: Option<String>,
+        conclusion: Option<String>,
+    }
+
     let output = std::process::Command::new("gh")
         .args(["pr", "view", pr_url, "--json", "statusCheckRollup"])
         .output();
@@ -1041,20 +1055,6 @@ fn fetch_failing_checks(pr_url: &str) -> Result<Vec<PrCheckData>, String> {
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct CheckRollup {
-        #[serde(default)]
-        status_check_rollup: Vec<CheckEntry>,
-    }
-
-    #[derive(serde::Deserialize)]
-    struct CheckEntry {
-        name: String,
-        status: Option<String>,
-        conclusion: Option<String>,
-    }
 
     let rollup: CheckRollup =
         serde_json::from_str(&stdout).map_err(|e| format!("failed to parse gh output: {e}"))?;
@@ -1261,6 +1261,7 @@ fn format_trigger(trigger: &IterationTrigger) -> String {
             }
             s
         }
+        IterationTrigger::ReturnToWork { .. } => "return to work (exited chat mode)".to_string(),
     }
 }
 

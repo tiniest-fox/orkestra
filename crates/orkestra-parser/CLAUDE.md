@@ -14,7 +14,7 @@ src/
 └── interactions/
     ├── claude/          # Claude Code format parsing
     │   ├── parse_assistant_content.rs   # Extract log entries from assistant messages
-    │   └── parse_tool_result_event.rs   # Extract Task tool results
+    │   └── parse_tool_result_event.rs   # Extract Agent tool results
     ├── opencode/        # OpenCode format parsing
     │   ├── classify_buffered_text.rs    # Classify final text as StructuredOutput or plain
     │   ├── extract_text_content.rs      # Extract text from v1.1+ or legacy events
@@ -57,7 +57,7 @@ The trait handles provider differences; `parse_stage_output` is the single sourc
 | Session ID | Caller supplies via `--session-id` | Extracted from `sessionID` field |
 | Stream text | Not buffered | Buffered, classified in `finalize()` |
 | Tool result tracking | Maps `tool_use_id` → `tool_name` | Inline in tool_use event (v1.1+) |
-| Subagent detection | Tracks Task tool IDs | N/A |
+| Subagent detection | Tracks Agent tool IDs | N/A |
 
 ## Gotchas
 

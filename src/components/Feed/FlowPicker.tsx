@@ -60,7 +60,7 @@ export function FlowPicker({ flows, stages, selected, onChange }: FlowPickerProp
         <span className="font-sans text-[11px] font-medium text-text-tertiary uppercase tracking-[0.06em] select-none">
           Flow
         </span>
-        <span className="font-mono text-[10px] text-text-quaternary select-none">⌘← ⌘→</span>
+        <span className="font-mono text-[10px] text-text-quaternary select-none">⌥← ⌥→</span>
       </div>
       <div
         role="radiogroup"

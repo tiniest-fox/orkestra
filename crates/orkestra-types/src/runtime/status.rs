@@ -243,7 +243,7 @@ impl TaskState {
     }
 
     /// Returns true for states where the system is doing background work
-    /// (finishing, committing, committed, integrating, gate running) but no agent is running.
+    /// (finishing, committing, committed, integrating, gate running, awaiting gate) but no agent is running.
     pub fn is_system_active(&self) -> bool {
         matches!(
             self,
@@ -252,6 +252,7 @@ impl TaskState {
                 | Self::Committed { .. }
                 | Self::Integrating
                 | Self::GateRunning { .. }
+                | Self::AwaitingGate { .. }
         )
     }
 
@@ -446,6 +447,8 @@ mod tests {
         assert!(TaskState::finishing("work").is_system_active());
         assert!(TaskState::committing("work").is_system_active());
         assert!(TaskState::Integrating.is_system_active());
+        assert!(TaskState::awaiting_gate("work").is_system_active());
+        assert!(TaskState::gate_running("work").is_system_active());
 
         assert!(!TaskState::agent_working("work").is_system_active());
         assert!(!TaskState::queued("work").is_system_active());
@@ -466,7 +469,7 @@ mod tests {
         assert!(!state.is_terminal());
         assert!(!state.needs_human_action());
         assert!(!state.has_active_agent());
-        assert!(!state.is_system_active());
+        assert!(state.is_system_active());
         assert_eq!(state.to_string(), "awaiting_gate (work)");
     }
 

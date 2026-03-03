@@ -3,6 +3,7 @@
 //! Handles creating `.orkestra` directories for new projects and validating existing ones.
 
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use orkestra_core::orkestra_debug;
 use orkestra_core::workflow::{load_auto_task_templates, load_workflow_for_project};
@@ -13,7 +14,13 @@ use crate::project_registry::ProjectState;
 ///
 /// If the directory doesn't exist, creates it with a default `workflow.yaml`.
 /// Returns a `ProjectState` for the initialized project.
-pub fn initialize_project(project_root: &Path) -> Result<ProjectState, String> {
+///
+/// `run_pids` is the shared PID list for signal handler cleanup, forwarded to the
+/// project's `RunProcessRegistry`.
+pub fn initialize_project(
+    project_root: &Path,
+    run_pids: Arc<Mutex<Vec<u32>>>,
+) -> Result<ProjectState, String> {
     let orkestra_dir = project_root.join(".orkestra");
 
     // Create .orkestra directory structure if needed
@@ -66,6 +73,7 @@ pub fn initialize_project(project_root: &Path) -> Result<ProjectState, String> {
         auto_task_templates,
         &db_path,
         project_root.to_path_buf(),
+        run_pids,
     )
 }
 

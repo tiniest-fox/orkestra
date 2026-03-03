@@ -24,6 +24,8 @@ export interface ProjectInfo {
   has_git: boolean;
   /** Whether the `gh` CLI is available for PR creation. */
   has_gh_cli: boolean;
+  /** Whether a run script exists for launching the project. */
+  has_run_script: boolean;
 }
 
 /**

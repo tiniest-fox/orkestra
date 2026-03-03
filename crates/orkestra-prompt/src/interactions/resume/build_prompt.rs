@@ -19,6 +19,7 @@ const RESUME_RETRY_FAILED: &str = include_str!("../../templates/resume/retry_fai
 const RESUME_RETRY_BLOCKED: &str = include_str!("../../templates/resume/retry_blocked.md");
 const RESUME_MANUAL_RESUME: &str = include_str!("../../templates/resume/manual_resume.md");
 const RESUME_PR_COMMENTS: &str = include_str!("../../templates/resume/pr_comments.md");
+const RESUME_RETURN_TO_WORK: &str = include_str!("../../templates/resume/return_to_work.md");
 
 // ============================================================================
 // Interaction
@@ -73,6 +74,10 @@ pub fn execute(
         } => (
             RESUME_PR_COMMENTS,
             serde_json::json!({ "comments": comments, "checks": checks, "guidance": guidance }),
+        ),
+        ResumeType::ReturnToWork { message } => (
+            RESUME_RETURN_TO_WORK,
+            serde_json::json!({ "message": message }),
         ),
     };
 
@@ -246,6 +251,39 @@ mod tests {
         assert!(prompt.contains("interrupted by the user"));
         assert!(prompt.contains("JSON"));
         assert!(!prompt.contains("Message from the user"));
+    }
+
+    #[test]
+    fn test_return_to_work() {
+        let prompt = execute(
+            "review",
+            &ResumeType::ReturnToWork { message: None },
+            "main",
+            &[],
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:review:return_to_work>"));
+        assert!(prompt.contains("free-form conversation"));
+        assert!(prompt.contains("structured output"));
+        assert!(prompt.contains("JSON"));
+    }
+
+    #[test]
+    fn test_return_to_work_with_message() {
+        let prompt = execute(
+            "review",
+            &ResumeType::ReturnToWork {
+                message: Some("Please also fix the typo in line 42".to_string()),
+            },
+            "main",
+            &[],
+            None,
+        )
+        .unwrap();
+        assert!(prompt.starts_with("<!orkestra:resume:review:return_to_work>"));
+        assert!(prompt.contains("Please also fix the typo in line 42"));
+        assert!(prompt.contains("structured output"));
     }
 
     #[test]

@@ -82,6 +82,13 @@ If your instructions reference specific skills (e.g., `/panel-slot`, `/e2e-testi
 
 These contain conventions that reviewers enforce. Reading them first prevents unnecessary rejections.
 
+<!-- compound: finally-idealistic-linnet -->
+### Audit All Rendering Paths When Adding Transformations
+
+When adding a utility that transforms content before rendering (e.g., stripping ANSI codes, truncating text, escaping HTML), search the **entire file** for every place that renders the same content type — not just the primary path you identified. Secondary render paths in helper functions (e.g., feed preview summaries vs. full display) are a common source of missed calls. A missing transformation in a secondary path is a common rejection reason.
+
+Before submitting: grep the modified file for the raw field/variable name and confirm every rendering site applies the transformation.
+
 <!-- compound: absolutely-jesting-partridge -->
 ### Frontend State Scope Rules
 

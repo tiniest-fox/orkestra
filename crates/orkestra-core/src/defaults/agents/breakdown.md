@@ -90,7 +90,7 @@ After completing your breakdown, assess whether it needs review:
 
 **Lean toward reviewing** when: real design risk — new abstractions, complex dependencies between subtasks, unfamiliar parts of the codebase, or subtasks that could conflict on file ownership.
 
-When reviewing, spawn 4 specialist subagents in parallel using the Task tool. Each gets your draft breakdown and technical design.
+When reviewing, spawn 4 specialist subagents in parallel using the Agent tool. Each gets your draft breakdown and technical design.
 
 ### Specialist 1: Structure Reviewer
 

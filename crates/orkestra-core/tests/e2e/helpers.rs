@@ -204,6 +204,7 @@ impl TestEnv {
             Arc::new(Git2GitService::new(temp_dir.path()).expect("Git service should init"));
 
         let pr_service = Arc::new(MockPrService::new());
+        let project_root = PathBuf::from(temp_dir.path());
         let api = WorkflowApi::with_git(
             loaded_workflow.clone(),
             Arc::new(SqliteWorkflowStore::new(db_conn.shared())),
@@ -214,10 +215,11 @@ impl TestEnv {
         .with_pr_service(pr_service.clone() as Arc<dyn PrService>)
         .with_pr_description_generator(
             Arc::new(MockPrDescriptionGenerator::succeeding()) as Arc<dyn PrDescriptionGenerator>
-        );
+        )
+        .with_provider_registry(test_provider_registry())
+        .with_project_root(project_root.clone());
 
         let api = Arc::new(Mutex::new(api));
-        let project_root = PathBuf::from(temp_dir.path());
 
         let iteration_service = api.lock().unwrap().iteration_service().clone();
         let runner = Arc::new(MockAgentRunner::new());

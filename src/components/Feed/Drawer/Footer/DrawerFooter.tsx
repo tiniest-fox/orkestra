@@ -3,6 +3,7 @@
 import type { WorkflowQuestion, WorkflowTaskView } from "../../../../types/workflow";
 import type { DrawerTabId } from "../drawerTabs";
 import type { TaskDrawerState } from "../useTaskDrawerState";
+import { ChatFooter } from "./ChatFooter";
 import { DoneFooter } from "./DoneFooter";
 import { FailedFooter } from "./FailedFooter";
 import { InterruptedFooter } from "./InterruptedFooter";
@@ -80,6 +81,27 @@ export function DrawerFooter({
       />
     );
   }
+  if (
+    (task.derived.is_chatting || state.showChatInput) &&
+    (task.derived.needs_review || task.derived.is_interrupted) &&
+    activeTab === "logs"
+  ) {
+    return (
+      <ChatFooter
+        chatMessage={state.chatMessage}
+        onChatMessageChange={state.setChatMessage}
+        chatTextareaRef={state.chatTextareaRef}
+        chatSending={state.chatSending}
+        chatAgentActive={task.derived.chat_agent_active}
+        onSendChat={state.handleSendChat}
+        onReturnToWork={state.handleReturnToWork}
+        onApprove={state.handleApprove}
+        loading={state.loading}
+        canApprove={task.derived.needs_review}
+        chatError={state.chatError}
+      />
+    );
+  }
   if (task.derived.needs_review && state.rejectMode) {
     return (
       <RejectFooter
@@ -100,6 +122,7 @@ export function DrawerFooter({
         loading={state.loading}
         onApprove={state.handleApprove}
         onEnterRejectMode={state.enterRejectMode}
+        onEnterChatMode={state.handleEnterChatMode}
       />
     );
   }
@@ -111,6 +134,7 @@ export function DrawerFooter({
         resumeTextareaRef={state.resumeTextareaRef}
         resuming={state.resuming}
         onResume={state.handleResume}
+        onEnterChatMode={state.handleEnterChatMode}
       />
     );
   }

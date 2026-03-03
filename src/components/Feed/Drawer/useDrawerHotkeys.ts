@@ -49,7 +49,7 @@ export function useDrawerHotkeys({
     if (selectedRunIdx === null) setActiveTab("diff");
   });
   useNavHandler("a", () => {
-    if (selectedRunIdx === null) setActiveTab("artifact");
+    if (!task.derived.needs_review && selectedRunIdx === null) setActiveTab("artifact");
   });
   useNavHandler("h", () => {
     if (selectedRunIdx === null) setActiveTab("history");

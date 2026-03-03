@@ -1,5 +1,9 @@
 /**
- * Tests for DiffContent — comment grouping, context collapsing, and rendering logic.
+ * Tests for DiffContent and FileSection — comment grouping, context collapsing, and rendering logic.
+ *
+ * DiffContent uses @tanstack/react-virtual which requires a real scroll container with layout.
+ * jsdom has no layout engine, so the virtualizer renders 0 items. We test FileSection directly
+ * for per-file rendering behavior, and test DiffContent only for the empty-state branch.
  */
 
 import { render, screen } from "@testing-library/react";
@@ -8,6 +12,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { HighlightedFileDiff, HighlightedLine } from "../../hooks/useDiff";
 import type { PrComment } from "../../types/workflow";
 import { DiffContent } from "./DiffContent";
+import { FileSection } from "./FileSection";
 
 // ============================================================================
 // Test data builders
@@ -73,7 +78,7 @@ function makeComment(
 const noop = () => {};
 
 // ============================================================================
-// Tests
+// DiffContent — empty state (virtualizer-independent)
 // ============================================================================
 
 describe("DiffContent", () => {
@@ -84,53 +89,84 @@ describe("DiffContent", () => {
         comments={[]}
         activePath={null}
         collapsedPaths={new Set()}
+        scrollElement={null}
         onToggleCollapsed={noop}
-        onFileSectionRef={noop}
+        onActivePathChange={noop}
       />,
     );
     expect(screen.getByText("No changes.")).toBeInTheDocument();
   });
+});
 
-  it("renders file headers with paths", () => {
-    const files = [
-      makeFile("src/foo.ts", [makeHunk([makeLine("add", "hello", { newLine: 1 })])]),
-      makeFile("src/bar.ts", [makeHunk([makeLine("add", "world", { newLine: 1 })])]),
-    ];
+// ============================================================================
+// FileSection — per-file rendering behavior
+// ============================================================================
 
-    render(
-      <DiffContent
-        files={files}
-        comments={[]}
-        activePath={null}
-        collapsedPaths={new Set()}
-        onToggleCollapsed={noop}
-        onFileSectionRef={noop}
-      />,
-    );
+function renderFileSection(
+  file: HighlightedFileDiff,
+  opts: {
+    commentsByLine?: Map<number, PrComment[]>;
+    collapsedPaths?: Set<string>;
+    onToggleCollapsed?: () => void;
+  } = {},
+) {
+  return render(
+    <FileSection
+      file={file}
+      commentsByLine={opts.commentsByLine ?? new Map()}
+      draftsByLine={new Map()}
+      isActive={false}
+      isCollapsed={opts.collapsedPaths?.has(file.path) ?? false}
+      onToggleCollapsed={opts.onToggleCollapsed ?? noop}
+      activeCommentLine={null}
+    />,
+  );
+}
 
+describe("FileSection", () => {
+  it("renders file header with path", () => {
+    const file = makeFile("src/foo.ts", [makeHunk([makeLine("add", "hello", { newLine: 1 })])]);
+    renderFileSection(file);
     expect(screen.getByText("src/foo.ts")).toBeInTheDocument();
-    expect(screen.getByText("src/bar.ts")).toBeInTheDocument();
   });
 
   it("renders binary file message", () => {
-    const files = [makeFile("image.png", [], { isBinary: true })];
-
-    render(
-      <DiffContent
-        files={files}
-        comments={[]}
-        activePath={null}
-        collapsedPaths={new Set()}
-        onToggleCollapsed={noop}
-        onFileSectionRef={noop}
-      />,
-    );
-
+    const file = makeFile("image.png", [], { isBinary: true });
+    renderFileSection(file);
     expect(screen.getByText("Binary file")).toBeInTheDocument();
     expect(screen.getByText("image.png")).toBeInTheDocument();
   });
 
-  it("groups comments by file path and line number", () => {
+  it("renders file headers with multiple files", () => {
+    const fileA = makeFile("src/foo.ts", [makeHunk([makeLine("add", "hello", { newLine: 1 })])]);
+    const fileB = makeFile("src/bar.ts", [makeHunk([makeLine("add", "world", { newLine: 1 })])]);
+    render(
+      <>
+        <FileSection
+          file={fileA}
+          commentsByLine={new Map()}
+          draftsByLine={new Map()}
+          isActive={false}
+          isCollapsed={false}
+          onToggleCollapsed={noop}
+          activeCommentLine={null}
+        />
+        <FileSection
+          file={fileB}
+          commentsByLine={new Map()}
+          draftsByLine={new Map()}
+          isActive={false}
+          isCollapsed={false}
+          onToggleCollapsed={noop}
+          activeCommentLine={null}
+        />
+      </>,
+    );
+    expect(screen.getByText("src/foo.ts")).toBeInTheDocument();
+    expect(screen.getByText("src/bar.ts")).toBeInTheDocument();
+  });
+
+  it("groups comments by line number", () => {
     const file = makeFile("src/foo.ts", [
       makeHunk([
         makeLine("add", "line one", { newLine: 1 }),
@@ -138,32 +174,15 @@ describe("DiffContent", () => {
       ]),
     ]);
 
-    const comments = [
-      makeComment(1, "src/foo.ts", 1, "First line comment"),
-      makeComment(2, "src/foo.ts", 2, "Second line comment"),
-      makeComment(3, "src/bar.ts", 1, "Different file comment"),
-      makeComment(4, null, 1, "No path comment"),
-      makeComment(5, "src/foo.ts", null, "No line comment"),
-    ];
+    const commentsByLine = new Map<number, PrComment[]>([
+      [1, [makeComment(1, "src/foo.ts", 1, "First line comment")]],
+      [2, [makeComment(2, "src/foo.ts", 2, "Second line comment")]],
+    ]);
 
-    render(
-      <DiffContent
-        files={[file]}
-        comments={comments}
-        activePath={null}
-        collapsedPaths={new Set()}
-        onToggleCollapsed={noop}
-        onFileSectionRef={noop}
-      />,
-    );
+    renderFileSection(file, { commentsByLine });
 
-    // Comments for this file's lines are shown
     expect(screen.getByText(/First line comment/)).toBeInTheDocument();
     expect(screen.getByText(/Second line comment/)).toBeInTheDocument();
-    // Comments for other file or missing path/line are not shown
-    expect(screen.queryByText(/Different file comment/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/No path comment/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/No line comment/)).not.toBeInTheDocument();
   });
 
   it("renders inline comments after matching lines", () => {
@@ -174,18 +193,11 @@ describe("DiffContent", () => {
       ]),
     ]);
 
-    const comments = [makeComment(1, "src/foo.ts", 5, "Comment on line 5")];
+    const commentsByLine = new Map<number, PrComment[]>([
+      [5, [makeComment(1, "src/foo.ts", 5, "Comment on line 5")]],
+    ]);
 
-    render(
-      <DiffContent
-        files={[file]}
-        comments={comments}
-        activePath={null}
-        collapsedPaths={new Set()}
-        onToggleCollapsed={noop}
-        onFileSectionRef={noop}
-      />,
-    );
+    renderFileSection(file, { commentsByLine });
 
     expect(screen.getByText(/Comment on line 5/)).toBeInTheDocument();
   });
@@ -196,17 +208,7 @@ describe("DiffContent", () => {
       makeLine("context", `ctx line ${i}`, { oldLine: i + 1, newLine: i + 1 }),
     );
     const file = makeFile("src/foo.ts", [makeHunk(contextLines)]);
-
-    render(
-      <DiffContent
-        files={[file]}
-        comments={[]}
-        activePath={null}
-        collapsedPaths={new Set()}
-        onToggleCollapsed={noop}
-        onFileSectionRef={noop}
-      />,
-    );
+    renderFileSection(file);
 
     // The collapsed section shows "N lines"
     expect(screen.getByText(/lines/)).toBeInTheDocument();
@@ -218,17 +220,7 @@ describe("DiffContent", () => {
       makeLine("context", `ctx line ${i}`, { oldLine: i + 1, newLine: i + 1 }),
     );
     const file = makeFile("src/foo.ts", [makeHunk(contextLines)]);
-
-    render(
-      <DiffContent
-        files={[file]}
-        comments={[]}
-        activePath={null}
-        collapsedPaths={new Set()}
-        onToggleCollapsed={noop}
-        onFileSectionRef={noop}
-      />,
-    );
+    renderFileSection(file);
 
     // All lines render, no collapse button
     expect(screen.queryByText(/lines/)).not.toBeInTheDocument();
@@ -236,19 +228,20 @@ describe("DiffContent", () => {
     expect(screen.getByText("ctx line 4")).toBeInTheDocument();
   });
 
-  it("respects collapsedPaths — hides hunks for collapsed files", () => {
+  it("respects isCollapsed — hides hunks when collapsed", () => {
     const file = makeFile("src/foo.ts", [
       makeHunk([makeLine("add", "should be hidden", { newLine: 1 })]),
     ]);
 
     render(
-      <DiffContent
-        files={[file]}
-        comments={[]}
-        activePath={null}
-        collapsedPaths={new Set(["src/foo.ts"])}
+      <FileSection
+        file={file}
+        commentsByLine={new Map()}
+        draftsByLine={new Map()}
+        isActive={false}
+        isCollapsed={true}
         onToggleCollapsed={noop}
-        onFileSectionRef={noop}
+        activeCommentLine={null}
       />,
     );
 
@@ -264,17 +257,18 @@ describe("DiffContent", () => {
     const file = makeFile("src/foo.ts", [makeHunk([makeLine("add", "line", { newLine: 1 })])]);
 
     render(
-      <DiffContent
-        files={[file]}
-        comments={[]}
-        activePath={null}
-        collapsedPaths={new Set()}
+      <FileSection
+        file={file}
+        commentsByLine={new Map()}
+        draftsByLine={new Map()}
+        isActive={false}
+        isCollapsed={false}
         onToggleCollapsed={onToggle}
-        onFileSectionRef={noop}
+        activeCommentLine={null}
       />,
     );
 
     await user.click(screen.getByText("src/foo.ts"));
-    expect(onToggle).toHaveBeenCalledWith("src/foo.ts");
+    expect(onToggle).toHaveBeenCalledOnce();
   });
 });

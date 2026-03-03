@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use orkestra_core::orkestra_debug;
 
 use crate::error::TauriError;
+use crate::run_process::RunProcessRegistry;
 
 /// Per-project state, holding the workflow API and project metadata.
 ///
@@ -48,6 +49,8 @@ pub struct ProjectState {
     pub(crate) stop_flag: Arc<AtomicBool>,
     /// Prefetched tasks from startup, consumed once by React.
     startup_tasks: Arc<Mutex<Option<Vec<TaskView>>>>,
+    /// Registry of active run script processes for this project.
+    run_processes: RunProcessRegistry,
 }
 
 impl ProjectState {
@@ -57,6 +60,7 @@ impl ProjectState {
         auto_task_templates: Vec<AutoTaskTemplate>,
         db_path: &Path,
         project_root: PathBuf,
+        run_pids: Arc<Mutex<Vec<u32>>>,
     ) -> Result<Self, String> {
         // Open database with integrity validation.
         // If corrupted, moves the bad file aside and starts fresh.
@@ -94,15 +98,7 @@ impl ProjectState {
                 }
             };
 
-        // Create workflow API with or without git service
-        let api = if let Some(git) = git_service {
-            WorkflowApi::with_git(workflow.clone(), store, git)
-                .with_pr_service(Arc::new(GhPrService::new()))
-        } else {
-            WorkflowApi::new(workflow.clone(), store)
-        };
-
-        // Construct shared provider registry
+        // Construct shared provider registry (built before the API so it can be wired in)
         let mut provider_registry = ProviderRegistry::new("claudecode");
         provider_registry.register(
             "claudecode",
@@ -116,6 +112,19 @@ impl ProjectState {
             opencode_capabilities(),
             opencode_aliases(),
         );
+        let provider_registry = Arc::new(provider_registry);
+
+        // Create workflow API with or without git service, wiring in the registry and project root
+        let api = if let Some(git) = git_service {
+            WorkflowApi::with_git(workflow.clone(), store, git)
+                .with_pr_service(Arc::new(GhPrService::new()))
+                .with_provider_registry(Arc::clone(&provider_registry))
+                .with_project_root(project_root.clone())
+        } else {
+            WorkflowApi::new(workflow.clone(), store)
+                .with_provider_registry(Arc::clone(&provider_registry))
+                .with_project_root(project_root.clone())
+        };
 
         let has_gh_cli = std::process::Command::new("gh")
             .arg("--version")
@@ -134,9 +143,10 @@ impl ProjectState {
             db_conn: conn,
             has_git,
             has_gh_cli,
-            provider_registry: Arc::new(provider_registry),
+            provider_registry,
             stop_flag,
             startup_tasks: Arc::new(Mutex::new(None)),
+            run_processes: RunProcessRegistry::new(run_pids),
         })
     }
 
@@ -194,6 +204,11 @@ impl ProjectState {
         &self.provider_registry
     }
 
+    /// Get the run process registry for this project.
+    pub fn run_processes(&self) -> &RunProcessRegistry {
+        &self.run_processes
+    }
+
     /// Flush the WAL to the main database file.
     ///
     /// Call on graceful shutdown to leave the database in a clean state.
@@ -207,6 +222,8 @@ impl ProjectState {
 /// Global registry mapping window labels to project state.
 pub struct ProjectRegistry {
     projects: Mutex<HashMap<String, ProjectState>>,
+    /// Shared PID list for run script processes, forwarded to each `RunProcessRegistry`.
+    run_pids: Arc<Mutex<Vec<u32>>>,
 }
 
 impl ProjectRegistry {
@@ -214,7 +231,13 @@ impl ProjectRegistry {
     pub fn new() -> Self {
         Self {
             projects: Mutex::new(HashMap::new()),
+            run_pids: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+
+    /// Return a clone of the shared run-PID list for signal handler use.
+    pub fn run_pids(&self) -> Arc<Mutex<Vec<u32>>> {
+        Arc::clone(&self.run_pids)
     }
 
     /// Register a project with the given window label.
@@ -335,6 +358,17 @@ impl ProjectRegistry {
             .join("-");
 
         format!("project-{cleaned}")
+    }
+
+    /// Stop all run script processes across all registered projects.
+    ///
+    /// Best-effort — ignores lock poisoning on shutdown.
+    pub fn stop_all_run_processes(&self) {
+        if let Ok(projects) = self.projects.lock() {
+            for state in projects.values() {
+                state.run_processes().stop_all();
+            }
+        }
     }
 
     /// Get all project root paths currently registered.

@@ -8,11 +8,13 @@ import { Terminal } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { LogEntry, ResumeType } from "../../types/workflow";
+import { stripParameterBlocks } from "../../utils/feedContent";
 import { PROSE_CLASSES } from "../../utils/prose";
 import { toolSummary } from "../../utils/toolSummary";
 import type { GroupedLogEntry } from "../Logs/useGroupedLogs";
 import { useGroupedLogs } from "../Logs/useGroupedLogs";
 import { EmptyState, ErrorState } from "../ui";
+import { ErrorLine, ScriptOutputLine, ToolLine } from "./FeedEntryComponents";
 
 // ============================================================================
 // Public component
@@ -68,9 +70,9 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
     return (
       <>
         <ToolLine
-          label="Task"
+          label="Agent"
           summary={
-            entry.taskEntry.input.tool === "task"
+            entry.taskEntry.input.tool === "agent"
               ? ((entry.taskEntry.input as { description?: string }).description ?? "")
               : ""
           }
@@ -138,41 +140,8 @@ function FeedEntry({ entry }: { entry: GroupedLogEntry }) {
 // Entry components
 // ============================================================================
 
-const TOOL_VARIANTS = {
-  tool: "text-text-tertiary",
-  task: "text-accent",
-  script: "text-text-tertiary",
-} as const;
-
-function ToolLine({
-  label,
-  summary,
-  variant,
-}: {
-  label: string;
-  summary: string;
-  variant: keyof typeof TOOL_VARIANTS;
-}) {
-  return (
-    <div className="flex items-baseline gap-2 py-1">
-      <span
-        className={`font-mono text-forge-mono-sm font-medium shrink-0 ${TOOL_VARIANTS[variant]}`}
-      >
-        {label}
-      </span>
-      {summary && (
-        <span className="font-mono text-forge-mono-sm text-text-quaternary truncate min-w-0">
-          {summary}
-        </span>
-      )}
-    </div>
-  );
-}
-
 function ThinkingLine({ content }: { content: string }) {
-  const cleaned = content
-    .replace(/<parameter name="content">[\s\S]*?<\/antml:parameter>/g, "")
-    .trim();
+  const cleaned = stripParameterBlocks(content);
   if (!cleaned) return null;
   return (
     <div className={`text-forge-body py-3 ${PROSE_CLASSES}`}>
@@ -192,6 +161,8 @@ const RESUME_GROUP: Record<ResumeType, BubbleGroup> = {
   feedback: "human",
   answers: "human",
   manual_resume: "human",
+  chat: "human",
+  return_to_work: "human",
   continue: "system",
   recheck: "system",
   retry_failed: "system",
@@ -214,24 +185,6 @@ function UserBubble({ content, resumeType }: { content: string; resumeType?: Res
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ErrorLine({ message }: { message: string }) {
-  return (
-    <div className="font-mono text-forge-mono-sm text-status-error py-2 border-l-2 border-status-error pl-2 my-2">
-      {message}
-    </div>
-  );
-}
-
-function ScriptOutputLine({ content }: { content: string }) {
-  const trimmed = content.trimEnd();
-  if (!trimmed) return null;
-  return (
-    <div className="font-mono text-forge-mono-sm text-text-tertiary py-[2px] whitespace-pre-wrap">
-      {trimmed}
     </div>
   );
 }

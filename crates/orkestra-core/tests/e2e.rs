@@ -23,6 +23,8 @@ mod integration;
 mod multi_project;
 #[path = "e2e/squash_commits.rs"]
 mod squash_commits;
+#[path = "e2e/stage_chat.rs"]
+mod stage_chat;
 #[path = "e2e/startup.rs"]
 mod startup;
 #[path = "e2e/subtasks.rs"]

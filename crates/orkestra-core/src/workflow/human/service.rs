@@ -77,6 +77,20 @@ impl WorkflowApi {
         )
     }
 
+    /// Return to structured work after chatting with the stage agent.
+    ///
+    /// Clears chat state on the session and creates a new iteration with
+    /// `ReturnToWork` trigger so the agent resumes with the appropriate prompt.
+    /// The caller should stop any running chat process before calling this.
+    pub fn return_to_work(&self, task_id: &str, message: Option<String>) -> WorkflowResult<Task> {
+        human::return_to_work::execute(
+            self.store.as_ref(),
+            &self.iteration_service,
+            task_id,
+            message,
+        )
+    }
+
     /// Reject an `AwaitingApproval` task with line-level comments, routing to the rejection target stage.
     pub fn reject_with_comments(
         &self,

@@ -202,6 +202,11 @@ pub enum ResumeType {
         checks: Vec<PrCheckContext>,
         guidance: Option<String>,
     },
+    /// User chatted with the agent and is returning to structured output.
+    ///
+    /// Carries the optional final message the user typed before clicking
+    /// "Return to Work", injected into the resume prompt as a closing instruction.
+    ReturnToWork { message: Option<String> },
 }
 
 /// A failed CI check to address in the resume prompt.

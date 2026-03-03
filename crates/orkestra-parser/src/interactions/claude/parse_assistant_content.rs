@@ -12,7 +12,7 @@ use crate::interactions::stream::parse_tool_input;
 /// `tool_use` items are parsed via `parse_tool_input` and become `LogEntry::ToolUse`
 /// or `LogEntry::SubagentToolUse`.
 ///
-/// Updates `tool_use_map` (id → name) and `task_tool_ids` (ids of Task tool calls)
+/// Updates `tool_use_map` (id → name) and `agent_tool_ids` (ids of Agent tool calls)
 /// as side effects.
 #[allow(clippy::implicit_hasher)]
 pub fn execute(
@@ -20,7 +20,7 @@ pub fn execute(
     is_subagent: bool,
     parent_id: Option<&str>,
     tool_use_map: &mut HashMap<String, String>,
-    task_tool_ids: &mut HashSet<String>,
+    agent_tool_ids: &mut HashSet<String>,
 ) -> Vec<LogEntry> {
     let mut entries = Vec::new();
 
@@ -37,7 +37,7 @@ pub fn execute(
                     is_subagent,
                     parent_id,
                     tool_use_map,
-                    task_tool_ids,
+                    agent_tool_ids,
                 ));
             }
             _ => {}
@@ -68,7 +68,7 @@ fn parse_tool_use(
     is_subagent: bool,
     parent_id: Option<&str>,
     tool_use_map: &mut HashMap<String, String>,
-    task_tool_ids: &mut HashSet<String>,
+    agent_tool_ids: &mut HashSet<String>,
 ) -> LogEntry {
     let tool_name = item
         .get("name")
@@ -83,8 +83,8 @@ fn parse_tool_use(
     let input = item.get("input").cloned().unwrap_or(serde_json::json!({}));
 
     tool_use_map.insert(tool_id.clone(), tool_name.clone());
-    if tool_name == "Task" {
-        task_tool_ids.insert(tool_id.clone());
+    if tool_name == "Agent" {
+        agent_tool_ids.insert(tool_id.clone());
     }
 
     let tool_input = parse_tool_input::execute(&tool_name, &input);

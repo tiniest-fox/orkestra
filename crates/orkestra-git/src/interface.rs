@@ -160,12 +160,16 @@ pub trait GitService: Send + Sync {
     /// Merge a task branch into a specific target branch.
     ///
     /// Operates in the target branch's working directory (worktree for `task/*`
-    /// branches, main repo otherwise). Stashes uncommitted changes, performs an
-    /// `--ff-only` merge, then restores the stash.
+    /// branches, main repo otherwise). Stashes uncommitted changes, performs the
+    /// merge, then restores the stash.
+    ///
+    /// When `message` is `Some`, uses `--no-ff -m <message>` to create an explicit
+    /// merge commit with that message. When `None`, uses `--ff-only`.
     fn merge_to_branch(
         &self,
         branch_name: &str,
         target_branch: &str,
+        message: Option<&str>,
     ) -> Result<MergeResult, GitError>;
 
     /// Merge a target branch into the current branch in a worktree.

@@ -49,6 +49,8 @@ function createMockTask(id: string, prUrl?: string): WorkflowTaskView {
       pending_rejection: null,
       stages_with_logs: [],
       subtask_progress: null,
+      is_chatting: false,
+      chat_agent_active: false,
     },
   };
 }

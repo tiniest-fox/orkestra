@@ -24,6 +24,7 @@ pub struct MockGitService {
     sync_results: Mutex<std::collections::VecDeque<Result<(), GitError>>>,
     create_worktree_calls: Mutex<Vec<(String, Option<String>)>>,
     remove_worktree_calls: Mutex<Vec<(String, bool)>>,
+    merge_to_branch_calls: Mutex<Vec<(String, String, Option<String>)>>,
     squash_calls: Mutex<Vec<(PathBuf, String, String)>>,
     sync_base_branch_calls: Mutex<Vec<String>>,
     push_branch_calls: Mutex<Vec<String>>,
@@ -50,6 +51,7 @@ impl MockGitService {
             sync_results: Mutex::new(std::collections::VecDeque::new()),
             create_worktree_calls: Mutex::new(Vec::new()),
             remove_worktree_calls: Mutex::new(Vec::new()),
+            merge_to_branch_calls: Mutex::new(Vec::new()),
             squash_calls: Mutex::new(Vec::new()),
             sync_base_branch_calls: Mutex::new(Vec::new()),
             push_branch_calls: Mutex::new(Vec::new()),
@@ -105,6 +107,13 @@ impl MockGitService {
     /// Get the list of `remove_worktree` calls for verification.
     pub fn get_remove_worktree_calls(&self) -> Vec<(String, bool)> {
         self.remove_worktree_calls.lock().unwrap().clone()
+    }
+
+    /// Get the list of `merge_to_branch` calls for verification.
+    ///
+    /// Each entry is `(branch_name, target_branch, message)`.
+    pub fn get_merge_to_branch_calls(&self) -> Vec<(String, String, Option<String>)> {
+        self.merge_to_branch_calls.lock().unwrap().clone()
     }
 
     /// Mark a branch as merged (or not) for `is_branch_merged` checks.
@@ -320,7 +329,14 @@ impl GitService for MockGitService {
         &self,
         branch_name: &str,
         target_branch: &str,
+        message: Option<&str>,
     ) -> Result<MergeResult, GitError> {
+        self.merge_to_branch_calls.lock().unwrap().push((
+            branch_name.to_string(),
+            target_branch.to_string(),
+            message.map(String::from),
+        ));
+
         if let Some(result) = self.next_merge_result.lock().unwrap().take() {
             return result;
         }
@@ -469,7 +485,7 @@ mod tests {
     fn test_mock_merge_result() {
         let mock = MockGitService::new();
 
-        let result = mock.merge_to_branch("task/TASK-001", "main").unwrap();
+        let result = mock.merge_to_branch("task/TASK-001", "main", None).unwrap();
         assert!(result.commit_sha.starts_with("mock-sha"));
 
         mock.set_next_merge_result(Err(GitError::MergeConflict {
@@ -477,8 +493,17 @@ mod tests {
             conflict_files: vec!["file.rs".to_string()],
         }));
 
-        let err = mock.merge_to_branch("task/TASK-002", "main").unwrap_err();
+        let err = mock
+            .merge_to_branch("task/TASK-002", "main", None)
+            .unwrap_err();
         assert!(matches!(err, GitError::MergeConflict { .. }));
+
+        let calls = mock.get_merge_to_branch_calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(
+            calls[0],
+            ("task/TASK-001".to_string(), "main".to_string(), None)
+        );
     }
 
     #[test]

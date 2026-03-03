@@ -8,6 +8,7 @@ mod highlight;
 mod notifications;
 mod project_init;
 mod project_registry;
+mod run_process;
 
 use orkestra_core::orkestra_debug;
 use orkestra_core::workflow::ports::WorkflowStore;
@@ -162,7 +163,7 @@ fn cleanup_agents_standalone() {
 
 /// Set up signal handlers to clean up agents on termination signals (Unix only).
 #[cfg(unix)]
-fn setup_signal_handlers() {
+fn setup_signal_handlers(run_pids: std::sync::Arc<std::sync::Mutex<Vec<u32>>>) {
     use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
     use signal_hook::iterator::Signals;
 
@@ -178,13 +179,14 @@ fn setup_signal_handlers() {
         if let Some(sig) = signals.forever().next() {
             eprintln!("[signal] Received signal {sig}, cleaning up...");
             cleanup_agents_standalone();
+            crate::run_process::kill_all_pids(&run_pids);
             std::process::exit(128 + sig);
         }
     });
 }
 
 #[cfg(not(unix))]
-fn setup_signal_handlers() {
+fn setup_signal_handlers(_run_pids: std::sync::Arc<std::sync::Mutex<Vec<u32>>>) {
     // Signal handlers not supported on non-Unix platforms
 }
 
@@ -249,6 +251,9 @@ fn handle_window_close(app_handle: &AppHandle, window_label: &str) {
             }
         }
 
+        // Stop all run script processes for this project.
+        state.run_processes().stop_all();
+
         // Checkpoint database
         state.checkpoint_database();
     }
@@ -289,8 +294,12 @@ pub fn run() {
     // the user's login shell to resolve their real PATH and sets it on this process.
     let _ = fix_path_env::fix();
 
+    // Create the project registry early so run_pids can be shared with the signal handler.
+    let registry = ProjectRegistry::new();
+    let run_pids = registry.run_pids();
+
     // Set up signal handlers to ensure cleanup on external termination
-    setup_signal_handlers();
+    setup_signal_handlers(run_pids);
 
     // Load .env files. More specific files are loaded first so their values
     // take precedence. Neither call uses _override, so process environment
@@ -306,7 +315,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .manage(ProjectRegistry::new())
+        .manage(registry)
         .manage(diff_cache::DiffCacheState::new())
         .setup(move |app| {
             // Initialize syntax highlighter (Send + Sync, shared across commands)
@@ -518,6 +527,15 @@ pub fn run() {
             commands::assistant_stop,
             commands::assistant_list_sessions,
             commands::assistant_get_logs,
+            // Stage chat commands
+            commands::stage_chat_send,
+            commands::stage_chat_stop,
+            commands::workflow_return_to_work,
+            // Run script commands
+            commands::start_run_script,
+            commands::stop_run_script,
+            commands::get_run_status,
+            commands::get_run_logs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -525,6 +543,10 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 // Kill all tracked agents to prevent orphaned processes
                 cleanup_all_agents(app_handle);
+
+                // Stop any remaining run script processes
+                let registry: tauri::State<ProjectRegistry> = app_handle.state();
+                registry.stop_all_run_processes();
 
                 // Checkpoint all project databases
                 let registry: tauri::State<ProjectRegistry> = app_handle.state();

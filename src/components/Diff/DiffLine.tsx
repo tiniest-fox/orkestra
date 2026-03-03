@@ -17,17 +17,17 @@ export function DiffLine({ line, onOpenCommentInput }: DiffLineProps) {
 
   const hoverColor =
     line.line_type === "add"
-      ? "hover:bg-[rgba(22,163,74,0.13)]"
+      ? "hover:bg-[var(--forge-diff-add-hover)]"
       : line.line_type === "delete"
-        ? "hover:bg-[rgba(220,38,38,0.11)]"
+        ? "hover:bg-[var(--forge-diff-del-hover)]"
         : "hover:bg-surface-2";
 
   // Gutter must be fully opaque so it occludes code that scrolls behind it.
   const gutterBg =
     line.line_type === "add"
-      ? "bg-[#DCEDE5]"
+      ? "bg-[var(--forge-diff-add-gutter)]"
       : line.line_type === "delete"
-        ? "bg-[#F7E1E5]"
+        ? "bg-[var(--forge-diff-del-gutter)]"
         : "bg-canvas";
 
   const prefixColor =

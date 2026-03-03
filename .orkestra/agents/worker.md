@@ -200,6 +200,9 @@ Omit anything obvious from the diff. The reviewer can see the code — your summ
 
 **`debug_assert!` vs `assert!`**: Use `debug_assert!` only for invariants that are architecturally unreachable in production — states the entry point structurally prevents (e.g., agent spawn requires a worktree, so "no worktree + active agent" is impossible). Use `assert!` for invariants that must hold in all builds including tests. When in doubt, prefer `assert!`.
 
+<!-- compound: evenly-prosperous-turkey -->
+**`Instant` arithmetic — prefer `elapsed()` over `checked_sub()`**: `Instant::now().checked_sub(duration).unwrap()` panics on recently-booted macOS (uptime < `duration`) because `Instant` is anchored to boot time and cannot represent a time before boot. Instead of computing a cutoff and comparing with `>`, use `last_used.elapsed() < duration` — semantically identical, always safe.
+
 <!-- compound: vainly-innocent-guan -->
 **`ok_or_else()` not `unwrap_or_default()` on required Optional fields**: Domain model fields like `branch_name: Option<String>` that represent required state at a given phase must fail fast with an actionable error when `None`. Use `ok_or_else(|| WorkflowError::Internal("branch_name missing".into()))?` rather than `.unwrap_or_default()`. `unwrap_or_default()` silently converts `None` to empty string, masking bugs and violating Fail Fast. This is a HIGH-severity pattern violation that reviewers always catch.
 

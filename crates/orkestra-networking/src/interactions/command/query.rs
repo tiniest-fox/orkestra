@@ -1,0 +1,580 @@
+//! Read-only query command handlers.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use chrono::Utc;
+use orkestra_core::workflow::load_auto_task_templates;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tokio::process::Command;
+
+use crate::types::{ErrorPayload, PrCheck, PrComment, PrReview, PrStatus};
+
+use super::dispatch::CommandContext;
+
+// ============================================================================
+// Simple API-backed queries
+// ============================================================================
+
+/// Handle the `get_config` method — returns the workflow configuration.
+pub async fn handle_get_config(
+    ctx: Arc<CommandContext>,
+    _params: Value,
+) -> Result<Value, ErrorPayload> {
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let config = api.workflow().clone();
+        Ok(serde_json::to_value(config).unwrap_or(Value::Null))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+/// Handle the `get_startup_data` method — returns config and full task list together.
+///
+/// Combines `get_config` and `list_tasks` in one round trip.
+pub async fn handle_get_startup_data(
+    ctx: Arc<CommandContext>,
+    _params: Value,
+) -> Result<Value, ErrorPayload> {
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let config = api.workflow().clone();
+        let tasks = api.list_task_views().map_err(ErrorPayload::from)?;
+        Ok(serde_json::json!({ "config": config, "tasks": tasks }))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+/// Handle the `get_auto_task_templates` method — loads predefined task templates.
+pub async fn handle_get_auto_task_templates(
+    ctx: Arc<CommandContext>,
+    _params: Value,
+) -> Result<Value, ErrorPayload> {
+    let api = Arc::clone(&ctx.api);
+    let project_root = Arc::clone(&ctx.project_root);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let config = api.workflow().clone();
+        drop(api); // release lock before file I/O
+        let templates = load_auto_task_templates(&project_root, &config);
+        Ok(serde_json::to_value(templates).unwrap_or(Value::Array(vec![])))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+/// Handle the `get_iterations` method.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub async fn handle_get_iterations(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let iterations = api.get_iterations(&task_id).map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(iterations).unwrap_or(Value::Array(vec![])))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+/// Handle the `get_artifact` method.
+///
+/// Expected params: `{ "task_id": "<id>", "name": "<artifact_name>" }`
+pub async fn handle_get_artifact(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let name = params
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ErrorPayload::invalid_params("missing field: name"))?
+        .to_string();
+
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let artifact = api
+            .get_artifact(&task_id, &name)
+            .map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(artifact).unwrap_or(Value::Null))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+/// Handle the `get_pending_questions` method.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub async fn handle_get_pending_questions(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let questions = api
+            .get_pending_questions(&task_id)
+            .map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(questions).unwrap_or(Value::Array(vec![])))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+/// Handle the `get_current_stage` method.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub async fn handle_get_current_stage(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let stage = api
+            .get_current_stage(&task_id)
+            .map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(stage).unwrap_or(Value::Null))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+/// Handle the `get_rejection_feedback` method.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub async fn handle_get_rejection_feedback(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let feedback = api
+            .get_rejection_feedback(&task_id)
+            .map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(feedback).unwrap_or(Value::Null))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+// ============================================================================
+// Branch queries
+// ============================================================================
+
+/// Branch information returned by `list_branches`.
+#[derive(Serialize)]
+pub struct BranchList {
+    pub branches: Vec<String>,
+    pub current: Option<String>,
+    pub latest_commit_message: Option<String>,
+}
+
+/// Handle the `list_branches` method — returns available git branches.
+///
+/// Returns empty lists if no git service is configured.
+pub async fn handle_list_branches(
+    ctx: Arc<CommandContext>,
+    _params: Value,
+) -> Result<Value, ErrorPayload> {
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let git = {
+            let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+            let Some(git) = api.git_service() else {
+                return Ok(serde_json::to_value(BranchList {
+                    branches: vec![],
+                    current: None,
+                    latest_commit_message: None,
+                })
+                .unwrap_or(Value::Null));
+            };
+            Arc::clone(git)
+        }; // lock released here — git subprocess runs off the lock
+
+        let latest_commit_message = git
+            .commit_log(1)
+            .ok()
+            .and_then(|commits| commits.first().map(|c| c.message.clone()));
+
+        Ok(serde_json::to_value(BranchList {
+            branches: git.list_branches().unwrap_or_default(),
+            current: git.current_branch().ok(),
+            latest_commit_message,
+        })
+        .unwrap_or(Value::Null))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+// ============================================================================
+// Log queries
+// ============================================================================
+
+/// Handle the `get_logs` method — returns log entries for a task's stage/session.
+///
+/// Expected params: `{ "task_id": "<id>", "stage": "<stage>" (opt), "session_id": "<id>" (opt) }`
+pub async fn handle_get_logs(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let stage = params
+        .get("stage")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+    let session_id = params
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let logs = api
+            .get_task_logs(&task_id, stage.as_deref(), session_id.as_deref())
+            .map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(logs).unwrap_or(Value::Array(vec![])))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+/// Handle the `get_latest_log` method — returns the most recent log entry for a task.
+///
+/// Expected params: `{ "task_id": "<id>" }`
+pub async fn handle_get_latest_log(
+    ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let task_id = super::extract_task_id(&params)?;
+    let api = Arc::clone(&ctx.api);
+    tokio::task::spawn_blocking(move || {
+        let api = api.lock().map_err(|_| ErrorPayload::lock_error())?;
+        let log = api.get_latest_log(&task_id).map_err(ErrorPayload::from)?;
+        Ok(serde_json::to_value(log).unwrap_or(Value::Null))
+    })
+    .await
+    .map_err(|e| ErrorPayload::internal(e.to_string()))?
+}
+
+// ============================================================================
+// PR status
+// ============================================================================
+
+// -- gh CLI deserialization types --
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhPrResponse {
+    url: String,
+    state: String,
+    #[serde(default)]
+    status_check_rollup: Vec<GhStatusCheck>,
+    #[serde(default)]
+    mergeable: Option<String>,
+    #[serde(default)]
+    merge_state_status: Option<String>,
+    #[serde(default)]
+    head_ref_oid: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GhStatusCheck {
+    name: String,
+    status: Option<String>,
+    conclusion: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GhApiReview {
+    id: i64,
+    user: Option<GhAuthor>,
+    body: Option<String>,
+    state: String,
+    submitted_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GhApiReviewComment {
+    id: i64,
+    user: Option<GhAuthor>,
+    body: String,
+    path: Option<String>,
+    #[serde(default)]
+    line: Option<u32>,
+    created_at: String,
+    pull_request_review_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct GhAuthor {
+    login: String,
+}
+
+#[derive(Deserialize, Default)]
+struct GhCheckRunsResponse {
+    check_runs: Vec<GhCheckRun>,
+}
+
+#[derive(Deserialize)]
+struct GhCheckRun {
+    id: i64,
+    name: String,
+    output: Option<GhCheckRunOutput>,
+}
+
+#[derive(Deserialize)]
+struct GhCheckRunOutput {
+    summary: Option<String>,
+}
+
+const GH_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Handle the `get_pr_status` method — fetches PR state, checks, reviews, and comments.
+///
+/// Expected params: `{ "pr_url": "<url>" }`
+pub async fn handle_get_pr_status(
+    _ctx: Arc<CommandContext>,
+    params: Value,
+) -> Result<Value, ErrorPayload> {
+    let pr_url = params
+        .get("pr_url")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ErrorPayload::invalid_params("missing field: pr_url"))?
+        .to_string();
+
+    let status = fetch_pr_status(&pr_url).await?;
+    Ok(serde_json::to_value(status).unwrap_or(Value::Null))
+}
+
+/// Fetches PR status from GitHub using the `gh` CLI.
+///
+/// Parses the PR URL, calls `gh pr view` and `gh api` endpoints, and returns
+/// a structured `PrStatus`. Requires the `gh` CLI to be installed and authenticated.
+pub async fn fetch_pr_status(pr_url: &str) -> Result<PrStatus, ErrorPayload> {
+    let (owner, repo, number) = parse_pr_url(pr_url).ok_or_else(|| {
+        ErrorPayload::new(
+            "INVALID_PR_URL",
+            format!("Not a valid GitHub PR URL: {pr_url}"),
+        )
+    })?;
+
+    let reviews_path = format!("repos/{owner}/{repo}/pulls/{number}/reviews");
+    let comments_path = format!("repos/{owner}/{repo}/pulls/{number}/comments");
+    let pr_view_args = [
+        "pr",
+        "view",
+        pr_url,
+        "--json",
+        "state,statusCheckRollup,url,number,mergeable,mergeStateStatus,headRefOid",
+    ];
+
+    let stdout = run_gh(&pr_view_args).await?;
+    let response: GhPrResponse = serde_json::from_str(&stdout).map_err(|e| {
+        ErrorPayload::new(
+            "GH_PARSE_ERROR",
+            format!("Failed to parse gh pr view output: {e}"),
+        )
+    })?;
+
+    let check_runs_path = response
+        .head_ref_oid
+        .as_deref()
+        .map(|sha| format!("repos/{owner}/{repo}/commits/{sha}/check-runs?per_page=100"));
+
+    let reviews_args: [&str; 2] = ["api", &reviews_path];
+    let comments_args: [&str; 2] = ["api", &comments_path];
+
+    let (reviews_result, comments_result, check_runs_result) =
+        tokio::join!(run_gh(&reviews_args), run_gh(&comments_args), async {
+            match &check_runs_path {
+                Some(path) => run_gh(&["api", path]).await,
+                None => Err(ErrorPayload::new("NO_HEAD_SHA", "No head SHA available")),
+            }
+        });
+
+    let check_enrichments: std::collections::HashMap<String, (i64, Option<String>)> =
+        match check_runs_result {
+            Ok(api_stdout) => {
+                let parsed: GhCheckRunsResponse =
+                    serde_json::from_str(&api_stdout).unwrap_or_default();
+                parsed
+                    .check_runs
+                    .into_iter()
+                    .map(|cr| (cr.name, (cr.id, cr.output.and_then(|o| o.summary))))
+                    .collect()
+            }
+            Err(e) => {
+                tracing::warn!("[pr] Failed to fetch check-runs: {}", e.message);
+                std::collections::HashMap::new()
+            }
+        };
+
+    let checks = map_checks(response.status_check_rollup.iter(), check_enrichments);
+
+    let reviews = match reviews_result {
+        Ok(api_stdout) => map_reviews(&api_stdout),
+        Err(e) => {
+            tracing::warn!("[pr] Failed to fetch PR reviews: {}", e.message);
+            Vec::new()
+        }
+    };
+
+    let comments = match comments_result {
+        Ok(api_stdout) => map_comments(&api_stdout),
+        Err(e) => {
+            tracing::warn!("[pr] Failed to fetch PR comments: {}", e.message);
+            Vec::new()
+        }
+    };
+
+    let mergeable = response.mergeable.as_deref().and_then(|m| match m {
+        "MERGEABLE" => Some(true),
+        "CONFLICTING" => Some(false),
+        _ => None,
+    });
+
+    let state = normalize_pr_state(&response.state).to_string();
+
+    Ok(PrStatus {
+        url: response.url,
+        state,
+        checks,
+        reviews,
+        comments,
+        fetched_at: Utc::now().to_rfc3339(),
+        mergeable,
+        merge_state_status: response.merge_state_status,
+    })
+}
+
+// -- Helpers --
+
+fn map_checks<'a>(
+    status_checks: impl Iterator<Item = &'a GhStatusCheck>,
+    mut check_enrichments: std::collections::HashMap<String, (i64, Option<String>)>,
+) -> Vec<PrCheck> {
+    status_checks
+        .map(|check| {
+            let enrichment = check_enrichments.remove(&check.name);
+            PrCheck {
+                name: check.name.clone(),
+                status: orkestra_types::domain::classify_check(
+                    check.status.as_deref(),
+                    check.conclusion.as_deref(),
+                )
+                .as_str()
+                .to_string(),
+                conclusion: check.conclusion.clone(),
+                id: enrichment.as_ref().map(|(id, _)| *id),
+                summary: enrichment.and_then(|(_, s)| s),
+            }
+        })
+        .collect()
+}
+
+fn map_reviews(api_stdout: &str) -> Vec<PrReview> {
+    let api_reviews: Vec<GhApiReview> = serde_json::from_str(api_stdout).unwrap_or_default();
+    api_reviews
+        .into_iter()
+        .filter_map(|r| {
+            Some(PrReview {
+                id: r.id,
+                author: r.user?.login,
+                state: r.state,
+                body: r.body,
+                submitted_at: r.submitted_at.unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+fn map_comments(api_stdout: &str) -> Vec<PrComment> {
+    let api_comments: Vec<GhApiReviewComment> =
+        serde_json::from_str(api_stdout).unwrap_or_default();
+    api_comments
+        .into_iter()
+        .filter_map(|c| {
+            Some(PrComment {
+                id: c.id,
+                author: c.user?.login,
+                body: c.body,
+                path: c.path,
+                line: c.line,
+                created_at: c.created_at,
+                review_id: c.pull_request_review_id,
+            })
+        })
+        .collect()
+}
+
+fn parse_pr_url(url: &str) -> Option<(&str, &str, &str)> {
+    let path = url.strip_prefix("https://github.com/")?;
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() >= 4 && parts[2] == "pull" {
+        Some((parts[0], parts[1], parts[3]))
+    } else {
+        None
+    }
+}
+
+fn normalize_pr_state(state: &str) -> &'static str {
+    match state.to_uppercase().as_str() {
+        "MERGED" => "merged",
+        "CLOSED" => "closed",
+        _ => "open",
+    }
+}
+
+async fn run_gh(args: &[&str]) -> Result<String, ErrorPayload> {
+    let result = tokio::time::timeout(GH_TIMEOUT, Command::new("gh").args(args).output()).await;
+
+    let output = match result {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => {
+            return if e.kind() == std::io::ErrorKind::NotFound {
+                Err(ErrorPayload::new(
+                    "GH_CLI_NOT_FOUND",
+                    "GitHub CLI (gh) is not installed or not in PATH",
+                ))
+            } else {
+                Err(ErrorPayload::new(
+                    "GH_CLI_ERROR",
+                    format!("Failed to run gh: {e}"),
+                ))
+            };
+        }
+        Err(_) => {
+            return Err(ErrorPayload::new(
+                "GH_TIMEOUT",
+                "GitHub CLI timed out after 10 seconds",
+            ))
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(ErrorPayload::new(
+            "GH_CLI_ERROR",
+            format!("gh command failed: {stderr}"),
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}

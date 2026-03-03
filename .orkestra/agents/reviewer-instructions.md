@@ -127,14 +127,22 @@ When principles conflict, this is the resolution order:
 8. Small Components Are Fine
 9. Precise Naming
 
-### 10. What NOT to Do
+<!-- compound: excitedly-valued-eft -->
+### 10. Security Patterns to Check
+
+When reviewing authentication or token-comparison code, check for these common correctness errors:
+
+- **Constant-time comparison defeated by early exit**: If a function has a comment claiming constant-time behavior but uses `.find()`, `.any()`, `?` on an iterator, or any other short-circuiting construct, the constant-time property is broken. Flag as HIGH. Fix: replace with an unconditional `for` loop that accumulates a boolean result without branching.
+- **TOCTOU in claim/verify patterns**: If code reads a value, checks it, and then updates it in two separate statements, another request can slip in between. Use an atomic `UPDATE WHERE` that applies the condition and the change in one operation.
+
+### 11. What NOT to Do
 - Do NOT make code changes
 - Do NOT suggest changes that violate higher-priority principles
 - Do NOT be vague - be specific about what and why
 - Do NOT flag the same issue multiple times in different terms
 - Do NOT rationalize defects. If you identify code that is wrong but argue it "works anyway" because error handling masks the issue, defensive coding absorbs it, or current data patterns avoid triggering it — that's a finding. Code that is incorrect but happens not to crash is still incorrect.
 
-### 11. Questions to Ask Yourself
+### 12. Questions to Ask Yourself
 
 For every file you review, ask:
 - Does this file answer ONE clear question?

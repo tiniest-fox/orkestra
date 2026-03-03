@@ -221,7 +221,7 @@ Inline unit tests where appropriate. TODO: e2e tests.
 
 **When adding or modifying database migrations:**
 
-1. Create the migration file in `crates/orkestra-core/src/adapters/sqlite/migrations/` (follow Refinery naming: `VN__description.sql`)
+1. Create the migration file in `crates/orkestra-store/src/migrations/` (follow Refinery naming: `VN__description.sql`)
 2. Update `SCHEMA.md` to reflect the schema changes
 3. Update the Database Schema section in this file if the changes are architecturally significant
 
@@ -246,7 +246,9 @@ Orkestra is a task orchestration system that spawns AI coding agents (Claude Cod
 
 - **`crates/orkestra-core/`** - Core library containing task management, agent spawning, and domain logic
 - **`crates/orkestra-git/`** - Git operations crate (worktrees, branches, merging, diffs). Reference implementation of the module structure pattern.
+- **`crates/orkestra-networking/`** - WebSocket server crate for remote control. Exposes the full WorkflowApi over an authenticated WebSocket connection; consumed by `daemon/`.
 - **`cli/`** - CLI binary (`ork`) for task management
+- **`daemon/`** - Headless daemon binary. Runs the orchestrator and serves the WebSocket API from `orkestra-networking` for remote clients (PWA, mobile).
 - **`src-tauri/`** - Tauri desktop application backend. **Read `src-tauri/CLAUDE.md` before making changes in this directory.**
 - **`src/`** - React/TypeScript frontend (Kanban board UI). **Read `src/CLAUDE.md` before making changes in this directory.**
 - **`.orkestra/`** - Runtime data directory (created on first init with sensible defaults)

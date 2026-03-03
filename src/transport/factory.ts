@@ -18,7 +18,7 @@ const DEFAULT_WS_URL = "ws://localhost:3847/ws";
  * to a remote daemon even from inside Tauri, enabling multi-machine workflows.
  */
 export function createTransport(): Transport {
-  const hasTauri = typeof window !== "undefined" && "__TAURI__" in window;
+  const hasTauri = !!import.meta.env.TAURI_ENV_PLATFORM;
   const remoteUrl =
     typeof localStorage !== "undefined" ? localStorage.getItem(STORAGE_REMOTE_URL) : null;
 

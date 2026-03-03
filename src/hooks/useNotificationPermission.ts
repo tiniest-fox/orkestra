@@ -20,7 +20,7 @@ export function useNotificationPermission() {
     requested.current = true;
 
     // Notification plugin is Tauri-only; skip in PWA context.
-    if (typeof window === "undefined" || !("__TAURI__" in window)) return;
+    if (!import.meta.env.TAURI_ENV_PLATFORM) return;
 
     requestNotificationPermission();
   }, []);

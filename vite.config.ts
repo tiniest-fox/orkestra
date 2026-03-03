@@ -46,6 +46,7 @@ export default defineConfig(async ({ mode }) => {
 
   return {
     plugins,
+    envPrefix: ["VITE_", "TAURI_ENV_"],
     clearScreen: false,
     server: {
       port: 1420,

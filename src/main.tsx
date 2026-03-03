@@ -68,7 +68,7 @@ function mountApp() {
  * gate inside AppContent handles the no-credentials and connecting states.
  */
 function main() {
-  const hasTauri = typeof window !== "undefined" && "__TAURI__" in window;
+  const hasTauri = !!import.meta.env.TAURI_ENV_PLATFORM;
 
   if (hasTauri) {
     const projectPath = getProjectPath();

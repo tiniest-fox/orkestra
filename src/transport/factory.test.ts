@@ -25,23 +25,19 @@ import { WebSocketTransport } from "./WebSocketTransport";
 const MockTauriTransport = TauriTransport as ReturnType<typeof vi.fn>;
 const MockWebSocketTransport = WebSocketTransport as ReturnType<typeof vi.fn>;
 
-// Cast through unknown to avoid TypeScript's "no index signature" error on Window.
-const win = window as unknown as Record<string, unknown>;
-
 describe("createTransport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    delete win.__TAURI__;
   });
 
   afterEach(() => {
-    delete win.__TAURI__;
+    vi.unstubAllEnvs();
     localStorage.clear();
   });
 
-  it("returns TauriTransport when __TAURI__ exists and no remote URL is set", () => {
-    win.__TAURI__ = {};
+  it("returns TauriTransport when TAURI_ENV_PLATFORM is set and no remote URL is set", () => {
+    vi.stubEnv("TAURI_ENV_PLATFORM", "macos");
 
     const transport = createTransport();
 
@@ -51,8 +47,8 @@ describe("createTransport", () => {
     expect(transport.requiresAuthentication).toBe(false);
   });
 
-  it("returns WebSocketTransport when __TAURI__ exists but remote URL is set", () => {
-    win.__TAURI__ = {};
+  it("returns WebSocketTransport when TAURI_ENV_PLATFORM is set but remote URL is set", () => {
+    vi.stubEnv("TAURI_ENV_PLATFORM", "macos");
     localStorage.setItem(STORAGE_REMOTE_URL, "ws://remote.example.com/ws");
     localStorage.setItem(STORAGE_AUTH_TOKEN, "secret-token");
 
@@ -64,8 +60,8 @@ describe("createTransport", () => {
     expect(transport.requiresAuthentication).toBe(true);
   });
 
-  it("returns WebSocketTransport when __TAURI__ is absent (PWA context)", () => {
-    // __TAURI__ is already absent from beforeEach.
+  it("returns WebSocketTransport when TAURI_ENV_PLATFORM is absent (PWA context)", () => {
+    // TAURI_ENV_PLATFORM is undefined by default — no stub needed.
 
     const transport = createTransport();
 

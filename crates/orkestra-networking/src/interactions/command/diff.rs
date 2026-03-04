@@ -177,15 +177,12 @@ pub(super) async fn handle_get_file_content(
 // ============================================================================
 
 /// Handle the `get_syntax_css` method — returns CSS for light and dark themes.
-pub fn handle_get_syntax_css(
-    ctx: Arc<CommandContext>,
-    _params: Value,
-) -> Result<Value, ErrorPayload> {
+pub fn handle_get_syntax_css(ctx: &Arc<CommandContext>, _params: Value) -> Value {
     let css = SyntaxCss {
         light: ctx.highlighter.light_css.clone(),
         dark: ctx.highlighter.dark_css.clone(),
     };
-    Ok(serde_json::to_value(css).unwrap_or(Value::Null))
+    serde_json::to_value(css).unwrap_or(Value::Null)
 }
 
 // ============================================================================

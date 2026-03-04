@@ -109,9 +109,14 @@ impl ProcessSpawner for OpenCodeProcessSpawner {
         #[cfg(unix)]
         cmd.process_group(0);
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| ProcessError::SpawnFailed(e.to_string()))?;
+        let mut child = cmd.spawn().map_err(|e| {
+            let path = config
+                .env
+                .as_ref()
+                .and_then(|m| m.get("PATH").cloned())
+                .unwrap_or_else(|| std::env::var("PATH").unwrap_or_else(|_| "<not set>".into()));
+            ProcessError::SpawnFailed(format!("command=opencode PATH={path}: {e}"))
+        })?;
 
         let pid = child.id();
 

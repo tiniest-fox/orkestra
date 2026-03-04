@@ -12,6 +12,7 @@ pub mod relay_client;
 pub mod server;
 pub mod types;
 
+pub use axum::http::HeaderValue;
 pub use interactions::auth::{generate_pairing_code, list_devices, pair_device, revoke_device};
 pub use interactions::command::dispatch::CommandContext;
 pub use interactions::event::broadcast::execute as convert_orchestrator_event;

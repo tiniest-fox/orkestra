@@ -12,5 +12,9 @@ use sha2::{Digest, Sha256};
 
 pub(crate) fn sha256_hex(input: &str) -> String {
     let hash = Sha256::digest(input.as_bytes());
-    hash.iter().map(|b| format!("{b:02x}")).collect()
+    hash.iter().fold(String::new(), |mut s, b| {
+        use std::fmt::Write;
+        write!(s, "{b:02x}").expect("write to String is infallible");
+        s
+    })
 }

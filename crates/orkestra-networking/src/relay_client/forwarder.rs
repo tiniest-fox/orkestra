@@ -129,9 +129,8 @@ async fn handle_forward(
     event_tx: broadcast::Sender<Event>,
 ) -> serde_json::Value {
     // Token is required — reject requests without one.
-    let token_str = match token {
-        Some(t) => t,
-        None => return unauthorized_error(),
+    let Some(token_str) = token else {
+        return unauthorized_error();
     };
 
     // Verify the bearer token.

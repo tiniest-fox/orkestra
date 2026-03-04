@@ -141,7 +141,7 @@ impl ScriptHandle {
         }
 
         let child = cmd.spawn()?;
-        Self::from_child(child, timeout)
+        Ok(Self::from_child(child, timeout))
     }
 
     /// Spawn a script with a fully resolved base environment and overlay variables.
@@ -170,7 +170,7 @@ impl ScriptHandle {
         }
 
         let child = cmd.spawn()?;
-        Self::from_child(child, timeout)
+        Ok(Self::from_child(child, timeout))
     }
 
     /// Get the process ID of the running script.
@@ -260,7 +260,7 @@ impl ScriptHandle {
     // -- Helpers --
 
     /// Set up channels and reader threads for a spawned child process.
-    fn from_child(mut child: Child, timeout: Duration) -> std::io::Result<Self> {
+    fn from_child(mut child: Child, timeout: Duration) -> Self {
         let (sender, receiver) = mpsc::channel();
         let mut reader_handles = Vec::new();
 
@@ -275,7 +275,7 @@ impl ScriptHandle {
         }
 
         let now = Instant::now();
-        Ok(Self {
+        Self {
             child,
             output_receiver: receiver,
             reader_handles,
@@ -283,7 +283,7 @@ impl ScriptHandle {
             timeout_at: now + timeout,
             output_buffer: String::new(),
             killed: false,
-        })
+        }
     }
 
     /// Collect available output from reader threads without blocking.

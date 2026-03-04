@@ -57,9 +57,7 @@ async fn run_connection(mut socket: WebSocket, state: Arc<ConnectionState>) -> R
             token,
         } => {
             let client_id = Uuid::new_v4().to_string();
-            let token = if let Some(t) = token {
-                t
-            } else {
+            let Some(token) = token else {
                 let error = RelayMessage::error(
                     "missing_token",
                     "Client registration requires a bearer token",
@@ -130,7 +128,7 @@ async fn run_daemon_connection(
             msg = socket.recv() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
-                        if let Err(e) = handle_daemon_message(&text, &device_id, &state).await {
+                        if let Err(e) = handle_daemon_message(&text, &device_id, &state) {
                             tracing::warn!(device_id, "Daemon message error: {e}");
                         }
                     }
@@ -150,14 +148,14 @@ async fn run_daemon_connection(
 
     // -- Cleanup --
     state.daemons.remove(&device_id);
-    notify_pending_requests_device_offline(&device_id, &state).await;
+    notify_pending_requests_device_offline(&device_id, &state);
     tracing::debug!(device_id, "Daemon disconnected");
 
     result
 }
 
 /// Route a text message received from a daemon.
-async fn handle_daemon_message(
+fn handle_daemon_message(
     text: &str,
     device_id: &str,
     state: &Arc<ConnectionState>,
@@ -186,7 +184,7 @@ async fn handle_daemon_message(
 
         RelayMessage::Event { payload } => {
             // Daemon broadcasting to all clients for this device.
-            broadcast_event_to_clients(device_id, payload, state).await;
+            broadcast_event_to_clients(device_id, payload, state);
         }
 
         RelayMessage::Forward {
@@ -239,7 +237,7 @@ async fn run_client_connection(
                     Some(Ok(Message::Text(text))) => {
                         if let Err(e) = handle_client_message(
                             &text, &device_id, &client_id, &token, &tx, &state,
-                        ).await {
+                        ) {
                             tracing::warn!(device_id, client_id, "Client message error: {e}");
                         }
                     }
@@ -265,7 +263,7 @@ async fn run_client_connection(
 }
 
 /// Route a text message received from a client.
-async fn handle_client_message(
+fn handle_client_message(
     text: &str,
     device_id: &str,
     client_id: &str,
@@ -336,11 +334,11 @@ async fn handle_client_message(
 pub(crate) async fn run_timeout_sweeper(state: Arc<ConnectionState>, timeout: Duration) {
     loop {
         tokio::time::sleep(TIMEOUT_SWEEP_INTERVAL).await;
-        expire_timed_out_requests(&state, timeout).await;
+        expire_timed_out_requests(&state, timeout);
     }
 }
 
-async fn expire_timed_out_requests(state: &Arc<ConnectionState>, timeout: Duration) {
+fn expire_timed_out_requests(state: &Arc<ConnectionState>, timeout: Duration) {
     let now = Instant::now();
     let expired_ids: Vec<String> = state
         .pending_requests
@@ -378,7 +376,7 @@ fn send_error(tx: &mpsc::Sender<String>, code: &str, message: &str) {
 }
 
 /// Notify all pending requests for a device that the daemon went offline.
-async fn notify_pending_requests_device_offline(device_id: &str, state: &Arc<ConnectionState>) {
+fn notify_pending_requests_device_offline(device_id: &str, state: &Arc<ConnectionState>) {
     let affected: Vec<String> = state
         .pending_requests
         .iter()
@@ -412,7 +410,7 @@ fn cleanup_pending_requests_for_client(client_id: &str, state: &Arc<ConnectionSt
 }
 
 /// Broadcast an event payload to all registered clients for a device.
-async fn broadcast_event_to_clients(
+fn broadcast_event_to_clients(
     device_id: &str,
     payload: serde_json::Value,
     state: &Arc<ConnectionState>,

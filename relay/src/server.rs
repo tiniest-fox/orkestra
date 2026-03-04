@@ -127,9 +127,8 @@ async fn ws_handler(
     State(state): State<ServerState>,
 ) -> impl IntoResponse {
     // -- API key check (constant-time) --
-    let provided = match query.api_key {
-        Some(k) => k,
-        None => return StatusCode::UNAUTHORIZED.into_response(),
+    let Some(provided) = query.api_key else {
+        return StatusCode::UNAUTHORIZED.into_response();
     };
 
     let keys_match: bool = provided.as_bytes().ct_eq(state.api_key.as_bytes()).into();

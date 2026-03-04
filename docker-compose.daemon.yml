@@ -1,0 +1,61 @@
+# Coolify / Docker Compose config for the Orkestra daemon.
+#
+# Copy this to your server or point Coolify at it.
+# Set all required environment variables in Coolify's UI (never commit secrets).
+
+services:
+  orkd:
+    build:
+      context: .
+      dockerfile: Dockerfile.daemon
+    restart: unless-stopped
+    ports:
+      - "${ORKD_PORT:-3847}:3847"
+    environment:
+      # --- Required ---
+      ORKD_TOKEN: "${ORKD_TOKEN}"           # Bearer token for WebSocket auth
+
+      # --- Claude auth: use ONE of these ---
+      # Option A: API key (set this env var in Coolify)
+      # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      # Option B: Subscription login — leave blank, run `docker compose exec orkd claude login`
+      #           once after first deploy. Credentials persist in the claude-config volume.
+
+      # --- Project ---
+      ORKD_PROJECT_ROOT: /project
+      PROJECT_REPO_URL: "${PROJECT_REPO_URL:-}"  # Git URL to clone on first boot
+      GIT_USER_EMAIL: "${GIT_USER_EMAIL:-orkestra@localhost}"
+      GIT_USER_NAME: "${GIT_USER_NAME:-Orkestra}"
+
+      # --- Optional: GitHub CLI auth (for PR creation) ---
+      GH_TOKEN: "${GH_TOKEN:-}"
+
+      # --- Optional: OpenCode support ---
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+
+      # --- Logging ---
+      RUST_LOG: "${RUST_LOG:-info}"
+
+    volumes:
+      # Project repo — persisted so the clone survives container restarts
+      - project-data:/project
+
+      # Claude credentials — persisted so subscription login survives restarts.
+      # After first deploy: docker compose exec orkd claude login
+      - claude-config:/root/.claude
+
+      # SSH keys — mount your server's SSH key for git push/pull over SSH
+      # Uncomment if using SSH git URLs:
+      # - ~/.ssh:/root/.ssh:ro
+
+    healthcheck:
+      # TCP check — daemon is up when it accepts connections on 3847
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/3847"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  project-data:
+  claude-config:

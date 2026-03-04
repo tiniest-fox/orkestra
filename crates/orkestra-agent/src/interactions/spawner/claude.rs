@@ -112,8 +112,17 @@ impl ProcessSpawner for ClaudeProcessSpawner {
         config: ProcessConfig,
     ) -> Result<ProcessHandle, ProcessError> {
         // Spawn the process
-        let mut child = spawn_claude_process(working_dir, config.env.as_ref(), &config)
-            .map_err(|e| ProcessError::SpawnFailed(e.to_string()))?;
+        let mut child =
+            spawn_claude_process(working_dir, config.env.as_ref(), &config).map_err(|e| {
+                let path = config
+                    .env
+                    .as_ref()
+                    .and_then(|m| m.get("PATH").cloned())
+                    .unwrap_or_else(|| {
+                        std::env::var("PATH").unwrap_or_else(|_| "<not set>".into())
+                    });
+                ProcessError::SpawnFailed(format!("command=claude PATH={path}: {e}"))
+            })?;
 
         let pid = child.id();
 

@@ -217,6 +217,18 @@ When implementing or extending the `transport.call()` / WebSocket dispatch layer
 
 **Parallel structures** — `METHOD_MAP` in `TauriTransport.ts` and the Rust dispatch table are maintained in parallel. When adding a new command, update both and add a cross-reference comment to make the link explicit.
 
+<!-- compound: plainly-touched-whitefish -->
+## CLI Flags for Typed HTTP/Network Values
+
+When a CLI flag represents a typed value (e.g., `HeaderValue`, `Uri`, `SocketAddr`), **parse it at the entry point and return `Err`** rather than storing it as `String` and parsing lazily. Lazy parsing can panic deep in the call stack where errors are harder to handle gracefully.
+
+Pattern:
+1. Accept the flag as `Option<String>` in `Args`
+2. Parse immediately in `run()` before any side effects: `let origin = raw.parse::<HeaderValue>().map_err(|e| format!("..."))?;`
+3. Pass the typed value downstream: `start(Option<HeaderValue>)` not `start(Option<String>)`
+
+**Re-exporting third-party types from the crate that uses them**: When a public API method accepts a type from a third-party crate (e.g., `axum::http::HeaderValue`), re-export it from your crate (`pub use axum::http::HeaderValue`) so callers don't need a direct dependency on `axum`. Without this, callers must add `axum` to their `Cargo.toml` just to pass a value to your API.
+
 ## If You Have Feedback to Address
 
 If your previous implementation was rejected, you'll receive specific feedback from the reviewer. Address the feedback directly:

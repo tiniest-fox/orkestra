@@ -22,6 +22,7 @@ use orkestra_core::{
         TaskView, WorkflowApi,
     },
 };
+use orkestra_networking::generate_pairing_code;
 
 #[derive(Clone, clap::ValueEnum)]
 enum StatusFilter {
@@ -73,6 +74,8 @@ enum Commands {
         #[command(subcommand)]
         action: UtilityAction,
     },
+    /// Generate a pairing code for daemon access
+    Pair,
 }
 
 #[derive(Subcommand)]
@@ -208,12 +211,30 @@ fn main() {
             cli.pretty,
         ),
         Commands::Utility { action } => handle_utility_action(action),
+        Commands::Pair => {
+            if let Err(e) = handle_pair() {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
 fn output_json<T: serde::Serialize>(value: &T) {
     let json = serde_json::to_string(value).expect("JSON serialization failed");
     println!("{json}");
+}
+
+fn handle_pair() -> Result<(), String> {
+    let project_root =
+        find_project_root().map_err(|e| format!("Failed to find project root: {e}"))?;
+    let db_path = project_root.join(".orkestra/.database/orkestra.db");
+    let conn = DatabaseConnection::open(&db_path)
+        .map_err(|e| format!("Failed to open workflow database: {e}"))?;
+    let code = generate_pairing_code::execute(&conn.shared())
+        .map_err(|e| format!("Failed to generate pairing code: {e}"))?;
+    println!("{code}");
+    Ok(())
 }
 
 fn handle_task_action(action: TaskAction, pretty: bool) {

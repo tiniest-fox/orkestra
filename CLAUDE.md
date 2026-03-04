@@ -247,7 +247,7 @@ Orkestra is a task orchestration system that spawns AI coding agents (Claude Cod
 
 - **`crates/orkestra-core/`** - Core library containing task management, agent spawning, and domain logic
 - **`crates/orkestra-git/`** - Git operations crate (worktrees, branches, merging, diffs). Reference implementation of the module structure pattern.
-- **`crates/orkestra-networking/`** - WebSocket server crate for remote control. Exposes the full WorkflowApi over an authenticated WebSocket connection; consumed by `daemon/`.
+- **`crates/orkestra-networking/`** - WebSocket server crate for remote control. Exposes the full WorkflowApi over an authenticated WebSocket connection; consumed by `daemon/`. **Note:** Auth interactions (`generate_pairing_code`, `pair_device`, `list_devices`, `revoke_device`, `verify_token`) currently live here as pure database operations with no networking logic — they belong in `orkestra-store` but haven't been moved yet. If you need auth functionality from the CLI, depend on `orkestra-networking` for now.
 - **`cli/`** - CLI binary (`ork`) for task management
 - **`daemon/`** - Headless daemon binary. Runs the orchestrator and serves the WebSocket API from `orkestra-networking` for remote clients (PWA, mobile).
 - **`src-tauri/`** - Tauri desktop application backend. **Read `src-tauri/CLAUDE.md` before making changes in this directory.**

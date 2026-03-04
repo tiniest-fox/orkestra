@@ -19,6 +19,7 @@ path = "src/main.rs"
 
 [dependencies]
 orkestra-core = { path = "../crates/orkestra-core" }
+orkestra-networking = { path = "../crates/orkestra-networking" }
 orkestra-types = { path = "../crates/orkestra-types" }
 clap = { version = "4", features = ["derive"] }
 serde = "1"
